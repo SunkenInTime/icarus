@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
-import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -20,7 +20,7 @@ enum UnsavedStrategyDecision {
 
 enum CloudExitDecision {
   stay,
-  cancelUpload,
+  leaveAnyway,
   retrySync,
   retryAuth,
 }
@@ -69,7 +69,7 @@ Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
 Future<CloudExitDecision> _showCloudSyncBlockedDialog(
   BuildContext context, {
   required String message,
-  required bool showCancelUpload,
+  required bool allowLeaveAnyway,
   required bool showRetryAuth,
 }) async {
   final result = await showShadDialog<CloudExitDecision>(
@@ -77,6 +77,7 @@ Future<CloudExitDecision> _showCloudSyncBlockedDialog(
     builder: (context) {
       return ShadDialog.alert(
         title: const Text('Cloud sync pending'),
+        actionsAxis: Axis.vertical,
         description: Padding(
           padding: const EdgeInsets.all(8),
           child: Text(message),
@@ -95,12 +96,12 @@ Future<CloudExitDecision> _showCloudSyncBlockedDialog(
               },
               child: const Text('Retry Convex Auth'),
             ),
-          if (showCancelUpload)
-            ShadButton.destructive(
+          if (allowLeaveAnyway)
+            ShadButton.secondary(
               onPressed: () {
-                Navigator.of(context).pop(CloudExitDecision.cancelUpload);
+                Navigator.of(context).pop(CloudExitDecision.leaveAnyway);
               },
-              child: const Text('Cancel Upload'),
+              child: const Text('Leave Anyway'),
             ),
           ShadButton(
             onPressed: () {
@@ -123,12 +124,17 @@ Future<bool> _waitForCloudSync(
 }) async {
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
+    final strategyId = ref.read(strategyProvider).strategyId;
     final saveState = ref.read(strategySaveStateProvider);
     final queueState = ref.read(strategyOpQueueProvider);
+    final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
+    final mediaJobs = mediaQueueState.jobsForStrategy(strategyId);
     if (!saveState.hasPendingCloudSync &&
         !saveState.hasPendingMediaSync &&
+        mediaJobs.isEmpty &&
         queueState.pending.isEmpty &&
         !queueState.isFlushing &&
+        !mediaQueueState.isProcessing &&
         saveState.cloudSyncError == null &&
         saveState.mediaSyncErrorCount == 0) {
       return true;
@@ -144,8 +150,10 @@ Future<bool> _guardCloudStrategyExit({
   required Future<void> Function() onContinue,
 }) async {
   final openingStrategy = ref.read(strategyProvider);
-  if (ref.read(textDraftProvider).isNotEmpty &&
+  final openingSaveState = ref.read(strategySaveStateProvider);
+  if ((ref.read(textDraftProvider).isNotEmpty || openingSaveState.isDirty) &&
       openingStrategy.strategyId != null) {
+    ref.read(textDraftProvider.notifier).commitAllDrafts();
     try {
       await ref
           .read(strategyProvider.notifier)
@@ -167,14 +175,23 @@ Future<bool> _guardCloudStrategyExit({
     final queueState = ref.read(strategyOpQueueProvider);
     final authState = ref.read(authProvider);
     final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
-    final hasPendingMediaJobs =
-        mediaQueueState.jobsForStrategy(strategyState.strategyId).isNotEmpty;
+    final mediaJobs = mediaQueueState.jobsForStrategy(strategyState.strategyId);
+    final hasPendingMediaJobs = mediaJobs.isNotEmpty;
 
     final hasPendingSync = saveState.hasPendingCloudSync ||
         saveState.hasPendingMediaSync ||
         hasPendingMediaJobs ||
         queueState.pending.isNotEmpty;
     final cloudError = saveState.cloudSyncError ?? queueState.lastError;
+    final hasDurablePendingWork =
+        queueState.pending.isNotEmpty || hasPendingMediaJobs;
+    final hasUnstagedWork = ref.read(textDraftProvider).isNotEmpty ||
+        (saveState.isDirty && !hasDurablePendingWork);
+    final canLeaveWithDurableWork = hasDurablePendingWork &&
+        !hasUnstagedWork &&
+        queueState.outboxIsReliable &&
+        mediaQueueState.outboxIsReliable;
+    final isConnected = ref.read(convexConnectionSnapshotProvider);
     AppErrorReporter.reportInfo(
       'Cloud exit guard check: strategy=${strategyState.strategyId} '
       'dirty=${saveState.isDirty} saving=${saveState.isSaving} '
@@ -188,7 +205,9 @@ Future<bool> _guardCloudStrategyExit({
       'auth=${authState.isAuthenticated} '
       'userReady=${authState.isConvexUserReady} '
       'authIncident=${authState.hasActiveAuthIncident} '
-      'connected=${ConvexClient.instance.isConnected} '
+      'connected=$isConnected '
+      'durablePending=$hasDurablePendingWork '
+      'canLeaveWithDurableWork=$canLeaveWithDurableWork '
       'cloudError=${cloudError ?? 'none'}',
       source: 'cloud_media.exit_guard',
     );
@@ -204,7 +223,8 @@ Future<bool> _guardCloudStrategyExit({
       return true;
     }
 
-    if (queueState.isFlushing && cloudError == null) {
+    if ((queueState.isFlushing || mediaQueueState.isProcessing) &&
+        cloudError == null) {
       AppErrorReporter.reportInfo(
         'Cloud exit guard waiting for active op flush: '
         'strategy=${strategyState.strategyId}',
@@ -230,12 +250,13 @@ Future<bool> _guardCloudStrategyExit({
 
     final decision = await _showCloudSyncBlockedDialog(
       context,
-      message: cloudError != null
-          ? friendlyCloudSyncError(cloudError)
-          : (saveState.mediaSyncErrorCount > 0
-              ? 'Some media uploads failed. Retry sync or stay here until the queue clears.'
-              : 'Icarus is still syncing cloud edits and media. Stay on this screen until sync completes.'),
-      showCancelUpload: hasPendingMediaJobs,
+      message: _cloudSyncBlockedMessage(
+        isConnected: isConnected,
+        cloudError: cloudError,
+        mediaErrorCount: saveState.mediaSyncErrorCount,
+        canLeaveWithDurableWork: canLeaveWithDurableWork,
+      ),
+      allowLeaveAnyway: canLeaveWithDurableWork,
       showRetryAuth: authState.hasActiveAuthIncident,
     );
 
@@ -255,20 +276,16 @@ Future<bool> _guardCloudStrategyExit({
             .read(authProvider.notifier)
             .reinitializeConvexAuth(source: 'cloud_exit_guard');
         break;
-      case CloudExitDecision.cancelUpload:
+      case CloudExitDecision.leaveAnyway:
         AppErrorReporter.reportInfo(
-          'Cloud exit guard canceling media uploads.',
+          'Cloud exit guard leaving with work pending in durable outboxes.',
           source: 'cloud_media.exit_guard',
         );
-        final strategyId = strategyState.strategyId;
-        if (strategyId == null) {
+        if (!canLeaveWithDurableWork || !context.mounted) {
           return false;
         }
-        await ref
-            .read(cloudMediaUploadQueueProvider.notifier)
-            .cancelUploadsForStrategy(strategyId);
-        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
-        break;
+        await onContinue();
+        return true;
       case CloudExitDecision.retrySync:
         AppErrorReporter.reportInfo(
           'Cloud exit guard retrying sync.',
@@ -282,6 +299,27 @@ Future<bool> _guardCloudStrategyExit({
         break;
     }
   }
+}
+
+String _cloudSyncBlockedMessage({
+  required bool isConnected,
+  required String? cloudError,
+  required int mediaErrorCount,
+  required bool canLeaveWithDurableWork,
+}) {
+  final base = !isConnected
+      ? 'Icarus is offline, so these changes have not reached the cloud.'
+      : (cloudError != null
+          ? friendlyCloudSyncError(cloudError)
+          : (mediaErrorCount > 0
+              ? 'Some images have not reached the cloud.'
+              : 'Icarus is still sending cloud edits and images.'));
+  if (canLeaveWithDurableWork) {
+    return '$base The pending work is saved on this device. You can leave '
+        'and Icarus will retry it later.';
+  }
+  return '$base Stay here and retry because Icarus could not confirm that '
+      'all pending work is saved on this device.';
 }
 
 Future<bool> guardUnsavedStrategyExit({

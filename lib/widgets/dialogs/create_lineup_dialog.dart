@@ -84,6 +84,17 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   }
 
   Future<void> _save() async {
+    try {
+      await _enqueueLineupMediaJobs(images: _imagePaths);
+    } catch (_) {
+      Settings.showToast(
+        message: 'Could not queue these images for cloud sync. '
+            'They remain on this device. Try again before closing.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
     final lineUpState = ref.read(lineUpProvider);
     final notifier = ref.read(lineUpProvider.notifier);
 
@@ -166,8 +177,6 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         ),
       );
     }
-
-    await _enqueueLineupMediaJobs(images: _imagePaths);
 
     ref
         .read(interactionStateProvider.notifier)

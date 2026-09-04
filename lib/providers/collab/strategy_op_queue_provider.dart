@@ -25,6 +25,7 @@ class StrategyOpQueueState {
     this.attentionByEntityKey = const <EntitySyncKey, QueuedEntityIntent>{},
     this.loadIssues = const <DurableOutboxLoadIssue>[],
     this.durableLoaded = false,
+    this.hasDurabilityFailure = false,
     this.isFlushing = false,
     this.lastError,
     this.lastFlushAt,
@@ -42,6 +43,7 @@ class StrategyOpQueueState {
   final Map<EntitySyncKey, QueuedEntityIntent> attentionByEntityKey;
   final List<DurableOutboxLoadIssue> loadIssues;
   final bool durableLoaded;
+  final bool hasDurabilityFailure;
   final bool isFlushing;
   final String? lastError;
   final DateTime? lastFlushAt;
@@ -52,6 +54,9 @@ class StrategyOpQueueState {
       loadIssues.isNotEmpty ||
       pausedByEntityKey.isNotEmpty ||
       attentionByEntityKey.isNotEmpty;
+
+  bool get outboxIsReliable =>
+      durableLoaded && loadIssues.isEmpty && !hasDurabilityFailure;
 
   List<PendingOp> get pending => <PendingOp>[
         ...queuedByEntityKey.values.map((intent) => intent.pending),
@@ -67,6 +72,7 @@ class StrategyOpQueueState {
     Map<EntitySyncKey, QueuedEntityIntent>? successorByEntityKey,
     Map<EntitySyncKey, QueuedEntityIntent>? pausedByEntityKey,
     Map<EntitySyncKey, QueuedEntityIntent>? attentionByEntityKey,
+    bool? hasDurabilityFailure,
     bool? isFlushing,
     String? lastError,
     bool clearError = false,
@@ -85,6 +91,8 @@ class StrategyOpQueueState {
       attentionByEntityKey: attentionByEntityKey ?? this.attentionByEntityKey,
       loadIssues: loadIssues,
       durableLoaded: durableLoaded,
+      hasDurabilityFailure:
+          hasDurabilityFailure ?? this.hasDurabilityFailure,
       isFlushing: isFlushing ?? this.isFlushing,
       lastError: clearError ? null : (lastError ?? this.lastError),
       lastFlushAt: lastFlushAt ?? this.lastFlushAt,
@@ -132,6 +140,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       clientId: const Uuid().v4(),
       loadIssues: loaded.issues,
       durableLoaded: true,
+      hasDurabilityFailure: loaded.issues.isNotEmpty,
       lastError: loaded.issues.isEmpty
           ? null
           : 'The cloud outbox contains unreadable saved work.',
@@ -194,6 +203,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       attentionByEntityKey: attention,
       loadIssues: state.loadIssues,
       durableLoaded: true,
+      hasDurabilityFailure:
+          state.hasDurabilityFailure || state.loadIssues.isNotEmpty,
       lastError: _loadedAttentionMessage(
         loadIssues: state.loadIssues,
         paused: paused,
@@ -303,6 +314,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         state = state.copyWith(
           lastError:
               'Cloud work could not be queued without an active account.',
+          hasDurabilityFailure: true,
         );
       }
       return;
@@ -940,6 +952,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     state = state.copyWith(
       isFlushing: false,
       lastError: 'Cloud work could not be saved to the durable outbox: $error',
+      hasDurabilityFailure: true,
     );
   }
 

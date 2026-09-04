@@ -5,12 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
-import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
-import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -105,28 +104,13 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
 
     final saveState = ref.watch(strategySaveStateProvider);
     final opQueueState = ref.watch(strategyOpQueueProvider);
-    final hasTextDrafts = ref.watch(
-      textDraftProvider.select((drafts) => drafts.isNotEmpty),
-    );
-    final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
-
-    final _SyncStatus status;
-    if (opQueueState.needsAttention ||
-        saveState.cloudSyncError != null ||
-        saveState.mediaSyncErrorCount > 0) {
-      status = _SyncStatus.attention;
-    } else if (!isConnected) {
-      status = _SyncStatus.offline;
-    } else if (hasTextDrafts) {
-      status = _SyncStatus.editing;
-    } else if (saveState.isSaving ||
-        saveState.hasPendingCloudSync ||
-        saveState.hasPendingMediaSync ||
-        !opQueueState.durableLoaded) {
-      status = _SyncStatus.syncing;
-    } else {
-      status = _SyncStatus.synced;
-    }
+    final status = switch (ref.watch(cloudSyncStatusProvider)) {
+      CloudSyncStatus.synced => _SyncStatus.synced,
+      CloudSyncStatus.editing => _SyncStatus.editing,
+      CloudSyncStatus.syncing => _SyncStatus.syncing,
+      CloudSyncStatus.offline => _SyncStatus.offline,
+      CloudSyncStatus.attention => _SyncStatus.attention,
+    };
 
     return ShadPopover(
       controller: _popoverController,
