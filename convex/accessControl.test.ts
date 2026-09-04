@@ -359,10 +359,12 @@ describe("A/B/C access boundary", () => {
     const strategyPublicId = "directly-shared-strategy";
 
     await a.mutation(createFolder, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       publicId: sourceFolderPublicId,
       name: "Source",
     });
     await a.mutation(createFolder, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       publicId: targetFolderPublicId,
       name: "Target",
     });
@@ -373,15 +375,20 @@ describe("A/B/C access boundary", () => {
       sourceFolderPublicId,
     );
     await a.mutation(createShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       targetType: "strategy",
       targetPublicId: strategyPublicId,
       token: "direct-move-editor-token",
       role: "editor",
     });
-    await b.mutation(redeemShare, { token: "direct-move-editor-token" });
+    await b.mutation(redeemShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      token: "direct-move-editor-token",
+    });
 
     await expect(
       b.mutation(moveStrategy, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
         expectedRevision: 0,
         folderPublicId: targetFolderPublicId,
@@ -398,6 +405,7 @@ describe("A/B/C access boundary", () => {
 
     await expect(
       a.mutation(moveStrategy, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
         expectedRevision: 0,
         folderPublicId: targetFolderPublicId,
@@ -419,6 +427,7 @@ describe("A/B/C access boundary", () => {
     const strategyPublicId = "inherited-editor-strategy";
 
     await a.mutation(createFolder, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       publicId: sharedFolderPublicId,
       name: "Shared source",
     });
@@ -429,15 +438,20 @@ describe("A/B/C access boundary", () => {
       sharedFolderPublicId,
     );
     await a.mutation(createShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       targetType: "folder",
       targetPublicId: sharedFolderPublicId,
       token: "inherited-move-editor-token",
       role: "editor",
     });
-    await b.mutation(redeemShare, { token: "inherited-move-editor-token" });
+    await b.mutation(redeemShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      token: "inherited-move-editor-token",
+    });
 
     await expect(
       b.mutation(moveStrategy, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
         expectedRevision: 0,
       }),

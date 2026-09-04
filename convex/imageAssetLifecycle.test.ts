@@ -7,6 +7,7 @@ import { makeFunctionReference } from "convex/server";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import cronDefinitions from "./crons";
+import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -50,12 +51,15 @@ async function createHarness(): Promise<{
 }> {
   const t = convexTest(schema, modules);
   const owner = t.withIdentity(identity());
-  await owner.mutation(ensureCurrentUser, {});
+  await owner.mutation(ensureCurrentUser, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+  });
   return { t, owner };
 }
 
 async function seedStrategy(owner: Harness): Promise<void> {
   await owner.mutation(createStrategy, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     publicId: strategyPublicId,
     name: "Asset lifecycle",
     mapData: "ascent",
@@ -138,6 +142,7 @@ describe("image asset lifecycle", () => {
     const { t, owner } = await createHarness();
     await seedStrategy(owner);
     await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 0,
       pagePublicId: pageB,
@@ -221,6 +226,7 @@ describe("image asset lifecycle", () => {
     });
 
     await owner.mutation(deletePage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
       expectedRevision: 1,
@@ -319,6 +325,7 @@ describe("image asset lifecycle", () => {
     });
 
     await owner.mutation(deleteStrategy, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 0,
     });
@@ -628,6 +635,7 @@ describe("image asset lifecycle", () => {
     });
 
     await owner.mutation(deleteStrategy, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 0,
     });
