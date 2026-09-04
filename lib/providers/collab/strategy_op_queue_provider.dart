@@ -749,11 +749,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // promotion. A rejected predecessor leaves both intents in attention.
       final successorRevision = ack.appliedRevision;
       if (successor != null && ack.isAck && successorRevision != null) {
+        final predecessorCreatedEntity = sent.pending.op is ElementAddOp ||
+            sent.pending.op is LineupAddOp;
         final promoted = PendingOp(
           op: _rebaseRejectedOp(
             successor.op,
             successorRevision,
-            preserveAdd: true,
+            preserveAdd: !predecessorCreatedEntity,
           ),
           clientId: successor.clientId,
         );

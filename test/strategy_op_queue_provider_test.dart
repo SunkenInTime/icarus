@@ -968,6 +968,159 @@ void main() {
       expect(durable.latestServerRevision, 2);
     });
 
+    test('promotes an edit after an element add as a patch', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(const ElementAddOp(
+        opId: 'element-add-in-flight',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'element-add-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'element-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalEdit = repository.calls[1].single as ElementPatchOp;
+      expect(finalEdit.payload, {'value': 'second'});
+      expect(finalEdit.expectedElementRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalEdit.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('promotes an edit after a lineup add as a patch', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.lineup('page-1', 'lineup-1');
+
+      await notifier.enqueue(const LineupAddOp(
+        opId: 'lineup-add-in-flight',
+        lineupPublicId: 'lineup-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const LineupAddOp(
+            opId: 'lineup-add-successor',
+            lineupPublicId: 'lineup-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'lineup-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalEdit = repository.calls[1].single as LineupPatchOp;
+      expect(finalEdit.payload, {'value': 'second'});
+      expect(finalEdit.expectedLineupRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalEdit.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('keeps a restore add after an accepted element delete', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(const ElementDeleteOp(
+        opId: 'element-delete-in-flight',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        expectedElementRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'element-restore-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'restored'},
+            sortIndex: 0,
+            expectedElementRevision: 1,
+          ),
+        },
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'element-delete-in-flight',
+        revision: 2,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final restore = repository.calls[1].single as ElementAddOp;
+      expect(restore.payload, {'value': 'restored'});
+      expect(restore.expectedElementRevision, 2);
+      repository.completeSecond(AppliedOpAck(
+        opId: restore.opId,
+        revision: 3,
+      ));
+      await repository.secondCompleted.future;
+    });
+
     test('keeps a final element delete behind an in-flight add', () async {
       final store = MemoryDurableStrategyOutboxStore();
       final repository = _SequencedAckRepository();
