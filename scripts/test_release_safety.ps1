@@ -134,6 +134,13 @@ if ($productionWorkflow -notmatch 'secrets\.CONVEX_PRODUCTION_DEPLOY_KEY') {
 if ($productionWorkflow -match 'CONVEX_PREVIEW_DEPLOY_KEY') {
     throw "The production Convex deployment must never reference the preview deploy key."
 }
+if ($productionWorkflow -notmatch 'CONFIRMATION:\s*\$\{\{\s*inputs\.confirmation\s*\}\}' -or
+    $productionWorkflow -notmatch 'if \[\[ "\$CONFIRMATION" != "deploy-production" \]\]') {
+    throw "The production confirmation must enter Bash through the environment and remain data."
+}
+if ($productionWorkflow -match 'if \[\[ "\$\{\{\s*inputs\.confirmation') {
+    throw "The production confirmation must never be interpolated directly into Bash source."
+}
 Assert-TextAppearsBefore -Text $productionWorkflow -First "Check Convex Types" -Second "Deploy Convex Production Backend"
 Assert-TextAppearsBefore -Text $productionWorkflow -First "Run Convex Tests" -Second "Deploy Convex Production Backend"
 

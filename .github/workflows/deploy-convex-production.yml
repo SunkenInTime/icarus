@@ -19,12 +19,14 @@ jobs:
     steps:
       - name: Guard Production Deploy
         shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "The production Convex backend can only deploy from branch main. Current ref: $GITHUB_REF"
             exit 1
           fi
-          if [[ "${{ inputs.confirmation }}" != "deploy-production" ]]; then
+          if [[ "$CONFIRMATION" != "deploy-production" ]]; then
             echo "Confirmation must be exactly: deploy-production"
             exit 1
           fi
