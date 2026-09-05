@@ -171,7 +171,7 @@ def main():
                           'seconds': time.perf_counter() - started},
               'calibration': calibration, 'floorChecks': floors, 'objects': objects, 'rays': rays,
               'limitations': ['Height sweep values are test parameters, not verified stance heights.',
-                              'Navigation comes from an earlier extraction and only seeds candidate positions.',
+                              'Navigation only seeds candidate positions; its fingerprint identifies the input.',
                               'No game-camera or material-opacity ground truth has been certified.',
                               'Map-to-SVG registration must be validated before accepting disagreements.']}
     report['uiTransform'] = {k: ui[k] for k in ['XScalarToAdd', 'XMultiplier', 'YScalarToAdd', 'YMultiplier']}
