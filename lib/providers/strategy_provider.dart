@@ -24,6 +24,7 @@ import 'package:icarus/migrations/canonical_coordinates_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/migrations/page_name_provenance_migration.dart';
+import 'package:icarus/migrations/sunset_scale_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -597,8 +598,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  static StrategyData migrateToCurrentVersion(StrategyData strat,
-      {bool forceAbilityScale = false}) {
+  static StrategyData migrateToCurrentVersion(
+    StrategyData strat, {
+    bool forceAbilityScale = false,
+  }) {
+    final originalVersion = strat.versionNumber;
     final needsCanonicalCoordinatesMigration =
         strat.versionNumber < CanonicalCoordinatesMigration.version;
     final needsAbilityVisionMigration =
@@ -606,11 +610,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     final needsPageNameProvenanceMigration =
         strat.versionNumber < PageNameProvenanceMigration.version;
     final worldMigrated = migrateToWorld16x9(strat);
-    final abilityScaleMigrated =
-        migrateAbilityScale(worldMigrated, force: forceAbilityScale);
-    final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-    final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
-    final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
+    final abilityScaleMigrated = migrateAbilityScale(
+      worldMigrated,
+      force:
+          forceAbilityScale || originalVersion < AbilityScaleMigration.version,
+    );
+    final squareAoeMigrated = migrateSquareAoeCenter(
+      abilityScaleMigrated,
+      force: originalVersion < SquareAoeCenterMigration.version,
+    );
+    final customCircleMigrated = migrateCustomCircleWrapper(
+      squareAoeMigrated,
+      force: originalVersion < CustomCircleWrapperMigration.version,
+    );
+    final lineUpGroupMigrated = migrateLineUpGroups(
+      customCircleMigrated,
+      force: originalVersion < LineUpGroupMigration.version,
+    );
     final abilityVisionMigrated = migrateAbilityVisionCones(
       lineUpGroupMigrated,
       force: needsAbilityVisionMigration,
@@ -619,9 +635,30 @@ class StrategyProvider extends Notifier<StrategyState> {
       abilityVisionMigrated,
       force: needsPageNameProvenanceMigration,
     );
-    return migrateCanonicalCoordinates(
+    final canonicalMigrated = migrateCanonicalCoordinates(
       pageNameMigrated,
       force: needsCanonicalCoordinatesMigration,
+    );
+    return migrateSunsetScale(
+      canonicalMigrated,
+      force: originalVersion < SunsetScaleMigration.version,
+    );
+  }
+
+  static StrategyData migrateSunsetScale(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force && strat.versionNumber >= SunsetScaleMigration.version) {
+      return strat;
+    }
+    return strat.copyWith(
+      pages: SunsetScaleMigration.migratePages(
+        pages: strat.pages,
+        map: strat.mapData,
+      ),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
     );
   }
 
@@ -776,10 +813,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       abilityVisionMigrated,
       force: originalVersion < PageNameProvenanceMigration.version,
     );
-    return migrateCanonicalCoordinates(
+    final canonicalMigrated = migrateCanonicalCoordinates(
       pageNameMigrated,
       force: originalVersion < CanonicalCoordinatesMigration.version,
     );
+    return migrateSunsetScale(canonicalMigrated,
+        force: originalVersion < SunsetScaleMigration.version);
   }
 
   static StrategyData migrateToWorld16x9(StrategyData strat,

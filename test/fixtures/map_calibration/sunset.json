@@ -1,0 +1,453 @@
+{
+  "version": 1,
+  "map": "sunset",
+  "mapCode": "Juliett",
+  "ability": "Veto Crosscut",
+  "uiData": {
+    "xMultiplier": 7.8e-05,
+    "yMultiplier": -7.8e-05,
+    "xScalarToAdd": 0.5,
+    "yScalarToAdd": 0.515625
+  },
+  "centimetersPerMeter": 100,
+  "currentRadiusMeters": 30,
+  "rangeSource": "https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-13-00/",
+  "extractedRangeRadiusCm": 2400,
+  "sourceFiles": [
+    {
+      "path": "Maps/Juliett/Juliett_UIData.json",
+      "sha256": "be779c19a5917f2aaf854a49995f89a15ae72934c5d209f22f83bb0327687bea"
+    },
+    {
+      "path": "UI/InGame/Minimap/Maps/Juliett/Juliett_VisionCones.json",
+      "sha256": "d159fcbda65f50d9a8e11f986c3950cd03eb48b27b470d91e13699a55d586e94"
+    },
+    {
+      "path": "Characters/Pine/S0/Ability_4/GameObject_Pine_4_UsableTeleport.json",
+      "sha256": "1dc08f0d3d06858e5c628577ecc005b296f42b347de183344438f83acd8a018c"
+    },
+    {
+      "path": "Characters/Pine/S0/Ability_4/Ability_Pine_4_UsableTP.json",
+      "sha256": "2b0e9f9a64f97c0d2133265717251d0ab8864ce8bff937f4d0d130c331977133"
+    }
+  ],
+  "landmarks": [
+    {
+      "name": "A Elbow northeast",
+      "role": "fit",
+      "svgSubpath": 0,
+      "svgSegment": 17,
+      "svg": [
+        414.436,
+        138.496
+      ],
+      "riotVertex": 281,
+      "uv": [
+        0.96875,
+        0.28027344
+      ]
+    },
+    {
+      "name": "B Site west",
+      "role": "fit",
+      "svgSubpath": 0,
+      "svgSegment": 57,
+      "svg": [
+        1.53516,
+        166.88
+      ],
+      "riotVertex": 0,
+      "uv": [
+        0.045898438,
+        0.34277344
+      ]
+    },
+    {
+      "name": "Attacker Spawn southwest",
+      "role": "fit",
+      "svgSubpath": 0,
+      "svgSegment": 34,
+      "svg": [
+        190.045,
+        454.465
+      ],
+      "riotVertex": 142,
+      "uv": [
+        0.46777344,
+        0.9863281
+      ]
+    },
+    {
+      "name": "Defender Spawn northeast",
+      "role": "fit",
+      "svgSubpath": 0,
+      "svgSegment": 2,
+      "svg": [
+        274.66,
+        27.6396
+      ],
+      "riotVertex": 200,
+      "uv": [
+        0.65625,
+        0.032226562
+      ]
+    },
+    {
+      "name": "B Lobby west",
+      "role": "fit",
+      "svgSubpath": 0,
+      "svgSegment": 44,
+      "svg": [
+        85.0791,
+        335.039
+      ],
+      "riotVertex": 57,
+      "uv": [
+        0.23339844,
+        0.71875
+      ]
+    },
+    {
+      "name": "B Main southwest",
+      "role": "fit",
+      "svgSubpath": 0,
+      "svgSegment": 48,
+      "svg": [
+        6.35547,
+        314.41
+      ],
+      "riotVertex": 5,
+      "uv": [
+        0.056640625,
+        0.671875
+      ]
+    },
+    {
+      "name": "A Lobby inside elbow",
+      "role": "check",
+      "svgSubpath": 0,
+      "svgSegment": 28,
+      "svg": [
+        295.546,
+        307.191
+      ],
+      "riotVertex": 209,
+      "uv": [
+        0.703125,
+        0.65625
+      ]
+    },
+    {
+      "name": "A Lobby outer southeast",
+      "role": "check",
+      "svgSubpath": 0,
+      "svgSegment": 27,
+      "svg": [
+        351.242,
+        307.191
+      ],
+      "riotVertex": 255,
+      "uv": [
+        0.828125,
+        0.65625
+      ]
+    },
+    {
+      "name": "A Lobby south doorway",
+      "role": "check",
+      "svgSubpath": 0,
+      "svgSegment": 30,
+      "svg": [
+        310.006,
+        334.504
+      ],
+      "riotVertex": 228,
+      "uv": [
+        0.734375,
+        0.71777344
+      ]
+    },
+    {
+      "name": "A Elbow southeast",
+      "role": "check",
+      "svgSubpath": 0,
+      "svgSegment": 22,
+      "svg": [
+        414.436,
+        251.495
+      ],
+      "riotVertex": 284,
+      "uv": [
+        0.96875,
+        0.53125
+      ]
+    },
+    {
+      "name": "Mid Bottom east wall top",
+      "role": "check",
+      "svgSubpath": 3,
+      "svgSegment": 0,
+      "svg": [
+        218.464,
+        226.896
+      ],
+      "riotVertex": 160,
+      "uv": [
+        0.53125,
+        0.4765625
+      ]
+    },
+    {
+      "name": "Mid Bottom east wall bottom",
+      "role": "check",
+      "svgSubpath": 3,
+      "svgSegment": 1,
+      "svg": [
+        218.464,
+        289.482
+      ],
+      "riotVertex": 163,
+      "uv": [
+        0.53125,
+        0.61621094
+      ]
+    },
+    {
+      "name": "Mid Tiles northwest",
+      "role": "check",
+      "svgSubpath": 4,
+      "svgSegment": 10,
+      "svg": [
+        253.274,
+        250.995
+      ],
+      "riotVertex": 184,
+      "uv": [
+        0.609375,
+        0.53125
+      ]
+    },
+    {
+      "name": "Mid Tiles southeast",
+      "role": "check",
+      "svgSubpath": 4,
+      "svgSegment": 17,
+      "svg": [
+        323.358,
+        278.772
+      ],
+      "riotVertex": 241,
+      "uv": [
+        0.76464844,
+        0.59277344
+      ]
+    },
+    {
+      "name": "A Main wall east",
+      "role": "check",
+      "svgSubpath": 7,
+      "svgSegment": 13,
+      "svg": [
+        386.017,
+        223.076
+      ],
+      "riotVertex": 278,
+      "uv": [
+        0.90527344,
+        0.46777344
+      ]
+    },
+    {
+      "name": "Defender Spawn inner wall",
+      "role": "check",
+      "svgSubpath": 10,
+      "svgSegment": 4,
+      "svg": [
+        246.241,
+        132.569
+      ],
+      "riotVertex": 179,
+      "uv": [
+        0.59277344,
+        0.26464844
+      ]
+    }
+  ],
+  "figmaBaseline": {
+    "document": "Icarus Maps Latest One",
+    "page": "Map Assets",
+    "nodeId": "908:1601",
+    "name": "sunsent_map",
+    "exportSha256": "dd422225ade44ea32d40e7d2fea11e817581e82bba73cf791143d6ad4db323c7",
+    "landmarks": [
+      {
+        "name": "A Elbow northeast",
+        "segment": 17,
+        "svg": [
+          413.807,
+          138.561
+        ]
+      },
+      {
+        "name": "B Site west",
+        "segment": 54,
+        "svg": [
+          0.5,
+          166.73
+        ]
+      },
+      {
+        "name": "Attacker Spawn southwest",
+        "segment": 0,
+        "svg": [
+          189.394,
+          454.76
+        ]
+      },
+      {
+        "name": "Defender Spawn northeast",
+        "segment": 32,
+        "svg": [
+          273.71,
+          27.6144
+        ]
+      },
+      {
+        "name": "B Lobby west",
+        "segment": 67,
+        "svg": [
+          84.1555,
+          335.408
+        ]
+      },
+      {
+        "name": "B Main southwest",
+        "segment": 63,
+        "svg": [
+          5.2393,
+          314.372
+        ]
+      },
+      {
+        "name": "A Lobby inside elbow",
+        "segment": 6,
+        "svg": [
+          294.839,
+          307.299
+        ]
+      },
+      {
+        "name": "A Lobby outer southeast",
+        "segment": 7,
+        "svg": [
+          350.714,
+          307.299
+        ]
+      },
+      {
+        "name": "A Lobby south doorway",
+        "segment": 4,
+        "svg": [
+          309.023,
+          334.442
+        ]
+      },
+      {
+        "name": "A Elbow southeast",
+        "segment": 12,
+        "svg": [
+          413.81,
+          251.375
+        ]
+      },
+      {
+        "name": "Mid Bottom east wall top",
+        "segment": 114,
+        "svg": [
+          217.935,
+          227.177
+        ]
+      },
+      {
+        "name": "Mid Bottom east wall bottom",
+        "segment": 121,
+        "svg": [
+          217.935,
+          288.829
+        ]
+      },
+      {
+        "name": "Mid Tiles northwest",
+        "segment": 141,
+        "svg": [
+          252.743,
+          251.375
+        ]
+      },
+      {
+        "name": "Mid Tiles southeast",
+        "segment": 134,
+        "svg": [
+          322.006,
+          278.461
+        ]
+      },
+      {
+        "name": "A Main wall east",
+        "segment": 161,
+        "svg": [
+          384.791,
+          222.659
+        ]
+      },
+      {
+        "name": "Defender Spawn inner wall",
+        "segment": 187,
+        "svg": [
+          245.082,
+          131.748
+        ]
+      }
+    ]
+  },
+  "discordReference": {
+    "thread": "https://discord.com/channels/1353173092649930835/1544901406522089632",
+    "sha256": "8c5ea50890a275b23860cd1cfe000ec50edbd662653c766c8b1936c67230dca7",
+    "imageSize": [
+      1920,
+      1080
+    ],
+    "landmarkPixels": [
+      [
+        1284,
+        400
+      ],
+      [
+        655,
+        424
+      ],
+      [
+        929,
+        870
+      ],
+      [
+        1076,
+        225
+      ],
+      [
+        775,
+        684
+      ],
+      [
+        655,
+        649
+      ]
+    ],
+    "circleInitial": [
+      1111,
+      696,
+      158
+    ],
+    "note": "Manual pixels at the first six named map corners, then a robust fit to bright neutral pixels in a narrow annulus. Screenshot is a visual check, not a gameplay distance measurement."
+  }
+}

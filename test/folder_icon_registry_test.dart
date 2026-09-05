@@ -7,8 +7,9 @@ import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/providers/folder_provider.dart';
 
 void main() {
-  test('folder icon registry migration version matches app version', () {
-    expect(folderIconRegistryVersion, Settings.versionNumber);
+  test('folder icon registry migration remains version 97', () {
+    expect(folderIconRegistryVersion, 97);
+    expect(folderIconRegistryVersion, lessThanOrEqualTo(Settings.versionNumber));
   });
 
   test('folder icon registry ids are unique and picker-safe', () {
