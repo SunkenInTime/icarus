@@ -168,7 +168,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final intent in intents) {
       final revision = intent.ack.appliedRevision;
       final key = intent.entityKey;
-      if (revision == null || key.pageId != state.hydratedPageId) {
+      if (revision == null) {
         continue;
       }
       final accepted = _normalizedAcceptedEntity(
@@ -205,7 +205,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       PagePatchOp(:final payload) => _NormalizedEntity(
           key: key,
           overlayEntityType: ActivePageOverlayEntityType.pageDescriptor,
-          payload: payload,
+          // The canvas tracks side only. Rename acks must not replace that
+          // baseline, or introduce fields the canvas never compares.
+          payload: <String, dynamic>{
+            if (previous != null) ..._decodeObject(previous.payload),
+            if (payload.containsKey('isAttack'))
+              'isAttack': payload['isAttack'],
+          },
           sortIndex: null,
           revision: revision,
           deleted: false,
@@ -515,6 +521,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   ActivePageProjectedState? projectPageState({
     required String strategyPublicId,
     required String pageId,
+    Set<EntitySyncKey> excludedOverlays = const {},
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
@@ -557,7 +564,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     var projectedIsAttack = page.isAttack;
 
     final pageOverlays = state.overlayByEntityKey.entries.where(
-      (entry) => entry.key.pageId == page.publicId,
+      (entry) =>
+          entry.key.pageId == page.publicId &&
+          !excludedOverlays.contains(entry.key),
     );
     for (final entry in pageOverlays) {
       final overlay = entry.value;

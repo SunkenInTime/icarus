@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -100,8 +104,44 @@ class _FixedOpQueue extends StrategyOpQueueNotifier {
   StrategyOpQueueState build() => initialState;
 }
 
+class _GoneUploadRepository implements ConvexStrategyRepository {
+  final List<String?> attemptedUploadIds = [];
+  @override
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
+    String? mimeType,
+    String? fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    attemptedUploadIds.add(uploadId);
+    throw const ConvexFunctionException(
+      code: ConvexErrorCode.uploadIntentNotFound,
+      rawCode: 'UPLOAD_INTENT_NOT_FOUND',
+      message: 'Upload intent not found.',
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FailingBatchStore extends MemoryDurableCloudMediaOutboxStore {
   bool failBatch = false;
+  bool failRemove = false;
+
+  @override
+  Future<void> remove(CloudMediaUploadJob job) async {
+    if (failRemove) throw StateError('delete failed');
+    await super.remove(job);
+  }
 
   @override
   Future<void> putAll(Iterable<CloudMediaUploadJob> jobs) async {
@@ -121,6 +161,7 @@ ProviderContainer _container(
   bool cloudEnabled = false,
   String? accountId = 'account-a',
   CloudMediaReferenceSnapshotLoader? referenceSnapshotLoader,
+  ConvexStrategyRepository? repository,
 }) {
   final resolvedOpQueueState = opQueueState ??
       (strategyOpen
@@ -134,6 +175,8 @@ ProviderContainer _container(
   return ProviderContainer(
     overrides: [
       durableCloudMediaOutboxStoreProvider.overrideWithValue(store),
+      if (repository != null)
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
       durableStrategyOutboxStoreProvider.overrideWithValue(
         strategyStore ?? MemoryDurableStrategyOutboxStore(),
       ),
@@ -200,6 +243,208 @@ RemoteFullStrategySnapshot _fullSnapshot({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('media durability recovers after a successful retry', () async {
+    final store = _FailingBatchStore()..failBatch = true;
+    final container = _container(store);
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    final images = [SimpleImageData(id: 'retry-image', fileExtension: '.png')];
+    await expectLater(
+        queue.enqueueLineupMediaJobs(
+          strategyPublicId: 'strategy-a',
+          images: images,
+        ),
+        throwsStateError);
+    store.failBatch = false;
+    await queue.enqueueLineupMediaJobs(
+        strategyPublicId: 'strategy-a', images: images);
+    expect(store.load().issues, isEmpty);
+    expect(store.load().jobs, hasLength(1));
+    await queue.clearJobsForStrategy('strategy-a');
+    expect(store.load().jobs, isEmpty);
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(
+        container.read(cloudMediaUploadQueueProvider).outboxIsReliable, isTrue);
+  });
+
+  test('removed upload intent returns to durable upload recovery', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    await store.put(CloudMediaUploadJob(
+      jobId: 'image-a',
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-a',
+      assetPublicId: 'image-a',
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      provider: 'r2',
+      uploadId: 'swept-upload',
+      objectKey: 'old/image.png',
+      state: CloudMediaJobState.pendingAttach,
+      attempts: 1,
+      updatedAt: DateTime.now().subtract(const Duration(days: 2)),
+    ));
+    final repository = _GoneUploadRepository();
+    final container = _container(store,
+        cloudReady: true, cloudEnabled: true, repository: repository);
+    addTearDown(container.dispose);
+    container.read(cloudMediaUploadQueueProvider.notifier);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(repository.attemptedUploadIds, ['swept-upload']);
+    final restored = store.load().jobs.single;
+    expect(restored.uploadId, isNull);
+    expect(restored.objectKey, isNull);
+    expect(restored.hasUploadedRemoteObject, isFalse);
+    expect(restored.referenceDurable, isTrue);
+    expect(
+        container
+            .read(cloudMediaUploadQueueProvider)
+            .jobs
+            .single
+            .hasUploadedRemoteObject,
+        isFalse,
+        reason:
+            'A permanently deleted server intent must not be retried as if the object still exists.');
+  });
+
+  test('a successful write cannot clear another media key failure', () async {
+    final store = _FailingBatchStore()..failBatch = true;
+    final container = _container(store);
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    final failed = [SimpleImageData(id: 'failed', fileExtension: '.png')];
+    await expectLater(
+        queue.enqueueLineupMediaJobs(
+          strategyPublicId: 'strategy-a',
+          images: failed,
+        ),
+        throwsStateError);
+    store.failBatch = false;
+    await queue.enqueueLineupMediaJobs(
+      strategyPublicId: 'strategy-a',
+      images: [SimpleImageData(id: 'other', fileExtension: '.png')],
+    );
+    expect(container.read(cloudMediaUploadQueueProvider).outboxIsReliable,
+        isFalse);
+    await queue.enqueueLineupMediaJobs(
+      strategyPublicId: 'strategy-a',
+      images: failed,
+    );
+    expect(
+        container.read(cloudMediaUploadQueueProvider).outboxIsReliable, isTrue);
+  });
+
+  for (final restage in [false, true]) {
+    test('server reads preserve new references and restaged=$restage media',
+        () async {
+      final store = MemoryDurableCloudMediaOutboxStore();
+      final ops = MemoryDurableStrategyOutboxStore();
+      final job = CloudMediaUploadJob(
+        jobId: 'racing-image',
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        assetPublicId: 'racing-image',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        referenceDurable: false,
+        state: CloudMediaJobState.pendingUpload,
+        attempts: 0,
+        updatedAt: DateTime.utc(2026, 9, 4),
+      );
+      await store.put(job);
+      final snapshot = Completer<RemoteFullStrategySnapshot>();
+      final started = Completer<void>();
+      final container = _container(
+        store,
+        strategyStore: ops,
+        cloudReady: true,
+        referenceSnapshotLoader: (_) {
+          if (!started.isCompleted) started.complete();
+          return snapshot.future;
+        },
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await started.future;
+      if (restage) {
+        await queue.enqueuePlacedImageUpload(
+          strategyPublicId: 'strategy-a',
+          imagePublicId: 'racing-image',
+          fileExtension: '.jpg',
+          width: 42,
+        );
+      }
+      await ops.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        entityKey: const EntitySyncKey.element('page-a', 'racing-image'),
+        pending: const PendingOp(
+          clientId: 'client-a',
+          op: ElementAddOp(
+            opId: 'new-reference',
+            elementPublicId: 'racing-image',
+            pagePublicId: 'page-a',
+            sortIndex: 0,
+            payload: {'id': 'racing-image'},
+          ),
+        ),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ));
+      snapshot.complete(_fullSnapshot());
+      await queue.retryNow();
+      expect(store.load().jobs.single.referenceDurable, isTrue);
+      expect(store.load().jobs.single.width, restage ? 42 : null);
+      expect(store.load().jobs.single.fileExtension, restage ? '.jpg' : '.png');
+      expect(
+          container
+              .read(cloudMediaUploadQueueProvider)
+              .jobs
+              .single
+              .assetPublicId,
+          'racing-image');
+    });
+  }
+
+  test('an orphan removal can retry and clear its durability error', () async {
+    final store = _FailingBatchStore();
+    await store.put(CloudMediaUploadJob(
+      jobId: 'orphan',
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-a',
+      assetPublicId: 'orphan',
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      referenceDurable: false,
+      state: CloudMediaJobState.pendingUpload,
+      attempts: 0,
+      updatedAt: DateTime.utc(2026, 9, 4),
+    ));
+    var snapshotAvailable = false;
+    final container = _container(
+      store,
+      cloudReady: true,
+      referenceSnapshotLoader: (_) async {
+        if (!snapshotAvailable) throw StateError('offline');
+        return _fullSnapshot();
+      },
+    );
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+    snapshotAvailable = true;
+    store.failRemove = true;
+    await expectLater(queue.retryNow(), throwsStateError);
+    expect(container.read(cloudMediaUploadQueueProvider).outboxIsReliable,
+        isFalse);
+
+    store.failRemove = false;
+    await queue.retryNow();
+    expect(store.load().jobs, isEmpty);
+    expect(
+        container.read(cloudMediaUploadQueueProvider).outboxIsReliable, isTrue);
+  });
 
   test('restart restores unfinished lineup media from the durable outbox',
       () async {

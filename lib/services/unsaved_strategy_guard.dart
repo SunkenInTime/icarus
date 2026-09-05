@@ -201,6 +201,10 @@ Future<bool> _guardCloudStrategyExit({
     final hasUnreadableSavedWork = queueState.loadIssues.isNotEmpty ||
         mediaQueueState.loadIssues.isNotEmpty;
     final canLeaveWithDurableWork = !hasUnstagedWork &&
+        queueState.durableLoaded &&
+        mediaQueueState.durableLoaded &&
+        !queueState.hasDurabilityFailure &&
+        mediaQueueState.durabilityError == null &&
         ((hasDurablePendingWork &&
                 queueState.outboxIsReliable &&
                 mediaQueueState.outboxIsReliable) ||

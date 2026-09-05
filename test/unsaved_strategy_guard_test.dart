@@ -731,6 +731,67 @@ void main() {
       expect(await guardFuture, isFalse);
     });
 
+    for (final failedStore in ['ops', 'media']) {
+      testWidgets('unreadable records cannot hide a $failedStore write failure',
+          (tester) async {
+        notifier = _FakeGuardStrategyProvider(
+          initialState: const StrategyState(
+            strategyId: 'cloud-strategy',
+            strategyName: 'Cloud Strategy',
+            source: StrategySource.cloud,
+            isOpen: true,
+          ),
+          flushResult: true,
+        );
+        container = ProviderContainer(overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => _GuardOpQueue(
+                StrategyOpQueueState(
+                  accountId: 'account-a',
+                  strategyPublicId: 'cloud-strategy',
+                  clientId: 'guard-client',
+                  durableLoaded: true,
+                  queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+                  hasDurabilityFailure: failedStore == 'ops',
+                ),
+              )),
+          cloudMediaUploadQueueProvider.overrideWith(() => _GuardMediaQueue(
+                CloudMediaUploadQueueState(
+                  jobs: const [],
+                  isProcessing: false,
+                  durabilityError:
+                      failedStore == 'media' ? 'Disk write failed.' : null,
+                  loadIssues: const [
+                    DurableCloudMediaOutboxLoadIssue(
+                      storageKey: 'old-unreadable',
+                      error: 'bad record',
+                    )
+                  ],
+                ),
+              )),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ]);
+        addTearDown(container.dispose);
+        await pumpHarness(tester);
+        var continued = false;
+        final guarded = guardUnsavedStrategyExit(
+          context: context,
+          ref: ref,
+          source: 'mixed-durability-test',
+          onContinue: () async {
+            continued = true;
+          },
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Leave Anyway'), findsNothing);
+        await tester.tap(find.text('Stay Here'));
+        await tester.pumpAndSettle();
+        expect(await guarded, isFalse);
+        expect(continued, isFalse);
+      });
+    }
+
     testWidgets('an unreliable media outbox can leave without deleting work',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(

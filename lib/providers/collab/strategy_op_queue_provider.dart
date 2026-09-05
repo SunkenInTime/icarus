@@ -115,6 +115,9 @@ class StrategyOpQueueState {
   final Map<EntitySyncKey, QueuedEntityIntent> attentionByEntityKey;
   final List<DurableOutboxLoadIssue> loadIssues;
   final bool durableLoaded;
+
+  /// A write in this process has not been verified. Persisted, unreadable
+  /// records are reported separately by [loadIssues].
   final bool hasDurabilityFailure;
   final bool isFlushing;
   final String? lastError;
@@ -254,7 +257,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       clientId: const Uuid().v4(),
       loadIssues: loaded.issues,
       durableLoaded: true,
-      hasDurabilityFailure: loaded.issues.isNotEmpty,
+      hasDurabilityFailure: false,
       lastError: loaded.issues.isEmpty
           ? null
           : 'The cloud outbox contains unreadable saved work.',
@@ -362,8 +365,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     final clientId =
         matching.firstOrNull?.pending.clientId ?? const Uuid().v4();
-    final hasDurabilityFailure = state.loadIssues.isNotEmpty ||
-        _hasDurabilityFailureForAccount(accountId);
+    final hasDurabilityFailure = _hasDurabilityFailureForAccount(accountId);
     state = StrategyOpQueueState(
       accountId: accountId,
       strategyPublicId: strategyPublicId,
@@ -1620,8 +1622,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       pausedByEntityKey: paused,
       attentionByEntityKey: attention,
       accountOutbox: _accountSummary(accountId),
-      hasDurabilityFailure: state.loadIssues.isNotEmpty ||
-          _hasDurabilityFailureForAccount(accountId),
+      hasDurabilityFailure: _hasDurabilityFailureForAccount(accountId),
       isFlushing: isFlushing,
       lastError: effectiveError,
       clearError: effectiveError == null,
@@ -1822,7 +1823,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   bool get _hasDurabilityFailureForCurrentAccount =>
-      state.loadIssues.isNotEmpty ||
       _hasDurabilityFailureForAccount(state.accountId);
 
   void _recordPersistenceFailure(Object error, StackTrace stackTrace) {
