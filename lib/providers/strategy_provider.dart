@@ -33,6 +33,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -42,6 +43,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -136,7 +138,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (!state.isOpen || state.strategyId == null || state.source == null) {
       return false;
     }
-    return !ref.read(strategyPageSessionProvider).isApplyingPage;
+    return !ref.read(strategyPageSessionProvider).isApplyingPage &&
+        _currentStrategyCanEditPages();
   }
 
   T _withoutPersistenceTracking<T>(T Function() callback) {
@@ -234,6 +237,17 @@ class StrategyProvider extends Notifier<StrategyState> {
     return state.source == StrategySource.cloud;
   }
 
+  bool _currentStrategyCanEditPages() {
+    if (!_currentStrategyIsCloud()) {
+      return true;
+    }
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final role = snapshot?.header.publicId == state.strategyId
+        ? snapshot?.header.role
+        : null;
+    return StrategyCapabilities.fromCloudRole(role).canEditPages;
+  }
+
   bool _selectedWorkspaceIsCloud() {
     return ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
   }
@@ -329,7 +343,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     List<StrategyOp> ops, {
     bool flushImmediately = false,
   }) async {
-    if (!_currentStrategyIsCloud() || ops.isEmpty) {
+    if (!_currentStrategyIsCloud() ||
+        !_currentStrategyCanEditPages() ||
+        ops.isEmpty) {
       return;
     }
 
@@ -359,7 +375,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> notifyCloudMutation({bool flushImmediately = false}) async {
     _cloudMutationSyncScheduled = false;
-    if (!_currentStrategyIsCloud()) {
+    if (!_currentStrategyIsCloud() || !_currentStrategyCanEditPages()) {
       return;
     }
 
@@ -376,7 +392,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     bool flushImmediately = false,
   }) async {
     _cloudStrategyMutationSyncScheduled = false;
-    if (!_currentStrategyIsCloud()) {
+    if (!_currentStrategyIsCloud() || !_currentStrategyCanEditPages()) {
       return;
     }
 
@@ -413,6 +429,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     _cloudMutationSyncScheduled = false;
   }
 
+  void consumeScheduledCloudStrategySync() {
+    _cloudStrategyMutationSyncScheduled = false;
+  }
+
   void _scheduleCloudStrategySync() {
     if (_cloudStrategyMutationSyncScheduled) {
       return;
@@ -431,6 +451,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
+      return;
+    }
+    if (!_currentStrategyCanEditPages()) {
       return;
     }
 
@@ -494,6 +517,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
       return;
     }
+    if (!_currentStrategyCanEditPages()) {
+      return;
+    }
 
     state = state.copyWith(isSaved: false);
 
@@ -511,6 +537,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> forceSaveNow(String id) async {
+    if (!_currentStrategyCanEditPages()) {
+      return;
+    }
     cancelPendingSave();
     if (_currentStrategyIsCloud()) {
       ref.read(strategySaveStateProvider.notifier)
@@ -615,6 +644,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (oldIndex == newIndex) return;
 
     if (_currentStrategyIsCloud()) {
@@ -865,6 +895,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> addPage([String? name]) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null) return;
@@ -943,6 +974,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> renamePage(String pageId, String newName) async {
+    if (!_currentStrategyCanEditPages()) return;
     final trimmed = newName.trim();
     if (trimmed.isEmpty) {
       return;
@@ -986,6 +1018,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> deletePage(String pageId) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null || snapshot.pages.length <= 1) {
@@ -1423,42 +1456,55 @@ class StrategyProvider extends Notifier<StrategyState> {
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
   }
 
-  Future<void> deleteStrategy(
+  Future<CloudLibraryActionResult> deleteStrategy(
     String strategyID, {
     StrategySource? source,
   }) async {
-    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
-      try {
-        final shell = await ref
-            .read(convexStrategyRepositoryProvider)
-            .fetchShell(strategyID);
-        await ref.read(convexStrategyRepositoryProvider).deleteStrategy(
-              strategyPublicId: strategyID,
-              expectedRevision: shell.header.revision,
-            );
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:delete',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        if (!handled) rethrow;
-      }
+      const sourceName = 'strategy:delete';
+      final result = await ref.read(cloudLibraryActionReporterProvider).run(
+            action: () async {
+              final shell = await ref
+                  .read(convexStrategyRepositoryProvider)
+                  .fetchShell(strategyID);
+              await ref.read(convexStrategyRepositoryProvider).deleteStrategy(
+                    strategyPublicId: strategyID,
+                    expectedRevision: shell.header.revision,
+                  );
+              return true;
+            },
+            source: sourceName,
+            failureMessage:
+                "Couldn't delete this cloud strategy. Try again.",
+            reportAuthenticationFailure: (error, stackTrace) => ref
+                .read(authProvider.notifier)
+                .reportConvexUnauthenticated(
+                  source: sourceName,
+                  error: error,
+                  stackTrace: stackTrace,
+                ),
+          );
+      if (!result.didSucceed) return result;
+
+      await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
       ref.invalidate(cloudStrategiesProvider);
-      return;
+      return result;
     }
 
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
 
     final directory = await getApplicationSupportDirectory();
 
     final customDirectory = Directory(path.join(directory.path, strategyID));
 
-    if (!await customDirectory.exists()) return;
+    if (!await customDirectory.exists()) {
+      return CloudLibraryActionResult.succeeded;
+    }
 
     await customDirectory.delete(recursive: true);
+    return CloudLibraryActionResult.succeeded;
   }
 
   Future<void> saveToHive(String id) async {
@@ -1577,6 +1623,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> _applySettingsToAllPages(
     StrategySettings Function(StrategySettings settings) transform,
   ) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
       if (strategyId == null) {
@@ -1656,42 +1703,54 @@ class StrategyProvider extends Notifier<StrategyState> {
     return StrategySettings();
   }
 
-  void moveToFolder({
+  Future<CloudLibraryActionResult> moveToFolder({
     required String strategyID,
     required String? parentID,
     StrategySource? source,
-  }) {
+  }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
-      unawaited(() async {
-        try {
-          final shell = await ref
-              .read(convexStrategyRepositoryProvider)
-              .fetchShell(strategyID);
-          await ref.read(convexStrategyRepositoryProvider).moveStrategy(
-                strategyPublicId: strategyID,
-                folderPublicId: parentID,
-                expectedRevision: shell.header.revision,
-              );
-        } catch (error, stackTrace) {
-          await _reportCloudUnauthenticated(
-            source: 'strategy:move',
-            error: error,
-            stackTrace: stackTrace,
+      const sourceName = 'strategy:move';
+      final result = await ref.read(cloudLibraryActionReporterProvider).run(
+            action: () async {
+              final shell = await ref
+                  .read(convexStrategyRepositoryProvider)
+                  .fetchShell(strategyID);
+              await ref.read(convexStrategyRepositoryProvider).moveStrategy(
+                    strategyPublicId: strategyID,
+                    folderPublicId: parentID,
+                    expectedRevision: shell.header.revision,
+                  );
+              return true;
+            },
+            source: sourceName,
+            failureMessage: "Couldn't move this cloud strategy. Try again.",
+            showFailureMessage: true,
+            reportAuthenticationFailure: (error, stackTrace) => ref
+                .read(authProvider.notifier)
+                .reportConvexUnauthenticated(
+                  source: sourceName,
+                  error: error,
+                  stackTrace: stackTrace,
+                ),
           );
-        }
-      }());
+      if (!result.didSucceed) return result;
+
       ref.invalidate(cloudStrategiesProvider);
-      return;
+      return result;
     }
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = strategyBox.get(strategyID);
 
     if (strategy != null) {
       strategy.folderID = parentID;
-      strategy.save();
+      await strategy.save();
+      return CloudLibraryActionResult.succeeded;
     } else {
       log("Strategy with ID $strategyID not found.");
+      return CloudLibraryActionResult.failed(
+        "Couldn't move this strategy. Try again.",
+      );
     }
   }
 }

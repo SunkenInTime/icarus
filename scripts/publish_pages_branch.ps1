@@ -12,6 +12,10 @@ Set-StrictMode -Version Latest
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
 $resolvedSourceDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath $SourceDir
+$publishesStable = Test-PublishesStablePages -SourceDirectory $resolvedSourceDir -SyncPaths $SyncPaths
+if ($publishesStable) {
+    Assert-ReleaseBranch -RepoRoot $repoRoot -ReleaseTarget "stable-desktop" | Out-Null
+}
 
 if (-not (Test-Path $resolvedSourceDir)) {
     throw "Pages source directory not found at $resolvedSourceDir"
@@ -67,19 +71,28 @@ try {
 
     if ($SyncPaths.Count -gt 0) {
         foreach ($syncPath in $SyncPaths) {
-            $sourcePath = Join-Path $resolvedSourceDir $syncPath
-            $targetPath = Join-Path $tempRoot $syncPath
+            $sourcePath = Resolve-PagesSyncPath -RootDirectory $resolvedSourceDir -SyncPath $syncPath
+            $targetPath = Resolve-PagesSyncPath -RootDirectory $tempRoot -SyncPath $syncPath
 
-            if (Test-Path $targetPath) {
-                Remove-Item -Path $targetPath -Recurse -Force
+            if ([string]::Equals(
+                $targetPath,
+                [System.IO.Path]::GetFullPath($tempRoot),
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+                Copy-Item -Path (Join-Path $resolvedSourceDir "*") -Destination $tempRoot -Recurse -Force
+                continue
             }
 
-            if (Test-Path $sourcePath) {
+            if (Test-Path -LiteralPath $targetPath) {
+                Remove-Item -LiteralPath $targetPath -Recurse -Force
+            }
+
+            if (Test-Path -LiteralPath $sourcePath) {
                 $targetParent = Split-Path -Parent $targetPath
                 if (-not [string]::IsNullOrWhiteSpace($targetParent)) {
                     New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
                 }
-                Copy-Item -Path $sourcePath -Destination $targetPath -Recurse -Force
+                Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Recurse -Force
             }
         }
     }

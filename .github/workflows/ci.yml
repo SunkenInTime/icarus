@@ -69,6 +69,10 @@ jobs:
           # Fetch all branch history so that ref exists on PR and push runs.
           fetch-depth: 0
 
+      - name: Test Release Safety Policy
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/test_release_safety.ps1
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -158,7 +162,7 @@ jobs:
         run: fvm flutter analyze --no-fatal-infos
       - name: Build Web Client
         shell: pwsh
-        run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
+        run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
       - name: Run Tests
         shell: pwsh
         run: fvm flutter test
@@ -170,7 +174,7 @@ jobs:
           cargo test --manifest-path third_party/convex_rs/Cargo.toml
       - name: Build Windows Client
         shell: pwsh
-        run: fvm flutter build windows --no-tree-shake-icons
+        run: fvm flutter build windows --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 
       - name: Build Windows Installer
         shell: pwsh
@@ -278,4 +282,4 @@ jobs:
           cargo test --manifest-path third_party/convex_rs/Cargo.toml
 
       - name: Build Linux Client
-        run: fvm flutter build linux --no-tree-shake-icons
+        run: fvm flutter build linux --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development

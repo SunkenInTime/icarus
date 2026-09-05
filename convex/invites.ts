@@ -9,6 +9,10 @@ import {
 } from "./lib/auth";
 import { getStrategyByPublicId } from "./lib/entities";
 import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
+import {
   forbiddenError,
   invalidOpError,
   notFoundError,
@@ -105,6 +109,7 @@ export const get = query({
 
 export const create = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     token: v.string(),
     role: v.union(v.literal("editor"), v.literal("viewer")),
@@ -112,6 +117,7 @@ export const create = mutation({
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user, role } = await assertStrategyRole(ctx, strategy, "owner");
     if (role !== "owner") {
@@ -135,6 +141,7 @@ export const create = mutation({
 
 export const redeem = mutation({
   args: {
+    ...cloudProtocolArgs,
     token: v.string(),
   },
   returns: v.object({
@@ -143,6 +150,7 @@ export const redeem = mutation({
     role: accessRoleValidator,
   }),
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     const invite = await ctx.db
       .query("inviteTokens")
@@ -213,11 +221,13 @@ export const redeem = mutation({
 
 export const revoke = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     token: v.string(),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "owner");
     if (role !== "owner") {

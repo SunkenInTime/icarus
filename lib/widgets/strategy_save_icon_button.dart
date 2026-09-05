@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -84,6 +85,11 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
   @override
   Widget build(BuildContext context) {
     final ping = ref.watch(autoSaveProvider);
+    final canEditPages = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
 
     if (ping != _lastPing) {
       _lastPing = ping;
@@ -116,10 +122,11 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
     }
 
     return ShadTooltip(
-      builder: (context) => const Text("Save"),
+      builder: (context) => Text(canEditPages ? "Save" : "View only"),
       child: ShadIconButton.ghost(
         foregroundColor: Colors.white,
         icon: icon,
+        enabled: canEditPages,
         onPressed: () async {
           await ref
               .read(strategyProvider.notifier)

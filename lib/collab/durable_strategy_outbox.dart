@@ -7,12 +7,34 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 
 const durableOutboxRecordVersion = 2;
+const _legacyDurableOutboxRecordVersion = 1;
 const durableOutboxVersionKey = '__outbox_record_version__';
 
 Future<void> prepareDurableStrategyOutbox() async {
   final box = Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox);
   if (box.get(durableOutboxVersionKey) == durableOutboxRecordVersion) return;
-  await box.clear();
+
+  final storageKeys = box.keys
+      .where((key) => key.toString() != durableOutboxVersionKey)
+      .toList(growable: false);
+  for (final key in storageKeys) {
+    final storageKey = key.toString();
+    DurableOutboxRecord record;
+    try {
+      final raw = box.get(key);
+      final decoded = raw is String ? jsonDecode(raw) : raw;
+      final json = decoded is Map<String, dynamic>
+          ? decoded
+          : Map<String, dynamic>.from(decoded as Map);
+      record = DurableOutboxRecord.fromJson(json);
+      if (record.storageKey != storageKey) continue;
+    } catch (_) {
+      // Keep unreadable records byte-for-byte. The store loader quarantines
+      // them as load issues instead of risking deletion of saved cloud work.
+      continue;
+    }
+    await box.put(key, record.toJson());
+  }
   await box.put(durableOutboxVersionKey, durableOutboxRecordVersion);
 }
 
@@ -110,7 +132,8 @@ class DurableOutboxRecord {
 
   factory DurableOutboxRecord.fromJson(Map<String, dynamic> json) {
     final version = (json['outboxVersion'] as num?)?.toInt();
-    if (version != durableOutboxRecordVersion) {
+    if (version != _legacyDurableOutboxRecordVersion &&
+        version != durableOutboxRecordVersion) {
       throw FormatException('Unsupported outbox record version: $version');
     }
     final opJson = _object(json['op'], field: 'op');

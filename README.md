@@ -59,8 +59,12 @@ back to the installed build.
 ## Build
 
 ```bash
-flutter build <platform>
+flutter build <platform> --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 ```
+
+That command makes an internal build against the named development Convex
+deployment. Use the release scripts in `docs/release_process.md` for stable or
+Store artifacts. They require explicit production cloud configuration.
 
 ## Versioning (Windows MSIX)
 

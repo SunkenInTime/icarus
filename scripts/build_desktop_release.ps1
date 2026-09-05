@@ -10,6 +10,8 @@ param(
     [string]$InitialChangeMessage = "Describe this release before publishing.",
     [string]$PostHogProjectToken = $env:POSTHOG_PROJECT_TOKEN,
     [string]$PostHogHost = $(if ($env:POSTHOG_HOST) { $env:POSTHOG_HOST } else { "https://us.i.posthog.com" }),
+    [string]$ProductionConvexDeploymentUrl = $env:ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL,
+    [string]$ProductionConvexClientId = $env:ICARUS_PRODUCTION_CONVEX_CLIENT_ID,
     [switch]$SkipPubGet
 )
 
@@ -19,6 +21,12 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "common_release.ps1")
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
+$releaseTarget = if ($Channel -eq "stable") { "stable-desktop" } else { "prerelease-desktop" }
+Assert-ReleaseBranch -RepoRoot $repoRoot -ReleaseTarget $releaseTarget | Out-Null
+$cloudBuildConfiguration = Resolve-CloudBuildConfiguration `
+    -ReleaseTarget $Channel `
+    -ProductionConvexDeploymentUrl $ProductionConvexDeploymentUrl `
+    -ProductionConvexClientId $ProductionConvexClientId
 $env:FLUTTER_ROOT = Get-FlutterRoot -RepoRoot $repoRoot
 
 if (-not $SkipPubGet) {
@@ -35,14 +43,21 @@ try {
         "--release",
         "--dart-define=ICARUS_UPDATE_CHANNEL=$Channel"
     )
-    if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
-        $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
-        Write-JsonFileUtf8 -Path $dartDefinesPath -Value @{
-            POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
-            POSTHOG_HOST = $PostHogHost
-        }
-        $releaseArguments += "--dart-define-from-file=$dartDefinesPath"
+    $dartDefines = [ordered]@{
+        ICARUS_CLOUD_ENVIRONMENT = $cloudBuildConfiguration.Environment
     }
+    if ($cloudBuildConfiguration.Environment -eq "production") {
+        $dartDefines.ICARUS_CONVEX_DEPLOYMENT_URL = $cloudBuildConfiguration.DeploymentUrl
+        $dartDefines.ICARUS_CONVEX_CLIENT_ID = $cloudBuildConfiguration.ClientId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
+        $dartDefines.POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
+        $dartDefines.POSTHOG_HOST = $PostHogHost
+    }
+
+    $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
+    Write-JsonFileUtf8 -Path $dartDefinesPath -Value $dartDefines
+    $releaseArguments += "--dart-define-from-file=$dartDefinesPath"
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $releaseArguments
 }
 finally {
@@ -146,9 +161,7 @@ else {
     $missingChannels = @($requiredChannels | Where-Object { $channels -notcontains $_ })
 
     if ($missingChannels.Count -gt 0) {
-        $metadata.channels = @($channels + $missingChannels)
-        Write-JsonFileUtf8 -Value $metadata -Path $metadataPath -Depth 6
-        Write-Host ("Updated release metadata channels at {0}: {1}" -f $metadataPath, ($metadata.channels -join ", "))
+        throw "Release metadata '$metadataPath' does not include channel(s): $($missingChannels -join ', '). Review and edit the metadata explicitly before building."
     }
 }
 

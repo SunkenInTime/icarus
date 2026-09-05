@@ -19,6 +19,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
+import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
@@ -236,7 +237,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                             icon: const Icon(Icons.home),
                           ),
                           const SizedBox(width: 5),
-                          const MapSelector(),
+                          const StrategyEditBoundary(
+                            disabledOpacity: 0.55,
+                            child: MapSelector(),
+                          ),
                           if (kIsWeb)
                             const Padding(
                               padding: EdgeInsets.symmetric(horizontal: 8.0),
@@ -286,7 +290,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Positioned.fill(child: DeleteCapture()),
+                Positioned.fill(
+                  child: StrategyEditBoundary(child: DeleteCapture()),
+                ),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: RepaintBoundary(child: InteractiveMap()),
@@ -299,7 +305,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     child: PagesBar(),
                   ),
                 ),
-                Align(alignment: Alignment.centerRight, child: SideBarUI()),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: StrategyEditBoundary(
+                    disabledOpacity: 0.55,
+                    child: SideBarUI(),
+                  ),
+                ),
               ],
             ),
           ),

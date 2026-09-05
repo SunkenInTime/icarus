@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +10,7 @@ import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -380,16 +378,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
   }
 
   Future<void> _confirmSignOut() async {
-    // One accidental click on the avatar used to sign out instantly.
-    final confirmed = await ConfirmAlertDialog.show(
-      context: context,
-      title: 'Sign out?',
-      content: 'Cloud strategies stay online; your local strategies stay on '
-          'this device.',
-      confirmText: 'Sign Out',
-    );
-    if (!confirmed || !mounted) return;
-    unawaited(ref.read(authProvider.notifier).signOut());
+    await ref.read(guardedSignOutRequestProvider)(context);
   }
 }
 

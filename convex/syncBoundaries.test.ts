@@ -6,6 +6,13 @@ import {
 import { makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
+import {
+  CLOUD_OPERATION_TOO_LARGE_MESSAGE,
+  CURRENT_CLOUD_PROTOCOL_VERSION,
+  MAX_CLOUD_ARRAY_ENTRIES,
+  MAX_CLOUD_OPERATION_BYTES,
+  serializedConvexValueUtf8Bytes,
+} from "./lib/cloudProtocol";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -81,12 +88,15 @@ async function createHarness(): Promise<{
 }> {
   const t = convexTest(schema, modules);
   const owner = t.withIdentity(identity);
-  await owner.mutation(ensureCurrentUser, {});
+  await owner.mutation(ensureCurrentUser, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+  });
   return { t, owner };
 }
 
 async function createBaseStrategy(owner: Harness) {
   await owner.mutation(createStrategyWithInitialPage, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     publicId: strategyPublicId,
     name: "Sync boundary strategy",
     mapData: "ascent",
@@ -105,7 +115,7 @@ async function applyOps(
   return (await owner.mutation(applyBatch, {
     strategyPublicId,
     clientId,
-    clientProtocolVersion: 3,
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     ops: ops.map(toProtocol3Op),
   })) as {
     strategyPublicId: string;
@@ -436,6 +446,7 @@ describe("page-scoped read contract", () => {
     try {
       const { t, owner } = await createHarness();
       await owner.mutation(createStrategyWithInitialPage, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         publicId: strategyPublicId,
         name: "Page names",
         mapData: "ascent",
@@ -1195,6 +1206,7 @@ describe("record-scoped write contract", () => {
       const { t, owner } = await createHarness();
       await createBaseStrategy(owner);
       const added = (await owner.mutation(addPage, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
         expectedRevision: 0,
         pagePublicId: pageB,
@@ -1206,6 +1218,7 @@ describe("record-scoped write contract", () => {
       expect(added.revision).toBe(1);
 
       const deleted = (await owner.mutation(deletePage, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
         pagePublicId: pageB,
         expectedRevision: 1,
@@ -1213,6 +1226,7 @@ describe("record-scoped write contract", () => {
       expect(deleted).toMatchObject({ revision: 2 });
 
       const replayed = (await owner.mutation(deletePage, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
         pagePublicId: pageB,
         expectedRevision: 1,
@@ -1228,6 +1242,7 @@ describe("record-scoped write contract", () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
     await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 0,
       pagePublicId: pageB,
@@ -1238,6 +1253,7 @@ describe("record-scoped write contract", () => {
     });
 
     const replayed = (await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 0,
       pagePublicId: pageB,
@@ -1258,6 +1274,7 @@ describe("record-scoped write contract", () => {
     await createBaseStrategy(owner);
 
     await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 0,
       pagePublicId: pageB,
@@ -1267,6 +1284,7 @@ describe("record-scoped write contract", () => {
       settings: settingsB,
     });
     await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 1,
       pagePublicId: "page-c",
@@ -1287,6 +1305,7 @@ describe("record-scoped write contract", () => {
     ]);
 
     const replayed = (await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 1,
       pagePublicId: "page-c",
@@ -1301,6 +1320,7 @@ describe("record-scoped write contract", () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
     await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       expectedRevision: 0,
       pagePublicId: pageB,
@@ -1312,6 +1332,7 @@ describe("record-scoped write contract", () => {
 
     await expect(
       owner.mutation(reorderPages, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
         orderedPagePublicIds: [pageA, pageA],
         expectedRevision: 1,
@@ -1524,6 +1545,114 @@ describe("cloud protocol v3 boundary", () => {
     });
   });
 
+  test("a policy-oversized Unicode op fails without blocking its sibling", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+    const oversized = {
+      opId: "oversized-drawing",
+      type: "element.add" as const,
+      elementPublicId: "large-element",
+      pagePublicId: pageA,
+      payload: {
+        kind: "drawing" as const,
+        payloadVersion: 1,
+        data: {
+          elementType: "drawing",
+          encodedPoints: "界".repeat(310_000),
+        },
+      },
+      sortIndex: 0,
+    };
+    const serializedBytes = serializedConvexValueUtf8Bytes(oversized);
+    expect(serializedBytes).toBeGreaterThan(MAX_CLOUD_OPERATION_BYTES);
+    expect(serializedBytes).toBeLessThan(1024 * 1024);
+
+    const response = (await owner.mutation(applyBatch, {
+      strategyPublicId,
+      clientId: "oversized-op-client",
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      ops: [
+        oversized,
+        {
+          opId: "independent-strategy-patch",
+          type: "strategy.patch",
+          payload: { name: "Independent change landed" },
+          expectedStrategyRevision: 0,
+        },
+      ],
+    })) as { results: Array<Record<string, unknown>> };
+
+    expect(response.results).toEqual([
+      {
+        opId: "oversized-drawing",
+        status: "failed",
+        code: "INVALID_PAYLOAD",
+        rawCode: "INVALID_PAYLOAD",
+        message: CLOUD_OPERATION_TOO_LARGE_MESSAGE,
+      },
+      {
+        opId: "independent-strategy-patch",
+        status: "applied",
+        appliedRevision: 1,
+      },
+    ]);
+    await expect(
+      owner.query(getShell, { strategyPublicId }),
+    ).resolves.toMatchObject({
+      header: { name: "Independent change landed", revision: 1 },
+    });
+  });
+
+  test("a policy-wide array fails per op without blocking its sibling", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+    const response = (await owner.mutation(applyBatch, {
+      strategyPublicId,
+      clientId: "wide-array-client",
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      ops: [
+        {
+          opId: "wide-drawing",
+          type: "element.add",
+          elementPublicId: "wide-element",
+          pagePublicId: pageA,
+          payload: {
+            kind: "drawing",
+            payloadVersion: 1,
+            data: {
+              points: Array.from(
+                { length: MAX_CLOUD_ARRAY_ENTRIES + 1 },
+                () => 0,
+              ),
+            },
+          },
+          sortIndex: 0,
+        },
+        {
+          opId: "independent-wide-array-sibling",
+          type: "strategy.patch",
+          payload: { name: "Wide sibling landed" },
+          expectedStrategyRevision: 0,
+        },
+      ],
+    })) as { results: Array<Record<string, unknown>> };
+
+    expect(response.results).toEqual([
+      {
+        opId: "wide-drawing",
+        status: "failed",
+        code: "INVALID_PAYLOAD",
+        rawCode: "INVALID_PAYLOAD",
+        message: CLOUD_OPERATION_TOO_LARGE_MESSAGE,
+      },
+      {
+        opId: "independent-wide-array-sibling",
+        status: "applied",
+        appliedRevision: 1,
+      },
+    ]);
+  });
+
   test("the wire validator rejects an illegal operation discriminator", async () => {
     const { owner } = await createHarness();
 
@@ -1531,7 +1660,7 @@ describe("cloud protocol v3 boundary", () => {
       owner.mutation(applyBatch, {
         strategyPublicId,
         clientId: "illegal-op",
-        clientProtocolVersion: 3,
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         ops: [
           {
             opId: "illegal-page-delete",

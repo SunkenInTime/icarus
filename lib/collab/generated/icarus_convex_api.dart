@@ -198,6 +198,7 @@ final class _ElementsModule implements ElementsModule {
 
 abstract interface class FoldersModule {
   Future<ConvexValue> create({
+    required double clientProtocolVersion,
     ConvexOptional<String> color = const ConvexOptional.absent(),
     ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
     ConvexOptional<double> iconCodePoint = const ConvexOptional.absent(),
@@ -208,12 +209,16 @@ abstract interface class FoldersModule {
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
     required String publicId,
   });
-  Future<FoldersDeleteResult> delete({required String folderPublicId});
+  Future<FoldersDeleteResult> delete({
+    required double clientProtocolVersion,
+    required String folderPublicId,
+  });
   ConvexQuery<List<FoldersListTreeResultItem>> listTree({
     ConvexOptional<FoldersListTreeArgsScope> scope =
         const ConvexOptional.absent(),
   });
   Future<FoldersDeleteResult> move({
+    required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
   });
@@ -221,6 +226,7 @@ abstract interface class FoldersModule {
     ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> color = const ConvexOptional.absent(),
     ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
     required String folderPublicId,
@@ -237,6 +243,7 @@ final class _FoldersModule implements FoldersModule {
   final ConvexTransport _transport;
   @override
   Future<ConvexValue> create({
+    required double clientProtocolVersion,
     ConvexOptional<String> color = const ConvexOptional.absent(),
     ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
     ConvexOptional<double> iconCodePoint = const ConvexOptional.absent(),
@@ -248,6 +255,7 @@ final class _FoldersModule implements FoldersModule {
     required String publicId,
   }) {
     final args = encodeFoldersCreateArgs(
+      clientProtocolVersion: clientProtocolVersion,
       color: color,
       customColorValue: customColorValue,
       iconCodePoint: iconCodePoint,
@@ -265,8 +273,14 @@ final class _FoldersModule implements FoldersModule {
   }
 
   @override
-  Future<FoldersDeleteResult> delete({required String folderPublicId}) {
-    final args = encodeFoldersDeleteArgs(folderPublicId: folderPublicId);
+  Future<FoldersDeleteResult> delete({
+    required double clientProtocolVersion,
+    required String folderPublicId,
+  }) {
+    final args = encodeFoldersDeleteArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      folderPublicId: folderPublicId,
+    );
     return _invoke(
       () => _transport.mutation('folders:delete', args),
       decodeFoldersDeleteResult,
@@ -289,10 +303,12 @@ final class _FoldersModule implements FoldersModule {
 
   @override
   Future<FoldersDeleteResult> move({
+    required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
   }) {
     final args = encodeFoldersMoveArgs(
+      clientProtocolVersion: clientProtocolVersion,
       folderPublicId: folderPublicId,
       parentFolderPublicId: parentFolderPublicId,
     );
@@ -307,6 +323,7 @@ final class _FoldersModule implements FoldersModule {
     ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> color = const ConvexOptional.absent(),
     ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
     required String folderPublicId,
@@ -320,6 +337,7 @@ final class _FoldersModule implements FoldersModule {
       clearCustomColorValue: clearCustomColorValue,
       clearIconFontFamily: clearIconFontFamily,
       clearIconFontPackage: clearIconFontPackage,
+      clientProtocolVersion: clientProtocolVersion,
       color: color,
       customColorValue: customColorValue,
       folderPublicId: folderPublicId,
@@ -359,6 +377,7 @@ abstract interface class ImagesModule {
   Future<ImagesCompleteUploadResult> completeUpload({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> etag = const ConvexOptional.absent(),
     ConvexOptional<String> fileExtension = const ConvexOptional.absent(),
     ConvexOptional<double> height = const ConvexOptional.absent(),
@@ -373,11 +392,13 @@ abstract interface class ImagesModule {
   });
   Future<FoldersDeleteResult> deleteAssetRef({
     required String assetPublicId,
+    required double clientProtocolVersion,
     required String strategyPublicId,
   });
   Future<ImagesGenerateUploadUrlResult> generateUploadUrl({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     required String fileExtension,
     ConvexOptional<double> height = const ConvexOptional.absent(),
     required String mimeType,
@@ -400,6 +421,7 @@ final class _ImagesModule implements ImagesModule {
   Future<ImagesCompleteUploadResult> completeUpload({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> etag = const ConvexOptional.absent(),
     ConvexOptional<String> fileExtension = const ConvexOptional.absent(),
     ConvexOptional<double> height = const ConvexOptional.absent(),
@@ -415,6 +437,7 @@ final class _ImagesModule implements ImagesModule {
     final args = encodeImagesCompleteUploadArgs(
       assetPublicId: assetPublicId,
       byteSize: byteSize,
+      clientProtocolVersion: clientProtocolVersion,
       etag: etag,
       fileExtension: fileExtension,
       height: height,
@@ -435,10 +458,12 @@ final class _ImagesModule implements ImagesModule {
   @override
   Future<FoldersDeleteResult> deleteAssetRef({
     required String assetPublicId,
+    required double clientProtocolVersion,
     required String strategyPublicId,
   }) {
     final args = encodeImagesDeleteAssetRefArgs(
       assetPublicId: assetPublicId,
+      clientProtocolVersion: clientProtocolVersion,
       strategyPublicId: strategyPublicId,
     );
     return _invoke(
@@ -451,6 +476,7 @@ final class _ImagesModule implements ImagesModule {
   Future<ImagesGenerateUploadUrlResult> generateUploadUrl({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     required String fileExtension,
     ConvexOptional<double> height = const ConvexOptional.absent(),
     required String mimeType,
@@ -460,6 +486,7 @@ final class _ImagesModule implements ImagesModule {
     final args = encodeImagesGenerateUploadUrlArgs(
       assetPublicId: assetPublicId,
       byteSize: byteSize,
+      clientProtocolVersion: clientProtocolVersion,
       fileExtension: fileExtension,
       height: height,
       mimeType: mimeType,
@@ -507,6 +534,7 @@ final class _ImagesModule implements ImagesModule {
 
 abstract interface class InvitesModule {
   Future<FoldersDeleteResult> create({
+    required double clientProtocolVersion,
     ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
     required InvitesCreateArgsRole role,
     required String strategyPublicId,
@@ -516,8 +544,12 @@ abstract interface class InvitesModule {
     ConvexOptional<String> strategyPublicId = const ConvexOptional.absent(),
     ConvexOptional<String> token = const ConvexOptional.absent(),
   });
-  Future<InvitesRedeemResult> redeem({required String token});
+  Future<InvitesRedeemResult> redeem({
+    required double clientProtocolVersion,
+    required String token,
+  });
   Future<FoldersDeleteResult> revoke({
+    required double clientProtocolVersion,
     required String strategyPublicId,
     required String token,
   });
@@ -528,12 +560,14 @@ final class _InvitesModule implements InvitesModule {
   final ConvexTransport _transport;
   @override
   Future<FoldersDeleteResult> create({
+    required double clientProtocolVersion,
     ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
     required InvitesCreateArgsRole role,
     required String strategyPublicId,
     required String token,
   }) {
     final args = encodeInvitesCreateArgs(
+      clientProtocolVersion: clientProtocolVersion,
       expiresAt: expiresAt,
       role: role,
       strategyPublicId: strategyPublicId,
@@ -563,8 +597,14 @@ final class _InvitesModule implements InvitesModule {
   }
 
   @override
-  Future<InvitesRedeemResult> redeem({required String token}) {
-    final args = encodeInvitesRedeemArgs(token: token);
+  Future<InvitesRedeemResult> redeem({
+    required double clientProtocolVersion,
+    required String token,
+  }) {
+    final args = encodeInvitesRedeemArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      token: token,
+    );
     return _invoke(
       () => _transport.mutation('invites:redeem', args),
       decodeInvitesRedeemResult,
@@ -573,10 +613,12 @@ final class _InvitesModule implements InvitesModule {
 
   @override
   Future<FoldersDeleteResult> revoke({
+    required double clientProtocolVersion,
     required String strategyPublicId,
     required String token,
   }) {
     final args = encodeInvitesRevokeArgs(
+      clientProtocolVersion: clientProtocolVersion,
       strategyPublicId: strategyPublicId,
       token: token,
     );
@@ -695,6 +737,7 @@ final class _PageModule implements PageModule {
 
 abstract interface class PagesModule {
   Future<ConvexValue> add({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required bool isAttack,
     ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
@@ -706,6 +749,7 @@ abstract interface class PagesModule {
     required String strategyPublicId,
   });
   Future<ConvexValue> delete({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required String pagePublicId,
     required String strategyPublicId,
@@ -714,6 +758,7 @@ abstract interface class PagesModule {
     required String strategyPublicId,
   });
   Future<ConvexValue> rename({
+    required double clientProtocolVersion,
     required double expectedRevision,
     ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
     required String name,
@@ -721,6 +766,7 @@ abstract interface class PagesModule {
     required String strategyPublicId,
   });
   Future<ConvexValue> reorder({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required List<String> orderedPagePublicIds,
     required String strategyPublicId,
@@ -732,6 +778,7 @@ final class _PagesModule implements PagesModule {
   final ConvexTransport _transport;
   @override
   Future<ConvexValue> add({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required bool isAttack,
     ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
@@ -743,6 +790,7 @@ final class _PagesModule implements PagesModule {
     required String strategyPublicId,
   }) {
     final args = encodePagesAddArgs(
+      clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       isAttack: isAttack,
       isAutoNamed: isAutoNamed,
@@ -760,11 +808,13 @@ final class _PagesModule implements PagesModule {
 
   @override
   Future<ConvexValue> delete({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required String pagePublicId,
     required String strategyPublicId,
   }) {
     final args = encodePagesDeleteArgs(
+      clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
@@ -792,6 +842,7 @@ final class _PagesModule implements PagesModule {
 
   @override
   Future<ConvexValue> rename({
+    required double clientProtocolVersion,
     required double expectedRevision,
     ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
     required String name,
@@ -799,6 +850,7 @@ final class _PagesModule implements PagesModule {
     required String strategyPublicId,
   }) {
     final args = encodePagesRenameArgs(
+      clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       isAutoNamed: isAutoNamed,
       name: name,
@@ -813,11 +865,13 @@ final class _PagesModule implements PagesModule {
 
   @override
   Future<ConvexValue> reorder({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required List<String> orderedPagePublicIds,
     required String strategyPublicId,
   }) {
     final args = encodePagesReorderArgs(
+      clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       orderedPagePublicIds: orderedPagePublicIds,
       strategyPublicId: strategyPublicId,
@@ -831,6 +885,7 @@ final class _PagesModule implements PagesModule {
 
 abstract interface class SharesModule {
   Future<FoldersDeleteResult> create({
+    required double clientProtocolVersion,
     required InvitesCreateArgsRole role,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
@@ -840,8 +895,12 @@ abstract interface class SharesModule {
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   });
-  Future<SharesRedeemResult> redeem({required String token});
+  Future<SharesRedeemResult> redeem({
+    required double clientProtocolVersion,
+    required String token,
+  });
   Future<FoldersDeleteResult> revoke({
+    required double clientProtocolVersion,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
@@ -853,12 +912,14 @@ final class _SharesModule implements SharesModule {
   final ConvexTransport _transport;
   @override
   Future<FoldersDeleteResult> create({
+    required double clientProtocolVersion,
     required InvitesCreateArgsRole role,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
   }) {
     final args = encodeSharesCreateArgs(
+      clientProtocolVersion: clientProtocolVersion,
       role: role,
       targetPublicId: targetPublicId,
       targetType: targetType,
@@ -888,8 +949,14 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
-  Future<SharesRedeemResult> redeem({required String token}) {
-    final args = encodeSharesRedeemArgs(token: token);
+  Future<SharesRedeemResult> redeem({
+    required double clientProtocolVersion,
+    required String token,
+  }) {
+    final args = encodeSharesRedeemArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      token: token,
+    );
     return _invoke(
       () => _transport.mutation('shares:redeem', args),
       decodeSharesRedeemResult,
@@ -898,11 +965,13 @@ final class _SharesModule implements SharesModule {
 
   @override
   Future<FoldersDeleteResult> revoke({
+    required double clientProtocolVersion,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
   }) {
     final args = encodeSharesRevokeArgs(
+      clientProtocolVersion: clientProtocolVersion,
       targetPublicId: targetPublicId,
       targetType: targetType,
       token: token,
@@ -916,6 +985,7 @@ final class _SharesModule implements SharesModule {
 
 abstract interface class StrategiesModule {
   Future<ConvexValue> create({
+    required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String mapData,
     required String name,
@@ -928,6 +998,7 @@ abstract interface class StrategiesModule {
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   });
   Future<ConvexValue> createWithInitialPage({
+    required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required bool initialPageIsAttack,
     ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
@@ -947,6 +1018,7 @@ abstract interface class StrategiesModule {
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   });
   Future<FoldersDeleteResult> delete({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
   });
@@ -960,6 +1032,7 @@ abstract interface class StrategiesModule {
   });
   ConvexQuery<List<StrategiesListForFolderResultItem>> listSharedWithMe();
   Future<ConvexValue> move({
+    required double clientProtocolVersion,
     required double expectedRevision,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -968,6 +1041,7 @@ abstract interface class StrategiesModule {
     ConvexOptional<bool> clearThemeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<bool> clearThemeProfileId = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     required double expectedRevision,
     ConvexOptional<String> mapData = const ConvexOptional.absent(),
     ConvexOptional<String> name = const ConvexOptional.absent(),
@@ -986,6 +1060,7 @@ final class _StrategiesModule implements StrategiesModule {
   final ConvexTransport _transport;
   @override
   Future<ConvexValue> create({
+    required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String mapData,
     required String name,
@@ -998,6 +1073,7 @@ final class _StrategiesModule implements StrategiesModule {
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesCreateArgs(
+      clientProtocolVersion: clientProtocolVersion,
       folderPublicId: folderPublicId,
       mapData: mapData,
       name: name,
@@ -1013,6 +1089,7 @@ final class _StrategiesModule implements StrategiesModule {
 
   @override
   Future<ConvexValue> createWithInitialPage({
+    required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required bool initialPageIsAttack,
     ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
@@ -1032,6 +1109,7 @@ final class _StrategiesModule implements StrategiesModule {
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesCreateWithInitialPageArgs(
+      clientProtocolVersion: clientProtocolVersion,
       folderPublicId: folderPublicId,
       initialPageIsAttack: initialPageIsAttack,
       initialPageIsAutoNamed: initialPageIsAutoNamed,
@@ -1052,10 +1130,12 @@ final class _StrategiesModule implements StrategiesModule {
 
   @override
   Future<FoldersDeleteResult> delete({
+    required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
   }) {
     final args = encodeStrategiesDeleteArgs(
+      clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       strategyPublicId: strategyPublicId,
     );
@@ -1111,11 +1191,13 @@ final class _StrategiesModule implements StrategiesModule {
 
   @override
   Future<ConvexValue> move({
+    required double clientProtocolVersion,
     required double expectedRevision,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategiesMoveArgs(
+      clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       folderPublicId: folderPublicId,
       strategyPublicId: strategyPublicId,
@@ -1131,6 +1213,7 @@ final class _StrategiesModule implements StrategiesModule {
     ConvexOptional<bool> clearThemeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<bool> clearThemeProfileId = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     required double expectedRevision,
     ConvexOptional<String> mapData = const ConvexOptional.absent(),
     ConvexOptional<String> name = const ConvexOptional.absent(),
@@ -1145,6 +1228,7 @@ final class _StrategiesModule implements StrategiesModule {
     final args = encodeStrategiesUpdateArgs(
       clearThemeOverridePalette: clearThemeOverridePalette,
       clearThemeProfileId: clearThemeProfileId,
+      clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       mapData: mapData,
       name: name,
@@ -1201,7 +1285,9 @@ final class _StrategyModule implements StrategyModule {
 }
 
 abstract interface class UsersModule {
-  Future<FoldersDeleteResult> ensureCurrentUser();
+  Future<FoldersDeleteResult> ensureCurrentUser({
+    required double clientProtocolVersion,
+  });
   ConvexQuery<UsersMeResult?> me();
 }
 
@@ -1209,8 +1295,12 @@ final class _UsersModule implements UsersModule {
   const _UsersModule(this._transport);
   final ConvexTransport _transport;
   @override
-  Future<FoldersDeleteResult> ensureCurrentUser() {
-    final args = encodeUsersEnsureCurrentUserArgs();
+  Future<FoldersDeleteResult> ensureCurrentUser({
+    required double clientProtocolVersion,
+  }) {
+    final args = encodeUsersEnsureCurrentUserArgs(
+      clientProtocolVersion: clientProtocolVersion,
+    );
     return _invoke(
       () => _transport.mutation('users:ensureCurrentUser', args),
       decodeUsersEnsureCurrentUserResult,

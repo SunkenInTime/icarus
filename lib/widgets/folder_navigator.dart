@@ -25,6 +25,7 @@ import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
+import 'package:icarus/widgets/cloud_outbox_summary_banner.dart';
 import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -319,6 +320,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 onImportBackup: handleImportBackup,
                 onExportLibrary: handleExportLibrary,
               ),
+              if (tab != LibraryTab.community) const CloudOutboxSummaryBanner(),
               Expanded(
                 child: ShadContextMenuRegion(
                   controller: _backgroundMenuController,

@@ -57,7 +57,8 @@ class LibraryBreadcrumb extends ConsumerWidget {
             children: [
               FolderTab(
                 folder: null,
-                label: tab == LibraryTab.shared ? 'Shared with Me' : 'My Library',
+                label:
+                    tab == LibraryTab.shared ? 'Shared with Me' : 'My Library',
                 store: store,
                 onOpen: goToRoot,
               ),
@@ -79,10 +80,10 @@ class LibraryBreadcrumb extends ConsumerWidget {
 
   List<Folder> _pathFolders(WidgetRef ref, LibraryWorkspace store) {
     if (store == LibraryWorkspace.cloud) {
-      final cloudFolders = (ref.watch(cloudAllFoldersProvider).valueOrNull ??
-              const [])
-          .map((entry) => entry.folder)
-          .toList(growable: false);
+      final cloudFolders =
+          (ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [])
+              .map((entry) => entry.folder)
+              .toList(growable: false);
       final path = <Folder>[];
       Folder? current = folder;
       while (current != null) {
@@ -130,10 +131,10 @@ class FolderTab extends ConsumerWidget {
       onPressed: onOpen,
       child: DragTarget<GridItem>(
         onWillAcceptWithDetails: (details) => details.data.store == store,
-        onAcceptWithDetails: (details) {
+        onAcceptWithDetails: (details) async {
           final item = details.data;
           if (item is StrategyItem) {
-            ref.read(strategyProvider.notifier).moveToFolder(
+            await ref.read(strategyProvider.notifier).moveToFolder(
                   strategyID: item.strategyId,
                   parentID: folder?.id,
                   source: item.strategy == null
@@ -141,7 +142,7 @@ class FolderTab extends ConsumerWidget {
                       : StrategySource.local,
                 );
           } else if (item is FolderItem) {
-            ref.read(folderProvider.notifier).moveToFolder(
+            await ref.read(folderProvider.notifier).moveToFolder(
                   folderID: item.folder.id,
                   parentID: folder?.id,
                   workspace: store,

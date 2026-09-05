@@ -8,13 +8,13 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -81,7 +81,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 final exporter = StrategyImportExportService(ref);
                 switch (strategy.source!) {
                   case StrategySource.cloud:
-                    await exporter.exportCloudStrategy(strategyId);
+                    await runCloudStrategyExport(ref, strategyId);
                   case StrategySource.local:
                     await exporter.exportFile(strategyId);
                 }
@@ -231,8 +231,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
 
   bool _isViewOnly() {
     final source = ref.watch(strategyProvider.select((value) => value.source));
-    if (source != StrategySource.cloud ||
-        !ref.watch(isCloudCollabEnabledProvider)) {
+    if (source != StrategySource.cloud) {
       return false;
     }
     // Read the cached role rather than the raw snapshot so the chip does not

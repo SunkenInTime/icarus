@@ -4,13 +4,18 @@ import {
   getCanonicalExternalId,
 } from "./lib/auth";
 import { unauthenticatedError } from "./lib/errors";
+import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
 import { okResultValidator } from "./lib/publicValidators";
 import { v } from "convex/values";
 
 export const ensureCurrentUser = mutation({
-  args: {},
+  args: cloudProtocolArgs,
   returns: okResultValidator,
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const identity = await ctx.auth.getUserIdentity();
     if (identity === null) {
       throw unauthenticatedError();

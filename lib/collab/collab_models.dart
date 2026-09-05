@@ -2,8 +2,17 @@ import 'dart:convert';
 
 const currentCloudProtocolVersion = 3;
 const currentCloudPayloadVersion = 1;
+const maxCloudOperationBytes = 900 * 1024;
+const maxCloudBatchBytes = 15 * 1024 * 1024;
+const maxCloudArrayEntries = 8000;
+const cloudOperationTooLargeMessage =
+    'This saved change is too large for cloud sync. It remains saved on this '
+    'device.';
 
 typedef CloudPayload = Map<String, dynamic>;
+
+int serializedConvexValueUtf8Bytes(Object? value) =>
+    utf8.encode(jsonEncode(value)).length;
 
 CloudPayload cloudElementPayload({
   required String kind,
@@ -928,6 +937,39 @@ Map<String, dynamic>? _optionalMap(Object? value) {
 int _requiredInt(Object? value) {
   if (value is num) return value.toInt();
   throw const FormatException('Op revision or index must be a number');
+}
+
+int serializedCloudOperationUtf8Bytes(StrategyOp op) =>
+    serializedConvexValueUtf8Bytes(op.toConvexJson());
+
+bool cloudOperationExceedsPolicy(StrategyOp op) {
+  final value = op.toConvexJson();
+  return serializedConvexValueUtf8Bytes(value) > maxCloudOperationBytes ||
+      _cloudValueExceedsArrayPolicy(value);
+}
+
+bool _cloudValueExceedsArrayPolicy(Object? value) {
+  if (value is List) {
+    return value.length > maxCloudArrayEntries ||
+        value.any(_cloudValueExceedsArrayPolicy);
+  }
+  if (value is Map) {
+    return value.values.any(_cloudValueExceedsArrayPolicy);
+  }
+  return false;
+}
+
+int serializedCloudBatchUtf8Bytes({
+  required String strategyPublicId,
+  required String clientId,
+  required Iterable<StrategyOp> ops,
+}) {
+  return serializedConvexValueUtf8Bytes(<String, dynamic>{
+    'strategyPublicId': strategyPublicId,
+    'clientId': clientId,
+    'clientProtocolVersion': currentCloudProtocolVersion,
+    'ops': ops.map((op) => op.toConvexJson()).toList(growable: false),
+  });
 }
 
 class PendingOp {

@@ -4,9 +4,10 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
 import 'package:icarus/collab/convex_client.dart';
+import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +24,7 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
+import 'package:icarus/config/cloud_build_config.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -30,6 +32,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -38,7 +41,9 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -112,9 +117,16 @@ Future<void> main(List<String> args) async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      appProviderContainer = ProviderContainer();
+      appProviderContainer = ProviderContainer(overrides: [
+        guardedSignOutRequestProvider.overrideWith(
+          (ref) => ref.watch(cloudSignOutRequestProvider),
+        ),
+      ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
+      final cloudBuildConfig = CloudBuildConfig.fromEnvironment(
+        isReleaseMode: kReleaseMode,
+      );
 
       await registerDeepLinkProtocol('icarus');
       await _initializeDeepLinkHandling();
@@ -152,6 +164,8 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
       await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
       await prepareDurableStrategyOutbox();
+      await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
+      await prepareDurableCloudMediaOutbox();
       await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
       await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);
 
@@ -160,10 +174,10 @@ Future<void> main(List<String> args) async {
       await StrategyMigrator.migrateAllStrategies();
 
       await ConvexClient.initialize(
-        const ConvexConfig(
-          deploymentUrl: 'https://majestic-eel-413.convex.cloud',
-          clientId: 'dev:majestic-eel-413',
-          operationTimeout: Duration(seconds: 30),
+        ConvexConfig(
+          deploymentUrl: cloudBuildConfig.deploymentUrl,
+          clientId: cloudBuildConfig.clientId,
+          operationTimeout: const Duration(seconds: 30),
           healthCheckQuery: defaultConvexHealthCheckQuery,
         ),
       );
@@ -387,6 +401,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   void initState() {
     super.initState();
     ref.read(authProvider);
+    ref.read(strategyOpQueueProvider);
     ref.read(cloudMediaUploadQueueProvider);
     ref.read(cloudMediaCacheProvider);
 

@@ -46,13 +46,45 @@ permissions:
   contents: write
 
 jobs:
+  production-approval:
+    if: ${{ inputs.channel == 'stable' }}
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - name: Guard Stable Desktop Release
+        shell: bash
+        env:
+          PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+          PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Stable desktop releases can only run from branch main. Current ref: $GITHUB_REF"
+            exit 1
+          fi
+          if [[ -z "$PRODUCTION_CONVEX_DEPLOYMENT_URL" || -z "$PRODUCTION_CONVEX_CLIENT_ID" ]]; then
+            echo "Set ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL and ICARUS_PRODUCTION_CONVEX_CLIENT_ID before releasing stable."
+            exit 1
+          fi
+
   build:
+    needs: production-approval
+    if: ${{ always() && (inputs.channel == 'prerelease' || needs.production-approval.result == 'success') }}
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Run Release Preflight
+        shell: pwsh
+        env:
+          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
+        run: >-
+          powershell -ExecutionPolicy Bypass -File scripts/assert_release_preflight.ps1
+          -ReleaseTarget "${{ inputs.channel == 'stable' && 'stable-desktop' || 'prerelease-desktop' }}"
 
       - uses: dart-lang/setup-dart@v1
 
@@ -76,6 +108,8 @@ jobs:
           RELEASE_TITLE: ${{ inputs.release_title }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
+          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
         run: |
           $args = @(
             "-ExecutionPolicy", "Bypass",

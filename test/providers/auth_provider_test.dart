@@ -1,12 +1,16 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/convex_client.dart';
+import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
@@ -330,6 +334,48 @@ void main() {
       state.errorMessage,
       'Your cloud session expired. Reconnect to resume syncing, or sign out.',
     );
+  });
+
+  testWidgets('auth incident Sign Out uses the guarded flow', (tester) async {
+    supabaseApi.currentSession = fakeSession();
+    var guardedRequests = 0;
+    final container = ProviderContainer(overrides: [
+      guardedSignOutRequestProvider.overrideWithValue((context) async {
+        guardedRequests += 1;
+        return false;
+      }),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          navigatorKey: appNavigatorKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    final notifier = container.read(authProvider.notifier);
+    await tester.pump();
+    await tester.pump();
+
+    await notifier.reportConvexUnauthenticated(
+      source: 'test:incident-route',
+      error: const ConvexClientFunctionError(
+        rawCode: 'UNAUTHENTICATED',
+        message: 'Authentication required',
+        data: null,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+
+    await tester.tap(find.text('Sign Out'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(guardedRequests, 1);
+    expect(supabaseApi.currentSession, isNotNull);
   });
 
   test('auth readiness timeout surfaces as setup incident, not unauthenticated',

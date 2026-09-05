@@ -15,10 +15,12 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
+import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -110,10 +112,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     child: SingleChildScrollView(
                       controller: _scrollController,
                       child: switch (_mode) {
-                        _SettingsMode.strategy => _StrategySettingsSections(
-                            key: const ValueKey('strategy-settings'),
-                            sectionKeys: _sectionKeys,
-                            strategySettings: strategySettings,
+                        _SettingsMode.strategy => StrategyEditBoundary(
+                            disabledOpacity: 0.55,
+                            child: _StrategySettingsSections(
+                              key: const ValueKey('strategy-settings'),
+                              sectionKeys: _sectionKeys,
+                              strategySettings: strategySettings,
+                            ),
                           ),
                         _SettingsMode.global => _GlobalSettingsSections(
                             key: const ValueKey('global-settings'),
@@ -306,7 +311,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _AccountSettingsSection(
+        AccountSettingsSection(
           key: sectionKeys[_SettingsSection.globalAccount],
         ),
         const SizedBox(height: 20),
@@ -1026,8 +1031,8 @@ class _ShortcutEmptySearch extends StatelessWidget {
   }
 }
 
-class _AccountSettingsSection extends ConsumerWidget {
-  const _AccountSettingsSection({super.key});
+class AccountSettingsSection extends ConsumerWidget {
+  const AccountSettingsSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1191,11 +1196,12 @@ class _SignedInAccountRow extends ConsumerWidget {
             const SizedBox(width: 8),
           ],
           ShadButton.outline(
+            key: const ValueKey('settings-sign-out'),
             size: ShadButtonSize.sm,
             onPressed: authState.isLoading
                 ? null
-                : () {
-                    ref.read(authProvider.notifier).signOut();
+                : () async {
+                    await ref.read(guardedSignOutRequestProvider)(context);
                   },
             child: const Text('Sign Out'),
           ),

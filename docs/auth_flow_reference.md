@@ -24,6 +24,7 @@ That means the flow is:
 These are the files that define the current behavior:
 
 - `lib/main.dart`
+- `lib/config/cloud_build_config.dart`
 - `lib/providers/auth_provider.dart`
 - `lib/collab/convex_strategy_repository.dart`
 - `lib/collab/generated/`
@@ -41,11 +42,14 @@ These are the files that define the current behavior:
 At startup the app initializes the Convex client and then Supabase:
 
 ```dart
+final cloudBuildConfig = CloudBuildConfig.fromEnvironment(
+  isReleaseMode: kReleaseMode,
+);
 await ConvexClient.initialize(
-  const ConvexConfig(
-    deploymentUrl: 'https://majestic-eel-413.convex.cloud',
-    clientId: 'dev:majestic-eel-413',
-    operationTimeout: Duration(seconds: 30),
+  ConvexConfig(
+    deploymentUrl: cloudBuildConfig.deploymentUrl,
+    clientId: cloudBuildConfig.clientId,
+    operationTimeout: const Duration(seconds: 30),
     healthCheckQuery: defaultConvexHealthCheckQuery,
   ),
 );
@@ -60,6 +64,9 @@ await Supabase.initialize(
 Why this matters:
 
 - `ConvexClient.initialize(...)` creates the global Convex client used by the app.
+- `CloudBuildConfig` selects the named development deployment for local, CI,
+  and prerelease builds. Stable and Store release scripts require an explicit
+  production URL and client ID.
 - `Supabase.initialize(...)` sets up the auth provider that will issue JWTs.
 - `detectSessionInUri: false` is intentional because the desktop app handles OAuth callback URIs itself instead of relying on automatic URI parsing.
 

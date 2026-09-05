@@ -137,6 +137,7 @@ class ActivePageOverlayEntry {
     required this.desiredSortIndex,
     required this.deletion,
     required this.baseRevision,
+    required this.baseDeleted,
     required this.dirtyAt,
   });
 
@@ -145,7 +146,8 @@ class ActivePageOverlayEntry {
   final Object? desiredPayload;
   final int? desiredSortIndex;
   final bool deletion;
-  final int baseRevision;
+  final int? baseRevision;
+  final bool baseDeleted;
   final DateTime dirtyAt;
 
   ActivePageOverlayEntry copyWith({
@@ -153,6 +155,7 @@ class ActivePageOverlayEntry {
     int? desiredSortIndex,
     bool? deletion,
     int? baseRevision,
+    bool? baseDeleted,
     DateTime? dirtyAt,
   }) {
     return ActivePageOverlayEntry(
@@ -162,6 +165,7 @@ class ActivePageOverlayEntry {
       desiredSortIndex: desiredSortIndex ?? this.desiredSortIndex,
       deletion: deletion ?? this.deletion,
       baseRevision: baseRevision ?? this.baseRevision,
+      baseDeleted: baseDeleted ?? this.baseDeleted,
       dirtyAt: dirtyAt ?? this.dirtyAt,
     );
   }
