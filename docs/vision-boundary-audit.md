@@ -90,8 +90,10 @@ FModel cannot export the full map. A fresh scene export is the direct path to
 the independent reference, followed by validation of scene completeness,
 transforms, units, material visibility, and camera height.
 
-The installed game directory was found at `E:\Games\Valorant`. This capability
-check did not export a new scene or change the game installation.
+The installed game directory was found at `E:\Games\Valorant`. The subsequent
+[Split world-reference experiment](split-world-reference.md) exported and loaded
+the real scene, built independent triangle queries, and captured Blender footage.
+It also found parser/material failures that prevent gameplay certification.
 
 ## A reliable verification path
 
