@@ -1,4 +1,4 @@
-# Valorant world reference, September 4, 2026
+# Valorant world reference, updated September 5, 2026
 
 Version-matched mappings repair the Split import. The same extraction process
 has now run across all 13 Icarus maps. This establishes usable source data and
@@ -9,6 +9,45 @@ PR #159.
 Local evidence lives under `E:/IcarusWorldAudit/2026-09-04`. Raw game assets and
 settings stay outside the repository. Reports supplement the explanation in
 chat, as specified in [answers.md](../answers.md).
+
+## In-game check, September 5
+
+Dara clarified the intended model: a horizontal sightline at the observer's
+eye height is blocked when geometry intersects that height. Low cover below
+that plane should not block it. The world height must include the observer's
+floor elevation; crouching requires a separate eye offset if supported. This
+model deliberately does not simulate looking up or down. Stacked floors still
+need explicit floor selection. The screenshot pair is landmark evidence, not
+a substitute for testing this horizontal rule.
+
+Dara opened a Split custom game and provided stationary standing and crouched
+views beside the B-site low crate. The crate, stacked furniture, corrugated
+sheet and decorative wall openings match the extracted scene. Both captures
+show the wall above the crate. Fixed wall features move upward in the crouched
+view, consistent with a lowered camera. The aim is slightly upward, so these
+images do not independently establish eye height or reproduce the earlier
+horizontal ray exactly.
+
+The original screenshots and their fingerprints are in
+`E:/IcarusWorldAudit/2026-09-05/in-game/evidence.json`. A provisional camera fit
+uses manually selected landmarks and fitted intrinsics. Its reprojection error
+is not sufficient evidence to adopt a new standing/crouching height. No fitted
+camera value has been copied into production.
+
+The production comparison runner now also tests the raw game vision layers,
+before SVG contours replace their segments. For recorded ray `44-1.7-9`, current
+Icarus clips at 0.337 m, raw game geometry at 2.886 m, and the exported triangles
+at 2.681 m. This isolates a useful distinction between the authored boundary
+and the source visibility data. Those distances are from the diagnostic ray,
+not measurements of the in-game screenshots.
+
+The 13,155-ray runner passes with this additional comparison. Raw geometry is
+not automatically certified: 2,564 eligible diagnostic rays still differ from
+the triangle reference by over 0.5 m, and the raw layers omit the low crate in
+the 0.98 m sensitivity test. These counts are not gameplay error rates. The
+next implementation should preserve SVG appearance while testing visibility
+geometry separately, with confirmed camera/floor semantics and explicit
+exceptions. A wholesale switch to raw layers has not been made.
 
 ## The mapping fix
 

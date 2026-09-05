@@ -44,6 +44,11 @@ void main() {
     addTearDown(container.dispose);
     final runtime = await container.read(viewConeGeometryProvider(map).future);
     expect(runtime, isNotNull);
+    final sourceGeometry = VisionGeometryMap.fromCompactJson(
+      map,
+      jsonDecode(File('assets/maps/${map.name}_vision.json').readAsStringSync())
+          as Map<String, dynamic>,
+    );
     final fingerprints = <String, String>{};
     for (final path in [
       sourcePath,
@@ -101,6 +106,26 @@ void main() {
               worldRange
           : 0.0;
       final referenceMeters = (ray['distanceMeters'] as num).toDouble();
+      // Compare the original elevation slices separately, before SVG contours
+      // replace their segments. This is diagnostic evidence, not a fallback.
+      final sourceLayer = sourceGeometry.layerForPosition(
+          isAttack: true, position: start, elevationOverride: z);
+      final sourcePolygon = VisionPolygon.compute(
+        layer: sourceLayer,
+        origin: start,
+        facingAngle: math.atan2(delta.dy, delta.dx),
+        coneAngle: 0.02,
+        range: distance,
+      );
+      final sourceCenter = sourcePolygon.skip(1).where((p) {
+        final v = p - start;
+        return (v.dx * direction.dy - v.dy * direction.dx).abs() < 0.000001;
+      }).toList();
+      expect(sourceCenter, isNotEmpty);
+      final sourceMeters =
+          sourceCenter.map((p) => (p - start).distance).reduce(math.max) /
+              distance *
+              worldRange;
       results.add({
         'id': ray['id'],
         'start': [start.dx, start.dy],
@@ -113,6 +138,8 @@ void main() {
             runtime.layerForPosition(isAttack: true, position: start).elevation,
         'runtimeDistanceMeters': runtimeMeters,
         'referenceDistanceMeters': referenceMeters,
+        'rawSourceDistanceMeters': sourceMeters,
+        'rawSourceElevation': sourceLayer.elevation,
         'differenceMeters': runtimeMeters - referenceMeters,
         'objectIndex': ray['objectIndex'],
       });
