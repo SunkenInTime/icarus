@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
@@ -459,13 +460,34 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       }
 
       final targetPageId = _resolveHydrationTargetPage(snapshot);
+      final hasPendingMetadata = ref.read(strategyOpQueueProvider).pending.any(
+        (pending) {
+          final op = pending.op;
+          return op is StrategyPatchOp &&
+              op.payload.keys.any((key) =>
+                  key == 'mapData' ||
+                  key == 'themeProfileId' ||
+                  key == 'clearThemeProfileId' ||
+                  key == 'themeOverridePalette' ||
+                  key == 'clearThemeOverridePalette');
+        },
+      );
+      final localMetadata = hasPendingMetadata
+          ? (
+              map: ref.read(mapProvider).currentMap,
+              theme: ref.read(strategyThemeProvider),
+            )
+          : null;
       if (targetPageId != null) {
         final pageSource = CloudStrategyPageSource(
           ref,
           strategyId: strategyId,
           activePageId: () => state.activePageId,
         );
-        final pageData = await pageSource.loadAuthoritativePage(targetPageId);
+        final pageData = await pageSource.loadAuthoritativePage(
+          targetPageId,
+          discardedEntities: rejected.keys.toSet(),
+        );
         await _applyLoadedPageData(
           pageData,
           strategyId: strategyId,
@@ -473,12 +495,39 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           hydrationKey: _buildRemotePageHydrationKey(snapshot, targetPageId),
           preserveTextDrafts: true,
           loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+          preservedMetadata:
+              rejected.containsKey(const EntitySyncKey.strategy())
+                  ? null
+                  : localMetadata,
         );
       }
 
       final discarded = await ref
           .read(strategyOpQueueProvider.notifier)
           .discardRejected(rejected.keys.toSet());
+      // A failed durable delete keeps its overlay and conflict. Restore those
+      // entities if only part of the requested adoption could be saved.
+      if (discarded.length != rejected.length && targetPageId != null) {
+        final pageSource = CloudStrategyPageSource(
+          ref,
+          strategyId: strategyId,
+          activePageId: () => state.activePageId,
+        );
+        final pageData = await pageSource.loadAuthoritativePage(
+          targetPageId,
+          discardedEntities: discarded,
+        );
+        await _applyLoadedPageData(
+          pageData,
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          preserveTextDrafts: true,
+          loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+          preservedMetadata: discarded.contains(const EntitySyncKey.strategy())
+              ? null
+              : localMetadata,
+        );
+      }
       if (discarded.isEmpty) return false;
 
       ref.read(activePageLiveSyncProvider.notifier).adoptRemoteForEntities(
@@ -501,7 +550,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           .read(strategyOpQueueProvider.notifier)
           .completeRemoteAdoption(discarded);
       _pendingRemoteReapply = false;
-      return true;
+      return discarded.length == rejected.length;
     } finally {
       _isResolvingConflicts = false;
     }
@@ -613,13 +662,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _RemotePageHydrationKey? hydrationKey,
     bool preserveTextDrafts = false,
     RemoteEditorSnapshot? loadedRemoteSnapshot,
+    ({MapValue map, StrategyThemeState theme})? preservedMetadata,
   }) async {
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
         _lastHydratedRemotePageKey?.pageId == pageData.pageId;
-    final themeProfileId = _resolveThemeProfileId(source, strategyId);
-    final themeOverridePalette =
-        _resolveThemeOverridePalette(source, strategyId);
+    final themeProfileId = preservedMetadata != null
+        ? preservedMetadata.theme.profileId
+        : _resolveThemeProfileId(source, strategyId);
+    final themeOverridePalette = preservedMetadata != null
+        ? preservedMetadata.theme.overridePalette
+        : _resolveThemeOverridePalette(source, strategyId);
 
     state = state.copyWith(
       isApplyingPage: true,
@@ -638,6 +691,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         themeProfileId: themeProfileId,
         themeOverridePalette: themeOverridePalette,
         preserveHistory: preserveHistory,
+        mapOverride: preservedMetadata?.map,
       );
       for (final entry in retainedTextDrafts.entries) {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);

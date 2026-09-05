@@ -89,6 +89,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   _FakeStrategyOpQueueNotifier({this.blockFlush = false});
 
   final bool blockFlush;
+  bool failDiscard = false;
   int flushNowCount = 0;
 
   @override
@@ -183,6 +184,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   Future<Set<EntitySyncKey>> discardRejected(
     Set<EntitySyncKey> entityKeys,
   ) async {
+    if (failDiscard) return {};
     final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.attentionByEntityKey,
     );
@@ -248,14 +250,15 @@ Future<void> _settle() async {
   await Future<void>.delayed(Duration.zero);
 }
 
-RemotePage _page(String id, int index, {int revision = 1, String? name}) {
+RemotePage _page(String id, int index,
+    {int revision = 1, String? name, bool isAttack = true}) {
   final now = DateTime.utc(2026);
   return RemotePage(
     publicId: id,
     strategyPublicId: 'cloud-strategy',
     name: name ?? 'Page ${index + 1}',
     sortIndex: index,
-    isAttack: true,
+    isAttack: isAttack,
     revision: revision,
     createdAt: now,
     updatedAt: now,
@@ -957,6 +960,88 @@ void main() {
     );
   });
 
+  for (final failDiscard in [false, true]) {
+    test('use cloud preserves unrelated edits when discard fails=$failDiscard',
+        () async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, elements: [
+          _textElement(page.publicId, 'conflicted', 'server-before',
+              worldSized: true),
+          _textElement(page.publicId, 'unrelated', 'server-original',
+              worldSized: true),
+        ]),
+      ));
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      final session = container.read(strategyPageSessionProvider.notifier);
+      queue.failDiscard = failDiscard;
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+      );
+      container
+          .read(textProvider.notifier)
+          .commitText('conflicted', 'local-loser');
+      await _settle();
+      final rejected = container
+          .read(strategyOpQueueProvider)
+          .pending
+          .map((p) => p.op)
+          .firstWhere((op) => op.entityPublicId == 'conflicted');
+      remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, contentRevision: 2, elements: [
+          _textElement(page.publicId, 'conflicted', 'server-winner',
+              worldSized: true),
+          _textElement(page.publicId, 'unrelated', 'server-original',
+              worldSized: true),
+        ]),
+      ));
+      queue.reject(rejected);
+      await _settle();
+      container
+          .read(textProvider.notifier)
+          .commitText('unrelated', 'keep-my-edit');
+      container.read(mapProvider.notifier).fromHive(MapValue.haven, true);
+      container
+          .read(strategyThemeProvider.notifier)
+          .fromStrategy(profileId: 'local-theme');
+      await _settle();
+      expect(container.read(strategyOpQueueProvider).queuedByEntityKey,
+          contains(const EntitySyncKey.element('page-1', 'unrelated')));
+      expect(await session.useCloudVersionsForRejected(), !failDiscard);
+      await _settle();
+      final canvas = {
+        for (final text in container.read(textProvider)) text.id: text.text
+      };
+      final desired =
+          container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+                strategyPublicId: 'cloud-strategy',
+                pageId: 'page-1',
+              )!;
+      await queue.syncDesiredOpsForPage(
+          pageId: 'page-1', desiredOpsByEntityKey: desired);
+      expect(canvas['unrelated'], 'keep-my-edit');
+      expect(
+          canvas['conflicted'], failDiscard ? 'local-loser' : 'server-winner');
+      expect(container.read(mapProvider).currentMap, MapValue.haven);
+      expect(container.read(strategyThemeProvider).profileId, 'local-theme');
+      final queued = container.read(strategyOpQueueProvider).queuedByEntityKey;
+      expect(
+          queued[const EntitySyncKey.element('page-1', 'unrelated')]!
+              .pending
+              .op
+              .payload
+              .toString(),
+          contains('keep-my-edit'));
+      expect(queued,
+          isNot(contains(const EntitySyncKey.element('page-1', 'conflicted'))));
+    });
+  }
+
   test('using cloud with no remaining attention is a silent no-op', () async {
     final page = _page('page-1', 0);
     final container = await _cloudContainer(
@@ -1267,6 +1352,115 @@ void main() {
             )![key] as ElementPatchOp;
     expect(afterAck.payload.toString(), contains('final-edit'));
     expect(afterAck.expectedElementRevision, 2);
+  });
+
+  test('an ack after leaving a page advances its retained overlay revision',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, elements: [
+        _textElement('page-1', 'text-a', 'before', worldSized: true),
+      ]),
+    ));
+    final container = await _syncContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final sync = container.read(activePageLiveSyncProvider.notifier);
+    sync.markPageHydrated(
+        strategyPublicId: 'cloud-strategy',
+        pageId: 'page-1',
+        snapshot: remote.initialSnapshot);
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-a', position: const Offset(10, 20))
+        ..text = 'my edit'
+        ..markSizeAsWorld(),
+    ]);
+    const key = EntitySyncKey.element('page-1', 'text-a');
+    final op = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: 'page-1',
+    )![key]!;
+    sync.setContext(strategyPublicId: 'cloud-strategy', activePageId: 'page-2');
+    sync.recordAckBatch([
+      AckedEntityIntent(
+          entityKey: key, op: op, ack: AppliedOpAck(opId: op.opId, revision: 2))
+    ]);
+    expect(
+        container
+            .read(activePageLiveSyncProvider)
+            .overlayByEntityKey[key]!
+            .baseRevision,
+        2);
+
+    remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, elements: [
+          _textElement('page-1', 'text-a', 'my edit',
+              revision: 2, worldSized: true),
+        ])));
+    sync.markPageHydrated(
+        strategyPublicId: 'cloud-strategy',
+        pageId: 'page-1',
+        snapshot: remote.initialSnapshot);
+    container.read(textProvider.notifier).commitText('text-a', 'next edit');
+    final next = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: 'page-1',
+    )![key] as ElementPatchOp;
+    expect(next.expectedElementRevision, 2);
+    expect(next.payload.toString(), contains('next edit'));
+  });
+
+  test('rename acks preserve the side baseline during a remote side change',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page),
+    ));
+    final container = await _syncContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final sync = container.read(activePageLiveSyncProvider.notifier);
+    container.read(mapProvider.notifier).fromHive(MapValue.ascent, true);
+    sync.markPageHydrated(
+        strategyPublicId: 'cloud-strategy',
+        pageId: 'page-1',
+        snapshot: remote.initialSnapshot);
+    const key = EntitySyncKey.pageDescriptor('page-1');
+    sync.recordAckBatch([
+      const AckedEntityIntent(
+        entityKey: key,
+        op: PagePatchOp(
+            opId: 'rename',
+            pagePublicId: 'page-1',
+            payload: {'name': 'Renamed'},
+            expectedPageRevision: 1),
+        ack: AppliedOpAck(opId: 'rename', revision: 2),
+      )
+    ]);
+    final changed =
+        _page('page-1', 0, revision: 3, name: 'Renamed', isAttack: false);
+    remote.setSnapshot(_editorSnapshot(
+      pages: [changed],
+      activePage: _pageSnapshot(changed),
+    ));
+    final desired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: 'page-1',
+    )!;
+    expect(desired, isNot(contains(key)));
+    expect(
+        sync
+            .projectPageState(
+              strategyPublicId: 'cloud-strategy',
+              pageId: 'page-1',
+            )!
+            .isAttack,
+        isFalse);
   });
 
   test('a final delete is emitted behind an in-flight local add', () async {

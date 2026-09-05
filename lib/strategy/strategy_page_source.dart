@@ -175,15 +175,17 @@ class CloudStrategyPageSource implements StrategyPageSource {
   }
 
   @override
-  Future<StrategyEditorPageData> loadPage(String pageId) =>
-      _loadPage(pageId, projectLocalWork: true);
+  Future<StrategyEditorPageData> loadPage(String pageId) => _loadPage(pageId);
 
-  Future<StrategyEditorPageData> loadAuthoritativePage(String pageId) =>
-      _loadPage(pageId, projectLocalWork: false);
+  Future<StrategyEditorPageData> loadAuthoritativePage(
+    String pageId, {
+    required Set<EntitySyncKey> discardedEntities,
+  }) =>
+      _loadPage(pageId, excludedOverlays: discardedEntities);
 
   Future<StrategyEditorPageData> _loadPage(
     String pageId, {
-    required bool projectLocalWork,
+    Set<EntitySyncKey> excludedOverlays = const {},
   }) async {
     if (ref
             .read(remoteEditorSnapshotProvider)
@@ -205,12 +207,12 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => pages.first,
     );
 
-    final projected = projectLocalWork
-        ? ref.read(activePageLiveSyncProvider.notifier).projectPageState(
+    final projected =
+        ref.read(activePageLiveSyncProvider.notifier).projectPageState(
               strategyPublicId: strategyId,
               pageId: page.publicId,
-            )
-        : null;
+              excludedOverlays: excludedOverlays,
+            );
     if (projected != null &&
         (page.publicId == activePageId() ||
             ref

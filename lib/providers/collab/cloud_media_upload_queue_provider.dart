@@ -107,6 +107,8 @@ final cloudMediaAccountIdProvider = Provider<String?>(
   (ref) => ref.watch(authProvider.select((state) => state.user?.id)),
 );
 
+enum _MediaOutboxMutation { write, remove }
+
 class CloudMediaUploadQueueNotifier
     extends Notifier<CloudMediaUploadQueueState> {
   static const Duration _blockedRetryDelay = Duration(seconds: 30);
@@ -121,6 +123,8 @@ class CloudMediaUploadQueueNotifier
   final Set<String> _uploadCompletedJobs = {};
   final Map<String, CloudMediaUploadJob> _jobsByStorageKey = {};
   final Set<String> _restoredStagedJobIds = {};
+  final Map<String, _MediaOutboxMutation> _unverifiedByStorageKey = {};
+  Future<void> _writeTail = Future<void>.value();
   bool _disposed = false;
   late DurableCloudMediaOutboxStore _store;
 
@@ -189,9 +193,6 @@ class CloudMediaUploadQueueNotifier
       isProcessing: false,
       loadIssues: loaded.issues,
       durableLoaded: true,
-      durabilityError: loaded.issues.isEmpty
-          ? null
-          : 'The media outbox contains unreadable saved work.',
     );
   }
 
@@ -687,7 +688,8 @@ class CloudMediaUploadQueueNotifier
       return false;
     }
 
-    await _deleteJob(job);
+    final deleted = await _deleteJob(job, onlyIfUnreferenced: true);
+    if (!deleted) return false;
     _refreshState();
     _logMedia(
       'missing_source.removed_unreferenced job=${job.jobId} '
@@ -775,8 +777,18 @@ class CloudMediaUploadQueueNotifier
           'strategy=${job.strategyPublicId}');
     } catch (error) {
       _logMedia('attach.failed error=$error ${_describeJob(job)}');
+      final missingIntent = isMissingImageUploadIntentError(error);
       await _markJobFailed(
-        job,
+        missingIntent
+            ? job.copyWith(
+                provider: null,
+                uploadId: null,
+                objectKey: null,
+                storageId: null,
+                etag: null,
+                uploadUrlExpiresAt: null,
+              )
+            : job,
         '$error',
         showToast: job.attempts == 0,
       );
@@ -892,17 +904,14 @@ class CloudMediaUploadQueueNotifier
                 _opReferencesAsset(pending.op, job.assetPublicId),
           ),
         )
-        .map(
-          (job) => job.copyWith(
-            referenceDurable: true,
-            updatedAt: DateTime.now(),
-          ),
-        )
         .toList(growable: false);
-    if (readyFromDurableOps.isNotEmpty) {
+    for (final job in readyFromDurableOps) {
       if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
-      await _putJobsAtomically(readyFromDurableOps);
-      _refreshState();
+      final promoted = job.copyWith(
+        referenceDurable: true,
+        updatedAt: DateTime.now(),
+      );
+      await _writeJobs([promoted], () => _store.put(promoted), replacing: job);
     }
 
     if (durableOps.issues.isNotEmpty) return;
@@ -933,30 +942,28 @@ class CloudMediaUploadQueueNotifier
 
       if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
 
-      final referenced = entry.value
-          .where(
-            (job) => _snapshotReferencesAsset(snapshot, job.assetPublicId),
-          )
-          .map(
-            (job) => job.copyWith(
-              referenceDurable: true,
-              updatedAt: DateTime.now(),
-            ),
-          )
-          .toList(growable: false);
-      await _putJobsAtomically(referenced);
-      if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
-      final referencedIds = referenced.map((job) => job.jobId).toSet();
-      for (final orphan in entry.value) {
-        if (!referencedIds.contains(orphan.jobId) &&
-            _restoredStagedJobIds.contains(
-              durableCloudMediaOutboxStorageKey(orphan),
-            )) {
-          await _deleteJob(orphan);
-          _logMedia(
-            'reference_reconcile.removed_orphan job=${orphan.jobId} '
-            'strategy=${orphan.strategyPublicId}',
+      for (final job in entry.value) {
+        if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
+        // Both jobs and op references may change while the server is read.
+        // Never promote or delete using a stale copy of a media job.
+        if (!identical(_getJob(job.jobId), job)) continue;
+        final localReference = _hasLocalReference(job);
+        if (_snapshotReferencesAsset(snapshot, job.assetPublicId) ||
+            localReference == true) {
+          final promoted = job.copyWith(
+            referenceDurable: true,
+            updatedAt: DateTime.now(),
           );
+          await _writeJobs(
+            [promoted],
+            () => _store.put(promoted),
+            replacing: job,
+          );
+        } else if (localReference == false &&
+            _restoredStagedJobIds.contains(
+              durableCloudMediaOutboxStorageKey(job),
+            )) {
+          await _deleteJob(job, onlyIfUnreferenced: true);
         }
       }
       _refreshState();
@@ -1111,13 +1118,7 @@ class CloudMediaUploadQueueNotifier
   }
 
   Future<void> _putJob(CloudMediaUploadJob job) async {
-    try {
-      await _store.put(job);
-      _jobsByStorageKey[durableCloudMediaOutboxStorageKey(job)] = job;
-    } catch (error, stackTrace) {
-      _recordDurabilityFailure(error, stackTrace);
-      rethrow;
-    }
+    await _writeJobs([job], () => _store.put(job));
   }
 
   Future<void> _putJobsAtomically(
@@ -1125,31 +1126,91 @@ class CloudMediaUploadQueueNotifier
   ) async {
     final jobList = jobs.toList(growable: false);
     if (jobList.isEmpty) return;
-    try {
-      await _store.putAll(jobList);
-      for (final job in jobList) {
-        final storageKey = durableCloudMediaOutboxStorageKey(job);
-        _jobsByStorageKey[storageKey] = job;
-        if (job.referenceDurable) {
-          _restoredStagedJobIds.remove(storageKey);
-        }
-      }
-    } catch (error, stackTrace) {
-      _recordDurabilityFailure(error, stackTrace);
-      rethrow;
-    }
+    await _writeJobs(jobList, () => _store.putAll(jobList));
   }
 
-  Future<void> _deleteJob(CloudMediaUploadJob job) async {
-    try {
-      await _store.remove(job);
-      final storageKey = durableCloudMediaOutboxStorageKey(job);
-      _jobsByStorageKey.remove(storageKey);
-      _restoredStagedJobIds.remove(storageKey);
-    } catch (error, stackTrace) {
-      _recordDurabilityFailure(error, stackTrace);
-      rethrow;
-    }
+  // Null means unreadable records or unverified writes prevent proving that
+  // this asset is unreferenced. Include in-memory ops still being persisted.
+  bool? _hasLocalReference(CloudMediaUploadJob job) {
+    final durable = ref.read(durableStrategyOutboxStoreProvider).load();
+    final queue = ref.read(strategyOpQueueProvider);
+    if (durable.issues.isNotEmpty ||
+        !queue.durableLoaded ||
+        queue.hasDurabilityFailure) return null;
+    final durableReference = durable.records.any((record) =>
+        record.accountId == job.accountId &&
+        record.strategyPublicId == job.strategyPublicId &&
+        (_opReferencesAsset(record.pending.op, job.assetPublicId) ||
+            (record.successorPending != null &&
+                _opReferencesAsset(
+                    record.successorPending!.op, job.assetPublicId))));
+    if (durableReference) return true;
+    final pendingReference = queue.accountId == job.accountId &&
+        queue.strategyPublicId == job.strategyPublicId &&
+        queue.pending.any(
+            (pending) => _opReferencesAsset(pending.op, job.assetPublicId));
+    return pendingReference ? null : false;
+  }
+
+  Future<void> _writeJobs(
+    List<CloudMediaUploadJob> jobs,
+    Future<void> Function() persist, {
+    CloudMediaUploadJob? replacing,
+  }) =>
+      _serializeWrite(() async {
+        if (replacing != null &&
+            !identical(_getJob(replacing.jobId), replacing)) return;
+        final keys = jobs.map(durableCloudMediaOutboxStorageKey).toSet();
+        try {
+          await persist();
+          for (final job in jobs) {
+            final key = durableCloudMediaOutboxStorageKey(job);
+            _jobsByStorageKey[key] = job;
+            if (job.referenceDurable) _restoredStagedJobIds.remove(key);
+          }
+          for (final key in keys) {
+            _unverifiedByStorageKey.remove(key);
+          }
+          _refreshState();
+        } catch (error, stackTrace) {
+          for (final key in keys) {
+            _unverifiedByStorageKey[key] = _MediaOutboxMutation.write;
+          }
+          _recordDurabilityFailure(error, stackTrace);
+          rethrow;
+        }
+      });
+
+  Future<bool> _deleteJob(
+    CloudMediaUploadJob job, {
+    bool onlyIfUnreferenced = false,
+  }) =>
+      _serializeWrite(() async {
+        final key = durableCloudMediaOutboxStorageKey(job);
+        if (onlyIfUnreferenced &&
+            (!_belongsToActiveAccount(job) ||
+                !identical(_jobsByStorageKey[key], job) ||
+                _unverifiedByStorageKey[key] == _MediaOutboxMutation.write ||
+                _hasLocalReference(job) != false)) return false;
+        try {
+          await _store.remove(job);
+          _jobsByStorageKey.remove(key);
+          _restoredStagedJobIds.remove(key);
+          _unverifiedByStorageKey.remove(key);
+          _refreshState();
+          return true;
+        } catch (error, stackTrace) {
+          _unverifiedByStorageKey[key] = _MediaOutboxMutation.remove;
+          _recordDurabilityFailure(error, stackTrace);
+          rethrow;
+        }
+      });
+
+  Future<T> _serializeWrite<T>(Future<T> Function() action) {
+    final result = _writeTail.then((_) => action());
+    _writeTail =
+        result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
   }
 
   void _recordDurabilityFailure(Object error, StackTrace stackTrace) {
@@ -1159,16 +1220,23 @@ class CloudMediaUploadQueueNotifier
       stackTrace: stackTrace,
       source: 'cloud_media.upload_queue',
     );
-    state = state.copyWith(
-      durabilityError: 'Media work could not be saved on this device.',
-      isProcessing: false,
-    );
+    _refreshState(isProcessing: false);
   }
 
   void _refreshState({bool? isProcessing}) {
+    if (_disposed) return;
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    final prefix =
+        accountId == null ? null : '${Uri.encodeComponent(accountId)}|';
+    final hasUnverifiedWrites = prefix != null &&
+        _unverifiedByStorageKey.keys.any((key) => key.startsWith(prefix));
     state = state.copyWith(
       jobs: _readJobs(),
       isProcessing: isProcessing ?? state.isProcessing,
+      durabilityError: hasUnverifiedWrites
+          ? 'Media work could not be saved on this device.'
+          : null,
+      clearDurabilityError: !hasUnverifiedWrites,
     );
     _syncUploadProgressToast();
   }

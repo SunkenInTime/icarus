@@ -136,6 +136,37 @@ afterEach(() => {
 });
 
 describe("image asset lifecycle", () => {
+  test("stale pending uploads require a fresh intent even when referenced", async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockR2Deletes();
+    const { t, owner } = await createHarness();
+    await seedStrategy(owner);
+    const { strategy, pages } = await getStrategyAndPages(t);
+    const staleAt = Date.now() - 48 * 60 * 60 * 1000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("imageAssets", {
+        publicId: "offline-image", strategyId: strategy._id, provider: "r2",
+        objectKey: "offline/image.png", uploadAttemptPublicId: "offline-attempt",
+        uploadStatus: "pending", fileExtension: ".png", mimeType: "image/png",
+        createdAt: staleAt, updatedAt: staleAt,
+      });
+      await ctx.db.insert("elements", {
+        publicId: "offline-image", strategyId: strategy._id, pageId: pages[0]!._id,
+        elementType: "image", payloadKind: "image", payloadVersion: 1, payload: imagePayload("offline-image"),
+        sortIndex: 0, revision: 1, deleted: false, createdAt: staleAt, updatedAt: staleAt,
+      });
+    });
+    await t.mutation(markStaleImageUploadsDeleted, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await allAssets(t)).toEqual([]);
+    expect(fetchMock).toHaveBeenCalled();
+    await expect(owner.action(completeUpload, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId, assetPublicId: "offline-image", provider: "r2",
+      uploadId: "offline-attempt", objectKey: "offline/image.png",
+    })).rejects.toThrow(/Upload intent not found/);
+  });
+
   test("page deletion removes only assets unreferenced by remaining Pages and Lineups", async () => {
     vi.useFakeTimers();
     const fetchMock = mockR2Deletes();

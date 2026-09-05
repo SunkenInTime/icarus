@@ -10,16 +10,19 @@ const durableCloudMediaOutboxVersionKey = '__media_outbox_record_version__';
 
 Future<void> prepareDurableCloudMediaOutbox() async {
   final box = Hive.box<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
-  if (box.get(durableCloudMediaOutboxVersionKey) ==
-      durableCloudMediaOutboxRecordVersion) {
+  final version = box.get(durableCloudMediaOutboxVersionKey);
+  if (version == durableCloudMediaOutboxRecordVersion) {
     return;
   }
-  if (box.isNotEmpty) {
+  if (version != null && version != 1) {
     throw StateError(
       'The media outbox has an unsupported record version. '
       'Refusing to discard pending media work.',
     );
   }
+  // Prerelease v1 records had no owning account. Keep them byte-for-byte
+  // for recovery, and let load() report them as unreadable saved work.
+  // Never assign them to whichever account happens to sign in next.
   await box.put(
     durableCloudMediaOutboxVersionKey,
     durableCloudMediaOutboxRecordVersion,

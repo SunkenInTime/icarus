@@ -494,6 +494,10 @@ bool isTypedConvexUnauthenticatedError(Object error) {
           error.rawCode == ConvexErrorCode.unauthenticated.wireName);
 }
 
+bool isMissingImageUploadIntentError(Object error) =>
+    error is ConvexFunctionException &&
+    error.code == ConvexErrorCode.uploadIntentNotFound;
+
 CloudFolderEntry _folderEntry(FoldersListTreeResultItem folder) {
   return (
     folder: Folder(

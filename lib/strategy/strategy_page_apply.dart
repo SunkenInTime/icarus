@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -17,9 +18,10 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 Future<void> applyStrategyEditorPageData(
   Ref ref,
   StrategyEditorPageData data, {
-  required String themeProfileId,
+  required String? themeProfileId,
   required MapThemePalette? themeOverridePalette,
   bool preserveHistory = false,
+  MapValue? mapOverride,
 }) async {
   ref.read(agentProvider.notifier).clearAll();
   ref.read(abilityProvider.notifier).clearAll();
@@ -38,7 +40,9 @@ Future<void> applyStrategyEditorPageData(
   ref.read(placedImageProvider.notifier).fromHive(data.images);
   ref.read(utilityProvider.notifier).fromHive(data.utilities);
   ref.read(lineUpProvider.notifier).fromHive(data.lineUpGroups);
-  ref.read(mapProvider.notifier).fromHive(data.map, data.isAttack);
+  ref
+      .read(mapProvider.notifier)
+      .fromHive(mapOverride ?? data.map, data.isAttack);
   ref.read(strategySettingsProvider.notifier).fromHive(data.settings);
   ref.read(strategyThemeProvider.notifier).fromStrategy(
         profileId: themeProfileId,
