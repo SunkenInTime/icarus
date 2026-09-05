@@ -1,12 +1,13 @@
 # Valorant world reference, updated September 5, 2026
 
-Version-matched mappings repair the Split import. The same extraction process
-has now run across all 13 Icarus maps. This establishes usable source data and
-repeatable diagnostics; it does not certify gameplay sightlines. Production
-collision assets remain unchanged. The earlier Sunset scale fix is merged in
-PR #159.
+Version-matched mappings repair the Split import. All 13 Icarus maps now have
+exported 3D references. The standing-only prototype takes horizontal
+cross-sections from those triangles and feeds them into Icarus's existing
+visibility calculation. Riot vision tables remain comparison evidence.
+Production collision assets remain unchanged. The earlier Sunset scale fix
+is merged in PR #159.
 
-Local evidence lives under `E:/IcarusWorldAudit/2026-09-04`. Raw game assets and
+Local evidence lives under `E:/IcarusWorldAudit/2026-09-04` and `2026-09-05`. Raw game assets and
 settings stay outside the repository. Reports supplement the explanation in
 chat, as specified in [answers.md](../answers.md).
 
@@ -15,9 +16,9 @@ chat, as specified in [answers.md](../answers.md).
 Dara clarified the intended model: a horizontal sightline at the observer's
 eye height is blocked when geometry intersects that height. Low cover below
 that plane should not block it. The world height must include the observer's
-floor elevation; crouching requires a separate eye offset if supported. This
-model deliberately does not simulate looking up or down. Stacked floors still
-need explicit floor selection. The screenshot pair is landmark evidence, not
+floor elevation. Only standing visibility is in scope; crouching is not a
+supported stance. This model does not simulate looking up or down. Stacked
+floors still need explicit floor selection. The screenshot pair is landmark evidence, not
 a substitute for testing this horizontal rule.
 
 Dara opened a Split custom game and provided stationary standing and crouched
@@ -31,7 +32,7 @@ horizontal ray exactly.
 The original screenshots and their fingerprints are in
 `E:/IcarusWorldAudit/2026-09-05/in-game/evidence.json`. A provisional camera fit
 uses manually selected landmarks and fitted intrinsics. Its reprojection error
-is not sufficient evidence to adopt a new standing/crouching height. No fitted
+is not sufficient evidence to adopt a standing eye height. No fitted
 camera value has been copied into production.
 
 The production comparison runner now also tests the raw game vision layers,
@@ -41,13 +42,84 @@ at 2.681 m. This isolates a useful distinction between the authored boundary
 and the source visibility data. Those distances are from the diagnostic ray,
 not measurements of the in-game screenshots.
 
-The 13,155-ray runner passes with this additional comparison. Raw geometry is
+The earlier 13,155-ray runner passed with this additional comparison. Raw geometry is
 not automatically certified: 2,564 eligible diagnostic rays still differ from
 the triangle reference by over 0.5 m, and the raw layers omit the low crate in
 the 0.98 m sensitivity test. These counts are not gameplay error rates. The
-next implementation should preserve SVG appearance while testing visibility
-geometry separately, with confirmed camera/floor semantics and explicit
-exceptions. A wholesale switch to raw layers has not been made.
+new prototype preserves SVG appearance while testing visibility geometry
+separately. A wholesale switch to raw layers has not been made.
+
+## Standing 3D prototype
+
+The current runtime replaces source visibility segments with authored SVG
+groups. Admitted groups default to every height layer, and the outer footprint
+cannot be disabled by an override. Low cover incorporated into that outline
+therefore remains a blocker even when the observer's eyes are above it.
+Changing the observer-height number alone cannot resolve that case.
+
+`blender_export_visibility_slice.py` intersects the placed triangles with the
+recorded observer's horizontal planes. `verify_world_slice_test.dart` loads
+those segments through Icarus's coordinate decoder and `VisionPolygon.compute`.
+The SVG still governs allowed observer positions; its outline is absent from
+the prototype's occluders. No source visibility-table segments enter that path.
+The SVG files, dimensions, scale and production provider remain unchanged.
+
+The test covers attack and defense orientations. It compares the actual 2D
+center ray against Blender's 3D hit, writes per-ray errors and fails above
+5 mm. This verifies conversion of the same source geometry, not independent
+gameplay accuracy. Unknown and nonopaque surfaces remain present in the
+prototype, so a passing conversion test cannot certify their visibility.
+
+At Split seed 44, the candidate floor +1.75 m ray reaches the B-site wall at
+2.681 m. Current Icarus stops at 0.337 m. Across the 1.55, 1.75 and 1.95 m
+standing sensitivity band, the model clears the low crate at all three heights.
+The wall distance changes to 2.911 m at the highest plane because its opening
+changes the section. These are height candidates, not supported stances or
+certified camera defaults. The 1.75 m section contains 6,108 segments around
+the fixture, so segment reduction and multi-agent performance still need work.
+
+The expanded sweep contains 412,323 diagnostic rays across the twelve maps
+with navigation seeds. Split accounts for 52,419, including three geometric
+calibration rays. It annotates first hits using parsed material data. Unknown
+bindings, ambiguous material identifiers and source meshes with unbound face
+subsets remain unresolved. The standing triage also excludes back-facing hits,
+origins near surfaces and height-sensitive results from correction candidates.
+Its counts identify investigations; they are not gameplay error rates.
+
+Summit's mesh-grid run adds 263,904 rays from 2,749 accepted candidate surfaces.
+It scans a 3 m grid over source UV bounds 0..1, retains multiple heights at each
+position and requires an upward opaque surface with 2 m of vertical clearance.
+No column reaches the scan limit. This removes the navigation-data dependency
+for diagnostics. It does not establish connected walkable floors: roof and
+prop tops can pass, and a vertical clearance check is not a movement capsule.
+Most generated directions fall outside the current authored footprint or need
+further material/floor review. These samples have not become production data.
+
+The first all-map slice run exposed a reference-tool precision fault on Pearl.
+The old full-scene BVH used an intersection epsilon of 0.00001 m and reported
+11.520234 m for ray `384-1.55-9`. A direct triangle calculation gives 11.525284 m;
+the full-scene BVH with zero epsilon gives 11.525284 m too. The positive
+allowance admitted a nearby triangle outside the exact ray. The generator now
+uses zero epsilon and records it explicitly. Historical broad sweeps retain
+their original files; the precise fixture rerun is separate.
+
+The precise rerun passes all 13 maps, including Summit: one selected observer
+per map, three standing-height candidates, 32 directions and both orientations
+produce 2,496 comparisons. The largest difference is 0.004760 mm, on Icebox.
+Split's largest difference is 0.002986 mm. These small values measure conversion
+of the exported triangles, not the triangles' agreement with the live game.
+The 5 mm failure threshold was not relaxed. Twelve unit tests for the new
+Python helpers pass, as do the three existing USD material-audit tests and
+Dart analysis of both diagnostic runners.
+
+Current evidence paths under `2026-09-05`:
+
+- `standing-visibility-audit.json` and `standing-all-maps` preserve the broad
+  material-aware triage and its original references.
+- `standing-precise` contains fixtures recast with zero BVH epsilon, their
+  3D slices, Flutter verification reports and the all-map manifest.
+- `split-standing-slice-comparison.png` compares the current clipping and
+  prototype at the same map scale. It is a diagnostic illustration.
 
 ## The mapping fix
 
@@ -142,12 +214,12 @@ are retained for comparison.
 
 ## Repeatable Split fixtures
 
-The 3D checker uses evaluated triangles and instance transforms, with no SVG
+The original 3D checker used evaluated triangles and instance transforms, with no SVG
 input. It casts downward from navigation seeds to find an upward-facing surface
 within 0.6 m before accepting a candidate floor. Of 286 seeds, 274 pass. Sixteen
 directions at 25 m and three heights, plus three crate calibration rays, produce
-13,155 rays. The heights 0.98, 1.5 and 1.7 m are test parameters, not established
-standing/crouching camera heights. Every triangle is provisionally opaque and
+13,155 rays. The heights 0.98, 1.5 and 1.7 m were test parameters, not established
+camera heights. Every triangle was provisionally opaque and
 two-sided.
 
 The Flutter comparison uses the actual provider, coordinate projection,
@@ -180,20 +252,21 @@ footprint, so it cannot independently establish a runtime collision defect.
 
 ## Next verification and implementation
 
-1. Confirm fixed structural reference points and these camera/target fixtures
-   in a Split custom game. Reserve some landmarks to check registration rather
-   than fitting every point. The local Riot Client is currently at sign-in.
-2. Establish actual standing/crouching camera heights and floor/state handling.
+1. Confirm the standing eye height and fixed sightline endpoints in a Split
+   custom game. The existing standing/crouched screenshot pair established the
+   landmark, not an exact horizontal camera. Reserve landmarks to check
+   registration rather than fitting every point.
+2. Establish floor selection and active map state.
    Current Icarus generation uses navigation `AgentHeight / 2`, or 98 cm for
    Split. Fresh character properties contain capsule and eye-offset defaults,
    but custom camera behavior prevents treating one field as the final view.
 3. Resolve material binding gaps and classify state-dependent surfaces. Keep
    unknown surfaces flagged; never convert an extraction failure into empty space.
-4. Use verified height intervals and states for sightline blockers while keeping
-   SVG appearance unchanged. Authored groups currently default to every layer;
-   movement limits, minimap outlines and visible occluders need distinct meaning.
-5. Add the confirmed fixtures as regression checks, then run the same validation
-   and apply the resulting collision correction to the other maps.
+4. Reduce the 3D section's segment count without changing its measured hits.
+   Benchmark multiple agents before integrating it into the production provider.
+5. Add the gameplay-confirmed standing fixtures as regression checks, then
+   apply the resulting collision data to the other maps. Keep movement limits,
+   minimap outlines and visible occluders separate.
 
 The source extraction and structural audits have expanded to all maps. The
 collision rollout remains conditional on Split passing the gameplay checks.
@@ -213,12 +286,26 @@ means unresolved evidence, even when structural checks pass. Empty/unbound
 reference and HDR-resolution tests are in `scripts/test_audit_world_materials.py`.
 
 Use `blender_world_reference.py` to import the selection and
-`blender_audit_world_rays.py` to cast rays. Run
+`blender_audit_world_rays.py` to cast rays. Supply `--eye-heights 1.55 1.75 1.95`
+and `--materials` pointing at the source material audit. These values reproduce
+the sensitivity band; they are not certified defaults. `--floor-grid 3` uses
+mesh candidates instead of navigation. `--seed-reference` with `--sample-ids`
+reuses a recorded fixture, verifies its scene fingerprint and recasts its floor.
+Run
 `flutter test --no-pub tool/compare_world_rays_test.dart` with a `WORLD_RAYS`
 dart define pointing at the report. `find_world_height_candidates.py` accepts
 the rays, comparison and output paths; `--object-name Crate` reproduces the
 narrow fixture list. `blender_render_ray_fixture.py` renders selected ray IDs
 from the fingerprinted scene.
+
+For the 3D prototype, run `blender_export_visibility_slice.py` with
+`--world-rays REPORT --sample ID --output SLICE`. Run
+`flutter test --no-pub tool/verify_world_slice_test.dart` with `WORLD_RAYS` and
+`WORLD_SLICE` dart defines. `audit_standing_visibility.py` takes world rays,
+the runtime comparison and an output path; it rejects mismatched fingerprints.
+The Python tests cover material ambiguity/unbound faces, uncertain-reference
+classification, stale reports, incomplete height groups, and horizontal
+triangle intersections. Raw game data stays outside the repository.
 
 The existing `split/footage-final/split-blender-import-raw.mp4` preserves the
 40-second actual import and orbit. Its 16-second annotated companion is labeled

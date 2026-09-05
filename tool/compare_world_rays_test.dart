@@ -110,22 +110,29 @@ void main() {
       // replace their segments. This is diagnostic evidence, not a fallback.
       final sourceLayer = sourceGeometry.layerForPosition(
           isAttack: true, position: start, elevationOverride: z);
-      final sourcePolygon = VisionPolygon.compute(
-        layer: sourceLayer,
-        origin: start,
-        facingAngle: math.atan2(delta.dy, delta.dx),
-        coneAngle: 0.02,
-        range: distance,
-      );
-      final sourceCenter = sourcePolygon.skip(1).where((p) {
-        final v = p - start;
-        return (v.dx * direction.dy - v.dy * direction.dx).abs() < 0.000001;
-      }).toList();
-      expect(sourceCenter, isNotEmpty);
-      final sourceMeters =
-          sourceCenter.map((p) => (p - start).distance).reduce(math.max) /
-              distance *
-              worldRange;
+      double sourceDistance(VisionGeometryLayer candidate) {
+        final polygon = VisionPolygon.compute(
+          layer: candidate,
+          origin: start,
+          facingAngle: math.atan2(delta.dy, delta.dx),
+          coneAngle: 0.02,
+          range: distance,
+        );
+        final center = polygon.skip(1).where((p) {
+          final v = p - start;
+          return (v.dx * direction.dy - v.dy * direction.dx).abs() < 0.000001;
+        }).toList();
+        expect(center, isNotEmpty);
+        return center.map((p) => (p - start).distance).reduce(math.max) /
+            distance *
+            worldRange;
+      }
+
+      final sourceMeters = sourceDistance(sourceLayer);
+      final floorElevation =
+          z - (ray['heightAboveFloorMeters'] as num).toDouble() * 100;
+      final floorSourceLayer = sourceGeometry.layerForPosition(
+          isAttack: true, position: start, elevationOverride: floorElevation);
       results.add({
         'id': ray['id'],
         'start': [start.dx, start.dy],
@@ -140,6 +147,8 @@ void main() {
         'referenceDistanceMeters': referenceMeters,
         'rawSourceDistanceMeters': sourceMeters,
         'rawSourceElevation': sourceLayer.elevation,
+        'rawSourceAtFloorDistanceMeters': sourceDistance(floorSourceLayer),
+        'rawSourceAtFloorElevation': floorSourceLayer.elevation,
         'differenceMeters': runtimeMeters - referenceMeters,
         'objectIndex': ray['objectIndex'],
       });
