@@ -69,7 +69,29 @@ This is a resource inventory, not an active-world reconstruction. We still need
 to resolve streamed-level membership, actor/component attachment transforms,
 blueprint defaults, collision profiles, and materials. Visibility-channel
 collision is also not identical to visual occlusion from the player's camera.
-The extracted files have hashes, but their exact game patch is not established.
+The extracted files have hashes. The retained FModel log records a June 20,
+2026 session with FModel 4.4.4.0 and `VALORANT_12.11_zs.usmap` mappings. This
+dates that extraction session, but does not independently identify the build
+of every exported asset.
+
+## Whole-map export is available
+
+FModel's [August 2026 release](https://github.com/4sval/FModel/releases/tag/aug-2026)
+adds whole-world export as `.usda`, including placed static meshes, instanced
+meshes, skeletal meshes, landscapes, and streaming levels. Its Export Session
+window supports batch world exports and per-session output settings. The
+release notes identify socket/attachment placement as a remaining limitation.
+
+Use that complete scene export for Split, whose package is
+`/Game/Maps/Bonsai/Bonsai`, including its relevant streaming levels. Keep the
+existing JSON export as complementary metadata. The missing triangle arrays
+described above are a limitation of the inspected JSON files, not a claim that
+FModel cannot export the full map. A fresh scene export is the direct path to
+the independent reference, followed by validation of scene completeness,
+transforms, units, material visibility, and camera height.
+
+The installed game directory was found at `E:\Games\Valorant`. This capability
+check did not export a new scene or change the game installation.
 
 ## A reliable verification path
 
