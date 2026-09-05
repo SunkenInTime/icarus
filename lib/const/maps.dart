@@ -70,7 +70,7 @@ class Maps {
     MapValue.breeze: 1.01, //modified
     MapValue.lotus: 1.24, //modified
     MapValue.icebox: 1.03, //modiefied
-    MapValue.sunset: 0.9502102049421427,
+    MapValue.sunset: 1.06,
     MapValue.split: 1.1920129279062075, //modified
     MapValue.haven: 1.06, //modified
     MapValue.fracture: 1.21, //modified
