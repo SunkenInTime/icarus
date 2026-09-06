@@ -116,6 +116,11 @@ components:
     textColor: "{colors.tactical-foreground}"
     rounded: "{rounded.panel}"
     width: "345px"
+  title-strip:
+    backgroundColor: "{colors.tactical-card}"
+    textColor: "{colors.tactical-foreground}"
+    height: "40px"
+    controlHeight: "28px"
   folder-card:
     backgroundColor: "{colors.tactical-card}"
     textColor: "{colors.tactical-foreground}"
@@ -134,6 +139,11 @@ Icarus is a tactical workbench: dark, dense, map-first. The canvas and the tacti
 - Color, theme, and sizing constants live in `lib/const/settings.dart` (including the `tacticalVioletTheme` ShadColorScheme). Use them; never hardcode a hex that already has a name. The frontmatter above mirrors these values for reference.
 - Spacing uses the 8/10/12/16/24px steps from the frontmatter. Radii: 8px controls, 12px panels, 16px cards, 22px dialogs.
 - Transitions run 150-250ms and must communicate a state change (hover, selection, reveal, loading). No motion for its own sake.
+
+## Window chrome
+
+- Desktop builds hide the native title bar. Each top-level screen draws its own 40px strip (`lib/widgets/window_chrome.dart`): macOS keeps its traffic lights, so the strip leaves a 78px inset on the left; Windows and Linux get app-drawn caption buttons on the right; the strip is the drag handle. Web renders the same strip with no inset and no buttons.
+- The library strip holds the three tabs on the left and only search, sort, New, and the account on the right. Nothing else goes in it. Inside a folder, the breadcrumb lives in the content area, not the strip.
 
 ## Named rules
 

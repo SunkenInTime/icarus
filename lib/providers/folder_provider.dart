@@ -59,7 +59,7 @@ class FolderProvider extends Notifier<String?> {
               color: color.name,
               customColorValue: customColor?.toARGB32(),
             );
-        ref.invalidate(cloudFoldersProvider);
+        ref.invalidate(cloudFolderTreeProvider);
         return newFolder;
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
@@ -85,6 +85,13 @@ class FolderProvider extends Notifier<String?> {
 
   void updateID(String? id) {
     updateWorkspaceFolderId(_currentWorkspace, id);
+  }
+
+  /// Enters [folderId], which lives in [store]. My Library shows folders from
+  /// both stores side by side, so opening one also makes its store active.
+  void openFolder({required String folderId, required LibraryWorkspace store}) {
+    ref.read(libraryWorkspaceProvider.notifier).select(store);
+    updateWorkspaceFolderId(store, folderId);
   }
 
   void clearID() {
@@ -168,7 +175,7 @@ class FolderProvider extends Notifier<String?> {
         updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
       }
       ref.invalidate(cloudFoldersProvider);
-      ref.invalidate(cloudAllFoldersProvider);
+      ref.invalidate(cloudFolderTreeProvider);
       ref.invalidate(cloudStrategiesProvider);
       return result;
     }
@@ -232,7 +239,7 @@ class FolderProvider extends Notifier<String?> {
       if (!result.didSucceed) return result;
 
       ref.invalidate(cloudFoldersProvider);
-      ref.invalidate(cloudAllFoldersProvider);
+      ref.invalidate(cloudFolderTreeProvider);
       return result;
     }
 
@@ -266,7 +273,7 @@ class FolderProvider extends Notifier<String?> {
       if (!result.didSucceed) return result;
 
       ref.invalidate(cloudFoldersProvider);
-      ref.invalidate(cloudAllFoldersProvider);
+      ref.invalidate(cloudFolderTreeProvider);
       return result;
     }
 
@@ -290,13 +297,12 @@ class FolderProvider extends Notifier<String?> {
           source: source,
           failureMessage: failureMessage,
           showFailureMessage: showFailureMessage,
-          reportAuthenticationFailure: (error, stackTrace) => ref
-              .read(authProvider.notifier)
-              .reportConvexUnauthenticated(
-                source: source,
-                error: error,
-                stackTrace: stackTrace,
-              ),
+          reportAuthenticationFailure: (error, stackTrace) =>
+              ref.read(authProvider.notifier).reportConvexUnauthenticated(
+                    source: source,
+                    error: error,
+                    stackTrace: stackTrace,
+                  ),
         );
   }
 

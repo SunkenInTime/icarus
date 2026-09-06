@@ -56,7 +56,7 @@ ProviderContainer _createContainer(ConvexStrategyRepository repository) {
       pinnedItemsProvider.overrideWith(_MemoryPinnedItemsProvider.new),
       convexStrategyRepositoryProvider.overrideWithValue(repository),
       authProvider.overrideWith(_ReadyAuthProvider.new),
-      cloudFoldersProvider.overrideWith((_) => Stream.value(const [])),
+      cloudFoldersProvider.overrideWith((_) => const AsyncData([])),
       cloudAllFoldersProvider.overrideWith((_) => Stream.value(const [])),
       cloudStrategiesProvider.overrideWith((_) => Stream.value(const [])),
     ],

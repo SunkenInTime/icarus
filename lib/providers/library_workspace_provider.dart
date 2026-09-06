@@ -67,3 +67,26 @@ class CloudLibrarySectionNotifier extends Notifier<CloudLibrarySection> {
     state = section;
   }
 }
+
+/// The three destinations in the library's title strip. `library` is the
+/// user's own work from every store; `shared` is what teammates gave them;
+/// `community` is the public space. The active store ([libraryWorkspaceProvider])
+/// stays an implementation detail behind the first tab.
+enum LibraryTab {
+  library,
+  shared,
+  community,
+}
+
+final libraryTabProvider = Provider<LibraryTab>((ref) {
+  final workspace = ref.watch(libraryWorkspaceProvider);
+  if (workspace == LibraryWorkspace.community) {
+    return LibraryTab.community;
+  }
+  final section = ref.watch(cloudLibrarySectionProvider);
+  if (workspace == LibraryWorkspace.cloud &&
+      section == CloudLibrarySection.sharedWithMe) {
+    return LibraryTab.shared;
+  }
+  return LibraryTab.library;
+});

@@ -26,6 +26,11 @@ Future<void> initializeIcarusDesktopWindow(String title) async {
     minimumSize: const Size(1280, 720),
     center: true,
     title: title,
+    // The app draws its own title strip (lib/widgets/window_chrome.dart).
+    // macOS keeps its traffic lights; Windows and Linux get app-drawn
+    // caption buttons.
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: true,
   );
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();

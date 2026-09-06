@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
@@ -25,8 +26,12 @@ class FolderEditDialog extends ConsumerStatefulWidget {
   const FolderEditDialog({
     super.key,
     this.folder,
+    this.store,
   });
   final Folder? folder;
+
+  /// The store to write to. Defaults to the active workspace.
+  final LibraryWorkspace? store;
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
       _FolderEditDialogState();
@@ -61,6 +66,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
               newIconId: _selectedIconId,
               newColor: _selectedColor,
               newCustomColor: _customColor,
+              workspace: widget.store,
             );
       } else {
         await ref.read(folderProvider.notifier).createFolder(
@@ -68,6 +74,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
               iconId: _selectedIconId,
               color: _selectedColor,
               customColor: _customColor,
+              workspace: widget.store,
             );
         result = CloudLibraryActionResult.succeeded;
       }

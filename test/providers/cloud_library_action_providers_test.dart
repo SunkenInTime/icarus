@@ -320,7 +320,7 @@ class _Harness {
         ),
         cloudFoldersProvider.overrideWith((_) {
           cloudFolderBuilds += 1;
-          return Stream.value(const []);
+          return const AsyncData([]);
         }),
         cloudAllFoldersProvider.overrideWith((_) {
           allCloudFolderBuilds += 1;

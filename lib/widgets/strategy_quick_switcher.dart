@@ -11,7 +11,6 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
@@ -29,7 +28,7 @@ class StrategyQuickSwitcher extends ConsumerStatefulWidget {
 class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barWidth = 280;
   static const double _barHeight = 40;
-  static const EdgeInsets _displayMargin = EdgeInsets.all(16);
+  static const EdgeInsets _displayMargin = EdgeInsets.symmetric(horizontal: 16);
   final OverlayPortalController _controller = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
   late final TextEditingController _nameController;
@@ -355,6 +354,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                 );
               },
               child: Container(
+                key: const ValueKey('strategy-quick-switcher-control'),
                 width: _barWidth,
                 height: _barHeight,
                 decoration: BoxDecoration(

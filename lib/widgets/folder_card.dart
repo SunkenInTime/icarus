@@ -5,8 +5,8 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -314,7 +314,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
           dragAnchorStrategy: pointerDragAnchorStrategy,
           onDragUpdate: (details) =>
               _dragTiltController.addDelta(details.delta.dx),
-          data: FolderItem(_folder),
+          data: FolderItem(_folder, store: LibraryWorkspace.local),
           child: MouseRegion(
             onEnter: (_) {
               _isHovered = true;
@@ -656,7 +656,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
           await showDialog<String>(
             context: context,
             builder: (context) {
-              return FolderEditDialog(folder: _folder);
+              return FolderEditDialog(
+                  folder: _folder, store: LibraryWorkspace.local);
             },
           );
         },
@@ -679,7 +680,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
             context: context,
             builder: (_) => DeleteFolderAlertDialog(
               folder: _folder,
-              workspace: ref.read(libraryWorkspaceProvider),
+              workspace: LibraryWorkspace.local,
             ),
           );
         },

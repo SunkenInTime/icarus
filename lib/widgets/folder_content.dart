@@ -16,10 +16,12 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
+import 'package:icarus/providers/library_navigation_provider.dart';
+import 'package:icarus/widgets/library_breadcrumb.dart';
+import 'package:icarus/widgets/library_entries.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
-import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/folder_pill.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -128,15 +130,15 @@ Set<String> _folderAndDescendantIds(Folder root, Iterable<Folder> allFolders) {
 }
 
 class FolderContent extends ConsumerWidget {
-  FolderContent({
+  const FolderContent({
     super.key,
     this.folder,
     required this.onCreateStrategy,
   });
 
+  /// The open folder, or null at a tab's root.
   final Folder? folder;
   final VoidCallback onCreateStrategy;
-  final TextEditingController searchController = TextEditingController();
 
   static final strategiesListenable =
       Provider<ValueListenable<Box<StrategyData>>>((ref) {
@@ -150,23 +152,46 @@ class FolderContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final workspace = ref.watch(libraryWorkspaceProvider);
-    if (workspace == LibraryWorkspace.community) {
-      return _buildCommunityPlaceholder(context, ref);
+    final tab = ref.watch(libraryTabProvider);
+    switch (tab) {
+      case LibraryTab.community:
+        return _buildCommunityPlaceholder(context, ref);
+      case LibraryTab.shared:
+        return _crossFade(_buildCloudBody(context, ref));
+      case LibraryTab.library:
+        if (folder == null) {
+          return _crossFade(_buildLibraryRoot(context, ref));
+        }
+        final store = ref.watch(libraryWorkspaceProvider);
+        if (store == LibraryWorkspace.cloud) {
+          return _crossFade(_buildCloudBody(context, ref));
+        }
+        return _buildLocalFolder(context, ref);
     }
+  }
 
-    final isCloud = workspace == LibraryWorkspace.cloud;
-    if (isCloud) {
-      // Wrapped in a switcher so skeleton -> content (and error transitions)
-      // cross-fade instead of hard-snapping.
-      return AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeOutCubic,
-        child: _buildCloudBody(context, ref),
-      );
-    }
+  /// Skeleton -> content (and error transitions) cross-fade instead of
+  /// hard-snapping.
+  Widget _crossFade(Widget child) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeOutCubic,
+      child: child,
+    );
+  }
 
+  /// Reads the local library and hands the visible rows to [builder]. Used
+  /// both inside a local folder and for the local half of the My Library root.
+  Widget _withLocalStore(
+    BuildContext context,
+    WidgetRef ref, {
+    required Widget Function(
+      List<LibraryFolderRow> folders,
+      List<LibraryStrategyRow> strategies,
+    ) builder,
+  }) {
+    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
     final strategiesBoxListenable = ref.watch(strategiesListenable);
     final foldersBoxListenable = ref.watch(foldersListenable);
     return ValueListenableBuilder<Box<StrategyData>>(
@@ -178,47 +203,137 @@ class FolderContent extends ConsumerWidget {
             final allFolders = folderBox.values.toList();
             final allStrategies = strategyBox.values.toList();
             final existingFolderIds = allFolders.map((item) => item.id).toSet();
-            final folders = allFolders
-                .where(
-                  (item) => folderBelongsToVisibleParent(
+            final folders = [
+              for (final item in allFolders)
+                if (folderBelongsToVisibleParent(
+                  folder: item,
+                  currentFolderId: folder?.id,
+                ))
+                  LibraryFolderRow(
                     folder: item,
-                    currentFolderId: folder?.id,
+                    store: LibraryWorkspace.local,
+                    lastUpdated: folderLastUpdated(
+                      folder: item,
+                      allFolders: allFolders,
+                      allStrategies: allStrategies,
+                    ),
                   ),
-                )
-                .toList();
-            final strategies = allStrategies
-                .where(
-                  (item) => strategyBelongsToVisibleFolder(
-                    strategy: item,
-                    currentFolderId: folder?.id,
-                    existingFolderIds: existingFolderIds,
+            ];
+            final strategies = [
+              for (final item in allStrategies)
+                if (strategyBelongsToVisibleFolder(
+                  strategy: item,
+                  currentFolderId: folder?.id,
+                  existingFolderIds: existingFolderIds,
+                ))
+                  LibraryStrategyRow.local(
+                    item,
+                    showDeviceBadge: cloudAvailable,
                   ),
-                )
-                .toList();
-            return _buildScaffold(
-              context,
-              ref,
-              folders: _filterFolders(
-                ref,
-                folders,
-                allFolders: allFolders,
-                allStrategies: allStrategies,
-              ),
-              localStrategies: _filterLocalStrategies(ref, strategies),
-              allLocalFolders: allFolders,
-              allLocalStrategies: allStrategies,
-              cloudStrategies: const [],
-              isCloud: false,
-              emptyStateTitle: 'No strategies available',
-              emptyStateSubtitle:
-                  'Create a new strategy or drop strategies, folders, or .zip archives',
-            );
+            ];
+            return builder(folders, strategies);
           },
         );
       },
     );
   }
 
+  Widget _buildLocalFolder(BuildContext context, WidgetRef ref) {
+    return _withLocalStore(
+      context,
+      ref,
+      builder: (folders, strategies) => _buildScaffold(
+        context,
+        ref,
+        folders: _filterFolders(ref, folders),
+        strategies: _filterStrategies(ref, strategies),
+        acceptsIcaDrops: true,
+        emptyStateTitle: 'No strategies in this folder',
+        emptyStateSubtitle:
+            'Create a new strategy or drop strategies, folders, or .zip archives',
+      ),
+    );
+  }
+
+  /// My Library's root: everything on this computer and everything in the
+  /// cloud, side by side. Inside a folder the view narrows to that folder's
+  /// store.
+  Widget _buildLibraryRoot(BuildContext context, WidgetRef ref) {
+    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+    final foldersAsync = cloudAvailable ? ref.watch(cloudFoldersProvider) : null;
+    final strategiesAsync =
+        cloudAvailable ? ref.watch(cloudStrategiesProvider) : null;
+    // Only the very first fetch shows the skeleton; dependency changes keep
+    // the previous value.
+    final isInitialLoading = foldersAsync != null &&
+        strategiesAsync != null &&
+        ((foldersAsync.isLoading && !foldersAsync.hasValue) ||
+            (strategiesAsync.isLoading && !strategiesAsync.hasValue));
+    if (isInitialLoading) {
+      return const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
+    }
+    final cloudFailed =
+        (foldersAsync?.hasError ?? false) || (strategiesAsync?.hasError ?? false);
+    final cloudFolders = [
+      for (final entry in foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[])
+        LibraryFolderRow(
+          folder: entry.folder,
+          store: LibraryWorkspace.cloud,
+          lastUpdated: entry.folder.dateCreated,
+        ),
+    ];
+    final cloudStrategies = [
+      for (final entry
+          in strategiesAsync?.valueOrNull ?? const <CloudStrategyEntry>[])
+        LibraryStrategyRow.cloud(entry),
+    ];
+
+    return KeyedSubtree(
+      key: const ValueKey('library-root'),
+      child: _withLocalStore(
+        context,
+        ref,
+        builder: (localFolders, localStrategies) => _buildScaffold(
+          context,
+          ref,
+          folders: _filterFolders(
+            ref,
+            mergeLibraryFolders(local: localFolders, cloud: cloudFolders),
+          ),
+          strategies: _filterStrategies(
+            ref,
+            mergeLibraryStrategies(
+              local: localStrategies,
+              cloud: cloudStrategies,
+            ),
+          ),
+          acceptsIcaDrops: true,
+          banner: cloudFailed ? _CloudErrorBanner(onRetry: () => _retryCloud(ref)) : null,
+          emptyStateKey: const ValueKey('library-empty-state'),
+          emptyStateIcon: Icons.folder_outlined,
+          emptyStateTitle: 'Your library is empty',
+          emptyStateSubtitle: cloudAvailable
+              ? 'Create your first strategy to keep it available across your '
+                  'Icarus clients.'
+              : 'Create a new strategy or drop strategies, folders, or .zip '
+                  'archives here.',
+          emptyStateAction: ShadButton(
+            key: const ValueKey('library-empty-create-strategy'),
+            onPressed: onCreateStrategy,
+            leading: const Icon(Icons.add),
+            child: const Text('Create Strategy'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _retryCloud(WidgetRef ref) {
+    ref.invalidate(cloudFolderTreeProvider);
+    ref.invalidate(cloudStrategiesProvider);
+  }
+
+  /// A cloud folder, or the Shared tab.
   Widget _buildCloudBody(BuildContext context, WidgetRef ref) {
     final cloudSection = ref.watch(cloudLibrarySectionProvider);
     final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
@@ -236,8 +351,6 @@ class FolderContent extends ConsumerWidget {
         child: _buildCloudErrorState(context, ref),
       );
     }
-    // Only the very first fetch shows the skeleton; dependency changes keep
-    // the previous value, so navigating folders doesn't flash it.
     final isInitialLoading =
         (foldersAsync.isLoading && !foldersAsync.hasValue) ||
             (strategiesAsync.isLoading && !strategiesAsync.hasValue);
@@ -246,10 +359,19 @@ class FolderContent extends ConsumerWidget {
         key: ValueKey('cloud-loading'),
       );
     }
-    final folders = (foldersAsync.valueOrNull ?? const [])
-        .map((entry) => entry.folder)
-        .toList(growable: false);
-    final strategies = strategiesAsync.valueOrNull ?? const [];
+    final folders = [
+      for (final entry in foldersAsync.valueOrNull ?? const <CloudFolderEntry>[])
+        LibraryFolderRow(
+          folder: entry.folder,
+          store: LibraryWorkspace.cloud,
+          lastUpdated: entry.folder.dateCreated,
+        ),
+    ];
+    final strategies = [
+      for (final entry
+          in strategiesAsync.valueOrNull ?? const <CloudStrategyEntry>[])
+        LibraryStrategyRow.cloud(entry),
+    ];
     final isSharedWithMe = cloudSection == CloudLibrarySection.sharedWithMe;
     return KeyedSubtree(
       key: const ValueKey('cloud-content'),
@@ -257,145 +379,91 @@ class FolderContent extends ConsumerWidget {
         context,
         ref,
         folders: _filterFolders(ref, folders),
-        localStrategies: const [],
-        cloudStrategies: _filterCloudStrategies(ref, strategies),
-        isCloud: true,
-        emptyStateKey: ValueKey(
-          isSharedWithMe ? 'shared-empty-state' : 'cloud-empty-state',
-        ),
-        emptyStateIcon:
-            isSharedWithMe ? Icons.people_outline : Icons.cloud_outlined,
-        emptyStateTitle: isSharedWithMe
+        strategies: _filterStrategies(ref, strategies),
+        acceptsIcaDrops: false,
+        emptyStateKey: isSharedWithMe && folder == null
+            ? const ValueKey('shared-empty-state')
+            : null,
+        emptyStateIcon: isSharedWithMe && folder == null
+            ? Icons.people_outline
+            : null,
+        emptyStateTitle: isSharedWithMe && folder == null
             ? 'Nothing shared with you yet'
-            : 'Your cloud library is empty',
-        emptyStateSubtitle: isSharedWithMe
+            : 'No strategies in this folder',
+        emptyStateSubtitle: isSharedWithMe && folder == null
             ? 'Add a share link or code from a teammate to keep it here.'
-            : 'Create your first cloud strategy to keep it available across '
-                'your Icarus clients.',
+            : isSharedWithMe
+                ? 'Strategies shared into this folder will show up here.'
+                : 'Create a new strategy to fill it.',
         emptyStateAction: isSharedWithMe
-            ? ShadButton(
-                key: const ValueKey('shared-empty-add-item'),
-                onPressed: () => showAddSharedItemDialog(context),
-                leading: const Icon(LucideIcons.link),
-                child: const Text('Add by Link or Code'),
-              )
+            ? (folder == null
+                ? ShadButton(
+                    key: const ValueKey('shared-empty-add-item'),
+                    onPressed: () => showAddSharedItemDialog(context),
+                    leading: const Icon(LucideIcons.link),
+                    child: const Text('Add by Link or Code'),
+                  )
+                : null)
             : ShadButton(
                 key: const ValueKey('cloud-empty-create-strategy'),
                 onPressed: onCreateStrategy,
                 leading: const Icon(Icons.add),
-                child: const Text('Create Cloud Strategy'),
+                child: const Text('Create Strategy'),
               ),
       ),
     );
   }
 
-  List<Folder> _filterFolders(
+  List<LibraryFolderRow> _filterFolders(
     WidgetRef ref,
-    List<Folder> folders, {
-    List<Folder> allFolders = const [],
-    List<StrategyData> allStrategies = const [],
-  }) {
-    final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
-    final filter = ref.watch(strategyFilterProvider);
-    final filtered = [...folders];
-    if (search.isNotEmpty) {
-      filtered.retainWhere(
-        (folder) => folder.name.toLowerCase().contains(search),
-      );
-    }
-    final direction = filter.sortOrder == SortOrder.ascending ? 1 : -1;
-    filtered.sort(
-      (a, b) =>
-          direction *
-          (allFolders.isEmpty
-              ? a.dateCreated.compareTo(b.dateCreated)
-              : compareFoldersForSort(
-                  a: a,
-                  b: b,
-                  sortBy: filter.sortBy,
-                  allFolders: allFolders,
-                  allStrategies: allStrategies,
-                )),
-    );
-    final pinned = ref.watch(pinnedItemsProvider);
-    return search.isEmpty && pinned.isNotEmpty
-        ? sortPinnedItemsFirst(filtered, pinned, (item) => item.id)
-        : filtered;
-  }
-
-  List<StrategyData> _filterLocalStrategies(
-    WidgetRef ref,
-    List<StrategyData> strategies,
+    List<LibraryFolderRow> folders,
   ) {
     final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
     final filter = ref.watch(strategyFilterProvider);
-    final filtered = [...strategies];
-    if (search.isNotEmpty) {
-      filtered.retainWhere(
-        (strategy) => strategy.name.toLowerCase().contains(search),
-      );
-    }
-
-    Comparator<StrategyData> comparator = switch (filter.sortBy) {
-      SortBy.alphabetical => (a, b) =>
-          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-      SortBy.dateCreated => (a, b) => a.createdAt.compareTo(b.createdAt),
-      SortBy.dateUpdated => (a, b) => a.lastEdited.compareTo(b.lastEdited),
-    };
-
-    final direction = filter.sortOrder == SortOrder.ascending ? 1 : -1;
-    filtered.sort((a, b) => direction * comparator(a, b));
+    final filtered = search.isEmpty
+        ? folders
+        : folders
+            .where((row) => row.folder.name.toLowerCase().contains(search))
+            .toList();
+    final sorted = sortLibraryFolders(filtered, filter);
     final pinned = ref.watch(pinnedItemsProvider);
     return search.isEmpty && pinned.isNotEmpty
-        ? sortPinnedItemsFirst(filtered, pinned, (item) => item.id)
-        : filtered;
+        ? sortPinnedItemsFirst(sorted, pinned, (row) => row.id)
+        : sorted;
   }
 
-  List<CloudStrategyEntry> _filterCloudStrategies(
+  List<LibraryStrategyRow> _filterStrategies(
     WidgetRef ref,
-    List<CloudStrategyEntry> strategies,
+    List<LibraryStrategyRow> strategies,
   ) {
     final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
     final filter = ref.watch(strategyFilterProvider);
-    final filtered = [...strategies];
-    if (search.isNotEmpty) {
-      filtered.retainWhere(
-        (entry) => entry.strategy.name.toLowerCase().contains(search),
-      );
-    }
-
-    Comparator<CloudStrategyEntry> comparator = switch (filter.sortBy) {
-      SortBy.alphabetical => (a, b) => a.strategy.name
-          .toLowerCase()
-          .compareTo(b.strategy.name.toLowerCase()),
-      SortBy.dateCreated => (a, b) =>
-          a.strategy.createdAt.compareTo(b.strategy.createdAt),
-      SortBy.dateUpdated => (a, b) =>
-          a.strategy.lastEdited.compareTo(b.strategy.lastEdited),
-    };
-
-    final direction = filter.sortOrder == SortOrder.ascending ? 1 : -1;
-    filtered.sort((a, b) => direction * comparator(a, b));
-    return filtered;
+    final filtered = search.isEmpty
+        ? strategies
+        : strategies
+            .where((row) => row.name.toLowerCase().contains(search))
+            .toList();
+    final sorted = sortLibraryStrategies(filtered, filter);
+    final pinned = ref.watch(pinnedItemsProvider);
+    return search.isEmpty && pinned.isNotEmpty
+        ? sortPinnedItemsFirst(sorted, pinned, (row) => row.id)
+        : sorted;
   }
 
   Widget _buildScaffold(
     BuildContext context,
     WidgetRef ref, {
-    required List<Folder> folders,
-    required List<StrategyData> localStrategies,
-    required List<CloudStrategyEntry> cloudStrategies,
-    List<Folder> allLocalFolders = const [],
-    List<StrategyData> allLocalStrategies = const [],
-    required bool isCloud,
+    required List<LibraryFolderRow> folders,
+    required List<LibraryStrategyRow> strategies,
+    required bool acceptsIcaDrops,
+    Widget? banner,
     Key? emptyStateKey,
     IconData? emptyStateIcon,
     required String emptyStateTitle,
     required String emptyStateSubtitle,
     Widget? emptyStateAction,
   }) {
-    final hasStrategies =
-        localStrategies.isNotEmpty || cloudStrategies.isNotEmpty;
+    final hasStrategies = strategies.isNotEmpty;
     final Widget emptyState = Center(
       key: emptyStateKey,
       child: ConstrainedBox(
@@ -435,7 +503,7 @@ class FolderContent extends ConsumerWidget {
     final Widget content = LayoutBuilder(
       builder: (context, constraints) {
         const double minTileWidth = 250;
-        final spacing = isCloud ? 20.0 : strategyTileGridSpacing;
+        const double spacing = strategyTileGridSpacing;
         const double padding = 32;
         final crossAxisCount = math.max(
           1,
@@ -449,71 +517,40 @@ class FolderContent extends ConsumerWidget {
             if (folders.isNotEmpty)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    isCloud ? 16 : 16 - folderCardGutterOutset,
-                    16,
-                    isCloud ? 16 : 16 - folderCardGutterOutset,
-                    8,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Wrap(
-                    spacing: isCloud ? 10 : 0,
-                    runSpacing: isCloud ? 10 : 14,
-                    children: folders
-                        .map(
-                          (folder) => isCloud
-                              ? FolderPill(folder: folder)
-                              : FolderCard(
-                                  key: ValueKey(folder.id),
-                                  data: FolderCardViewData(
-                                    folder: folder,
-                                    strategies: strategiesInFolderTree(
-                                      folder: folder,
-                                      allFolders: allLocalFolders,
-                                      allStrategies: allLocalStrategies,
-                                    ),
-                                    folderCount: allLocalFolders
-                                        .where(
-                                          (item) => item.parentID == folder.id,
-                                        )
-                                        .length,
-                                  ),
-                                ),
-                        )
-                        .toList(),
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final row in folders)
+                        FolderPill(
+                          key: ValueKey(row.id),
+                          folder: row.folder,
+                          store: row.store,
+                        ),
+                    ],
                   ),
                 ),
               ),
             if (hasStrategies)
               SliverPadding(
-                padding: EdgeInsets.all(
-                  isCloud ? 16 : 16 - strategyTileGutterOutset,
-                ),
+                padding: const EdgeInsets.all(16 - strategyTileGutterOutset),
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: crossAxisCount,
-                    mainAxisExtent:
-                        isCloud ? 250 : strategyTileGridMainAxisExtent,
-                    crossAxisSpacing: isCloud ? 20 : 0,
-                    mainAxisSpacing: isCloud ? 20 : 0,
+                    mainAxisExtent: strategyTileGridMainAxisExtent,
                   ),
                   delegate: SliverChildListDelegate.fixed(
                     [
-                      ...localStrategies.map(
-                        (strategy) => StrategyTile.local(
-                          strategyData: strategy,
-                        ),
-                      ),
-                      ...cloudStrategies.map((strategy) {
-                        final caps =
-                            StrategyCapabilities.fromCloudRole(strategy.role);
-                        return StrategyTile.cloud(
-                          cloudStrategy: strategy,
-                          canRename: caps.canRenameStrategy,
-                          canDuplicate: caps.canDuplicateStrategy,
-                          canDelete: caps.canDeleteStrategy,
-                          canMove: caps.canMoveStrategy,
-                        );
-                      }),
+                      for (final row in strategies)
+                        if (row.local case final local?)
+                          StrategyTile.local(
+                            key: ValueKey(row.id),
+                            strategyData: local,
+                            showDeviceBadge: row.showDeviceBadge,
+                          )
+                        else
+                          _cloudTile(row.cloud!),
                     ],
                   ),
                 ),
@@ -537,11 +574,10 @@ class FolderContent extends ConsumerWidget {
         );
       },
     );
-    final wrappedContent = isCloud
-        ? content
-        : IcaDropTarget(
-            child: DropInsertionIndicatorScope(child: content),
-          );
+    final wrappedContent = acceptsIcaDrops
+        ? IcaDropTarget(child: DropInsertionIndicatorScope(child: content))
+        : DropInsertionIndicatorScope(child: content);
+    final currentFolder = folder;
 
     return Listener(
       behavior: HitTestBehavior.translucent,
@@ -557,47 +593,12 @@ class FolderContent extends ConsumerWidget {
           Positioned.fill(
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0, left: 16, right: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        spacing: 8,
-                        children: [
-                          _SortSelect<SortBy>(
-                            currentValue:
-                                ref.watch(strategyFilterProvider).sortBy,
-                            labels: StrategyFilterProvider.sortByLabels,
-                            values: SortBy.values,
-                            onChanged: (value) => ref
-                                .read(strategyFilterProvider.notifier)
-                                .setSortBy(value),
-                          ),
-                          _SortSelect<SortOrder>(
-                            currentValue:
-                                ref.watch(strategyFilterProvider).sortOrder,
-                            labels: StrategyFilterProvider.sortOrderLabels,
-                            values: SortOrder.values,
-                            onChanged: (value) => ref
-                                .read(strategyFilterProvider.notifier)
-                                .setSortOrder(value),
-                          ),
-                        ],
-                      ),
-                      SizedBox(
-                        height: 40,
-                        child: SearchTextField(
-                          controller: searchController,
-                          collapsedWidth: 40,
-                          expandedWidth: 250,
-                          compact: true,
-                          onChanged: (value) {},
-                        ),
-                      ),
-                    ],
+                if (currentFolder != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 16, 0),
+                    child: LibraryBreadcrumb(folder: currentFolder),
                   ),
-                ),
+                if (banner != null) banner,
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 200),
@@ -606,9 +607,9 @@ class FolderContent extends ConsumerWidget {
                     child: (folders.isEmpty && !hasStrategies)
                         ? KeyedSubtree(
                             key: const ValueKey('library-empty'),
-                            child: isCloud
-                                ? emptyState
-                                : IcaDropTarget(child: emptyState),
+                            child: acceptsIcaDrops
+                                ? IcaDropTarget(child: emptyState)
+                                : emptyState,
                           )
                         : KeyedSubtree(
                             key: const ValueKey('library-content'),
@@ -624,13 +625,25 @@ class FolderContent extends ConsumerWidget {
     );
   }
 
+  Widget _cloudTile(CloudStrategyEntry entry) {
+    final caps = StrategyCapabilities.fromCloudRole(entry.role);
+    return StrategyTile.cloud(
+      key: ValueKey(entry.strategy.id),
+      cloudStrategy: entry,
+      canRename: caps.canRenameStrategy,
+      canDuplicate: caps.canDuplicateStrategy,
+      canDelete: caps.canDeleteStrategy,
+      canMove: caps.canMoveStrategy,
+    );
+  }
+
   Widget _buildCloudUnavailableState(BuildContext context, WidgetRef ref) {
     return _LibraryMessageState(
       icon: Icons.cloud_off_outlined,
       iconColor: Settings.tacticalVioletTheme.mutedForeground,
-      title: 'Cloud workspace unavailable',
-      subtitle: 'Sign in again to reach your online strategies, or switch '
-          'back to Local to keep working.',
+      title: 'Cloud unavailable',
+      subtitle: 'Sign in again to reach your online strategies, or go back '
+          'to your library to keep working.',
       actions: [
         ShadButton(
           onPressed: () {
@@ -642,12 +655,8 @@ class FolderContent extends ConsumerWidget {
           child: const Text('Log In'),
         ),
         ShadButton.secondary(
-          onPressed: () {
-            ref
-                .read(libraryWorkspaceProvider.notifier)
-                .select(LibraryWorkspace.local);
-          },
-          child: const Text('Back to Local'),
+          onPressed: ref.read(libraryNavigationProvider).showLibrary,
+          child: const Text('Back to My Library'),
         ),
       ],
     );
@@ -662,19 +671,12 @@ class FolderContent extends ConsumerWidget {
       actions: [
         ShadButton(
           leading: const Icon(LucideIcons.refreshCw, size: 14),
-          onPressed: () {
-            ref.invalidate(cloudFoldersProvider);
-            ref.invalidate(cloudStrategiesProvider);
-          },
+          onPressed: () => _retryCloud(ref),
           child: const Text('Retry'),
         ),
         ShadButton.secondary(
-          onPressed: () {
-            ref
-                .read(libraryWorkspaceProvider.notifier)
-                .select(LibraryWorkspace.local);
-          },
-          child: const Text('Back to Local'),
+          onPressed: ref.read(libraryNavigationProvider).showLibrary,
+          child: const Text('Back to My Library'),
         ),
       ],
     );
@@ -689,14 +691,56 @@ class FolderContent extends ConsumerWidget {
           'This space is reserved for public lineups, team executes, and discoverable strategy packs.',
       actions: [
         ShadButton.secondary(
-          onPressed: () {
-            ref
-                .read(libraryWorkspaceProvider.notifier)
-                .select(LibraryWorkspace.local);
-          },
-          child: const Text('Back to Local'),
+          onPressed: ref.read(libraryNavigationProvider).showLibrary,
+          child: const Text('Back to My Library'),
         ),
       ],
+    );
+  }
+}
+
+/// Shown above the My Library root when the cloud half failed to load. The
+/// local half stays usable underneath.
+class _CloudErrorBanner extends StatelessWidget {
+  const _CloudErrorBanner({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        key: const ValueKey('cloud-error-banner'),
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+        decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Settings.tacticalVioletTheme.border),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.cloud_off_outlined,
+              size: 16,
+              color: Settings.tacticalVioletTheme.destructive,
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                "Couldn't load your cloud library. Showing what's on this "
+                'computer.',
+              ),
+            ),
+            ShadButton.ghost(
+              height: 28,
+              leading: const Icon(LucideIcons.refreshCw, size: 14),
+              onPressed: onRetry,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -890,44 +934,6 @@ class _LibraryLoadingSkeletonState extends State<_LibraryLoadingSkeleton>
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SortSelect<T> extends StatelessWidget {
-  const _SortSelect({
-    required this.currentValue,
-    required this.labels,
-    required this.values,
-    required this.onChanged,
-  });
-
-  final T currentValue;
-  final Map<T, String> labels;
-  final Iterable<T> values;
-  final ValueChanged<T> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ShadSelect<T>(
-      decoration: ShadDecoration(
-        color: Settings.tacticalVioletTheme.card,
-        shadows: const [Settings.cardForegroundBackdrop],
-      ),
-      initialValue: currentValue,
-      selectedOptionBuilder: (context, value) => Text(labels[value]!),
-      options: [
-        for (final value in values)
-          ShadOption(
-            value: value,
-            child: Text(labels[value]!),
-          ),
-      ],
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
-        }
-      },
     );
   }
 }
