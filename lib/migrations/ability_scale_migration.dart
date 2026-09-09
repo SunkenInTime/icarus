@@ -6,6 +6,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/migrations/map_scale_history.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 class AbilityScaleMigration {
@@ -71,7 +72,7 @@ class AbilityScaleMigration {
     if (data == null) return ability;
 
     final oldMapScale = _oldMapScale[map] ?? 1.0;
-    final newMapScale = Maps.mapScale[map] ?? 1.0;
+    final newMapScale = mapScaleBeforeVersion98(map);
 
     final oldAnchor = _oldAnchor(
       data: data,

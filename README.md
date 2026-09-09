@@ -40,6 +40,31 @@ flutter pub get
 flutter run
 ```
 
+### Isolated Hive store
+
+Desktop builds accept an absolute `--hive-store-dir` path. It moves every
+Hive box, including the library, preferences, and anonymous analytics, without
+touching the normal Hive files.
+
+Pass the option through Flutter with one Dart entrypoint argument:
+
+```bash
+fvm flutter run -d macos -a "--hive-store-dir=/Users/your-name/Library/Containers/xyz.icarus-strats/Data/Library/Application Support/xyz.icarus-strats-demo"
+```
+
+The macOS app sandbox limits this path to Icarus's container unless the user
+selects another directory through a native picker. The container lives at
+`~/Library/Containers/xyz.icarus-strats/Data`.
+
+Or pass it directly to a built executable:
+
+```bash
+./icarus --hive-store-dir "/absolute/path/to/icarus-demo-hive"
+```
+
+Strategy media, debug logs, and WebView data still use the normal application
+support directory. Use a different absolute Hive directory for each instance.
+
 ## Build
 
 ```bash

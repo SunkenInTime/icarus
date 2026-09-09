@@ -9,6 +9,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/placed_media_geometry.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/map_scale_history.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 abstract final class CanonicalCoordinatesMigration {
@@ -19,7 +20,7 @@ abstract final class CanonicalCoordinatesMigration {
     required List<StrategyPage> pages,
     required MapValue map,
   }) {
-    final mapScale = Maps.mapScale[map] ?? 1;
+    final mapScale = mapScaleBeforeVersion98(map);
     return [
       for (final page in pages)
         page.isAttack ? page : _migrateDefensePage(page, mapScale),
