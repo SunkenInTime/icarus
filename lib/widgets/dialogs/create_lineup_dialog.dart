@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -15,67 +16,84 @@ import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
+/// Media for a lineup. Without [linkId] it commits the current placement or,
+/// with [variantLandingId], adds another way into that landing spot from one
+/// of its origins ([variantOriginId] preselects one). With [linkId] it edits
+/// that lineup.
 class CreateLineupDialog extends ConsumerStatefulWidget {
   const CreateLineupDialog({
     super.key,
-    this.lineUpGroupId,
-    this.lineUpItemId,
-  });
+    this.linkId,
+    this.variantOriginId,
+    this.variantLandingId,
+  }) : assert(variantOriginId == null || variantLandingId != null);
 
-  final String? lineUpGroupId;
-  final String? lineUpItemId;
+  final String? linkId;
+  final String? variantOriginId;
+  final String? variantLandingId;
 
   @override
   ConsumerState<CreateLineupDialog> createState() => _CreateLineupDialogState();
 }
 
 class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
+  final TextEditingController _nameController = TextEditingController();
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
 
-  bool get _isEditing =>
-      widget.lineUpGroupId != null && widget.lineUpItemId != null;
+  String? _variantOriginId;
+
+  bool get _isEditing => widget.linkId != null;
+
+  bool get _isVariant => widget.variantLandingId != null;
+
+  List<String> get _variantOriginIds {
+    final links =
+        ref.read(lineUpProvider).linksToLanding(widget.variantLandingId!);
+    return <String>{for (final link in links) link.originId}.toList();
+  }
 
   @override
   void initState() {
     super.initState();
+    if (_isVariant) {
+      final originIds = _variantOriginIds;
+      _variantOriginId = widget.variantOriginId ??
+          (originIds.length == 1 ? originIds.single : null);
+    }
     if (_isEditing) {
-      final item = ref.read(lineUpProvider.notifier).getItemById(
-            groupId: widget.lineUpGroupId!,
-            itemId: widget.lineUpItemId!,
-          );
-      if (item != null) {
-        _youtubeLinkController.text = item.youtubeLink;
-        _notesController.text = item.notes;
-        _imagePaths.addAll(item.images);
+      final link = ref.read(lineUpProvider.notifier).linkById(widget.linkId!);
+      if (link != null) {
+        _nameController.text = link.name;
+        _youtubeLinkController.text = link.youtubeLink;
+        _notesController.text = link.notes;
+        _imagePaths.addAll(link.images);
       }
     }
   }
 
   @override
   void dispose() {
+    _nameController.dispose();
     _youtubeLinkController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    final lineUpState = ref.read(lineUpProvider);
     final notifier = ref.read(lineUpProvider.notifier);
+    final name = _nameController.text.trim();
 
     if (_isEditing) {
-      final existingItem = notifier.getItemById(
-        groupId: widget.lineUpGroupId!,
-        itemId: widget.lineUpItemId!,
-      );
-      if (existingItem != null) {
+      final existing = notifier.linkById(widget.linkId!);
+      if (existing != null) {
         ref.read(actionProvider.notifier).performTransaction(
           groups: const [ActionGroup.lineUp],
           mutation: () {
-            notifier.updateItem(
-              groupId: widget.lineUpGroupId!,
-              item: existingItem.copyWith(
+            notifier.updateLink(
+              existing.copyWith(
+                name: name,
                 youtubeLink: _youtubeLinkController.text,
                 notes: _notesController.text,
                 images: _imagePaths,
@@ -85,52 +103,29 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         );
       }
     } else {
-      final currentAbility = lineUpState.currentAbility;
-      if (currentAbility == null) {
+      if (_isVariant && _variantOriginId == null) {
+        Settings.showToast(
+          message: 'Pick which origin this lineup is thrown from',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
         return;
       }
-
-      final item = LineUpItem(
-        id: const Uuid().v4(),
-        ability: currentAbility,
-        youtubeLink: _youtubeLinkController.text,
-        images: _imagePaths,
-        notes: _notesController.text,
-      );
-
-      if (lineUpState.currentGroupId != null) {
-        ref.read(actionProvider.notifier).performTransaction(
-          groups: const [ActionGroup.lineUp],
-          mutation: () {
-            notifier.addItemToGroup(
-              groupId: lineUpState.currentGroupId!,
-              item: item.copyWith(
-                ability: item.ability.copyWith(
-                  lineUpID: lineUpState.currentGroupId,
-                ),
-              ),
+      final link = _isVariant
+          ? notifier.addVariant(
+              _variantOriginId!,
+              widget.variantLandingId!,
+              name: name,
+              youtubeLink: _youtubeLinkController.text,
+              notes: _notesController.text,
+              images: _imagePaths,
+            )
+          : notifier.commitPlacement(
+              name: name,
+              youtubeLink: _youtubeLinkController.text,
+              notes: _notesController.text,
+              images: _imagePaths,
             );
-          },
-        );
-      } else {
-        final currentAgent = lineUpState.currentAgent;
-        if (currentAgent == null) {
-          return;
-        }
-
-        final groupId = const Uuid().v4();
-        notifier.addGroup(
-          LineUpGroup(
-            id: groupId,
-            agent: currentAgent.copyWith(lineUpID: groupId),
-            items: [
-              item.copyWith(
-                ability: item.ability.copyWith(lineUpID: groupId),
-              ),
-            ],
-          ),
-        );
-      }
+      if (link == null) return;
 
       unawaited(
         AnalyticsService.instance.capture(
@@ -139,6 +134,10 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             'has_video': _youtubeLinkController.text.trim().isNotEmpty,
             'has_notes': _notesController.text.trim().isNotEmpty,
             'has_images': _imagePaths.isNotEmpty,
+            'has_name': name.isNotEmpty,
+            'shares_origin': notifier.linksFromOrigin(link.originId).length > 1,
+            'shares_landing':
+                notifier.linksToLanding(link.landingId).length > 1,
           },
         ),
       );
@@ -152,6 +151,41 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     }
   }
 
+  Widget _originSelect() {
+    final state = ref.watch(lineUpProvider);
+    final originIds = _variantOriginIds;
+    if (originIds.length < 2) return const SizedBox.shrink();
+
+    String label(String originId) {
+      final origin = state.originById(originId);
+      final agentName = AgentData.agents[origin?.agent.type]?.name ?? 'Origin';
+      final index = state.origins.indexWhere((entry) => entry.id == originId);
+      return '$agentName ${index + 1}';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          const Text('From', style: TextStyle(color: Colors.white)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ShadSelect<String>(
+              initialValue: _variantOriginId,
+              placeholder: const Text('Pick an origin'),
+              selectedOptionBuilder: (context, value) => Text(label(value)),
+              options: [
+                for (final originId in originIds)
+                  ShadOption(value: originId, child: Text(label(originId))),
+              ],
+              onChanged: (value) => setState(() => _variantOriginId = value),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -163,7 +197,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         }
       },
       child: ShadDialog(
-        title: Text(_isEditing ? "Edit Line Up" : "Create Line Up"),
+        title: Text(_isEditing ? "Edit Lineup" : "Create Lineup"),
         actions: [
           ShadButton(
             onPressed: _save,
@@ -172,8 +206,10 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         ],
         child: SizedBox(
           width: 600,
-          height: 504,
+          height: 576,
           child: LineupMediaPage(
+            header: _isVariant ? _originSelect() : null,
+            nameController: _nameController,
             notesController: _notesController,
             youtubeLinkController: _youtubeLinkController,
             images: _imagePaths,

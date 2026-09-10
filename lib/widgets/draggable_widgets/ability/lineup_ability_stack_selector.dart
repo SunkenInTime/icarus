@@ -147,7 +147,7 @@ class _LineUpAbilityStackSelectorDialogState
                   for (final (index, candidate) in widget.candidates.indexed)
                     _LineUpStackSelectorOption(
                       key: ValueKey(
-                        'lineup-stack-option-${candidate.groupId}-${candidate.itemId}',
+                        'lineup-stack-option-${candidate.landingId}',
                       ),
                       index: index,
                       candidate: candidate,
@@ -158,9 +158,8 @@ class _LineUpAbilityStackSelectorDialogState
                       onHoverLineUpEnter: () {
                         ref
                             .read(hoveredLineUpTargetProvider.notifier)
-                            .setHoveredItem(
-                              groupId: candidate.groupId,
-                              itemId: candidate.itemId,
+                            .setHoveredLanding(
+                              landingId: candidate.landingId,
                               ownerToken: _hoverOwnerToken,
                             );
                       },

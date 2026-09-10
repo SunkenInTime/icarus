@@ -16,8 +16,12 @@ class LineupMediaPage extends ConsumerStatefulWidget {
   final VoidCallback onPasteImage;
   final Function(int index) onRemoveImage;
   final TextEditingController notesController;
+  final TextEditingController? nameController;
+  final Widget? header;
   const LineupMediaPage({
     super.key,
+    this.header,
+    this.nameController,
     required this.youtubeLinkController,
     required this.images,
     required this.onAddImage,
@@ -55,6 +59,16 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.header != null) widget.header!,
+        if (widget.nameController != null) ...[
+          const Text("Name", style: TextStyle(color: Colors.white)),
+          const SizedBox(height: 8),
+          CustomTextField(
+            controller: widget.nameController!,
+            hintText: "Optional, for telling this apart from other lineups here",
+          ),
+          const SizedBox(height: 24),
+        ],
         const Text("Youtube link", style: TextStyle(color: Colors.white)),
         const SizedBox(height: 8),
         CustomTextField(

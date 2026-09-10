@@ -119,7 +119,7 @@ class AgentWidget extends ConsumerWidget {
         ? ref.watch(hoveredLineUpTargetProvider)
         : null;
     final isLineUpHovered =
-        lineUpId != null && (hoverTarget?.matchesAgent(lineUpId!) ?? false);
+        lineUpId != null && (hoverTarget?.matchesOrigin(lineUpId!) ?? false);
 
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
 
@@ -242,18 +242,18 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
-          child: const Text('Add Lineup Item'),
+          child: const Text('Add lineup from here'),
           onPressed: () {
-            final group =
-                ref.read(lineUpProvider.notifier).getGroupById(lineUpId!);
-            if (group == null) return;
+            final origin =
+                ref.read(lineUpProvider.notifier).originById(lineUpId!);
+            if (origin == null) return;
             ref
                 .read(abilityBarProvider.notifier)
-                .updateData(AgentData.agents[group.agent.type]!);
+                .updateData(AgentData.agents[origin.agent.type]!);
+            ref.read(lineUpProvider.notifier).startFromOrigin(lineUpId!);
             ref
                 .read(interactionStateProvider.notifier)
                 .update(InteractionState.lineUpPlacing);
-            ref.read(lineUpProvider.notifier).startNewItemForGroup(lineUpId!);
           },
         ),
       if (canInteract && lineUpId != null)
@@ -262,9 +262,9 @@ class AgentWidget extends ConsumerWidget {
             Icons.delete,
             color: Settings.tacticalVioletTheme.destructive,
           ),
-          child: const Text('Delete Lineup Group'),
+          child: const Text('Delete origin and its lineups'),
           onPressed: () {
-            ref.read(lineUpProvider.notifier).deleteGroupById(lineUpId!);
+            ref.read(lineUpProvider.notifier).deleteOrigin(lineUpId!);
           },
         ),
       if (canInteract && viewConeAgent != null)
@@ -290,10 +290,13 @@ class AgentWidget extends ConsumerWidget {
           leading: const Icon(LucideIcons.plus),
           child: const Text('Create Lineup'),
           onPressed: () {
+            ref.read(abilityBarProvider.notifier).updateData(agent);
+            final lineUps = ref.read(lineUpProvider.notifier);
+            lineUps.startFresh();
+            lineUps.setDraftAgent(plainAgent);
             ref
                 .read(interactionStateProvider.notifier)
                 .update(InteractionState.lineUpPlacing);
-            ref.read(lineUpProvider.notifier).startNewGroup(plainAgent);
           },
         ),
       ...adjacentPageCopyItems,
@@ -336,7 +339,7 @@ class AgentWidget extends ConsumerWidget {
     }
 
     return MouseWatch(
-      lineUpId: lineUpId,
+      lineUpOriginId: lineUpId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       contextMenuItems: contextMenuItems.isEmpty ? null : contextMenuItems,

@@ -19,6 +19,9 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(LineUpAdapter());
     registerAdapter(LineUpGroupAdapter());
     registerAdapter(LineUpItemAdapter());
+    registerAdapter(LineUpLandingAdapter());
+    registerAdapter(LineUpLinkAdapter());
+    registerAdapter(LineUpOriginAdapter());
     registerAdapter(MapThemePaletteAdapter());
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
@@ -53,6 +56,9 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(LineUpAdapter());
     registerAdapter(LineUpGroupAdapter());
     registerAdapter(LineUpItemAdapter());
+    registerAdapter(LineUpLandingAdapter());
+    registerAdapter(LineUpLinkAdapter());
+    registerAdapter(LineUpOriginAdapter());
     registerAdapter(MapThemePaletteAdapter());
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());

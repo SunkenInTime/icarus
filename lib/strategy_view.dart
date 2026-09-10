@@ -22,8 +22,6 @@ import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
-import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -172,15 +170,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(lineUpProvider, (previous, next) {
-      if (previous?.isSelectingPosition == true &&
-          next.isSelectingPosition == false) {
-        showDialog(
-          context: context,
-          builder: (context) => const CreateLineupDialog(),
-        );
-      }
-    });
     final strategyState = ref.watch(strategyProvider);
     final initialStrategyId = widget.initialStrategyId;
     final showSkeleton = _isInitialLoadPending ||

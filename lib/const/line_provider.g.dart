@@ -72,3 +72,50 @@ Map<String, dynamic> _$SimpleImageDataToJson(SimpleImageData instance) =>
       'id': instance.id,
       'fileExtension': instance.fileExtension,
     };
+
+LineUpOrigin _$LineUpOriginFromJson(Map<String, dynamic> json) => LineUpOrigin(
+      id: json['id'] as String,
+      agent: PlacedAgent.fromJson(json['agent'] as Map<String, dynamic>),
+    );
+
+Map<String, dynamic> _$LineUpOriginToJson(LineUpOrigin instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'agent': instance.agent,
+    };
+
+LineUpLanding _$LineUpLandingFromJson(Map<String, dynamic> json) =>
+    LineUpLanding(
+      id: json['id'] as String,
+      ability: PlacedAbility.fromJson(json['ability'] as Map<String, dynamic>),
+    );
+
+Map<String, dynamic> _$LineUpLandingToJson(LineUpLanding instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'ability': instance.ability,
+    };
+
+LineUpLink _$LineUpLinkFromJson(Map<String, dynamic> json) => LineUpLink(
+      id: json['id'] as String,
+      originId: json['originId'] as String,
+      landingId: json['landingId'] as String,
+      name: json['name'] as String? ?? '',
+      youtubeLink: json['youtubeLink'] as String? ?? '',
+      notes: json['notes'] as String? ?? '',
+      images: (json['images'] as List<dynamic>?)
+              ?.map((e) => SimpleImageData.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+    );
+
+Map<String, dynamic> _$LineUpLinkToJson(LineUpLink instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'originId': instance.originId,
+      'landingId': instance.landingId,
+      'name': instance.name,
+      'youtubeLink': instance.youtubeLink,
+      'notes': instance.notes,
+      'images': instance.images,
+    };

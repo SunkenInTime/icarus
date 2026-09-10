@@ -1,4 +1,3 @@
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
@@ -12,20 +11,9 @@ class AbilityVisionConeMigration {
           abilityData: [
             for (final ability in page.abilityData) _migrateAbility(ability),
           ],
-          lineUpGroups: [
-            for (final group in page.lineUpGroups) _migrateLineUpGroup(group),
-          ],
+          lineUpGraph: page.lineUpGraph.mapNodes(ability: _migrateAbility),
         ),
     ];
-  }
-
-  static LineUpGroup _migrateLineUpGroup(LineUpGroup group) {
-    return group.copyWith(
-      items: [
-        for (final item in group.items)
-          item.copyWith(ability: _migrateAbility(item.ability)),
-      ],
-    );
   }
 
   static PlacedAbility _migrateAbility(PlacedAbility ability) {

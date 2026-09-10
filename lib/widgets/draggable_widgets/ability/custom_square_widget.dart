@@ -16,8 +16,7 @@ class CustomSquareWidget extends ConsumerWidget {
     required this.height,
     required this.distanceBetweenAOE,
     this.rotation,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
     required this.iconPath,
     required this.id,
     required this.isAlly,
@@ -31,8 +30,7 @@ class CustomSquareWidget extends ConsumerWidget {
     this.contextMenuItems,
   });
 
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
   final String? id;
   final Color color;
   final double width;
@@ -160,8 +158,7 @@ class CustomSquareWidget extends ConsumerWidget {
               angle: -(rotation ?? 0),
               alignment: Alignment.center,
               child: AbilityWidget(
-                lineUpId: lineUpId,
-                lineUpItemId: lineUpItemId,
+                landingId: landingId,
                 iconPath: iconPath,
                 id: id,
                 isAlly: isAlly,

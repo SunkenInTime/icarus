@@ -8,16 +8,15 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:json_annotation/json_annotation.dart';
+import 'package:uuid/uuid.dart';
 
 part "line_provider.g.dart";
 
-enum PlacingType { agent, ability }
-
-enum LineUpPlacementMode { newGroup, addItemToGroup }
+enum LineUpPlacementMode { fresh, fromPinnedOrigin, toPinnedLanding }
 
 const _noChange = Object();
 
-@Deprecated('Use LineUpGroup and LineUpItem instead.')
+@Deprecated('Use LineUpOrigin, LineUpLanding and LineUpLink instead.')
 @JsonSerializable()
 class LineUp extends HiveObject {
   final String id;
@@ -70,6 +69,7 @@ class LineUp extends HiveObject {
   Map<String, dynamic> toJson() => _$LineUpToJson(this);
 }
 
+@Deprecated('Use LineUpLanding and LineUpLink instead.')
 @JsonSerializable()
 class LineUpItem extends HiveObject {
   final String id;
@@ -118,6 +118,7 @@ class LineUpItem extends HiveObject {
   Map<String, dynamic> toJson() => _$LineUpItemToJson(this);
 }
 
+@Deprecated('Use LineUpOrigin, LineUpLanding and LineUpLink instead.')
 @JsonSerializable()
 class LineUpGroup extends HiveObject {
   final String id;
@@ -199,252 +200,522 @@ class SimpleImageData extends HiveObject {
   Map<String, dynamic> toJson() => _$SimpleImageDataToJson(this);
 }
 
+
+@JsonSerializable()
+class LineUpOrigin extends HiveObject {
+  final String id;
+  final PlacedAgent agent;
+
+  LineUpOrigin({
+    required this.id,
+    required this.agent,
+  });
+
+  LineUpOrigin copyWith({
+    String? id,
+    PlacedAgent? agent,
+  }) {
+    return LineUpOrigin(
+      id: id ?? this.id,
+      agent: agent ?? this.agent,
+    );
+  }
+
+  LineUpOrigin deepCopy() {
+    return LineUpOrigin(
+      id: id,
+      agent: agent.deepCopy<PlacedAgent>(),
+    );
+  }
+
+  factory LineUpOrigin.fromJson(Map<String, dynamic> json) =>
+      _$LineUpOriginFromJson(json);
+
+  Map<String, dynamic> toJson() => _$LineUpOriginToJson(this);
+}
+
+@JsonSerializable()
+class LineUpLanding extends HiveObject {
+  final String id;
+  final PlacedAbility ability;
+
+  LineUpLanding({
+    required this.id,
+    required this.ability,
+  });
+
+  LineUpLanding copyWith({
+    String? id,
+    PlacedAbility? ability,
+  }) {
+    return LineUpLanding(
+      id: id ?? this.id,
+      ability: ability ?? this.ability,
+    );
+  }
+
+  LineUpLanding deepCopy() {
+    return LineUpLanding(
+      id: id,
+      ability: ability.deepCopy<PlacedAbility>(),
+    );
+  }
+
+  factory LineUpLanding.fromJson(Map<String, dynamic> json) =>
+      _$LineUpLandingFromJson(json);
+
+  Map<String, dynamic> toJson() => _$LineUpLandingToJson(this);
+}
+
+@JsonSerializable()
+class LineUpLink extends HiveObject {
+  final String id;
+  final String originId;
+  final String landingId;
+  final String name;
+  final String youtubeLink;
+  final String notes;
+  final List<SimpleImageData> images;
+
+  LineUpLink({
+    required this.id,
+    required this.originId,
+    required this.landingId,
+    this.name = '',
+    this.youtubeLink = '',
+    this.notes = '',
+    this.images = const [],
+  });
+
+  LineUpLink copyWith({
+    String? id,
+    String? originId,
+    String? landingId,
+    String? name,
+    String? youtubeLink,
+    String? notes,
+    List<SimpleImageData>? images,
+  }) {
+    return LineUpLink(
+      id: id ?? this.id,
+      originId: originId ?? this.originId,
+      landingId: landingId ?? this.landingId,
+      name: name ?? this.name,
+      youtubeLink: youtubeLink ?? this.youtubeLink,
+      notes: notes ?? this.notes,
+      images: images ?? List<SimpleImageData>.from(this.images),
+    );
+  }
+
+  LineUpLink deepCopy() {
+    return LineUpLink(
+      id: id,
+      originId: originId,
+      landingId: landingId,
+      name: name,
+      youtubeLink: youtubeLink,
+      notes: notes,
+      images: images.map((image) => image.copyWith()).toList(),
+    );
+  }
+
+  factory LineUpLink.fromJson(Map<String, dynamic> json) =>
+      _$LineUpLinkFromJson(json);
+
+  Map<String, dynamic> toJson() => _$LineUpLinkToJson(this);
+}
+
+/// The persisted shape of a page's lineups: origins, landing spots and the
+/// links between them. Owns the conversions to and from the legacy
+/// [LineUpGroup] shape so every reader and writer agrees on them.
+class LineUpGraph {
+  final List<LineUpOrigin> origins;
+  final List<LineUpLanding> landings;
+  final List<LineUpLink> links;
+
+  const LineUpGraph({
+    this.origins = const [],
+    this.landings = const [],
+    this.links = const [],
+  });
+
+  static const empty = LineUpGraph();
+
+  bool get isEmpty => links.isEmpty && origins.isEmpty && landings.isEmpty;
+
+  LineUpGraph deepCopy() {
+    return LineUpGraph(
+      origins: origins.map((origin) => origin.deepCopy()).toList(),
+      landings: landings.map((landing) => landing.deepCopy()).toList(),
+      links: links.map((link) => link.deepCopy()).toList(),
+    );
+  }
+
+  /// Applies a transform to every placed agent and ability while keeping
+  /// the links untouched. Used by coordinate and geometry migrations.
+  LineUpGraph mapNodes({
+    PlacedAgent Function(PlacedAgent agent)? agent,
+    PlacedAbility Function(PlacedAbility ability)? ability,
+  }) {
+    return LineUpGraph(
+      origins: [
+        for (final origin in origins)
+          agent == null
+              ? origin
+              : origin.copyWith(agent: agent(origin.agent)),
+      ],
+      landings: [
+        for (final landing in landings)
+          ability == null
+              ? landing
+              : landing.copyWith(ability: ability(landing.ability)),
+      ],
+      links: links,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'lineUpOrigins': origins.map((origin) => origin.toJson()).toList(),
+      'lineUpLandings': landings.map((landing) => landing.toJson()).toList(),
+      'lineUpLinks': links.map((link) => link.toJson()).toList(),
+    };
+  }
+
+  static bool hasJson(Map<String, dynamic> json) {
+    return json['lineUpOrigins'] != null ||
+        json['lineUpLandings'] != null ||
+        json['lineUpLinks'] != null;
+  }
+
+  factory LineUpGraph.fromJson(Map<String, dynamic> json) {
+    List<T> decode<T>(String key, T Function(Map<String, dynamic>) decoder) {
+      final raw = json[key];
+      if (raw is String) {
+        return (jsonDecode(raw) as List<dynamic>)
+            .map((entry) => decoder(entry as Map<String, dynamic>))
+            .toList();
+      }
+      return ((raw as List<dynamic>?) ?? const [])
+          .map((entry) => decoder(entry as Map<String, dynamic>))
+          .toList();
+    }
+
+    return LineUpGraph(
+      origins: decode('lineUpOrigins', LineUpOrigin.fromJson),
+      landings: decode('lineUpLandings', LineUpLanding.fromJson),
+      links: decode('lineUpLinks', LineUpLink.fromJson),
+    );
+  }
+
+  /// One origin per group, one landing and one link per item. Landing and
+  /// link share the item id on purpose: old readers keyed everything by item
+  /// id and this keeps those ids stable. Empty groups are dropped. Landings
+  /// are never merged by position; two stacked abilities stay two landings.
+  static LineUpGraph fromLegacyGroups(List<LineUpGroup> groups) {
+    final origins = <LineUpOrigin>[];
+    final landings = <LineUpLanding>[];
+    final links = <LineUpLink>[];
+    for (final group in groups) {
+      if (group.items.isEmpty) continue;
+      origins.add(
+        LineUpOrigin(
+          id: group.id,
+          agent: group.agent.copyWith(lineUpID: group.id),
+        ),
+      );
+      for (final item in group.items) {
+        landings.add(
+          LineUpLanding(
+            id: item.id,
+            ability: item.ability.copyWith(lineUpID: item.id),
+          ),
+        );
+        links.add(
+          LineUpLink(
+            id: item.id,
+            originId: group.id,
+            landingId: item.id,
+            youtubeLink: item.youtubeLink,
+            notes: item.notes,
+            images: item.images.map((image) => image.copyWith()).toList(),
+          ),
+        );
+      }
+    }
+    return LineUpGraph(origins: origins, landings: landings, links: links);
+  }
+
+  static LineUpGraph fromLegacyLineUps(List<LineUp> lineUps) {
+    return fromLegacyGroups(lineUps.map(LineUpGroup.fromLegacyLineUp).toList());
+  }
+
+  /// Projection for readers that predate the graph: one group per origin,
+  /// each link becomes an item carrying a copy of its landing's ability. A
+  /// shared landing is copied once per origin.
+  List<LineUpGroup> toLegacyGroups() {
+    final landingsById = {for (final landing in landings) landing.id: landing};
+    return [
+      for (final origin in origins)
+        LineUpGroup(
+          id: origin.id,
+          agent: origin.agent.copyWith(lineUpID: origin.id),
+          items: [
+            for (final link in links)
+              if (link.originId == origin.id &&
+                  landingsById.containsKey(link.landingId))
+                LineUpItem(
+                  id: link.id,
+                  ability: landingsById[link.landingId]!
+                      .ability
+                      .copyWith(lineUpID: origin.id),
+                  youtubeLink: link.youtubeLink,
+                  notes: link.notes,
+                  images: link.images.map((image) => image.copyWith()).toList(),
+                ),
+          ],
+        ),
+    ];
+  }
+}
+
+class LineUpPlacement {
+  final LineUpPlacementMode mode;
+  final String? pinnedOriginId;
+  final String? pinnedLandingId;
+  final AgentType? pinnedAgentType;
+  final PlacedAgent? draftAgent;
+  final PlacedAbility? draftAbility;
+
+  const LineUpPlacement({
+    required this.mode,
+    this.pinnedOriginId,
+    this.pinnedLandingId,
+    this.pinnedAgentType,
+    this.draftAgent,
+    this.draftAbility,
+  });
+
+  AgentType? get lockedAgentType => pinnedAgentType ?? draftAgent?.type;
+
+  bool get hasOrigin => pinnedOriginId != null || draftAgent != null;
+
+  bool get hasLanding => pinnedLandingId != null || draftAbility != null;
+
+  bool get isComplete => hasOrigin && hasLanding;
+
+  LineUpPlacement copyWith({
+    Object? draftAgent = _noChange,
+    Object? draftAbility = _noChange,
+  }) {
+    return LineUpPlacement(
+      mode: mode,
+      pinnedOriginId: pinnedOriginId,
+      pinnedLandingId: pinnedLandingId,
+      pinnedAgentType: pinnedAgentType,
+      draftAgent: identical(draftAgent, _noChange)
+          ? this.draftAgent
+          : draftAgent as PlacedAgent?,
+      draftAbility: identical(draftAbility, _noChange)
+          ? this.draftAbility
+          : draftAbility as PlacedAbility?,
+    );
+  }
+}
+
 class LineUpState {
-  final List<LineUpGroup> groups;
-  final PlacedAgent? currentAgent;
-  final String? currentGroupId;
-  final PlacedAbility? currentAbility;
-  final bool isSelectingPosition;
-  final LineUpPlacementMode? placementMode;
-  final AgentType? lockedAgentType;
+  final List<LineUpOrigin> origins;
+  final List<LineUpLanding> landings;
+  final List<LineUpLink> links;
+  final LineUpPlacement? placement;
 
-  LineUpState({
-    this.currentAgent,
-    this.currentGroupId,
-    this.currentAbility,
-    List<LineUpGroup> groups = const [],
-    @Deprecated('Use groups instead') List<LineUp> lineUps = const [],
-    this.isSelectingPosition = false,
-    this.placementMode,
-    this.lockedAgentType,
-  }) : groups = groups.isNotEmpty
-            ? groups
-            : lineUps.map(LineUpGroup.fromLegacyLineUp).toList();
+  const LineUpState({
+    this.origins = const [],
+    this.landings = const [],
+    this.links = const [],
+    this.placement,
+  });
 
-  @Deprecated('Use groups instead.')
-  List<LineUp> get lineUps => [
-        for (final group in groups)
-          for (final item in group.items)
-            LineUp(
-              id: item.id,
-              agent: group.agent.copyWith(lineUpID: group.id),
-              ability: item.ability.copyWith(lineUpID: group.id),
-              youtubeLink: item.youtubeLink,
-              notes: item.notes,
-              images: item.images.map((image) => image.copyWith()).toList(),
-            ),
-      ];
+  LineUpGraph get graph =>
+      LineUpGraph(origins: origins, landings: landings, links: links);
+
+  bool get isEmpty => links.isEmpty;
+
+  LineUpOrigin? originById(String id) {
+    for (final origin in origins) {
+      if (origin.id == id) return origin;
+    }
+    return null;
+  }
+
+  LineUpLanding? landingById(String id) {
+    for (final landing in landings) {
+      if (landing.id == id) return landing;
+    }
+    return null;
+  }
+
+  LineUpLink? linkById(String id) {
+    for (final link in links) {
+      if (link.id == id) return link;
+    }
+    return null;
+  }
+
+  List<LineUpLink> linksFromOrigin(String originId) {
+    return links.where((link) => link.originId == originId).toList();
+  }
+
+  List<LineUpLink> linksToLanding(String landingId) {
+    return links.where((link) => link.landingId == landingId).toList();
+  }
+
+  List<LineUpLink> linksBetween(String originId, String landingId) {
+    return links
+        .where(
+          (link) => link.originId == originId && link.landingId == landingId,
+        )
+        .toList();
+  }
+
+  /// Distinct (originId, landingId) pairs in first-seen order. One line is
+  /// drawn per pair regardless of how many links share it.
+  List<(String, String)> get connectorPairs {
+    final seen = <String>{};
+    final pairs = <(String, String)>[];
+    for (final link in links) {
+      if (seen.add('${link.originId}::${link.landingId}')) {
+        pairs.add((link.originId, link.landingId));
+      }
+    }
+    return pairs;
+  }
 
   LineUpState copyWith({
-    List<LineUpGroup>? groups,
-    Object? currentAgent = _noChange,
-    Object? currentGroupId = _noChange,
-    Object? currentAbility = _noChange,
-    bool? isSelectingPosition,
-    Object? placementMode = _noChange,
-    Object? lockedAgentType = _noChange,
+    List<LineUpOrigin>? origins,
+    List<LineUpLanding>? landings,
+    List<LineUpLink>? links,
+    Object? placement = _noChange,
   }) {
     return LineUpState(
-      groups: groups ?? List<LineUpGroup>.from(this.groups),
-      currentAgent: identical(currentAgent, _noChange)
-          ? this.currentAgent
-          : currentAgent as PlacedAgent?,
-      currentGroupId: identical(currentGroupId, _noChange)
-          ? this.currentGroupId
-          : currentGroupId as String?,
-      currentAbility: identical(currentAbility, _noChange)
-          ? this.currentAbility
-          : currentAbility as PlacedAbility?,
-      isSelectingPosition: isSelectingPosition ?? this.isSelectingPosition,
-      placementMode: identical(placementMode, _noChange)
-          ? this.placementMode
-          : placementMode as LineUpPlacementMode?,
-      lockedAgentType: identical(lockedAgentType, _noChange)
-          ? this.lockedAgentType
-          : lockedAgentType as AgentType?,
+      origins: origins ?? this.origins,
+      landings: landings ?? this.landings,
+      links: links ?? this.links,
+      placement: identical(placement, _noChange)
+          ? this.placement
+          : placement as LineUpPlacement?,
     );
   }
 }
 
 class LineUpProviderSnapshot {
-  final List<LineUpGroup> groups;
-  final List<LineUpGroup> poppedGroups;
+  final LineUpGraph graph;
+  final Map<String, LineUpGraph> popped;
+  final Map<String, List<String>> actionLinkIds;
 
   const LineUpProviderSnapshot({
-    required this.groups,
-    required this.poppedGroups,
+    required this.graph,
+    required this.popped,
+    required this.actionLinkIds,
   });
 }
 
 class LineUpProvider extends Notifier<LineUpState> {
-  final List<LineUpGroup> _poppedGroups = [];
+  static const _uuid = Uuid();
+
+  /// Subgraphs removed by an undoable action, keyed by action id, waiting to
+  /// be restored.
+  final Map<String, LineUpGraph> _popped = {};
+
+  /// Which links each deletion action removes, so redo removes the same set.
+  final Map<String, List<String>> _actionLinkIds = {};
 
   @override
   LineUpState build() {
-    return LineUpState(groups: []);
+    return const LineUpState();
   }
 
-  void addGroup(LineUpGroup group) {
-    final action = UserAction(
-      type: ActionType.addition,
-      id: group.id,
-      group: ActionGroup.lineUp,
+  LineUpOrigin? originById(String id) => state.originById(id);
+  LineUpLanding? landingById(String id) => state.landingById(id);
+  LineUpLink? linkById(String id) => state.linkById(id);
+  List<LineUpLink> linksFromOrigin(String originId) =>
+      state.linksFromOrigin(originId);
+  List<LineUpLink> linksToLanding(String landingId) =>
+      state.linksToLanding(landingId);
+  List<LineUpLink> linksBetween(String originId, String landingId) =>
+      state.linksBetween(originId, landingId);
+
+  // --- Placement -----------------------------------------------------------
+
+  void startFresh() {
+    state = state.copyWith(
+      placement: const LineUpPlacement(mode: LineUpPlacementMode.fresh),
     );
-    ref.read(actionProvider.notifier).addAction(action);
-    state = state.copyWith(groups: [...state.groups, group.deepCopy()]);
   }
 
-  void updateGroup(LineUpGroup group) {
-    final index = getGroupIndexById(group.id);
-    if (index < 0) return;
-    final groups = [...state.groups];
-    groups[index] = group;
-    state = state.copyWith(groups: groups);
+  void startFromOrigin(String originId) {
+    final origin = state.originById(originId);
+    if (origin == null) return;
+    state = state.copyWith(
+      placement: LineUpPlacement(
+        mode: LineUpPlacementMode.fromPinnedOrigin,
+        pinnedOriginId: originId,
+        pinnedAgentType: origin.agent.type,
+      ),
+    );
   }
 
-  void deleteGroupById(String groupId) {
-    final index = getGroupIndexById(groupId);
-    if (index < 0) return;
-
-    ref.read(actionProvider.notifier).addAction(
-          UserAction(
-            type: ActionType.deletion,
-            id: groupId,
-            group: ActionGroup.lineUp,
-          ),
-        );
-
-    final groups = [...state.groups];
-    _poppedGroups.add(groups.removeAt(index));
-    state = state.copyWith(groups: groups);
+  void startToLanding(String landingId) {
+    final landing = state.landingById(landingId);
+    if (landing == null) return;
+    state = state.copyWith(
+      placement: LineUpPlacement(
+        mode: LineUpPlacementMode.toPinnedLanding,
+        pinnedLandingId: landingId,
+        pinnedAgentType: landing.ability.data.type,
+      ),
+    );
   }
 
-  LineUpGroup? getGroupById(String groupId) {
-    final index = getGroupIndexById(groupId);
-    if (index < 0) return null;
-    return state.groups[index];
-  }
-
-  int getGroupIndexById(String groupId) {
-    return state.groups.indexWhere((group) => group.id == groupId);
-  }
-
-  void addItemToGroup({
-    required String groupId,
-    required LineUpItem item,
-  }) {
-    final group = getGroupById(groupId);
-    if (group == null) return;
-    updateGroup(group.copyWith(items: [...group.items, item]));
-  }
-
-  void updateItem({
-    required String groupId,
-    required LineUpItem item,
-  }) {
-    final group = getGroupById(groupId);
-    if (group == null) return;
-    final items = [...group.items];
-    final index = items.indexWhere((entry) => entry.id == item.id);
-    if (index < 0) return;
-    items[index] = item;
-    updateGroup(group.copyWith(items: items));
-  }
-
-  void deleteItem({
-    required String groupId,
-    required String itemId,
-  }) {
-    final group = getGroupById(groupId);
-    if (group == null) return;
-    final items = group.items.where((item) => item.id != itemId).toList();
-    if (items.isEmpty) {
-      deleteGroupById(groupId);
+  void setDraftAgent(PlacedAgent agent) {
+    final placement = state.placement;
+    if (placement == null) return;
+    if (placement.pinnedOriginId != null) {
+      Settings.showToast(
+        message: "The origin is pinned. Drag an ability instead.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
       return;
     }
-    updateGroup(group.copyWith(items: items));
-  }
-
-  LineUpItem? getItemById({
-    required String groupId,
-    required String itemId,
-  }) {
-    final group = getGroupById(groupId);
-    if (group == null) return null;
-    for (final item in group.items) {
-      if (item.id == itemId) {
-        return item;
-      }
+    final pinnedType = placement.pinnedAgentType;
+    if (pinnedType != null && agent.type != pinnedType) {
+      Settings.showToast(
+        message: "Drag ${AgentData.agents[pinnedType]?.name ?? 'the agent'} "
+            "for this landing spot.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
     }
-    return null;
-  }
-
-  @Deprecated('Use getGroupById/getItemById instead.')
-  LineUp? getLineUpById(String id) {
-    for (final group in state.groups) {
-      for (final item in group.items) {
-        if (item.id == id) {
-          return LineUp(
-            id: item.id,
-            agent: group.agent.copyWith(lineUpID: group.id),
-            ability: item.ability.copyWith(lineUpID: group.id),
-            youtubeLink: item.youtubeLink,
-            notes: item.notes,
-            images: item.images.map((image) => image.copyWith()).toList(),
-          );
-        }
-      }
-    }
-    return null;
-  }
-
-  void startNewGroup(PlacedAgent agent) {
+    final keepsAbility = placement.draftAbility?.data.type == agent.type;
     state = state.copyWith(
-      currentAgent: agent,
-      currentGroupId: null,
-      currentAbility: null,
-      placementMode: LineUpPlacementMode.newGroup,
-      lockedAgentType: null,
+      placement: placement.copyWith(
+        draftAgent: agent,
+        draftAbility: keepsAbility ? placement.draftAbility : null,
+      ),
     );
   }
 
-  @Deprecated('Use startNewGroup instead.')
-  void setAgent(PlacedAgent agent) {
-    startNewGroup(agent);
-  }
-
-  void startNewItemForGroup(String groupId) {
-    final group = getGroupById(groupId);
-    if (group == null) return;
-    state = state.copyWith(
-      currentAgent: null,
-      currentGroupId: groupId,
-      currentAbility: null,
-      placementMode: LineUpPlacementMode.addItemToGroup,
-      lockedAgentType: group.agent.type,
-    );
-  }
-
-  AgentType? getActiveAgentType() {
-    return state.currentAgent?.type ?? state.lockedAgentType;
-  }
-
-  PlacedAgent? getCurrentPreviewAgent() {
-    if (state.currentAgent != null) {
-      return state.currentAgent;
+  void setDraftAbility(PlacedAbility ability) {
+    final placement = state.placement;
+    if (placement == null) return;
+    if (placement.pinnedLandingId != null) {
+      Settings.showToast(
+        message: "The landing spot is pinned. Drag an agent instead.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
     }
-
-    final groupId = state.currentGroupId;
-    if (groupId == null) return null;
-    return getGroupById(groupId)?.agent;
-  }
-
-  bool get isLockedAddItemMode =>
-      state.placementMode == LineUpPlacementMode.addItemToGroup &&
-      state.currentGroupId != null;
-
-  void setCurrentAbility(PlacedAbility ability) {
-    final agentType = getActiveAgentType();
+    final agentType = placement.lockedAgentType;
     if (agentType == null) {
       Settings.showToast(
         message: "Please select an agent first.",
@@ -452,7 +723,6 @@ class LineUpProvider extends Notifier<LineUpState> {
       );
       return;
     }
-
     if (ability.data.type != agentType) {
       Settings.showToast(
         message: "Ability does not match the selected agent.",
@@ -460,189 +730,275 @@ class LineUpProvider extends Notifier<LineUpState> {
       );
       return;
     }
+    state = state.copyWith(placement: placement.copyWith(draftAbility: ability));
+  }
 
-    final groupId = state.currentGroupId;
+  void updateDraftAgentPosition(Offset position) {
+    final draft = state.placement?.draftAgent;
+    if (draft == null) return;
+    draft.updatePosition(position);
+    state = state.copyWith(placement: state.placement!.copyWith(draftAgent: draft));
+  }
+
+  void updateDraftAbilityPosition(Offset position) {
+    final draft = state.placement?.draftAbility;
+    if (draft == null) return;
+    draft.updatePosition(position);
     state = state.copyWith(
-      currentAbility:
-          groupId == null ? ability : ability.copyWith(lineUpID: groupId),
+      placement: state.placement!.copyWith(draftAbility: draft),
     );
   }
 
-  @Deprecated('Use setCurrentAbility instead.')
-  void setAbility(PlacedAbility ability) {
-    setCurrentAbility(ability);
-  }
-
-  void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
-    state = state.copyWith(
-      isSelectingPosition: isSelecting,
-    );
-  }
-
-  void clearCurrentPlacing() {
-    state = state.copyWith(
-      currentAgent: null,
-      currentGroupId: null,
-      currentAbility: null,
-      isSelectingPosition: false,
-      placementMode: null,
-      lockedAgentType: null,
-    );
-  }
-
-  void removeCurrentAbility() {
-    state = state.copyWith(currentAbility: null);
-  }
-
-  void updateCurrentAgentPosition(Offset position) {
-    if (state.currentAgent == null) return;
-    final updatedAgent = state.currentAgent!..updatePosition(position);
-    state = state.copyWith(currentAgent: updatedAgent);
-  }
-
-  @Deprecated('Use updateCurrentAgentPosition instead.')
-  void updateAgentPosition(Offset position) {
-    updateCurrentAgentPosition(position);
-  }
-
-  void updateCurrentAbilityPosition(Offset position) {
-    if (state.currentAbility == null) return;
-    final updatedAbility = state.currentAbility!..updatePosition(position);
-    state = state.copyWith(currentAbility: updatedAbility);
-  }
-
-  @Deprecated('Use updateCurrentAbilityPosition instead.')
-  void updateAbilityPosition(Offset position) {
-    updateCurrentAbilityPosition(position);
-  }
-
-  void updateRotation(double rotation, double length) {
-    updateCurrentAbilityGeometry(rotation: rotation, length: length);
-  }
-
-  void updateCurrentAbilityGeometry({
+  void updateDraftAbilityGeometry({
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
   }) {
-    if (state.currentAbility == null) return;
+    final draft = state.placement?.draftAbility;
+    if (draft == null) return;
     state = state.copyWith(
-      currentAbility: state.currentAbility!.copyWith(
-        rotation: rotation,
-        length: length,
-        armLengthsMeters: armLengthsMeters,
+      placement: state.placement!.copyWith(
+        draftAbility: draft.copyWith(
+          rotation: rotation,
+          length: length,
+          armLengthsMeters: armLengthsMeters,
+        ),
       ),
     );
   }
 
-  @Deprecated('Use updateCurrentAbilityGeometry instead.')
-  void updateGeometry({
-    double? rotation,
-    double? length,
-    List<double>? armLengthsMeters,
+  void clearDraftAbility() {
+    final placement = state.placement;
+    if (placement?.draftAbility == null) return;
+    state = state.copyWith(placement: placement!.copyWith(draftAbility: null));
+  }
+
+  void clearPlacement() {
+    if (state.placement == null) return;
+    state = state.copyWith(placement: null);
+  }
+
+  /// Turns the current placement into a link, creating whichever end was a
+  /// draft. Returns the new link, or null when the placement is incomplete.
+  LineUpLink? commitPlacement({
+    String name = '',
+    String youtubeLink = '',
+    String notes = '',
+    List<SimpleImageData> images = const [],
   }) {
-    updateCurrentAbilityGeometry(
-      rotation: rotation,
-      length: length,
-      armLengthsMeters: armLengthsMeters,
-    );
-  }
+    final placement = state.placement;
+    if (placement == null || !placement.isComplete) return null;
 
-  void updateArmLengths(List<double> armLengthsMeters) {
-    updateCurrentAbilityGeometry(armLengthsMeters: armLengthsMeters);
-  }
-
-  void fromHive(covariant List groups) {
-    final normalized = <LineUpGroup>[];
-    for (final entry in groups) {
-      if (entry is LineUpGroup) {
-        normalized.add(entry.deepCopy());
-      } else if (entry is LineUp) {
-        normalized.add(LineUpGroup.fromLegacyLineUp(entry));
-      }
+    final originId = placement.pinnedOriginId ?? _uuid.v4();
+    final landingId = placement.pinnedLandingId ?? _uuid.v4();
+    final origins = [...state.origins];
+    final landings = [...state.landings];
+    if (placement.pinnedOriginId == null) {
+      origins.add(
+        LineUpOrigin(
+          id: originId,
+          agent: placement.draftAgent!.copyWith(lineUpID: originId),
+        ),
+      );
     }
-    state = state.copyWith(groups: normalized);
-  }
-
-  static String objectToJson(List groups) {
-    return jsonEncode(
-      groups.map((group) {
-        if (group is LineUpGroup) {
-          return group.toJson();
-        }
-        if (group is LineUp) {
-          return LineUpGroup.fromLegacyLineUp(group).toJson();
-        }
-        return group;
-      }).toList(),
-    );
-  }
-
-  static List<LineUpGroup> fromJson(String json) {
-    return (jsonDecode(json) as List<dynamic>)
-        .map((entry) => LineUpGroup.fromJson(entry as Map<String, dynamic>))
-        .toList();
-  }
-
-  static List<LineUpGroup> fromLegacyJson(String json) {
-    return (jsonDecode(json) as List<dynamic>)
-        .map((entry) => LineUp.fromJson(entry as Map<String, dynamic>))
-        .map(LineUpGroup.fromLegacyLineUp)
-        .toList();
-  }
-
-  void updateAbilityVisualState(
-      String legacyLineUpId, AbilityVisualState visualState) {
-    for (final group in state.groups) {
-      for (final item in group.items) {
-        if (item.id == legacyLineUpId) {
-          updateItemAbilityVisualState(
-            groupId: group.id,
-            itemId: item.id,
-            visualState: visualState,
-          );
-          return;
-        }
-      }
+    if (placement.pinnedLandingId == null) {
+      landings.add(
+        LineUpLanding(
+          id: landingId,
+          ability: placement.draftAbility!.copyWith(lineUpID: landingId),
+        ),
+      );
     }
+    final link = LineUpLink(
+      id: _uuid.v4(),
+      originId: originId,
+      landingId: landingId,
+      name: name,
+      youtubeLink: youtubeLink,
+      notes: notes,
+      images: images.map((image) => image.copyWith()).toList(),
+    );
+    _recordAddition(link.id);
+    state = state.copyWith(
+      origins: origins,
+      landings: landings,
+      links: [...state.links, link],
+      placement: null,
+    );
+    return link;
   }
 
-  void updateItemAbilityVisualState({
-    required String groupId,
-    required String itemId,
+  /// Another way to land on an existing spot from an existing origin.
+  LineUpLink? addVariant(
+    String originId,
+    String landingId, {
+    String name = '',
+    String youtubeLink = '',
+    String notes = '',
+    List<SimpleImageData> images = const [],
+  }) {
+    if (state.originById(originId) == null ||
+        state.landingById(landingId) == null) {
+      return null;
+    }
+    final link = LineUpLink(
+      id: _uuid.v4(),
+      originId: originId,
+      landingId: landingId,
+      name: name,
+      youtubeLink: youtubeLink,
+      notes: notes,
+      images: images.map((image) => image.copyWith()).toList(),
+    );
+    _recordAddition(link.id);
+    state = state.copyWith(links: [...state.links, link]);
+    return link;
+  }
+
+  // --- Edits (no action recorded; callers wrap in performTransaction) -------
+
+  void updateLink(LineUpLink link) {
+    final index = state.links.indexWhere((entry) => entry.id == link.id);
+    if (index < 0) return;
+    final links = [...state.links];
+    links[index] = link;
+    state = state.copyWith(links: links);
+  }
+
+  void updateLandingAbility(String landingId, PlacedAbility ability) {
+    final index =
+        state.landings.indexWhere((landing) => landing.id == landingId);
+    if (index < 0) return;
+    final landings = [...state.landings];
+    landings[index] = landings[index].copyWith(
+      ability: ability.copyWith(lineUpID: landingId),
+    );
+    state = state.copyWith(landings: landings);
+  }
+
+  void updateLandingAbilityVisualState({
+    required String landingId,
     required AbilityVisualState visualState,
   }) {
-    final item = getItemById(groupId: groupId, itemId: itemId);
-    if (item == null) return;
-    updateItem(
-      groupId: groupId,
-      item: item.copyWith(
-        ability: item.ability.copyWith(visualState: visualState),
-      ),
+    final landing = state.landingById(landingId);
+    if (landing == null) return;
+    updateLandingAbility(
+      landingId,
+      landing.ability.copyWith(visualState: visualState),
     );
   }
 
-  @Deprecated('Use deleteGroupById instead.')
-  void deleteLineUpById(String groupId) {
-    deleteGroupById(groupId);
+  // --- Deletions -----------------------------------------------------------
+
+  void deleteLink(String linkId) {
+    if (state.linkById(linkId) == null) return;
+    _recordDeletion(linkId, [linkId]);
+  }
+
+  void deleteOrigin(String originId) {
+    if (state.originById(originId) == null) return;
+    _recordDeletion(
+      originId,
+      state.linksFromOrigin(originId).map((link) => link.id).toList(),
+    );
+  }
+
+  void deleteLanding(String landingId) {
+    if (state.landingById(landingId) == null) return;
+    _recordDeletion(
+      landingId,
+      state.linksToLanding(landingId).map((link) => link.id).toList(),
+    );
+  }
+
+  void _recordAddition(String linkId) {
+    _actionLinkIds[linkId] = [linkId];
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.addition,
+            id: linkId,
+            group: ActionGroup.lineUp,
+          ),
+        );
+  }
+
+  void _recordDeletion(String actionId, List<String> linkIds) {
+    _actionLinkIds[actionId] = linkIds;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.deletion,
+            id: actionId,
+            group: ActionGroup.lineUp,
+          ),
+        );
+    _removeForAction(actionId);
+  }
+
+  /// Removes the links an action owns plus any origin or landing left with
+  /// no links, and parks the removed subgraph under the action id.
+  void _removeForAction(String actionId) {
+    final linkIds = (_actionLinkIds[actionId] ?? [actionId]).toSet();
+    final removedLinks =
+        state.links.where((link) => linkIds.contains(link.id)).toList();
+    if (removedLinks.isEmpty) return;
+    final remainingLinks =
+        state.links.where((link) => !linkIds.contains(link.id)).toList();
+    final liveOriginIds = remainingLinks.map((link) => link.originId).toSet();
+    final liveLandingIds = remainingLinks.map((link) => link.landingId).toSet();
+
+    final removedOrigins = state.origins
+        .where((origin) => !liveOriginIds.contains(origin.id))
+        .toList();
+    final removedLandings = state.landings
+        .where((landing) => !liveLandingIds.contains(landing.id))
+        .toList();
+
+    _popped[actionId] = LineUpGraph(
+      origins: removedOrigins,
+      landings: removedLandings,
+      links: removedLinks,
+    );
+    state = state.copyWith(
+      origins: state.origins
+          .where((origin) => liveOriginIds.contains(origin.id))
+          .toList(),
+      landings: state.landings
+          .where((landing) => liveLandingIds.contains(landing.id))
+          .toList(),
+      links: remainingLinks,
+    );
+  }
+
+  void _restoreForAction(String actionId) {
+    final subgraph = _popped.remove(actionId);
+    if (subgraph == null) return;
+    final originIds = state.origins.map((origin) => origin.id).toSet();
+    final landingIds = state.landings.map((landing) => landing.id).toSet();
+    final linkIds = state.links.map((link) => link.id).toSet();
+    state = state.copyWith(
+      origins: [
+        ...state.origins,
+        ...subgraph.origins.where((origin) => !originIds.contains(origin.id)),
+      ],
+      landings: [
+        ...state.landings,
+        ...subgraph.landings
+            .where((landing) => !landingIds.contains(landing.id)),
+      ],
+      links: [
+        ...state.links,
+        ...subgraph.links.where((link) => !linkIds.contains(link.id)),
+      ],
+    );
   }
 
   void undoAction(UserAction action) {
     switch (action.type) {
       case ActionType.addition:
-        final groups = [...state.groups];
-        final index = groups.indexWhere((group) => group.id == action.id);
-        if (index < 0) return;
-        _poppedGroups.add(groups.removeAt(index));
-        state = state.copyWith(groups: groups);
+        _removeForAction(action.id);
         return;
       case ActionType.deletion:
-        final index =
-            _poppedGroups.indexWhere((group) => group.id == action.id);
-        if (index < 0) return;
-        state = state.copyWith(
-          groups: [...state.groups, _poppedGroups.removeAt(index)],
-        );
+        _restoreForAction(action.id);
         return;
       case ActionType.edit:
       case ActionType.bulkDeletion:
@@ -654,19 +1010,10 @@ class LineUpProvider extends Notifier<LineUpState> {
   void redoAction(UserAction action) {
     switch (action.type) {
       case ActionType.addition:
-        final index =
-            _poppedGroups.indexWhere((group) => group.id == action.id);
-        if (index < 0) return;
-        state = state.copyWith(
-          groups: [...state.groups, _poppedGroups.removeAt(index)],
-        );
+        _restoreForAction(action.id);
         return;
       case ActionType.deletion:
-        final groups = [...state.groups];
-        final index = groups.indexWhere((group) => group.id == action.id);
-        if (index < 0) return;
-        _poppedGroups.add(groups.removeAt(index));
-        state = state.copyWith(groups: groups);
+        _removeForAction(action.id);
         return;
       case ActionType.edit:
       case ActionType.bulkDeletion:
@@ -675,24 +1022,75 @@ class LineUpProvider extends Notifier<LineUpState> {
     }
   }
 
+  // --- Lifecycle and serialization -----------------------------------------
+
+  void fromHive(LineUpGraph graph) {
+    final copy = graph.deepCopy();
+    state = state.copyWith(
+      origins: copy.origins,
+      landings: copy.landings,
+      links: copy.links,
+    );
+  }
+
+  static String objectToJson(LineUpGraph graph) {
+    return jsonEncode(graph.toJson());
+  }
+
+  static LineUpGraph fromJson(String json) {
+    return LineUpGraph.fromJson(jsonDecode(json) as Map<String, dynamic>);
+  }
+
+  static List<LineUpGroup> legacyGroupsFromJson(String json) {
+    return (jsonDecode(json) as List<dynamic>)
+        .map((entry) => LineUpGroup.fromJson(entry as Map<String, dynamic>))
+        .toList();
+  }
+
+  static List<LineUpGroup> legacyGroupsFromLineUpJson(String json) {
+    return (jsonDecode(json) as List<dynamic>)
+        .map((entry) => LineUp.fromJson(entry as Map<String, dynamic>))
+        .map(LineUpGroup.fromLegacyLineUp)
+        .toList();
+  }
+
   void clearAll() {
-    _poppedGroups.clear();
-    state = state.copyWith(groups: []);
+    _popped.clear();
+    _actionLinkIds.clear();
+    state = state.copyWith(origins: [], landings: [], links: []);
   }
 
   LineUpProviderSnapshot takeSnapshot() {
     return LineUpProviderSnapshot(
-      groups: state.groups.map((group) => group.deepCopy()).toList(),
-      poppedGroups: _poppedGroups.map((group) => group.deepCopy()).toList(),
+      graph: state.graph.deepCopy(),
+      popped: {
+        for (final entry in _popped.entries) entry.key: entry.value.deepCopy(),
+      },
+      actionLinkIds: {
+        for (final entry in _actionLinkIds.entries)
+          entry.key: List<String>.from(entry.value),
+      },
     );
   }
 
   void restoreSnapshot(LineUpProviderSnapshot snapshot) {
-    _poppedGroups
+    _popped
       ..clear()
-      ..addAll(snapshot.poppedGroups.map((group) => group.deepCopy()));
+      ..addAll({
+        for (final entry in snapshot.popped.entries)
+          entry.key: entry.value.deepCopy(),
+      });
+    _actionLinkIds
+      ..clear()
+      ..addAll({
+        for (final entry in snapshot.actionLinkIds.entries)
+          entry.key: List<String>.from(entry.value),
+      });
+    final graph = snapshot.graph.deepCopy();
     state = state.copyWith(
-      groups: snapshot.groups.map((group) => group.deepCopy()).toList(),
+      origins: graph.origins,
+      landings: graph.landings,
+      links: graph.links,
     );
   }
 }
@@ -700,37 +1098,49 @@ class LineUpProvider extends Notifier<LineUpState> {
 final lineUpProvider =
     NotifierProvider<LineUpProvider, LineUpState>(LineUpProvider.new);
 
-enum LineUpHoverKind { group, item }
+enum LineUpHoverKind { origin, landing, connector }
 
 class HoveredLineUpTarget {
-  const HoveredLineUpTarget.group({
-    required this.groupId,
+  const HoveredLineUpTarget.origin({
+    required String id,
     required this.ownerToken,
-  })  : itemId = null,
-        kind = LineUpHoverKind.group;
+  })  : originId = id,
+        landingId = null,
+        kind = LineUpHoverKind.origin;
 
-  const HoveredLineUpTarget.item({
-    required this.groupId,
-    required this.itemId,
+  const HoveredLineUpTarget.landing({
+    required String id,
     required this.ownerToken,
-  }) : kind = LineUpHoverKind.item;
+  })  : originId = null,
+        landingId = id,
+        kind = LineUpHoverKind.landing;
 
-  final String groupId;
-  final String? itemId;
+  const HoveredLineUpTarget.connector({
+    required String this.originId,
+    required String this.landingId,
+    required this.ownerToken,
+  }) : kind = LineUpHoverKind.connector;
+
+  final String? originId;
+  final String? landingId;
   final LineUpHoverKind kind;
   final Object ownerToken;
 
-  bool matchesAgent(String candidateGroupId) {
-    return groupId == candidateGroupId;
+  bool matchesOrigin(String candidateOriginId) {
+    return kind == LineUpHoverKind.origin && originId == candidateOriginId;
   }
 
-  bool matchesAbility(String candidateGroupId, String candidateItemId) {
-    if (groupId != candidateGroupId) return false;
-    return kind == LineUpHoverKind.group || itemId == candidateItemId;
+  bool matchesLanding(String candidateLandingId) {
+    return kind == LineUpHoverKind.landing && landingId == candidateLandingId;
   }
 
-  bool matchesConnector(String candidateGroupId, String candidateItemId) {
-    return matchesAbility(candidateGroupId, candidateItemId);
+  bool matchesConnector(String candidateOriginId, String candidateLandingId) {
+    return switch (kind) {
+      LineUpHoverKind.origin => originId == candidateOriginId,
+      LineUpHoverKind.landing => landingId == candidateLandingId,
+      LineUpHoverKind.connector =>
+        originId == candidateOriginId && landingId == candidateLandingId,
+    };
   }
 }
 
@@ -740,24 +1150,28 @@ class HoveredLineUpProvider extends Notifier<HoveredLineUpTarget?> {
     return null;
   }
 
-  void setHoveredGroup({
-    required String groupId,
+  void setHoveredOrigin({
+    required String originId,
     required Object ownerToken,
   }) {
-    state = HoveredLineUpTarget.group(
-      groupId: groupId,
-      ownerToken: ownerToken,
-    );
+    state = HoveredLineUpTarget.origin(id: originId, ownerToken: ownerToken);
   }
 
-  void setHoveredItem({
-    required String groupId,
-    required String itemId,
+  void setHoveredLanding({
+    required String landingId,
     required Object ownerToken,
   }) {
-    state = HoveredLineUpTarget.item(
-      groupId: groupId,
-      itemId: itemId,
+    state = HoveredLineUpTarget.landing(id: landingId, ownerToken: ownerToken);
+  }
+
+  void setHoveredConnector({
+    required String originId,
+    required String landingId,
+    required Object ownerToken,
+  }) {
+    state = HoveredLineUpTarget.connector(
+      originId: originId,
+      landingId: landingId,
       ownerToken: ownerToken,
     );
   }
@@ -775,34 +1189,26 @@ final hoveredLineUpTargetProvider =
 
 class LineUpAbilityHitboxEntry {
   const LineUpAbilityHitboxEntry({
-    required this.groupId,
-    required this.itemId,
+    required this.landingId,
     required this.globalRect,
   });
 
-  final String groupId;
-  final String itemId;
+  final String landingId;
   final Rect globalRect;
 }
 
 class LineUpAbilityStackCandidate {
   const LineUpAbilityStackCandidate({
-    required this.groupId,
-    required this.itemId,
+    required this.landingId,
     required this.ability,
     required this.globalRect,
     required this.paintOrder,
   });
 
-  final String groupId;
-  final String itemId;
+  final String landingId;
   final PlacedAbility ability;
   final Rect globalRect;
   final int paintOrder;
-}
-
-String _lineUpAbilityHitboxKey(String groupId, String itemId) {
-  return '$groupId::$itemId';
 }
 
 class LineUpAbilityHitboxRegistry
@@ -813,36 +1219,29 @@ class LineUpAbilityHitboxRegistry
   }
 
   void register({
-    required String groupId,
-    required String itemId,
+    required String landingId,
     required Rect globalRect,
   }) {
-    final key = _lineUpAbilityHitboxKey(groupId, itemId);
-    final current = state[key];
+    final current = state[landingId];
     if (current != null && current.globalRect == globalRect) {
       return;
     }
 
     state = {
       ...state,
-      key: LineUpAbilityHitboxEntry(
-        groupId: groupId,
-        itemId: itemId,
+      landingId: LineUpAbilityHitboxEntry(
+        landingId: landingId,
         globalRect: globalRect,
       ),
     };
   }
 
-  void unregister({
-    required String groupId,
-    required String itemId,
-  }) {
-    final key = _lineUpAbilityHitboxKey(groupId, itemId);
-    if (!state.containsKey(key)) {
+  void unregister({required String landingId}) {
+    if (!state.containsKey(landingId)) {
       return;
     }
 
-    final nextState = {...state}..remove(key);
+    final nextState = {...state}..remove(landingId);
     state = nextState;
   }
 }
@@ -852,6 +1251,9 @@ final lineUpAbilityHitboxRegistryProvider = NotifierProvider<
   LineUpAbilityHitboxRegistry.new,
 );
 
+/// Landings whose icon covers [globalPosition], topmost first. Only landings
+/// that genuinely overlap each other end up here; a landing with several
+/// links is still one candidate.
 List<LineUpAbilityStackCandidate> resolveLineUpAbilityStackCandidates({
   required LineUpState lineUpState,
   required Map<String, LineUpAbilityHitboxEntry> hitboxes,
@@ -860,23 +1262,19 @@ List<LineUpAbilityStackCandidate> resolveLineUpAbilityStackCandidates({
   final candidates = <LineUpAbilityStackCandidate>[];
   var paintOrder = 0;
 
-  for (final group in lineUpState.groups) {
-    for (final item in group.items) {
-      final key = _lineUpAbilityHitboxKey(group.id, item.id);
-      final hitbox = hitboxes[key];
-      if (hitbox != null && hitbox.globalRect.contains(globalPosition)) {
-        candidates.add(
-          LineUpAbilityStackCandidate(
-            groupId: group.id,
-            itemId: item.id,
-            ability: item.ability,
-            globalRect: hitbox.globalRect,
-            paintOrder: paintOrder,
-          ),
-        );
-      }
-      paintOrder++;
+  for (final landing in lineUpState.landings) {
+    final hitbox = hitboxes[landing.id];
+    if (hitbox != null && hitbox.globalRect.contains(globalPosition)) {
+      candidates.add(
+        LineUpAbilityStackCandidate(
+          landingId: landing.id,
+          ability: landing.ability,
+          globalRect: hitbox.globalRect,
+          paintOrder: paintOrder,
+        ),
+      );
     }
+    paintOrder++;
   }
 
   candidates.sort((a, b) => b.paintOrder.compareTo(a.paintOrder));

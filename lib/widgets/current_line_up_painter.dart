@@ -1,17 +1,36 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
 
-/// Paints the highlight line for the lineup currently being built (agent + ability).
-/// Kept separate from LineUpLinePainter so it can be layered independently.
+/// Where the sidebar drag currently hovers over the map while a lineup end is
+/// pinned, in map-local pixels. Null when nothing is being dragged.
+final lineUpDragHoverProvider =
+    NotifierProvider<LineUpDragHoverNotifier, Offset?>(
+  LineUpDragHoverNotifier.new,
+);
+
+class LineUpDragHoverNotifier extends Notifier<Offset?> {
+  @override
+  Offset? build() => null;
+
+  void update(Offset? position) {
+    if (state == position) return;
+    state = position;
+  }
+}
+
+/// Paints the line for the lineup currently being placed, from whichever end
+/// is pinned or already dropped to the other. Kept separate from
+/// LineUpLinePainter so it can be layered independently.
 class CurrentLineUpPainter extends ConsumerWidget {
   const CurrentLineUpPainter({super.key});
 
@@ -27,25 +46,44 @@ class CurrentLineUpPainter extends ConsumerWidget {
     );
     final double mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final lineUpState = ref.watch(lineUpProvider);
-    final PlacedAgent? currentAgent =
-        lineUpState.currentAgent ??
-        ref
-            .read(lineUpProvider.notifier)
-            .getGroupById(lineUpState.currentGroupId ?? '')
-            ?.agent;
-    final PlacedAbility? currentAbility = lineUpState.currentAbility;
+    final placement = lineUpState.placement;
+    final isAttack = ref.watch(mapProvider).isAttack;
+
+    Offset? originAnchor;
+    Offset? landingAnchor;
+    if (placement != null) {
+      final agent = placement.draftAgent ??
+          lineUpState.originById(placement.pinnedOriginId ?? '')?.agent;
+      final ability = placement.draftAbility ??
+          lineUpState.landingById(placement.pinnedLandingId ?? '')?.ability;
+      if (agent != null) {
+        originAnchor = screenAnchorForAgent(
+          agent: agent,
+          coordinateSystem: coordinateSystem,
+          isAttack: isAttack,
+        );
+      }
+      if (ability != null) {
+        landingAnchor = screenAnchorForAbility(
+          ability: ability,
+          coordinateSystem: coordinateSystem,
+          mapScale: mapScale,
+          isAttack: isAttack,
+        );
+      }
+    }
 
     return IgnorePointer(
       ignoring: true,
       child: CustomPaint(
         painter: _CurrentLinePainter(
-          coordinateSystem: coordinateSystem,
+          strokeWidth: coordinateSystem.scale(Settings.brushSize),
+          color: Settings.tacticalVioletTheme.primary,
+          originAnchor: originAnchor,
+          landingAnchor: landingAnchor,
+          dragHover: ref.watch(lineUpDragHoverProvider),
           abilitySize: abilitySize,
           agentSize: agentSize,
-          mapScale: mapScale,
-          isAttack: ref.watch(mapProvider).isAttack,
-          currentAgent: currentAgent,
-          currentAbility: currentAbility,
           resizeCounter: ref.watch(lineUpCanvasResizeProvider),
         ),
       ),
@@ -54,63 +92,69 @@ class CurrentLineUpPainter extends ConsumerWidget {
 }
 
 class _CurrentLinePainter extends CustomPainter {
-  final CoordinateSystem coordinateSystem;
+  final double strokeWidth;
+  final Color color;
+  final Offset? originAnchor;
+  final Offset? landingAnchor;
+  final Offset? dragHover;
   final double abilitySize;
   final double agentSize;
-  final double mapScale;
-  final bool isAttack;
-  final PlacedAgent? currentAgent;
-  final PlacedAbility? currentAbility;
   final int resizeCounter;
 
   _CurrentLinePainter({
-    required this.coordinateSystem,
+    required this.strokeWidth,
+    required this.color,
+    required this.originAnchor,
+    required this.landingAnchor,
+    required this.dragHover,
     required this.abilitySize,
     required this.agentSize,
-    required this.mapScale,
-    required this.isAttack,
-    this.currentAgent,
-    this.currentAbility,
     required this.resizeCounter,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (currentAgent == null || currentAbility == null) return;
-
-    final highlightPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = coordinateSystem.scale(Settings.brushSize)
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..isAntiAlias = true;
 
-    final startPosition = screenAnchorForAgent(
-      agent: currentAgent!,
-      coordinateSystem: coordinateSystem,
-      isAttack: isAttack,
-    );
+    if (originAnchor != null && landingAnchor != null) {
+      canvas.drawLine(originAnchor!, landingAnchor!, paint);
+      return;
+    }
 
-    final endPosition = screenAnchorForAbility(
-      ability: currentAbility!,
-      coordinateSystem: coordinateSystem,
-      mapScale: mapScale,
-      isAttack: isAttack,
-    );
+    final pinned = originAnchor ?? landingAnchor;
+    if (pinned == null || dragHover == null) return;
+    _drawDashed(canvas, pinned, dragHover!, paint);
+  }
 
-    canvas.drawLine(startPosition, endPosition, highlightPaint);
+  void _drawDashed(Canvas canvas, Offset from, Offset to, Paint paint) {
+    const dash = 8.0;
+    const gap = 6.0;
+    final path = Path()
+      ..moveTo(from.dx, from.dy)
+      ..lineTo(to.dx, to.dy);
+    for (final ui.PathMetric metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = (distance + dash).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance = end + gap;
+      }
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    if (oldDelegate is _CurrentLinePainter) {
-      return oldDelegate.currentAgent != currentAgent ||
-          oldDelegate.currentAbility != currentAbility ||
-          oldDelegate.abilitySize != abilitySize ||
-          oldDelegate.agentSize != agentSize ||
-          oldDelegate.mapScale != mapScale ||
-          oldDelegate.isAttack != isAttack ||
-          oldDelegate.resizeCounter != resizeCounter;
-    }
-    return true;
+  bool shouldRepaint(covariant _CurrentLinePainter oldDelegate) {
+    return oldDelegate.originAnchor != originAnchor ||
+        oldDelegate.landingAnchor != landingAnchor ||
+        oldDelegate.dragHover != dragHover ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.color != color ||
+        oldDelegate.abilitySize != abilitySize ||
+        oldDelegate.agentSize != agentSize ||
+        oldDelegate.resizeCounter != resizeCounter;
   }
 }
