@@ -734,7 +734,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     return strat.copyWith(
-      pages: migratedPages,
+      pages: hasPageChanged ? migratedPages : strat.pages,
       versionNumber: Settings.versionNumber,
       lastEdited: DateTime.now(),
     );

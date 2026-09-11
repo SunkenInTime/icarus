@@ -130,7 +130,11 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
         Icons.delete,
         color: Settings.tacticalVioletTheme.destructive,
       ),
-      child: const Text('Delete landing spot and its lineups'),
+      child: Text(
+        links.length > 1
+            ? 'Delete landing spot and its lineups'
+            : 'Delete lineup',
+      ),
       onPressed: () {
         ref.read(lineUpProvider.notifier).deleteLanding(landingId);
       },

@@ -138,13 +138,17 @@ void main() {
         notes: '',
       );
 
-      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
       container.read(actionProvider.notifier).performTransaction(
         groups: const [ActionGroup.lineUp],
         mutation: () {
-              container.read(lineUpProvider.notifier).updateAbilityVisualState(
-                lineUp.id,
-                const AbilityVisualState(
+          container
+              .read(lineUpProvider.notifier)
+              .updateLandingAbilityVisualState(
+                landingId: lineUp.id,
+                visualState: const AbilityVisualState(
                   showRangeFill: false,
                 ),
               );
@@ -154,7 +158,7 @@ void main() {
       expect(
         container
             .read(lineUpProvider)
-            .lineUps
+            .landings
             .single
             .ability
             .visualState
@@ -166,7 +170,7 @@ void main() {
       expect(
         container
             .read(lineUpProvider)
-            .lineUps
+            .landings
             .single
             .ability
             .visualState
@@ -178,7 +182,7 @@ void main() {
       expect(
         container
             .read(lineUpProvider)
-            .lineUps
+            .landings
             .single
             .ability
             .visualState
