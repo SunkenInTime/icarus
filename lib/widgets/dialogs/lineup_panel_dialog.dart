@@ -78,6 +78,13 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
   String? _selectedLinkId;
   final Object _hoverOwnerToken = Object();
   Directory? _imageFolder;
+  ProviderContainer? _container;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _container ??= ProviderScope.containerOf(context, listen: false);
+  }
 
   @override
   void initState() {
@@ -91,9 +98,14 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
 
   @override
   void dispose() {
-    ref.read(hoveredLineUpTargetProvider.notifier).clearIfOwned(
-          _hoverOwnerToken,
-        );
+    final container = _container;
+    if (container != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        container
+            .read(hoveredLineUpTargetProvider.notifier)
+            .clearIfOwned(_hoverOwnerToken);
+      });
+    }
     super.dispose();
   }
 
@@ -195,6 +207,7 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
         child: ShadDialog(
           title: Text(title),
           description: Text(subtitle),
+          constraints: const BoxConstraints(maxWidth: 960),
           child: SizedBox(
             width: 900,
             height: 520,

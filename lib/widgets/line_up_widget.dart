@@ -179,13 +179,18 @@ class _PinnedEnd extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    Widget result = child;
+    // The tree shape stays the same whatever the state, so the child keeps its
+    // element (and its registered hitbox) when a pin or badge comes and goes.
+    const inset = _pinnedRingGap + _pinnedRingStroke;
 
-    if (badgeCount != null) {
-      result = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          result,
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Opacity(
+          opacity: dimmed ? _placingDimOpacity : 1,
+          child: child,
+        ),
+        if (badgeCount != null)
           Positioned(
             top: -7,
             right: -7,
@@ -210,16 +215,7 @@ class _PinnedEnd extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      );
-    }
-
-    if (isPinned) {
-      const inset = _pinnedRingGap + _pinnedRingStroke;
-      result = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          result,
+        if (isPinned) ...[
           Positioned.fill(
             left: -inset,
             top: -inset,
@@ -272,11 +268,7 @@ class _PinnedEnd extends StatelessWidget {
             ),
           ),
         ],
-      );
-    } else if (dimmed) {
-      result = Opacity(opacity: _placingDimOpacity, child: result);
-    }
-
-    return result;
+      ],
+    );
   }
 }

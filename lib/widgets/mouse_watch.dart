@@ -140,7 +140,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     final activeContainer = container ?? _container;
     activeContainer
         ?.read(lineUpAbilityHitboxRegistryProvider.notifier)
-        .unregister(landingId: landingId);
+        .unregister(landingId: landingId, owner: _ownerToken);
 
     if (_registeredLandingId == landingId) {
       _registeredLandingId = null;
@@ -203,6 +203,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       ref.read(lineUpAbilityHitboxRegistryProvider.notifier).register(
             landingId: widget.lineUpLandingId!,
             globalRect: rect,
+            owner: _ownerToken,
           );
     });
   }

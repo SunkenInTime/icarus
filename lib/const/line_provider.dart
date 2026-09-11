@@ -1191,10 +1191,15 @@ class LineUpAbilityHitboxEntry {
   const LineUpAbilityHitboxEntry({
     required this.landingId,
     required this.globalRect,
+    this.owner,
   });
 
   final String landingId;
   final Rect globalRect;
+
+  /// The widget instance that registered this hitbox, so a disposed instance
+  /// cannot unregister a successor that took over the same landing.
+  final Object? owner;
 }
 
 class LineUpAbilityStackCandidate {
@@ -1221,9 +1226,12 @@ class LineUpAbilityHitboxRegistry
   void register({
     required String landingId,
     required Rect globalRect,
+    Object? owner,
   }) {
     final current = state[landingId];
-    if (current != null && current.globalRect == globalRect) {
+    if (current != null &&
+        current.globalRect == globalRect &&
+        current.owner == owner) {
       return;
     }
 
@@ -1232,12 +1240,14 @@ class LineUpAbilityHitboxRegistry
       landingId: LineUpAbilityHitboxEntry(
         landingId: landingId,
         globalRect: globalRect,
+        owner: owner,
       ),
     };
   }
 
-  void unregister({required String landingId}) {
-    if (!state.containsKey(landingId)) {
+  void unregister({required String landingId, Object? owner}) {
+    final current = state[landingId];
+    if (current == null || (owner != null && current.owner != owner)) {
       return;
     }
 
