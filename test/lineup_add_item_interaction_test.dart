@@ -286,11 +286,12 @@ void main() {
     );
 
     expect(container.read(lineUpProvider).placement?.draftAgent, isNull);
-    expect(find.byType(AgentWidget), findsOneWidget);
+    // The overlay's own origin plus the placer's full-opacity copy.
+    expect(find.byType(AgentWidget), findsNWidgets(2));
     expect(find.byType(Draggable), findsNothing);
     expect(
       find.byKey(const ValueKey('lineup-pinned-chip-Origin')),
-      findsOneWidget,
+      findsNWidgets(2),
     );
   });
 

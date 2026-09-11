@@ -7,7 +7,6 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
-import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
@@ -15,13 +14,19 @@ import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 
 const double _pinnedRingGap = 3;
 const double _pinnedRingStroke = 2;
-const double _placingDimOpacity = 0.2;
 
 class LineUpOriginAgentWidget extends ConsumerWidget {
-  LineUpOriginAgentWidget({Key? key, required this.origin})
-      : super(key: key ?? ValueKey('lineup-agent-widget-${origin.id}'));
+  LineUpOriginAgentWidget({
+    Key? key,
+    required this.origin,
+    this.interactive = true,
+  }) : super(key: key ?? ValueKey('lineup-agent-widget-${origin.id}'));
 
   final LineUpOrigin origin;
+
+  /// False for the full-opacity copy the placer draws over the dimmed map
+  /// while this origin is pinned; the real one underneath keeps the hitbox.
+  final bool interactive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,8 +39,6 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
       agentSize: agentSize,
       isAttack: isAttack,
     );
-    final isPlacing =
-        ref.watch(interactionStateProvider) == InteractionState.lineUpPlacing;
     final isPinned = ref.watch(
       lineUpProvider.select(
         (state) => state.placement?.pinnedOriginId == origin.id,
@@ -46,16 +49,19 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
       key: ValueKey('lineup-agent-${origin.id}'),
       left: agentScreen.dx,
       top: agentScreen.dy,
-      child: _PinnedEnd(
-        isPinned: isPinned,
-        dimmed: isPlacing && !isPinned,
-        label: 'Origin',
-        shape: BoxShape.circle,
-        child: AgentWidget(
-          lineUpId: origin.id,
-          agent: AgentData.agents[origin.agent.type]!,
-          isAlly: origin.agent.isAlly,
-          id: origin.agent.id,
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: _PinnedEnd(
+          isPinned: isPinned,
+          label: 'Origin',
+          shape: BoxShape.circle,
+          child: AgentWidget(
+            lineUpId: origin.id,
+            agent: AgentData.agents[origin.agent.type]!,
+            isAlly: origin.agent.isAlly,
+            id: origin.agent.id,
+            isInteractive: interactive,
+          ),
         ),
       ),
     );
@@ -63,10 +69,17 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
 }
 
 class LineUpLandingAbilityWidget extends ConsumerWidget {
-  LineUpLandingAbilityWidget({Key? key, required this.landing})
-      : super(key: key ?? ValueKey('lineup-ability-widget-${landing.id}'));
+  LineUpLandingAbilityWidget({
+    Key? key,
+    required this.landing,
+    this.interactive = true,
+  }) : super(key: key ?? ValueKey('lineup-ability-widget-${landing.id}'));
 
   final LineUpLanding landing;
+
+  /// False for the full-opacity copy the placer draws over the dimmed map
+  /// while this landing is pinned; the real one underneath keeps the hitbox.
+  final bool interactive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -90,14 +103,14 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
       isAttack: isAttack,
     );
     final shouldRotate = isRotatable(ability.data.abilityData!);
-    final contextMenuItems = buildAbilityContextMenuItems(
-      ref,
-      ability,
-      landingId: landing.id,
-      context: context,
-    );
-    final isPlacing =
-        ref.watch(interactionStateProvider) == InteractionState.lineUpPlacing;
+    final contextMenuItems = interactive
+        ? buildAbilityContextMenuItems(
+            ref,
+            ability,
+            landingId: landing.id,
+            context: context,
+          )
+        : null;
     final isPinned = ref.watch(
       lineUpProvider.select(
         (state) => state.placement?.pinnedLandingId == landing.id,
@@ -126,7 +139,7 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
       length: ability.length,
       armLengthsMeters: ability.armLengthsMeters,
       visualState: ability.visualState,
-      watchMouse: true,
+      watchMouse: interactive,
       contextMenuItems: contextMenuItems,
     );
     if (shouldRotate) {
@@ -144,25 +157,25 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
       key: ValueKey('lineup-ability-${landing.id}'),
       left: abilityScreen.dx,
       top: abilityScreen.dy,
-      child: _PinnedEnd(
-        isPinned: isPinned,
-        dimmed: isPlacing && !isPinned,
-        label: 'Landing spot',
-        shape: BoxShape.rectangle,
-        badgeCount: badgeCount > 1 ? badgeCount : null,
-        child: abilityChild,
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: _PinnedEnd(
+          isPinned: isPinned,
+          label: 'Landing spot',
+          shape: BoxShape.rectangle,
+          badgeCount: badgeCount > 1 ? badgeCount : null,
+          child: abilityChild,
+        ),
       ),
     );
   }
 }
 
-/// Wraps a lineup end with the placement styling: dimmed while another end is
-/// being placed, or ringed in violet with a chip when it is the pinned one. A
-/// [badgeCount] marks a landing with several ways in from one origin.
+/// Wraps a lineup end: ringed in violet with a chip when it is the pinned one.
+/// A [badgeCount] marks a landing with several ways in from one origin.
 class _PinnedEnd extends StatelessWidget {
   const _PinnedEnd({
     required this.isPinned,
-    required this.dimmed,
     required this.label,
     required this.shape,
     required this.child,
@@ -170,7 +183,6 @@ class _PinnedEnd extends StatelessWidget {
   });
 
   final bool isPinned;
-  final bool dimmed;
   final String label;
   final BoxShape shape;
   final Widget child;
@@ -186,10 +198,7 @@ class _PinnedEnd extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Opacity(
-          opacity: dimmed ? _placingDimOpacity : 1,
-          child: child,
-        ),
+        child,
         if (badgeCount != null)
           Positioned(
             top: -7,

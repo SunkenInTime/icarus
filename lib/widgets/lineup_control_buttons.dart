@@ -1,31 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-String lineUpPlacementStatus(LineUpPlacement placement) {
-  switch (placement.mode) {
-    case LineUpPlacementMode.fresh:
-      return placement.hasOrigin
-          ? 'Drag an ability to where it lands'
-          : 'Drag an agent to where you throw from';
-    case LineUpPlacementMode.fromPinnedOrigin:
-      return placement.hasLanding
-          ? 'Origin pinned · Ability placed'
-          : 'Origin pinned · Drag an ability to where it lands';
-    case LineUpPlacementMode.toPinnedLanding:
-      if (placement.hasOrigin) {
-        return 'Landing spot pinned · Origin placed';
-      }
-      final agentName =
-          AgentData.agents[placement.pinnedAgentType]?.name ?? 'the agent';
-      return 'Landing spot pinned · Drag $agentName to where you throw from';
-  }
-}
 
 class LineupControlButtons extends ConsumerWidget {
   const LineupControlButtons({super.key});
@@ -54,27 +32,6 @@ class LineupControlButtons extends ConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            key: const ValueKey('lineup-placement-status'),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: Settings.abilityBGColor,
-              borderRadius: const BorderRadius.all(Radius.circular(4)),
-              border: Border.all(
-                color: Settings.tacticalVioletTheme.border,
-                width: 2,
-              ),
-              boxShadow: const [Settings.cardForegroundBackdrop],
-            ),
-            child: Text(
-              lineUpPlacementStatus(placement),
-              style: TextStyle(
-                color: Settings.tacticalVioletTheme.foreground,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
           ShadTooltip(
             builder: (_) => const Text("Cancel"),
             child: ShadIconButton.secondary(

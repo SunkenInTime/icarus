@@ -5,6 +5,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -13,7 +14,26 @@ import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_lineup_agent_widget.dart';
+import 'package:icarus/widgets/line_up_widget.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
+
+/// The one thing the user has to do next. Empty once both ends are down.
+String lineUpPlacementStatus(LineUpPlacement placement) {
+  if (placement.isComplete) return '';
+  switch (placement.mode) {
+    case LineUpPlacementMode.fresh:
+      return placement.hasOrigin
+          ? 'Drag the ability to where it lands'
+          : 'Drag an agent to where you throw from';
+    case LineUpPlacementMode.fromPinnedOrigin:
+      return 'Drag the ability to where it lands';
+    case LineUpPlacementMode.toPinnedLanding:
+      final agentName =
+          AgentData.agents[placement.pinnedAgentType]?.name ?? 'the agent';
+      return 'Drag $agentName to where you throw from';
+  }
+}
 
 class LineupPositionWidget extends ConsumerStatefulWidget {
   const LineupPositionWidget({super.key});
@@ -30,13 +50,71 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final placement = ref.watch(lineUpProvider).placement;
+        final lineUpState = ref.watch(lineUpProvider);
+        final placement = lineUpState.placement;
         final draftAgent = placement?.draftAgent;
         final draftAbility = placement?.draftAbility;
+        final pinnedOrigin =
+            lineUpState.originById(placement?.pinnedOriginId ?? '');
+        final pinnedLanding =
+            lineUpState.landingById(placement?.pinnedLandingId ?? '');
 
         Offset localOffset(Offset globalOffset) {
           final renderBox = context.findRenderObject() as RenderBox;
           return renderBox.globalToLocal(globalOffset);
+        }
+
+        PlacedAgent agentAt(AgentData data, Offset renderedTopLeft) {
+          return PlacedAgent(
+            id: const Uuid().v4(),
+            type: data.type,
+            position: storedAgentPositionForRenderedScreenPosition(
+              coordinateSystem: coordinateSystem,
+              renderedScreenPosition: renderedTopLeft,
+              agentSize: ref.read(strategySettingsProvider).agentSize,
+              isAttack: ref.read(mapProvider).isAttack,
+            ),
+            isAlly: ref.read(teamProvider),
+          );
+        }
+
+        PlacedAbility abilityAt(AbilityInfo info, Offset renderedTopLeft) {
+          return PlacedAbility(
+            id: const Uuid().v4(),
+            data: info,
+            position: storedAbilityPositionForRenderedScreenPosition(
+              ability: info.abilityData!,
+              coordinateSystem: coordinateSystem,
+              renderedScreenPosition: renderedTopLeft,
+              mapScale: Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
+              abilitySize: ref.read(strategySettingsProvider).abilitySize,
+              isAttack: ref.read(mapProvider).isAttack,
+            ),
+            isAlly: ref.read(teamProvider),
+          );
+        }
+
+        /// Where the dragged item's anchor ends up if dropped at this offset,
+        /// so the preview line points at the real landing point rather than
+        /// the corner of the drag feedback.
+        Offset? dropAnchor(Object? data, Offset renderedTopLeft) {
+          final isAttack = ref.read(mapProvider).isAttack;
+          if (data is AgentData) {
+            return screenAnchorForAgent(
+              agent: agentAt(data, renderedTopLeft),
+              coordinateSystem: coordinateSystem,
+              isAttack: isAttack,
+            );
+          }
+          if (data is AbilityInfo) {
+            return screenAnchorForAbility(
+              ability: abilityAt(data, renderedTopLeft),
+              coordinateSystem: coordinateSystem,
+              mapScale: Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
+              isAttack: isAttack,
+            );
+          }
+          return null;
         }
 
         return DragTarget(
@@ -44,6 +122,45 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
             return Stack(
               children: [
                 const Positioned.fill(child: CurrentLineUpPainter()),
+                if (pinnedOrigin != null)
+                  LineUpOriginAgentWidget(
+                    origin: pinnedOrigin,
+                    interactive: false,
+                  ),
+                if (pinnedLanding != null)
+                  LineUpLandingAbilityWidget(
+                    landing: pinnedLanding,
+                    interactive: false,
+                  ),
+                if (placement != null && !placement.isComplete)
+                  Align(
+                    alignment: Alignment.center,
+                    child: IgnorePointer(
+                      child: Container(
+                        key: const ValueKey('lineup-placement-status'),
+                        margin: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Settings.tacticalVioletTheme.primary,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Settings.tacticalVioletTheme.border,
+                          ),
+                          boxShadow: const [Settings.cardForegroundBackdrop],
+                        ),
+                        child: Text(
+                          lineUpPlacementStatus(placement),
+                          style: ShadTheme.of(context)
+                              .textTheme
+                              .small
+                              .copyWith(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (draftAbility != null)
                   PlacedAbilityWidget(
                     rotation: draftAbility.rotation,
@@ -110,7 +227,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
           onMove: (details) {
             ref
                 .read(lineUpDragHoverProvider.notifier)
-                .update(localOffset(details.offset));
+                .update(dropAnchor(details.data, localOffset(details.offset)));
           },
           onLeave: (_) {
             ref.read(lineUpDragHoverProvider.notifier).update(null);
@@ -118,24 +235,12 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
           onAcceptWithDetails: (details) {
             ref.read(lineUpDragHoverProvider.notifier).update(null);
             final dropOffset = localOffset(details.offset);
-            const uuid = Uuid();
+            final data = details.data;
 
-            if (details.data is AgentData) {
-              final agentPosition =
-                  storedAgentPositionForRenderedScreenPosition(
-                coordinateSystem: coordinateSystem,
-                renderedScreenPosition: dropOffset,
-                agentSize: ref.read(strategySettingsProvider).agentSize,
-                isAttack: ref.read(mapProvider).isAttack,
-              );
-              final placedAgent = PlacedAgent(
-                id: uuid.v4(),
-                type: (details.data as AgentData).type,
-                position: agentPosition,
-                isAlly: ref.read(teamProvider),
-              );
-
-              ref.read(lineUpProvider.notifier).setDraftAgent(placedAgent);
+            if (data is AgentData) {
+              ref
+                  .read(lineUpProvider.notifier)
+                  .setDraftAgent(agentAt(data, dropOffset));
               final lockedType =
                   ref.read(lineUpProvider).placement?.lockedAgentType;
               if (lockedType != null) {
@@ -143,26 +248,10 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                     .read(abilityBarProvider.notifier)
                     .updateData(AgentData.agents[lockedType]!);
               }
-            } else if (details.data is AbilityInfo) {
-              final abilityInfo = details.data as AbilityInfo;
-              final abilityPosition =
-                  storedAbilityPositionForRenderedScreenPosition(
-                ability: abilityInfo.abilityData!,
-                coordinateSystem: coordinateSystem,
-                renderedScreenPosition: dropOffset,
-                mapScale:
-                    Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
-                abilitySize: ref.read(strategySettingsProvider).abilitySize,
-                isAttack: ref.read(mapProvider).isAttack,
-              );
-              final placedAbility = PlacedAbility(
-                id: uuid.v4(),
-                data: abilityInfo,
-                position: abilityPosition,
-                isAlly: ref.read(teamProvider),
-              );
-
-              ref.read(lineUpProvider.notifier).setDraftAbility(placedAbility);
+            } else if (data is AbilityInfo) {
+              ref
+                  .read(lineUpProvider.notifier)
+                  .setDraftAbility(abilityAt(data, dropOffset));
             }
           },
         );
