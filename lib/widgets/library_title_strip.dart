@@ -79,7 +79,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     return AppWindowStrip(
       child: Row(
         children: [
-          const WindowsIcarusWordmark(),
+          const IcarusWordmark(),
           const SizedBox(width: 6),
           _TabButton(
             key: const ValueKey('library-tab-library'),
