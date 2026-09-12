@@ -141,7 +141,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: ShadButton(
             key: const ValueKey('folder-edit-submit'),
-            leading: _isSubmitting ? null : const Icon(Icons.check),
+            leading: _isSubmitting ? null : const Icon(LucideIcons.check),
             onPressed: _isSubmitting ? null : _submit,
             child: Text(_isSubmitting ? 'Saving...' : 'Done'),
           ),

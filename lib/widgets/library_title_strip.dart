@@ -17,7 +17,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _controlHeight = 28;
 // Action menus hug their labels; the account menu keeps room for email text.
-const double _sortMenuWidth = 132;
+const double _sortMenuWidth = 168;
 const double _newMenuWidth = 140;
 const double _accountMenuWidth = 200;
 const double _menuItemHorizontalPadding = 8;
@@ -173,7 +173,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             for (final value in SortBy.values)
               _MenuItem(
                 menu: _sortController,
-                icon: value == filter.sortBy ? Icons.check : null,
+                icon: value == filter.sortBy ? LucideIcons.check : null,
                 label: StrategyFilterProvider.sortByLabels[value]!,
                 onPressed: () {
                   ref.read(strategyFilterProvider.notifier).setSortBy(value);
@@ -233,7 +233,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             _MenuItem(
               menu: _newController,
               key: const ValueKey('library-new-strategy'),
-              icon: Icons.note_add_outlined,
+              icon: LucideIcons.filePlus,
               label: 'New Strategy',
               onPressed: widget.onCreateStrategy,
             ),
@@ -248,19 +248,19 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               const _MenuDivider(),
               _MenuItem(
                 menu: _newController,
-                icon: Icons.file_download_outlined,
+                icon: LucideIcons.fileDown,
                 label: 'Import .ica',
                 onPressed: widget.onImportIca,
               ),
               _MenuItem(
                 menu: _newController,
-                icon: Icons.archive_outlined,
+                icon: LucideIcons.archiveRestore,
                 label: 'Import Backup',
                 onPressed: widget.onImportBackup,
               ),
               _MenuItem(
                 menu: _newController,
-                icon: Icons.backup_outlined,
+                icon: LucideIcons.archive,
                 label: 'Export Library',
                 onPressed: widget.onExportLibrary,
               ),
@@ -273,8 +273,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         height: _controlHeight,
         padding: const EdgeInsets.only(left: 8, right: 6),
         onPressed: _newController.toggle,
-        leading: const Icon(Icons.add, size: 16),
-        trailing: const Icon(Icons.keyboard_arrow_down, size: 16),
+        leading: const Icon(LucideIcons.plus, size: 16),
+        trailing: const Icon(LucideIcons.chevronDown, size: 14),
         child: const Text('New'),
       ),
     );
@@ -370,7 +370,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             radius: 12,
             backgroundColor: Settings.tacticalVioletTheme.secondary,
             avatarUrl: auth.avatarUrl,
-            fallback: const Icon(Icons.person, size: 14),
+            fallback: const Icon(LucideIcons.user, size: 14),
           ),
         ),
       ),
@@ -459,7 +459,15 @@ class _MenuItem extends StatelessWidget {
       },
       leading: SizedBox(
         width: _menuIconWidth,
-        child: icon == null ? null : Icon(icon, size: 16),
+        child: icon == null
+            ? null
+            : Icon(
+                icon,
+                size: 16,
+                color: icon == LucideIcons.check
+                    ? Settings.tacticalVioletTheme.primary
+                    : Settings.tacticalVioletTheme.mutedForeground,
+              ),
       ),
       child: Flexible(
         child: Text(

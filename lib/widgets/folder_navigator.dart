@@ -329,12 +329,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       : [
                           ShadContextMenuItem(
                             leading:
-                                const Icon(Icons.create_new_folder_outlined),
+                                const Icon(LucideIcons.folderPlus),
                             onPressed: showCreateFolderDialog,
                             child: const Text('Create Folder'),
                           ),
                           ShadContextMenuItem(
-                            leading: const Icon(Icons.note_add_outlined),
+                            leading: const Icon(LucideIcons.filePlus),
                             onPressed: showCreateDialog,
                             child: const Text('Create Strategy'),
                           ),

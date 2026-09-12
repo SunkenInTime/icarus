@@ -310,7 +310,7 @@ class FolderContent extends ConsumerWidget {
           acceptsIcaDrops: true,
           banner: cloudFailed ? _CloudErrorBanner(onRetry: () => _retryCloud(ref)) : null,
           emptyStateKey: const ValueKey('library-empty-state'),
-          emptyStateIcon: Icons.folder_outlined,
+          emptyStateIcon: LucideIcons.folder,
           emptyStateTitle: 'Your library is empty',
           emptyStateSubtitle: cloudAvailable
               ? 'Create your first strategy to keep it available across your '
@@ -320,7 +320,7 @@ class FolderContent extends ConsumerWidget {
           emptyStateAction: ShadButton(
             key: const ValueKey('library-empty-create-strategy'),
             onPressed: onCreateStrategy,
-            leading: const Icon(Icons.add),
+            leading: const Icon(LucideIcons.plus),
             child: const Text('Create Strategy'),
           ),
         ),
@@ -385,7 +385,7 @@ class FolderContent extends ConsumerWidget {
             ? const ValueKey('shared-empty-state')
             : null,
         emptyStateIcon: isSharedWithMe && folder == null
-            ? Icons.people_outline
+            ? LucideIcons.users
             : null,
         emptyStateTitle: isSharedWithMe && folder == null
             ? 'Nothing shared with you yet'
@@ -407,7 +407,7 @@ class FolderContent extends ConsumerWidget {
             : ShadButton(
                 key: const ValueKey('cloud-empty-create-strategy'),
                 onPressed: onCreateStrategy,
-                leading: const Icon(Icons.add),
+                leading: const Icon(LucideIcons.plus),
                 child: const Text('Create Strategy'),
               ),
       ),
@@ -639,7 +639,7 @@ class FolderContent extends ConsumerWidget {
 
   Widget _buildCloudUnavailableState(BuildContext context, WidgetRef ref) {
     return _LibraryMessageState(
-      icon: Icons.cloud_off_outlined,
+      icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.mutedForeground,
       title: 'Cloud unavailable',
       subtitle: 'Sign in again to reach your online strategies, or go back '
@@ -664,7 +664,7 @@ class FolderContent extends ConsumerWidget {
 
   Widget _buildCloudErrorState(BuildContext context, WidgetRef ref) {
     return _LibraryMessageState(
-      icon: Icons.cloud_off_outlined,
+      icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.destructive,
       title: "Couldn't load your cloud library",
       subtitle: 'Check your connection and try again.',
@@ -684,7 +684,7 @@ class FolderContent extends ConsumerWidget {
 
   Widget _buildCommunityPlaceholder(BuildContext context, WidgetRef ref) {
     return _LibraryMessageState(
-      icon: Icons.public,
+      icon: LucideIcons.globe,
       iconColor: Settings.tacticalVioletTheme.primary,
       title: 'Community strats are coming soon',
       subtitle:
@@ -721,7 +721,7 @@ class _CloudErrorBanner extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              Icons.cloud_off_outlined,
+              LucideIcons.cloudOff,
               size: 16,
               color: Settings.tacticalVioletTheme.destructive,
             ),

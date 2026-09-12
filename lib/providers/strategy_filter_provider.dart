@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 
@@ -89,11 +90,11 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
 
     switch (state.sortBy) {
       case SortBy.alphabetical:
-        return (icon: Icons.sort_by_alpha, label: label);
+        return (icon: LucideIcons.arrowDownAZ, label: label);
       case SortBy.dateCreated:
-        return (icon: Icons.calendar_today, label: label);
+        return (icon: LucideIcons.calendarPlus, label: label);
       case SortBy.dateUpdated:
-        return (icon: Icons.update, label: label);
+        return (icon: LucideIcons.history, label: label);
     }
   }
 }

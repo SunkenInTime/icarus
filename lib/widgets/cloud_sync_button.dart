@@ -13,28 +13,34 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/editor_toolbar.dart';
+import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-const _chipSwitchDuration = Duration(milliseconds: 150);
+const _glyphSwitchDuration = Duration(milliseconds: 150);
 const _conflictToastGap = Duration(seconds: 5);
 
 enum _SyncStatus { synced, editing, syncing, offline, attention }
 
-/// Persistent cloud sync indicator for the strategy editor top strip.
+/// The save button of a cloud strategy. Its glyph is the sync state, so the
+/// promise that work is on the server has a face without a text chip:
+/// synced, editing, syncing, offline, or needs attention.
 ///
-/// Renders nothing for local strategies. For cloud strategies it shows one of
-/// synced / syncing / offline / needs-attention, with a popover explaining the
-/// state and offering recovery when something failed. Also surfaces conflicts
-/// (the server rejected an edit while retaining the local intent) as a toast.
-class CloudSyncStatusChip extends ConsumerStatefulWidget {
-  const CloudSyncStatusChip({super.key});
+/// Pressing it saves now. When sync needs attention the press opens a popover
+/// that explains what happened and offers recovery instead. Conflicts (the
+/// server rejected an edit while the local intent was kept) surface as a toast.
+///
+/// Renders nothing for local strategies; [AutoSaveButton] covers those.
+class CloudSyncButton extends ConsumerStatefulWidget {
+  const CloudSyncButton({super.key, required this.style});
+
+  final EditorToolbarButtonStyle style;
 
   @override
-  ConsumerState<CloudSyncStatusChip> createState() =>
-      _CloudSyncStatusChipState();
+  ConsumerState<CloudSyncButton> createState() => _CloudSyncButtonState();
 }
 
-class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
+class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   final ShadPopoverController _popoverController = ShadPopoverController();
   DateTime? _lastConflictToast;
   Timer? _pendingConflictToast;
@@ -81,6 +87,14 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     ref.read(strategyConflictProvider.notifier).clearAll();
+  }
+
+  Future<void> _handlePressed(_SyncStatus status) async {
+    if (status == _SyncStatus.attention) {
+      _popoverController.toggle();
+      return;
+    }
+    await saveStrategyNow(context, ref);
   }
 
   Future<void> _retry() async {
@@ -183,13 +197,18 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       CloudSyncStatus.attention => _SyncStatus.attention,
     };
 
+    final tooltip = _tooltip(status, saveState.lastPersistedAt);
+    final foreground = status == _SyncStatus.attention
+        ? Settings.tacticalVioletTheme.destructive
+        : null;
+
     return ShadPopover(
       controller: _popoverController,
       padding: const EdgeInsets.all(14),
       anchor: const ShadAnchor(
         offset: Offset(0, 8),
-        childAlignment: Alignment.topCenter,
-        overlayAlignment: Alignment.bottomCenter,
+        childAlignment: Alignment.topLeft,
+        overlayAlignment: Alignment.bottomLeft,
       ),
       popover: (context) => _SyncStatusPopover(
         status: status,
@@ -203,136 +222,84 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
         onRetry: _retry,
         onUseCloudVersions: _useCloudVersions,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: _popoverController.toggle,
-            child: AnimatedContainer(
-              duration: _chipSwitchDuration,
-              curve: Curves.easeOutCubic,
-              height: 24,
-              padding: const EdgeInsets.symmetric(horizontal: 9),
-              decoration: BoxDecoration(
-                color: _chipBackground(status),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedSwitcher(
-                    duration: _chipSwitchDuration,
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeOutCubic,
-                    child: _chipIcon(status),
-                  ),
-                  const SizedBox(width: 6),
-                  AnimatedSwitcher(
-                    duration: _chipSwitchDuration,
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeOutCubic,
-                    child: Text(
-                      _chipLabel(status),
-                      key: ValueKey(status),
-                      style: TextStyle(
-                        color: _chipForeground(status),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+      child: EditorToolbarButton(
+        key: ValueKey('cloud-sync-button-${status.name}'),
+        style: widget.style,
+        tooltip: tooltip,
+        semanticsLabel: tooltip,
+        foregroundColor: foreground,
+        onPressed: () => _handlePressed(status),
+        icon: AnimatedSwitcher(
+          duration: _glyphSwitchDuration,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          child: _glyph(status, foreground),
         ),
       ),
     );
   }
 
-  Color _chipBackground(_SyncStatus status) {
-    switch (status) {
-      case _SyncStatus.attention:
-        return Settings.tacticalVioletTheme.destructive.withValues(alpha: 0.14);
-      case _SyncStatus.offline:
-      case _SyncStatus.editing:
-      case _SyncStatus.syncing:
-      case _SyncStatus.synced:
-        return Settings.tacticalVioletTheme.muted.withValues(alpha: 0.4);
-    }
-  }
-
-  Color _chipForeground(_SyncStatus status) {
-    switch (status) {
-      case _SyncStatus.attention:
-        return Settings.tacticalVioletTheme.destructive;
-      case _SyncStatus.offline:
-      case _SyncStatus.editing:
-      case _SyncStatus.syncing:
-      case _SyncStatus.synced:
-        return Settings.tacticalVioletTheme.mutedForeground;
-    }
-  }
-
-  Widget _chipIcon(_SyncStatus status) {
-    final color = _chipForeground(status);
+  Widget _glyph(_SyncStatus status, Color? color) {
+    final size = widget.style.iconSize;
     switch (status) {
       case _SyncStatus.synced:
         return Icon(
-          Icons.cloud_done_outlined,
+          LucideIcons.cloudCheck,
           key: const ValueKey('synced'),
-          size: 13,
+          size: size,
           color: color,
         );
       case _SyncStatus.editing:
         return Icon(
-          Icons.edit_outlined,
+          LucideIcons.cloudUpload,
           key: const ValueKey('editing'),
-          size: 13,
+          size: size,
           color: color,
         );
       case _SyncStatus.syncing:
         return SizedBox(
           key: const ValueKey('syncing'),
-          width: 11,
-          height: 11,
+          width: size - 2,
+          height: size - 2,
           child: CircularProgressIndicator(
-            strokeWidth: 1.6,
-            valueColor: AlwaysStoppedAnimation<Color>(color),
+            strokeWidth: 1.8,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              color ?? Settings.tacticalVioletTheme.mutedForeground,
+            ),
           ),
         );
       case _SyncStatus.offline:
         return Icon(
-          Icons.cloud_off_outlined,
+          LucideIcons.cloudOff,
           key: const ValueKey('offline'),
-          size: 13,
+          size: size,
           color: color,
         );
       case _SyncStatus.attention:
         return Icon(
-          Icons.error_outline,
+          LucideIcons.cloudAlert,
           key: const ValueKey('attention'),
-          size: 13,
+          size: size,
           color: color,
         );
     }
   }
 
-  String _chipLabel(_SyncStatus status) {
+  /// One line, what the glyph means and what a press will do.
+  static String _tooltip(_SyncStatus status, DateTime? lastSynced) {
     switch (status) {
       case _SyncStatus.synced:
-        return 'Synced';
+        return lastSynced == null
+            ? 'Synced'
+            : 'Synced at ${_SyncStatusPopover._formatTime(lastSynced)}';
       case _SyncStatus.editing:
-        return 'Editing…';
+        return 'Edit not synced yet';
       case _SyncStatus.syncing:
         return 'Syncing…';
       case _SyncStatus.offline:
-        return 'Offline';
+        return 'Offline, changes stay on this device';
       case _SyncStatus.attention:
-        return 'Needs attention';
+        return 'Sync needs attention';
     }
   }
 }

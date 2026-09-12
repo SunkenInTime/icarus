@@ -17,6 +17,7 @@ class CustomTextField extends StatefulWidget {
     this.obscureText = false,
     this.textInputAction,
     this.hasError = false,
+    this.autofocus = false,
   });
   final TextEditingController? controller;
   final FocusNode? focusNode;
@@ -32,6 +33,7 @@ class CustomTextField extends StatefulWidget {
 
   /// Draws a destructive border when true (e.g. failed validation).
   final bool hasError;
+  final bool autofocus;
 
   @override
   State<CustomTextField> createState() => _CustomTextFieldState();
@@ -77,6 +79,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
               : null,
           controller: _controller,
           focusNode: _focusNode,
+          autofocus: widget.autofocus,
           textAlign: widget.textAlign ?? TextAlign.start,
           minLines: widget.minLines,
           maxLines: widget.maxLines ?? 1,

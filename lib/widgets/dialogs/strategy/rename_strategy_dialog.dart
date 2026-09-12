@@ -71,7 +71,7 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
             }
           },
           height: 35,
-          leading: const Icon(Icons.text_fields),
+          leading: const Icon(LucideIcons.pencil),
           child: const Text("Rename"),
         ),
       ],

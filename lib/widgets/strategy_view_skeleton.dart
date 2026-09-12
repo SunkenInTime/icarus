@@ -275,7 +275,7 @@ class _MapSelectorSkeleton extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  isAttack ? CustomIcons.sword : Icons.shield,
+                  isAttack ? CustomIcons.sword : LucideIcons.shield,
                   size: 20,
                   color: Settings.tacticalVioletTheme.mutedForeground,
                 ),
@@ -387,16 +387,25 @@ class _FloatingControlSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-        SizedBox(width: 8),
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-        SizedBox(width: 8),
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-        SizedBox(width: 8),
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-      ],
+    // Mirrors EditorToolbar: five 32px controls in one 12px card.
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: _tone(Settings.tacticalVioletTheme.card, 0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _tone(Settings.highlightColor, 0.88)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          SizedBox(width: 9),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+        ],
+      ),
     );
   }
 }

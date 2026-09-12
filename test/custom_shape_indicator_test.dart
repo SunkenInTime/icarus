@@ -16,6 +16,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
@@ -204,7 +205,7 @@ void main() {
           .every((indicator) => indicator.visible),
       isTrue,
     );
-    expect(find.byIcon(Icons.rotate_right_rounded), findsOneWidget);
+    expect(find.byIcon(LucideIcons.rotateCw), findsOneWidget);
 
     final handle = find.byKey(
       const ValueKey('custom-rectangle-rotate-top-center'),
@@ -231,7 +232,7 @@ void main() {
     final activeBadgeIcon = tester.widget<Icon>(
       find.descendant(
         of: handle,
-        matching: find.byIcon(Icons.rotate_right_rounded),
+        matching: find.byIcon(LucideIcons.rotateCw),
       ),
     );
     expect(

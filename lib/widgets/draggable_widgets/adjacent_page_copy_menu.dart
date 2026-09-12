@@ -16,7 +16,7 @@ List<ShadContextMenuItem> buildAdjacentPageCopyMenuItems(
   return [
     if (directions.contains(PageTransitionDirection.backward))
       ShadContextMenuItem(
-        leading: const Icon(Icons.arrow_upward),
+        leading: const Icon(LucideIcons.arrowUp, size: 16),
         child: const Text('Copy to previous page'),
         onPressed: () async {
           await notifier.copyPlacedWidgetToAdjacentPage(
@@ -27,7 +27,7 @@ List<ShadContextMenuItem> buildAdjacentPageCopyMenuItems(
       ),
     if (directions.contains(PageTransitionDirection.forward))
       ShadContextMenuItem(
-        leading: const Icon(Icons.arrow_downward),
+        leading: const Icon(LucideIcons.arrowDown, size: 16),
         child: const Text('Copy to next page'),
         onPressed: () async {
           await notifier.copyPlacedWidgetToAdjacentPage(

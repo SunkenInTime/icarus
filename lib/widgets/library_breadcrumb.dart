@@ -47,7 +47,7 @@ class LibraryBreadcrumb extends ConsumerWidget {
               ref.read(folderProvider.notifier).updateID(parent.id);
             }
           },
-          icon: const Icon(Icons.chevron_left, size: 20),
+          icon: const Icon(LucideIcons.chevronLeft, size: 20),
         ),
         const SizedBox(width: 4),
         Expanded(

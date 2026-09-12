@@ -23,7 +23,7 @@ import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
-import 'package:icarus/widgets/save_and_load_button.dart';
+import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -231,10 +231,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          ShadIconButton.ghost(
-                            foregroundColor: Colors.white,
-                            onPressed: _leaveToLibrary,
-                            icon: const Icon(Icons.home),
+                          ShadTooltip(
+                            builder: (context) => const Text('Library'),
+                            child: ShadIconButton.ghost(
+                              foregroundColor: Colors.white,
+                              onPressed: _leaveToLibrary,
+                              icon: const Icon(LucideIcons.house, size: 20),
+                            ),
                           ),
                           const SizedBox(width: 5),
                           const StrategyEditBoundary(
@@ -297,7 +300,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   alignment: Alignment.centerLeft,
                   child: RepaintBoundary(child: InteractiveMap()),
                 ),
-                Align(alignment: Alignment.topLeft, child: SaveAndLoadButton()),
+                Align(alignment: Alignment.topLeft, child: EditorToolbar()),
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Padding(

@@ -205,7 +205,7 @@ class _StrategySettingsSections extends ConsumerWidget {
           child: Column(
             children: [
               _SettingsSliderTile(
-                icon: Icons.person_pin_circle_outlined,
+                icon: LucideIcons.personStanding,
                 iconColor: Settings.settingsAgentAccent,
                 title: "Agent markers",
                 description:
@@ -233,7 +233,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                 },
               ),
               _SettingsSliderTile(
-                icon: Icons.auto_awesome_outlined,
+                icon: LucideIcons.sparkles,
                 iconColor: Settings.settingsAbilityAccent,
                 title: "Ability markers",
                 description:
@@ -261,7 +261,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                 },
               ),
               _SettingsToggleTile(
-                icon: Icons.contrast_outlined,
+                icon: LucideIcons.contrast,
                 iconColor: Settings.settingsNeutralAccent,
                 title: "Neutral team marker colors",
                 description:
@@ -323,7 +323,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
           child: Column(
             children: [
               _SettingsSliderTile(
-                icon: Icons.person_pin_circle_outlined,
+                icon: LucideIcons.personStanding,
                 iconColor: Settings.settingsAgentAccent,
                 title: "Default agent markers",
                 description:
@@ -340,7 +340,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 },
               ),
               _SettingsSliderTile(
-                icon: Icons.auto_awesome_outlined,
+                icon: LucideIcons.sparkles,
                 iconColor: Settings.settingsAbilityAccent,
                 title: "Default ability markers",
                 description:
@@ -357,7 +357,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 },
               ),
               _SettingsToggleTile(
-                icon: Icons.contrast_outlined,
+                icon: LucideIcons.contrast,
                 iconColor: Settings.settingsNeutralAccent,
                 title: "Neutral marker colors by default",
                 description:
@@ -382,7 +382,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
           child: Column(
             children: [
               _SettingsToggleTile(
-                icon: Icons.save_outlined,
+                icon: LucideIcons.save,
                 iconColor: Settings.settingsPersistenceAccent,
                 title: "Autosave",
                 description:
@@ -398,7 +398,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 },
               ),
               _SettingsToggleTile(
-                icon: Icons.sports_esports_outlined,
+                icon: LucideIcons.gamepad2,
                 iconColor: Settings.settingsDiscordAccent,
                 title: "Discord Rich Presence",
                 description:
@@ -420,7 +420,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
           child: Column(
             children: [
               _SettingsToggleTile(
-                icon: Icons.grid_on_rounded,
+                icon: LucideIcons.grid3x3,
                 iconColor: Settings.settingsMapAccent,
                 title: "Spawn barriers",
                 description:
@@ -431,7 +431,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 },
               ),
               _SettingsToggleTile(
-                icon: Icons.location_on_outlined,
+                icon: LucideIcons.mapPin,
                 iconColor: Settings.settingsMapAccent,
                 title: "Region names",
                 description: "Show map callout names directly on the canvas.",
@@ -441,7 +441,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 },
               ),
               _SettingsToggleTile(
-                icon: Icons.radio_button_checked_outlined,
+                icon: LucideIcons.circleDot,
                 iconColor: Settings.settingsMapAccent,
                 title: "Ultimate orbs",
                 description: "Display orb pickup markers on supported maps.",
@@ -458,7 +458,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
           key: sectionKeys[_SettingsSection.globalPrivacy],
           title: "Privacy",
           child: _SettingsToggleTile(
-            icon: Icons.analytics_outlined,
+            icon: LucideIcons.chartColumn,
             iconColor: Settings.settingsPersistenceAccent,
             title: "Anonymous analytics",
             description:
@@ -530,7 +530,7 @@ class _ShortcutSettingsSectionState
               const SizedBox(width: 12),
               ShadButton.secondary(
                 size: ShadButtonSize.sm,
-                leading: const Icon(Icons.restart_alt_outlined, size: 15),
+                leading: const Icon(LucideIcons.rotateCcw, size: 15),
                 onPressed: customBindings.isEmpty
                     ? null
                     : () {
@@ -650,7 +650,7 @@ class _ShortcutSearchField extends StatelessWidget {
               fontSize: 13,
             ),
             prefixIcon: Icon(
-              Icons.search,
+              LucideIcons.search,
               size: 17,
               color: Settings.tacticalVioletTheme.mutedForeground,
             ),
@@ -770,7 +770,7 @@ class _ShortcutBindingRow extends StatelessWidget {
                 ShadTooltip(
                   builder: (_) => const Text("Reset to default"),
                   child: ShadIconButton.ghost(
-                    icon: const Icon(Icons.undo_outlined, size: 15),
+                    icon: const Icon(LucideIcons.undo2, size: 15),
                     onPressed: onReset,
                   ),
                 )
@@ -959,7 +959,7 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
               child: Row(
                 children: [
                   Icon(
-                    Icons.keyboard_alt_outlined,
+                    LucideIcons.keyboard,
                     size: 17,
                     color: hasDuplicate
                         ? Settings.tacticalVioletTheme.destructive
@@ -1058,7 +1058,7 @@ class AccountSettingsSection extends ConsumerWidget {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.cloud_off_outlined,
+                      LucideIcons.cloudOff,
                       size: 18,
                       color: Settings.tacticalVioletTheme.mutedForeground,
                     ),
@@ -1106,22 +1106,22 @@ class _SignedInAccountRow extends ConsumerWidget {
         switch (authState.convexAuthStatus) {
       ConvexAuthStatus.ready => (
           'Cloud sync active',
-          Icons.cloud_done_outlined,
+          LucideIcons.cloudCheck,
           theme.mutedForeground,
         ),
       ConvexAuthStatus.configuring => (
           'Connecting to cloud…',
-          Icons.cloud_sync_outlined,
+          LucideIcons.refreshCw,
           theme.mutedForeground,
         ),
       ConvexAuthStatus.incident => (
           'Cloud connection needs attention',
-          Icons.error_outline,
+          LucideIcons.circleAlert,
           theme.destructive,
         ),
       ConvexAuthStatus.signedOut => (
           'Cloud sync inactive',
-          Icons.cloud_off_outlined,
+          LucideIcons.cloudOff,
           theme.mutedForeground,
         ),
     };
@@ -1240,13 +1240,13 @@ class _SettingsNavigationRail extends StatelessWidget {
           const _SettingsNavHeader(label: "Current strategy"),
           const SizedBox(height: 4),
           _SettingsNavItem(
-            icon: Icons.tune_outlined,
+            icon: LucideIcons.slidersHorizontal,
             label: "Object styling",
             isSelected: selectedSection == _SettingsSection.strategyObjects,
             onTap: () => onSectionSelected(_SettingsSection.strategyObjects),
           ),
           _SettingsNavItem(
-            icon: Icons.palette_outlined,
+            icon: LucideIcons.palette,
             label: "Map theme",
             isSelected: selectedSection == _SettingsSection.strategyMapTheme,
             onTap: () => onSectionSelected(_SettingsSection.strategyMapTheme),
@@ -1255,38 +1255,38 @@ class _SettingsNavigationRail extends StatelessWidget {
           const _SettingsNavHeader(label: "App-wide"),
           const SizedBox(height: 4),
           _SettingsNavItem(
-            icon: Icons.person_outline,
+            icon: LucideIcons.user,
             label: "Account",
             isSelected: selectedSection == _SettingsSection.globalAccount,
             onTap: () => onSectionSelected(_SettingsSection.globalAccount),
           ),
           _SettingsNavItem(
-            icon: Icons.auto_fix_high_outlined,
+            icon: LucideIcons.wandSparkles,
             label: "Defaults",
             isSelected: selectedSection == _SettingsSection.globalDefaults,
             onTap: () => onSectionSelected(_SettingsSection.globalDefaults),
           ),
           _SettingsNavItem(
-            icon: Icons.save_outlined,
+            icon: LucideIcons.save,
             label: "Autosave",
             isSelected: selectedSection == _SettingsSection.globalSaving,
             onTap: () => onSectionSelected(_SettingsSection.globalSaving),
           ),
           _SettingsNavItem(
-            icon: Icons.map_outlined,
+            icon: LucideIcons.map,
             label: "Map layers",
             isSelected: selectedSection == _SettingsSection.globalMapVisibility,
             onTap: () =>
                 onSectionSelected(_SettingsSection.globalMapVisibility),
           ),
           _SettingsNavItem(
-            icon: Icons.privacy_tip_outlined,
+            icon: LucideIcons.shield,
             label: "Privacy",
             isSelected: selectedSection == _SettingsSection.globalPrivacy,
             onTap: () => onSectionSelected(_SettingsSection.globalPrivacy),
           ),
           _SettingsNavItem(
-            icon: Icons.keyboard_alt_outlined,
+            icon: LucideIcons.keyboard,
             label: "Keybinds",
             isSelected: selectedSection == _SettingsSection.shortcuts,
             onTap: () => onSectionSelected(_SettingsSection.shortcuts),

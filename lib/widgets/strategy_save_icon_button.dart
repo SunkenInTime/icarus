@@ -7,81 +7,99 @@ import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
-/// The save button that animates on auto-save pings.
+/// Saves the open strategy immediately and tells the user what landed.
+Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
+  final strategyId = ref.read(strategyProvider).strategyId;
+  if (strategyId == null) return;
+  await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+  if (!context.mounted) return;
+
+  final latestSaveState = ref.read(strategySaveStateProvider);
+  final hasIncompleteMediaSync = latestSaveState.hasPendingMediaSync ||
+      latestSaveState.mediaSyncErrorCount > 0;
+  final toastMessage = hasIncompleteMediaSync
+      ? latestSaveState.mediaSyncErrorCount > 0
+          ? 'Saved on this device. Media sync needs retry.'
+          : 'Saved on this device. Media still syncing.'
+      : 'Saved';
+
+  toastification.showCustom(
+    context: context,
+    autoCloseDuration: const Duration(seconds: 3),
+    alignment: Alignment.bottomCenter,
+    builder: (context, holder) {
+      return Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Settings.tacticalVioletTheme.border),
+        ),
+        child: Text(
+          toastMessage,
+          style: ShadTheme.of(context)
+              .textTheme
+              .small
+              .copyWith(color: Settings.tacticalVioletTheme.foreground),
+        ),
+      );
+    },
+  );
+}
+
+/// The save button of a local strategy. Shows a spinner while an auto-save
+/// runs and a check when it lands, then rests on the save glyph.
 class AutoSaveButton extends ConsumerStatefulWidget {
-  const AutoSaveButton({super.key});
+  const AutoSaveButton({
+    super.key,
+    this.style = kEditorToolbarButtonStyle,
+  });
+
+  final EditorToolbarButtonStyle style;
 
   @override
   ConsumerState<AutoSaveButton> createState() => _AutoSaveButtonState();
 }
 
-class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
-    with SingleTickerProviderStateMixin {
-  /// Listen to the autoSave ping counter.
-  // late final AutoDisposeProviderSubscription<int> _sub;
-
-  /// Drives continuous rotation in the loading phase.
-  late final AnimationController _rotationController;
-
-  /// Our own internal phase.
+class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
   _Phase _phase = _Phase.idle;
+  Timer? _successTimer;
+  Timer? _idleTimer;
+  int _lastPing = 0;
 
   @override
   void initState() {
     super.initState();
     _lastPing = ref.read(autoSaveProvider);
-    _rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(); // we'll stop when not loading
   }
 
   @override
   void dispose() {
-    _rotationController.dispose();
+    _successTimer?.cancel();
+    _idleTimer?.cancel();
     super.dispose();
   }
 
   void _startAutoSaveAnimation() {
     if (!mounted) return;
-
+    _successTimer?.cancel();
+    _idleTimer?.cancel();
     setState(() => _phase = _Phase.loading);
-    _rotationController.repeat();
-
-    // After 3s, show check and snackbar
-    Timer(const Duration(seconds: 3), () {
+    _successTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
-      _rotationController.stop();
       setState(() => _phase = _Phase.success);
-
-      // // show the snack bar here, outside build
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   const SnackBar(
-      //     content: Center(
-      //       child: Text(
-      //         "Auto‐save complete",
-      //         style: TextStyle(color: Colors.white),
-      //       ),
-      //     ),
-      //     duration: Duration(seconds: 2),
-      //     backgroundColor: Settings.sideBarColor,
-      //     behavior: SnackBarBehavior.floating,
-      //     width: 200,
-      //   ),
-      // );
-
-      // after 1s go back to idle
-      Timer(const Duration(seconds: 1), () {
+      _idleTimer = Timer(const Duration(seconds: 1), () {
         if (!mounted) return;
         setState(() => _phase = _Phase.idle);
       });
     });
   }
 
-  int _lastPing = 0;
   @override
   Widget build(BuildContext context) {
     final ping = ref.watch(autoSaveProvider);
@@ -95,80 +113,39 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
       _lastPing = ping;
       _startAutoSaveAnimation();
     }
-    Widget icon;
-    switch (_phase) {
-      case _Phase.idle:
-        _rotationController.stop();
-        icon = const Icon(Icons.save);
-        break;
 
-      case _Phase.loading:
-        _rotationController.stop();
-        icon = const SizedBox(
-          width: 24,
-          height: 24,
+    final size = widget.style.iconSize;
+    final Widget icon = switch (_phase) {
+      _Phase.idle => Icon(LucideIcons.save, key: const ValueKey('idle')),
+      _Phase.loading => SizedBox(
+          key: const ValueKey('loading'),
+          width: size - 2,
+          height: size - 2,
           child: CircularProgressIndicator(
-            strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            strokeWidth: 1.8,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              Settings.tacticalVioletTheme.mutedForeground,
+            ),
           ),
-        );
-        break;
+        ),
+      _Phase.success => Icon(
+          LucideIcons.check,
+          key: const ValueKey('success'),
+          color: Settings.allyBGColor,
+        ),
+    };
 
-      case _Phase.success:
-        _rotationController.stop();
-        icon = const Icon(Icons.check, color: Colors.greenAccent);
-
-        break;
-    }
-
-    return ShadTooltip(
-      builder: (context) => Text(canEditPages ? "Save" : "View only"),
-      child: ShadIconButton.ghost(
-        foregroundColor: Colors.white,
-        icon: icon,
-        enabled: canEditPages,
-        onPressed: () async {
-          await ref
-              .read(strategyProvider.notifier)
-              .forceSaveNow(ref.read(strategyProvider).strategyId!);
-          if (!context.mounted) return;
-
-          final latestSaveState = ref.read(strategySaveStateProvider);
-          final hasIncompleteMediaSync = latestSaveState.hasPendingMediaSync ||
-              latestSaveState.mediaSyncErrorCount > 0;
-          final toastMessage = hasIncompleteMediaSync
-              ? latestSaveState.mediaSyncErrorCount > 0
-                  ? 'Local save complete. Media sync needs retry.'
-                  : 'Local save complete. Media still syncing.'
-              : 'Save Complete';
-
-          toastification.showCustom(
-            context: context,
-            autoCloseDuration: const Duration(seconds: 3),
-            alignment: Alignment.bottomCenter,
-            builder: (context, holder) {
-              return Container(
-                margin: const EdgeInsets.all(16),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Settings.tacticalVioletTheme.card,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Settings.tacticalVioletTheme.border,
-                  ),
-                ),
-                child: Text(
-                  toastMessage,
-                  style: ShadTheme.of(context)
-                      .textTheme
-                      .small
-                      .copyWith(color: Colors.white),
-                ),
-              );
-            },
-          );
-        },
+    return EditorToolbarButton(
+      key: const ValueKey('local-save-button'),
+      style: widget.style,
+      tooltip: canEditPages ? 'Save' : 'View only',
+      enabled: canEditPages,
+      onPressed: () => saveStrategyNow(context, ref),
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 150),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeOutCubic,
+        child: icon,
       ),
     );
   }

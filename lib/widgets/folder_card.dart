@@ -551,7 +551,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         if (isPinned) ...[
           const SizedBox(width: 4),
           Icon(
-            Icons.push_pin,
+            LucideIcons.pin,
             color: Colors.white.withValues(alpha: 0.78),
             size: 13,
           ),
@@ -624,7 +624,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
               highlightColor: Colors.white.withValues(alpha: 0.08),
               onTap: _handleMenuButtonPressed,
               child: Icon(
-                Icons.more_vert,
+                LucideIcons.ellipsisVertical,
                 color: Colors.white.withValues(alpha: iconAlpha),
                 size: 16,
               ),
@@ -639,7 +639,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
     final id = _folder.id;
     return [
       ShadContextMenuItem(
-        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        leading: Icon(isPinned ? LucideIcons.pinOff : LucideIcons.pin),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
         onPressed: () {
           _closeMenus();
@@ -648,7 +648,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         },
       ),
       ShadContextMenuItem(
-        leading: const Icon(Icons.text_fields),
+        leading: const Icon(LucideIcons.pencil),
         child: const Text('Edit'),
         onPressed: () async {
           _closeMenus();
@@ -663,7 +663,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         },
       ),
       ShadContextMenuItem(
-        leading: const Icon(Icons.file_upload),
+        leading: const Icon(LucideIcons.upload),
         child: const Text('Export'),
         onPressed: () async {
           _closeMenus();
@@ -671,8 +671,11 @@ class _FolderCardState extends ConsumerState<FolderCard>
         },
       ),
       ShadContextMenuItem(
-        leading: const Icon(Icons.delete, color: Colors.redAccent),
-        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        leading: Icon(LucideIcons.trash2,
+            color: Settings.tacticalVioletTheme.destructive),
+        child: Text('Delete',
+            style:
+                TextStyle(color: Settings.tacticalVioletTheme.destructive)),
         onPressed: () async {
           _closeMenus();
           if (widget.isDemo) return;
@@ -842,7 +845,7 @@ class _CountBadge extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (folderCount > 0) ...[
-          Icon(Icons.folder_outlined, size: 12, color: muted),
+          Icon(LucideIcons.folder, size: 12, color: muted),
           const SizedBox(width: 2),
           Text(
             '$folderCount',
@@ -852,7 +855,7 @@ class _CountBadge extends StatelessWidget {
         ],
         if (folderCount > 0 && strategyCount > 0) const SizedBox(width: 6),
         if (strategyCount > 0) ...[
-          Icon(Icons.description_outlined, size: 12, color: muted),
+          Icon(LucideIcons.fileText, size: 12, color: muted),
           const SizedBox(width: 2),
           Text(
             '$strategyCount',

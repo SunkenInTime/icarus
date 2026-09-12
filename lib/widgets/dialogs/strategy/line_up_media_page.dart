@@ -9,6 +9,7 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:path/path.dart' as path;
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
   final TextEditingController youtubeLinkController;
@@ -113,7 +114,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
               child: Column(
                 children: [
                   Icon(
-                    Icons.add_photo_alternate_outlined,
+                    LucideIcons.imagePlus,
                     size: 48,
                     color: Settings.tacticalVioletTheme.cardForeground,
                   ),
@@ -183,7 +184,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
           child: Icon(
-            Icons.add,
+            LucideIcons.plus,
             color: Settings.tacticalVioletTheme.secondaryForeground,
           ),
         ),
@@ -206,7 +207,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.content_paste,
+                LucideIcons.clipboardPaste,
                 color: Settings.tacticalVioletTheme.secondaryForeground,
               ),
               const SizedBox(height: 4),
@@ -240,7 +241,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.content_paste,
+                LucideIcons.clipboardPaste,
                 color: Settings.tacticalVioletTheme.secondaryForeground,
                 size: 16,
               ),
@@ -288,7 +289,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           child: imageProvider == null
               ? Center(
                   child: Icon(
-                    Icons.broken_image,
+                    LucideIcons.imageOff,
                     color: Settings.tacticalVioletTheme.secondaryForeground,
                   ),
                 )
@@ -307,7 +308,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                   color: Colors.black54,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.close, size: 14, color: Colors.white),
+                child: const Icon(LucideIcons.x, size: 14, color: Colors.white),
               ),
             ),
           ),

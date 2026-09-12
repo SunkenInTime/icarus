@@ -122,7 +122,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                 if (!file.existsSync() &&
                     (remoteUrl == null || remoteUrl.isEmpty)) {
                   return const Center(
-                    child: Icon(Icons.broken_image, color: Colors.white),
+                    child: Icon(LucideIcons.imageOff, color: Colors.white),
                   );
                 }
 

@@ -309,7 +309,7 @@ class _AuthMessageBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isInfo ? Icons.mark_email_read_outlined : Icons.error_outline,
+            isInfo ? LucideIcons.mailCheck : LucideIcons.circleAlert,
             size: 15,
             color: color,
           ),

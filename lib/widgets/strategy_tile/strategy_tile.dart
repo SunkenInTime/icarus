@@ -18,6 +18,7 @@ import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
 import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/widgets/role_badge.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -89,7 +90,7 @@ class StrategyTileActionsButton extends StatelessWidget {
         width: 28,
         height: 28,
         onPressed: onPressed,
-        icon: const Icon(Icons.more_vert_outlined),
+        icon: const Icon(LucideIcons.ellipsisVertical),
       ),
     );
   }
@@ -311,7 +312,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                       borderRadius: strategyTileInnerRadius,
                                       overlay: widget.showDeviceBadge
                                           ? const DeviceOnlyBadge()
-                                          : null,
+                                          : viewData.sharedBadge,
                                     ),
                                   ),
                                   const SizedBox(height: 10),
@@ -342,7 +343,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                     ),
                                     child: const Padding(
                                       padding: EdgeInsets.all(5),
-                                      child: Icon(Icons.push_pin, size: 15),
+                                      child: Icon(LucideIcons.pin, size: 15),
                                     ),
                                   ),
                                 ),
@@ -364,7 +365,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                       height: 28,
                                       onPressed: _handleMenuButtonPressed,
                                       icon:
-                                          const Icon(Icons.more_vert_outlined),
+                                          const Icon(LucideIcons.ellipsisVertical),
                                     ),
                                   ),
                                 ),
@@ -403,7 +404,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     final isPinned = pinned.containsKey(id);
     return [
       ShadContextMenuItem(
-        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        leading: Icon(isPinned ? LucideIcons.pinOff : LucideIcons.pin),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
         onPressed: () {
           _closeMenus();
@@ -450,8 +451,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           },
         ),
       ShadContextMenuItem(
-        leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
-        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        leading: Icon(LucideIcons.trash2,
+            color: Settings.tacticalVioletTheme.destructive),
+        child: Text('Delete',
+            style:
+                TextStyle(color: Settings.tacticalVioletTheme.destructive)),
         enabled: widget.canDelete,
         onPressed: widget.canDelete
             ? () {

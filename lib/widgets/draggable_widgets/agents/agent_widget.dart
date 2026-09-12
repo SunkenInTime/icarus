@@ -241,7 +241,7 @@ class AgentWidget extends ConsumerWidget {
         ),
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
-          leading: const Icon(LucideIcons.plus),
+          leading: const Icon(LucideIcons.plus, size: 16),
           child: const Text('Add Lineup Item'),
           onPressed: () {
             final group =
@@ -259,7 +259,8 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: Icon(
-            Icons.delete,
+            LucideIcons.trash2,
+            size: 16,
             color: Settings.tacticalVioletTheme.destructive,
           ),
           child: const Text('Delete Lineup Group'),
@@ -269,7 +270,7 @@ class AgentWidget extends ConsumerWidget {
         ),
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(
-          leading: const Icon(LucideIcons.eyeOff),
+          leading: const Icon(LucideIcons.eyeOff, size: 16),
           child: const Text('Remove View Cone'),
           onPressed: () {
             ref.read(actionProvider.notifier).performTransaction(
@@ -287,7 +288,7 @@ class AgentWidget extends ConsumerWidget {
           plainAgent != null &&
           plainAgent.id.isNotEmpty)
         ShadContextMenuItem(
-          leading: const Icon(LucideIcons.plus),
+          leading: const Icon(LucideIcons.plus, size: 16),
           child: const Text('Create Lineup'),
           onPressed: () {
             ref
