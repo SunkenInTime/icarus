@@ -34,7 +34,6 @@ People use Icarus while their tactical idea is still hot, the interface must nev
 ## Fight for the obvious solution
 Measure twice, cut once: understand the problem fully before building, because cleverness is what gets written when you haven't. The biggest simplicity win is refusing to solve problems we don't have. Good code is the most simple thing that delivers full functionality, nothing traded away, nothing bolted on. Push back when you see a more obvious way.
 
-## Some general rules
-These steer us in the right direction. They are not hard-set, but default to following them; if you think one should be ignored, be very loud about it and get approval from us first.
+
 
 - Never edit `*.g.dart` files. Edit the source models, then run `dart run build_runner build --delete-conflicting-outputs`.
