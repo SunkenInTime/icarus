@@ -341,7 +341,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                               onPressed: handleImportIca,
                               mainAxisAlignment: MainAxisAlignment.start,
                               leading: const Icon(
-                                Icons.file_download,
+                                LucideIcons.fileDown,
                               ),
                               child: const Text(
                                 'Import .ica',
@@ -352,7 +352,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                               onPressed: handleImportBackup,
                               mainAxisAlignment: MainAxisAlignment.start,
                               leading: const Icon(
-                                Icons.archive_outlined,
+                                LucideIcons.archiveRestore,
                               ),
                               child: const Text('Import Backup',
                                   style: TextStyle(color: Colors.white)),
@@ -361,7 +361,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                               onPressed: handleExportLibrary,
                               mainAxisAlignment: MainAxisAlignment.start,
                               leading: const Icon(
-                                Icons.backup_outlined,
+                                LucideIcons.archive,
                               ),
                               child: const Text('Export Library',
                                   style: TextStyle(color: Colors.white)),
@@ -373,8 +373,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                     child: ShadButton.secondary(
                       key: _importExportButtonKey,
                       onPressed: _toggleImportExportPopover,
-                      leading: const Icon(Icons.import_export),
-                      trailing: const Icon(Icons.keyboard_arrow_down),
+                      leading: const Icon(LucideIcons.arrowDownUp),
+                      trailing: const Icon(LucideIcons.chevronDown, size: 14),
                       child: const Text('Import / Export'),
                     ),
                   ),
@@ -385,7 +385,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                   ),
                   ShadButton(
                     onPressed: showCreateDialog,
-                    leading: const Icon(Icons.add),
+                    leading: const Icon(LucideIcons.plus),
                     child: const Text('Create Strategy'),
                   ),
                 ],
@@ -397,12 +397,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             controller: _backgroundMenuController,
             items: [
               ShadContextMenuItem(
-                leading: const Icon(Icons.create_new_folder_outlined),
+                leading: const Icon(LucideIcons.folderPlus),
                 onPressed: showCreateFolderDialog,
                 child: const Text('Create Folder'),
               ),
               ShadContextMenuItem(
-                leading: const Icon(Icons.note_add_outlined),
+                leading: const Icon(LucideIcons.filePlus),
                 onPressed: showCreateDialog,
                 child: const Text('Create Strategy'),
               ),

@@ -112,7 +112,8 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
     ),
     ShadContextMenuItem(
       leading: Icon(
-        Icons.delete,
+        LucideIcons.trash2,
+        size: 16,
         color: Settings.tacticalVioletTheme.destructive,
       ),
       child: Text(links.length > 1 ? 'Delete spot' : 'Delete lineup'),
@@ -278,7 +279,8 @@ ShadContextMenuItem _buildToggleItem({
   return ShadContextMenuItem(
     onPressed: onPressed,
     leading: Icon(
-      isEnabled ? Icons.check_box : Icons.check_box_outline_blank,
+      isEnabled ? LucideIcons.squareCheck : LucideIcons.square,
+      size: 16,
     ),
     child: Text(label),
   );

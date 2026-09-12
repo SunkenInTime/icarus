@@ -12,6 +12,7 @@ class CustomTextField extends ConsumerWidget {
     this.minLines,
     this.maxLines,
     this.onSubmitted,
+    this.autofocus = false,
     // required this.onEnterPressed,
   });
   final TextEditingController? controller;
@@ -20,6 +21,7 @@ class CustomTextField extends ConsumerWidget {
   final int? minLines;
   final int? maxLines;
   final Function(String)? onSubmitted;
+  final bool autofocus;
   // final Function(EnterTextIntent intent) onEnterPressed;
 
   @override
@@ -27,6 +29,7 @@ class CustomTextField extends ConsumerWidget {
     return TextEditingShortcutScope(
       child: ShadInput(
         controller: controller,
+        autofocus: autofocus,
         textAlign: textAlign ?? TextAlign.start,
         minLines: minLines,
         maxLines: maxLines ?? 1,

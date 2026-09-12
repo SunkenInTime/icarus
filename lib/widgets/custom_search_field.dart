@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// A themed search text field that smoothly expands (slides out) when:
 /// - Hovered by the pointer
@@ -171,7 +172,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
               ? const EdgeInsets.only(left: 8, right: 8)
               : const EdgeInsets.only(left: 12, right: 8),
           child: Icon(
-            Icons.search,
+            LucideIcons.search,
             color: Colors.white,
             size: compact ? 18 : 20,
           ),
@@ -184,7 +185,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
             ? IconButton(
                 tooltip: 'Clear',
                 icon: Icon(
-                  Icons.close,
+                  LucideIcons.x,
                   size: compact ? 18 : 20,
                   color: Colors.white70,
                 ),

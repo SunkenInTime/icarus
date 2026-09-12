@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ImageDropTarget extends ConsumerStatefulWidget {
   const ImageDropTarget({super.key, required this.child});
@@ -68,7 +69,7 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.download, size: 60),
+                    Icon(LucideIcons.download, size: 60),
                     SizedBox(
                       height: 10,
                     ),

@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/map_tile.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MapSelector extends ConsumerStatefulWidget {
   const MapSelector({super.key});
@@ -222,7 +223,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                         Icon(
                           (ref.watch(mapProvider).isAttack)
                               ? CustomIcons.sword
-                              : Icons.shield,
+                              : LucideIcons.shield,
                           size: 20,
                           color: (ref.watch(mapProvider).isAttack)
                               ? Colors.redAccent

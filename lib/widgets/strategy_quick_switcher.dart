@@ -482,8 +482,8 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                               )
                             : Icon(
                                 _isOpen
-                                    ? Icons.keyboard_arrow_up
-                                    : Icons.keyboard_arrow_down,
+                                    ? LucideIcons.chevronUp
+                                    : LucideIcons.chevronDown,
                                 color: Colors.white,
                                 size: 18,
                               ),

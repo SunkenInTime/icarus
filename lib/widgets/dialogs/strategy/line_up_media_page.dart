@@ -8,6 +8,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:path/path.dart' as path;
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
   final TextEditingController youtubeLinkController;
@@ -65,7 +66,8 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           const SizedBox(height: 8),
           CustomTextField(
             controller: widget.nameController!,
-            hintText: "Optional, for telling this apart from other lineups here",
+            hintText:
+                "Optional, for telling this apart from other lineups here",
           ),
           const SizedBox(height: 24),
         ],
@@ -117,7 +119,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
               child: Column(
                 children: [
                   Icon(
-                    Icons.add_photo_alternate_outlined,
+                    LucideIcons.imagePlus,
                     size: 48,
                     color: Settings.tacticalVioletTheme.cardForeground,
                   ),
@@ -182,7 +184,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: const Icon(Icons.add, color: Colors.white),
+          child: const Icon(LucideIcons.plus, color: Colors.white),
         ),
       ),
     );
@@ -202,7 +204,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.content_paste, color: Colors.white),
+              Icon(LucideIcons.clipboardPaste, color: Colors.white),
               SizedBox(height: 4),
               Text(
                 "Paste",
@@ -230,7 +232,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           child: const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.content_paste, color: Colors.white, size: 16),
+              Icon(LucideIcons.clipboardPaste, color: Colors.white, size: 16),
               SizedBox(width: 6),
               Text(
                 "Paste from clipboard",
@@ -272,7 +274,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                   color: Colors.black54,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.close, size: 14, color: Colors.white),
+                child: const Icon(LucideIcons.x, size: 14, color: Colors.white),
               ),
             ),
           ),

@@ -103,7 +103,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                                           .toggleFavoritesOnly();
                                     },
                                     icon: Icon(
-                                      Icons.star_rounded,
+                                      LucideIcons.star600,
                                       size: 24,
                                       color: filterState.favoritesOnly
                                           ? Colors.white

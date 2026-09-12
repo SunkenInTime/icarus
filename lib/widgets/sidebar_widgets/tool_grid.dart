@@ -130,7 +130,7 @@ class ToolGrid extends ConsumerWidget {
             crossAxisSpacing: 5,
             children: [
               SelectableIconButton(
-                icon: const Icon(Icons.draw),
+                icon: const Icon(LucideIcons.pencil, size: 22),
                 tooltip: "Draw",
                 shortcutLabel: shortcutLabel(IcarusShortcutAction.draw),
                 onPressed: () {
@@ -165,7 +165,7 @@ class ToolGrid extends ConsumerWidget {
                 },
                 icon: const Icon(
                   CustomIcons.eraser,
-                  size: 20,
+                  size: 22,
                 ),
                 isSelected: currentInteractionState == InteractionState.erasing,
               ),
@@ -184,7 +184,7 @@ class ToolGrid extends ConsumerWidget {
                           .update(InteractionState.textTools);
                   }
                 },
-                icon: const Icon(Icons.text_fields),
+                icon: const Icon(LucideIcons.type, size: 22),
                 isSelected:
                     currentInteractionState == InteractionState.textTools,
               ),
@@ -244,7 +244,7 @@ class ToolGrid extends ConsumerWidget {
                           tagColorValue: imageResult.tagColorValue,
                         );
                   },
-                  icon: const Icon(Icons.image_outlined),
+                  icon: const Icon(LucideIcons.image, size: 22),
                 ),
               ),
               SelectableIconButton(
@@ -271,7 +271,7 @@ class ToolGrid extends ConsumerWidget {
                         .update(InteractionState.lineUpPlacing);
                   }
                 },
-                icon: const Icon(LucideIcons.bookOpen400),
+                icon: const Icon(LucideIcons.bookOpen400, size: 22),
                 isSelected: ref.watch(interactionStateProvider) ==
                     InteractionState.lineUpPlacing,
               ),
@@ -289,7 +289,7 @@ class ToolGrid extends ConsumerWidget {
                           .update(InteractionState.visionCone);
                   }
                 },
-                icon: const Icon(LucideIcons.eye, size: 20),
+                icon: const Icon(LucideIcons.eye, size: 22),
                 isSelected:
                     currentInteractionState == InteractionState.visionCone,
               ),
@@ -307,7 +307,7 @@ class ToolGrid extends ConsumerWidget {
                           .update(InteractionState.customShapes);
                   }
                 },
-                icon: const Icon(Icons.crop_square, size: 20),
+                icon: const Icon(LucideIcons.square, size: 22),
                 isSelected:
                     currentInteractionState == InteractionState.customShapes,
               ),

@@ -209,7 +209,7 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
 
                 if (!file.existsSync()) {
                   return const Center(
-                      child: Icon(Icons.broken_image, color: Colors.white));
+                      child: Icon(LucideIcons.imageOff, color: Colors.white));
                 }
 
                 return InteractiveViewer(

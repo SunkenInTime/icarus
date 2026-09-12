@@ -379,6 +379,11 @@ class _MyAppState extends ConsumerState<MyApp> {
           brightness: Brightness.dark,
           colorScheme: Settings.tacticalVioletTheme,
           breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+          // Ghost buttons are quiet controls (menu items, icon buttons),
+          // not primary commands, so they don't get the command color.
+          ghostButtonTheme: ShadButtonTheme(
+            foregroundColor: Settings.tacticalVioletTheme.foreground,
+          ),
         ),
         home: const MyHomePage(),
         routes: {

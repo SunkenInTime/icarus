@@ -204,7 +204,7 @@ void main() {
           .every((indicator) => indicator.visible),
       isTrue,
     );
-    expect(find.byIcon(Icons.rotate_right_rounded), findsOneWidget);
+    expect(find.byIcon(LucideIcons.rotateCw), findsOneWidget);
 
     final handle = find.byKey(
       const ValueKey('custom-rectangle-rotate-top-center'),
@@ -231,7 +231,7 @@ void main() {
     final activeBadgeIcon = tester.widget<Icon>(
       find.descendant(
         of: handle,
-        matching: find.byIcon(Icons.rotate_right_rounded),
+        matching: find.byIcon(LucideIcons.rotateCw),
       ),
     );
     expect(

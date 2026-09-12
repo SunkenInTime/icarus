@@ -94,12 +94,12 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           spacing: 4,
           children: [
             SelectableIconButton(
-              icon: const Icon(Icons.circle_outlined, size: 20),
+              icon: const Icon(LucideIcons.circle, size: 20),
               isSelected: _shape == _CustomShapeKind.circle,
               onPressed: () => setState(() => _shape = _CustomShapeKind.circle),
             ),
             SelectableIconButton(
-              icon: const Icon(Icons.crop_square, size: 20),
+              icon: const Icon(LucideIcons.square, size: 20),
               isSelected: _shape == _CustomShapeKind.rectangle,
               onPressed: () =>
                   setState(() => _shape = _CustomShapeKind.rectangle),
@@ -178,7 +178,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             onChanged: (v) => setState(() => _opacityPercent = v.round()),
             min: 5,
             max: 80,
-            leading: Icon(Icons.opacity,
+            leading: Icon(LucideIcons.droplet,
                 color: Settings.tacticalVioletTheme.mutedForeground),
             // label: 'O',
             hintText: 'Enter Opacity',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CustomExpansionTile extends StatefulWidget {
   /// Creates a custom expansion tile that keeps a persistent row visible
@@ -175,7 +176,8 @@ class _CustomExpansionTileState extends State<CustomExpansionTile>
                       RotationTransition(
                         turns: _iconTurns,
                         child: Icon(
-                          Icons.expand_more,
+                          LucideIcons.chevronDown,
+                          size: 20,
                           color: iconColor,
                         ),
                       ),

@@ -10,6 +10,7 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DeleteArea extends ConsumerStatefulWidget {
   const DeleteArea({super.key});
@@ -329,8 +330,8 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                               children: [
                                 Center(
                                   child: Icon(
-                                    Icons.delete_outline,
-                                    size: 24,
+                                    LucideIcons.trash2,
+                                    size: 22,
                                     color: iconColor,
                                   ),
                                 ),
