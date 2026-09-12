@@ -17,6 +17,12 @@ The palette, theme, and sizing constants live in `lib/const/settings.dart`, with
 
 - Desktop builds hide the native title bar. Each top-level screen draws its own 40px strip (`lib/widgets/window_chrome.dart`): macOS keeps its traffic lights, so the strip leaves a 78px inset on the left; Windows and Linux get app-drawn caption buttons on the right; the strip is the drag handle. Web renders the same strip with no inset and no buttons.
 - The library strip holds the three tabs on the left and only search, sort, New, and the account on the right. Nothing else goes in it. Inside a folder, the breadcrumb lives in the content area, not the strip.
+- The editor's document actions (save, export, video, screenshot, settings) sit in one card at the top-left of the canvas (`lib/widgets/editor_toolbar.dart`). For a cloud strategy the save button's glyph is the sync state; the words live in its tooltip and a popover opens only when sync needs attention. No status chips or labels in the editor.
+
+## Icons
+
+- Lucide is the icon family (`LucideIcons.*`, re-exported by shadcn_ui). Material `Icons.*` only survive in the persisted folder-icon registry and cursor glyphs. Toolbar and tool glyphs are 18-22px, menu and inline glyphs 16px.
+- Icons rest in muted foreground and come up to foreground on hover. Violet on an icon means it is the selected or checked item, nothing else.
 
 ## Things I would like to remain consistent
 
