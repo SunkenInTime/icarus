@@ -19,6 +19,11 @@ The palette, theme, and sizing constants live in `lib/const/settings.dart`, with
 - The library strip holds the three tabs on the left and only search, sort, and New on the right (there is no account yet). Nothing else goes in it. Inside a folder, the breadcrumb lives in the content area, not the strip.
 - The editor's document actions (save, export, video, screenshot, settings) sit in one card at the top-left of the canvas (`lib/widgets/editor_toolbar.dart`). No status chips or labels in the editor.
 
+## Icons
+
+- Lucide is the icon family (`LucideIcons.*`, re-exported by shadcn_ui). Material `Icons.*` only survive in the persisted folder-icon registry and cursor glyphs. Toolbar and tool glyphs are 18-22px, menu and inline glyphs 16px.
+- Icons rest in muted foreground and come up to foreground on hover. Violet on an icon means it is the selected or checked item, nothing else.
+
 ## Things I would like to remain consistent
 
 **The One Command Color** Violet marks current action, selection, focus, and primary commands, and nothing else. If violet appears somewhere that isn't actionable or active, it's wrong.
