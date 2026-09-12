@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -329,8 +330,8 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                               children: [
                                 Center(
                                   child: Icon(
-                                    Icons.delete_outline,
-                                    size: 24,
+                                    LucideIcons.trash2,
+                                    size: 22,
                                     color: iconColor,
                                   ),
                                 ),
