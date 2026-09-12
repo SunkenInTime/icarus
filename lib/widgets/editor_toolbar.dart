@@ -277,8 +277,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   }
 }
 
-/// One control in the editor toolbar: a quiet ghost icon button that comes up
-/// to full foreground on hover. [icon] is any 18px glyph, so buttons can swap
+/// One control in the editor toolbar: a ghost icon button in full foreground
+/// (muted glyphs vanish against the card) with a tonal hover. [icon] is any 18px glyph, so buttons can swap
 /// in a spinner without changing size.
 class EditorToolbarButton extends StatelessWidget {
   const EditorToolbarButton({
@@ -305,7 +305,7 @@ class EditorToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    final resting = foregroundColor ?? theme.mutedForeground;
+    final resting = foregroundColor ?? theme.foreground;
     return Semantics(
       label: semanticsLabel ?? tooltip,
       button: true,

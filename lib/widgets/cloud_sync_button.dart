@@ -240,7 +240,9 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   }
 
   Widget _glyph(_SyncStatus status, Color? color) {
-    final size = widget.style.iconSize;
+    // Lucide's cloud sits low in its box and reads smaller than the upload
+    // and camera glyphs beside it, so it gets 2px more.
+    final size = widget.style.iconSize + 2;
     switch (status) {
       case _SyncStatus.synced:
         return Icon(
@@ -259,8 +261,8 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
       case _SyncStatus.syncing:
         return SizedBox(
           key: const ValueKey('syncing'),
-          width: size - 2,
-          height: size - 2,
+          width: size - 4,
+          height: size - 4,
           child: CircularProgressIndicator(
             strokeWidth: 1.8,
             valueColor: AlwaysStoppedAnimation<Color>(
