@@ -626,7 +626,7 @@ class FolderContent extends ConsumerWidget {
               children: [
                 if (currentFolder != null)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 16, 0),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                     child: LibraryBreadcrumb(folder: currentFolder),
                   ),
                 if (banner != null) banner,
