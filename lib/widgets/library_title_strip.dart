@@ -417,7 +417,8 @@ class _TabButton extends StatelessWidget {
         opacity: dimmed ? 0.45 : 1,
         child: ShadButton.ghost(
           height: _controlHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          gap: 6,
           backgroundColor: selected ? theme.secondary : null,
           foregroundColor: foreground,
           hoverForegroundColor: theme.foreground,
