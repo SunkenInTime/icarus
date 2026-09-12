@@ -39531,6 +39531,15 @@
         "value": {
           "type": "object",
           "value": {
+            "agentTypes": {
+              "fieldType": {
+                "type": "array",
+                "value": {
+                  "type": "string"
+                }
+              },
+              "optional": false
+            },
             "color": {
               "fieldType": {
                 "type": "union",
@@ -39621,6 +39630,15 @@
               },
               "optional": false
             },
+            "mapPeeks": {
+              "fieldType": {
+                "type": "array",
+                "value": {
+                  "type": "string"
+                }
+              },
+              "optional": false
+            },
             "name": {
               "fieldType": {
                 "type": "string"
@@ -39664,6 +39682,12 @@
                     "value": "viewer"
                   }
                 ]
+              },
+              "optional": false
+            },
+            "strategyCount": {
+              "fieldType": {
+                "type": "number"
               },
               "optional": false
             },
@@ -47914,6 +47938,20 @@
       },
       "visibility": {
         "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "maintenance.js:backfillStrategyAgentSummaries",
+      "returns": {
+        "type": "number"
+      },
+      "visibility": {
+        "kind": "internal"
       }
     },
     {

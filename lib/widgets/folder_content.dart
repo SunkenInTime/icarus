@@ -351,6 +351,9 @@ class FolderContent extends ConsumerWidget {
         folderCount: tree
             .where((item) => item.folder.parentID == entry.folder.id)
             .length,
+        strategyCount: entry.strategyCount,
+        maps: entry.mapPeeks,
+        agentTypes: entry.agentTypes,
       ),
     );
   }

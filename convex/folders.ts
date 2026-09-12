@@ -8,6 +8,7 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import { getFolderByPublicId } from "./lib/entities";
+import { readStrategyAgentTypes } from "./lib/strategyAgentSummary";
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -285,6 +286,10 @@ export const listTree = query({
     const folderLookup = new Map(
       accessible.map(({ folder }) => [folder._id, folder]),
     );
+    const summaries = await summariseFolderTrees(
+      ctx,
+      accessible.map(({ folder }) => folder),
+    );
 
     return accessible
       .sort((a, b) => a.folder.createdAt - b.folder.createdAt)
@@ -304,9 +309,94 @@ export const listTree = query({
         createdAt: folder.createdAt,
         updatedAt: folder.updatedAt,
         role,
+        ...summaries.get(folder._id)!,
       }));
   },
 });
+
+type FolderTreeSummary = {
+  strategyCount: number;
+  mapPeeks: string[];
+  agentTypes: string[];
+};
+
+/// One pass over the strategies of every listed folder, then counts roll up
+/// from each folder into its ancestors so a parent summarises its whole
+/// subtree. Folders outside the list (not accessible) contribute nothing.
+async function summariseFolderTrees(
+  ctx: AnyCtx,
+  folders: Doc<"folders">[],
+): Promise<Map<Id<"folders">, FolderTreeSummary>> {
+  const listed = new Set(folders.map((folder) => folder._id));
+  const strategyCounts = new Map<Id<"folders">, number>();
+  const mapCounts = new Map<Id<"folders">, Map<string, number>>();
+  const agentCounts = new Map<Id<"folders">, Map<string, number>>();
+  for (const folder of folders) {
+    strategyCounts.set(folder._id, 0);
+    mapCounts.set(folder._id, new Map());
+    agentCounts.set(folder._id, new Map());
+  }
+  const bump = (counts: Map<string, number>, key: string) =>
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+
+  for (const folder of folders) {
+    const strategies = await ctx.db
+      .query("strategies")
+      .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
+      .collect();
+    const agentTypesSeen = new Map<string, number>();
+    for (const strategy of strategies) {
+      bump(mapCounts.get(folder._id)!, strategy.mapData);
+      for (const type of await readStrategyAgentTypes(ctx, strategy._id)) {
+        bump(agentTypesSeen, type);
+      }
+    }
+    strategyCounts.set(folder._id, strategies.length);
+    agentCounts.set(folder._id, agentTypesSeen);
+  }
+
+  // Roll every folder's own counts up through its listed ancestors.
+  const merged = new Map<Id<"folders">, FolderTreeSummary>();
+  const totals = new Map<
+    Id<"folders">,
+    { strategies: number; maps: Map<string, number>; agents: Map<string, number> }
+  >();
+  for (const folder of folders) {
+    totals.set(folder._id, { strategies: 0, maps: new Map(), agents: new Map() });
+  }
+  const mergeCounts = (into: Map<string, number>, from: Map<string, number>) => {
+    for (const [key, count] of from) into.set(key, (into.get(key) ?? 0) + count);
+  };
+  for (const folder of folders) {
+    let current: Doc<"folders"> | undefined = folder;
+    const visited = new Set<Id<"folders">>();
+    while (current !== undefined && !visited.has(current._id)) {
+      visited.add(current._id);
+      const total = totals.get(current._id)!;
+      total.strategies += strategyCounts.get(folder._id)!;
+      mergeCounts(total.maps, mapCounts.get(folder._id)!);
+      mergeCounts(total.agents, agentCounts.get(folder._id)!);
+      const parentId: Id<"folders"> | undefined = current.parentFolderId;
+      current =
+        parentId !== undefined && listed.has(parentId)
+          ? folders.find((candidate) => candidate._id === parentId)
+          : undefined;
+    }
+  }
+  const ranked = (counts: Map<string, number>) =>
+    [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([key]) => key);
+  for (const folder of folders) {
+    const total = totals.get(folder._id)!;
+    merged.set(folder._id, {
+      strategyCount: total.strategies,
+      mapPeeks: ranked(total.maps).slice(0, 2),
+      agentTypes: ranked(total.agents),
+    });
+  }
+  return merged;
+}
 
 export const move = mutation({
   args: {

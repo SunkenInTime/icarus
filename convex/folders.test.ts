@@ -100,3 +100,108 @@ test("folder move rejects a descendant parent without changing the tree", async 
   await expect(parentPublicId(t, "child")).resolves.toBe("root");
   await expect(parentPublicId(t, "grandchild")).resolves.toBe("child");
 });
+
+const listFolderTree = makeFunctionReference<"query">("folders:listTree");
+const createStrategy = makeFunctionReference<"mutation">(
+  "strategies:createWithInitialPage",
+);
+const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
+const deleteStrategy = makeFunctionReference<"mutation">("strategies:delete");
+
+async function seedStrategy(
+  owner: Harness,
+  publicId: string,
+  folderPublicId: string,
+  mapData: string,
+) {
+  await owner.mutation(createStrategy, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+    publicId,
+    name: publicId,
+    mapData,
+    folderPublicId,
+    initialPagePublicId: `${publicId}-page`,
+    initialPageName: "Page 1",
+    initialPageIsAttack: true,
+    initialPageSettings: {
+      agentSize: 48,
+      abilitySize: 32,
+      useNeutralTeamColors: false,
+    },
+  });
+}
+
+async function placeAgent(
+  owner: Harness,
+  strategyPublicId: string,
+  elementPublicId: string,
+  agentType: string,
+) {
+  await owner.mutation(applyBatch, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+    strategyPublicId,
+    clientId: "client-a",
+    ops: [
+      {
+        opId: `${elementPublicId}-add`,
+        type: "element.add",
+        elementPublicId,
+        pagePublicId: `${strategyPublicId}-page`,
+        payload: {
+          kind: "agent",
+          payloadVersion: 1,
+          data: { type: agentType, position: { x: 0.5, y: 0.5 } },
+        },
+        sortIndex: 0,
+      },
+    ],
+  });
+}
+
+test("folder tree summarises strategies, maps, and agents across the subtree", async () => {
+  const { owner } = await createHarness();
+  await seedFolder(owner, "root");
+  await seedFolder(owner, "child", "root");
+  await seedStrategy(owner, "s-root", "root", "ascent");
+  await seedStrategy(owner, "s-child-1", "child", "haven");
+  await seedStrategy(owner, "s-child-2", "child", "haven");
+  await placeAgent(owner, "s-root", "e1", "jett");
+  await placeAgent(owner, "s-child-1", "e2", "sova");
+  await placeAgent(owner, "s-child-2", "e3", "sova");
+
+  const tree = (await owner.query(listFolderTree, { scope: "owned" })) as Array<
+    Record<string, unknown>
+  >;
+  const byId = new Map(tree.map((entry) => [entry.publicId, entry]));
+  expect(byId.get("child")).toMatchObject({
+    strategyCount: 2,
+    mapPeeks: ["haven"],
+    agentTypes: ["sova"],
+  });
+  expect(byId.get("root")).toMatchObject({
+    strategyCount: 3,
+    mapPeeks: ["haven", "ascent"],
+    agentTypes: ["sova", "jett"],
+  });
+});
+
+test("deleting a strategy drops it from the folder summary", async () => {
+  const { owner } = await createHarness();
+  await seedFolder(owner, "root");
+  await seedStrategy(owner, "s-root", "root", "ascent");
+  await placeAgent(owner, "s-root", "e1", "jett");
+  await owner.mutation(deleteStrategy, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+    strategyPublicId: "s-root",
+    expectedRevision: 0,
+  });
+
+  const tree = (await owner.query(listFolderTree, { scope: "owned" })) as Array<
+    Record<string, unknown>
+  >;
+  expect(tree[0]).toMatchObject({
+    strategyCount: 0,
+    mapPeeks: [],
+    agentTypes: [],
+  });
+});

@@ -6,6 +6,7 @@ import {
   collectAssetIdsFromLineupPayload,
 } from "./lib/imageAssets";
 import { captureDeletedPageImageAssets } from "./images";
+import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 
 const MAINTENANCE_BATCH_SIZE = 200;
 const DAYS_30_MS = 30 * 24 * 60 * 60 * 1000;
@@ -138,5 +139,19 @@ export const purgeOldTombstones = internalMutation({
     if (shouldContinue) {
       await ctx.scheduler.runAfter(0, purgeOldTombstonesRef, {});
     }
+  },
+});
+
+/// One-off after the agent summary table shipped: every strategy written
+/// before it needs its summary computed once. Safe to re-run.
+export const backfillStrategyAgentSummaries = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const strategies = await ctx.db.query("strategies").collect();
+    for (const strategy of strategies) {
+      await refreshStrategyAgentSummary(ctx, strategy._id);
+    }
+    return strategies.length;
   },
 });

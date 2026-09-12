@@ -2,6 +2,7 @@ import { mutation, type MutationCtx } from "./_generated/server";
 import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
+import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
   clampPageIndex,
   getStrategyByPublicId,
@@ -1323,6 +1324,7 @@ export const applyBatch = mutation({
     await assertStrategyRole(ctx, strategy, "editor");
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
+    let contentChanged = false;
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
@@ -1401,6 +1403,9 @@ export const applyBatch = mutation({
           } else {
             result = await applyLineupOp(ctx, strategy, op);
           }
+          if (result.status === "ack" && op.entityType !== "strategy") {
+            contentChanged = true;
+          }
         } catch (error) {
           if (!(error instanceof ConvexError)) throw error;
           const rawCode =
@@ -1456,6 +1461,10 @@ export const applyBatch = mutation({
         createdAt: Date.now(),
       });
       results.push(publicResult);
+    }
+
+    if (contentChanged) {
+      await refreshStrategyAgentSummary(ctx, strategy._id);
     }
 
     return { strategyPublicId: strategy.publicId, results };

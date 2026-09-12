@@ -200,6 +200,13 @@ export default defineSchema({
     .index("by_uploadStatus_and_updatedAt", ["uploadStatus", "updatedAt"])
     .index("by_storageId", ["storageId"])
     .index("by_objectKey", ["objectKey"]),
+  // Derived: which agents each strategy uses, kept current by ops.applyBatch
+  // so the folder tree can summarise a folder without reading its elements.
+  strategyAgentSummaries: defineTable({
+    strategyId: v.id("strategies"),
+    agentTypes: v.array(v.string()),
+    updatedAt: v.number(),
+  }).index("by_strategyId", ["strategyId"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),

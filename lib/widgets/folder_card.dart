@@ -52,14 +52,18 @@ class FolderCardViewData {
         mapPeeks = _collectMapPeeks(strategies),
         agentTypes = _collectAgents(strategies);
 
-  /// A folder whose contents are not loaded on this device, e.g. a cloud
-  /// folder: only its subfolder count is known.
+  /// A folder summarised elsewhere, e.g. by the cloud: counts, map peeks, and
+  /// agents arrive ready-made instead of being derived from strategies here.
   FolderCardViewData.summary({
     required this.folder,
     required this.folderCount,
-  })  : strategyCount = null,
-        mapPeeks = const [],
-        agentTypes = const [];
+    this.strategyCount,
+    List<MapValue> maps = const [],
+    this.agentTypes = const [],
+  }) : mapPeeks = [
+          for (final map in maps.take(2))
+            'assets/maps/thumbnails/${Maps.mapNames[map]}_thumbnail.webp',
+        ];
 
   final Folder folder;
 
