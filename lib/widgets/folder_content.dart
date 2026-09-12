@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
@@ -11,11 +10,11 @@ import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
+import 'package:icarus/widgets/library_breadcrumb.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 @visibleForTesting
 bool strategyBelongsToVisibleFolder({
@@ -135,8 +134,6 @@ class FolderContent extends ConsumerWidget {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).listenable();
   });
 
-  final TextEditingController searchController = TextEditingController();
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Move all your existing grid logic here from FolderView
@@ -157,75 +154,11 @@ class FolderContent extends ConsumerWidget {
           Positioned.fill(
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0, left: 16, right: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        spacing: 8,
-                        children: [
-                          ShadSelect<SortBy>(
-                            decoration: ShadDecoration(
-                              color: Settings.tacticalVioletTheme.card,
-                              shadows: const [Settings.cardForegroundBackdrop],
-                            ),
-                            initialValue:
-                                ref.watch(strategyFilterProvider).sortBy,
-                            selectedOptionBuilder: (context, value) => Text(
-                                StrategyFilterProvider.sortByLabels[value]!),
-                            options: [
-                              for (final sb in SortBy.values)
-                                ShadOption(
-                                  value: sb,
-                                  child: Text(
-                                      StrategyFilterProvider.sortByLabels[sb]!),
-                                ),
-                            ],
-                            onChanged: (value) {
-                              ref
-                                  .read(strategyFilterProvider.notifier)
-                                  .setSortBy(value!);
-                            },
-                          ),
-                          ShadSelect<SortOrder>(
-                            decoration: ShadDecoration(
-                              color: Settings.tacticalVioletTheme.card,
-                              shadows: const [Settings.cardForegroundBackdrop],
-                            ),
-                            initialValue:
-                                ref.watch(strategyFilterProvider).sortOrder,
-                            selectedOptionBuilder: (context, value) => Text(
-                                StrategyFilterProvider.sortOrderLabels[value]!),
-                            options: [
-                              for (final so in SortOrder.values)
-                                ShadOption(
-                                  value: so,
-                                  child: Text(StrategyFilterProvider
-                                      .sortOrderLabels[so]!),
-                                ),
-                            ],
-                            onChanged: (value) {
-                              ref
-                                  .read(strategyFilterProvider.notifier)
-                                  .setSortOrder(value!);
-                            },
-                          ),
-                        ],
-                      ),
-                      SizedBox(
-                        height: 40,
-                        child: SearchTextField(
-                          controller: searchController,
-                          collapsedWidth: 40,
-                          expandedWidth: 250,
-                          compact: true,
-                          onChanged: (value) {},
-                        ),
-                      ),
-                    ],
+                if (folder != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: LibraryBreadcrumb(folder: folder!),
                   ),
-                ),
                 Expanded(
                   child: ValueListenableBuilder<Box<StrategyData>>(
                     valueListenable: strategiesBoxListenable,
