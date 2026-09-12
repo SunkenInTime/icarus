@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
@@ -22,7 +23,12 @@ class AbiilityBar extends ConsumerWidget {
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
 
     AgentData activeAgent = ref.watch(abilityBarProvider)!;
-    return Container(
+    // A pinned landing already has its ability; only an agent can be dropped.
+    final isLandingPinned = ref.watch(
+      lineUpProvider
+          .select((state) => state.placement?.pinnedLandingId != null),
+    );
+    final bar = Container(
       width: 90,
       height: (activeAgent.abilities.length * 71),
       decoration: BoxDecoration(
@@ -136,6 +142,11 @@ class AbiilityBar extends ConsumerWidget {
           )
         ],
       ),
+    );
+    if (!isLandingPinned) return bar;
+    return IgnorePointer(
+      key: const ValueKey('ability-bar-disabled'),
+      child: Opacity(opacity: 0.4, child: bar),
     );
   }
 }

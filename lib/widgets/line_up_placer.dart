@@ -94,24 +94,45 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
           );
         }
 
-        /// Where the dragged item's anchor ends up if dropped at this offset,
-        /// so the preview line points at the real landing point rather than
-        /// the corner of the drag feedback.
-        Offset? dropAnchor(Object? data, Offset renderedTopLeft) {
+        /// Which end the dragged item would become and where its anchor ends
+        /// up if dropped at this offset, so the preview line points at the
+        /// real landing point rather than the corner of the drag feedback.
+        /// Sidebar items and drafts being repositioned both count.
+        LineUpDragHover? dropHover(Object? data, Offset renderedTopLeft) {
           final isAttack = ref.read(mapProvider).isAttack;
-          if (data is AgentData) {
-            return screenAnchorForAgent(
-              agent: agentAt(data, renderedTopLeft),
-              coordinateSystem: coordinateSystem,
-              isAttack: isAttack,
+          final PlacedAgent? agent = switch (data) {
+            AgentData() => agentAt(data, renderedTopLeft),
+            PlacedAgent() => agentAt(
+                AgentData.agents[data.type]!,
+                renderedTopLeft,
+              ),
+            _ => null,
+          };
+          if (agent != null) {
+            return LineUpDragHover(
+              end: LineUpEnd.origin,
+              anchor: screenAnchorForAgent(
+                agent: agent,
+                coordinateSystem: coordinateSystem,
+                isAttack: isAttack,
+              ),
             );
           }
-          if (data is AbilityInfo) {
-            return screenAnchorForAbility(
-              ability: abilityAt(data, renderedTopLeft),
-              coordinateSystem: coordinateSystem,
-              mapScale: Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
-              isAttack: isAttack,
+          final PlacedAbility? ability = switch (data) {
+            AbilityInfo() => abilityAt(data, renderedTopLeft),
+            PlacedAbility() => abilityAt(data.data, renderedTopLeft),
+            _ => null,
+          };
+          if (ability != null) {
+            return LineUpDragHover(
+              end: LineUpEnd.landing,
+              anchor: screenAnchorForAbility(
+                ability: ability,
+                coordinateSystem: coordinateSystem,
+                mapScale:
+                    Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
+                isAttack: isAttack,
+              ),
             );
           }
           return null;
@@ -227,7 +248,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
           onMove: (details) {
             ref
                 .read(lineUpDragHoverProvider.notifier)
-                .update(dropAnchor(details.data, localOffset(details.offset)));
+                .update(dropHover(details.data, localOffset(details.offset)));
           },
           onLeave: (_) {
             ref.read(lineUpDragHoverProvider.notifier).update(null);

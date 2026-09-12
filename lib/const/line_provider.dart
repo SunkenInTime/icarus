@@ -570,14 +570,6 @@ class LineUpState {
     return links.where((link) => link.landingId == landingId).toList();
   }
 
-  List<LineUpLink> linksBetween(String originId, String landingId) {
-    return links
-        .where(
-          (link) => link.originId == originId && link.landingId == landingId,
-        )
-        .toList();
-  }
-
   /// Distinct (originId, landingId) pairs in first-seen order. One line is
   /// drawn per pair regardless of how many links share it.
   List<(String, String)> get connectorPairs {
@@ -642,8 +634,6 @@ class LineUpProvider extends Notifier<LineUpState> {
       state.linksFromOrigin(originId);
   List<LineUpLink> linksToLanding(String landingId) =>
       state.linksToLanding(landingId);
-  List<LineUpLink> linksBetween(String originId, String landingId) =>
-      state.linksBetween(originId, landingId);
 
   // --- Placement -----------------------------------------------------------
 
@@ -825,33 +815,6 @@ class LineUpProvider extends Notifier<LineUpState> {
       links: [...state.links, link],
       placement: null,
     );
-    return link;
-  }
-
-  /// Another way to land on an existing spot from an existing origin.
-  LineUpLink? addVariant(
-    String originId,
-    String landingId, {
-    String name = '',
-    String youtubeLink = '',
-    String notes = '',
-    List<SimpleImageData> images = const [],
-  }) {
-    if (state.originById(originId) == null ||
-        state.landingById(landingId) == null) {
-      return null;
-    }
-    final link = LineUpLink(
-      id: _uuid.v4(),
-      originId: originId,
-      landingId: landingId,
-      name: name,
-      youtubeLink: youtubeLink,
-      notes: notes,
-      images: images.map((image) => image.copyWith()).toList(),
-    );
-    _recordAddition(link.id);
-    state = state.copyWith(links: [...state.links, link]);
     return link;
   }
 

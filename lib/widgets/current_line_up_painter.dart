@@ -11,20 +11,37 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
 
-/// Where the sidebar drag currently hovers over the map while a lineup end is
-/// pinned, in map-local pixels. Null when nothing is being dragged.
+enum LineUpEnd { origin, landing }
+
+/// A lineup end being dragged over the map: where its anchor would land, in
+/// map-local pixels, and which end it is.
+class LineUpDragHover {
+  const LineUpDragHover({required this.end, required this.anchor});
+
+  final LineUpEnd end;
+  final Offset anchor;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LineUpDragHover && other.end == end && other.anchor == anchor;
+
+  @override
+  int get hashCode => Object.hash(end, anchor);
+}
+
+/// Null when nothing is being dragged.
 final lineUpDragHoverProvider =
-    NotifierProvider<LineUpDragHoverNotifier, Offset?>(
+    NotifierProvider<LineUpDragHoverNotifier, LineUpDragHover?>(
   LineUpDragHoverNotifier.new,
 );
 
-class LineUpDragHoverNotifier extends Notifier<Offset?> {
+class LineUpDragHoverNotifier extends Notifier<LineUpDragHover?> {
   @override
-  Offset? build() => null;
+  LineUpDragHover? build() => null;
 
-  void update(Offset? position) {
-    if (state == position) return;
-    state = position;
+  void update(LineUpDragHover? hover) {
+    if (state == hover) return;
+    state = hover;
   }
 }
 
@@ -96,7 +113,7 @@ class _CurrentLinePainter extends CustomPainter {
   final Color color;
   final Offset? originAnchor;
   final Offset? landingAnchor;
-  final Offset? dragHover;
+  final LineUpDragHover? dragHover;
   final double abilitySize;
   final double agentSize;
   final int resizeCounter;
@@ -120,14 +137,18 @@ class _CurrentLinePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..isAntiAlias = true;
 
-    if (originAnchor != null && landingAnchor != null) {
-      canvas.drawLine(originAnchor!, landingAnchor!, paint);
+    final hover = dragHover;
+    if (hover != null) {
+      // The dragged end replaces its settled counterpart, so the line runs
+      // from the other end to the cursor instead of pointing at the old spot.
+      final fixed =
+          hover.end == LineUpEnd.origin ? landingAnchor : originAnchor;
+      if (fixed != null) _drawDashed(canvas, fixed, hover.anchor, paint);
       return;
     }
-
-    final pinned = originAnchor ?? landingAnchor;
-    if (pinned == null || dragHover == null) return;
-    _drawDashed(canvas, pinned, dragHover!, paint);
+    if (originAnchor != null && landingAnchor != null) {
+      canvas.drawLine(originAnchor!, landingAnchor!, paint);
+    }
   }
 
   void _drawDashed(Canvas canvas, Offset from, Offset to, Paint paint) {

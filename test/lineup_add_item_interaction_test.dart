@@ -15,6 +15,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
@@ -161,7 +162,7 @@ void main() {
   });
 
   testWidgets(
-      'right-click Add lineup from here populates ability bar and enters lineup mode',
+      'right-click Add lineup populates ability bar and enters lineup mode',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
@@ -189,7 +190,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Add lineup from here'));
+    await tester.tap(find.text('Add lineup'));
     await tester.pumpAndSettle();
 
     expect(container.read(interactionStateProvider),
@@ -289,10 +290,6 @@ void main() {
     // The overlay's own origin plus the placer's full-opacity copy.
     expect(find.byType(AgentWidget), findsNWidgets(2));
     expect(find.byType(Draggable), findsNothing);
-    expect(
-      find.byKey(const ValueKey('lineup-pinned-chip-Origin')),
-      findsNWidgets(2),
-    );
   });
 
   testWidgets('new-lineup current agent and ability reposition on resize',
@@ -507,6 +504,59 @@ void main() {
     expect(draftAbility, isNotNull);
     expect(draftAbility!.data.type, AgentType.breach);
     expect(container.read(lineUpProvider).placement?.isComplete, isTrue);
+  });
+
+  testWidgets('repositioning a draft end publishes its hover while dragging',
+      (tester) async {
+    final container = _createContainer();
+    container.read(lineUpProvider.notifier).startFresh();
+    container.read(lineUpProvider.notifier).setDraftAgent(
+          PlacedAgent(
+            id: 'current-agent',
+            type: AgentType.breach,
+            position: const Offset(180, 220),
+            isAlly: true,
+          ),
+        );
+    container.read(lineUpProvider.notifier).setDraftAbility(
+          PlacedAbility(
+            id: 'current-ability',
+            data: AgentData.agents[AgentType.breach]!.abilities.first,
+            position: const Offset(320, 360),
+            isAlly: true,
+          ),
+        );
+    container
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.lineUpPlacing);
+
+    await _pumpLineupCanvas(
+      tester,
+      container: container,
+      width: 900,
+      height: 600,
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(AgentWidget)),
+    );
+    await tester.pump();
+    for (var step = 0; step < 4; step++) {
+      await gesture.moveBy(const Offset(30, -15));
+      await tester.pump();
+    }
+
+    final hover = container.read(lineUpDragHoverProvider);
+    expect(hover, isNotNull);
+    expect(hover!.end, LineUpEnd.origin);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(container.read(lineUpDragHoverProvider), isNull);
+    expect(
+      container.read(lineUpProvider).placement?.draftAgent?.position,
+      isNot(const Offset(180, 220)),
+    );
   });
 
   test('leaving lineup mode clears the ability bar', () {

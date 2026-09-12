@@ -92,27 +92,8 @@ void main() {
       expect(second.landingId, first.landingId);
       expect(second.originId, isNot(first.originId));
       expect(state.linksToLanding(first.landingId), hasLength(2));
-      expect(state.linksBetween(second.originId, first.landingId), hasLength(1));
     });
 
-    test('variant adds a link between existing ends only', () {
-      final container = _createContainer();
-      final notifier = container.read(lineUpProvider.notifier);
-      final first = _placeFresh(notifier, agentId: 'a1', abilityId: 'b1');
-
-      final variant = notifier.addVariant(
-        first.originId,
-        first.landingId,
-        name: 'Bounce off the wall',
-      )!;
-      expect(notifier.addVariant('missing', first.landingId), isNull);
-
-      final state = container.read(lineUpProvider);
-      expect(state.origins, hasLength(1));
-      expect(state.landings, hasLength(1));
-      expect(state.linksBetween(first.originId, first.landingId), hasLength(2));
-      expect(variant.name, 'Bounce off the wall');
-    });
   });
 
   group('deletion and undo', () {
@@ -195,19 +176,19 @@ void main() {
   });
 
   group('serialization', () {
-    test('graph JSON round-trips a fan-in with variants', () {
+    test('graph JSON round-trips a fan-in with media', () {
       final container = _createContainer();
       final notifier = container.read(lineUpProvider.notifier);
       final first = _placeFresh(notifier, agentId: 'a1', abilityId: 'b1');
       notifier.startToLanding(first.landingId);
       notifier.setDraftAgent(_sova('a2', const Offset(900, 100)));
       final second = notifier.commitPlacement()!;
-      notifier.addVariant(
-        second.originId,
-        second.landingId,
-        name: 'Variant',
-        notes: 'aim higher',
-        images: [SimpleImageData(id: 'img', fileExtension: 'png')],
+      notifier.updateLink(
+        second.copyWith(
+          name: 'From B main',
+          notes: 'aim higher',
+          images: [SimpleImageData(id: 'img', fileExtension: 'png')],
+        ),
       );
 
       final graph = container.read(lineUpProvider).graph;
@@ -220,8 +201,8 @@ void main() {
         LineUpProvider.objectToJson(restored),
         encoded,
       );
-      expect(restored.links, hasLength(3));
-      expect(restored.links.last.name, 'Variant');
+      expect(restored.links, hasLength(2));
+      expect(restored.links.last.name, 'From B main');
       expect(restored.links.last.images.single.id, 'img');
     });
 

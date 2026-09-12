@@ -69,8 +69,8 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   ];
 }
 
-/// Lineup actions for a landing spot: start another lineup into it, add
-/// another way from an origin that already lands here, edit, delete.
+/// Lineup actions for a landing spot: add another lineup into it from a new
+/// throw spot, edit, delete.
 List<ShadContextMenuItem> buildLandingLineUpMenuItems(
   WidgetRef ref,
   String landingId, {
@@ -78,13 +78,12 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
 }) {
   final state = ref.read(lineUpProvider);
   final links = state.linksToLanding(landingId);
-  final originIds = <String>{for (final link in links) link.originId};
   final landing = state.landingById(landingId);
 
   return [
     ShadContextMenuItem(
       leading: const Icon(LucideIcons.plus),
-      child: const Text('Add lineup from another spot'),
+      child: const Text('Add lineup here'),
       onPressed: () {
         if (landing == null) return;
         ref
@@ -96,20 +95,6 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
             .update(InteractionState.lineUpPlacing);
       },
     ),
-    if (originIds.isNotEmpty)
-      ShadContextMenuItem(
-        leading: const Icon(LucideIcons.gitBranch),
-        child: const Text('Add another way to this spot'),
-        onPressed: () {
-          if (context == null) return;
-          showDialog(
-            context: context,
-            builder: (context) => CreateLineupDialog(
-              variantLandingId: landingId,
-            ),
-          );
-        },
-      ),
     ShadContextMenuItem(
       leading: const Icon(LucideIcons.pencil),
       child: Text(links.length > 1 ? 'Show lineups' : 'Edit media'),
@@ -130,11 +115,7 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
         Icons.delete,
         color: Settings.tacticalVioletTheme.destructive,
       ),
-      child: Text(
-        links.length > 1
-            ? 'Delete landing spot and its lineups'
-            : 'Delete lineup',
-      ),
+      child: Text(links.length > 1 ? 'Delete spot' : 'Delete lineup'),
       onPressed: () {
         ref.read(lineUpProvider.notifier).deleteLanding(landingId);
       },

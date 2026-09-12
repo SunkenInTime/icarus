@@ -242,7 +242,7 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
-          child: const Text('Add lineup from here'),
+          child: const Text('Add lineup'),
           onPressed: () {
             final origin =
                 ref.read(lineUpProvider.notifier).originById(lineUpId!);
@@ -262,7 +262,7 @@ class AgentWidget extends ConsumerWidget {
             Icons.delete,
             color: Settings.tacticalVioletTheme.destructive,
           ),
-          child: const Text('Delete origin and its lineups'),
+          child: const Text('Delete origin'),
           onPressed: () {
             ref.read(lineUpProvider.notifier).deleteOrigin(lineUpId!);
           },

@@ -300,7 +300,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                     Icons.delete,
                     color: Settings.tacticalVioletTheme.destructive,
                   ),
-                  child: const Text('Delete origin and its lineups'),
+                  child: const Text('Delete origin'),
                   onPressed: () {
                     ref
                         .read(lineUpProvider.notifier)

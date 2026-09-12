@@ -53,8 +53,6 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
         ignoring: !interactive,
         child: _PinnedEnd(
           isPinned: isPinned,
-          label: 'Origin',
-          shape: BoxShape.circle,
           child: AgentWidget(
             lineUpId: origin.id,
             agent: AgentData.agents[origin.agent.type]!,
@@ -116,20 +114,6 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
         (state) => state.placement?.pinnedLandingId == landing.id,
       ),
     );
-    final badgeCount = ref.watch(
-      lineUpProvider.select((state) {
-        final links = state.linksToLanding(landing.id);
-        var maxPerOrigin = 0;
-        final counts = <String, int>{};
-        for (final link in links) {
-          final count = (counts[link.originId] ?? 0) + 1;
-          counts[link.originId] = count;
-          if (count > maxPerOrigin) maxPerOrigin = count;
-        }
-        return maxPerOrigin;
-      }),
-    );
-
     Widget abilityChild = ability.data.abilityData!.createWidget(
       id: null,
       isAlly: ability.isAlly,
@@ -161,9 +145,6 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
         ignoring: !interactive,
         child: _PinnedEnd(
           isPinned: isPinned,
-          label: 'Landing spot',
-          shape: BoxShape.rectangle,
-          badgeCount: badgeCount > 1 ? badgeCount : null,
           child: abilityChild,
         ),
       ),
@@ -171,60 +152,25 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
   }
 }
 
-/// Wraps a lineup end: ringed in violet with a chip when it is the pinned one.
-/// A [badgeCount] marks a landing with several ways in from one origin.
+/// Wraps a lineup end: ringed in violet when it is the pinned one.
 class _PinnedEnd extends StatelessWidget {
-  const _PinnedEnd({
-    required this.isPinned,
-    required this.label,
-    required this.shape,
-    required this.child,
-    this.badgeCount,
-  });
+  const _PinnedEnd({required this.isPinned, required this.child});
 
   final bool isPinned;
-  final String label;
-  final BoxShape shape;
   final Widget child;
-  final int? badgeCount;
 
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
     // The tree shape stays the same whatever the state, so the child keeps its
-    // element (and its registered hitbox) when a pin or badge comes and goes.
+    // element (and its registered hitbox) when a pin comes and goes.
     const inset = _pinnedRingGap + _pinnedRingStroke;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         child,
-        if (badgeCount != null)
-          Positioned(
-            top: -7,
-            right: -7,
-            child: Container(
-              key: ValueKey('lineup-count-badge-$badgeCount'),
-              height: 16,
-              padding: const EdgeInsets.symmetric(horizontal: 5),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: theme.secondary,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF3F3F46)),
-              ),
-              child: Text(
-                '$badgeCount',
-                style: TextStyle(
-                  color: theme.foreground,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  height: 1,
-                ),
-              ),
-            ),
-          ),
-        if (isPinned) ...[
+        if (isPinned)
           Positioned.fill(
             left: -inset,
             top: -inset,
@@ -233,10 +179,7 @@ class _PinnedEnd extends StatelessWidget {
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  shape: shape,
-                  borderRadius: shape == BoxShape.rectangle
-                      ? BorderRadius.circular(3 + inset)
-                      : null,
+                  borderRadius: BorderRadius.circular(3 + inset),
                   border: Border.all(
                     color: theme.primary,
                     width: _pinnedRingStroke,
@@ -245,38 +188,6 @@ class _PinnedEnd extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: -inset - 4 - 16,
-            child: IgnorePointer(
-              child: Center(
-                child: Container(
-                  key: ValueKey('lineup-pinned-chip-$label'),
-                  height: 16,
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: theme.primary,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.visible,
-                    style: TextStyle(
-                      color: theme.primaryForeground,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }

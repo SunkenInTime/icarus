@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -16,21 +15,12 @@ import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-/// Media for a lineup. Without [linkId] it commits the current placement or,
-/// with [variantLandingId], adds another way into that landing spot from one
-/// of its origins ([variantOriginId] preselects one). With [linkId] it edits
-/// that lineup.
+/// Media for a lineup. Without [linkId] it commits the current placement.
+/// With [linkId] it edits that lineup.
 class CreateLineupDialog extends ConsumerStatefulWidget {
-  const CreateLineupDialog({
-    super.key,
-    this.linkId,
-    this.variantOriginId,
-    this.variantLandingId,
-  }) : assert(variantOriginId == null || variantLandingId != null);
+  const CreateLineupDialog({super.key, this.linkId});
 
   final String? linkId;
-  final String? variantOriginId;
-  final String? variantLandingId;
 
   @override
   ConsumerState<CreateLineupDialog> createState() => _CreateLineupDialogState();
@@ -42,26 +32,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
 
-  String? _variantOriginId;
-
   bool get _isEditing => widget.linkId != null;
-
-  bool get _isVariant => widget.variantLandingId != null;
-
-  List<String> get _variantOriginIds {
-    final links =
-        ref.read(lineUpProvider).linksToLanding(widget.variantLandingId!);
-    return <String>{for (final link in links) link.originId}.toList();
-  }
 
   @override
   void initState() {
     super.initState();
-    if (_isVariant) {
-      final originIds = _variantOriginIds;
-      _variantOriginId = widget.variantOriginId ??
-          (originIds.length == 1 ? originIds.single : null);
-    }
     if (_isEditing) {
       final link = ref.read(lineUpProvider.notifier).linkById(widget.linkId!);
       if (link != null) {
@@ -103,28 +78,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         );
       }
     } else {
-      if (_isVariant && _variantOriginId == null) {
-        Settings.showToast(
-          message: 'Pick which origin this lineup is thrown from',
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
-        );
-        return;
-      }
-      final link = _isVariant
-          ? notifier.addVariant(
-              _variantOriginId!,
-              widget.variantLandingId!,
-              name: name,
-              youtubeLink: _youtubeLinkController.text,
-              notes: _notesController.text,
-              images: _imagePaths,
-            )
-          : notifier.commitPlacement(
-              name: name,
-              youtubeLink: _youtubeLinkController.text,
-              notes: _notesController.text,
-              images: _imagePaths,
-            );
+      final link = notifier.commitPlacement(
+        name: name,
+        youtubeLink: _youtubeLinkController.text,
+        notes: _notesController.text,
+        images: _imagePaths,
+      );
       if (link == null) return;
 
       unawaited(
@@ -151,41 +110,6 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     }
   }
 
-  Widget _originSelect() {
-    final state = ref.watch(lineUpProvider);
-    final originIds = _variantOriginIds;
-    if (originIds.length < 2) return const SizedBox.shrink();
-
-    String label(String originId) {
-      final origin = state.originById(originId);
-      final agentName = AgentData.agents[origin?.agent.type]?.name ?? 'Origin';
-      final index = state.origins.indexWhere((entry) => entry.id == originId);
-      return '$agentName ${index + 1}';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          const Text('From', style: TextStyle(color: Colors.white)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ShadSelect<String>(
-              initialValue: _variantOriginId,
-              placeholder: const Text('Pick an origin'),
-              selectedOptionBuilder: (context, value) => Text(label(value)),
-              options: [
-                for (final originId in originIds)
-                  ShadOption(value: originId, child: Text(label(originId))),
-              ],
-              onChanged: (value) => setState(() => _variantOriginId = value),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -208,7 +132,6 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           width: 600,
           height: 576,
           child: LineupMediaPage(
-            header: _isVariant ? _originSelect() : null,
             nameController: _nameController,
             notesController: _notesController,
             youtubeLinkController: _youtubeLinkController,
