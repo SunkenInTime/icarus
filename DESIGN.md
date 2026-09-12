@@ -13,19 +13,15 @@ The palette, theme, and sizing constants live in `lib/const/settings.dart`, with
 - Type roles, all in the system sans stack: headline 20px/500, title 16px/600, body 14px/400, label 12px/600, micro 10px/600. Hierarchy comes from these five roles, not from display fonts or hero-scale type.
 - Transitions run 150-250ms and must communicate a state change (hover, selection, reveal, loading). No motion for its own sake.
 
-## Named rules
+## Things I would like to remain consistent
 
-**The One Command Color Rule.** Violet marks current action, selection, focus, and primary commands, and nothing else. If violet appears somewhere that isn't actionable or active, it's wrong.
+**The One Command Color** Violet marks current action, selection, focus, and primary commands, and nothing else. If violet appears somewhere that isn't actionable or active, it's wrong.
 
-**The Tactical Semantics Rule.** Ally green, enemy red, defender blue, favorite amber, and the map ember hues carry game meaning. Never reuse them for unrelated UI emphasis.
+**The Tactical Semantics** Ally green, enemy red, defender blue, favorite amber, and the map ember hues carry game meaning. Never reuse them for unrelated UI emphasis.
 
-**The Tonal First Rule.** Depth comes from surface steps (background, panel, raised) and 1px zinc borders. A shadow is only allowed where it explains stacking: drag previews, floating menus, card foreground details (`0 4px 12px rgba(0,0,0,0.54)` / `0 8px 24px rgba(0,0,0,0.28)`).
+**The Tonal First** Depth comes from surface steps (background, panel, raised) and 1px zinc borders. A shadow is only allowed where it explains stacking: drag previews, floating menus, card foreground details (`0 4px 12px rgba(0,0,0,0.54)` / `0 8px 24px rgba(0,0,0,0.28)`).
 
 **Every control earns its position.** If you can't say why a control sits where it sits, it isn't done. Never fill spare space with a feature.
 
-## Don't
-
-- No gradients, glow, glassmorphism, or decorative effects on chrome. The anti-reference is the generic gamer overlay. Gradients and blur that do a job on the canvas are fine and intentional: the map vignette, the loading skeleton shimmer, the color picker, the view cone falloff, and the media carousel backdrop.
-- No marketing-page composition inside the product: no hero typography, no decorative dashboards.
-- No colored side-stripe borders, gradient text, or nested cards.
-- No custom affordance where a standard Shad or desktop pattern already communicates the action.
+## Some general rules
+These steer us in the right direction. They are not hard-set, but default to following them; if you think one should be ignored, be very loud about it and get approval from us first.
