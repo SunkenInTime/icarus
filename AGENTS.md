@@ -18,7 +18,7 @@ local mode - the shipped behavior: signed out, library on disk, exactly what mai
 cloud mode - signed in, library synced to Convex.
 op - one queued change to cloud data. an op lands when the server accepts it.
 
-The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in CONTEXT.md, use those words exactly. DESIGN.md defines how the app must look and how we build UI, read it before touching UI. PRODUCT.md holds who this is for and how it must feel.
+The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in CONTEXT.md, use those words exactly. DESIGN.md holds the rules for how we build UI (the values themselves live in `lib/const/settings.dart`), read it before touching UI. PRODUCT.md holds who this is for and how it must feel.
 
 Here's the philosophy we work by:
 
