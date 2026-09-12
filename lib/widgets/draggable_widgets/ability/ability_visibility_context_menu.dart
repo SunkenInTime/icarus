@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
+import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -28,34 +33,93 @@ bool supportsAbilityInactiveState(Ability? ability) {
   };
 }
 
+/// Context menu for a placed ability. With [landingId] the ability is a
+/// lineup landing spot and gets the lineup actions; [context] is needed for
+/// the ones that open dialogs.
 List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   WidgetRef ref,
   PlacedAbility ability, {
-  String? lineUpGroupId,
-  String? lineUpItemId,
-  bool includeDelete = false,
+  String? landingId,
+  BuildContext? context,
 }) {
   final abilityData = ability.data.abilityData;
   final visibilityItems = _buildVisibilityItems(
     ref,
     ability,
     abilityData,
-    lineUpGroupId: lineUpGroupId,
-    lineUpItemId: lineUpItemId,
+    landingId: landingId,
   );
-  final adjacentPageItems = lineUpGroupId == null && lineUpItemId == null
+  final adjacentPageItems = landingId == null
       ? buildAdjacentPageCopyMenuItems(ref, ability.id)
       : const <ShadContextMenuItem>[];
+  final lineUpItems = landingId == null
+      ? const <ShadContextMenuItem>[]
+      : buildLandingLineUpMenuItems(ref, landingId, context: context);
 
-  if (visibilityItems.isEmpty && adjacentPageItems.isEmpty && !includeDelete) {
+  if (visibilityItems.isEmpty &&
+      adjacentPageItems.isEmpty &&
+      lineUpItems.isEmpty) {
     return null;
   }
 
   return [
+    ...lineUpItems,
     ...visibilityItems,
     ...adjacentPageItems,
-    if (includeDelete && lineUpGroupId != null && lineUpItemId != null)
-      _buildDeleteItem(ref, lineUpGroupId, lineUpItemId),
+  ];
+}
+
+/// Lineup actions for a landing spot: add another lineup into it from a new
+/// throw spot, edit, delete.
+List<ShadContextMenuItem> buildLandingLineUpMenuItems(
+  WidgetRef ref,
+  String landingId, {
+  BuildContext? context,
+}) {
+  final state = ref.read(lineUpProvider);
+  final links = state.linksToLanding(landingId);
+  final landing = state.landingById(landingId);
+
+  return [
+    ShadContextMenuItem(
+      leading: const Icon(LucideIcons.plus),
+      child: const Text('Add lineup here'),
+      onPressed: () {
+        if (landing == null) return;
+        ref
+            .read(abilityBarProvider.notifier)
+            .updateData(AgentData.agents[landing.ability.data.type]!);
+        ref.read(lineUpProvider.notifier).startToLanding(landingId);
+        ref
+            .read(interactionStateProvider.notifier)
+            .update(InteractionState.lineUpPlacing);
+      },
+    ),
+    ShadContextMenuItem(
+      leading: const Icon(LucideIcons.pencil),
+      child: Text(links.length > 1 ? 'Show lineups' : 'Edit media'),
+      onPressed: () {
+        if (context == null) return;
+        if (links.length == 1) {
+          showDialog(
+            context: context,
+            builder: (context) => CreateLineupDialog(linkId: links.single.id),
+          );
+        } else {
+          showLineUpPanel(context, landingId: landingId);
+        }
+      },
+    ),
+    ShadContextMenuItem(
+      leading: Icon(
+        Icons.delete,
+        color: Settings.tacticalVioletTheme.destructive,
+      ),
+      child: Text(links.length > 1 ? 'Delete spot' : 'Delete lineup'),
+      onPressed: () {
+        ref.read(lineUpProvider.notifier).deleteLanding(landingId);
+      },
+    ),
   ];
 }
 
@@ -63,13 +127,11 @@ List<ShadContextMenuItem> _buildVisibilityItems(
   WidgetRef ref,
   PlacedAbility ability,
   Ability? abilityData, {
-  String? lineUpGroupId,
-  String? lineUpItemId,
+  String? landingId,
 }) {
   final controls = [
     ..._buildVisibilityControls(abilityData, ability.visualState),
-    if (lineUpGroupId == null &&
-        lineUpItemId == null &&
+    if (landingId == null &&
         AbilityVisionConeSpec.forAbility(ability.data) != null)
       _AbilityVisibilityControl(
         label: 'Vision Cone',
@@ -88,8 +150,7 @@ List<ShadContextMenuItem> _buildVisibilityItems(
             ref,
             ability,
             control.toggle(ability.visualState),
-            lineUpGroupId: lineUpGroupId,
-            lineUpItemId: lineUpItemId,
+            landingId: landingId,
           ),
         ),
       )
@@ -223,45 +284,18 @@ ShadContextMenuItem _buildToggleItem({
   );
 }
 
-ShadContextMenuItem _buildDeleteItem(
-  WidgetRef ref,
-  String lineUpGroupId,
-  String lineUpItemId,
-) {
-  return ShadContextMenuItem(
-    leading: Icon(
-      Icons.delete,
-      color: Settings.tacticalVioletTheme.destructive,
-    ),
-    child: const Text('Delete'),
-    onPressed: () {
-      ref.read(actionProvider.notifier).performTransaction(
-            groups: const [ActionGroup.lineUp],
-            mutation: () {
-              ref.read(lineUpProvider.notifier).deleteItem(
-                    groupId: lineUpGroupId,
-                    itemId: lineUpItemId,
-                  );
-            },
-          );
-    },
-  );
-}
-
 void _updateVisualState(
   WidgetRef ref,
   PlacedAbility ability,
   AbilityVisualState visualState, {
-  String? lineUpGroupId,
-  String? lineUpItemId,
+  String? landingId,
 }) {
-  if (lineUpGroupId != null && lineUpItemId != null) {
+  if (landingId != null) {
     ref.read(actionProvider.notifier).performTransaction(
       groups: const [ActionGroup.lineUp],
       mutation: () {
-        ref.read(lineUpProvider.notifier).updateItemAbilityVisualState(
-              groupId: lineUpGroupId,
-              itemId: lineUpItemId,
+        ref.read(lineUpProvider.notifier).updateLandingAbilityVisualState(
+              landingId: landingId,
               visualState: visualState,
             );
       },

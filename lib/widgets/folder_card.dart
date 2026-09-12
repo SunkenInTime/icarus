@@ -78,10 +78,10 @@ class FolderCardViewData {
         for (final agent in page.agentData) {
           seenInStrategy.add(agent.type);
         }
-        // Lineup agents live in lineUpGroups, not agentData, so collect them
-        // too or agents added via the lineup tool never show in previews.
-        for (final group in page.lineUpGroups) {
-          seenInStrategy.add(group.agent.type);
+        // Lineup origins live in lineUpOrigins, not agentData, so collect
+        // them too or agents added via the lineup tool never show in previews.
+        for (final origin in page.lineUpOrigins) {
+          seenInStrategy.add(origin.agent.type);
         }
       }
       for (final type in seenInStrategy) {

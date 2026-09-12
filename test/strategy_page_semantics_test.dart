@@ -382,7 +382,7 @@ void _activatePage(
   container.read(textProvider.notifier).fromHive(page.textData);
   container.read(placedImageProvider.notifier).fromHive(page.imageData);
   container.read(utilityProvider.notifier).fromHive(page.utilityData);
-  container.read(lineUpProvider.notifier).fromHive(page.lineUpGroups);
+  container.read(lineUpProvider.notifier).fromHive(page.lineUpGraph);
   container
       .read(mapProvider.notifier)
       .fromHive(strategy.mapData, page.isAttack);

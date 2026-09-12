@@ -28,14 +28,92 @@ class StrategyPage extends HiveObject {
   final List<PlacedImage> imageData;
   final List<PlacedUtility> utilityData;
   final bool isAttack;
-  @Deprecated('Use lineUpGroups instead.')
-  final List<LineUp> lineUps;
+  final List<LineUpOrigin> lineUpOrigins;
+  final List<LineUpLanding> lineUpLandings;
+  final List<LineUpLink> lineUpLinks;
+  @Deprecated('Use lineUpOrigins, lineUpLandings and lineUpLinks instead.')
   final List<LineUpGroup> lineUpGroups;
+  @Deprecated('Use lineUpOrigins, lineUpLandings and lineUpLinks instead.')
+  final List<LineUp> lineUps;
   final StrategySettings settings;
 
-  static List<LineUpGroup> _groupsFromLegacyLineUps(List<LineUp> lineUps) {
-    return lineUps.map(LineUpGroup.fromLegacyLineUp).toList();
+  /// The graph is the source of truth. `lineUpGroups` and `lineUps` are
+  /// projections kept for readers that predate it, and legacy input is
+  /// upgraded to the graph the moment a page is built.
+  factory StrategyPage({
+    required String id,
+    required String name,
+    bool? isAutoNamed,
+    required List<DrawingElement> drawingData,
+    required List<PlacedAgentNode> agentData,
+    required List<PlacedAbility> abilityData,
+    required List<PlacedText> textData,
+    required List<PlacedImage> imageData,
+    required List<PlacedUtility> utilityData,
+    required int sortIndex,
+    required bool isAttack,
+    required StrategySettings settings,
+    List<LineUpOrigin> lineUpOrigins = const [],
+    List<LineUpLanding> lineUpLandings = const [],
+    List<LineUpLink> lineUpLinks = const [],
+    @Deprecated('Use lineUpOrigins, lineUpLandings and lineUpLinks instead')
+    List<LineUpGroup> lineUpGroups = const [],
+    @Deprecated('Use lineUpOrigins, lineUpLandings and lineUpLinks instead')
+    List<LineUp> lineUps = const [],
+  }) {
+    var graph = LineUpGraph(
+      origins: lineUpOrigins,
+      landings: lineUpLandings,
+      links: lineUpLinks,
+    );
+    if (graph.isEmpty) {
+      graph = lineUpGroups.isNotEmpty
+          ? LineUpGraph.fromLegacyGroups(lineUpGroups)
+          : LineUpGraph.fromLegacyLineUps(lineUps);
+    }
+    graph = graph.deepCopy();
+    final legacyGroups = graph.toLegacyGroups();
+
+    return StrategyPage._(
+      id: id,
+      name: name,
+      isAutoNamed: isAutoNamed,
+      drawingData: drawingData,
+      agentData: agentData,
+      abilityData: abilityData,
+      textData: textData,
+      imageData: imageData,
+      utilityData: utilityData,
+      sortIndex: sortIndex,
+      isAttack: isAttack,
+      settings: settings,
+      lineUpOrigins: graph.origins,
+      lineUpLandings: graph.landings,
+      lineUpLinks: graph.links,
+      lineUpGroups: legacyGroups,
+      lineUps: _legacyLineUpsFromGroups(legacyGroups),
+    );
   }
+
+  StrategyPage._({
+    required this.id,
+    required this.name,
+    required this.isAutoNamed,
+    required this.drawingData,
+    required this.agentData,
+    required this.abilityData,
+    required this.textData,
+    required this.imageData,
+    required this.utilityData,
+    required this.sortIndex,
+    required this.isAttack,
+    required this.settings,
+    required this.lineUpOrigins,
+    required this.lineUpLandings,
+    required this.lineUpLinks,
+    required this.lineUpGroups,
+    required this.lineUps,
+  });
 
   static List<LineUp> _legacyLineUpsFromGroups(List<LineUpGroup> groups) {
     return [
@@ -53,31 +131,11 @@ class StrategyPage extends HiveObject {
     ];
   }
 
-  StrategyPage({
-    required this.id,
-    required this.name,
-    this.isAutoNamed,
-    required this.drawingData,
-    required this.agentData,
-    required this.abilityData,
-    required this.textData,
-    required this.imageData,
-    required this.utilityData,
-    required this.sortIndex,
-    required this.isAttack,
-    required this.settings,
-    List<LineUpGroup> lineUpGroups = const [],
-    @Deprecated('Use lineUpGroups instead') List<LineUp> lineUps = const [],
-  })  : lineUps = (lineUpGroups.isNotEmpty
-                ? _legacyLineUpsFromGroups(lineUpGroups)
-                : lineUps)
-            .map((lineUp) => lineUp.deepCopy())
-            .toList(),
-        lineUpGroups = (lineUpGroups.isNotEmpty
-                ? lineUpGroups
-                : _groupsFromLegacyLineUps(lineUps))
-            .map((group) => group.deepCopy())
-            .toList();
+  LineUpGraph get lineUpGraph => LineUpGraph(
+        origins: lineUpOrigins,
+        landings: lineUpLandings,
+        links: lineUpLinks,
+      );
 
   StrategyPage copyWith({
     String? id,
@@ -92,13 +150,13 @@ class StrategyPage extends HiveObject {
     List<PlacedUtility>? utilityData,
     bool? isAttack,
     StrategySettings? settings,
-    List<LineUpGroup>? lineUpGroups,
-    @Deprecated('Use lineUpGroups instead') List<LineUp>? lineUps,
+    LineUpGraph? lineUpGraph,
+    @Deprecated('Use lineUpGraph instead') List<LineUpGroup>? lineUpGroups,
   }) {
-    final resolvedLineUpGroups = lineUpGroups ??
-        (lineUps != null
-            ? _groupsFromLegacyLineUps(lineUps)
-            : this.lineUpGroups);
+    final resolvedGraph = lineUpGraph ??
+        (lineUpGroups != null
+            ? LineUpGraph.fromLegacyGroups(lineUpGroups)
+            : this.lineUpGraph);
 
     return StrategyPage(
       id: id ?? this.id,
@@ -122,13 +180,16 @@ class StrategyPage extends HiveObject {
       )),
       settings: settings?.copyWith() ?? this.settings.copyWith(),
       isAttack: isAttack ?? this.isAttack,
-      lineUpGroups: resolvedLineUpGroups,
+      lineUpOrigins: resolvedGraph.origins,
+      lineUpLandings: resolvedGraph.landings,
+      lineUpLinks: resolvedGraph.links,
     );
   }
 
   Map<String, dynamic> toJson(String strategyID) {
     String fetchedImageData =
         kIsWeb ? "[]" : PlacedImageProvider.objectToJson(imageData, strategyID);
+    final lineUpJson = lineUpGraph.toJson();
     String data = '''
                {
                "id": "$id",
@@ -143,7 +204,9 @@ class StrategyPage extends HiveObject {
                "utilityData": ${UtilityProvider.objectToJson(utilityData)},
                "isAttack": "${isAttack.toString()}",
                "settings": ${StrategySettingsProvider.objectToJson(settings)},
-               "lineUpGroups": ${LineUpProvider.objectToJson(lineUpGroups)}
+               "lineUpOrigins": ${jsonEncode(lineUpJson['lineUpOrigins'])},
+               "lineUpLandings": ${jsonEncode(lineUpJson['lineUpLandings'])},
+               "lineUpLinks": ${jsonEncode(lineUpJson['lineUpLinks'])}
                }
              ''';
 
@@ -209,6 +272,8 @@ class StrategyPage extends HiveObject {
       isAttack = false;
     }
 
+    final graph = _lineUpGraphFromJson(json);
+
     return StrategyPage(
       id: json['id'],
       sortIndex: int.parse(json['sortIndex']),
@@ -222,11 +287,28 @@ class StrategyPage extends HiveObject {
       utilityData: UtilityProvider.fromJson(jsonEncode(json['utilityData'])),
       isAttack: isAttack,
       settings: StrategySettings.fromJson(json['settings']),
-      lineUpGroups: json['lineUpGroups'] != null
-          ? LineUpProvider.fromJson(jsonEncode(json['lineUpGroups']))
-          : json['lineUpData'] != null
-              ? LineUpProvider.fromLegacyJson(jsonEncode(json['lineUpData']))
-              : const [],
+      lineUpOrigins: graph.origins,
+      lineUpLandings: graph.landings,
+      lineUpLinks: graph.links,
     );
+  }
+
+  static LineUpGraph _lineUpGraphFromJson(Map<String, dynamic> json) {
+    if (LineUpGraph.hasJson(json)) {
+      return LineUpGraph.fromJson(json);
+    }
+    if (json['lineUpGroups'] != null) {
+      return LineUpGraph.fromLegacyGroups(
+        LineUpProvider.legacyGroupsFromJson(jsonEncode(json['lineUpGroups'])),
+      );
+    }
+    if (json['lineUpData'] != null) {
+      return LineUpGraph.fromLegacyGroups(
+        LineUpProvider.legacyGroupsFromLineUpJson(
+          jsonEncode(json['lineUpData']),
+        ),
+      );
+    }
+    return LineUpGraph.empty;
   }
 }

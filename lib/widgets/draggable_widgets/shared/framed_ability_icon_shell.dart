@@ -11,23 +11,20 @@ class FramedAbilityIconShell extends ConsumerWidget {
     required this.size,
     required this.isAlly,
     required this.child,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
   });
 
   final double size;
   final bool isAlly;
   final Widget child;
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final hoverTarget = ref.watch(hoveredLineUpTargetProvider);
-    final isLineUpHovered = lineUpId != null &&
-        lineUpItemId != null &&
-        (hoverTarget?.matchesAbility(lineUpId!, lineUpItemId!) ?? false);
+    final isLineUpHovered =
+        landingId != null && (hoverTarget?.matchesLanding(landingId!) ?? false);
     final useNeutralTeamColors =
         ref.watch(strategySettingsProvider).useNeutralTeamColors;
     final outlineColor =

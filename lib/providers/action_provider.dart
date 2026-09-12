@@ -351,7 +351,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
         case ActionGroup.utility:
           if (ref.read(utilityProvider).isNotEmpty) return true;
         case ActionGroup.lineUp:
-          if (ref.read(lineUpProvider).lineUps.isNotEmpty) return true;
+          if (ref.read(lineUpProvider).links.isNotEmpty) return true;
         case ActionGroup.strategySettings:
           break;
         case ActionGroup.bulk:
