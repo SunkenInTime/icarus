@@ -16,6 +16,8 @@ import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _controlHeight = 28;
+// Tabs sit apart so a selected and a hovered background never touch.
+const double _tabGap = 4;
 // Action menus hug their labels; the account menu keeps room for email text.
 const double _sortMenuWidth = 168;
 const double _newMenuWidth = 140;
@@ -87,6 +89,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             selected: tab == LibraryTab.library,
             onTap: navigation.showLibrary,
           ),
+          const SizedBox(width: _tabGap),
           _TabButton(
             key: const ValueKey('library-tab-shared'),
             icon: LucideIcons.users,
@@ -100,6 +103,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               }
             },
           ),
+          const SizedBox(width: _tabGap),
           _TabButton(
             key: const ValueKey('library-tab-community'),
             icon: LucideIcons.globe,
