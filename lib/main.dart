@@ -10,7 +10,6 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 
-import 'package:windows_single_instance/windows_single_instance.dart';
 import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -28,10 +27,10 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/desktop_runtime.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
-import 'package:icarus/startup/windows_process_termination.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -41,7 +40,6 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
-import 'package:window_manager/window_manager.dart';
 
 CustomMouseCursor? staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
@@ -65,17 +63,11 @@ Future<void> main(List<String> args) async {
         );
       }
 
-      if (!kIsWeb && Platform.isWindows) {
-        await WindowsSingleInstance.ensureSingleInstance(
-          launch.fileOpenArgs,
-          alternateHiveStore?.windowsSingleInstanceId ??
-              HiveStoreLaunch.defaultWindowsSingleInstanceId,
-          onSecondWindow: (args) {
-            publishSecondInstanceArgs(args);
-          },
-          exitFunction: terminateDuplicateWindowsProcess,
-        );
-      }
+      await ensureIcarusSingleInstance(
+        launch.fileOpenArgs,
+        instanceId: alternateHiveStore?.windowsSingleInstanceId ??
+            HiveStoreLaunch.defaultWindowsSingleInstanceId,
+      );
 
       if (kIsWeb) {
         // On web, Hive uses IndexedDB; no path needed.
@@ -123,18 +115,9 @@ Future<void> main(List<String> args) async {
       await _initWebViewEnvironment();
 
       if (!kIsWeb) {
-        await windowManager.ensureInitialized();
-        WindowOptions windowOptions = const WindowOptions(
-          size: Size(1600, 900),
-          minimumSize: Size(1280, 720),
-          center: true,
-          title:
-              "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
+        await initializeIcarusDesktopWindow(
+          "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
         );
-        windowManager.waitUntilReadyToShow(windowOptions, () async {
-          await windowManager.show();
-          await windowManager.focus();
-        });
       }
 
       // Ensure WebView2 environment is initialized on Windows before any InAppWebView
