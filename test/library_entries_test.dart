@@ -5,6 +5,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/library_entries.dart';
 
 void main() {
@@ -17,7 +18,8 @@ void main() {
       _localStrategy('local-only', 'Mine'),
       showDeviceBadge: true,
     );
-    final cloud = LibraryStrategyRow.cloud(_cloudStrategy('shared-id', 'Cloud'));
+    final cloud =
+        LibraryStrategyRow.cloud(_cloudStrategy('shared-id', 'Cloud'));
 
     final merged = mergeLibraryStrategies(
       local: [local, onlyLocal],
@@ -100,14 +102,16 @@ CloudStrategyEntry _cloudStrategy(String id, String name, {DateTime? created}) {
 }
 
 LibraryFolderRow _folderRow(String id, LibraryWorkspace store) {
+  final folder = Folder(
+    name: id,
+    id: id,
+    dateCreated: DateTime(2024, 1, 1),
+    color: FolderColor.blue,
+  );
   return LibraryFolderRow(
-    folder: Folder(
-      name: id,
-      id: id,
-      dateCreated: DateTime(2024, 1, 1),
-      color: FolderColor.blue,
-    ),
+    folder: folder,
     store: store,
     lastUpdated: DateTime(2024, 1, 1),
+    card: FolderCardViewData.summary(folder: folder, folderCount: 0),
   );
 }
