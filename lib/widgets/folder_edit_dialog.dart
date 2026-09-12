@@ -68,6 +68,10 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
           child: CustomTextField(
             hintText: "Folder Name",
             controller: _folderNameController,
+            autofocus: true,
+            onSubmitted: (_) {
+              if (!_isSubmitting) _submit();
+            },
           ),
         ),
         // const SizedBox(width: 30),

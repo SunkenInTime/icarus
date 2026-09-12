@@ -71,9 +71,9 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: CustomTextField(
-            // onEnterPressed: (intent) {},
             hintText: widget.currentName,
             controller: _textController,
+            autofocus: true,
             textAlign: TextAlign.start,
             onSubmitted: (value) async {
               if (value.isNotEmpty) {
