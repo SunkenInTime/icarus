@@ -236,7 +236,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                             child: ShadIconButton.ghost(
                               foregroundColor: Colors.white,
                               onPressed: _leaveToLibrary,
-                              icon: const Icon(LucideIcons.house, size: 20),
+                              icon: const Icon(LucideIcons.house300, size: 20),
                             ),
                           ),
                           const SizedBox(width: 5),

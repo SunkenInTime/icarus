@@ -83,13 +83,13 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                   style: style,
                   tooltip: 'Export .ica',
                   onPressed: _exportStrategy,
-                  icon: const Icon(LucideIcons.upload),
+                  icon: const Icon(LucideIcons.upload300),
                 ),
                 EditorToolbarButton(
                   style: style,
                   tooltip: 'Export video',
                   onPressed: _exportVideo,
-                  icon: const Icon(LucideIcons.clapperboard),
+                  icon: const Icon(LucideIcons.clapperboard300),
                 ),
                 EditorToolbarButton(
                   style: style,
@@ -106,7 +106,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                             ),
                           ),
                         )
-                      : const Icon(LucideIcons.camera),
+                      : const Icon(LucideIcons.camera300),
                 ),
                 const EditorToolbarDivider(),
                 EditorToolbarButton(
@@ -118,7 +118,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                       builder: (context) => const SettingsTab(),
                     );
                   },
-                  icon: const Icon(LucideIcons.settings),
+                  icon: const Icon(LucideIcons.settings300),
                 ),
               ],
             ),
@@ -277,8 +277,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   }
 }
 
-/// One control in the editor toolbar: a ghost icon button in full foreground
-/// (muted glyphs vanish against the card) with a tonal hover. [icon] is any 18px glyph, so buttons can swap
+/// One control in the editor toolbar. Glyphs are the 300 stroke weight: the
+/// default 2px Lucide stroke reads heavy in white at 18px, and muted grey
+/// vanishes against the card, so the weight carries the quietness instead. [icon] is any 18px glyph, so buttons can swap
 /// in a spinner without changing size.
 class EditorToolbarButton extends StatelessWidget {
   const EditorToolbarButton({
@@ -371,7 +372,7 @@ class _ViewOnlyChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(LucideIcons.eye, size: 14, color: theme.mutedForeground),
+            Icon(LucideIcons.eye300, size: 14, color: theme.mutedForeground),
             const SizedBox(width: 6),
             Text(
               'View only',

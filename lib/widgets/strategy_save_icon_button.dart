@@ -116,7 +116,7 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
 
     final size = widget.style.iconSize;
     final Widget icon = switch (_phase) {
-      _Phase.idle => Icon(LucideIcons.save, key: const ValueKey('idle')),
+      _Phase.idle => Icon(LucideIcons.save300, key: const ValueKey('idle')),
       _Phase.loading => SizedBox(
           key: const ValueKey('loading'),
           width: size - 2,
@@ -129,7 +129,7 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
           ),
         ),
       _Phase.success => Icon(
-          LucideIcons.check,
+          LucideIcons.check300,
           key: const ValueKey('success'),
           color: Settings.allyBGColor,
         ),

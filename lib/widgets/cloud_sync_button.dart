@@ -246,14 +246,14 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     switch (status) {
       case _SyncStatus.synced:
         return Icon(
-          LucideIcons.cloudCheck,
+          LucideIcons.cloudCheck300,
           key: const ValueKey('synced'),
           size: size,
           color: color,
         );
       case _SyncStatus.editing:
         return Icon(
-          LucideIcons.cloudUpload,
+          LucideIcons.cloudUpload300,
           key: const ValueKey('editing'),
           size: size,
           color: color,
@@ -272,14 +272,14 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         );
       case _SyncStatus.offline:
         return Icon(
-          LucideIcons.cloudOff,
+          LucideIcons.cloudOff300,
           key: const ValueKey('offline'),
           size: size,
           color: color,
         );
       case _SyncStatus.attention:
         return Icon(
-          LucideIcons.cloudAlert,
+          LucideIcons.cloudAlert300,
           key: const ValueKey('attention'),
           size: size,
           color: color,
