@@ -49,18 +49,8 @@ void main() {
             home: const Scaffold(
               body: Align(
                 alignment: Alignment.topCenter,
-                child: EditorWindowHeader(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      SizedBox(
-                        key: ValueKey('map-card-reference'),
-                        width: 262,
-                        height: 65,
-                      ),
-                      StrategyQuickSwitcher(),
-                    ],
-                  ),
+                child: AppWindowStrip(
+                  child: Center(child: StrategyQuickSwitcher()),
                 ),
               ),
             ),
@@ -75,16 +65,14 @@ void main() {
     final control = tester.getRect(
       find.byKey(const ValueKey('strategy-quick-switcher-control')),
     );
-    final mapCard = tester.getRect(
-      find.byKey(const ValueKey('map-card-reference')),
-    );
     final captionButtons = tester.getRect(find.byType(WindowCaptionButtons));
-    final header = tester.getRect(find.byType(EditorWindowHeader));
+    final strip = tester.getRect(find.byType(AppWindowStrip));
 
-    expect(control.center.dy, mapCard.center.dy);
-    expect(captionButtons.center.dy, mapCard.center.dy);
-    expect(mapCard.top - header.top, header.bottom - mapCard.bottom);
-    expect(control.height, 40);
+    expect(strip.height, kWindowStripHeight);
+    // The strip's 1px bottom border sits outside its content box.
+    expect(control.center.dy, closeTo(strip.center.dy, 0.5));
+    expect(captionButtons.center.dy, closeTo(strip.center.dy, 0.5));
+    expect(control.height, 30);
     expect(tester.takeException(), isNull);
   });
 }

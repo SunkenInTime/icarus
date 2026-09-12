@@ -43,8 +43,8 @@ class EditorToolbarButtonStyle {
 const EditorToolbarButtonStyle kEditorToolbarButtonStyle =
     EditorToolbarButtonStyle();
 
-/// The document actions of the open strategy, docked at the top-left of the
-/// canvas as one card: save, export, video, screenshot, then settings.
+/// The document actions of the open strategy, one card under the map card at
+/// the top-left of the canvas: save, export, video, screenshot, then settings.
 class EditorToolbar extends ConsumerStatefulWidget {
   const EditorToolbar({super.key});
 
@@ -61,74 +61,71 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     final source = ref.watch(strategyProvider.select((value) => value.source));
     final isCloud = source == StrategySource.cloud;
 
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Settings.tacticalVioletTheme.card,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Settings.tacticalVioletTheme.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isCloud)
-                  const CloudSyncButton(style: style)
-                else
-                  const AutoSaveButton(style: style),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Export .ica',
-                  onPressed: _exportStrategy,
-                  icon: const Icon(LucideIcons.upload300),
-                ),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Export video',
-                  onPressed: _exportVideo,
-                  icon: const Icon(LucideIcons.clapperboard300),
-                ),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Screenshot',
-                  onPressed: _captureScreenshot,
-                  icon: _isCapturingScreenshot
-                      ? SizedBox(
-                          width: style.iconSize - 2,
-                          height: style.iconSize - 2,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.8,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Settings.tacticalVioletTheme.mutedForeground,
-                            ),
-                          ),
-                        )
-                      : const Icon(LucideIcons.camera300),
-                ),
-                const EditorToolbarDivider(),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Settings',
-                  onPressed: () {
-                    showShadDialog(
-                      context: context,
-                      builder: (context) => const SettingsTab(),
-                    );
-                  },
-                  icon: const Icon(LucideIcons.settings300),
-                ),
-              ],
-            ),
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          if (_isViewOnly()) ...[
-            const SizedBox(width: 8),
-            const _ViewOnlyChip(),
-          ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isCloud)
+                const CloudSyncButton(style: style)
+              else
+                const AutoSaveButton(style: style),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Export .ica',
+                onPressed: _exportStrategy,
+                icon: const Icon(LucideIcons.upload300),
+              ),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Export video',
+                onPressed: _exportVideo,
+                icon: const Icon(LucideIcons.clapperboard300),
+              ),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Screenshot',
+                onPressed: _captureScreenshot,
+                icon: _isCapturingScreenshot
+                    ? SizedBox(
+                        width: style.iconSize - 2,
+                        height: style.iconSize - 2,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.8,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Settings.tacticalVioletTheme.mutedForeground,
+                          ),
+                        ),
+                      )
+                    : const Icon(LucideIcons.camera300),
+              ),
+              const EditorToolbarDivider(),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Settings',
+                onPressed: () {
+                  showShadDialog(
+                    context: context,
+                    builder: (context) => const SettingsTab(),
+                  );
+                },
+                icon: const Icon(LucideIcons.settings300),
+              ),
+            ],
+          ),
+        ),
+        if (_isViewOnly()) ...[
+          const SizedBox(width: 8),
+          const _ViewOnlyChip(),
         ],
-      ),
+      ],
     );
   }
 

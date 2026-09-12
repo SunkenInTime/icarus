@@ -27,7 +27,7 @@ class StrategyQuickSwitcher extends ConsumerStatefulWidget {
 
 class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barWidth = 280;
-  static const double _barHeight = 40;
+  static const double _barHeight = 30;
   static const EdgeInsets _displayMargin = EdgeInsets.symmetric(horizontal: 16);
   final OverlayPortalController _controller = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();

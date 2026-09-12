@@ -42,11 +42,22 @@ class StrategyViewSkeleton extends StatelessWidget {
                         isAttack: isAttack,
                       ),
                     ),
-                    const Align(
+                    Align(
                       alignment: Alignment.topLeft,
                       child: Padding(
-                        padding: EdgeInsets.all(8),
-                        child: _FloatingControlSkeleton(),
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _MapSelectorSkeleton(
+                              mapValue: resolvedMap,
+                              isAttack: isAttack,
+                            ),
+                            const SizedBox(height: 8),
+                            const _FloatingControlSkeleton(),
+                          ],
+                        ),
                       ),
                     ),
                     const Align(
@@ -157,68 +168,47 @@ class _SkeletonTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = strategyName?.trim();
-    return EditorWindowHeader(child: _buildBar(context, title));
-  }
-
-  Widget _buildBar(BuildContext context, String? title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 15),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
+    return AppWindowStrip(
+      child: Stack(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          const Row(
             children: [
-              const _SkeletonBlock(width: 40, height: 40, radius: 8),
-              const SizedBox(width: 5),
-              _MapSelectorSkeleton(mapValue: mapValue, isAttack: isAttack),
+              SizedBox(width: 6),
+              _SkeletonBlock(width: 28, height: 28, radius: 8),
+              Spacer(),
+              _SkeletonBlock(width: 200, height: 28, radius: 8),
+              SizedBox(width: 10),
             ],
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 280),
-                  child: Container(
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _tone(Settings.tacticalVioletTheme.card, 0.95),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _tone(Settings.highlightColor, 0.82),
-                      ),
-                    ),
-                    child: Center(
-                      child: title == null || title.isEmpty
-                          ? const _SkeletonBlock(
-                              width: 158,
-                              height: 12,
-                              radius: 5,
-                            )
-                          : Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: ShadTheme.of(
-                                  context,
-                                )
-                                    .textTheme
-                                    .small
-                                    .copyWith(color: Colors.white70),
-                              ),
-                            ),
-                    ),
-                  ),
+          Center(
+            child: Container(
+              width: 280,
+              height: 30,
+              decoration: BoxDecoration(
+                color: _tone(Settings.tacticalVioletTheme.card, 0.95),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _tone(Settings.highlightColor, 0.82),
                 ),
+              ),
+              child: Center(
+                child: title == null || title.isEmpty
+                    ? const _SkeletonBlock(width: 158, height: 12, radius: 5)
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ShadTheme.of(context)
+                              .textTheme
+                              .small
+                              .copyWith(color: Colors.white70),
+                        ),
+                      ),
               ),
             ),
           ),
-          const _SkeletonBlock(width: 238, height: 40, radius: 8),
         ],
       ),
     );
@@ -228,7 +218,7 @@ class _SkeletonTopBar extends StatelessWidget {
 class _MapSelectorSkeleton extends StatelessWidget {
   const _MapSelectorSkeleton({required this.mapValue, required this.isAttack});
 
-  static const double _outerRadius = 10;
+  static const double _outerRadius = 12;
   static const double _innerGap = 4;
   static const double _innerRadius = _outerRadius - _innerGap;
 
@@ -244,11 +234,8 @@ class _MapSelectorSkeleton extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Settings.tacticalVioletTheme.border,
-          width: 2,
-        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,

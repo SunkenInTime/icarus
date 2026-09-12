@@ -218,75 +218,42 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     return Scaffold(
       body: Column(
         children: [
-          EditorWindowHeader(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 15),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final showDiscordLabel = constraints.maxWidth >= 1000;
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          ShadTooltip(
-                            builder: (context) => const Text('Library'),
-                            child: ShadIconButton.ghost(
-                              foregroundColor: Colors.white,
-                              onPressed: _leaveToLibrary,
-                              icon: const Icon(LucideIcons.house300, size: 20),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          const StrategyEditBoundary(
-                            disabledOpacity: 0.55,
-                            child: MapSelector(),
-                          ),
-                          if (kIsWeb)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8.0),
-                              child: DemoTag(),
-                            ),
-                        ],
+          // The same 40px strip as the library, so the traffic lights never
+          // move: Library on the left, the strategy in the middle, Discord on
+          // the right. The map card lives on the canvas with the toolbar.
+          AppWindowStrip(
+            child: Stack(
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(width: 6),
+                    ShadTooltip(
+                      builder: (context) => const Text('Library'),
+                      child: ShadIconButton.ghost(
+                        width: 28,
+                        height: 28,
+                        foregroundColor:
+                            Settings.tacticalVioletTheme.mutedForeground,
+                        hoverForegroundColor:
+                            Settings.tacticalVioletTheme.foreground,
+                        onPressed: _leaveToLibrary,
+                        icon: const Icon(LucideIcons.house300, size: 18),
                       ),
-                      const StrategyQuickSwitcher(),
-                      if (showDiscordLabel)
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            enabledMouseCursor: SystemMouseCursors.click,
-                          ),
-                          onPressed: () async {
-                            await launchUrl(Settings.dicordLink);
-                          },
-                          child: const Row(
-                            children: [
-                              Text("Have any bugs? Join the Discord"),
-                              SizedBox(width: 10),
-                              Icon(
-                                CustomIcons.discord,
-                                color: Colors.white,
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        Tooltip(
-                          message: 'Have any bugs? Join the Discord',
-                          child: ShadIconButton.ghost(
-                            foregroundColor: Colors.white,
-                            onPressed: () async {
-                              await launchUrl(Settings.dicordLink);
-                            },
-                            icon: const Icon(CustomIcons.discord),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
+                    ),
+                    if (kIsWeb)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8.0),
+                        child: DemoTag(),
+                      ),
+                    const Expanded(
+                      child: WindowDragArea(child: SizedBox.expand()),
+                    ),
+                    const _DiscordLink(),
+                    const SizedBox(width: 10),
+                  ],
+                ),
+                const Center(child: StrategyQuickSwitcher()),
+              ],
             ),
           ),
           const Expanded(
@@ -300,7 +267,24 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   alignment: Alignment.centerLeft,
                   child: RepaintBoundary(child: InteractiveMap()),
                 ),
-                Align(alignment: Alignment.topLeft, child: EditorToolbar()),
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        StrategyEditBoundary(
+                          disabledOpacity: 0.55,
+                          child: MapSelector(),
+                        ),
+                        SizedBox(height: 8),
+                        EditorToolbar(),
+                      ],
+                    ),
+                  ),
+                ),
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Padding(
@@ -342,6 +326,46 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         await windowManager.setPreventClose(false);
         await windowManager.close();
       },
+    );
+  }
+}
+
+/// The bug-report link at the end of the editor strip: text when there is
+/// room, the glyph alone when there isn't.
+class _DiscordLink extends StatelessWidget {
+  const _DiscordLink();
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final showLabel = MediaQuery.sizeOf(context).width >= 1000;
+    final button = ShadButton.ghost(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      foregroundColor: theme.mutedForeground,
+      hoverForegroundColor: theme.foreground,
+      onPressed: () async {
+        await launchUrl(Settings.dicordLink);
+      },
+      leading: showLabel ? null : const Icon(CustomIcons.discord, size: 16),
+      child: showLabel
+          ? const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Have any bugs? Join the Discord',
+                  style: TextStyle(fontSize: 13),
+                ),
+                SizedBox(width: 8),
+                Icon(CustomIcons.discord, size: 16),
+              ],
+            )
+          : const SizedBox.shrink(),
+    );
+    if (showLabel) return button;
+    return ShadTooltip(
+      builder: (context) => const Text('Have any bugs? Join the Discord'),
+      child: button,
     );
   }
 }

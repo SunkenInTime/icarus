@@ -37,12 +37,17 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     }
 
+    final strip = tester.getRect(find.byType(AppWindowStrip));
     final mapThumbnail = tester.getRect(find.byType(Image).first);
     final strategyTitle = tester.getRect(find.text('SYNC BOUNDARY PROBE'));
     final captionButtons = tester.getRect(find.byType(WindowCaptionButtons));
 
-    expect(strategyTitle.center.dy, mapThumbnail.center.dy);
-    expect(captionButtons.center.dy, mapThumbnail.center.dy);
+    // Title and caption buttons share the strip; the map card sits on the
+    // canvas below it, like the real editor.
+    expect(strip.height, kWindowStripHeight);
+    expect(strategyTitle.center.dy, closeTo(strip.center.dy, 0.5));
+    expect(captionButtons.center.dy, closeTo(strip.center.dy, 0.5));
+    expect(mapThumbnail.top, greaterThan(strip.bottom));
     expect(tester.takeException(), isNull);
   });
 }
