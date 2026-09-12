@@ -226,7 +226,9 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
         : const Duration(milliseconds: 140);
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      // Same 8px off the strip as the map card on the left, so both hang
+      // from the same line.
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: CompositedTransformTarget(
         link: _layerLink,
         child: OverlayPortal(

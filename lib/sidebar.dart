@@ -43,7 +43,11 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
         const AbiilityBar(),
         Padding(
           padding: const EdgeInsets.only(
-              left: 0, right: Settings.sideBarPanelPaddingRight, bottom: 8),
+            left: 0,
+            top: 8,
+            right: Settings.sideBarPanelPaddingRight,
+            bottom: 8,
+          ),
           child: ClipRRect(
             borderRadius: _panelBorderRadius,
             child: Container(
