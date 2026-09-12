@@ -296,7 +296,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -328,7 +329,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -447,7 +449,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -505,7 +508,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -532,7 +536,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -563,7 +568,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -604,7 +610,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -635,7 +642,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -671,7 +679,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -702,7 +711,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -738,7 +748,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
