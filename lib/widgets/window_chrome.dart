@@ -191,9 +191,14 @@ class AppWindowStrip extends StatelessWidget {
     return Container(
       key: const ValueKey('app-window-strip'),
       height: kWindowStripHeight,
-      // No seam under the strip: the card tone alone separates it from the
-      // canvas, and the floating panels below keep their own 8px of air.
-      color: Settings.tacticalVioletTheme.card,
+      // The 1px seam is the edge of the window frame: everything under it
+      // is the bench, and the floating panels on it carry their own air.
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card,
+        border: Border(
+          bottom: BorderSide(color: Settings.tacticalVioletTheme.border),
+        ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
