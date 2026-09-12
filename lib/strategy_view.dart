@@ -256,54 +256,52 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               ],
             ),
           ),
-          // Breathing room under the strip; every floating panel starts here.
+          // The canvas runs right up to the strip; each floating panel keeps
+          // its own 8px of air so no bare band shows between the two.
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: StrategyEditBoundary(child: DeleteCapture()),
-                  ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: RepaintBoundary(child: InteractiveMap()),
-                  ),
-                  Align(
-                    alignment: Alignment.topLeft,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          StrategyEditBoundary(
-                            disabledOpacity: 0.55,
-                            child: MapSelector(),
-                          ),
-                          SizedBox(height: 8),
-                          EditorToolbar(),
-                        ],
-                      ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: StrategyEditBoundary(child: DeleteCapture()),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: RepaintBoundary(child: InteractiveMap()),
+                ),
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        StrategyEditBoundary(
+                          disabledOpacity: 0.55,
+                          child: MapSelector(),
+                        ),
+                        SizedBox(height: 8),
+                        EditorToolbar(),
+                      ],
                     ),
                   ),
-                  Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: PagesBar(),
-                    ),
+                ),
+                Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: PagesBar(),
                   ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: StrategyEditBoundary(
-                      disabledOpacity: 0.55,
-                      child: SideBarUI(),
-                    ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: StrategyEditBoundary(
+                    disabledOpacity: 0.55,
+                    child: SideBarUI(),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
