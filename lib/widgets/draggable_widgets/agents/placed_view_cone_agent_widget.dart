@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -50,6 +51,8 @@ class ViewConeAgentComposite extends ConsumerWidget {
     required this.rotation,
     required this.length,
     this.forcedAgentSize,
+    this.previousWeapon,
+    this.weaponTransitionProgress = 1,
     this.applyRotation = true,
     this.clipToGeometry = true,
     this.isInteractive = true,
@@ -59,6 +62,8 @@ class ViewConeAgentComposite extends ConsumerWidget {
   final double rotation;
   final double length;
   final double? forcedAgentSize;
+  final WeaponType? previousWeapon;
+  final double weaponTransitionProgress;
   final bool applyRotation;
   final bool clipToGeometry;
   final bool isInteractive;
@@ -117,6 +122,9 @@ class ViewConeAgentComposite extends ConsumerWidget {
                 isAlly: agent.isAlly,
                 id: agent.id,
                 agent: AgentData.agents[agent.type]!,
+                weapon: agent.weapon,
+                previousWeapon: previousWeapon,
+                weaponTransitionProgress: weaponTransitionProgress,
                 forcedAgentSize: agentSize,
                 isInteractive: isInteractive,
               ),

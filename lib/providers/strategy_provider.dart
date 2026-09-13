@@ -19,6 +19,7 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_vision_cone_migration.dart';
+import 'package:icarus/migrations/agent_weapon_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/canonical_coordinates_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
@@ -647,10 +648,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       pageNameMigrated,
       force: needsCanonicalCoordinatesMigration,
     );
-    return migrateSunsetScale(
+    final sunsetMigrated = migrateSunsetScale(
       canonicalMigrated,
       force: originalVersion < SunsetScaleMigration.version,
     );
+    return AgentWeaponMigration.migrate(sunsetMigrated);
   }
 
   static StrategyData migrateSunsetScale(

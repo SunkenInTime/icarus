@@ -131,7 +131,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byType(ShadContextMenuItem), findsNWidgets(2));
+    expect(find.text('Sidearms'), findsOneWidget);
+    expect(find.text('None'), findsOneWidget);
     expect(tester.getSize(find.byType(ShadContextMenuItem).first).height, 40);
     final menuItemRect = tester.getRect(find.byType(ShadContextMenuItem).first);
     final abilityButtons = find.byWidgetPredicate(
