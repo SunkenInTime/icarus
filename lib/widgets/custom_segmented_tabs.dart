@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/inset_shadow_decoration.dart';
 
 enum SegmentedIndicatorBehavior {
   slidingPill,
@@ -207,10 +208,7 @@ class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
                 width: _segmentWidths[selectedIndex],
                 bottom: 0,
                 child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Settings.tacticalVioletTheme.primary,
-                    borderRadius: BorderRadius.circular(_segmentRadius),
-                  ),
+                  decoration: Settings.raisedPrimary(_segmentRadius),
                 ),
               ),
             Row(
@@ -296,12 +294,11 @@ class _TabButton<T> extends StatelessWidget {
             horizontal: horizontalPadding,
             vertical: verticalPadding,
           ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(borderRadius),
-            color: showStaticFill && isSelected
-                ? Settings.tacticalVioletTheme.primary
-                : Colors.transparent,
-          ),
+          decoration: showStaticFill && isSelected
+              ? Settings.raisedPrimary(borderRadius)
+              : InsetShadowDecoration(
+                  borderRadius: BorderRadius.circular(borderRadius),
+                ),
           child: DefaultTextStyle.merge(
             style: TextStyle(
               color: textColor,
