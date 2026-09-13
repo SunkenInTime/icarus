@@ -266,6 +266,14 @@ void main() {
     expect(badgeRect.right, greaterThan(agentRect.right));
     expect(badgeRect.bottom, greaterThan(agentRect.bottom));
 
+    // A filtered run starts with a cold image cache. Wait for the actual asset
+    // before inspecting pixels instead of relying on earlier menu tests.
+    await tester.runAsync(() => precacheImage(
+          AssetImage(WeaponType.classic.iconPath),
+          tester.element(find.byType(AgentWeaponBadge)),
+        ));
+    await tester.pumpAndSettle();
+
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: agentRect.center);
     await tester.pumpAndSettle();

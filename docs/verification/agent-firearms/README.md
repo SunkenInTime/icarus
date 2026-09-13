@@ -18,3 +18,11 @@ The screenshots below were also inspected visually. Every gun is visible at the 
 ![Right-click category menu with sidearms](sidearms-menu.png)
 
 The Windows CI run also passed all 493 unit/widget tests, including the overhang pixel assertion, with one existing skipped test: [CI run](https://github.com/SunkenInTime/icarus/actions/runs/34738623168).
+
+## Isolated pixel check
+
+Greptile's first review exposed a test timing issue. Running only the overhang test started with a cold image cache and captured before the firearm asset decoded. The full suite had already loaded it during the menu scenarios. The test now awaits `precacheImage` before inspecting pixels. This isolated command reproduces the original failure before that fix and passes after it:
+
+```powershell
+flutter test test/agent_weapon_widgets_test.dart --plain-name 'gun overhang paints outside the portrait and has no hit target'
+```
