@@ -30,7 +30,7 @@ The palette, theme, and sizing constants live in `lib/const/settings.dart`, with
 
 **The Tactical Semantics** Ally green, enemy red, defender blue, favorite amber, and the map ember hues carry game meaning. Never reuse them for unrelated UI emphasis.
 
-**The Tonal First** Depth comes from surface steps (background, panel, raised) and 1px zinc borders. A shadow is only allowed where it explains stacking: drag previews, floating menus, card foreground details (`0 4px 12px rgba(0,0,0,0.54)` / `0 8px 24px rgba(0,0,0,0.28)`).
+**The Tonal First** Depth comes from surface steps (background, panel, raised) and 1px zinc borders. A shadow is only allowed where it explains stacking: drag previews, floating menus, card foreground details (`0 4px 12px rgba(0,0,0,0.54)` / `0 8px 24px rgba(0,0,0,0.28)`). A selected or primary state is never a flat fill: it is a raised surface, lit from above. The fill runs lighter at the top, a 1px light sits inside the top edge, a 1px shade inside the bottom, and a 1px shadow drops beneath; the sides stay bare. `Settings.raised(color, radius)` builds it for any base color (`raisedPrimary` and `raisedSurface` are the violet and zinc shortcuts), painted by `InsetShadowDecoration` (`lib/widgets/inset_shadow_decoration.dart`), which also tweens in animated containers. Primary buttons get it from the Shad theme. Hover stays flat.
 
 **Every control earns its position.** If you can't say why a control sits where it sits, it isn't done. Never fill spare space with a feature.
 
