@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -730,6 +731,15 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(placement: state.placement!.copyWith(draftAgent: draft));
   }
 
+  void setDraftAgentWeapon(WeaponType weapon) {
+    final placement = state.placement;
+    final draft = placement?.draftAgent;
+    if (placement == null || draft == null || draft.weapon == weapon) return;
+    state = state.copyWith(
+      placement: placement.copyWith(draftAgent: draft.copyWith(weapon: weapon)),
+    );
+  }
+
   void updateDraftAbilityPosition(Offset position) {
     final draft = state.placement?.draftAbility;
     if (draft == null) return;
@@ -816,6 +826,30 @@ class LineUpProvider extends Notifier<LineUpState> {
       placement: null,
     );
     return link;
+  }
+
+  void setOriginWeapon(String originId, WeaponType weapon) {
+    final index = state.origins.indexWhere((origin) => origin.id == originId);
+    if (index < 0 || state.origins[index].agent.weapon == weapon) return;
+    final previous = state.origins[index].agent.weapon;
+    _applyOriginWeapon(originId, weapon);
+    ref.read(actionProvider.notifier).addAction(WeaponSelectionAction(
+          id: originId,
+          group: ActionGroup.lineUp,
+          before: previous,
+          after: weapon,
+        ));
+  }
+
+  void _applyOriginWeapon(String originId, WeaponType weapon) {
+    final index = state.origins.indexWhere((origin) => origin.id == originId);
+    if (index < 0) return;
+    final origins = [...state.origins];
+    final origin = origins[index];
+    origins[index] = origin.copyWith(
+      agent: origin.agent.copyWith(weapon: weapon),
+    );
+    state = state.copyWith(origins: origins);
   }
 
   // --- Edits (no action recorded; callers wrap in performTransaction) -------
@@ -956,6 +990,10 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void undoAction(UserAction action) {
+    if (action is WeaponSelectionAction) {
+      _applyOriginWeapon(action.id, action.before);
+      return;
+    }
     switch (action.type) {
       case ActionType.addition:
         _removeForAction(action.id);
@@ -971,6 +1009,10 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void redoAction(UserAction action) {
+    if (action is WeaponSelectionAction) {
+      _applyOriginWeapon(action.id, action.after);
+      return;
+    }
     switch (action.type) {
       case ActionType.addition:
         _restoreForAction(action.id);

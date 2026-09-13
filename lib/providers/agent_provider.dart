@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -81,6 +82,26 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = newState;
+  }
+
+  void setWeapon(String id, WeaponType weapon) {
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0 || state[index].weapon == weapon) return;
+    final previous = state[index].weapon;
+    _applyWeapon(id, weapon);
+    ref.read(actionProvider.notifier).addAction(WeaponSelectionAction(
+          id: id,
+          group: ActionGroup.agent,
+          before: previous,
+          after: weapon,
+        ));
+  }
+
+  void _applyWeapon(String id, WeaponType weapon) {
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
+    state[index].weapon = weapon;
+    state = [...state];
   }
 
   void updatePosition(Offset position, String id) {
@@ -218,6 +239,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       type: node.type,
       isAlly: node.isAlly,
       state: node.state,
+      weapon: node.weapon,
       presetType: presetType,
       rotation: rotation,
       length: length,
@@ -244,6 +266,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       type: node.type,
       isAlly: node.isAlly,
       state: node.state,
+      weapon: node.weapon,
     )..isDeleted = node.isDeleted;
 
     ref.read(actionProvider.notifier).addAction(
@@ -271,6 +294,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       type: node.type,
       isAlly: node.isAlly,
       state: node.state,
+      weapon: node.weapon,
       diameterMeters: diameterMeters,
       colorValue: colorValue,
       opacityPercent: opacityPercent,
@@ -284,6 +308,10 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void undoAction(UserAction action) {
+    if (action is WeaponSelectionAction) {
+      _applyWeapon(action.id, action.before);
+      return;
+    }
     switch (action.type) {
       case ActionType.addition:
         removeAgent(action.id);
@@ -320,6 +348,10 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void redoAction(UserAction action) {
+    if (action is WeaponSelectionAction) {
+      _applyWeapon(action.id, action.after);
+      return;
+    }
     final newState = [...state];
 
     try {

@@ -80,6 +80,8 @@ PlacedAgent _$PlacedAgentFromJson(Map<String, dynamic> json) => PlacedAgent(
       state: json['state'] == null
           ? AgentState.none
           : const AgentStateCompatConverter().fromJson(json['state']),
+      weapon: $enumDecodeNullable(_$WeaponTypeEnumMap, json['weapon']) ??
+          WeaponType.none,
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
@@ -90,8 +92,32 @@ Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
       'type': const AgentTypeCompatConverter().toJson(instance.type),
       'isAlly': instance.isAlly,
       'state': const AgentStateCompatConverter().toJson(instance.state),
+      'weapon': _$WeaponTypeEnumMap[instance.weapon]!,
       'lineUpID': instance.lineUpID,
     };
+
+const _$WeaponTypeEnumMap = {
+  WeaponType.none: 'none',
+  WeaponType.classic: 'classic',
+  WeaponType.shorty: 'shorty',
+  WeaponType.frenzy: 'frenzy',
+  WeaponType.ghost: 'ghost',
+  WeaponType.bandit: 'bandit',
+  WeaponType.sheriff: 'sheriff',
+  WeaponType.bulldog: 'bulldog',
+  WeaponType.guardian: 'guardian',
+  WeaponType.phantom: 'phantom',
+  WeaponType.vandal: 'vandal',
+  WeaponType.bucky: 'bucky',
+  WeaponType.judge: 'judge',
+  WeaponType.stinger: 'stinger',
+  WeaponType.spectre: 'spectre',
+  WeaponType.marshal: 'marshal',
+  WeaponType.outlaw: 'outlaw',
+  WeaponType.operator: 'operator',
+  WeaponType.ares: 'ares',
+  WeaponType.odin: 'odin',
+};
 
 PlacedViewConeAgent _$PlacedViewConeAgentFromJson(Map<String, dynamic> json) =>
     PlacedViewConeAgent(
@@ -108,6 +134,8 @@ PlacedViewConeAgent _$PlacedViewConeAgentFromJson(Map<String, dynamic> json) =>
       state: json['state'] == null
           ? AgentState.none
           : const AgentStateCompatConverter().fromJson(json['state']),
+      weapon: $enumDecodeNullable(_$WeaponTypeEnumMap, json['weapon']) ??
+          WeaponType.none,
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedViewConeAgentToJson(
@@ -119,6 +147,7 @@ Map<String, dynamic> _$PlacedViewConeAgentToJson(
       'type': const AgentTypeCompatConverter().toJson(instance.type),
       'isAlly': instance.isAlly,
       'state': const AgentStateCompatConverter().toJson(instance.state),
+      'weapon': _$WeaponTypeEnumMap[instance.weapon]!,
       'presetType':
           const UtilityTypeCompatConverter().toJson(instance.presetType),
       'rotation': instance.rotation,
@@ -139,6 +168,8 @@ PlacedCircleAgent _$PlacedCircleAgentFromJson(Map<String, dynamic> json) =>
       state: json['state'] == null
           ? AgentState.none
           : const AgentStateCompatConverter().fromJson(json['state']),
+      weapon: $enumDecodeNullable(_$WeaponTypeEnumMap, json['weapon']) ??
+          WeaponType.none,
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedCircleAgentToJson(PlacedCircleAgent instance) =>
@@ -149,6 +180,7 @@ Map<String, dynamic> _$PlacedCircleAgentToJson(PlacedCircleAgent instance) =>
       'type': const AgentTypeCompatConverter().toJson(instance.type),
       'isAlly': instance.isAlly,
       'state': const AgentStateCompatConverter().toJson(instance.state),
+      'weapon': _$WeaponTypeEnumMap[instance.weapon]!,
       'diameterMeters': instance.diameterMeters,
       'colorValue': instance.colorValue,
       'opacityPercent': instance.opacityPercent,

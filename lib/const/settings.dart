@@ -40,6 +40,11 @@ class Settings {
   static const double agentSize = 35;
   static const double agentSizeMin = 15;
   static const double agentSizeMax = 45;
+  static const double agentWeaponWidthRatio = 0.70;
+  static const double agentWeaponHeightRatio = 0.40;
+  static const double agentWeaponRightOverhangRatio = 0.18;
+  static const double agentWeaponBottomOverhangRatio = 0.12;
+  static const double agentWeaponOutlineWidthRatio = 0.035;
 
   static const double abilitySize = 25;
   static const double abilitySizeMin = 15;
@@ -100,7 +105,7 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 99;
+  static const int versionNumber = 100;
   static const String versionName = "4.6.1";
   static final Uri desktopUpdaterArchiveUrl =
       buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);

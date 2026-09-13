@@ -161,13 +161,14 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       isAlly: fields[1] == null ? true : fields[1] as bool,
       lineUpID: fields[5] as String?,
       state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
+      weapon: fields[7] == null ? WeaponType.none : fields[7] as WeaponType,
     )..isDeleted = fields[3] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAgent obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -181,7 +182,9 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       ..writeByte(5)
       ..write(obj.lineUpID)
       ..writeByte(6)
-      ..write(obj.state);
+      ..write(obj.state)
+      ..writeByte(7)
+      ..write(obj.weapon);
   }
 
   @override
@@ -1421,13 +1424,14 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       visionElevation: (fields[9] as num?)?.toDouble(),
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+      weapon: fields[10] == null ? WeaponType.none : fields[10] as WeaponType,
     )..isDeleted = fields[7] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedViewConeAgent obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.presetType)
       ..writeByte(1)
@@ -1447,7 +1451,9 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       ..writeByte(8)
       ..write(obj.position)
       ..writeByte(9)
-      ..write(obj.visionElevation);
+      ..write(obj.visionElevation)
+      ..writeByte(10)
+      ..write(obj.weapon);
   }
 
   @override
@@ -1480,13 +1486,14 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
       opacityPercent: fields[2] == null ? 100 : (fields[2] as num).toInt(),
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+      weapon: fields[9] == null ? WeaponType.none : fields[9] as WeaponType,
     )..isDeleted = fields[7] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedCircleAgent obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.diameterMeters)
       ..writeByte(1)
@@ -1504,7 +1511,9 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
       ..writeByte(7)
       ..write(obj.isDeleted)
       ..writeByte(8)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(9)
+      ..write(obj.weapon);
   }
 
   @override
@@ -1776,6 +1785,115 @@ class LineUpLinkAdapter extends TypeAdapter<LineUpLink> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is LineUpLinkAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class WeaponTypeAdapter extends TypeAdapter<WeaponType> {
+  @override
+  final typeId = 38;
+
+  @override
+  WeaponType read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return WeaponType.none;
+      case 1:
+        return WeaponType.classic;
+      case 2:
+        return WeaponType.shorty;
+      case 3:
+        return WeaponType.frenzy;
+      case 4:
+        return WeaponType.ghost;
+      case 5:
+        return WeaponType.bandit;
+      case 6:
+        return WeaponType.sheriff;
+      case 7:
+        return WeaponType.bulldog;
+      case 8:
+        return WeaponType.guardian;
+      case 9:
+        return WeaponType.phantom;
+      case 10:
+        return WeaponType.vandal;
+      case 11:
+        return WeaponType.bucky;
+      case 12:
+        return WeaponType.judge;
+      case 13:
+        return WeaponType.stinger;
+      case 14:
+        return WeaponType.spectre;
+      case 15:
+        return WeaponType.marshal;
+      case 16:
+        return WeaponType.outlaw;
+      case 17:
+        return WeaponType.operator;
+      case 18:
+        return WeaponType.ares;
+      case 19:
+        return WeaponType.odin;
+      default:
+        return WeaponType.none;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, WeaponType obj) {
+    switch (obj) {
+      case WeaponType.none:
+        writer.writeByte(0);
+      case WeaponType.classic:
+        writer.writeByte(1);
+      case WeaponType.shorty:
+        writer.writeByte(2);
+      case WeaponType.frenzy:
+        writer.writeByte(3);
+      case WeaponType.ghost:
+        writer.writeByte(4);
+      case WeaponType.bandit:
+        writer.writeByte(5);
+      case WeaponType.sheriff:
+        writer.writeByte(6);
+      case WeaponType.bulldog:
+        writer.writeByte(7);
+      case WeaponType.guardian:
+        writer.writeByte(8);
+      case WeaponType.phantom:
+        writer.writeByte(9);
+      case WeaponType.vandal:
+        writer.writeByte(10);
+      case WeaponType.bucky:
+        writer.writeByte(11);
+      case WeaponType.judge:
+        writer.writeByte(12);
+      case WeaponType.stinger:
+        writer.writeByte(13);
+      case WeaponType.spectre:
+        writer.writeByte(14);
+      case WeaponType.marshal:
+        writer.writeByte(15);
+      case WeaponType.outlaw:
+        writer.writeByte(16);
+      case WeaponType.operator:
+        writer.writeByte(17);
+      case WeaponType.ares:
+        writer.writeByte(18);
+      case WeaponType.odin:
+        writer.writeByte(19);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WeaponTypeAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

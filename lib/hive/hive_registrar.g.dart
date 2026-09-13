@@ -40,6 +40,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());
+    registerAdapter(WeaponTypeAdapter());
   }
 }
 
@@ -77,5 +78,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());
+    registerAdapter(WeaponTypeAdapter());
   }
 }

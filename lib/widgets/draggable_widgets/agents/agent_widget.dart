@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/agent_weapon_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/agent_weapon_badge.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -85,6 +88,10 @@ class AgentWidget extends ConsumerWidget {
     required this.isAlly,
     this.lineUpId,
     this.state = AgentState.none,
+    this.weapon = WeaponType.none,
+    this.previousWeapon,
+    this.weaponTransitionProgress = 1,
+    this.onWeaponSelected,
     this.forcedAgentSize,
     this.deadStateProgress,
     this.isInteractive = true,
@@ -95,6 +102,12 @@ class AgentWidget extends ConsumerWidget {
   final bool isAlly;
   final AgentData agent;
   final AgentState state;
+  final WeaponType weapon;
+  final WeaponType? previousWeapon;
+  final double weaponTransitionProgress;
+
+  /// Lineup drafts supply their own editor because they are not placed agents.
+  final ValueChanged<WeaponType>? onWeaponSelected;
   final double? forcedAgentSize;
   final double? deadStateProgress;
   final bool isInteractive;
@@ -299,6 +312,25 @@ class AgentWidget extends ConsumerWidget {
                 .update(InteractionState.lineUpPlacing);
           },
         ),
+      if (canInteract &&
+          (placedAgentNode != null ||
+              lineUpId != null ||
+              onWeaponSelected != null))
+        ...buildAgentWeaponMenu(
+          selectedWeapon: weapon,
+          onSelected: (selectedWeapon) {
+            if (onWeaponSelected != null) {
+              onWeaponSelected!(selectedWeapon);
+            } else if (lineUpId != null) {
+              ref.read(lineUpProvider.notifier).setOriginWeapon(
+                    lineUpId!,
+                    selectedWeapon,
+                  );
+            } else if (id != null) {
+              ref.read(agentProvider.notifier).setWeapon(id!, selectedWeapon);
+            }
+          },
+        ),
       ...adjacentPageCopyItems,
     ];
 
@@ -331,6 +363,28 @@ class AgentWidget extends ConsumerWidget {
             child: agentDisplay,
           ),
         ),
+      );
+    }
+
+    // Only the square portrait participates in layout and hit testing.
+    // A positioned decoration can paint outside it without moving its anchor.
+    if (weapon != WeaponType.none ||
+        (previousWeapon != null && previousWeapon != WeaponType.none)) {
+      agentCard = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          agentCard,
+          Positioned(
+            right: -scaledSize * Settings.agentWeaponRightOverhangRatio,
+            bottom: -scaledSize * Settings.agentWeaponBottomOverhangRatio,
+            child: AgentWeaponBadge(
+              weapon: weapon,
+              agentSize: scaledSize,
+              previousWeapon: previousWeapon,
+              transitionProgress: weaponTransitionProgress,
+            ),
+          ),
+        ],
       );
     }
 

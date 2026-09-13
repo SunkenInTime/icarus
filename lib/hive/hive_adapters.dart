@@ -6,6 +6,7 @@ import 'dart:ui' show Offset;
 import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -53,6 +54,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<AppPreferences>(),
   AdapterSpec<PlacedViewConeAgent>(),
   AdapterSpec<PlacedCircleAgent>(),
+  AdapterSpec<WeaponType>(),
 ])
 part 'hive_adapters.g.dart';
 

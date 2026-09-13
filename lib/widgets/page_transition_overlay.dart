@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
 
 import 'package:icarus/const/maps.dart';
@@ -251,6 +252,8 @@ class _EntryRenderer {
               );
         return _overlayItem(
           key: ValueKey('move_${entry.id}'),
+          previousWeapon: PageTransitionEntry.weaponOf(entry.from!),
+          weaponTransitionProgress: t,
           widget: entry.to!,
           pos: position,
           coordinatePosition: coordinatePosition,
@@ -381,6 +384,8 @@ class _EntryRenderer {
     double? customWidth,
     double? customLength,
     double? deadStateProgress,
+    WeaponType? previousWeapon,
+    double weaponTransitionProgress = 1,
   }) {
     final displayRotation = rotation == null
         ? null
@@ -398,6 +403,8 @@ class _EntryRenderer {
       customWidth: customWidth,
       customLength: customLength,
       deadStateProgress: deadStateProgress,
+      previousWeapon: previousWeapon,
+      weaponTransitionProgress: weaponTransitionProgress,
       agentSize: agentSize,
       abilitySize: abilitySize,
     ); // central factory (below)
@@ -576,6 +583,8 @@ class PlacedWidgetPreview {
     double? customWidth,
     double? customLength,
     double? deadStateProgress,
+    WeaponType? previousWeapon,
+    double weaponTransitionProgress = 1,
     required double agentSize,
     required double abilitySize,
   }) {
@@ -585,7 +594,10 @@ class PlacedWidgetPreview {
         id: w.id,
         agent: AgentData.agents[w.type]!,
         state: w.state,
+        weapon: w.weapon,
         deadStateProgress: deadStateProgress,
+        previousWeapon: previousWeapon,
+        weaponTransitionProgress: weaponTransitionProgress,
         forcedAgentSize: agentSize,
         isInteractive: false,
       );
@@ -599,6 +611,8 @@ class PlacedWidgetPreview {
         rotation: rotation ?? w.rotation,
         length: length ?? w.length,
         forcedAgentSize: agentSize,
+        previousWeapon: previousWeapon,
+        weaponTransitionProgress: weaponTransitionProgress,
         isInteractive: false,
       );
     }
@@ -606,6 +620,8 @@ class PlacedWidgetPreview {
       return CircleAgentComposite(
         agent: w.copyWith(diameterMeters: customDiameter ?? w.diameterMeters),
         forcedAgentSize: agentSize,
+        previousWeapon: previousWeapon,
+        weaponTransitionProgress: weaponTransitionProgress,
         isInteractive: false,
       );
     }
