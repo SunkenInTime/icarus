@@ -31,10 +31,9 @@ Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
         ),
         child: Text(
           'Save Complete',
-          style: ShadTheme.of(context)
-              .textTheme
-              .small
-              .copyWith(color: Settings.tacticalVioletTheme.foreground),
+          style: ShadTheme.of(context).textTheme.small.copyWith(
+            color: Settings.tacticalVioletTheme.foreground,
+          ),
         ),
       );
     },
@@ -44,10 +43,7 @@ Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
 /// The save button of the open strategy. Shows a spinner while an auto-save
 /// runs and a check when it lands, then rests on the save glyph.
 class AutoSaveButton extends ConsumerStatefulWidget {
-  const AutoSaveButton({
-    super.key,
-    this.style = kEditorToolbarButtonStyle,
-  });
+  const AutoSaveButton({super.key, this.style = kEditorToolbarButtonStyle});
 
   final EditorToolbarButtonStyle style;
 
@@ -100,23 +96,23 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
 
     final size = widget.style.iconSize;
     final Widget icon = switch (_phase) {
-      _Phase.idle => const Icon(LucideIcons.save300, key: ValueKey('idle')),
+      _Phase.idle => const Icon(LucideIcons.save200, key: ValueKey('idle')),
       _Phase.loading => SizedBox(
-          key: const ValueKey('loading'),
-          width: size - 2,
-          height: size - 2,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.8,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              Settings.tacticalVioletTheme.mutedForeground,
-            ),
+        key: const ValueKey('loading'),
+        width: size - 2,
+        height: size - 2,
+        child: CircularProgressIndicator(
+          strokeWidth: 1.8,
+          valueColor: AlwaysStoppedAnimation<Color>(
+            Settings.tacticalVioletTheme.mutedForeground,
           ),
         ),
+      ),
       _Phase.success => const Icon(
-          LucideIcons.check300,
-          key: ValueKey('success'),
-          color: Settings.allyBGColor,
-        ),
+        LucideIcons.check200,
+        key: ValueKey('success'),
+        color: Settings.allyBGColor,
+      ),
     };
 
     return EditorToolbarButton(

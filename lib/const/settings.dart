@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/color_option.dart';
+import 'package:icarus/widgets/inset_shadow_decoration.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -226,6 +227,79 @@ class Settings {
   static const Color settingsDiscordAccent = Color(0xff5865f2); // brand blurple
   static const Color settingsMapAccent = Color(0xffb27c40); // map layers
 
+  // Resting glyph color for toolbar controls: a step under foreground so the
+  // strip of icons stays quiet, but above mutedForeground, which vanishes at
+  // the light stroke weights. Hover still comes up to foreground.
+  static const Color toolbarGlyph = Color(0xffd4d4d8); // zinc-300
+
+  // Raised surfaces (a selected tab, a checked tool, a primary command) are
+  // lit from above: the fill runs lighter at the top, a bright 1px edge sits
+  // inside the top, a dark 1px edge inside the bottom, and a 1px shadow drops
+  // beneath. The sides stay bare. Everything paints inside or 1px under the
+  // box, so the footprint never changes. Hover stays flat.
+  static const Color raisedTopLight = Color(0x24ffffff); // white 14%
+  static const Color raisedBottomShade = Color(0x4d000000); // black 30%
+  static const List<InsetShadow> raisedRim = [
+    InsetShadow(color: raisedTopLight, offset: Offset(0, 1)),
+    InsetShadow(color: raisedBottomShade, offset: Offset(0, -1)),
+  ];
+  static const BoxShadow raisedDropShadow = BoxShadow(
+    color: Color(0x73000000), // black 45%
+    offset: Offset(0, 1),
+  );
+  // How far the fill's top and bottom move from the base color, in HSL
+  // lightness. These two numbers set the lift for every raised surface.
+  static const double raisedTopLift = 0.06;
+  static const double raisedBottomDrop = 0.03;
+
+  /// The lit fill for any base color: lighter at the top, darker at the
+  /// bottom, so one recipe serves violet, zinc, red, and the rest.
+  static LinearGradient raisedGradient(Color base) {
+    final hsl = HSLColor.fromColor(base);
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        hsl
+            .withLightness((hsl.lightness + raisedTopLift).clamp(0, 1))
+            .toColor(),
+        hsl
+            .withLightness((hsl.lightness - raisedBottomDrop).clamp(0, 1))
+            .toColor(),
+      ],
+    );
+  }
+
+  /// A raised surface of [base] color at [radius]. Use this wherever a
+  /// selected or primary state would otherwise be a flat fill.
+  static InsetShadowDecoration raised(Color base, double radius) =>
+      InsetShadowDecoration(
+        gradient: raisedGradient(base),
+        borderRadius: BorderRadius.circular(radius),
+        boxShadows: const [raisedDropShadow],
+        shadows: raisedRim,
+      );
+
+  /// The raised neutral surface: a selected tab or chip.
+  static InsetShadowDecoration raisedSurface(double radius) =>
+      raised(tacticalVioletTheme.secondary, radius);
+
+  /// The raised command surface: a checked tool, the active segment, the
+  /// active page, anything that would otherwise be a flat `primary` fill.
+  static InsetShadowDecoration raisedPrimary(double radius) =>
+      raised(tacticalVioletTheme.primary, radius);
+
+  /// The primary fill alone, for the Shad theme and animated fills.
+  static final LinearGradient raisedPrimaryFill =
+      raisedGradient(tacticalVioletTheme.primary);
+
+  // The shadow a floating menu earns (DESIGN.md: 0 8px 24px rgba(0,0,0,0.28)).
+  static const BoxShadow floatingMenuShadow = BoxShadow(
+    color: Color(0x47000000),
+    blurRadius: 24,
+    offset: Offset(0, 8),
+  );
+
   static const cardForegroundBackdrop = BoxShadow(
     color: Colors.black54, // High opacity because the background is dark
     blurRadius: 12,
@@ -249,13 +323,7 @@ class Settings {
         return Container(
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Settings.tacticalVioletTheme.border,
-            ),
-          ),
+          decoration: Settings.raised(backgroundColor, 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

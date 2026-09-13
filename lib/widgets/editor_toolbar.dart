@@ -23,10 +23,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// Geometry shared by every control in the editor's floating toolbar, so the
 /// save button matches its neighbours exactly.
 class EditorToolbarButtonStyle {
-  const EditorToolbarButtonStyle({
-    this.size = 32,
-    this.iconSize = 18,
-  });
+  const EditorToolbarButtonStyle({this.size = 32, this.iconSize = 18});
 
   final double size;
   final double iconSize;
@@ -70,13 +67,13 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                   style: style,
                   tooltip: 'Export .ica',
                   onPressed: _exportStrategy,
-                  icon: const Icon(LucideIcons.upload300),
+                  icon: const Icon(LucideIcons.upload200),
                 ),
                 EditorToolbarButton(
                   style: style,
                   tooltip: 'Export video',
                   onPressed: _exportVideo,
-                  icon: const Icon(LucideIcons.clapperboard300),
+                  icon: const Icon(LucideIcons.clapperboard200),
                 ),
                 EditorToolbarButton(
                   style: style,
@@ -93,7 +90,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                             ),
                           ),
                         )
-                      : const Icon(LucideIcons.camera300),
+                      : const Icon(LucideIcons.camera200),
                 ),
                 const EditorToolbarDivider(),
                 EditorToolbarButton(
@@ -105,7 +102,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                       builder: (context) => const SettingsTab(),
                     );
                   },
-                  icon: const Icon(LucideIcons.settings300),
+                  icon: const Icon(LucideIcons.settings200),
                 ),
               ],
             ),
@@ -157,10 +154,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
 
     await ref.read(strategyProvider.notifier).forceSaveNow(id);
 
-    final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
-        .where((StrategyData strategy) => strategy.id == id)
-        .firstOrNull;
+    final newStrat = Hive.box<StrategyData>(
+      HiveBoxNames.strategiesBox,
+    ).values.where((StrategyData strategy) => strategy.id == id).firstOrNull;
 
     if (newStrat == null) {
       if (mounted) setState(() => _isCapturingScreenshot = false);
@@ -206,10 +202,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
       screenshotView.hydrateProviders(screenshotContainer);
       final image = await newController.captureFromWidget(
         targetSize: CoordinateSystem.screenShotSize,
-        wrapForOffscreenCapture(
-          screenshotView,
-          container: screenshotContainer,
-        ),
+        wrapForOffscreenCapture(screenshotView, container: screenshotContainer),
       );
       if (mounted) setState(() => _isCapturingScreenshot = false);
       String? outputFile = await FilePicker.platform.saveFile(
@@ -237,7 +230,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   }
 }
 
-/// One control in the editor toolbar. Glyphs are the 300 stroke weight: the
+/// One control in the editor toolbar. Glyphs are the 200 stroke weight: the
 /// default 2px Lucide stroke reads heavy in white at 18px, and muted grey
 /// vanishes against the card, so the weight carries the quietness instead. [icon] is any 18px glyph, so buttons can swap
 /// in a spinner without changing size.
@@ -266,7 +259,7 @@ class EditorToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    final resting = foregroundColor ?? theme.foreground;
+    final resting = foregroundColor ?? Settings.toolbarGlyph;
     return Semantics(
       label: semanticsLabel ?? tooltip,
       button: true,

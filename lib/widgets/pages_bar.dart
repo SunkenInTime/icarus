@@ -411,7 +411,7 @@ class _CollapsedPill extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium?.copyWith(
                   color: Colors.white,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   fontSize: 14),
             ),
           ),
@@ -786,9 +786,7 @@ class _PageRowState extends State<_PageRow> {
     final fillProgress = widget.transitionProgress?.clamp(0.0, 1.0);
     final showActions =
         _hovered || widget.active || widget.transitionProgress != null;
-    final bg = widget.active && fillProgress == null
-        ? Settings.tacticalVioletTheme.primary
-        : Settings.tacticalVioletTheme.card;
+    final isRaised = widget.active && fillProgress == null;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -803,34 +801,48 @@ class _PageRowState extends State<_PageRow> {
           onTap: () => widget.onSelect(widget.page.id),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(_PageRow._rowRadius),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(_PageRow._rowRadius),
-                border: Border.all(
-                  color: Settings.tacticalVioletTheme.border,
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                      color: Settings.tacticalVioletTheme.card
-                          .withValues(alpha: 0.2),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4))
-                ],
-                color: bg,
-              ),
+            // Every layer is a Positioned.fill over one fixed-size box, so
+            // the surface, the transition sweep, and the content share the
+            // same rect in every state. (A Container would inset its child
+            // by the resting border's width and shift everything 1px when
+            // the row turns active, which has no border.)
+            child: SizedBox(
               height: _PageRow._rowHeight,
               child: Stack(
                 children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: isRaised
+                          ? Settings.raisedPrimary(_PageRow._rowRadius)
+                          : BoxDecoration(
+                              borderRadius:
+                                  BorderRadius.circular(_PageRow._rowRadius),
+                              border: Border.all(
+                                color: Settings.tacticalVioletTheme.border,
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                    color: Settings.tacticalVioletTheme.card
+                                        .withValues(alpha: 0.2),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4))
+                              ],
+                              color: Settings.tacticalVioletTheme.card,
+                            ),
+                    ),
+                  ),
                   if (fillProgress != null)
                     Positioned.fill(
                       child: FractionallySizedBox(
                         widthFactor: fillProgress,
                         alignment: Alignment.centerLeft,
+                        // The same surface as the active row, so the
+                        // sweep's corners match at every width and it
+                        // lands exactly on the active state.
                         child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Settings.tacticalVioletTheme.primary,
-                          ),
+                          decoration:
+                              Settings.raisedPrimary(_PageRow._rowRadius),
                         ),
                       ),
                     ),
@@ -845,9 +857,7 @@ class _PageRowState extends State<_PageRow> {
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 color: Colors.white,
-                                fontWeight: widget.active
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
+                                fontWeight: FontWeight.w500,
                                 fontSize: 14,
                               ),
                             ),

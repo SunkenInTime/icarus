@@ -12,6 +12,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 const double _controlHeight = 28;
 // Tabs sit apart so a selected and a hovered background never touch.
 const double _tabGap = 4;
+// Matches the ghost button's own radius so the rim hugs its hover shape.
+const double _tabRadius = 6;
 // Action menus hug their labels.
 const double _sortMenuWidth = 168;
 const double _newMenuWidth = 140;
@@ -280,19 +282,25 @@ class _TabButton extends StatelessWidget {
       onTap: onTap,
       child: Opacity(
         opacity: dimmed ? 0.45 : 1,
-        child: ShadButton.ghost(
-          height: _controlHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          gap: 6,
-          cursor: onTap == null ? SystemMouseCursors.basic : null,
-          backgroundColor: selected ? theme.secondary : null,
-          foregroundColor: foreground,
-          hoverForegroundColor: theme.foreground,
-          onPressed: onTap,
-          leading: Icon(icon, size: 15),
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        child: DecoratedBox(
+          decoration: selected
+              ? Settings.raisedSurface(_tabRadius)
+              : const BoxDecoration(),
+          child: ShadButton.ghost(
+            height: _controlHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            gap: 6,
+            cursor: onTap == null ? SystemMouseCursors.basic : null,
+            backgroundColor: selected ? Colors.transparent : null,
+            hoverBackgroundColor: selected ? Colors.transparent : null,
+            foregroundColor: foreground,
+            hoverForegroundColor: theme.foreground,
+            onPressed: onTap,
+            leading: Icon(icon, size: 15),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ),
         ),
       ),

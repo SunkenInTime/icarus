@@ -164,14 +164,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                           horizontal: 12,
                           vertical: 8,
                         ),
-                        decoration: BoxDecoration(
-                          color: Settings.tacticalVioletTheme.primary,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: Settings.tacticalVioletTheme.border,
-                          ),
-                          boxShadow: const [Settings.cardForegroundBackdrop],
-                        ),
+                        decoration: Settings.raisedPrimary(8),
                         child: Text(
                           lineUpPlacementStatus(placement),
                           style: ShadTheme.of(context)

@@ -18,6 +18,10 @@ class MapTile extends ConsumerStatefulWidget {
   final bool isActive;
   final double borderRadius;
 
+  /// The tile's fixed footprint; the map card sizes itself from this.
+  static const double width = 180;
+  static const double height = 65;
+
   @override
   ConsumerState<MapTile> createState() => _MapTileState();
 }
@@ -28,18 +32,20 @@ class _MapTileState extends ConsumerState<MapTile> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter:
-          widget.isPreview ? null : (_) => setState(() => _isHovered = true),
-      onExit:
-          widget.isPreview ? null : (_) => setState(() => _isHovered = false),
+      onEnter: widget.isPreview
+          ? null
+          : (_) => setState(() => _isHovered = true),
+      onExit: widget.isPreview
+          ? null
+          : (_) => setState(() => _isHovered = false),
       child: ClipRRect(
         borderRadius: BorderRadius.all(Radius.circular(widget.borderRadius)),
         child: InkWell(
           mouseCursor: SystemMouseCursors.click,
           onTap: widget.onTap,
           child: SizedBox(
-            width: 180,
-            height: 65,
+            width: MapTile.width,
+            height: MapTile.height,
             child: Stack(
               children: [
                 Positioned.fill(
@@ -77,11 +83,11 @@ class _MapTileState extends ConsumerState<MapTile> {
                           color: Colors.black,
                           blurRadius: 2,
                           offset: Offset(0, 2),
-                        )
+                        ),
                       ],
                     ),
                   ),
-                )
+                ),
               ],
             ),
           ),

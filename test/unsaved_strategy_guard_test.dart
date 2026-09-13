@@ -411,7 +411,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Save changes?'), findsOneWidget);
-      await tester.tap(find.text("Don't Save"));
+      await tester.tap(find.text("Don't save"));
       await tester.pumpAndSettle();
 
       final result = await guardFuture;

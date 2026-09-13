@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -28,6 +28,12 @@ class StrategyQuickSwitcher extends ConsumerStatefulWidget {
 class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barWidth = 280;
   static const double _barHeight = 30;
+  static const double _barRadius = 8;
+  static const double _chevronWidth = 38;
+  // Menu geometry, matching the library strip's popovers.
+  static const double _menuRadius = 12;
+  static const double _menuInset = 6;
+  static const double _rowInset = 6;
   static const EdgeInsets _displayMargin = EdgeInsets.symmetric(horizontal: 16);
   final OverlayPortalController _controller = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
@@ -249,6 +255,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   @override
   Widget build(BuildContext context) {
     final currentStrategy = ref.watch(strategyProvider);
+    final currentStrategyId = currentStrategy.id;
     final strategyName = currentStrategy.stratName ?? 'Untitled Strategy';
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
@@ -261,7 +268,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
           builder: (context, box, _) {
             final recents = _recentStrategies(
               box: box,
-              currentStrategyId: currentStrategy.id,
+              currentStrategyId: currentStrategyId,
             );
 
             return OverlayPortal.overlayChildLayoutBuilder(
@@ -293,73 +300,81 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                       left: left,
                       top: top,
                       width: _barWidth,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: Container(
-                          constraints: BoxConstraints(maxHeight: maxHeight),
-                          decoration: BoxDecoration(
-                            color: Settings.tacticalVioletTheme.background,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Settings.tacticalVioletTheme.border,
-                            ),
+                      // A floating menu like the library strip's: popover
+                      // grey, hairline border, panel radius, one shadow. The
+                      // rows inside are flat.
+                      child: Container(
+                        constraints: BoxConstraints(maxHeight: maxHeight),
+                        decoration: BoxDecoration(
+                          color: Settings.tacticalVioletTheme.popover,
+                          borderRadius: BorderRadius.circular(_menuRadius),
+                          border: Border.all(
+                            color: Settings.tacticalVioletTheme.border,
                           ),
-                          child: recents.isEmpty
-                              ? Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  child: Text(
-                                    'No recent strategies',
-                                    style: ShadTheme.of(context)
-                                        .textTheme
-                                        .small
-                                        .copyWith(color: Colors.white70),
-                                  ),
-                                )
-                              : ListView.separated(
-                                  shrinkWrap: true,
-                                  padding: const EdgeInsets.all(8),
-                                  itemCount: recents.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 8),
-                                  itemBuilder: (context, index) {
-                                    final strategy = recents[index];
-                                    final attackLabel = _attackLabel(strategy);
-                                    final mapName = _mapName(strategy);
-                                    final thumbnail =
-                                        'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp';
-                                    return _StrategyQuickSwitchItem(
-                                      strategyName: strategy.name,
-                                      mapName: mapName,
-                                      attackLabel: attackLabel,
-                                      attackColor: _attackColor(attackLabel),
-                                      lastEdited: _timeAgo(strategy.lastEdited),
-                                      thumbnailPath: thumbnail,
-                                      onTap: _isSwitching || _isEditingName
-                                          ? null
-                                          : () => _switchStrategy(strategy.id),
-                                    );
-                                  },
-                                ),
+                          boxShadow: const [Settings.floatingMenuShadow],
                         ),
+                        child: recents.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  _menuInset + _rowInset,
+                                  _menuInset + 6,
+                                  _menuInset + _rowInset,
+                                  _menuInset + 6,
+                                ),
+                                child: Text(
+                                  'No recent strategies',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Settings
+                                        .tacticalVioletTheme.mutedForeground,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                padding: const EdgeInsets.all(_menuInset),
+                                itemCount: recents.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 2),
+                                itemBuilder: (context, index) {
+                                  final strategy = recents[index];
+                                  final attackLabel = _attackLabel(strategy);
+                                  final mapName = _mapName(strategy);
+                                  final thumbnail =
+                                      'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp';
+                                  return _StrategyQuickSwitchItem(
+                                    strategyName: strategy.name,
+                                    mapName: mapName,
+                                    attackLabel: attackLabel,
+                                    attackColor: _attackColor(attackLabel),
+                                    lastEdited: _timeAgo(strategy.lastEdited),
+                                    thumbnailPath: thumbnail,
+                                    onTap: _isSwitching || _isEditingName
+                                        ? null
+                                        : () => _switchStrategy(strategy.id),
+                                  );
+                                },
+                              ),
                       ),
                     ),
                   ],
                 );
               },
+              // A two-segment control. The children are clipped to the
+              // bar's inner rounded rect, so each segment's hover fill runs
+              // edge to edge and the bar's own corners round it off.
               child: Container(
                 key: const ValueKey('strategy-quick-switcher-control'),
                 width: _barWidth,
                 height: _barHeight,
                 decoration: BoxDecoration(
                   color: Settings.tacticalVioletTheme.card,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(_barRadius),
                   border: Border.all(
                     color: Settings.tacticalVioletTheme.border,
                   ),
                 ),
+                clipBehavior: Clip.antiAlias,
                 child: Row(
                   children: [
                     Expanded(
@@ -441,7 +456,8 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                   mouseCursor: currentStrategy.stratName == null
                                       ? SystemMouseCursors.basic
                                       : SystemMouseCursors.click,
-                                  borderRadius: BorderRadius.circular(8),
+                                  hoverColor:
+                                      Settings.tacticalVioletTheme.accent,
                                   child: Center(
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -465,12 +481,17 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                     ),
                     Container(
                       width: 1,
-                      height: 30,
                       color: Settings.tacticalVioletTheme.border,
                     ),
                     SizedBox(
-                      width: 38,
+                      width: _chevronWidth,
                       child: ShadIconButton.ghost(
+                        width: _chevronWidth,
+                        height: double.infinity,
+                        padding: EdgeInsets.zero,
+                        decoration: const ShadDecoration(
+                          border: ShadBorder(radius: BorderRadius.zero),
+                        ),
                         onPressed: _isSwitching || _isEditingName
                             ? null
                             : () => _isOpen ? _closePortal() : _openPortal(),
@@ -526,106 +547,84 @@ class _StrategyQuickSwitchItem extends StatefulWidget {
 }
 
 class _StrategyQuickSwitchItemState extends State<_StrategyQuickSwitchItem> {
-  bool _isHovered = false;
+  static const double _rowHeight = 40;
+  static const double _thumbnail = 28;
 
   @override
   Widget build(BuildContext context) {
-    final isEnabled = widget.onTap != null;
-    final borderColor = _isHovered
-        ? Settings.tacticalVioletTheme.primary
-        : Settings.tacticalVioletTheme.border;
-    final backgroundColor = _isHovered
-        ? Settings.tacticalVioletTheme.card.withValues(alpha: 0.85)
-        : Settings.tacticalVioletTheme.card;
-
-    return MouseRegion(
-      cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: borderColor),
-          boxShadow: const [Settings.cardForegroundBackdrop],
+    const theme = Settings.tacticalVioletTheme;
+    // A flat menu row: thumbnail, name over map, side over time. Hover is
+    // the ghost button's grey fill; nothing here is bordered or shadowed.
+    return ShadButton.ghost(
+      height: _rowHeight,
+      expands: true,
+      mainAxisAlignment: MainAxisAlignment.start,
+      padding: const EdgeInsets.symmetric(
+        horizontal: _StrategyQuickSwitcherState._rowInset,
+      ),
+      gap: 10,
+      onPressed: widget.onTap,
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.asset(
+          widget.thumbnailPath,
+          width: _thumbnail,
+          height: _thumbnail,
+          fit: BoxFit.cover,
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(10),
-            mouseCursor:
-                isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-            hoverColor:
-                Settings.tacticalVioletTheme.primary.withValues(alpha: 0.12),
-            splashColor:
-                Settings.tacticalVioletTheme.primary.withValues(alpha: 0.2),
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      widget.thumbnailPath,
-                      width: 46,
-                      height: 46,
-                      fit: BoxFit.cover,
-                    ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OverflowTooltipText(
+                  widget.strategyName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.2,
+                    color: theme.foreground,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OverflowTooltipText(
-                          widget.strategyName,
-                          style: ShadTheme.of(context).textTheme.small.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.mapName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ShadTheme.of(context).textTheme.small.copyWith(
-                                color: Colors.white70,
-                              ),
-                        ),
-                      ],
-                    ),
+                ),
+                Text(
+                  widget.mapName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    color: theme.mutedForeground,
                   ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.attackLabel,
-                        style: ShadTheme.of(context).textTheme.small.copyWith(
-                              color: widget.attackColor,
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        widget.lastEdited,
-                        style: ShadTheme.of(context).textTheme.small.copyWith(
-                              color: Colors.white54,
-                            ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.attackLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  color: widget.attackColor,
+                ),
+              ),
+              Text(
+                widget.lastEdited,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  color: theme.mutedForeground,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
