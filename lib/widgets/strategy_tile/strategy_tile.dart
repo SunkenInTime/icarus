@@ -227,7 +227,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                     ),
                                     child: const Padding(
                                       padding: EdgeInsets.all(5),
-                                      child: Icon(Icons.push_pin, size: 15),
+                                      child: Icon(LucideIcons.pin, size: 15),
                                     ),
                                   ),
                                 ),
@@ -248,8 +248,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                       width: 28,
                                       height: 28,
                                       onPressed: _handleMenuButtonPressed,
-                                      icon:
-                                          const Icon(Icons.more_vert_outlined),
+                                      icon: const Icon(
+                                          LucideIcons.ellipsisVertical),
                                     ),
                                   ),
                                 ),
@@ -288,7 +288,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     final isPinned = pinned.containsKey(id);
     return [
       ShadContextMenuItem(
-        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        leading: Icon(isPinned ? LucideIcons.pinOff : LucideIcons.pin),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
         onPressed: () {
           _closeMenus();
@@ -320,8 +320,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         },
       ),
       ShadContextMenuItem(
-        leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
-        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        leading: Icon(LucideIcons.trash2,
+            color: Settings.tacticalVioletTheme.destructive),
+        child: Text('Delete',
+            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
         onPressed: () {
           _closeMenus();
           _showDeleteDialog();

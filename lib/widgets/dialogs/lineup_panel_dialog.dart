@@ -354,7 +354,7 @@ class _LineUpRowState extends State<_LineUpRow> {
           child: const Text('Rename'),
         ),
         ShadContextMenuItem(
-          leading: Icon(Icons.delete, color: theme.destructive),
+          leading: Icon(LucideIcons.trash2, color: theme.destructive),
           onPressed: widget.onDelete,
           child: const Text('Delete lineup'),
         ),

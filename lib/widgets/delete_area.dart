@@ -10,6 +10,7 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DeleteArea extends ConsumerStatefulWidget {
   const DeleteArea({super.key});
@@ -225,7 +226,9 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
         : const Duration(milliseconds: 140);
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      // Same 8px off the strip as the map card on the left, so both hang
+      // from the same line.
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: CompositedTransformTarget(
         link: _layerLink,
         child: OverlayPortal(
@@ -329,8 +332,8 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                               children: [
                                 Center(
                                   child: Icon(
-                                    Icons.delete_outline,
-                                    size: 24,
+                                    LucideIcons.trash2,
+                                    size: 22,
                                     color: iconColor,
                                   ),
                                 ),

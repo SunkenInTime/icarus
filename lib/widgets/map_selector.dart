@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/map_tile.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MapSelector extends ConsumerStatefulWidget {
   const MapSelector({super.key});
@@ -17,7 +18,7 @@ class MapSelector extends ConsumerStatefulWidget {
 class _MapSelectorState extends ConsumerState<MapSelector> {
   static const double _cardWidth = 262;
   static const double _cardHeight = 65;
-  static const double _outerRadius = 10;
+  static const double _outerRadius = 12;
   static const double _innerGap = 4;
   static const double _innerRadius = _outerRadius - _innerGap;
   static const double _sideToggleWidth = 66;
@@ -76,10 +77,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
         decoration: BoxDecoration(
           color: Settings.tacticalVioletTheme.card,
           borderRadius: const BorderRadius.all(Radius.circular(_outerRadius)),
-          border: Border.all(
-            color: Settings.tacticalVioletTheme.border,
-            width: 2,
-          ),
+          border: Border.all(color: Settings.tacticalVioletTheme.border),
         ),
         width: _cardWidth,
         height: _cardHeight,
@@ -222,7 +220,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                         Icon(
                           (ref.watch(mapProvider).isAttack)
                               ? CustomIcons.sword
-                              : Icons.shield,
+                              : LucideIcons.shield,
                           size: 20,
                           color: (ref.watch(mapProvider).isAttack)
                               ? Colors.redAccent

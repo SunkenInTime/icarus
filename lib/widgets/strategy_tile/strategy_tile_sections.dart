@@ -319,7 +319,7 @@ class _MoreAgentsIndicator extends StatelessWidget {
         border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
       child: const Icon(
-        Icons.more_horiz,
+        LucideIcons.ellipsis,
         color: Color.fromARGB(190, 210, 214, 219),
         size: 18,
       ),

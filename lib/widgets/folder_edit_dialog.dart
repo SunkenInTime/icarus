@@ -74,7 +74,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: ShadButton(
-            leading: const Icon(Icons.check),
+            leading: const Icon(LucideIcons.check),
             onPressed: () async {
               if (widget.folder != null) {
                 ref.read(folderProvider.notifier).editFolder(

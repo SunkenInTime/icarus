@@ -259,7 +259,8 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: Icon(
-            Icons.delete,
+            LucideIcons.trash2,
+            size: 16,
             color: Settings.tacticalVioletTheme.destructive,
           ),
           child: const Text('Delete origin'),

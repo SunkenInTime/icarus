@@ -27,8 +27,8 @@ class StrategyQuickSwitcher extends ConsumerStatefulWidget {
 
 class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barWidth = 280;
-  static const double _barHeight = 40;
-  static const EdgeInsets _displayMargin = EdgeInsets.all(16);
+  static const double _barHeight = 30;
+  static const EdgeInsets _displayMargin = EdgeInsets.symmetric(horizontal: 16);
   final OverlayPortalController _controller = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
   late final TextEditingController _nameController;
@@ -350,6 +350,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                 );
               },
               child: Container(
+                key: const ValueKey('strategy-quick-switcher-control'),
                 width: _barWidth,
                 height: _barHeight,
                 decoration: BoxDecoration(
@@ -482,8 +483,8 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                               )
                             : Icon(
                                 _isOpen
-                                    ? Icons.keyboard_arrow_up
-                                    : Icons.keyboard_arrow_down,
+                                    ? LucideIcons.chevronUp
+                                    : LucideIcons.chevronDown,
                                 color: Colors.white,
                                 size: 18,
                               ),

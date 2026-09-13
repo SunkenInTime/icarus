@@ -15,6 +15,7 @@ class CreateStrategyDialog extends ConsumerStatefulWidget {
 
 class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
   final TextEditingController _textController = TextEditingController();
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -22,60 +23,52 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
     super.dispose();
   }
 
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    final strategyName = _textController.text.trim();
+    if (strategyName.isEmpty) {
+      Settings.showToast(
+        message: 'Strategy name cannot be empty.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final strategyID = await ref
+          .read(strategyProvider.notifier)
+          .createNewStrategy(strategyName);
+      if (!mounted) return;
+      Navigator.of(context).pop(strategyID);
+    } catch (_) {
+      if (mounted) setState(() => _isSubmitting = false);
+      Settings.showToast(
+        message: "Couldn't create strategy right now.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ShadDialog(
-      title: const Text("Create Strategy"),
+      title: const Text('Create Strategy'),
       actions: [
         ShadButton(
-          child: const Text("Create"),
-          onPressed: () async {
-            final strategyName = _textController.text;
-            if (strategyName.isNotEmpty) {
-              final strategyID = await ref
-                  .read(strategyProvider.notifier)
-                  .createNewStrategy(strategyName);
-              if (!context.mounted) return;
-              Navigator.of(context).pop(strategyID); // Close the dialog
-            } else {
-              // Optionally, show an error message if the name is empty
-              Settings.showToast(
-                message: "Strategy name cannot be empty.",
-                backgroundColor: Settings.tacticalVioletTheme.destructive,
-              );
-            }
-          },
-        )
+          onPressed: _isSubmitting ? null : _submit,
+          child: Text(_isSubmitting ? 'Creating…' : 'Create'),
+        ),
       ],
       child: SizedBox(
         width: 300,
         child: CustomTextField(
-          // onEnterPressed: (intent) {},
-          hintText: "Enter strategy name",
+          hintText: 'Enter strategy name',
           controller: _textController,
-
-          onSubmitted: (value) async {
-            if (value.isNotEmpty) {
-              final strategyID = await ref
-                  .read(strategyProvider.notifier)
-                  .createNewStrategy(value);
-              if (!context.mounted) return;
-              Navigator.of(context).pop(strategyID); // Close the dialog
-            } else {
-              // Optionally, show an error message if the name is empty
-              Settings.showToast(
-                message: "Strategy name cannot be empty.",
-                backgroundColor: Settings.tacticalVioletTheme.destructive,
-              );
-            }
-          },
+          autofocus: true,
+          onSubmitted: (_) => _submit(),
         ),
       ),
     );
   }
 }
-// How to use it:
-// showDialog(
-//   context: context,
-//   builder: (context) => const NameStrategyDialog(),
-// );

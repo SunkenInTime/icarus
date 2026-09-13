@@ -21,10 +21,11 @@ import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
-import 'package:icarus/widgets/save_and_load_button.dart';
+import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:icarus/widgets/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 
 class StrategyView extends ConsumerStatefulWidget {
@@ -191,56 +192,46 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     return Scaffold(
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.only(
-              left: 15,
-              top: 15,
-              bottom: 10,
-              right: 15,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // The same 40px strip as the library, so the traffic lights never
+          // move: Library on the left, the strategy in the middle, Discord on
+          // the right. The map card lives on the canvas with the toolbar.
+          AppWindowStrip(
+            child: Stack(
               children: [
                 Row(
                   children: [
-                    ShadIconButton.ghost(
-                      foregroundColor: Colors.white,
-                      onPressed: _leaveToLibrary,
-                      icon: const Icon(Icons.home),
+                    const SizedBox(width: 6),
+                    ShadTooltip(
+                      builder: (context) => const Text('Library'),
+                      child: ShadIconButton.ghost(
+                        width: 28,
+                        height: 28,
+                        foregroundColor:
+                            Settings.tacticalVioletTheme.mutedForeground,
+                        hoverForegroundColor:
+                            Settings.tacticalVioletTheme.foreground,
+                        onPressed: _leaveToLibrary,
+                        icon: const Icon(LucideIcons.house300, size: 18),
+                      ),
                     ),
-                    const SizedBox(width: 5),
-                    const MapSelector(),
                     if (kIsWeb)
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8.0),
                         child: DemoTag(),
                       ),
-                  ],
-                ),
-                const StrategyQuickSwitcher(),
-                Row(
-                  children: [
-                    TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        enabledMouseCursor: SystemMouseCursors.click,
-                      ),
-                      onPressed: () async {
-                        await launchUrl(Settings.dicordLink);
-                      },
-                      child: const Row(
-                        children: [
-                          Text("Have any bugs? Join the Discord"),
-                          SizedBox(width: 10),
-                          Icon(CustomIcons.discord, color: Colors.white),
-                        ],
-                      ),
+                    const Expanded(
+                      child: WindowDragArea(child: SizedBox.expand()),
                     ),
+                    const _DiscordLink(),
+                    const SizedBox(width: 10),
                   ],
                 ),
+                const Center(child: StrategyQuickSwitcher()),
               ],
             ),
           ),
+          // The canvas runs right up to the strip; each floating panel keeps
+          // its own 8px of air so no bare band shows between the two.
           const Expanded(
             child: Stack(
               clipBehavior: Clip.none,
@@ -250,7 +241,21 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   alignment: Alignment.centerLeft,
                   child: RepaintBoundary(child: InteractiveMap()),
                 ),
-                Align(alignment: Alignment.topLeft, child: SaveAndLoadButton()),
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        MapSelector(),
+                        SizedBox(height: 8),
+                        EditorToolbar(),
+                      ],
+                    ),
+                  ),
+                ),
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Padding(
@@ -286,6 +291,46 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         await windowManager.setPreventClose(false);
         await windowManager.close();
       },
+    );
+  }
+}
+
+/// The bug-report link at the end of the editor strip: text when there is
+/// room, the glyph alone when there isn't.
+class _DiscordLink extends StatelessWidget {
+  const _DiscordLink();
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final showLabel = MediaQuery.sizeOf(context).width >= 1000;
+    final button = ShadButton.ghost(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      foregroundColor: theme.mutedForeground,
+      hoverForegroundColor: theme.foreground,
+      onPressed: () async {
+        await launchUrl(Settings.dicordLink);
+      },
+      leading: showLabel ? null : const Icon(CustomIcons.discord, size: 16),
+      child: showLabel
+          ? const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Have any bugs? Join the Discord',
+                  style: TextStyle(fontSize: 13),
+                ),
+                SizedBox(width: 8),
+                Icon(CustomIcons.discord, size: 16),
+              ],
+            )
+          : const SizedBox.shrink(),
+    );
+    if (showLabel) return button;
+    return ShadTooltip(
+      builder: (context) => const Text('Have any bugs? Join the Discord'),
+      child: button,
     );
   }
 }

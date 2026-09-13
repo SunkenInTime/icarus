@@ -15,10 +15,9 @@ import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
-import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
-import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
@@ -38,15 +37,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
   WindowsDesktopUpdateController? _desktopUpdaterController;
-  final GlobalKey _importExportButtonKey = GlobalKey();
   final ShadContextMenuController _backgroundMenuController =
       ShadContextMenuController();
-  final ShadPopoverController _importExportPopoverController =
-      ShadPopoverController();
 
   @override
   void dispose() {
-    _importExportPopoverController.dispose();
     _backgroundMenuController.dispose();
     _desktopUpdaterController?.dispose();
     super.dispose();
@@ -116,10 +111,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       message: 'This feature is only supported in the Windows version.',
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
-  }
-
-  void _toggleImportExportPopover() {
-    _importExportPopoverController.toggle();
   }
 
   Future<void> handleImportIca() async {
@@ -308,106 +299,34 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     return Stack(
       children: [
         Scaffold(
-          appBar: AppBar(
-            title: const CurrentPathBar(),
-            toolbarHeight: 70,
-            actionsPadding: const EdgeInsets.only(right: 24),
-
-            actions: [
-              if (kIsWeb)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: DemoTag(),
+          body: Column(
+            children: [
+              LibraryTitleStrip(
+                onCreateStrategy: showCreateDialog,
+                onCreateFolder: showCreateFolderDialog,
+                onImportIca: handleImportIca,
+                onImportBackup: handleImportBackup,
+                onExportLibrary: handleExportLibrary,
+              ),
+              Expanded(
+                child: ShadContextMenuRegion(
+                  controller: _backgroundMenuController,
+                  items: [
+                    ShadContextMenuItem(
+                      leading: const Icon(LucideIcons.folderPlus),
+                      onPressed: showCreateFolderDialog,
+                      child: const Text('Create Folder'),
+                    ),
+                    ShadContextMenuItem(
+                      leading: const Icon(LucideIcons.filePlus),
+                      onPressed: showCreateDialog,
+                      child: const Text('Create Strategy'),
+                    ),
+                  ],
+                  child: FolderContent(folder: currentFolder),
                 ),
-              Row(
-                spacing: 15,
-                children: [
-                  ShadPopover(
-                    controller: _importExportPopoverController,
-                    padding: const EdgeInsets.all(8),
-                    anchor: const ShadAnchor(
-                      offset: Offset(0, 8),
-                      childAlignment: Alignment.topLeft,
-                      overlayAlignment: Alignment.bottomLeft,
-                    ),
-                    popover: (context) {
-                      return SizedBox(
-                        width: 178,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ShadButton.ghost(
-                              onPressed: handleImportIca,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.file_download,
-                              ),
-                              child: const Text(
-                                'Import .ica',
-                                style: TextStyle(color: Colors.white),
-                              ),
-                            ),
-                            ShadButton.ghost(
-                              onPressed: handleImportBackup,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.archive_outlined,
-                              ),
-                              child: const Text('Import Backup',
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                            ShadButton.ghost(
-                              onPressed: handleExportLibrary,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.backup_outlined,
-                              ),
-                              child: const Text('Export Library',
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    child: ShadButton.secondary(
-                      key: _importExportButtonKey,
-                      onPressed: _toggleImportExportPopover,
-                      leading: const Icon(Icons.import_export),
-                      trailing: const Icon(Icons.keyboard_arrow_down),
-                      child: const Text('Import / Export'),
-                    ),
-                  ),
-                  ShadButton.secondary(
-                    leading: const Icon(LucideIcons.folderPlus),
-                    onPressed: showCreateFolderDialog,
-                    child: const Text('Add Folder'),
-                  ),
-                  ShadButton(
-                    onPressed: showCreateDialog,
-                    leading: const Icon(Icons.add),
-                    child: const Text('Create Strategy'),
-                  ),
-                ],
-              )
-            ],
-            // ... your existing actions
-          ),
-          body: ShadContextMenuRegion(
-            controller: _backgroundMenuController,
-            items: [
-              ShadContextMenuItem(
-                leading: const Icon(Icons.create_new_folder_outlined),
-                onPressed: showCreateFolderDialog,
-                child: const Text('Create Folder'),
-              ),
-              ShadContextMenuItem(
-                leading: const Icon(Icons.note_add_outlined),
-                onPressed: showCreateDialog,
-                child: const Text('Create Strategy'),
               ),
             ],
-            child: FolderContent(folder: currentFolder),
           ),
         ),
         if (_desktopUpdaterController != null)

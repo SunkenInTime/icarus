@@ -1,0 +1,89 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/strategy_quick_switcher.dart';
+import 'package:icarus/widgets/window_chrome.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+void main() {
+  late Directory hiveDirectory;
+
+  setUpAll(() async {
+    hiveDirectory = await Directory.systemTemp.createTemp(
+      'icarus-quick-switcher-layout-',
+    );
+    Hive.init(hiveDirectory.path);
+    await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    await hiveDirectory.delete(recursive: true);
+  });
+
+  testWidgets('editor controls share the strip center line', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await tester.binding.setSurfaceSize(const Size(800, 160));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            strategyProvider.overrideWith(_OpenStrategyProvider.new),
+          ],
+          child: ShadApp(
+            themeMode: ThemeMode.dark,
+            darkTheme: ShadThemeData(
+              brightness: Brightness.dark,
+              colorScheme: Settings.tacticalVioletTheme,
+            ),
+            home: const Scaffold(
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: AppWindowStrip(
+                  child: Center(child: StrategyQuickSwitcher()),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+
+    final control = tester.getRect(
+      find.byKey(const ValueKey('strategy-quick-switcher-control')),
+    );
+    final captionButtons = tester.getRect(find.byType(WindowCaptionButtons));
+    final strip = tester.getRect(find.byType(AppWindowStrip));
+
+    expect(strip.height, kWindowStripHeight);
+    // The strip's 1px bottom border sits outside its content box.
+    expect(control.center.dy, closeTo(strip.center.dy, 0.5));
+    expect(captionButtons.center.dy, closeTo(strip.center.dy, 0.5));
+    expect(control.height, 30);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _OpenStrategyProvider extends StrategyProvider {
+  @override
+  StrategyState build() {
+    return StrategyState(
+      isSaved: true,
+      stratName: 'afeaf',
+      id: 'strategy-1',
+      storageDirectory: null,
+    );
+  }
+}

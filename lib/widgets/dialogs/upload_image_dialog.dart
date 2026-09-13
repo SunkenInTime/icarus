@@ -333,9 +333,7 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isDragging
-                  ? Icons.file_download_outlined
-                  : Icons.add_photo_alternate_outlined,
+              isDragging ? LucideIcons.download : LucideIcons.imagePlus,
               size: 44,
               color: isDragging ? cs.primary : cs.onSurfaceVariant,
             ),
@@ -404,7 +402,7 @@ class _SelectionFooter extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
-            const Icon(Icons.image_outlined, size: 18),
+            const Icon(LucideIcons.image, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

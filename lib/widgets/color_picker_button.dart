@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ColorPickerButton extends ConsumerStatefulWidget {
   const ColorPickerButton({
@@ -61,7 +62,7 @@ class _ColorButtonsState extends ConsumerState<ColorPickerButton> {
                   strokeAlign: BorderSide.strokeAlignCenter,
                 ),
               ),
-              child: const Icon(Icons.add),
+              child: const Icon(LucideIcons.plus, size: 18),
             ),
           ),
         ),

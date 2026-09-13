@@ -216,7 +216,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
           ),
           ShadButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            leading: const Icon(Icons.text_fields),
+            leading: const Icon(LucideIcons.type, size: 16),
             child: const Text("Rename"),
           ),
         ],
@@ -398,7 +398,7 @@ class _CollapsedPill extends StatelessWidget {
         children: [
           const SizedBox(width: _pagesBarControlInset),
           _SquareIconButton(
-            icon: Icons.add,
+            icon: LucideIcons.plus,
             onTap: onAdd,
             tooltip: "Add page",
             color: Settings.tacticalVioletTheme.primary,
@@ -421,7 +421,8 @@ class _CollapsedPill extends StatelessWidget {
             padding: EdgeInsets.zero,
             foregroundColor: Colors.white,
             onPressed: onToggle,
-            icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+            icon: const Icon(LucideIcons.chevronDown,
+                size: 20, color: Colors.white),
             decoration: ShadDecoration(
               border: ShadBorder(
                 radius: BorderRadius.circular(_pagesBarInnerButtonRadius),
@@ -601,7 +602,7 @@ class _ExpandedPanel extends ConsumerWidget {
               children: [
                 const SizedBox(width: _pagesBarControlInset),
                 _SquareIconButton(
-                  icon: Icons.add,
+                  icon: LucideIcons.plus,
                   onTap: onAdd,
                   tooltip: "Add page",
                   color: Settings.tacticalVioletTheme.primary,
@@ -614,8 +615,8 @@ class _ExpandedPanel extends ConsumerWidget {
                   padding: EdgeInsets.zero,
                   foregroundColor: Colors.white,
                   onPressed: onCollapse,
-                  icon:
-                      const Icon(Icons.keyboard_arrow_up, color: Colors.white),
+                  icon: const Icon(LucideIcons.chevronUp,
+                      size: 20, color: Colors.white),
                   decoration: ShadDecoration(
                     border: ShadBorder(
                       radius: BorderRadius.circular(
@@ -967,7 +968,7 @@ class _SquareIconButton extends StatelessWidget {
         backgroundColor: color,
         hoverBackgroundColor: color,
         foregroundColor: Colors.white,
-        icon: Icon(icon),
+        icon: Icon(icon, size: 20),
         width: _pagesBarControlSize,
         height: _pagesBarControlSize,
         padding: EdgeInsets.zero,

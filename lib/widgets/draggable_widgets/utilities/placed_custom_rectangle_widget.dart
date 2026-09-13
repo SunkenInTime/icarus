@@ -17,6 +17,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_t
 import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_axis_resize_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum _RectangleResizeHandle { none, left, right, top, bottom }
 
@@ -841,7 +842,7 @@ class _RotationBadge extends StatelessWidget {
       curve: Curves.easeOutCubic,
       scale: isEmphasized ? 1.0 : 0.9,
       child: Icon(
-        Icons.rotate_right_rounded,
+        LucideIcons.rotateCw,
         size: size,
         color: isActive ? Settings.tacticalVioletTheme.primary : Colors.white,
         shadows: const [
