@@ -123,8 +123,10 @@ class StrategyTileMenuActionSemantics extends StatelessWidget {
   }
 }
 
+const double _ringWidth = 2;
+
 class _StrategyTileState extends ConsumerState<StrategyTile> {
-  Color _highlightColor = Settings.tacticalVioletTheme.border;
+  bool _isHovered = false;
   bool _isLoading = false;
   bool _menuButtonWasOpenOnPointerDown = false;
   DropInsertionSide? _pinnedDropSide;
@@ -266,10 +268,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             ),
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
-              onEnter: (_) => setState(
-                  () => _highlightColor = Settings.tacticalVioletTheme.ring),
-              onExit: (_) => setState(
-                  () => _highlightColor = Settings.tacticalVioletTheme.border),
+              onEnter: (_) => setState(() => _isHovered = true),
+              onExit: (_) => setState(() => _isHovered = false),
               child: AbsorbPointer(
                 absorbing: _isLoading,
                 child: ShadContextMenuRegion(
@@ -290,41 +290,50 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                         return Stack(
                           clipBehavior: Clip.none,
                           children: [
+                            // The ring is the outer box showing through a
+                            // 2px inset: flat zinc at rest, and on hover the
+                            // lit violet gradient, since a Border cannot
+                            // take a gradient.
                             AnimatedContainer(
-                              duration: const Duration(milliseconds: 100),
-                              decoration: BoxDecoration(
-                                color: ShadTheme.of(context).colorScheme.card,
-                                borderRadius: BorderRadius.circular(
-                                    strategyTileOuterRadius),
-                                border: Border.all(
-                                  color: isPinDropTarget
-                                      ? Settings.tacticalVioletTheme.border
-                                      : _highlightColor,
-                                  width: 2,
+                                duration: const Duration(milliseconds: 100),
+                                decoration: BoxDecoration(
+                                  color: Settings.tacticalVioletTheme.border,
+                                  gradient: !isPinDropTarget && _isHovered
+                                      ? Settings.raisedPrimaryFill
+                                      : null,
+                                  borderRadius: BorderRadius.circular(
+                                      strategyTileOuterRadius),
                                 ),
-                              ),
-                              padding: const EdgeInsets.all(8),
-                              child: Column(
-                                children: [
-                                  Expanded(
-                                    child: StrategyTileThumbnail(
-                                      assetPath: viewData.thumbnailAsset,
-                                      borderRadius: strategyTileInnerRadius,
-                                      overlay: widget.showDeviceBadge
-                                          ? const DeviceOnlyBadge()
-                                          : viewData.sharedBadge,
-                                    ),
+                                padding: const EdgeInsets.all(_ringWidth),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color:
+                                        ShadTheme.of(context).colorScheme.card,
+                                    borderRadius: BorderRadius.circular(
+                                        strategyTileOuterRadius - _ringWidth),
                                   ),
-                                  const SizedBox(height: 10),
-                                  Expanded(
-                                    child: StrategyTileDetails(
-                                      data: viewData,
-                                      borderRadius: strategyTileInnerRadius,
-                                    ),
+                                  padding: const EdgeInsets.all(8 - _ringWidth),
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: StrategyTileThumbnail(
+                                          assetPath: viewData.thumbnailAsset,
+                                          borderRadius: strategyTileInnerRadius,
+                                          overlay: widget.showDeviceBadge
+                                              ? const DeviceOnlyBadge()
+                                              : viewData.sharedBadge,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Expanded(
+                                        child: StrategyTileDetails(
+                                          data: viewData,
+                                          borderRadius: strategyTileInnerRadius,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
+                                )),
                             if (isPinned)
                               Align(
                                 alignment: Alignment.topLeft,
@@ -364,8 +373,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                       width: 28,
                                       height: 28,
                                       onPressed: _handleMenuButtonPressed,
-                                      icon:
-                                          const Icon(LucideIcons.ellipsisVertical),
+                                      icon: const Icon(
+                                          LucideIcons.ellipsisVertical),
                                     ),
                                   ),
                                 ),
@@ -454,8 +463,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         leading: Icon(LucideIcons.trash2,
             color: Settings.tacticalVioletTheme.destructive),
         child: Text('Delete',
-            style:
-                TextStyle(color: Settings.tacticalVioletTheme.destructive)),
+            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
         enabled: widget.canDelete,
         onPressed: widget.canDelete
             ? () {

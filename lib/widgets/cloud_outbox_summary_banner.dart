@@ -78,44 +78,56 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                         'waiting on this device and will resume when the '
                         'connection returns.';
     final theme = ShadTheme.of(context);
+    // A floating status card, not a banner: it sits over the library's
+    // corner like a floating menu and never moves the grid. The parent
+    // positions it.
     return Container(
       key: const ValueKey('cloud-outbox-summary'),
-      margin: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      constraints: const BoxConstraints(maxWidth: 360),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.card,
+        color: Settings.tacticalVioletTheme.popover,
         border: Border.all(color: Settings.tacticalVioletTheme.border),
         borderRadius: BorderRadius.circular(12),
+        boxShadow: const [Settings.floatingMenuShadow],
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            needsAttention
-                ? LucideIcons.circleAlert
-                : connected
-                    ? LucideIcons.cloudUpload
-                    : LucideIcons.cloudOff,
-            size: 18,
-            color: needsAttention
-                ? theme.colorScheme.destructive
-                : theme.colorScheme.mutedForeground,
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              needsAttention
+                  ? LucideIcons.circleAlert
+                  : connected
+                      ? LucideIcons.cloudUpload
+                      : LucideIcons.cloudOff,
+              size: 16,
+              color: needsAttention
+                  ? theme.colorScheme.destructive
+                  : theme.colorScheme.mutedForeground,
+            ),
           ),
           const SizedBox(width: 10),
-          Expanded(
+          Flexible(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: theme.textTheme.small.copyWith(
-                    fontWeight: FontWeight.w600,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.foreground,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   detail,
-                  style: theme.textTheme.small.copyWith(
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
                     color: theme.colorScheme.mutedForeground,
                   ),
                 ),
@@ -126,16 +138,22 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                     runSpacing: 8,
                     children: [
                       for (final strategyId in attentionIds)
-                        ShadButton.outline(
+                        ShadButton.secondary(
                           size: ShadButtonSize.sm,
                           onPressed: () => _openStrategy(context, strategyId),
-                          child: Text(_attentionLabel(
-                            strategyId,
-                            strategyNames[strategyId],
-                            opQueue
-                                .accountOutbox.strategies[strategyId]?.reason,
-                            failedMediaByStrategy[strategyId] ?? 0,
-                          )),
+                          child: Flexible(
+                            child: Text(
+                              _attentionLabel(
+                                strategyId,
+                                strategyNames[strategyId],
+                                opQueue.accountOutbox.strategies[strategyId]
+                                    ?.reason,
+                                failedMediaByStrategy[strategyId] ?? 0,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ),
                     ],
                   ),

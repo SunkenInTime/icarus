@@ -33,14 +33,11 @@ Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
     builder: (context) {
       return ShadDialog.alert(
         title: const Text('Save changes?'),
-        description: const Padding(
-          padding: EdgeInsets.all(8),
-          child: Text(
-            'This strategy has unsaved changes. Do you want to save before leaving?',
-          ),
+        description: const Text(
+          'This strategy has unsaved changes. Do you want to save before leaving?',
         ),
         actions: [
-          ShadButton.secondary(
+          ShadButton.ghost(
             onPressed: () {
               Navigator.of(context).pop(UnsavedStrategyDecision.cancel);
             },
@@ -50,7 +47,7 @@ Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
             onPressed: () {
               Navigator.of(context).pop(UnsavedStrategyDecision.dontSave);
             },
-            child: const Text("Don't Save"),
+            child: const Text("Don't save"),
           ),
           ShadButton(
             onPressed: () {
@@ -77,37 +74,44 @@ Future<CloudExitDecision> _showCloudSyncBlockedDialog(
     builder: (context) {
       return ShadDialog.alert(
         title: const Text('Cloud sync pending'),
-        actionsAxis: Axis.vertical,
-        description: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text(message),
-        ),
+        description: Text(message),
+        // One row that wraps when the labels need more room: the quiet way
+        // out first, the command last.
         actions: [
-          ShadButton.secondary(
-            onPressed: () {
-              Navigator.of(context).pop(CloudExitDecision.stay);
-            },
-            child: const Text('Stay Here'),
-          ),
-          if (showRetryAuth)
-            ShadButton.secondary(
-              onPressed: () {
-                Navigator.of(context).pop(CloudExitDecision.retryAuth);
-              },
-              child: const Text('Retry Convex Auth'),
+          Expanded(
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ShadButton.ghost(
+                  onPressed: () {
+                    Navigator.of(context).pop(CloudExitDecision.stay);
+                  },
+                  child: const Text('Stay here'),
+                ),
+                if (showRetryAuth)
+                  ShadButton.secondary(
+                    onPressed: () {
+                      Navigator.of(context).pop(CloudExitDecision.retryAuth);
+                    },
+                    child: const Text('Retry sign-in'),
+                  ),
+                if (allowLeaveAnyway)
+                  ShadButton.secondary(
+                    onPressed: () {
+                      Navigator.of(context).pop(CloudExitDecision.leaveAnyway);
+                    },
+                    child: const Text('Leave anyway'),
+                  ),
+                ShadButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(CloudExitDecision.retrySync);
+                  },
+                  child: const Text('Retry sync'),
+                ),
+              ],
             ),
-          if (allowLeaveAnyway)
-            ShadButton.secondary(
-              onPressed: () {
-                Navigator.of(context).pop(CloudExitDecision.leaveAnyway);
-              },
-              child: const Text('Leave Anyway'),
-            ),
-          ShadButton(
-            onPressed: () {
-              Navigator.of(context).pop(CloudExitDecision.retrySync);
-            },
-            child: const Text('Retry Sync'),
           ),
         ],
       );

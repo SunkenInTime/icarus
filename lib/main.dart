@@ -566,6 +566,20 @@ class _MyAppState extends ConsumerState<MyApp> {
           ghostButtonTheme: ShadButtonTheme(
             foregroundColor: Settings.tacticalVioletTheme.foreground,
           ),
+          // Primary commands are raised like the selected tab: a lighter top
+          // of the fill, a bright 1px edge inside the top, a 1px shadow
+          // beneath. A rounded Border must be one color, so the theme paints
+          // the top light only and the gradient carries the bottom shade.
+          primaryButtonTheme: ShadButtonTheme(
+            decoration: ShadDecoration(
+              gradient: Settings.raisedPrimaryFill,
+              shadows: [Settings.raisedDropShadow],
+              border: const ShadBorder(
+                radius: BorderRadius.all(Radius.circular(6)),
+                top: ShadBorderSide(color: Settings.raisedTopLight, width: 1),
+              ),
+            ),
+          ),
         ),
         home: const MyHomePage(),
         routes: {
