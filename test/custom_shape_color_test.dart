@@ -9,7 +9,7 @@ import 'package:icarus/providers/utility_provider.dart';
 class _NoopStrategyProvider extends StrategyProvider {
   @override
   StrategyState build() {
-    return StrategyState(
+    return const StrategyState(
       isSaved: true,
       stratName: null,
       id: 'shape-color-test',

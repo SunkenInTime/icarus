@@ -107,6 +107,12 @@ void main() {
 
   testWidgets('library strip exposes stable destinations while signed out',
       (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(_testApp(_strip()));
 
     expect(find.byKey(const ValueKey('library-tab-library')), findsOneWidget);
@@ -131,6 +137,12 @@ void main() {
   });
 
   testWidgets('signed-out Shared tab opens login', (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(_testApp(_strip()));
 
     await tester.tap(find.byKey(const ValueKey('library-tab-shared')));
@@ -141,6 +153,12 @@ void main() {
   });
 
   testWidgets('New menu offers a strategy and a folder', (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     var created = 0;
     await tester.pumpWidget(
       _testApp(_strip(onCreateStrategy: () => created++)),
@@ -158,6 +176,12 @@ void main() {
     expect(created, 1);
   });
   testWidgets('library account action uses guarded sign out', (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     var requests = 0;
     await tester.pumpWidget(
       ProviderScope(

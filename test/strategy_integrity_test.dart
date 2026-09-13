@@ -32,7 +32,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
 class _IcaFixture {

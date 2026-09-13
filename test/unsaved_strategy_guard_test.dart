@@ -28,7 +28,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -521,7 +520,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Save changes?'), findsOneWidget);
-      await tester.tap(find.text("Don't Save"));
+      await tester.tap(find.text("Don't save"));
       await tester.pumpAndSettle();
 
       final result = await guardFuture;
@@ -617,13 +616,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave Anyway'), findsOneWidget);
+      expect(find.text('Leave anyway'), findsOneWidget);
       expect(
         find.textContaining('have not reached the cloud'),
         findsOneWidget,
       );
       expect(opQueue.currentState.pending, hasLength(1));
-      await tester.tap(find.text('Leave Anyway'));
+      await tester.tap(find.text('Leave anyway'));
       await tester.pumpAndSettle();
 
       expect(await guardFuture, isTrue);
@@ -674,8 +673,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave Anyway'), findsOneWidget);
-      await tester.tap(find.text('Leave Anyway'));
+      expect(find.text('Leave anyway'), findsOneWidget);
+      await tester.tap(find.text('Leave anyway'));
       await tester.pumpAndSettle();
 
       expect(await guardFuture, isTrue);
@@ -724,9 +723,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave Anyway'), findsNothing);
-      expect(find.text('Stay Here'), findsOneWidget);
-      await tester.tap(find.text('Stay Here'));
+      expect(find.text('Leave anyway'), findsNothing);
+      expect(find.text('Stay here'), findsOneWidget);
+      await tester.tap(find.text('Stay here'));
       await tester.pumpAndSettle();
       expect(await guardFuture, isFalse);
     });
@@ -784,8 +783,8 @@ void main() {
           },
         );
         await tester.pumpAndSettle();
-        expect(find.text('Leave Anyway'), findsNothing);
-        await tester.tap(find.text('Stay Here'));
+        expect(find.text('Leave anyway'), findsNothing);
+        await tester.tap(find.text('Stay here'));
         await tester.pumpAndSettle();
         expect(await guarded, isFalse);
         expect(continued, isFalse);
@@ -859,9 +858,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave Anyway'), findsOneWidget);
+      expect(find.text('Leave anyway'), findsOneWidget);
       expect(find.textContaining('will not delete'), findsOneWidget);
-      await tester.tap(find.text('Leave Anyway'));
+      await tester.tap(find.text('Leave anyway'));
       await tester.pumpAndSettle();
       expect(await guardFuture, isTrue);
       expect(continueCalls, 1);
@@ -926,8 +925,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave Anyway'), findsNothing);
-      await tester.tap(find.text('Stay Here'));
+      expect(find.text('Leave anyway'), findsNothing);
+      await tester.tap(find.text('Stay here'));
       await tester.pumpAndSettle();
       expect(await guardFuture, isFalse);
     });

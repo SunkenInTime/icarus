@@ -6,6 +6,7 @@ import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
@@ -515,7 +516,32 @@ CloudFolderEntry _folderEntry(FoldersListTreeResultItem folder) {
       customColor: folderCustomColorFromCloud(folder.customColorValue?.toInt()),
     ),
     role: folder.role.wireName,
+    strategyCount: folder.strategyCount.toInt(),
+    mapPeeks: [
+      for (final wireName in folder.mapPeeks)
+        if (_mapValueOrNull(wireName) case final map?) map,
+    ],
+    agentTypes: [
+      for (final name in folder.agentTypes)
+        if (_agentTypeOrNull(name) case final type?) type,
+    ],
   );
+}
+
+/// Unknown wire names are skipped: a peek at a map or agent this build does
+/// not know yet must not break the folder list.
+MapValue? _mapValueOrNull(String wireName) {
+  for (final entry in Maps.mapNames.entries) {
+    if (entry.value == wireName) return entry.key;
+  }
+  return null;
+}
+
+AgentType? _agentTypeOrNull(String name) {
+  for (final type in AgentType.values) {
+    if (type.name == name) return type;
+  }
+  return null;
 }
 
 CloudStrategyEntry _strategyEntry(

@@ -43,7 +43,7 @@ class DemoTag extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.science_outlined,
+              LucideIcons.flaskConical,
               size: 14,
               color: Colors.white.withAlpha(230), // 0.9
             ),

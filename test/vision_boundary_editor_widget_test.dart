@@ -73,7 +73,7 @@ void main() {
       VisionBoundaryEditScope.all,
     );
 
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_right));
+    await tester.tap(find.byIcon(LucideIcons.chevronRight));
     await tester.pumpAndSettle();
     var state = container.read(visionBoundaryEditorProvider);
     expect(state.draft!.outer.first, initial.outer.first + const Offset(1, 0));

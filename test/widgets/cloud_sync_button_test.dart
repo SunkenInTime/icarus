@@ -13,7 +13,8 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:icarus/widgets/cloud_sync_status_chip.dart';
+import 'package:icarus/widgets/cloud_sync_button.dart';
+import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _CloudStrategyProvider extends StrategyProvider {
@@ -218,6 +219,17 @@ ProviderContainer _createConflictContainer({
   );
 }
 
+Finder _syncButton(String status) =>
+    find.byKey(ValueKey('cloud-sync-button-$status'));
+
+/// The one-line meaning the button shows on hover.
+String _syncTooltip(WidgetTester tester) {
+  final button = tester.widget<EditorToolbarButton>(
+    find.byType(EditorToolbarButton),
+  );
+  return button.tooltip;
+}
+
 void main() {
   test('restored active-strategy media renders as syncing', () {
     final container = _createContainer(
@@ -284,13 +296,14 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
 
-    expect(find.text('Synced'), findsOneWidget);
+    expect(_syncButton('synced'), findsOneWidget);
 
     container
         .read(textDraftProvider.notifier)
@@ -298,18 +311,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Editing…'), findsOneWidget);
-    expect(find.text('Synced'), findsNothing);
+    expect(_syncButton('editing'), findsOneWidget);
+    expect(_syncButton('synced'), findsNothing);
 
-    await tester.tap(find.text('Editing…'));
-    await tester.pumpAndSettle();
-    expect(find.text('Edit not synced yet'), findsOneWidget);
-    expect(
-      find.text(
-        'Finish editing or switch pages to send this change to the cloud.',
-      ),
-      findsOneWidget,
-    );
+    expect(_syncTooltip(tester), 'Edit not synced yet');
   });
 
   testWidgets('offline remains visible while a text draft is active',
@@ -324,16 +329,17 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Offline'), findsOneWidget);
-    expect(find.text('Editing…'), findsNothing);
-    expect(find.text('Synced'), findsNothing);
+    expect(_syncButton('offline'), findsOneWidget);
+    expect(_syncButton('editing'), findsNothing);
+    expect(_syncButton('synced'), findsNothing);
   });
 
   test('status provider prioritizes connectivity over an offline flush error',
@@ -443,14 +449,15 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
 
-    expect(find.text('Needs attention'), findsOneWidget);
-    await tester.tap(find.text('Needs attention'));
+    expect(_syncButton('attention'), findsOneWidget);
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
     expect(
       find.text(
@@ -501,15 +508,16 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('Offline'), findsOneWidget);
-    expect(find.text('Needs attention'), findsNothing);
+    expect(_syncButton('offline'), findsOneWidget);
+    expect(_syncButton('attention'), findsNothing);
   });
 
   testWidgets('durability uncertainty never appears synced or reliable',
@@ -528,7 +536,8 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
@@ -536,10 +545,10 @@ void main() {
 
     final queue = container.read(strategyOpQueueProvider);
     expect(queue.outboxIsReliable, isFalse);
-    expect(find.text('Needs attention'), findsOneWidget);
-    expect(find.text('Synced'), findsNothing);
+    expect(_syncButton('attention'), findsOneWidget);
+    expect(_syncButton('synced'), findsNothing);
 
-    await tester.tap(find.text('Needs attention'));
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
     expect(find.text('Retry sync'), findsOneWidget);
     expect(find.textContaining('safely stored'), findsNothing);
@@ -559,12 +568,13 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Needs attention'));
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
     expect(find.text('Use cloud'), findsOneWidget);
@@ -600,12 +610,13 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Needs attention'));
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
     expect(find.text('Use cloud'), findsOneWidget);
@@ -631,12 +642,13 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Needs attention'));
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
     expect(find.text('Use cloud'), findsOneWidget);
@@ -667,12 +679,13 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Needs attention'));
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
     expect(
@@ -698,12 +711,13 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Needs attention'));
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Use cloud'));
     await tester.pumpAndSettle();
@@ -734,12 +748,13 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: const ShadApp(
-          home: Scaffold(body: CloudSyncStatusChip()),
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Needs attention'));
+    await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Use cloud'));
     await tester.pumpAndSettle();

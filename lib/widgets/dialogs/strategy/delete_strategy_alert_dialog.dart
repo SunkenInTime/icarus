@@ -124,7 +124,7 @@ class _DeleteStrategyAlertDialogState
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.delete_forever,
+                LucideIcons.trash2,
                 color: Settings.tacticalVioletTheme.destructiveForeground,
               ),
               const SizedBox(width: 5),

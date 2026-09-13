@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { deleteStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -671,6 +672,7 @@ const deleteStrategy = mutation({
     await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
       strategyId: strategy._id,
     });
+    await deleteStrategyAgentSummary(ctx, strategy._id);
     await ctx.db.delete(strategy._id);
     return { ok: true } as const;
   },

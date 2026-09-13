@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
@@ -34,6 +35,9 @@ void main() {
           'createdAt': 1700000000000,
           'updatedAt': 1700000001000,
           'role': 'owner',
+          'strategyCount': 2,
+          'mapPeeks': ['haven', 'ascent'],
+          'agentTypes': ['sova', 'jett', 'not-an-agent-yet'],
         },
       ]),
     );
@@ -46,6 +50,10 @@ void main() {
     expect(folders.single.folder.color, FolderColor.blue);
     expect(folders.single.folder.customColor?.toARGB32(), 0xff123456);
     expect(folders.single.role, 'owner');
+    expect(folders.single.strategyCount, 2);
+    expect(folders.single.mapPeeks, [MapValue.haven, MapValue.ascent]);
+    // Unknown agent names from a newer server are skipped, not fatal.
+    expect(folders.single.agentTypes, [AgentType.sova, AgentType.jett]);
   });
 
   test('repository maps typed strategy rows into Icarus strategies', () async {
@@ -126,6 +134,9 @@ void main() {
           dateCreated: DateTime(2026),
         ),
         role: 'owner',
+        strategyCount: 0,
+        mapPeeks: const [],
+        agentTypes: const [],
       ),
       (
         folder: Folder(
@@ -134,6 +145,9 @@ void main() {
           dateCreated: DateTime(2026),
         ),
         role: 'editor',
+        strategyCount: 0,
+        mapPeeks: const [],
+        agentTypes: const [],
       ),
     ]);
     for (var i = 0;

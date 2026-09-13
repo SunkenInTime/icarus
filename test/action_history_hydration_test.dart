@@ -9,7 +9,6 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 class _NoopStrategyProvider extends StrategyProvider {

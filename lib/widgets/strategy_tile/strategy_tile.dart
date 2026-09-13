@@ -9,7 +9,6 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
@@ -18,6 +17,7 @@ import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
 import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/widgets/role_badge.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -89,7 +89,7 @@ class StrategyTileActionsButton extends StatelessWidget {
         width: 28,
         height: 28,
         onPressed: onPressed,
-        icon: const Icon(Icons.more_vert_outlined),
+        icon: const Icon(LucideIcons.ellipsisVertical),
       ),
     );
   }
@@ -122,8 +122,10 @@ class StrategyTileMenuActionSemantics extends StatelessWidget {
   }
 }
 
+const double _ringWidth = 2;
+
 class _StrategyTileState extends ConsumerState<StrategyTile> {
-  Color _highlightColor = Settings.tacticalVioletTheme.border;
+  bool _isHovered = false;
   bool _isLoading = false;
   bool _menuButtonWasOpenOnPointerDown = false;
   DropInsertionSide? _pinnedDropSide;
@@ -265,10 +267,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             ),
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
-              onEnter: (_) => setState(
-                  () => _highlightColor = Settings.tacticalVioletTheme.ring),
-              onExit: (_) => setState(
-                  () => _highlightColor = Settings.tacticalVioletTheme.border),
+              onEnter: (_) => setState(() => _isHovered = true),
+              onExit: (_) => setState(() => _isHovered = false),
               child: AbsorbPointer(
                 absorbing: _isLoading,
                 child: ShadContextMenuRegion(
@@ -289,41 +289,50 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                         return Stack(
                           clipBehavior: Clip.none,
                           children: [
+                            // The ring is the outer box showing through a
+                            // 2px inset: flat zinc at rest, and on hover the
+                            // lit violet gradient, since a Border cannot
+                            // take a gradient.
                             AnimatedContainer(
-                              duration: const Duration(milliseconds: 100),
-                              decoration: BoxDecoration(
-                                color: ShadTheme.of(context).colorScheme.card,
-                                borderRadius: BorderRadius.circular(
-                                    strategyTileOuterRadius),
-                                border: Border.all(
-                                  color: isPinDropTarget
-                                      ? Settings.tacticalVioletTheme.border
-                                      : _highlightColor,
-                                  width: 2,
+                                duration: const Duration(milliseconds: 100),
+                                decoration: BoxDecoration(
+                                  color: Settings.tacticalVioletTheme.border,
+                                  gradient: !isPinDropTarget && _isHovered
+                                      ? Settings.raisedPrimaryFill
+                                      : null,
+                                  borderRadius: BorderRadius.circular(
+                                      strategyTileOuterRadius),
                                 ),
-                              ),
-                              padding: const EdgeInsets.all(8),
-                              child: Column(
-                                children: [
-                                  Expanded(
-                                    child: StrategyTileThumbnail(
-                                      assetPath: viewData.thumbnailAsset,
-                                      borderRadius: strategyTileInnerRadius,
-                                      overlay: widget.showDeviceBadge
-                                          ? const DeviceOnlyBadge()
-                                          : null,
-                                    ),
+                                padding: const EdgeInsets.all(_ringWidth),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color:
+                                        ShadTheme.of(context).colorScheme.card,
+                                    borderRadius: BorderRadius.circular(
+                                        strategyTileOuterRadius - _ringWidth),
                                   ),
-                                  const SizedBox(height: 10),
-                                  Expanded(
-                                    child: StrategyTileDetails(
-                                      data: viewData,
-                                      borderRadius: strategyTileInnerRadius,
-                                    ),
+                                  padding: const EdgeInsets.all(8 - _ringWidth),
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: StrategyTileThumbnail(
+                                          assetPath: viewData.thumbnailAsset,
+                                          borderRadius: strategyTileInnerRadius,
+                                          overlay: widget.showDeviceBadge
+                                              ? const DeviceOnlyBadge()
+                                              : viewData.sharedBadge,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Expanded(
+                                        child: StrategyTileDetails(
+                                          data: viewData,
+                                          borderRadius: strategyTileInnerRadius,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
+                                )),
                             if (isPinned)
                               Align(
                                 alignment: Alignment.topLeft,
@@ -342,7 +351,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                     ),
                                     child: const Padding(
                                       padding: EdgeInsets.all(5),
-                                      child: Icon(Icons.push_pin, size: 15),
+                                      child: Icon(LucideIcons.pin, size: 15),
                                     ),
                                   ),
                                 ),
@@ -363,8 +372,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                       width: 28,
                                       height: 28,
                                       onPressed: _handleMenuButtonPressed,
-                                      icon:
-                                          const Icon(Icons.more_vert_outlined),
+                                      icon: const Icon(
+                                          LucideIcons.ellipsisVertical),
                                     ),
                                   ),
                                 ),
@@ -403,7 +412,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     final isPinned = pinned.containsKey(id);
     return [
       ShadContextMenuItem(
-        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        leading: Icon(isPinned ? LucideIcons.pinOff : LucideIcons.pin),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
         onPressed: () {
           _closeMenus();
@@ -412,7 +421,6 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
-        child: const Text('Rename'),
         enabled: widget.canRename,
         onPressed: widget.canRename
             ? () {
@@ -420,10 +428,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _showRenameDialog();
               }
             : null,
+        child: const Text('Rename'),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.copy),
-        child: const Text('Duplicate'),
         enabled: widget.canDuplicate,
         onPressed: widget.canDuplicate
             ? () {
@@ -431,6 +439,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _duplicateStrategy();
               }
             : null,
+        child: const Text('Duplicate'),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
@@ -450,8 +459,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           },
         ),
       ShadContextMenuItem(
-        leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
-        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        leading: Icon(LucideIcons.trash2,
+            color: Settings.tacticalVioletTheme.destructive),
         enabled: widget.canDelete,
         onPressed: widget.canDelete
             ? () {
@@ -459,6 +468,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _showDeleteDialog();
               }
             : null,
+        child: Text('Delete',
+            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
       ),
     ];
   }

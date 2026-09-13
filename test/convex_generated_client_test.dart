@@ -230,6 +230,9 @@ ConvexArray _folderTreeValue({
         'publicId': const ConvexString('folder-1'),
         'role': ConvexString(role),
         'updatedAt': const ConvexInteger(2),
+        'strategyCount': const ConvexInteger(0),
+        'mapPeeks': ConvexArray(const []),
+        'agentTypes': ConvexArray(const []),
       }),
     ]);
 

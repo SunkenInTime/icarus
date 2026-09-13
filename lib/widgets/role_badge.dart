@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Small uppercase micro badges used to mark cloud ownership and share role.
-///
-/// Styling follows the Icarus design system: 10px, w600, 0.5 letter spacing,
-/// uppercase text on a tinted pill. Colors come only from the tactical theme
-/// tokens (no hardcoded Material colors).
+/// What the cloud says about a strategy's place in the library: yours, shared
+/// with edit access, or shared read-only.
 enum CloudBadgeKind { owned, editor, viewer }
 
 CloudBadgeKind? cloudBadgeKindForRole(String? role) {
@@ -26,6 +24,68 @@ CloudBadgeKind? cloudBadgeKindForRole(String? role) {
   }
 }
 
+/// The pill drawn over a strategy thumbnail to say where it lives or how it
+/// was shared. Owned cloud strategies are the ordinary case in a signed-in
+/// library, so they carry no badge; only the exceptions get one.
+class StrategyBadge extends StatelessWidget {
+  const StrategyBadge({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+  });
+
+  final IconData icon;
+  final String label;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: theme.background.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: theme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: theme.foreground),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: theme.foreground,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "On this device": the strategy exists only in the local library.
+class DeviceOnlyBadge extends StatelessWidget {
+  const DeviceOnlyBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const StrategyBadge(
+      icon: LucideIcons.monitor,
+      label: 'On this device',
+      tooltip: 'Saved only on this computer',
+    );
+  }
+}
+
+/// The share role of a strategy someone else owns. Null for owned strategies.
 class CloudRoleBadge extends StatelessWidget {
   const CloudRoleBadge({super.key, required this.kind});
 
@@ -33,80 +93,21 @@ class CloudRoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const theme = Settings.tacticalVioletTheme;
-
     switch (kind) {
       case CloudBadgeKind.owned:
-        // Owned cloud strategies: a muted cloud glyph pill, deliberately quiet.
-        return _BadgePill(
-          background: theme.muted,
-          border: theme.border,
-          child: Icon(
-            Icons.cloud_outlined,
-            size: 12,
-            color: theme.mutedForeground,
-          ),
-        );
+        return const SizedBox.shrink();
       case CloudBadgeKind.editor:
-        // Shared with edit access: violet tint to echo the "action" accent.
-        return _BadgePill(
-          background: theme.primary.withValues(alpha: 0.16),
-          border: theme.primary.withValues(alpha: 0.32),
-          child: _BadgeLabel(text: 'EDIT', color: theme.primary),
+        return const StrategyBadge(
+          icon: LucideIcons.users,
+          label: 'Shared · Can edit',
+          tooltip: 'Shared with you. You can edit it.',
         );
       case CloudBadgeKind.viewer:
-        // Shared read-only: muted, no command color.
-        return _BadgePill(
-          background: theme.muted,
-          border: theme.border,
-          child: _BadgeLabel(text: 'VIEW', color: theme.mutedForeground),
+        return const StrategyBadge(
+          icon: LucideIcons.users,
+          label: 'Shared · View only',
+          tooltip: 'Shared with you. Ask the owner for edit access.',
         );
     }
-  }
-}
-
-class _BadgePill extends StatelessWidget {
-  const _BadgePill({
-    required this.background,
-    required this.border,
-    required this.child,
-  });
-
-  final Color background;
-  final Color border;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: border),
-      ),
-      child: child,
-    );
-  }
-}
-
-class _BadgeLabel extends StatelessWidget {
-  const _BadgeLabel({required this.text, required this.color});
-
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: color,
-        fontSize: 10,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.5,
-        height: 1.2,
-      ),
-    );
   }
 }

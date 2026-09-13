@@ -1,6 +1,7 @@
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
@@ -11,10 +12,19 @@ class LibraryFolderRow {
     required this.folder,
     required this.store,
     required this.lastUpdated,
+    required this.card,
+    this.cloudRole,
   });
 
   final Folder folder;
   final LibraryWorkspace store;
+
+  /// What the folder card shows: contents for local folders, the subfolder
+  /// count alone for cloud folders (their strategies load per folder).
+  final FolderCardViewData card;
+
+  /// The signed-in user's role on a cloud folder; null for local folders.
+  final String? cloudRole;
 
   /// Newest edit inside the folder tree, used for the "Date updated" sort.
   /// Cloud folders do not carry this yet and fall back to their creation date.
@@ -25,7 +35,8 @@ class LibraryFolderRow {
 
 /// One strategy in the library grid, from either store.
 class LibraryStrategyRow {
-  LibraryStrategyRow.local(StrategyData strategy, {required this.showDeviceBadge})
+  LibraryStrategyRow.local(StrategyData strategy,
+      {required this.showDeviceBadge})
       : local = strategy,
         cloud = null;
 
@@ -84,7 +95,8 @@ List<LibraryFolderRow> sortLibraryFolders(
     final result = switch (filter.sortBy) {
       SortBy.alphabetical =>
         a.folder.name.toLowerCase().compareTo(b.folder.name.toLowerCase()),
-      SortBy.dateCreated => a.folder.dateCreated.compareTo(b.folder.dateCreated),
+      SortBy.dateCreated =>
+        a.folder.dateCreated.compareTo(b.folder.dateCreated),
       SortBy.dateUpdated => a.lastUpdated.compareTo(b.lastUpdated),
     };
     if (result != 0) return direction * result;

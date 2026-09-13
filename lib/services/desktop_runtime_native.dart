@@ -2,20 +2,25 @@ import 'dart:io';
 
 import 'package:flutter/material.dart' show Size;
 import 'package:icarus/const/second_instance_args.dart';
+import 'package:icarus/startup/windows_process_termination.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:windows_single_instance/windows_single_instance.dart';
 
 bool get isWindowsRuntime => Platform.isWindows;
 
-Future<void> ensureIcarusSingleInstance(List<String> args) async {
+Future<void> ensureIcarusSingleInstance(
+  List<String> args, {
+  required String instanceId,
+}) async {
   if (!Platform.isWindows) {
     return;
   }
 
   await WindowsSingleInstance.ensureSingleInstance(
     args,
-    'icarus_single_instance',
+    instanceId,
     onSecondWindow: publishSecondInstanceArgs,
+    exitFunction: terminateDuplicateWindowsProcess,
   );
 }
 

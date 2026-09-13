@@ -1,37 +1,17 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Height of the strip the app draws in place of the native title bar.
-/// `macos/Runner/MainFlutterWindow.swift` centers the traffic lights on it.
+/// Height of the strip the app draws in place of the native title bar. Every
+/// screen uses it, so `macos/Runner/MainFlutterWindow.swift` can center the
+/// traffic lights on it once and never move them.
 const double kWindowStripHeight = 40;
-
-/// Height of the editor's header band: the 65px map card.
-const double kEditorHeaderHeight = 65;
 
 /// Room reserved on the left for the native macOS traffic lights.
 const double kMacTrafficLightInset = 78;
-
-/// Talks to `MainFlutterWindow.swift`, which centers the traffic lights on
-/// whatever band height the current screen reports.
-const MethodChannel _chromeChannel = MethodChannel('icarus/window_chrome');
-
-int _editorHeadersMounted = 0;
-
-Future<void> _syncMacTitleStripHeight() async {
-  if (!_isMacOS) return;
-  final height =
-      _editorHeadersMounted > 0 ? kEditorHeaderHeight : kWindowStripHeight;
-  try {
-    await _chromeChannel.invokeMethod<void>('setTitleStripHeight', height);
-  } on MissingPluginException {
-    // Running without the macOS runner (tests, other hosts).
-  }
-}
 
 bool get _isMacOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 bool get _isWindows =>
@@ -60,71 +40,18 @@ class WindowDragArea extends StatelessWidget {
   }
 }
 
-/// The editor's header: controls and the map card centered on one band,
-/// with the traffic lights (macOS) or caption buttons (Windows, Linux) on
-/// that same line. On macOS the window is told the band's height so the
-/// lights move down to meet it, and back up when the editor closes. Windows
-/// and Linux split the canvas gap evenly above and below the band.
-class EditorWindowHeader extends StatefulWidget {
-  const EditorWindowHeader({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  State<EditorWindowHeader> createState() => _EditorWindowHeaderState();
-}
-
-class _EditorWindowHeaderState extends State<EditorWindowHeader> {
-  @override
-  void initState() {
-    super.initState();
-    _editorHeadersMounted++;
-    _syncMacTitleStripHeight();
-  }
-
-  @override
-  void dispose() {
-    // The skeleton and the real header swap within one frame, so count
-    // mounts instead of assuming this was the last one.
-    _editorHeadersMounted--;
-    _syncMacTitleStripHeight();
-    super.dispose();
-  }
+/// The compact Icarus lockup at the start of the library strip. On macOS it
+/// follows the traffic-light inset; on Windows and Linux it leads the strip.
+class IcarusWordmark extends StatelessWidget {
+  const IcarusWordmark({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return WindowDragArea(
-      child: Padding(
-        padding: _drawsCaptionButtons
-            ? const EdgeInsets.symmetric(vertical: 5)
-            : const EdgeInsets.only(bottom: 10),
-        child: SizedBox(
-          height: kEditorHeaderHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const MacTrafficLightInset(),
-              Expanded(child: widget.child),
-              const WindowCaptionButtons(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The compact Icarus lockup at the start of the Windows library strip.
-class WindowsIcarusWordmark extends StatelessWidget {
-  const WindowsIcarusWordmark({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_isWindows) {
+    if (kIsWeb) {
       return const SizedBox.shrink();
     }
     return Padding(
-      padding: const EdgeInsets.only(left: 10, right: 4),
+      padding: const EdgeInsets.only(left: 10, right: 6),
       child: SvgPicture.asset(
         'assets/brand/icarus-wordmark.svg',
         height: 14,
@@ -265,6 +192,8 @@ class AppWindowStrip extends StatelessWidget {
     return Container(
       key: const ValueKey('app-window-strip'),
       height: kWindowStripHeight,
+      // The 1px seam is the edge of the window frame: everything under it
+      // is the bench, and the floating panels on it carry their own air.
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         border: Border(

@@ -34,47 +34,62 @@ class LibraryBreadcrumb extends ConsumerWidget {
       }
     }
 
-    return Row(
-      children: [
-        ShadIconButton.ghost(
-          width: 30,
-          height: 30,
-          foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
-          onPressed: () {
-            if (parent == null) {
-              goToRoot();
-            } else {
-              ref.read(folderProvider.notifier).updateID(parent.id);
-            }
-          },
-          icon: const Icon(Icons.chevron_left, size: 20),
+    // Same card as the editor toolbar, so the path reads as hardware on the
+    // bench instead of text floating on the dot grid.
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
+        decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Settings.tacticalVioletTheme.border),
         ),
-        const SizedBox(width: 4),
-        Expanded(
-          child: ShadBreadcrumb(
-            lastItemTextColor: Settings.tacticalVioletTheme.foreground,
-            textStyle: ShadTheme.of(context).textTheme.lead,
-            children: [
-              FolderTab(
-                folder: null,
-                label:
-                    tab == LibraryTab.shared ? 'Shared with Me' : 'My Library',
-                store: store,
-                onOpen: goToRoot,
-              ),
-              for (int i = 0; i < pathFolders.length; i++)
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ShadIconButton.ghost(
+              width: 28,
+              height: 28,
+              foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
+              hoverForegroundColor: Settings.tacticalVioletTheme.foreground,
+              onPressed: () {
+                if (parent == null) {
+                  goToRoot();
+                } else {
+                  ref.read(folderProvider.notifier).updateID(parent.id);
+                }
+              },
+              icon: const Icon(LucideIcons.chevronLeft300, size: 18),
+            ),
+            const SizedBox(width: 4),
+            ShadBreadcrumb(
+              lastItemTextColor: Settings.tacticalVioletTheme.foreground,
+              textStyle: ShadTheme.of(context).textTheme.small,
+              children: [
                 FolderTab(
-                  folder: pathFolders[i],
+                  folder: null,
+                  label: tab == LibraryTab.shared
+                      ? 'Shared with Me'
+                      : 'My Library',
                   store: store,
-                  isActive: i == pathFolders.length - 1,
-                  onOpen: () => ref
-                      .read(folderProvider.notifier)
-                      .updateID(pathFolders[i].id),
+                  onOpen: goToRoot,
                 ),
-            ],
-          ),
+                for (int i = 0; i < pathFolders.length; i++)
+                  FolderTab(
+                    folder: pathFolders[i],
+                    store: store,
+                    isActive: i == pathFolders.length - 1,
+                    onOpen: () => ref
+                        .read(folderProvider.notifier)
+                        .updateID(pathFolders[i].id),
+                  ),
+              ],
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -126,7 +141,7 @@ class FolderTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ShadBreadcrumbLink(
-      textStyle: ShadTheme.of(context).textTheme.lead,
+      textStyle: ShadTheme.of(context).textTheme.small,
       normalColor: isActive ? Settings.tacticalVioletTheme.foreground : null,
       onPressed: onOpen,
       child: DragTarget<GridItem>(

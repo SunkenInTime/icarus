@@ -71,16 +71,16 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
             }
           },
           height: 35,
-          leading: const Icon(Icons.text_fields),
+          leading: const Icon(LucideIcons.pencil),
           child: const Text("Rename"),
         ),
       ],
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: CustomTextField(
-            // onEnterPressed: (intent) {},
             hintText: widget.currentName,
             controller: _textController,
+            autofocus: true,
             textAlign: TextAlign.start,
             onSubmitted: (value) async {
               if (value.isNotEmpty) {

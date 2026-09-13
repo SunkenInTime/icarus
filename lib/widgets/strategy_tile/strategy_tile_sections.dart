@@ -68,9 +68,16 @@ class StrategyTileViewData {
   final String lastEditedLabel;
   final List<AgentType> agentTypes;
 
-  /// Non-null only for cloud strategies. Local tiles leave this null so they
-  /// render exactly as before.
+  /// Non-null only for cloud strategies. Owned strategies render no badge;
+  /// shared ones show their role over the thumbnail.
   final CloudBadgeKind? cloudBadge;
+
+  /// The pill drawn over the thumbnail, if this strategy needs one.
+  Widget? get sharedBadge {
+    final kind = cloudBadge;
+    if (kind == null || kind == CloudBadgeKind.owned) return null;
+    return CloudRoleBadge(kind: kind);
+  }
 
   static String _mapName(MapValue? map) {
     final raw = map == null ? null : Maps.mapNames[map];
@@ -187,45 +194,6 @@ class StrategyTileThumbnail extends StatelessWidget {
   }
 }
 
-/// "On this device": the strategy exists only in the local library.
-class DeviceOnlyBadge extends StatelessWidget {
-  const DeviceOnlyBadge({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Saved only on this computer',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Settings.tacticalVioletTheme.background.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Settings.tacticalVioletTheme.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.monitor,
-              size: 12,
-              color: Settings.tacticalVioletTheme.foreground,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              'On this device',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Settings.tacticalVioletTheme.foreground,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class StrategyTileDetails extends StatelessWidget {
   const StrategyTileDetails({
     super.key,
@@ -271,10 +239,6 @@ class StrategyTileDetails extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (data.cloudBadge != null) ...[
-                          const SizedBox(width: 6),
-                          CloudRoleBadge(kind: data.cloudBadge!),
-                        ],
                       ],
                     ),
                     const SizedBox(height: 5),
@@ -418,7 +382,7 @@ class _MoreAgentsIndicator extends StatelessWidget {
         border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
       child: const Icon(
-        Icons.more_horiz,
+        LucideIcons.ellipsis,
         color: Color.fromARGB(190, 210, 214, 219),
         size: 18,
       ),

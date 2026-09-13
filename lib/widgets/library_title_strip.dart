@@ -16,8 +16,12 @@ import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _controlHeight = 28;
+// Tabs sit apart so a selected and a hovered background never touch.
+const double _tabGap = 4;
+// Matches the ghost button's own radius so the rim hugs its hover shape.
+const double _tabRadius = 6;
 // Action menus hug their labels; the account menu keeps room for email text.
-const double _sortMenuWidth = 132;
+const double _sortMenuWidth = 168;
 const double _newMenuWidth = 140;
 const double _accountMenuWidth = 200;
 const double _menuItemHorizontalPadding = 8;
@@ -77,7 +81,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     return AppWindowStrip(
       child: Row(
         children: [
-          const WindowsIcarusWordmark(),
+          const IcarusWordmark(),
           const SizedBox(width: 6),
           _TabButton(
             key: const ValueKey('library-tab-library'),
@@ -87,6 +91,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             selected: tab == LibraryTab.library,
             onTap: navigation.showLibrary,
           ),
+          const SizedBox(width: _tabGap),
           _TabButton(
             key: const ValueKey('library-tab-shared'),
             icon: LucideIcons.users,
@@ -100,6 +105,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               }
             },
           ),
+          const SizedBox(width: _tabGap),
           _TabButton(
             key: const ValueKey('library-tab-community'),
             icon: LucideIcons.globe,
@@ -173,7 +179,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             for (final value in SortBy.values)
               _MenuItem(
                 menu: _sortController,
-                icon: value == filter.sortBy ? Icons.check : null,
+                icon: value == filter.sortBy ? LucideIcons.check : null,
                 label: StrategyFilterProvider.sortByLabels[value]!,
                 onPressed: () {
                   ref.read(strategyFilterProvider.notifier).setSortBy(value);
@@ -233,7 +239,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             _MenuItem(
               menu: _newController,
               key: const ValueKey('library-new-strategy'),
-              icon: Icons.note_add_outlined,
+              icon: LucideIcons.filePlus,
               label: 'New Strategy',
               onPressed: widget.onCreateStrategy,
             ),
@@ -248,19 +254,19 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               const _MenuDivider(),
               _MenuItem(
                 menu: _newController,
-                icon: Icons.file_download_outlined,
+                icon: LucideIcons.fileDown,
                 label: 'Import .ica',
                 onPressed: widget.onImportIca,
               ),
               _MenuItem(
                 menu: _newController,
-                icon: Icons.archive_outlined,
+                icon: LucideIcons.archiveRestore,
                 label: 'Import Backup',
                 onPressed: widget.onImportBackup,
               ),
               _MenuItem(
                 menu: _newController,
-                icon: Icons.backup_outlined,
+                icon: LucideIcons.archive,
                 label: 'Export Library',
                 onPressed: widget.onExportLibrary,
               ),
@@ -273,8 +279,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         height: _controlHeight,
         padding: const EdgeInsets.only(left: 8, right: 6),
         onPressed: _newController.toggle,
-        leading: const Icon(Icons.add, size: 16),
-        trailing: const Icon(Icons.keyboard_arrow_down, size: 16),
+        leading: const Icon(LucideIcons.plus, size: 16),
+        trailing: const Icon(LucideIcons.chevronDown, size: 14),
         child: const Text('New'),
       ),
     );
@@ -370,7 +376,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             radius: 12,
             backgroundColor: Settings.tacticalVioletTheme.secondary,
             avatarUrl: auth.avatarUrl,
-            fallback: const Icon(Icons.person, size: 14),
+            fallback: const Icon(LucideIcons.user, size: 14),
           ),
         ),
       ),
@@ -411,17 +417,24 @@ class _TabButton extends StatelessWidget {
       onTap: onTap,
       child: Opacity(
         opacity: dimmed ? 0.45 : 1,
-        child: ShadButton.ghost(
-          height: _controlHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          backgroundColor: selected ? theme.secondary : null,
-          foregroundColor: foreground,
-          hoverForegroundColor: theme.foreground,
-          onPressed: onTap,
-          leading: Icon(icon, size: 15),
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        child: DecoratedBox(
+          decoration: selected
+              ? Settings.raisedSurface(_tabRadius)
+              : const BoxDecoration(),
+          child: ShadButton.ghost(
+            height: _controlHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            gap: 6,
+            backgroundColor: selected ? Colors.transparent : null,
+            hoverBackgroundColor: selected ? Colors.transparent : null,
+            foregroundColor: foreground,
+            hoverForegroundColor: theme.foreground,
+            onPressed: onTap,
+            leading: Icon(icon, size: 15),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ),
         ),
       ),
@@ -459,7 +472,15 @@ class _MenuItem extends StatelessWidget {
       },
       leading: SizedBox(
         width: _menuIconWidth,
-        child: icon == null ? null : Icon(icon, size: 16),
+        child: icon == null
+            ? null
+            : Icon(
+                icon,
+                size: 16,
+                color: icon == LucideIcons.check
+                    ? Settings.tacticalVioletTheme.primary
+                    : Settings.tacticalVioletTheme.mutedForeground,
+              ),
       ),
       child: Flexible(
         child: Text(

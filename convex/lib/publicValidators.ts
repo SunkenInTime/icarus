@@ -78,6 +78,12 @@ export const folderSummaryValidator = v.object({
   createdAt: v.number(),
   updatedAt: v.number(),
   role: accessRoleValidator,
+  // What the folder holds, including every subfolder: how many strategies,
+  // the two most-used maps (wire names, most used first), and the agents in
+  // play ordered by how many strategies use them.
+  strategyCount: v.number(),
+  mapPeeks: v.array(v.string()),
+  agentTypes: v.array(v.string()),
 });
 
 export const pageDescriptorValidator = v.object({

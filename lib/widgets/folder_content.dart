@@ -22,7 +22,7 @@ import 'package:icarus/widgets/library_entries.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
-import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
@@ -217,6 +217,17 @@ class FolderContent extends ConsumerWidget {
                       allFolders: allFolders,
                       allStrategies: allStrategies,
                     ),
+                    card: FolderCardViewData(
+                      folder: item,
+                      strategies: strategiesInFolderTree(
+                        folder: item,
+                        allFolders: allFolders,
+                        allStrategies: allStrategies,
+                      ),
+                      folderCount: allFolders
+                          .where((folder) => folder.parentID == item.id)
+                          .length,
+                    ),
                   ),
             ];
             final strategies = [
@@ -260,7 +271,8 @@ class FolderContent extends ConsumerWidget {
   /// store.
   Widget _buildLibraryRoot(BuildContext context, WidgetRef ref) {
     final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
-    final foldersAsync = cloudAvailable ? ref.watch(cloudFoldersProvider) : null;
+    final foldersAsync =
+        cloudAvailable ? ref.watch(cloudFoldersProvider) : null;
     final strategiesAsync =
         cloudAvailable ? ref.watch(cloudStrategiesProvider) : null;
     // Only the very first fetch shows the skeleton; dependency changes keep
@@ -272,15 +284,12 @@ class FolderContent extends ConsumerWidget {
     if (isInitialLoading) {
       return const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
     }
-    final cloudFailed =
-        (foldersAsync?.hasError ?? false) || (strategiesAsync?.hasError ?? false);
+    final cloudFailed = (foldersAsync?.hasError ?? false) ||
+        (strategiesAsync?.hasError ?? false);
     final cloudFolders = [
-      for (final entry in foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[])
-        LibraryFolderRow(
-          folder: entry.folder,
-          store: LibraryWorkspace.cloud,
-          lastUpdated: entry.folder.dateCreated,
-        ),
+      for (final entry
+          in foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[])
+        _cloudFolderRow(ref, entry),
     ];
     final cloudStrategies = [
       for (final entry
@@ -308,9 +317,11 @@ class FolderContent extends ConsumerWidget {
             ),
           ),
           acceptsIcaDrops: true,
-          banner: cloudFailed ? _CloudErrorBanner(onRetry: () => _retryCloud(ref)) : null,
+          banner: cloudFailed
+              ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
+              : null,
           emptyStateKey: const ValueKey('library-empty-state'),
-          emptyStateIcon: Icons.folder_outlined,
+          emptyStateIcon: LucideIcons.folder,
           emptyStateTitle: 'Your library is empty',
           emptyStateSubtitle: cloudAvailable
               ? 'Create your first strategy to keep it available across your '
@@ -320,10 +331,29 @@ class FolderContent extends ConsumerWidget {
           emptyStateAction: ShadButton(
             key: const ValueKey('library-empty-create-strategy'),
             onPressed: onCreateStrategy,
-            leading: const Icon(Icons.add),
+            leading: const Icon(LucideIcons.plus),
             child: const Text('Create Strategy'),
           ),
         ),
+      ),
+    );
+  }
+
+  LibraryFolderRow _cloudFolderRow(WidgetRef ref, CloudFolderEntry entry) {
+    final tree = ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [];
+    return LibraryFolderRow(
+      folder: entry.folder,
+      store: LibraryWorkspace.cloud,
+      lastUpdated: entry.folder.dateCreated,
+      cloudRole: entry.role,
+      card: FolderCardViewData.summary(
+        folder: entry.folder,
+        folderCount: tree
+            .where((item) => item.folder.parentID == entry.folder.id)
+            .length,
+        strategyCount: entry.strategyCount,
+        maps: entry.mapPeeks,
+        agentTypes: entry.agentTypes,
       ),
     );
   }
@@ -360,12 +390,9 @@ class FolderContent extends ConsumerWidget {
       );
     }
     final folders = [
-      for (final entry in foldersAsync.valueOrNull ?? const <CloudFolderEntry>[])
-        LibraryFolderRow(
-          folder: entry.folder,
-          store: LibraryWorkspace.cloud,
-          lastUpdated: entry.folder.dateCreated,
-        ),
+      for (final entry
+          in foldersAsync.valueOrNull ?? const <CloudFolderEntry>[])
+        _cloudFolderRow(ref, entry),
     ];
     final strategies = [
       for (final entry
@@ -384,9 +411,8 @@ class FolderContent extends ConsumerWidget {
         emptyStateKey: isSharedWithMe && folder == null
             ? const ValueKey('shared-empty-state')
             : null,
-        emptyStateIcon: isSharedWithMe && folder == null
-            ? Icons.people_outline
-            : null,
+        emptyStateIcon:
+            isSharedWithMe && folder == null ? LucideIcons.users : null,
         emptyStateTitle: isSharedWithMe && folder == null
             ? 'Nothing shared with you yet'
             : 'No strategies in this folder',
@@ -407,7 +433,7 @@ class FolderContent extends ConsumerWidget {
             : ShadButton(
                 key: const ValueKey('cloud-empty-create-strategy'),
                 onPressed: onCreateStrategy,
-                leading: const Icon(Icons.add),
+                leading: const Icon(LucideIcons.plus),
                 child: const Text('Create Strategy'),
               ),
       ),
@@ -517,16 +543,24 @@ class FolderContent extends ConsumerWidget {
             if (folders.isNotEmpty)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  // Each card carries half the gutter as drop hit area, so
+                  // the row's padding shrinks by that much to keep x=16.
+                  padding: const EdgeInsets.fromLTRB(
+                    16 - folderCardGutterOutset,
+                    16,
+                    16 - folderCardGutterOutset,
+                    8,
+                  ),
                   child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
+                    spacing: 0,
+                    runSpacing: 14,
                     children: [
                       for (final row in folders)
-                        FolderPill(
+                        FolderCard(
                           key: ValueKey(row.id),
-                          folder: row.folder,
+                          data: row.card,
                           store: row.store,
+                          cloudRole: row.cloudRole,
                         ),
                     ],
                   ),
@@ -595,7 +629,7 @@ class FolderContent extends ConsumerWidget {
               children: [
                 if (currentFolder != null)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 16, 0),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                     child: LibraryBreadcrumb(folder: currentFolder),
                   ),
                 if (banner != null) banner,
@@ -639,7 +673,7 @@ class FolderContent extends ConsumerWidget {
 
   Widget _buildCloudUnavailableState(BuildContext context, WidgetRef ref) {
     return _LibraryMessageState(
-      icon: Icons.cloud_off_outlined,
+      icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.mutedForeground,
       title: 'Cloud unavailable',
       subtitle: 'Sign in again to reach your online strategies, or go back '
@@ -664,7 +698,7 @@ class FolderContent extends ConsumerWidget {
 
   Widget _buildCloudErrorState(BuildContext context, WidgetRef ref) {
     return _LibraryMessageState(
-      icon: Icons.cloud_off_outlined,
+      icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.destructive,
       title: "Couldn't load your cloud library",
       subtitle: 'Check your connection and try again.',
@@ -684,7 +718,7 @@ class FolderContent extends ConsumerWidget {
 
   Widget _buildCommunityPlaceholder(BuildContext context, WidgetRef ref) {
     return _LibraryMessageState(
-      icon: Icons.public,
+      icon: LucideIcons.globe,
       iconColor: Settings.tacticalVioletTheme.primary,
       title: 'Community strats are coming soon',
       subtitle:
@@ -721,7 +755,7 @@ class _CloudErrorBanner extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              Icons.cloud_off_outlined,
+              LucideIcons.cloudOff,
               size: 16,
               color: Settings.tacticalVioletTheme.destructive,
             ),

@@ -321,7 +321,7 @@ class _NumericDragInputState extends State<NumericDragInput> {
                     child: Padding(
                       padding: trailingPadding,
                       child: Icon(
-                        Icons.drag_indicator,
+                        LucideIcons.gripVertical,
                         size: widget.dragIconSize,
                         color: _isDragging
                             ? colorScheme.primary

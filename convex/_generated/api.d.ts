@@ -25,6 +25,7 @@ import type * as lib_payloadValidators from "../lib/payloadValidators.js";
 import type * as lib_publicValidators from "../lib/publicValidators.js";
 import type * as lib_r2 from "../lib/r2.js";
 import type * as lib_snapshotSerialization from "../lib/snapshotSerialization.js";
+import type * as lib_strategyAgentSummary from "../lib/strategyAgentSummary.js";
 import type * as lineups from "../lineups.js";
 import type * as maintenance from "../maintenance.js";
 import type * as ops from "../ops.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "lib/publicValidators": typeof lib_publicValidators;
   "lib/r2": typeof lib_r2;
   "lib/snapshotSerialization": typeof lib_snapshotSerialization;
+  "lib/strategyAgentSummary": typeof lib_strategyAgentSummary;
   lineups: typeof lineups;
   maintenance: typeof maintenance;
   ops: typeof ops;

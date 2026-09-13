@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -225,7 +226,9 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
         : const Duration(milliseconds: 140);
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      // Same 8px off the strip as the map card on the left, so both hang
+      // from the same line.
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: CompositedTransformTarget(
         link: _layerLink,
         child: OverlayPortal(
@@ -329,8 +332,8 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                               children: [
                                 Center(
                                   child: Icon(
-                                    Icons.delete_outline,
-                                    size: 24,
+                                    LucideIcons.trash2,
+                                    size: 22,
                                     color: iconColor,
                                   ),
                                 ),

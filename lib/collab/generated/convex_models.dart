@@ -649,6 +649,7 @@ final class FoldersDeleteResult {
 
 final class FoldersListTreeResultItem {
   const FoldersListTreeResultItem({
+    required this.agentTypes,
     required this.color,
     required this.createdAt,
     required this.customColorValue,
@@ -656,12 +657,15 @@ final class FoldersListTreeResultItem {
     required this.iconFontFamily,
     required this.iconFontPackage,
     required this.iconId,
+    required this.mapPeeks,
     required this.name,
     required this.parentFolderPublicId,
     required this.publicId,
     required this.role,
+    required this.strategyCount,
     required this.updatedAt,
   });
+  final List<String> agentTypes;
   final String? color;
   final double createdAt;
   final double? customColorValue;
@@ -669,15 +673,18 @@ final class FoldersListTreeResultItem {
   final String? iconFontFamily;
   final String? iconFontPackage;
   final double? iconId;
+  final List<String> mapPeeks;
   final String name;
   final String? parentFolderPublicId;
   final String publicId;
   final FoldersListTreeResultItemRole role;
+  final double strategyCount;
   final double updatedAt;
 
   factory FoldersListTreeResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
+      'agentTypes',
       'color',
       'createdAt',
       'customColorValue',
@@ -685,13 +692,27 @@ final class FoldersListTreeResultItem {
       'iconFontFamily',
       'iconFontPackage',
       'iconId',
+      'mapPeeks',
       'name',
       'parentFolderPublicId',
       'publicId',
       'role',
+      'strategyCount',
       'updatedAt',
     });
     return FoldersListTreeResultItem(
+      agentTypes:
+          _decodeArray(
+                object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
+                '$path.agentTypes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.agentTypes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       color: (object.value['color'] ?? _missing(path, 'color')) is ConvexNull
           ? null
           : _decodeString(
@@ -744,6 +765,18 @@ final class FoldersListTreeResultItem {
               object.value['iconId'] ?? _missing(path, 'iconId'),
               '$path.iconId',
             ),
+      mapPeeks:
+          _decodeArray(
+                object.value['mapPeeks'] ?? _missing(path, 'mapPeeks'),
+                '$path.mapPeeks',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.mapPeeks', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       name: _decodeString(
         object.value['name'] ?? _missing(path, 'name'),
         '$path.name',
@@ -769,6 +802,10 @@ final class FoldersListTreeResultItem {
         ),
         '$path.role',
       ),
+      strategyCount: _decodeNumber(
+        object.value['strategyCount'] ?? _missing(path, 'strategyCount'),
+        '$path.strategyCount',
+      ),
       updatedAt: _decodeNumber(
         object.value['updatedAt'] ?? _missing(path, 'updatedAt'),
         '$path.updatedAt',
@@ -778,6 +815,11 @@ final class FoldersListTreeResultItem {
 
   ConvexObject encode(String path) {
     return ConvexObject({
+      'agentTypes': ConvexArray(
+        agentTypes.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
       'color': color == null ? const ConvexNull() : ConvexString(color!),
       'createdAt': _encodeNumber(createdAt, '$path.createdAt'),
       'customColorValue': customColorValue == null
@@ -795,12 +837,18 @@ final class FoldersListTreeResultItem {
       'iconId': iconId == null
           ? const ConvexNull()
           : _encodeNumber(iconId!, '$path.iconId'),
+      'mapPeeks': ConvexArray(
+        mapPeeks.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
       'name': ConvexString(name),
       'parentFolderPublicId': parentFolderPublicId == null
           ? const ConvexNull()
           : ConvexString(parentFolderPublicId!),
       'publicId': ConvexString(publicId),
       'role': ConvexString(role.wireName),
+      'strategyCount': _encodeNumber(strategyCount, '$path.strategyCount'),
       'updatedAt': _encodeNumber(updatedAt, '$path.updatedAt'),
     });
   }

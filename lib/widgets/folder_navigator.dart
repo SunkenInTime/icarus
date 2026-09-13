@@ -320,7 +320,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 onImportBackup: handleImportBackup,
                 onExportLibrary: handleExportLibrary,
               ),
-              if (tab != LibraryTab.community) const CloudOutboxSummaryBanner(),
               Expanded(
                 child: ShadContextMenuRegion(
                   controller: _backgroundMenuController,
@@ -328,13 +327,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       ? const []
                       : [
                           ShadContextMenuItem(
-                            leading:
-                                const Icon(Icons.create_new_folder_outlined),
+                            leading: const Icon(LucideIcons.folderPlus),
                             onPressed: showCreateFolderDialog,
                             child: const Text('Create Folder'),
                           ),
                           ShadContextMenuItem(
-                            leading: const Icon(Icons.note_add_outlined),
+                            leading: const Icon(LucideIcons.filePlus),
                             onPressed: showCreateDialog,
                             child: const Text('Create Strategy'),
                           ),
@@ -352,6 +350,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             ],
           ),
         ),
+        // Cloud sync status floats over the library's corner so it never
+        // pushes the grid.
+        if (tab != LibraryTab.community)
+          const Positioned(
+            right: 16,
+            bottom: 16,
+            child: CloudOutboxSummaryBanner(),
+          ),
         if (_desktopUpdaterController != null)
           DesktopUpdateDialogListener(
             controller: _desktopUpdaterController!,
