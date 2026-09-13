@@ -58,6 +58,40 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
     });
   }
 
+  bool _isSubmitting = false;
+
+  /// Saves the folder and closes the dialog; Enter in the name field and the
+  /// Done button both land here, and a second submit while one is in flight
+  /// is ignored.
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    final name = _folderNameController.text.isEmpty
+        ? "New Folder"
+        : _folderNameController.text;
+    try {
+      if (widget.folder != null) {
+        ref.read(folderProvider.notifier).editFolder(
+              folder: widget.folder!,
+              newName: name,
+              newIconId: _selectedIconId,
+              newColor: _selectedColor,
+              newCustomColor: _customColor,
+            );
+      } else {
+        await ref.read(folderProvider.notifier).createFolder(
+              name: name,
+              iconId: _selectedIconId,
+              color: _selectedColor,
+              customColor: _customColor,
+            );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return ShadDialog(
@@ -79,31 +113,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: ShadButton(
             leading: const Icon(LucideIcons.check),
-            onPressed: () async {
-              if (widget.folder != null) {
-                ref.read(folderProvider.notifier).editFolder(
-                      folder: widget.folder!,
-                      newName: _folderNameController.text.isEmpty
-                          ? "New Folder"
-                          : _folderNameController.text,
-                      newIconId: _selectedIconId,
-                      newColor: _selectedColor,
-                      newCustomColor: _customColor,
-                    );
-                if (context.mounted) Navigator.of(context).pop();
-                return;
-              }
-              await ref.read(folderProvider.notifier).createFolder(
-                    name: _folderNameController.text.isEmpty
-                        ? "New Folder"
-                        : _folderNameController.text,
-                    iconId: _selectedIconId,
-                    color: _selectedColor,
-                    customColor: _customColor,
-                  );
-
-              if (context.mounted) Navigator.of(context).pop();
-            },
+            onPressed: _isSubmitting ? null : _submit,
             child: const Text("Done"),
           ),
         )

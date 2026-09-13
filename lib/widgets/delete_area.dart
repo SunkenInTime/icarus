@@ -11,7 +11,6 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DeleteArea extends ConsumerStatefulWidget {
   const DeleteArea({super.key});

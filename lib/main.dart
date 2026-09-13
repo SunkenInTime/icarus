@@ -374,7 +374,7 @@ class _MyAppState extends ConsumerState<MyApp> {
           primaryButtonTheme: ShadButtonTheme(
             decoration: ShadDecoration(
               gradient: Settings.raisedPrimaryFill,
-              shadows: [Settings.raisedDropShadow],
+              shadows: const [Settings.raisedDropShadow],
               border: const ShadBorder(
                 radius: BorderRadius.all(Radius.circular(6)),
                 top: ShadBorderSide(color: Settings.raisedTopLight, width: 1),
