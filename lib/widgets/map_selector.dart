@@ -16,12 +16,19 @@ class MapSelector extends ConsumerStatefulWidget {
 }
 
 class _MapSelectorState extends ConsumerState<MapSelector> {
-  static const double _cardWidth = 262;
   static const double _cardHeight = 65;
   static const double _outerRadius = 12;
   static const double _innerGap = 4;
   static const double _innerRadius = _outerRadius - _innerGap;
+  static const double _borderWidth = 1;
   static const double _sideToggleWidth = 66;
+  // Sized from the contents so the gap on the right of the side toggle equals
+  // the gap on the left of the map tile.
+  static const double _cardWidth = 2 * _borderWidth +
+      2 * _innerGap +
+      MapTile.width +
+      _innerGap +
+      _sideToggleWidth;
 
   final OverlayPortalController _controller = OverlayPortalController();
   final _link = LayerLink();
@@ -77,7 +84,10 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
         decoration: BoxDecoration(
           color: Settings.tacticalVioletTheme.card,
           borderRadius: const BorderRadius.all(Radius.circular(_outerRadius)),
-          border: Border.all(color: Settings.tacticalVioletTheme.border),
+          border: Border.all(
+            color: Settings.tacticalVioletTheme.border,
+            width: _borderWidth,
+          ),
         ),
         width: _cardWidth,
         height: _cardHeight,

@@ -81,13 +81,13 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                 style: style,
                 tooltip: 'Export .ica',
                 onPressed: _exportStrategy,
-                icon: const Icon(LucideIcons.upload300),
+                icon: const Icon(LucideIcons.upload200),
               ),
               EditorToolbarButton(
                 style: style,
                 tooltip: 'Export video',
                 onPressed: _exportVideo,
-                icon: const Icon(LucideIcons.clapperboard300),
+                icon: const Icon(LucideIcons.clapperboard200),
               ),
               EditorToolbarButton(
                 style: style,
@@ -104,7 +104,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                           ),
                         ),
                       )
-                    : const Icon(LucideIcons.camera300),
+                    : const Icon(LucideIcons.camera200),
               ),
               const EditorToolbarDivider(),
               EditorToolbarButton(
@@ -116,7 +116,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                     builder: (context) => const SettingsTab(),
                   );
                 },
-                icon: const Icon(LucideIcons.settings300),
+                icon: const Icon(LucideIcons.settings200),
               ),
             ],
           ),
@@ -274,10 +274,11 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   }
 }
 
-/// One control in the editor toolbar. Glyphs are the 300 stroke weight: the
-/// default 2px Lucide stroke reads heavy in white at 18px, and muted grey
-/// vanishes against the card, so the weight carries the quietness instead. [icon] is any 18px glyph, so buttons can swap
-/// in a spinner without changing size.
+/// One control in the editor toolbar. Glyphs are the 200 stroke weight and
+/// rest in [Settings.toolbarGlyph]: the default 2px Lucide stroke reads heavy
+/// at 18px, and full white on top of it shouts, so the weight and a step of
+/// grey share the quietness. Hover brings the glyph up to foreground. [icon]
+/// is any 18px glyph, so buttons can swap in a spinner without changing size.
 class EditorToolbarButton extends StatelessWidget {
   const EditorToolbarButton({
     super.key,
@@ -303,7 +304,7 @@ class EditorToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    final resting = foregroundColor ?? theme.foreground;
+    final resting = foregroundColor ?? Settings.toolbarGlyph;
     return Semantics(
       label: semanticsLabel ?? tooltip,
       button: true,
@@ -369,7 +370,7 @@ class _ViewOnlyChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(LucideIcons.eye300, size: 14, color: theme.mutedForeground),
+            Icon(LucideIcons.eye200, size: 14, color: theme.mutedForeground),
             const SizedBox(width: 6),
             Text(
               'View only',

@@ -246,14 +246,14 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     switch (status) {
       case _SyncStatus.synced:
         return Icon(
-          LucideIcons.cloudCheck300,
+          LucideIcons.cloudCheck200,
           key: const ValueKey('synced'),
           size: size,
           color: color,
         );
       case _SyncStatus.editing:
         return Icon(
-          LucideIcons.cloudUpload300,
+          LucideIcons.cloudUpload200,
           key: const ValueKey('editing'),
           size: size,
           color: color,
@@ -272,14 +272,14 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         );
       case _SyncStatus.offline:
         return Icon(
-          LucideIcons.cloudOff300,
+          LucideIcons.cloudOff200,
           key: const ValueKey('offline'),
           size: size,
           color: color,
         );
       case _SyncStatus.attention:
         return Icon(
-          LucideIcons.cloudAlert300,
+          LucideIcons.cloudAlert200,
           key: const ValueKey('attention'),
           size: size,
           color: color,
@@ -338,68 +338,78 @@ class _SyncStatusPopover extends StatelessWidget {
     final theme = ShadTheme.of(context);
     final lastSynced = saveState.lastPersistedAt;
 
-    return SizedBox(
-      width: 260,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _title,
-            style: theme.textTheme.small.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _explanation,
-            style: theme.textTheme.small.copyWith(
-              color: theme.colorScheme.mutedForeground,
-              height: 1.35,
-            ),
-          ),
-          if (resolutionError != null) ...[
-            const SizedBox(height: 8),
+    // Text alignment is inherited from the editor, which centers, so pin it
+    // here; the column's own alignment does not reach inside the Texts.
+    return DefaultTextStyle.merge(
+      textAlign: TextAlign.start,
+      child: SizedBox(
+        width: 260,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              resolutionError!,
+              _title,
               style: theme.textTheme.small.copyWith(
-                color: theme.colorScheme.destructive,
+                color: theme.colorScheme.foreground,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _explanation,
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.mutedForeground,
                 height: 1.35,
               ),
             ),
-          ],
-          if (lastSynced != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Last synced at ${_formatTime(lastSynced)}',
-              style: theme.textTheme.small.copyWith(
-                color: theme.colorScheme.mutedForeground,
-                fontSize: 11,
-              ),
-            ),
-          ],
-          if (status == _SyncStatus.attention &&
-              (!hasOtherStrategyAttention || hasActiveStrategyAttention)) ...[
-            const SizedBox(height: 12),
-            if (hasRejectedWork) ...[
-              ShadButton.secondary(
-                size: ShadButtonSize.sm,
-                expands: false,
-                onPressed: isResolving ? null : onUseCloudVersions,
-                child: const Text('Use cloud'),
-              ),
+            if (resolutionError != null) ...[
               const SizedBox(height: 8),
-            ],
-            ShadButton(
-              size: ShadButtonSize.sm,
-              expands: false,
-              onPressed: isResolving ? null : onRetry,
-              child: Text(
-                hasRejectedWork ? 'Keep mine' : 'Retry sync',
+              Text(
+                resolutionError!,
+                style: theme.textTheme.small.copyWith(
+                  color: theme.colorScheme.destructive,
+                  height: 1.35,
+                ),
               ),
-            ),
+            ],
+            if (lastSynced != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Last synced at ${_formatTime(lastSynced)}',
+                style: theme.textTheme.small.copyWith(
+                  color: theme.colorScheme.mutedForeground,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+            if (status == _SyncStatus.attention &&
+                (!hasOtherStrategyAttention || hasActiveStrategyAttention)) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (hasRejectedWork) ...[
+                    ShadButton.secondary(
+                      size: ShadButtonSize.sm,
+                      expands: false,
+                      onPressed: isResolving ? null : onUseCloudVersions,
+                      child: const Text('Use cloud'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  ShadButton(
+                    size: ShadButtonSize.sm,
+                    expands: false,
+                    onPressed: isResolving ? null : onRetry,
+                    child: Text(
+                      hasRejectedWork ? 'Keep mine' : 'Retry sync',
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
