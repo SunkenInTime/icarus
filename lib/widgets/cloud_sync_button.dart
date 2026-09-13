@@ -385,18 +385,18 @@ class _SyncStatusPopover extends StatelessWidget {
             if (status == _SyncStatus.attention &&
                 (!hasOtherStrategyAttention || hasActiveStrategyAttention)) ...[
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  if (hasRejectedWork) ...[
+                  if (hasRejectedWork)
                     ShadButton.secondary(
                       size: ShadButtonSize.sm,
                       expands: false,
                       onPressed: isResolving ? null : onUseCloudVersions,
                       child: const Text('Use cloud'),
                     ),
-                    const SizedBox(width: 8),
-                  ],
                   ShadButton(
                     size: ShadButtonSize.sm,
                     expands: false,
