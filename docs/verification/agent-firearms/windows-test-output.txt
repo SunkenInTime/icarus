@@ -1,5 +1,5 @@
 00:00 +0: loading C:/Users/shawn/.codex/worktrees/icarus-release/agent-firearms/integration_test/agent_weapon_test.dart
-Building Windows application...                                 
+Building Windows application...
 CMake Warning (dev) at flutter/ephemeral/.plugin_symlinks/flutter_inappwebview_windows/windows/CMakeLists.txt:31 (add_custom_command):
   The following keywords are not supported when using
   add_custom_command(TARGET): DEPENDS.
