@@ -13,7 +13,6 @@ import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';

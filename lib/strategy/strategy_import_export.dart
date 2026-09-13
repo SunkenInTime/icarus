@@ -36,7 +36,6 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';

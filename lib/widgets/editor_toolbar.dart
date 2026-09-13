@@ -16,7 +16,6 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';

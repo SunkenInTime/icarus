@@ -16,7 +16,6 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -256,7 +255,7 @@ void main() {
 
   testWidgets('pre-hydrated screenshot providers render without build writes',
       (tester) async {
-    final strategyState = StrategyState(
+    const strategyState = StrategyState(
       isSaved: true,
       stratName: 'test strategy',
       id: 'strategy-id',

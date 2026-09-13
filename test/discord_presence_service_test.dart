@@ -8,7 +8,7 @@ void main() {
   group('DiscordPresenceData', () {
     test('uses a generic library presence when no strategy is open', () {
       final presence = DiscordPresenceData.fromAppState(
-        strategy: StrategyState(
+        strategy: const StrategyState(
           isSaved: true,
           stratName: null,
           id: 'testID',
@@ -24,7 +24,7 @@ void main() {
 
     test('shares map and side without sharing the strategy name', () {
       final presence = DiscordPresenceData.fromAppState(
-        strategy: StrategyState(
+        strategy: const StrategyState(
           isSaved: false,
           stratName: 'Secret tournament execute',
           id: 'strategy-id',
@@ -46,7 +46,7 @@ void main() {
     test('summarizes what is on the board', () {
       DiscordPresenceData build({int agents = 0, int abilities = 0}) =>
           DiscordPresenceData.fromAppState(
-            strategy: StrategyState(
+            strategy: const StrategyState(
               isSaved: false,
               stratName: 'A-site rush',
               id: 'strategy-id',

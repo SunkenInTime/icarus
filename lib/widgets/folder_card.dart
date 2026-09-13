@@ -698,7 +698,6 @@ class _FolderCardState extends ConsumerState<FolderCard>
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
-        child: const Text('Edit'),
         enabled: _canManage,
         onPressed: !_canManage
             ? null
@@ -715,6 +714,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
                   },
                 );
               },
+        child: const Text('Edit'),
       ),
       if (_isCloud && widget.cloudRole == 'owner')
         ShadContextMenuItem(
@@ -743,8 +743,6 @@ class _FolderCardState extends ConsumerState<FolderCard>
       ShadContextMenuItem(
         leading: Icon(LucideIcons.trash2,
             color: Settings.tacticalVioletTheme.destructive),
-        child: Text('Delete',
-            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
         enabled: _canManage,
         onPressed: !_canManage
             ? null
@@ -759,6 +757,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
                   ),
                 );
               },
+        child: Text('Delete',
+            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
       ),
     ];
   }

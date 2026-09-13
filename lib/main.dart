@@ -46,7 +46,6 @@ import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -573,7 +572,7 @@ class _MyAppState extends ConsumerState<MyApp> {
           primaryButtonTheme: ShadButtonTheme(
             decoration: ShadDecoration(
               gradient: Settings.raisedPrimaryFill,
-              shadows: [Settings.raisedDropShadow],
+              shadows: const [Settings.raisedDropShadow],
               border: const ShadBorder(
                 radius: BorderRadius.all(Radius.circular(6)),
                 top: ShadBorderSide(color: Settings.raisedTopLight, width: 1),

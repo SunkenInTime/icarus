@@ -31,7 +31,6 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/transition_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {

@@ -9,7 +9,6 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
@@ -422,7 +421,6 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
-        child: const Text('Rename'),
         enabled: widget.canRename,
         onPressed: widget.canRename
             ? () {
@@ -430,10 +428,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _showRenameDialog();
               }
             : null,
+        child: const Text('Rename'),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.copy),
-        child: const Text('Duplicate'),
         enabled: widget.canDuplicate,
         onPressed: widget.canDuplicate
             ? () {
@@ -441,6 +439,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _duplicateStrategy();
               }
             : null,
+        child: const Text('Duplicate'),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
@@ -462,8 +461,6 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       ShadContextMenuItem(
         leading: Icon(LucideIcons.trash2,
             color: Settings.tacticalVioletTheme.destructive),
-        child: Text('Delete',
-            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
         enabled: widget.canDelete,
         onPressed: widget.canDelete
             ? () {
@@ -471,6 +468,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _showDeleteDialog();
               }
             : null,
+        child: Text('Delete',
+            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
       ),
     ];
   }

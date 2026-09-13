@@ -258,7 +258,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           ),
           // The canvas runs right up to the strip; each floating panel keeps
           // its own 8px of air so no bare band shows between the two.
-          Expanded(
+          const Expanded(
             child: Stack(
               clipBehavior: Clip.none,
               children: [

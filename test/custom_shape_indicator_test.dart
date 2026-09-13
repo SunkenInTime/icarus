@@ -23,7 +23,6 @@ import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _FixedMapProvider extends MapProvider {
   @override
