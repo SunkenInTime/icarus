@@ -1,0 +1,26 @@
+00:00 +0: loading C:/Users/shawn/.codex/worktrees/icarus-release/agent-firearms/integration_test/agent_weapon_test.dart
+Building Windows application...                                 
+CMake Warning (dev) at flutter/ephemeral/.plugin_symlinks/flutter_inappwebview_windows/windows/CMakeLists.txt:31 (add_custom_command):
+  The following keywords are not supported when using
+  add_custom_command(TARGET): DEPENDS.
+
+  Policy CMP0175 is not set: add_custom_command() rejects invalid arguments.
+  Run "cmake --help-policy CMP0175" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+Building Windows application...                                    47.3s
+√ Built build\windows\x64\runner\Debug\icarus.exe
+00:00 +0: plain agent selects, changes and removes a firearm by menu
+00:05 +1: plain firearm preserves drag anchor at different sizes and zooms
+00:07 +2: cone agent selects, changes and removes a firearm by menu
+00:12 +3: cone firearm preserves drag anchor at different sizes and zooms
+00:14 +4: circle agent selects, changes and removes a firearm by menu
+00:18 +5: circle firearm preserves drag anchor at different sizes and zooms
+00:21 +6: gun overhang paints outside the portrait and has no hit target
+00:22 +7: lineup origin offers the same firearm menu
+00:23 +8: lineup draft firearm edits do not change the source agent
+00:25 +9: shared page and video renderer fades weapon changes at one anchor
+00:27 +10: every bundled firearm renders beside an unchanged portrait
+00:28 +11: (tearDownAll)
+00:28 +11: All tests passed!
