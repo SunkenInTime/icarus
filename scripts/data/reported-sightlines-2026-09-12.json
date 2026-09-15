@@ -1,0 +1,420 @@
+{
+  "version": 1,
+  "reviewer": "Codex",
+  "sourceRevision": "Valorant 13.05",
+  "basis": "User screenshots and descriptions identify the intended playable floors, opaque ramp sides, open ledge, stacked Haven passage, and window sightlines. Source IDs and measurements were resolved by the agent.",
+  "maps": {
+    "abyss": {
+      "standingSource": "work\\abyss-all-reviewed-v1\\regional-floors.json",
+      "standingSourceSha256": "533f9242d5bb5a0ff6c5b49a31cf8df43ba653f14715644606ae95ce81dac950",
+      "excludedStandingDomains": [
+        {
+          "id": "volume-132-0",
+          "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_513/Cube#0",
+          "sourceFaces": [
+            [
+              132,
+              0
+            ],
+            [
+              132,
+              1
+            ]
+          ],
+          "nativePlane": [
+            -0.0,
+            -0.0,
+            20.0
+          ],
+          "areaSquareMeters": 272.5159255667055
+        },
+        {
+          "id": "volume-142-0",
+          "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_523/Cube#0",
+          "sourceFaces": [
+            [
+              142,
+              10
+            ],
+            [
+              142,
+              11
+            ]
+          ],
+          "nativePlane": [
+            -0.0,
+            0.0,
+            20.0
+          ],
+          "areaSquareMeters": 14.205414219807517
+        },
+        {
+          "id": "volume-141-0",
+          "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_522/Cube#0",
+          "sourceFaces": [
+            [
+              141,
+              10
+            ],
+            [
+              141,
+              11
+            ]
+          ],
+          "nativePlane": [
+            0.0,
+            -0.0,
+            19.5805
+          ],
+          "areaSquareMeters": 20.23440064094661
+        }
+      ],
+      "excludedSupportIds": [
+        "abyss-physical-top-4bc6a0466fbf",
+        "abyss-physical-top-16cff8e787b9",
+        "abyss-measured-volume-132-0",
+        "abyss-physical-top-e80172155f47"
+      ],
+      "restoredStandingDomain": "volume-1-0",
+      "restoredStandingLabel": "Ledge",
+      "openingWalls": [
+        {
+          "wall": "p7-stroke-0",
+          "objects": [
+            4918,
+            5112,
+            5141,
+            5144
+          ],
+          "axis": 1,
+          "cross": [
+            307.8,
+            309.3
+          ],
+          "mode": "measured-intervals",
+          "behavior": "Preserve measured solid sections and the user-confirmed opening."
+        },
+        {
+          "wall": "p7-stroke-1",
+          "objects": [
+            5112
+          ],
+          "axis": 0,
+          "cross": [
+            93.9,
+            95.1
+          ],
+          "mode": "window-frame",
+          "openingEyeElevationMeters": 7.75,
+          "behavior": "The perpendicular opening is usable from the 6 m ramp landing; retain the 7 m sill, 9 m header and solid end posts."
+        }
+      ],
+      "sightlineFloorSupportIds": [],
+      "baselineSha256": {
+        "attack": "fbb0798669ee35e0e4cda56a24b6f1b4ceaada8581cba380db861fd79e327839",
+        "defense": "98e98e91c89bcb1b2eb2a9fb99b7fde79f4d35c507d4fada3f565443d162f530"
+      }
+    },
+    "haven": {
+      "standingSource": "work\\haven-all-reviewed-v1\\regional-floors.json",
+      "standingSourceSha256": "c0a2ea2365095a661e39febb584ccda0e64b45e754af7b5f27c5a2f7be961fc3",
+      "excludedStandingDomains": [
+        {
+          "id": "volume-35-0",
+          "sourceCollision": "/Triad_BVPawn/BP_BlockingVolume37/Cube#0",
+          "sourceFaces": [
+            [
+              35,
+              10
+            ],
+            [
+              35,
+              11
+            ]
+          ],
+          "nativePlane": [
+            0.0,
+            -0.0,
+            45.0
+          ],
+          "areaSquareMeters": 48.000007200000084
+        },
+        {
+          "id": "volume-34-0",
+          "sourceCollision": "/Triad_BVPawn/BP_BlockingVolume36/Cube#0",
+          "sourceFaces": [
+            [
+              34,
+              10
+            ],
+            [
+              34,
+              11
+            ]
+          ],
+          "nativePlane": [
+            0.0,
+            -0.0,
+            62.0
+          ],
+          "areaSquareMeters": 55.00000879999995
+        }
+      ],
+      "excludedSupportIds": [
+        "haven-physical-top-c55edbdf823e",
+        "haven-measured-volume-35-0",
+        "haven-physical-top-b6f98cf0700e",
+        "haven-measured-volume-34-0"
+      ],
+      "restoredStandingDomain": "volume-195-0",
+      "restoredStandingLabel": "Window sill",
+      "openingWalls": [
+        {
+          "wall": "p3-stroke-12",
+          "objects": [
+            7140,
+            3528,
+            6973,
+            7012
+          ],
+          "axis": 1,
+          "cross": [
+            307.8,
+            309.2
+          ],
+          "mode": "window-frame",
+          "behavior": "Preserve measured solid sections and the user-confirmed opening.",
+          "openingEyeElevationMeters": 4.75
+        },
+        {
+          "wall": "p8-stroke-0",
+          "objects": [
+            6673,
+            6672,
+            6675,
+            6674,
+            6680,
+            6683,
+            6687,
+            6692,
+            6676,
+            6697,
+            745,
+            746,
+            6730,
+            6731,
+            6733
+          ],
+          "mode": "measured-intervals",
+          "sections": [
+            {
+              "axis": 0,
+              "cross": [
+                351.8,
+                352.6
+              ],
+              "clipBox": [
+                -1000,
+                124.101,
+                1000,
+                1000
+              ]
+            },
+            {
+              "axis": 1,
+              "cross": [
+                123.4,
+                124.3
+              ],
+              "clipBox": [
+                -1000,
+                -1000,
+                1000,
+                124.101
+              ]
+            }
+          ],
+          "behavior": "The lower interior wall blocks the 3 m passage but is absent at the 9 m upper floor; preserve upper walls and overhead beams where they actually intersect."
+        },
+        {
+          "wall": "p4-stroke-7",
+          "objects": [
+            6673,
+            6672,
+            6675,
+            6674,
+            6692,
+            6676,
+            6697,
+            745,
+            746,
+            6730,
+            6731,
+            6733
+          ],
+          "axis": 1,
+          "cross": [
+            154.1,
+            156.3
+          ],
+          "mode": "measured-intervals",
+          "behavior": "Keep the lower passage exit and upper tower window distinct, including their solid side walls, balcony base and header."
+        },
+        {
+          "wall": "p3-stroke-18",
+          "objects": [
+            6673,
+            6672,
+            6675,
+            6674,
+            6692,
+            6676,
+            6697,
+            745,
+            746,
+            6730,
+            6731,
+            6733
+          ],
+          "axis": 1,
+          "cross": [
+            154.1,
+            156.3
+          ],
+          "mode": "measured-intervals",
+          "behavior": "Keep the lower passage exit and upper tower window distinct, including their solid side walls, balcony base and header."
+        },
+        {
+          "wall": "p4-stroke-9",
+          "objects": [
+            6673,
+            6672,
+            6675,
+            6674,
+            6692,
+            6676,
+            6697,
+            745,
+            746,
+            6730,
+            6731,
+            6733
+          ],
+          "axis": 1,
+          "cross": [
+            154.1,
+            156.3
+          ],
+          "mode": "measured-intervals",
+          "behavior": "Keep the lower passage exit and upper tower window distinct, including their solid side walls, balcony base and header."
+        }
+      ],
+      "sightlineFloorSupportIds": [
+        "haven-measured-volume-362-0"
+      ],
+      "baselineSha256": {
+        "attack": "44f89047d6fbb3bce1556c5dbc8573e539eefecd5fc7872f5d6ffe043151a259",
+        "defense": "bc64771fc956c14ac61ec2fad9ef928ddc353855b2a05dce0f00f3aba4dc64d2"
+      }
+    }
+  },
+  "gameplayExpectations": [
+    {
+      "map": "abyss",
+      "position": [
+        206.875,
+        196.25
+      ],
+      "floors": [
+        8
+      ],
+      "behavior": "Mid faces the continuous structural wall without the fragmented view from an invisible collision-volume top."
+    },
+    {
+      "map": "abyss",
+      "position": [
+        81.875,
+        345
+      ],
+      "floors": [
+        4
+      ],
+      "behavior": "Ramp side walls block; the perpendicular opening remains usable."
+    },
+    {
+      "map": "abyss",
+      "position": [
+        38.125,
+        321.25
+      ],
+      "floors": [
+        8
+      ],
+      "behavior": "See across the horizontal ledge directly above the agent, toward the site. The user explicitly confirmed this direction."
+    },
+    {
+      "map": "haven",
+      "position": [
+        357.5,
+        128.125
+      ],
+      "floors": [
+        3,
+        9
+      ],
+      "behavior": "Retain the lower passage and upper floor; the bordering wall blocks."
+    },
+    {
+      "map": "haven",
+      "position": [
+        193.33,
+        320.61
+      ],
+      "floors": [
+        3
+      ],
+      "behavior": "See outward through the window."
+    },
+    {
+      "map": "haven",
+      "position": [
+        198.18,
+        256.97
+      ],
+      "behavior": "See upward through the window into its measured 3 m interior floor. Preserve the solid sill and overhead frame."
+    },
+    {
+      "map": "abyss",
+      "position": [
+        88,
+        320
+      ],
+      "floors": [
+        6
+      ],
+      "behavior": "The landing keeps the perpendicular opening usable as the agent climbs the ramp."
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-3379d4c4-8210-44fc-a363-a430343c3f1b.png",
+      "sha256": "fbf547b44217095f5b9ec8f0144b031a738829046f043923ce40604a17dbdc79"
+    },
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-38f6e614-c668-4767-ad88-3845a401cd8b.png",
+      "sha256": "bed3ed9b2a6cee9982d4adb2850e0b8902c8eeb7f37d09423a74c2734b24d912"
+    },
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-5f606b73-12f3-4528-913c-eaca023292c9.png",
+      "sha256": "b2a518eaec0e5324190d49a11c4fe47c223cce9f2ee2177763ab763f9ce9e3d5"
+    },
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-a4f20bc0-c349-4e1e-8a62-28fd948cef6c.png",
+      "sha256": "ba82728634a56ec94122097e9d196b690716fcc2bcf763942ce38fe0a3bbbc7f"
+    },
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-e8ef2907-a567-43fe-b8e6-8f2e367e3da5.png",
+      "sha256": "59656052040bcfadf35fc84897b0a12bd889167735773be3561e81bdae90df67"
+    }
+  ]
+}

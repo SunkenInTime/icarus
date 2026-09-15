@@ -1,0 +1,580 @@
+{
+  "reviewSha256": "ce7e6bc5bdb30c6cfb9f8407b4b1022d5934a2f3167b81db89b4178c6a4ab2cf",
+  "cases": [
+    {
+      "map": "abyss",
+      "id": "atrium-measured-header-block",
+      "absoluteEyeMeters": 12.75,
+      "expectedFloorMeters": null,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": false,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            48.17988965517242,
+            305.1742805064673
+          ],
+          "target": [
+            48.1798896551724,
+            309.94
+          ]
+        },
+        "defense": {
+          "origin": [
+            405.3378103448276,
+            167.63171949353267
+          ],
+          "target": [
+            405.3378103448276,
+            162.86599999999999
+          ]
+        }
+      }
+    },
+    {
+      "map": "abyss",
+      "id": "atrium-reviewed-upper-opening",
+      "absoluteEyeMeters": 9.75,
+      "expectedFloorMeters": null,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": false,
+      "expectedBlocked": false,
+      "sides": {
+        "attack": {
+          "origin": [
+            48.17988965517242,
+            305.1742805064673
+          ],
+          "target": [
+            48.1798896551724,
+            309.94
+          ]
+        },
+        "defense": {
+          "origin": [
+            405.3378103448276,
+            167.63171949353267
+          ],
+          "target": [
+            405.3378103448276,
+            162.86599999999999
+          ]
+        }
+      }
+    },
+    {
+      "map": "ascent",
+      "id": "lion-supported-facade-block",
+      "absoluteEyeMeters": 7.189,
+      "expectedFloorMeters": 5.439,
+      "sourceControlFloorMeters": 5.439,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            128.9,
+            93.1
+          ],
+          "target": [
+            132.45619627797868,
+            92.58371149184447
+          ]
+        },
+        "defense": {
+          "origin": [
+            282.1,
+            380.9
+          ],
+          "target": [
+            278.5438037220213,
+            381.4162885081555
+          ]
+        }
+      }
+    },
+    {
+      "map": "haven",
+      "id": "basalt-before-wall-clear",
+      "absoluteEyeMeters": 4.75,
+      "expectedFloorMeters": 3.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": false,
+      "sides": {
+        "attack": {
+          "origin": [
+            223.12970503334455,
+            50.451358924171814
+          ],
+          "target": [
+            222.3,
+            50.5
+          ]
+        },
+        "defense": {
+          "origin": [
+            169.86129496665544,
+            422.5486410758282
+          ],
+          "target": [
+            170.69099999999997,
+            422.5
+          ]
+        }
+      }
+    },
+    {
+      "map": "pearl",
+      "id": "mid-wall-before-wall-clear",
+      "absoluteEyeMeters": 9.75,
+      "expectedFloorMeters": 8.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": false,
+      "sides": {
+        "attack": {
+          "origin": [
+            260.29555142993854,
+            285.34985
+          ],
+          "target": [
+            259.7,
+            285.34985
+          ]
+        },
+        "defense": {
+          "origin": [
+            208.37214857006143,
+            187.65015
+          ],
+          "target": [
+            208.96769999999998,
+            187.65015
+          ]
+        }
+      }
+    },
+    {
+      "map": "pearl",
+      "id": "mid-door-flat-edge-clear",
+      "absoluteEyeMeters": 9.75,
+      "expectedFloorMeters": 8.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": false,
+      "sides": {
+        "attack": {
+          "origin": [
+            239.441902,
+            265.418986
+          ],
+          "target": [
+            237.440141,
+            263.83633
+          ]
+        },
+        "defense": {
+          "origin": [
+            229.22579799999997,
+            207.58101399999998
+          ],
+          "target": [
+            231.22755899999996,
+            209.16367000000002
+          ]
+        }
+      }
+    },
+    {
+      "map": "abyss",
+      "id": "p7-stroke-0-station-2-0",
+      "absoluteEyeMeters": 5.75,
+      "expectedFloorMeters": 4.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            48.17988965517242,
+            305.1742805064673
+          ],
+          "target": [
+            48.1798896551724,
+            309.94
+          ]
+        },
+        "defense": {
+          "origin": [
+            405.3378103448276,
+            167.63171949353267
+          ],
+          "target": [
+            405.3378103448276,
+            162.86599999999999
+          ]
+        }
+      }
+    },
+    {
+      "map": "abyss",
+      "id": "p7-stroke-0-station-11-0",
+      "absoluteEyeMeters": 5.75,
+      "expectedFloorMeters": 4.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            30.73677241379309,
+            305.1742805064673
+          ],
+          "target": [
+            30.736772413793116,
+            309.94
+          ]
+        },
+        "defense": {
+          "origin": [
+            422.7809275862069,
+            167.63171949353267
+          ],
+          "target": [
+            422.7809275862069,
+            162.86599999999999
+          ]
+        }
+      }
+    },
+    {
+      "map": "abyss",
+      "id": "p7-stroke-0-station-26-0",
+      "absoluteEyeMeters": 5.75,
+      "expectedFloorMeters": 4.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            47.67988965517242,
+            305.1742805064673
+          ],
+          "target": [
+            47.67988965517242,
+            310.44
+          ]
+        },
+        "defense": {
+          "origin": [
+            405.8378103448276,
+            167.63171949353267
+          ],
+          "target": [
+            405.8378103448276,
+            162.36599999999999
+          ]
+        }
+      }
+    },
+    {
+      "map": "ascent",
+      "id": "p1-fill-3-station-145-0",
+      "absoluteEyeMeters": 7.189,
+      "expectedFloorMeters": null,
+      "sourceControlFloorMeters": 5.439,
+      "verifyAutomaticFloor": false,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            130.32635703915588,
+            93.03695210441572
+          ],
+          "target": [
+            132.45619627797868,
+            92.58371149184447
+          ]
+        },
+        "defense": {
+          "origin": [
+            280.6736429608441,
+            380.9630478955843
+          ],
+          "target": [
+            278.5438037220213,
+            381.4162885081555
+          ]
+        }
+      }
+    },
+    {
+      "map": "ascent",
+      "id": "p1-fill-3-station-145-1",
+      "absoluteEyeMeters": 7.189,
+      "expectedFloorMeters": null,
+      "sourceControlFloorMeters": 5.439,
+      "verifyAutomaticFloor": false,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            130.32635703915588,
+            93.03695210441572
+          ],
+          "target": [
+            136.36858883393603,
+            91.75113447553342
+          ]
+        },
+        "defense": {
+          "origin": [
+            280.6736429608441,
+            380.9630478955843
+          ],
+          "target": [
+            274.63141116606397,
+            382.24886552446657
+          ]
+        }
+      }
+    },
+    {
+      "map": "ascent",
+      "id": "p1-fill-3-station-145-2",
+      "absoluteEyeMeters": 7.189,
+      "expectedFloorMeters": null,
+      "sourceControlFloorMeters": 5.439,
+      "verifyAutomaticFloor": false,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            130.32635703915588,
+            93.03695210441572
+          ],
+          "target": [
+            142.2371776678721,
+            90.50226895106684
+          ]
+        },
+        "defense": {
+          "origin": [
+            280.6736429608441,
+            380.9630478955843
+          ],
+          "target": [
+            268.76282233212794,
+            383.49773104893313
+          ]
+        }
+      }
+    },
+    {
+      "map": "haven",
+      "id": "p3-stroke-13-station-12-0",
+      "absoluteEyeMeters": 4.75,
+      "expectedFloorMeters": 3.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            223.12970503334455,
+            50.451358924171814
+          ],
+          "target": [
+            215.98818930616292,
+            50.86808988665584
+          ]
+        },
+        "defense": {
+          "origin": [
+            169.86129496665544,
+            422.5486410758282
+          ],
+          "target": [
+            177.00281069383706,
+            422.13191011334413
+          ]
+        }
+      }
+    },
+    {
+      "map": "haven",
+      "id": "p3-stroke-13-station-12-1",
+      "absoluteEyeMeters": 4.75,
+      "expectedFloorMeters": 3.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            224.5314100666891,
+            50.3841531424614
+          ],
+          "target": [
+            215.98629567956752,
+            50.833968156261044
+          ]
+        },
+        "defense": {
+          "origin": [
+            168.4595899333109,
+            422.6158468575386
+          ],
+          "target": [
+            177.00470432043247,
+            422.16603184373895
+          ]
+        }
+      }
+    },
+    {
+      "map": "haven",
+      "id": "p3-stroke-13-station-12-2",
+      "absoluteEyeMeters": 4.75,
+      "expectedFloorMeters": 3.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            226.98439387504203,
+            50.266543024468035
+          ],
+          "target": [
+            215.98558791713162,
+            50.82022250719534
+          ]
+        },
+        "defense": {
+          "origin": [
+            166.00660612495795,
+            422.73345697553196
+          ],
+          "target": [
+            177.00541208286836,
+            422.17977749280465
+          ]
+        }
+      }
+    },
+    {
+      "map": "pearl",
+      "id": "p19-stroke-0-station-6-0",
+      "absoluteEyeMeters": 9.75,
+      "expectedFloorMeters": 8.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            260.29555142993854,
+            285.34985
+          ],
+          "target": [
+            253.324,
+            285.34985
+          ]
+        },
+        "defense": {
+          "origin": [
+            208.37214857006143,
+            187.65015
+          ],
+          "target": [
+            215.34369999999996,
+            187.65015
+          ]
+        }
+      }
+    },
+    {
+      "map": "pearl",
+      "id": "p19-stroke-0-station-28-0",
+      "absoluteEyeMeters": 9.75,
+      "expectedFloorMeters": 8.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            260.29555142993854,
+            284.22235
+          ],
+          "target": [
+            252.324,
+            284.22235
+          ]
+        },
+        "defense": {
+          "origin": [
+            208.37214857006143,
+            188.77765
+          ],
+          "target": [
+            216.34369999999996,
+            188.77765
+          ]
+        }
+      }
+    },
+    {
+      "map": "pearl",
+      "id": "p19-stroke-0-station-57-0",
+      "absoluteEyeMeters": 9.75,
+      "expectedFloorMeters": 8.0,
+      "sourceControlFloorMeters": null,
+      "verifyAutomaticFloor": true,
+      "expectedBlocked": true,
+      "sides": {
+        "attack": {
+          "origin": [
+            248.40889714012297,
+            284.75425
+          ],
+          "target": [
+            256.852,
+            284.75425
+          ]
+        },
+        "defense": {
+          "origin": [
+            220.258802859877,
+            188.24575
+          ],
+          "target": [
+            211.8157,
+            188.24575
+          ]
+        }
+      }
+    }
+  ],
+  "floorControls": [
+    {
+      "map": "pearl",
+      "id": "opened-mid-door-retains-physical-floor",
+      "expectedFloorMeters": 8.0,
+      "sides": {
+        "attack": [
+          239.00071119,
+          264.415219
+        ],
+        "defense": [
+          229.66698880999996,
+          208.58478100000002
+        ]
+      }
+    }
+  ]
+}

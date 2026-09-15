@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "map": "pearl",
+  "name": "lower B Hall tunnel mouth",
+  "basis": "The complete B Hall tunnel assembly has a continuous lower passage beneath its ceiling. Current attack and defense assignments disagree at the same 2.5 m floor. Measure the tunnel shell, interior sides/floor and roof together; retain the first jamb and upper structure. This is a lower passage, distinct from the previously reviewed upper B Hall window.",
+  "standingSource": "work\\pearl-all-reviewed-v1\\regional-floors.json",
+  "standingSourceSha256": "362c4fcac40ecaa50de4d8da504498d1871ed9197407de1fe63b79cde3996cf3",
+  "baselineSha256": {
+    "attack": "1eefe3876f70bd895d23cb0cc6801c60d0eb4bf928a1397c2ace08e337e71dcd",
+    "defense": "610d3b1f18f3bc748f6903f2b1b8e12feacd951a02fbc094f7975da25c0efb35"
+  },
+  "sourceSha256": {
+    "geometry": "f14bb163751e314823e6ecbb41ff862d14eb904f883833f2e3bd3c9105a47309",
+    "metadata": "44acf34008a17d1bc799a0ebd8d651bf3457a8ec0734743575d6f25a20c69570",
+    "alignment": "c7961001b98eeba16a70be47ba531e09aa1bb0f24e238d1e4886c639e2a69f8a",
+    "footprint": "f013d4adb89cb586dc1dda10ef162acef60fd3979219708e219e39a219025571",
+    "defenseFootprint": "db2389e76abbaa55cd173b62fd2b6a20426f73d83a2acdd7513ab8ef15fb826d"
+  },
+  "parent": "p8-stroke-1",
+  "sourceObjects": [
+    6943,
+    6944,
+    6945,
+    6949,
+    6950,
+    6957
+  ],
+  "sourceCrossAxis": 1,
+  "sourceCrossRange": [
+    21.1,
+    22.5
+  ],
+  "svgAlongRange": [
+    160.052,
+    178.297
+  ],
+  "eyeElevationMeters": 4.25,
+  "standingFloorMeters": 2.5,
+  "sourceMeasurement": "Native source sections are projected through the frozen alignment. No SVG footprint or endpoint moves.",
+  "reference": "https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-6-11/"
+}

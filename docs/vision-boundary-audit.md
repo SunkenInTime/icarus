@@ -1,5 +1,8 @@
 # Vision boundary audit
 
+Historical investigation. For current implementation decisions, follow
+[the visibility model](vision-model.md).
+
 September 4, 2026. Runtime inspected at `5861ee3`, after the Sunset scale fix.
 
 Renyxx reported choppy collisions on Split. The current implementation contains

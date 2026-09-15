@@ -1,0 +1,384 @@
+{
+  "version": 1,
+  "map": "lotus",
+  "sources": {
+    "geometry": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\lotus\\geometry.npz",
+      "sha256": "6d08fd13b043a9e7417b8fd64abb7b92b80eb24867e93e007aa36d86917a2101"
+    },
+    "metadata": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\lotus\\geometry.json",
+      "sha256": "0c591ebb0f04ca7a5591752e482480afeb98d56113693c936c8d8e7c5254f90e"
+    },
+    "alignment": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\tactical-alignment-sides-v1\\lotus.json",
+      "sha256": "ee381b4263f91f1498f66272babfa356ed25ae6ce5487c107ff77f2259bb59f0"
+    },
+    "profile": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\tactical-visibility-revision\\all-map-finite-heights-v7\\lotus\\local-source-profiles.json",
+      "sha256": "66f94bf7325cd19d51f62dae27c7e1e0802662e5d75d976c3069e4587baeb4dc"
+    }
+  },
+  "baseline": {
+    "attack": {
+      "path": "work/fracture-wall-review-2026-09-14/lotus/before-attack.json.gz",
+      "sha256": "fe4e93edfd6ca3285cbb12e9af834af85c3cf4c69663fa9c6e8ba3c187c85e3d"
+    },
+    "defense": {
+      "path": "work/fracture-wall-review-2026-09-14/lotus/before-defense.json.gz",
+      "sha256": "2cb407e6d46d1796cd57866be202ab6d6ac9955b127fb30f8e9eca669b5270c7"
+    }
+  },
+  "basis": "Correct only the local base cells to their complete continuous primary facade. Separate upper roof and wing intervals do not become a continuous solid cap.",
+  "corrections": [
+    {
+      "id": "lotus-primary-facade-3028",
+      "sourceObjects": [
+        3028
+      ],
+      "sourcePaths": [
+        "Jam_Art_ASite/ASiteTreeRoomPillarA/StaticMeshComponent0.053"
+      ],
+      "parents": {
+        "attack": "p3-stroke-11",
+        "defense": "p3-stroke-2"
+      },
+      "sectionSpace": "native",
+      "sections": [
+        {
+          "axis": 0,
+          "cross": [
+            68.6,
+            68.81
+          ],
+          "along": [
+            -60.49,
+            -60.3
+          ]
+        }
+      ],
+      "mode": "complete-solid-facade",
+      "rings": [
+        [
+          469.27489816854865,
+          187.514,
+          469.2516735678956,
+          188.3701271570682,
+          469.987,
+          188.70992680221812,
+          469.987,
+          187.514,
+          469.27489816854865,
+          187.514
+        ]
+      ],
+      "sideRings": {
+        "attack": [
+          [
+            469.27489816854865,
+            187.514,
+            469.2516735678956,
+            188.3701271570682,
+            469.987,
+            188.70992680221812,
+            469.987,
+            187.514,
+            469.27489816854865,
+            187.514
+          ]
+        ],
+        "defense": [
+          [
+            22.818101831451372,
+            285.09999999999997,
+            22.841326432104438,
+            284.24387284293175,
+            22.1066,
+            283.9043504621072,
+            22.1066,
+            285.09999999999997,
+            22.818101831451372,
+            285.09999999999997
+          ]
+        ]
+      },
+      "measuredSections": [
+        [
+          [
+            3.0000035762786865,
+            8.65845775604248
+          ]
+        ]
+      ],
+      "bands": [
+        [
+          0.0,
+          8.65845775604248
+        ]
+      ],
+      "sourceFaces": [
+        1338592,
+        1338593,
+        1338594,
+        1338595,
+        1338596,
+        1338597,
+        1338598,
+        1338599,
+        1338600,
+        1338601,
+        1338602,
+        1338603,
+        1338604,
+        1338605,
+        1338606,
+        1338607,
+        1338608,
+        1338609,
+        1338610,
+        1338611,
+        1338612,
+        1338613,
+        1338614,
+        1338615,
+        1338616
+      ],
+      "rationale": "The flagged cell is the outer authored corner of the same TreeRoom pillar. Selected base faces stop at 4.08843 m, while the immediately inset complete pillar is continuous to 8.658457756 m. The source-to-ink registration distance is 0.28454 m. This correction explicitly associates that painted corner with its pillar; the source section is inset and is not falsely described as direct XY overlap."
+    },
+    {
+      "id": "lotus-primary-facade-4119",
+      "sourceObjects": [
+        4119
+      ],
+      "sourcePaths": [
+        "Jam_Art_AtkSpawn/Shell_2_AtkPathBExtWingA/StaticMeshComponent0.1039"
+      ],
+      "parents": {
+        "attack": "p3-stroke-5",
+        "defense": "p3-stroke-9"
+      },
+      "sectionSpace": "native",
+      "sections": [
+        {
+          "axis": 0,
+          "cross": [
+            27.85,
+            28.07
+          ],
+          "along": [
+            4.731960571420785,
+            4.932999217534551
+          ]
+        }
+      ],
+      "mode": "complete-solid-facade",
+      "rings": [
+        [
+          205.0850216331332,
+          351.761,
+          204.7567061438357,
+          353.31328873075626,
+          205.568,
+          353.5288863539729,
+          205.568,
+          351.761,
+          205.0850216331332,
+          351.761
+        ]
+      ],
+      "sideRings": {
+        "attack": [
+          [
+            205.0850216331332,
+            351.761,
+            204.7567061438357,
+            353.31328873075626,
+            205.568,
+            353.5288863539729,
+            205.568,
+            351.761,
+            205.0850216331332,
+            351.761
+          ]
+        ],
+        "defense": [
+          [
+            287.00797836686684,
+            120.85299999999995,
+            287.33629385616433,
+            119.30071126924372,
+            286.525,
+            119.08511364602708,
+            286.525,
+            120.85299999999995,
+            287.00797836686684,
+            120.85299999999995
+          ]
+        ]
+      },
+      "measuredSections": [
+        [
+          [
+            2.087969285691413,
+            8.728802680969238
+          ]
+        ]
+      ],
+      "bands": [
+        [
+          0.0,
+          8.728802680969238
+        ]
+      ],
+      "sourceFaces": [
+        1955215,
+        1955216,
+        1955219,
+        1955220,
+        1955223,
+        1955224,
+        1955225,
+        1955226,
+        1955239,
+        1955240,
+        1955241,
+        1955242,
+        1955536,
+        1955537,
+        1955538,
+        1955539,
+        1955540,
+        1955541,
+        1955542,
+        1955543,
+        1955544,
+        1955545,
+        1955546,
+        1955547,
+        1955548,
+        1955549,
+        1955550,
+        1955551,
+        1955552,
+        1955553
+      ],
+      "rationale": "At the outer WingA corner, selected lower triangles stop at 3.8131 m. The full primary corner facade is continuous to 8.728802681 m. The section stays at Y 4.73..4.94, away from the visible arched opening around Y 2..3.5. Upper wing components are measured separately and do not justify filling their separated upper intervals."
+    },
+    {
+      "id": "lotus-primary-facade-5115",
+      "sourceObjects": [
+        5115
+      ],
+      "sourcePaths": [
+        "Jam_Art_DefSpawn/Shell_0_DefPathBExteriorB/StaticMeshComponent0.2004"
+      ],
+      "parents": {
+        "attack": "p3-stroke-6",
+        "defense": "p3-stroke-8"
+      },
+      "sectionSpace": "native",
+      "sections": [
+        {
+          "axis": 0,
+          "cross": [
+            97.2,
+            98.2
+          ],
+          "along": [
+            -9.759633287016257,
+            -9.511895201826675
+          ]
+        }
+      ],
+      "mode": "complete-solid-facade",
+      "rings": [
+        [
+          263.04925000000003,
+          69.659,
+          264.049,
+          69.659,
+          264.049,
+          68.659,
+          263.04925000000003,
+          68.659,
+          263.04925000000003,
+          69.659
+        ]
+      ],
+      "sideRings": {
+        "attack": [
+          [
+            263.04925000000003,
+            69.659,
+            264.049,
+            69.659,
+            264.049,
+            68.659,
+            263.04925000000003,
+            68.659,
+            263.04925000000003,
+            69.659
+          ]
+        ],
+        "defense": [
+          [
+            229.04375,
+            402.955,
+            228.04400000000004,
+            402.955,
+            228.04400000000004,
+            403.955,
+            229.04375,
+            403.955,
+            229.04375,
+            402.955
+          ]
+        ]
+      },
+      "measuredSections": [
+        [
+          [
+            4.937564373016357,
+            8.93776798248291
+          ]
+        ]
+      ],
+      "bands": [
+        [
+          0.0,
+          8.93776798248291
+        ]
+      ],
+      "sourceFaces": [
+        2575324,
+        2575325,
+        2575326,
+        2575333,
+        2575334,
+        2575397,
+        2575398,
+        2575399,
+        2575400,
+        2575556,
+        2575557,
+        2575560,
+        2575562,
+        2575563,
+        2575564,
+        2575566,
+        2575570,
+        2575575,
+        2575577,
+        2575581,
+        2575585,
+        2575590,
+        2575592,
+        2575593,
+        2575597,
+        2575599,
+        2575600
+      ],
+      "rationale": "Selected bottom-panel triangles stop at 5.64482 m beneath the inset continuous DefPathBExterior wall. The complete primary section across the exact low-cell Y span reaches 8.937767982 m. The roof above has separated intervals and is not collapsed into a solid wall cap."
+    }
+  ]
+}

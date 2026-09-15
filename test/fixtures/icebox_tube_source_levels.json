@@ -1,0 +1,1020 @@
+{
+  "sourceCollidersSha256": "e1c34589c2d01428e196761fee89aceb185cdb47bbc27212122c8abcd1eabbec",
+  "sourceMeshesSha256": "6ee6f4e10d87597672fb80789cffe0189bf4ee9ce86e460f43c975150ab51cf2",
+  "alignmentSha256": "b4ca76f2eedc5cb50180aacf5fe1e062259aa7f61eaf1e3fa04cfc53074d218a",
+  "algorithmSha256": "439097ee9ccca9dee3027f326b73bed0d1cce2f722c8b1d11376923d99a30f55",
+  "convexBoundaryOrientation": [
+    "/Port_KillVolumes/BP_PlayerKillVolume15_Bottom/StaticMesh#0",
+    "/Port_KillVolumes/BP_PlayerKillVolume16_Top/StaticMesh#0",
+    "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume159/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume139/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume160/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume239/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume166/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume438/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume511/Cube#0",
+    "/Port_BVPawn/BP_UnwalkableBlockingVolumeCylinder6/Cylinder#0",
+    "/Port_BVPawn/BP_BlockingVolume238/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume402/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume401/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume410/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume194/Cube#0",
+    "/Port_BVPawn/BP_BlockingVolume221/Cube#0"
+  ],
+  "points": [
+    {
+      "attackSvg": [
+        185.0,
+        175.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -28.01431949657408
+      ],
+      "levels": [
+        {
+          "floorMeters": 4.6875,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            4.6875
+          ],
+          "sourceFaces": [
+            [
+              56,
+              10
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume139/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 12.95272840251713,
+          "nativePlane": [
+            -0.0,
+            0.005,
+            13.0928
+          ],
+          "sourceFaces": [
+            [
+              1297,
+              109
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-2150-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 13.001442722013703,
+          "nativePlane": [
+            -0.0,
+            0.004,
+            13.1135
+          ],
+          "sourceFaces": [
+            [
+              1298,
+              118
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-2151-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 13.272153425440493,
+          "nativePlane": [
+            -0.0105,
+            -0.0005,
+            13.0151
+          ],
+          "sourceFaces": [
+            [
+              1298,
+              12
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-2151-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 13.369061573835268,
+          "nativePlane": [
+            -0.0,
+            -0.0043,
+            13.2486
+          ],
+          "sourceFaces": [
+            [
+              1297,
+              10
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-2150-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 28.0,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            28.0
+          ],
+          "sourceFaces": [
+            [
+              78,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume159/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        195.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -22.054982572427807
+      ],
+      "levels": [
+        {
+          "floorMeters": 4.6875,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            4.6875
+          ],
+          "sourceFaces": [
+            [
+              56,
+              10
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume139/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 11.9099,
+          "nativePlane": [
+            0.0,
+            0.0,
+            11.9099
+          ],
+          "sourceFaces": [
+            [
+              1297,
+              342
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-2150-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 12.3425,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            12.3425
+          ],
+          "sourceFaces": [
+            [
+              1298,
+              342
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-2151-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 28.0,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            28.0
+          ],
+          "sourceFaces": [
+            [
+              78,
+              10
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume159/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        215.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -16.095645648281536
+      ],
+      "levels": [
+        {
+          "floorMeters": 4.6875,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            4.6875
+          ],
+          "sourceFaces": [
+            [
+              56,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume139/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 28.0,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            28.0
+          ],
+          "sourceFaces": [
+            [
+              78,
+              10
+            ],
+            [
+              80,
+              10
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume159/Cube#0",
+            "/Port_BVPawn/BP_BlockingVolume160/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        225.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -13.1159771862084
+      ],
+      "levels": [
+        {
+          "floorMeters": 1.0,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            1.0
+          ],
+          "sourceFaces": [
+            [
+              1951,
+              4332
+            ],
+            [
+              112,
+              10
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume194/Cube#0",
+            "source-object-4697-part-0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 4.3329,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            4.3329
+          ],
+          "sourceFaces": [
+            [
+              700,
+              0
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume238/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 4.6872,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            4.6872
+          ],
+          "sourceFaces": [
+            [
+              699,
+              1
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume166/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 8.2791,
+          "nativePlane": [
+            0.0,
+            0.0,
+            8.2791
+          ],
+          "sourceFaces": [
+            [
+              588,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume511/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 9.2889,
+          "nativePlane": [
+            -0.0,
+            -0.0,
+            9.2889
+          ],
+          "sourceFaces": [
+            [
+              306,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume438/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        232.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -11.030209262757205
+      ],
+      "levels": [
+        {
+          "floorMeters": 1.0,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            1.0
+          ],
+          "sourceFaces": [
+            [
+              1951,
+              4370
+            ],
+            [
+              112,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume194/Cube#0",
+            "source-object-4697-part-0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 3.9763197201880263,
+          "nativePlane": [
+            -0.0,
+            -0.3714,
+            -0.1203
+          ],
+          "sourceFaces": [
+            [
+              281,
+              8
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume402/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 7.685431494460228,
+          "nativePlane": [
+            -0.0,
+            -0.3751,
+            3.548
+          ],
+          "sourceFaces": [
+            [
+              280,
+              9
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume401/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        235.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -10.136308724135265
+      ],
+      "levels": [
+        {
+          "floorMeters": 1.0,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            1.0
+          ],
+          "sourceFaces": [
+            [
+              1951,
+              4383
+            ],
+            [
+              112,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume194/Cube#0",
+            "source-object-4697-part-0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 3.6443250601438377,
+          "nativePlane": [
+            -0.0,
+            -0.3714,
+            -0.1203
+          ],
+          "sourceFaces": [
+            [
+              281,
+              8
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume402/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 7.350129402423137,
+          "nativePlane": [
+            -0.0,
+            -0.3751,
+            3.548
+          ],
+          "sourceFaces": [
+            [
+              280,
+              9
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume401/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        245.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -7.156640262062129
+      ],
+      "levels": [
+        {
+          "floorMeters": 1.0,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            1.0
+          ],
+          "sourceFaces": [
+            [
+              130,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume221/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.1866961489865728,
+          "nativePlane": [
+            -0.0479,
+            -0.0922,
+            -0.5819
+          ],
+          "sourceFaces": [
+            [
+              1951,
+              3637
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-4697-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 2.193331443021076,
+          "nativePlane": [
+            -0.007,
+            -0.3939,
+            -0.7877
+          ],
+          "sourceFaces": [
+            [
+              288,
+              3
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume410/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 2.537676193329875,
+          "nativePlane": [
+            -0.0,
+            -0.3714,
+            -0.1203
+          ],
+          "sourceFaces": [
+            [
+              281,
+              9
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume402/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 6.232455762299504,
+          "nativePlane": [
+            -0.0,
+            -0.3751,
+            3.548
+          ],
+          "sourceFaces": [
+            [
+              280,
+              8
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume401/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        250.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -5.666806031025561
+      ],
+      "levels": [
+        {
+          "floorMeters": 1.0,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            1.0
+          ],
+          "sourceFaces": [
+            [
+              130,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume221/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.0818137500525995,
+          "nativePlane": [
+            -0.0626,
+            0.5138,
+            2.5444
+          ],
+          "sourceFaces": [
+            [
+              1951,
+              3769
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-4697-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.1266398468042709,
+          "nativePlane": [
+            -0.0268,
+            -0.1903,
+            -0.5721
+          ],
+          "sourceFaces": [
+            [
+              1951,
+              3776
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-4697-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.1385,
+          "nativePlane": [
+            0.0,
+            0.0,
+            1.1385
+          ],
+          "sourceFaces": [
+            [
+              1951,
+              3771
+            ]
+          ],
+          "sourceCollisions": [
+            "source-object-4697-part-0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.6064857394157723,
+          "nativePlane": [
+            -0.007,
+            -0.3939,
+            -0.7877
+          ],
+          "sourceFaces": [
+            [
+              288,
+              2
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume410/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.9843517599228935,
+          "nativePlane": [
+            -0.0,
+            -0.3714,
+            -0.1203
+          ],
+          "sourceFaces": [
+            [
+              281,
+              9
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume402/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 5.673618942237688,
+          "nativePlane": [
+            -0.0,
+            -0.3751,
+            3.548
+          ],
+          "sourceFaces": [
+            [
+              280,
+              8
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume401/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    },
+    {
+      "attackSvg": [
+        185.0,
+        255.0
+      ],
+      "nativeXY": [
+        -23.147263399257714,
+        -4.176971799988993
+      ],
+      "levels": [
+        {
+          "floorMeters": 1.0,
+          "nativePlane": [
+            0.0,
+            -0.0,
+            1.0
+          ],
+          "sourceFaces": [
+            [
+              130,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume221/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.0196400358104682,
+          "nativePlane": [
+            -0.007,
+            -0.3939,
+            -0.7877
+          ],
+          "sourceFaces": [
+            [
+              288,
+              2
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume410/Cube#0"
+          ],
+          "standingClear": false
+        },
+        {
+          "floorMeters": 1.4310273265159121,
+          "nativePlane": [
+            -0.0,
+            -0.3714,
+            -0.1203
+          ],
+          "sourceFaces": [
+            [
+              281,
+              9
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume402/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 5.114782122175871,
+          "nativePlane": [
+            -0.0,
+            -0.3751,
+            3.548
+          ],
+          "sourceFaces": [
+            [
+              280,
+              8
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume401/Cube#0"
+          ],
+          "standingClear": true
+        },
+        {
+          "floorMeters": 61.47,
+          "nativePlane": [
+            -0.0,
+            0.0,
+            61.47
+          ],
+          "sourceFaces": [
+            [
+              101,
+              11
+            ]
+          ],
+          "sourceCollisions": [
+            "/Port_BVPawn/BP_BlockingVolume184_Ceiling/Cube#0"
+          ],
+          "standingClear": false
+        }
+      ]
+    }
+  ],
+  "scope": "Nine fixed Tube positions. Source-only contact and standing clearance using oriented triangle boundaries; no candidate or bundled height input."
+}

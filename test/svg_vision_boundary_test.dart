@@ -9,6 +9,94 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('SvgVisionBoundary', () {
+    test('artwork registration moves source paths but not canonical additions',
+        () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" d="M5 5H95V95H5Z"/>
+  <path stroke="#B27C40" d="M20 20H40V40 M40 40H20V20"/>
+  <path stroke="#B27C40" d="M60 20H80V40"/>
+  <rect x="30" y="60" width="10" height="20" stroke="#B27C40"/>
+</svg>
+''';
+      final additions = VisionBoundaryAdditions.fromJson({
+        'version': 1,
+        'maps': {
+          'split': {
+            'shared': [
+              {
+                'id': 'canonical',
+                'label': 'Canonical wall',
+                'closed': false,
+                'points': [
+                  [.1, .4],
+                  [.2, .4]
+                ],
+                'activeElevations': [300],
+              }
+            ],
+          },
+        },
+      });
+      VisionBoundary parse(Offset shift) => SvgVisionBoundary.parse(
+            map: MapValue.split,
+            source: source,
+            isAttack: false,
+            additions: additions,
+            sourceTranslationSvg: shift,
+          );
+      final raw = parse(Offset.zero);
+      final registered = parse(const Offset(.8238, .386));
+      expect(registered.collisionGroups.length, raw.collisionGroups.length);
+      // A 100 x 100 source fits into the canonical 1000-high viewport at 10x.
+      const expectedShift = Offset(8.238, 3.86);
+      for (var i = 0; i < raw.collisionGroups.length; i++) {
+        final before = raw.collisionGroups[i];
+        final after = registered.collisionGroups[i];
+        final shift =
+            before.id == 'audit_canonical' ? Offset.zero : expectedShift;
+        expect(after.id, before.id);
+        expect(after.kind, before.kind);
+        expect(after.segments.length, before.segments.length);
+        expect(after.collisionSegments.length, before.collisionSegments.length);
+        for (var j = 0; j < before.collisionSegments.length; j++) {
+          final oldSegment = before.collisionSegments[j];
+          final newSegment = after.collisionSegments[j];
+          expect(newSegment.collisionRadius, oldSegment.collisionRadius);
+          expect(newSegment.collisionPolygons.length,
+              oldSegment.collisionPolygons.length);
+          for (var k = 0; k < oldSegment.collisionPolygons.length; k++) {
+            for (var p = 0; p < oldSegment.collisionPolygons[k].length; p++) {
+              expect(
+                  (newSegment.collisionPolygons[k][p] -
+                          oldSegment.collisionPolygons[k][p] -
+                          shift)
+                      .distance,
+                  lessThan(1e-9));
+            }
+          }
+        }
+
+        for (var j = 0; j < before.segments.length; j++) {
+          expect(
+              (after.segments[j].start - before.segments[j].start - shift)
+                  .distance,
+              lessThan(1e-9));
+          expect(
+              (after.segments[j].end - before.segments[j].end - shift).distance,
+              lessThan(1e-9));
+        }
+      }
+      final canonical = registered.collisionGroups
+          .singleWhere((group) => group.id == 'audit_canonical');
+      expect(canonical.points.first.dy, closeTo(600, 1e-9));
+      expect(
+          additions
+              .overridesFor(MapValue.split, isAttack: false)['audit_canonical']!
+              .activeElevations,
+          [300]);
+    });
+
     test('preserves open chains without inventing closing diagonals', () {
       const source = '''
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">

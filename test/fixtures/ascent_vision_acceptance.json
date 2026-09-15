@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "map": "ascent",
+  "sourceSha256": "1d147d6355a9ea6b74e87c8abde5a48f06c200511ae7e669be0ee9af5bfe9186",
+  "evidence": {
+    "algorithmSha256": "046a6d57cf9e27f67b451461b3c3e99ff29f01c048b89d638a5d3ebaaa3867c7",
+    "wallBaselineSha256": {
+      "attack": "246c8816299ed2be8fd2873ff8fda5aba8a4a81ff8e72f2b6e807250176f6f82",
+      "defense": "1bdffd9fab6e9603ad9c37e3a415f3666e363206611e714af527c51dc4709eeb"
+    },
+    "gameplayReviewSha256": "bbf8204e30b660a96f2f336c43998d8131bd4d780c2e444ecd433ea75603d231",
+    "groundReviewSha256": "400c2651c51d704140abfb36afbb7f3d70af10c4612933cc070340d4bfaa35ae",
+    "selectedPointerJoins": [
+      "join-2159",
+      "join-1707",
+      "join-3028"
+    ],
+    "basis": "Reviewed source poses; highest locally clear source level; ordinary-floor joins that remain the source default throughout. Frozen baseline supplies only SVG floor footprints and previously reviewed wall intervals."
+  },
+  "dragFrom": "reviewed-standing-000",
+  "dragTo": "reviewed-standing-005",
+  "cases": [
+    {
+      "id": "reviewed-standing-000",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-6168-b702f5e489afde9c",
+      "reviewedDomain": "reviewed-mesh-6168-b702f5e489afde9c",
+      "nativeXY": [
+        64.585,
+        64.59833333333333
+      ],
+      "svg": {
+        "attack": [
+          374.46762040289263,
+          169.78221593930385
+        ],
+        "defense": [
+          36.53237959710739,
+          304.21778406069615
+        ]
+      },
+      "sourceObject": 6168,
+      "sourcePath": "Ascent_Art_A/AWall_0_FacadeDrains_0_1/StaticMeshComponent0.028",
+      "expectedFloorMeters": 5.159786244968828,
+      "expectedEyeMeters": 6.909786244968828,
+      "sourceLocalLevelsMeters": [
+        5.159786244968828
+      ]
+    },
+    {
+      "id": "reviewed-standing-001",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-6168-d1c34dad76c3cf1e",
+      "reviewedDomain": "reviewed-mesh-6168-d1c34dad76c3cf1e",
+      "nativeXY": [
+        64.631,
+        64.279
+      ],
+      "svg": {
+        "attack": [
+          374.6192779161344,
+          170.83502679209823
+        ],
+        "defense": [
+          36.38072208386558,
+          303.16497320790177
+        ]
+      },
+      "sourceObject": 6168,
+      "sourcePath": "Ascent_Art_A/AWall_0_FacadeDrains_0_1/StaticMeshComponent0.028",
+      "expectedFloorMeters": 5.0314505056323,
+      "expectedEyeMeters": 6.7814505056323,
+      "sourceLocalLevelsMeters": [
+        5.0314505056323
+      ]
+    },
+    {
+      "id": "reviewed-standing-003",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "mesh-7210-537",
+      "reviewedDomain": "reviewed-mesh-7210-05a21496d43b6c12",
+      "nativeXY": [
+        -25.25,
+        86.22
+      ],
+      "svg": {
+        "attack": [
+          78.29038774907973,
+          98.49768987823046
+        ],
+        "defense": [
+          332.70961225092026,
+          375.50231012176954
+        ]
+      },
+      "sourceObject": 7210,
+      "sourcePath": "Ascent_Art_B/BombsiteB_0_Ground/StaticMeshComponent0.1052",
+      "expectedFloorMeters": -0.9904019999999996,
+      "expectedEyeMeters": 0.7595980000000004,
+      "sourceLocalLevelsMeters": [
+        -0.9934278085789998,
+        -0.9904019999999996
+      ]
+    },
+    {
+      "id": "reviewed-standing-004",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-7210-6fd30d37700d4af1",
+      "reviewedDomain": "reviewed-mesh-7210-6fd30d37700d4af1",
+      "nativeXY": [
+        -24.439999999999998,
+        85.59
+      ],
+      "svg": {
+        "attack": [
+          80.96087874311979,
+          100.5747384291505
+        ],
+        "defense": [
+          330.0391212568802,
+          373.4252615708495
+        ]
+      },
+      "sourceObject": 7210,
+      "sourcePath": "Ascent_Art_B/BombsiteB_0_Ground/StaticMeshComponent0.1052",
+      "expectedFloorMeters": -0.9999999404,
+      "expectedEyeMeters": 0.7500000596,
+      "sourceLocalLevelsMeters": [
+        -1.0,
+        -0.9999999404
+      ]
+    },
+    {
+      "id": "reviewed-standing-005",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-7210-4be7b9ea592bb482",
+      "reviewedDomain": "reviewed-mesh-7210-4be7b9ea592bb482",
+      "nativeXY": [
+        -23.57,
+        85.3
+      ],
+      "svg": {
+        "attack": [
+          83.82918388486651,
+          101.53084014306609
+        ],
+        "defense": [
+          327.1708161151335,
+          372.4691598569339
+        ]
+      },
+      "sourceObject": 7210,
+      "sourcePath": "Ascent_Art_B/BombsiteB_0_Ground/StaticMeshComponent0.1052",
+      "expectedFloorMeters": -0.9999999622109998,
+      "expectedEyeMeters": 0.7500000377890002,
+      "sourceLocalLevelsMeters": [
+        -1.0,
+        -0.9999999622109998
+      ]
+    }
+  ]
+}

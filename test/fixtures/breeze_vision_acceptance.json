@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "map": "breeze",
+  "sourceSha256": "5721ee9799ce5e32ae10cf46107282e0a0b6f7f1c32fbc1db90edb57652185c0",
+  "evidence": {
+    "algorithmSha256": "046a6d57cf9e27f67b451461b3c3e99ff29f01c048b89d638a5d3ebaaa3867c7",
+    "wallBaselineSha256": {
+      "attack": "f7dd029c35dab048f8a3ff7beb74eca6e23596b8d10af1279276790957482970",
+      "defense": "3ab29008d0c7d3601b76490487cfff7217a8b8757d206937899b0f8d771c7f8b"
+    },
+    "gameplayReviewSha256": "bbf8204e30b660a96f2f336c43998d8131bd4d780c2e444ecd433ea75603d231",
+    "groundReviewSha256": "f0e5bde5ad90545c533df39b41d837f05b5c2d87f3f31dde4513f22458c4f59f",
+    "selectedPointerJoins": [
+      "join-3507",
+      "join-1069",
+      "join-807"
+    ],
+    "basis": "Reviewed source poses; highest locally clear source level; ordinary-floor joins that remain the source default throughout. Frozen baseline supplies only SVG floor footprints and previously reviewed wall intervals."
+  },
+  "dragFrom": "reviewed-standing-232",
+  "dragTo": "reviewed-standing-238",
+  "cases": [
+    {
+      "id": "reviewed-standing-232",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "mesh-5938-107",
+      "reviewedDomain": "reviewed-mesh-5938-eb8884e1bdc64839",
+      "nativeXY": [
+        93.75,
+        -27.083333333333332
+      ],
+      "svg": {
+        "attack": [
+          296.8618969539455,
+          87.06655850558383
+        ],
+        "defense": [
+          150.0721030460545,
+          385.9334414944162
+        ]
+      },
+      "sourceObject": 5938,
+      "sourcePath": "Foxtrot_Art_DefSpawn/Shell_0_DefSpawnDirt/StaticMeshComponent0.980",
+      "expectedFloorMeters": 6.2889,
+      "expectedEyeMeters": 8.0389,
+      "sourceLocalLevelsMeters": [
+        6.284452214641668,
+        6.2889
+      ]
+    },
+    {
+      "id": "reviewed-standing-233",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "mesh-5938-102",
+      "reviewedDomain": "reviewed-mesh-5938-c1c6170e59243138",
+      "nativeXY": [
+        93.66999999999999,
+        -26.25
+      ],
+      "svg": {
+        "attack": [
+          294.0883251101384,
+          87.33282140258939
+        ],
+        "defense": [
+          152.8456748898616,
+          385.6671785974106
+        ]
+      },
+      "sourceObject": 5938,
+      "sourcePath": "Foxtrot_Art_DefSpawn/Shell_0_DefSpawnDirt/StaticMeshComponent0.980",
+      "expectedFloorMeters": 6.535807000000002,
+      "expectedEyeMeters": 8.285807000000002,
+      "sourceLocalLevelsMeters": [
+        6.517640129088001,
+        6.535807000000002
+      ]
+    },
+    {
+      "id": "reviewed-standing-234",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-5470-778bef24e82c4914",
+      "reviewedDomain": "reviewed-mesh-5470-778bef24e82c4914",
+      "nativeXY": [
+        38.75,
+        46.81666666666666
+      ],
+      "svg": {
+        "attack": [
+          50.90154584513232,
+          270.12230019685217
+        ],
+        "defense": [
+          396.0324541548677,
+          202.87769980314786
+        ]
+      },
+      "sourceObject": 5470,
+      "sourcePath": "Foxtrot_Art_AtkPath_B/Shell_1_AtkPathBRuinsGroundPlaneDU/StaticMeshComponent0.504",
+      "expectedFloorMeters": 2.1875017803766656,
+      "expectedEyeMeters": 3.9375017803766656,
+      "sourceLocalLevelsMeters": [
+        2.1875,
+        2.1875017803766656
+      ]
+    },
+    {
+      "id": "reviewed-standing-235",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-5470-778bef24e82c4914",
+      "reviewedDomain": "reviewed-mesh-1591-855f8d6bbf8d83e5",
+      "nativeXY": [
+        38.75,
+        52.333333333333336
+      ],
+      "svg": {
+        "attack": [
+          32.54050023912933,
+          270.12230019685217
+        ],
+        "defense": [
+          414.39349976087067,
+          202.87769980314786
+        ]
+      },
+      "sourceObject": 1591,
+      "sourcePath": "Foxtrot_Art_AtkPath_B/Plant_0_BeachCabbageGroundA.001/Instances.328",
+      "expectedFloorMeters": 2.1875032224333335,
+      "expectedEyeMeters": 3.9375032224333335,
+      "sourceLocalLevelsMeters": [
+        2.1875,
+        2.1875032224333335
+      ]
+    },
+    {
+      "id": "reviewed-standing-236",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-5302-d0c25d86e498ef3d",
+      "reviewedDomain": "reviewed-mesh-5302-d0c25d86e498ef3d",
+      "nativeXY": [
+        13.524999999999999,
+        -30.4
+      ],
+      "svg": {
+        "attack": [
+          307.90071289229775,
+          354.0783199088929
+        ],
+        "defense": [
+          139.03328710770228,
+          118.92168009110708
+        ]
+      },
+      "sourceObject": 5302,
+      "sourcePath": "Foxtrot_Art_AtkPath_A/Rock_5_BeachMedChunkA_18/StaticMeshComponent0.336",
+      "expectedFloorMeters": 3.43694944797,
+      "expectedEyeMeters": 5.18694944797,
+      "sourceLocalLevelsMeters": [
+        3.4321424999999994,
+        3.43694944797
+      ]
+    },
+    {
+      "id": "reviewed-standing-237",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-5306-593ce18474892ec1",
+      "reviewedDomain": "reviewed-mesh-5306-593ce18474892ec1",
+      "nativeXY": [
+        13.16,
+        -29.74
+      ],
+      "svg": {
+        "attack": [
+          305.70404399200254,
+          355.2931443764804
+        ],
+        "defense": [
+          141.2299560079975,
+          117.70685562351959
+        ]
+      },
+      "sourceObject": 5306,
+      "sourcePath": "Foxtrot_Art_AtkPath_A/Rock_5_BeachMedChunkA_7/StaticMeshComponent0.340",
+      "expectedFloorMeters": 3.5120580409919993,
+      "expectedEyeMeters": 5.262058040991999,
+      "sourceLocalLevelsMeters": [
+        3.5119980000000006,
+        3.5120580409919993
+      ]
+    },
+    {
+      "id": "reviewed-standing-238",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-2087-e2a7ab4694fd9225",
+      "reviewedDomain": "reviewed-mesh-2087-e2a7ab4694fd9225",
+      "nativeXY": [
+        -11.719999999999999,
+        -7.1
+      ],
+      "svg": {
+        "attack": [
+          230.35164413945137,
+          438.100905345185
+        ],
+        "defense": [
+          216.58235586054866,
+          34.89909465481495
+        ]
+      },
+      "sourceObject": 2087,
+      "sourcePath": "Foxtrot_Art_AtkSpawn/Rock_5_SmChunkB_2/Instances.424",
+      "expectedFloorMeters": 2.734539321062,
+      "expectedEyeMeters": 4.484539321062,
+      "sourceLocalLevelsMeters": [
+        2.734539321062
+      ]
+    }
+  ]
+}

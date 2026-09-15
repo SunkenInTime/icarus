@@ -30,12 +30,15 @@ class _FixedMapProvider extends MapProvider {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('attached view-cone drag feedback skips geometry clipping',
+  testWidgets('attached drag feedback queries the current apex without saving',
       (tester) async {
     CoordinateSystem(playAreaSize: const Size(1920, 1080));
     final container = ProviderContainer(
       overrides: [
         mapProvider.overrideWith(_FixedMapProvider.new),
+        viewConeGeometryProvider.overrideWith(
+          (ref, map) async => twoLayerAscentGeometry(),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -70,14 +73,23 @@ void main() {
         tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
     expect(placedCone.worldOrigin, isNotNull);
 
-    final draggable = tester.widget<Draggable<PlacedWidget>>(
-      find.byWidgetPredicate((widget) => widget is Draggable<PlacedWidget>),
-    );
-    await tester.pumpWidget(harness(draggable.feedback));
-
-    final feedbackCone =
-        tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
-    expect(feedbackCone.worldOrigin, isNull);
+    final gesture =
+        await tester.startGesture(tester.getCenter(find.byType(AgentWidget)));
+    await gesture.moveBy(const Offset(30, 10));
+    await tester.pump();
+    final first =
+        tester.widget<ViewConeWidget>(find.byType(ViewConeWidget)).worldOrigin!;
+    await gesture.moveBy(const Offset(24, 36));
+    await tester.pump();
+    final next =
+        tester.widget<ViewConeWidget>(find.byType(ViewConeWidget)).worldOrigin!;
+    expect((next - first).dx,
+        closeTo(CoordinateSystem.instance.screenWidthToWorld(24), 1e-9));
+    expect((next - first).dy,
+        closeTo(CoordinateSystem.instance.screenHeightToWorld(36), 1e-9));
+    expect(container.read(agentProvider).single.position, agent.position);
+    await gesture.up();
+    await tester.pump();
   });
 
   testWidgets('view-cone agent menu removes the cone with undo support',
@@ -223,5 +235,8 @@ void main() {
     expect(find.byType(ShadContextMenuRegion), findsNothing);
     expect(find.text('View elevation'), findsNothing);
     expect(find.text('Vision calibration'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(Duration.zero);
   });
 }

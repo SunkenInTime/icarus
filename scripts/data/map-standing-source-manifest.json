@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "maps": {
+    "abyss": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/collision-roof-addendum/candidate-v2/abyss/source/regional-floors.json",
+      "sourceSha256": "aef1950593ce4b34f0351dd59cb3ff4e614b60980aa23b26f1cf33f4c8495c33"
+    },
+    "ascent": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/ascent/source/regional-floors.json",
+      "sourceSha256": "a5a08166973ea98c1c638a389f4dd86409c5641dd260dc4d223c39d7ae32d97e"
+    },
+    "bind": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/bind/source/regional-floors.json",
+      "sourceSha256": "9f7e29a32b7c288a93cb006503d1ed275bb780a9a3f253bcf6047f38c2161cf2"
+    },
+    "breeze": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/breeze/source/regional-floors.json",
+      "sourceSha256": "1fc8003b1281d4452aa5f66e706b56c60a5e00a791c709239a741a318403ac17"
+    },
+    "corrode": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/collision-roof-addendum/candidate-v2/corrode/source/regional-floors.json",
+      "sourceSha256": "9bd3384e06ed3a9547cb3bfde3cc7454f4b28d081b24a495b70d3bc935741846"
+    },
+    "fracture": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/fracture/source/regional-floors.json",
+      "sourceSha256": "676cf74ea15fca12463b7e2c10549d6c9f8c90bd02d2ccb66c411a9252505f37"
+    },
+    "haven": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/haven/source/regional-floors.json",
+      "sourceSha256": "e1d42df17c8e87fd1715b264ee314c3a862129ca83553bd47cbbc30f2fcea95d"
+    },
+    "icebox": {
+      "sourcePath": "work\\icebox-all-v6\\regional-floors.json",
+      "sourceSha256": "cd097400e2f86ff52f085a04a859e11f935cfe44eb8de62dd1e5d560b1588c4c"
+    },
+    "lotus": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/lotus/source/regional-floors.json",
+      "sourceSha256": "d9348c9b1974057d8a55cdec043bd091768c885a39e735bdc34d9bb03da647ba"
+    },
+    "pearl": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/pearl/source/regional-floors.json",
+      "sourceSha256": "1e9babc0deea6fa8af1aafe5699073f95cccf587ab3800ce5299d726590a16fe"
+    },
+    "summit": {
+      "sourcePath": "work/all-map-vision-followup-2026-09-14/collision-roof-addendum/candidate-v2/summit/source/regional-floors.json",
+      "sourceSha256": "57d6e67fee863d78515734e71b586a2596eff97629376424e6791e836329393d"
+    },
+    "sunset": {
+      "sourcePath": "work\\sunset-all-reviewed-v1\\regional-floors.json",
+      "sourceSha256": "e3a48d32f2ce090883eba57de98d02e00786bd3be83dadf79924fa59e00ea2a9"
+    },
+    "split": {
+      "sourcePath": "work/split-source-2026-09-15/candidate-covered-v1/split/source/regional-floors.json",
+      "sourceSha256": "dcff60bb2f4b582989e5bc94b0a35222777bb382621c2dd7229bbd996b1a71ba"
+    }
+  }
+}

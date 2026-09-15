@@ -1,0 +1,1976 @@
+{
+  "version": 1,
+  "maps": {
+    "fracture": {
+      "sourceFixture": {
+        "path": "work/fracture-spawn-review-2026-09-14/source/corridor-source-fixture.json",
+        "sha256": "7a91fd551f8caad1b3c91bbb89ed856eb6bac6d72a8c72c03d24bd179e35fe85"
+      },
+      "poses": [
+        {
+          "id": "west-0",
+          "svg": {
+            "attack": [
+              296.2000042579649,
+              360.38954646100433
+            ],
+            "defense": [
+              163.5379957420351,
+              112.61045353899567
+            ]
+          },
+          "expectedFloorMeters": 6.0
+        },
+        {
+          "id": "west-1",
+          "svg": {
+            "attack": [
+              308.0934324253601,
+              356.42507040520593
+            ],
+            "defense": [
+              151.6445675746399,
+              116.57492959479407
+            ]
+          },
+          "expectedFloorMeters": 6.0
+        },
+        {
+          "id": "west-2",
+          "svg": {
+            "attack": [
+              316.0223845369569,
+              360.38954646100433
+            ],
+            "defense": [
+              143.7156154630431,
+              112.61045353899567
+            ]
+          },
+          "expectedFloorMeters": 6.0
+        },
+        {
+          "id": "east-3",
+          "svg": {
+            "attack": [
+              321.9690986206545,
+              356.42507040520593
+            ],
+            "defense": [
+              137.7689013793455,
+              116.57492959479407
+            ]
+          },
+          "expectedFloorMeters": 6.0
+        },
+        {
+          "id": "east-4",
+          "svg": {
+            "attack": [
+              321.9690986206545,
+              360.38954646100433
+            ],
+            "defense": [
+              137.7689013793455,
+              112.61045353899567
+            ]
+          },
+          "expectedFloorMeters": 6.0
+        },
+        {
+          "id": "east-5",
+          "svg": {
+            "attack": [
+              323.9513366485537,
+              360.38954646100433
+            ],
+            "defense": [
+              135.7866633514463,
+              112.61045353899567
+            ]
+          },
+          "expectedFloorMeters": 6.0
+        },
+        {
+          "id": "mesh-4427-0-interior",
+          "svg": {
+            "attack": [
+              419.6264175160683,
+              351.0296363827769
+            ],
+            "defense": [
+              40.11158248393173,
+              121.97036361722309
+            ]
+          },
+          "expectedFloorMeters": 5.5,
+          "expectedFloorDomain": "volume-225-0",
+          "savedRoofFloorMeters": 16.623707531347417
+        }
+      ],
+      "rays": [
+        {
+          "id": "corrected-corridor-eye-left-leak-negative",
+          "origin": {
+            "attack": [
+              311.33157436204533,
+              359.0719010337923
+            ],
+            "defense": [
+              148.40642563795467,
+              113.9280989662077
+            ]
+          },
+          "target": {
+            "attack": [
+              238.84058801638773,
+              398.72509014594687
+            ],
+            "defense": [
+              220.89741198361227,
+              74.27490985405313
+            ]
+          },
+          "expectedFloorMeters": 6.0,
+          "blocked": true
+        },
+        {
+          "id": "corrected-corridor-eye-down-corridor-positive",
+          "origin": {
+            "attack": [
+              311.33157436204533,
+              359.0719010337923
+            ],
+            "defense": [
+              148.40642563795467,
+              113.9280989662077
+            ]
+          },
+          "target": {
+            "attack": [
+              300.17911492425185,
+              378.27891450999215
+            ],
+            "defense": [
+              159.55888507574815,
+              94.72108549000785
+            ]
+          },
+          "expectedFloorMeters": 6.0,
+          "blocked": false
+        },
+        {
+          "id": "reported-solid-wall-within-cone",
+          "origin": {
+            "attack": [
+              311.33157436204533,
+              359.0719010337923
+            ],
+            "defense": [
+              148.40642563795467,
+              113.9280989662077
+            ]
+          },
+          "target": {
+            "attack": [
+              263.62383121148434,
+              395.6271847465598
+            ],
+            "defense": [
+              196.11416878851563,
+              77.3728152534402
+            ]
+          },
+          "expectedFloorMeters": 6.0,
+          "blocked": true
+        }
+      ],
+      "assemblyEvidence": {
+        "path": "work/all-map-vision-followup-2026-09-14/floor-inventory/assembly-review/proposals.json",
+        "sha256": "d32eb377e53294aa2392ae2e0c53f5e6e99ba8fc6a84692994aaffa60673a7c4"
+      }
+    },
+    "ascent": {
+      "poses": [
+        {
+          "id": "mesh-7276-0-interior",
+          "svg": {
+            "attack": [
+              91.6007158875,
+              106.49535939
+            ],
+            "defense": [
+              319.3992841125,
+              367.50464060999997
+            ]
+          },
+          "expectedFloorMeters": 0.15240160110687917,
+          "expectedFloorDomain": "volume-59-0",
+          "savedRoofFloorMeters": 4.69390814040176
+        }
+      ],
+      "rays": [],
+      "assemblyEvidence": {
+        "path": "work/all-map-vision-followup-2026-09-14/floor-inventory/assembly-review/proposals.json",
+        "sha256": "d32eb377e53294aa2392ae2e0c53f5e6e99ba8fc6a84692994aaffa60673a7c4"
+      }
+    },
+    "bind": {
+      "poses": [
+        {
+          "id": "mesh-6654-0-interior",
+          "svg": {
+            "attack": [
+              390.3462042675727,
+              248.1896612075401
+            ],
+            "defense": [
+              24.83179573242728,
+              225.8103387924599
+            ]
+          },
+          "expectedFloorMeters": 1.0,
+          "expectedFloorDomain": "volume-520-0",
+          "savedRoofFloorMeters": 17.9981
+        }
+      ],
+      "rays": [],
+      "assemblyEvidence": {
+        "path": "work/all-map-vision-followup-2026-09-14/floor-inventory/assembly-review/proposals.json",
+        "sha256": "d32eb377e53294aa2392ae2e0c53f5e6e99ba8fc6a84692994aaffa60673a7c4"
+      }
+    },
+    "breeze": {
+      "poses": [
+        {
+          "id": "mesh-5487-0-interior",
+          "svg": {
+            "attack": [
+              98.8775843199299,
+              235.09405899
+            ],
+            "defense": [
+              348.05641568007013,
+              237.90594101
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 13.472587921588563
+        },
+        {
+          "id": "mesh-5487-1-interior",
+          "svg": {
+            "attack": [
+              91.56412280514255,
+              235.04775470948692
+            ],
+            "defense": [
+              355.3698771948575,
+              237.95224529051308
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 13.516010844494364
+        },
+        {
+          "id": "mesh-5487-2-interior",
+          "svg": {
+            "attack": [
+              104.70951969829872,
+              235.09357056
+            ],
+            "defense": [
+              342.2244803017013,
+              237.90642944
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 13.492618752321098
+        },
+        {
+          "id": "mesh-5487-3-interior",
+          "svg": {
+            "attack": [
+              93.93074618126762,
+              235.09429362999998
+            ],
+            "defense": [
+              353.00325381873245,
+              237.90570637000002
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 13.489713604948921
+        },
+        {
+          "id": "mesh-5487-4-interior",
+          "svg": {
+            "attack": [
+              98.87758468076302,
+              226.97748838
+            ],
+            "defense": [
+              348.056415319237,
+              246.02251162
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 13.535769078195193
+        },
+        {
+          "id": "mesh-5487-5-interior",
+          "svg": {
+            "attack": [
+              106.1755780725,
+              225.454758335
+            ],
+            "defense": [
+              340.7584219275,
+              247.545241665
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 13.572180969314248
+        },
+        {
+          "id": "mesh-5487-6-interior",
+          "svg": {
+            "attack": [
+              91.755646255,
+              226.134935895
+            ],
+            "defense": [
+              355.17835374500004,
+              246.865064105
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 13.55328856272833
+        },
+        {
+          "id": "mesh-5487-7-interior",
+          "svg": {
+            "attack": [
+              111.30497284804306,
+              236.65545603109223
+            ],
+            "defense": [
+              335.62902715195696,
+              236.34454396890777
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.171981634347308
+        },
+        {
+          "id": "mesh-5487-8-interior",
+          "svg": {
+            "attack": [
+              111.97288254175307,
+              236.92605485604503
+            ],
+            "defense": [
+              334.961117458247,
+              236.07394514395497
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.08761069725227
+        },
+        {
+          "id": "mesh-5487-9-interior",
+          "svg": {
+            "attack": [
+              110.10652264250001,
+              237.11735363
+            ],
+            "defense": [
+              336.8274773575,
+              235.88264637
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.253892862757585
+        },
+        {
+          "id": "mesh-5487-10-interior",
+          "svg": {
+            "attack": [
+              109.81232035517448,
+              237.130616685
+            ],
+            "defense": [
+              337.1216796448256,
+              235.869383315
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.236073307496683
+        },
+        {
+          "id": "mesh-5487-11-interior",
+          "svg": {
+            "attack": [
+              111.85545458934683,
+              226.400662935
+            ],
+            "defense": [
+              335.0785454106532,
+              246.599337065
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.110031704553831
+        },
+        {
+          "id": "mesh-5487-12-interior",
+          "svg": {
+            "attack": [
+              111.56192226354867,
+              228.5033803263371
+            ],
+            "defense": [
+              335.3720777364514,
+              244.4966196736629
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.146038014680638
+        },
+        {
+          "id": "mesh-5487-13-interior",
+          "svg": {
+            "attack": [
+              109.90218802835068,
+              227.80556649
+            ],
+            "defense": [
+              337.03181197164935,
+              245.19443351
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.251345672989817
+        },
+        {
+          "id": "mesh-5487-14-interior",
+          "svg": {
+            "attack": [
+              110.04974956050515,
+              223.43332736
+            ],
+            "defense": [
+              336.88425043949485,
+              249.56667264
+            ]
+          },
+          "expectedFloorMeters": 4.0,
+          "expectedFloorDomain": "volume-478-0",
+          "savedRoofFloorMeters": 14.30496917491178
+        }
+      ],
+      "rays": [],
+      "assemblyEvidence": {
+        "path": "work/all-map-vision-followup-2026-09-14/floor-inventory/assembly-review/proposals.json",
+        "sha256": "d32eb377e53294aa2392ae2e0c53f5e6e99ba8fc6a84692994aaffa60673a7c4"
+      }
+    },
+    "haven": {
+      "poses": [
+        {
+          "id": "mesh-2693-0-interior",
+          "svg": {
+            "attack": [
+              110.17292064484896,
+              222.51234421194653
+            ],
+            "defense": [
+              282.81807935515104,
+              250.48765578805347
+            ]
+          },
+          "expectedFloorMeters": 1.2000928149142875,
+          "expectedFloorDomain": "volume-311-0",
+          "savedRoofFloorMeters": 6.9625
+        },
+        {
+          "id": "mesh-2694-0-interior",
+          "svg": {
+            "attack": [
+              113.19473299,
+              222.506109635
+            ],
+            "defense": [
+              279.79626701,
+              250.49389036499997
+            ]
+          },
+          "expectedFloorMeters": 1.1139592850071112,
+          "expectedFloorDomain": "volume-311-0",
+          "savedRoofFloorMeters": 6.9625
+        },
+        {
+          "id": "mesh-2695-0-interior",
+          "svg": {
+            "attack": [
+              105.0453983675,
+              222.51234421194653
+            ],
+            "defense": [
+              287.94560163250003,
+              250.48765578805347
+            ]
+          },
+          "expectedFloorMeters": 1.3462473549652094,
+          "expectedFloorDomain": "volume-311-0",
+          "savedRoofFloorMeters": 6.9625
+        },
+        {
+          "id": "mesh-2696-0-interior",
+          "svg": {
+            "attack": [
+              99.504014575,
+              222.51234421194653
+            ],
+            "defense": [
+              293.486985425,
+              250.48765578805347
+            ]
+          },
+          "expectedFloorMeters": 1.504198574995248,
+          "expectedFloorDomain": "volume-311-0",
+          "savedRoofFloorMeters": 6.9625
+        },
+        {
+          "id": "mesh-2697-0-interior",
+          "svg": {
+            "attack": [
+              93.86260458000001,
+              222.51234421194653
+            ],
+            "defense": [
+              299.12839542,
+              250.48765578805347
+            ]
+          },
+          "expectedFloorMeters": 1.6650009349772295,
+          "expectedFloorDomain": "volume-311-0",
+          "savedRoofFloorMeters": 6.9625
+        },
+        {
+          "id": "mesh-2698-0-interior",
+          "svg": {
+            "attack": [
+              88.677747405,
+              222.51234421194653
+            ],
+            "defense": [
+              304.313252595,
+              250.48765578805347
+            ]
+          },
+          "expectedFloorMeters": 1.8127897449819015,
+          "expectedFloorDomain": "volume-311-0",
+          "savedRoofFloorMeters": 6.9625
+        },
+        {
+          "id": "mesh-7706-0-interior",
+          "svg": {
+            "attack": [
+              242.29499380469184,
+              215.36872439
+            ],
+            "defense": [
+              150.69600619530817,
+              257.63127561
+            ]
+          },
+          "expectedFloorMeters": 2.0311,
+          "expectedFloorDomain": "volume-307-0",
+          "savedRoofFloorMeters": 11.1571
+        }
+      ],
+      "rays": [],
+      "assemblyEvidence": {
+        "path": "work/all-map-vision-followup-2026-09-14/floor-inventory/assembly-review/proposals.json",
+        "sha256": "d32eb377e53294aa2392ae2e0c53f5e6e99ba8fc6a84692994aaffa60673a7c4"
+      }
+    },
+    "lotus": {
+      "poses": [
+        {
+          "id": "mesh-4297-0-interior",
+          "svg": {
+            "attack": [
+              295.18074345308366,
+              205.66996904500002
+            ],
+            "defense": [
+              196.91225654691635,
+              266.94403095499996
+            ]
+          },
+          "expectedFloorMeters": 3.0,
+          "expectedFloorDomain": "volume-67-0",
+          "savedRoofFloorMeters": 13.5049
+        },
+        {
+          "id": "mesh-4297-1-interior",
+          "svg": {
+            "attack": [
+              296.0430287004116,
+              207.32377288499998
+            ],
+            "defense": [
+              196.04997129958844,
+              265.290227115
+            ]
+          },
+          "expectedFloorMeters": 3.0,
+          "expectedFloorDomain": "volume-67-0",
+          "savedRoofFloorMeters": 13.5051
+        },
+        {
+          "id": "mesh-4297-2-interior",
+          "svg": {
+            "attack": [
+              296.64099718865435,
+              210.19282090000002
+            ],
+            "defense": [
+              195.45200281134566,
+              262.42117909999996
+            ]
+          },
+          "expectedFloorMeters": 3.0,
+          "expectedFloorDomain": "volume-67-0",
+          "savedRoofFloorMeters": 13.505
+        },
+        {
+          "id": "mesh-4621-0-interior",
+          "svg": {
+            "attack": [
+              105.21034333312626,
+              208.885770445
+            ],
+            "defense": [
+              386.88265666687374,
+              263.728229555
+            ]
+          },
+          "expectedFloorMeters": 1.0,
+          "expectedFloorDomain": "volume-36-0",
+          "savedRoofFloorMeters": 14.9856
+        }
+      ],
+      "rays": [],
+      "assemblyEvidence": {
+        "path": "work/all-map-vision-followup-2026-09-14/floor-inventory/assembly-review/proposals.json",
+        "sha256": "d32eb377e53294aa2392ae2e0c53f5e6e99ba8fc6a84692994aaffa60673a7c4"
+      }
+    },
+    "pearl": {
+      "poses": [
+        {
+          "id": "mesh-6347-0-interior",
+          "svg": {
+            "attack": [
+              143.8392297275,
+              376.408150085
+            ],
+            "defense": [
+              324.8284702725,
+              96.59184991500001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.44821452324734
+        },
+        {
+          "id": "mesh-6347-1-interior",
+          "svg": {
+            "attack": [
+              143.45325288436777,
+              385.64956278
+            ],
+            "defense": [
+              325.2144471156322,
+              87.35043722
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.470711863055193
+        },
+        {
+          "id": "mesh-6347-2-interior",
+          "svg": {
+            "attack": [
+              143.86207804999998,
+              385.625084075
+            ],
+            "defense": [
+              324.80562195,
+              87.37491592499998
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.469799755295348
+        },
+        {
+          "id": "mesh-6347-3-interior",
+          "svg": {
+            "attack": [
+              143.87073360651033,
+              390.1646786
+            ],
+            "defense": [
+              324.79696639348964,
+              82.8353214
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.49409827570166
+        },
+        {
+          "id": "mesh-6347-4-interior",
+          "svg": {
+            "attack": [
+              143.71533865062514,
+              397.369180475
+            ],
+            "defense": [
+              324.9523613493748,
+              75.63081952499999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.588196121839147
+        },
+        {
+          "id": "mesh-6347-5-interior",
+          "svg": {
+            "attack": [
+              143.85332110140828,
+              401.4442335727024
+            ],
+            "defense": [
+              324.8143788985917,
+              71.55576642729761
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.64356851030913
+        },
+        {
+          "id": "mesh-6347-6-interior",
+          "svg": {
+            "attack": [
+              143.40628890221382,
+              400.46528915669535
+            ],
+            "defense": [
+              325.26141109778615,
+              72.53471084330465
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.63023580406791
+        },
+        {
+          "id": "mesh-6347-7-interior",
+          "svg": {
+            "attack": [
+              141.54963969287533,
+              374.34627310999997
+            ],
+            "defense": [
+              327.11806030712467,
+              98.65372689000003
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 21.752800922896892
+        },
+        {
+          "id": "mesh-6347-8-interior",
+          "svg": {
+            "attack": [
+              138.9306142675489,
+              400.70228254
+            ],
+            "defense": [
+              329.7370857324511,
+              72.29771746
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 20.810030129456507
+        },
+        {
+          "id": "mesh-6347-9-interior",
+          "svg": {
+            "attack": [
+              153.326443845,
+              374.834601565
+            ],
+            "defense": [
+              315.341256155,
+              98.16539843499999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.45161019844956
+        },
+        {
+          "id": "mesh-6347-10-interior",
+          "svg": {
+            "attack": [
+              152.73812648327936,
+              378.79555668
+            ],
+            "defense": [
+              315.9295735167206,
+              94.20444332
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.449267938667727
+        },
+        {
+          "id": "mesh-6347-11-interior",
+          "svg": {
+            "attack": [
+              149.67889947026163,
+              377.52968289
+            ],
+            "defense": [
+              318.98880052973834,
+              95.47031711
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.448691296900957
+        },
+        {
+          "id": "mesh-6347-12-interior",
+          "svg": {
+            "attack": [
+              153.32676657500002,
+              382.79474142000004
+            ],
+            "defense": [
+              315.34093342499995,
+              90.20525857999996
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.455773252481453
+        },
+        {
+          "id": "mesh-6347-13-interior",
+          "svg": {
+            "attack": [
+              145.9188290575,
+              377.52845746
+            ],
+            "defense": [
+              322.74887094249993,
+              95.47154253999997
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.448678837199253
+        },
+        {
+          "id": "mesh-6347-14-interior",
+          "svg": {
+            "attack": [
+              153.19930584999997,
+              389.07206840000003
+            ],
+            "defense": [
+              315.46839415,
+              83.92793159999997
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.488099035719234
+        },
+        {
+          "id": "mesh-6347-15-interior",
+          "svg": {
+            "attack": [
+              148.19878078115232,
+              384.2930199
+            ],
+            "defense": [
+              320.46891921884765,
+              88.70698010000001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.46356433034893
+        },
+        {
+          "id": "mesh-6347-16-interior",
+          "svg": {
+            "attack": [
+              153.3268517425,
+              391.077549825
+            ],
+            "defense": [
+              315.34084825749994,
+              81.922450175
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.50794391335764
+        },
+        {
+          "id": "mesh-6347-17-interior",
+          "svg": {
+            "attack": [
+              145.3166918275,
+              384.291328905
+            ],
+            "defense": [
+              323.3510081725,
+              88.708671095
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.46264458460248
+        },
+        {
+          "id": "mesh-6347-18-interior",
+          "svg": {
+            "attack": [
+              149.68051201771576,
+              393.907583275
+            ],
+            "defense": [
+              318.98718798228424,
+              79.09241672500002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.543787455396053
+        },
+        {
+          "id": "mesh-6347-19-interior",
+          "svg": {
+            "attack": [
+              152.7384671945926,
+              395.06777354999997
+            ],
+            "defense": [
+              315.92923280540737,
+              77.93222645000003
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.558957115726297
+        },
+        {
+          "id": "mesh-6347-20-interior",
+          "svg": {
+            "attack": [
+              152.73847034562255,
+              399.8187440794345
+            ],
+            "defense": [
+              315.9292296543774,
+              73.18125592056549
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.621567741690313
+        },
+        {
+          "id": "mesh-6347-21-interior",
+          "svg": {
+            "attack": [
+              147.17145279845835,
+              393.910253035
+            ],
+            "defense": [
+              321.4962472015416,
+              79.08974696500002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.542950188235828
+        },
+        {
+          "id": "mesh-6347-22-interior",
+          "svg": {
+            "attack": [
+              150.5003977181227,
+              400.16241188337506
+            ],
+            "defense": [
+              318.16730228187726,
+              72.83758811662494
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.625951071106048
+        },
+        {
+          "id": "mesh-6347-23-interior",
+          "svg": {
+            "attack": [
+              146.585341795,
+              400.4640047
+            ],
+            "defense": [
+              322.082358205,
+              72.53599530000002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 22.630006912267078
+        },
+        {
+          "id": "mesh-1230-0-interior",
+          "svg": {
+            "attack": [
+              142.4219455052634,
+              394.224525835
+            ],
+            "defense": [
+              326.24575449473656,
+              78.77547416499999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.717784086823414
+        },
+        {
+          "id": "mesh-1230-1-interior",
+          "svg": {
+            "attack": [
+              142.54613693855714,
+              394.417692715
+            ],
+            "defense": [
+              326.1215630614428,
+              78.58230728500001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.731701782776373
+        },
+        {
+          "id": "mesh-1230-2-interior",
+          "svg": {
+            "attack": [
+              143.3091082025,
+              394.124430355
+            ],
+            "defense": [
+              325.35859179749997,
+              78.87556964499998
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.864452022210937
+        },
+        {
+          "id": "mesh-1230-3-interior",
+          "svg": {
+            "attack": [
+              142.49220579925992,
+              394.93112896499997
+            ],
+            "defense": [
+              326.17549420074005,
+              78.06887103500003
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.685614325361264
+        },
+        {
+          "id": "mesh-1230-4-interior",
+          "svg": {
+            "attack": [
+              143.15274580110096,
+              394.90697602
+            ],
+            "defense": [
+              325.514954198899,
+              78.09302398
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.75395150091599
+        },
+        {
+          "id": "mesh-1230-5-interior",
+          "svg": {
+            "attack": [
+              143.27081462030867,
+              395.19245847
+            ],
+            "defense": [
+              325.3968853796913,
+              77.80754152999998
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.731084101114867
+        },
+        {
+          "id": "mesh-1230-6-interior",
+          "svg": {
+            "attack": [
+              143.6108913698746,
+              395.18187525999997
+            ],
+            "defense": [
+              325.0568086301254,
+              77.81812474000003
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.742766567793026
+        },
+        {
+          "id": "mesh-1230-7-interior",
+          "svg": {
+            "attack": [
+              144.09744406105034,
+              395.205941005
+            ],
+            "defense": [
+              324.57025593894963,
+              77.794058995
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.740798177896735
+        },
+        {
+          "id": "mesh-1230-8-interior",
+          "svg": {
+            "attack": [
+              144.3300601024425,
+              395.21437465500003
+            ],
+            "defense": [
+              324.33763989755744,
+              77.78562534499997
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.735820373863184
+        },
+        {
+          "id": "mesh-1230-9-interior",
+          "svg": {
+            "attack": [
+              144.40256261000002,
+              394.1881088
+            ],
+            "defense": [
+              324.26513738999995,
+              78.81189119999999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.861499339152843
+        },
+        {
+          "id": "mesh-1230-10-interior",
+          "svg": {
+            "attack": [
+              144.8174320325528,
+              394.29485017499997
+            ],
+            "defense": [
+              323.85026796744717,
+              78.70514982500003
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.76909838138633
+        },
+        {
+          "id": "mesh-1230-11-interior",
+          "svg": {
+            "attack": [
+              144.60201055040648,
+              394.97686276
+            ],
+            "defense": [
+              324.0656894495935,
+              78.02313723999998
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.743642193505927
+        },
+        {
+          "id": "mesh-1230-12-interior",
+          "svg": {
+            "attack": [
+              144.87682309307235,
+              394.586218095
+            ],
+            "defense": [
+              323.7908769069276,
+              78.41378190500001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.754156768731896
+        },
+        {
+          "id": "mesh-1230-13-interior",
+          "svg": {
+            "attack": [
+              145.24786381255348,
+              394.31019551500003
+            ],
+            "defense": [
+              323.4198361874465,
+              78.68980448499997
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.72427759111126
+        },
+        {
+          "id": "mesh-1230-14-interior",
+          "svg": {
+            "attack": [
+              145.2505014915518,
+              393.61946932
+            ],
+            "defense": [
+              323.41719850844817,
+              79.38053067999999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.725526859122485
+        },
+        {
+          "id": "mesh-1230-15-interior",
+          "svg": {
+            "attack": [
+              145.20301084229357,
+              393.401116475
+            ],
+            "defense": [
+              323.4646891577064,
+              79.59888352500002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.726285317592158
+        },
+        {
+          "id": "mesh-1230-16-interior",
+          "svg": {
+            "attack": [
+              144.36060403825553,
+              393.745737265
+            ],
+            "defense": [
+              324.30709596174444,
+              79.254262735
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.87051400876508
+        },
+        {
+          "id": "mesh-1230-17-interior",
+          "svg": {
+            "attack": [
+              144.93572197433815,
+              393.224178605
+            ],
+            "defense": [
+              323.7319780256618,
+              79.77582139499998
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.74485028335519
+        },
+        {
+          "id": "mesh-1230-18-interior",
+          "svg": {
+            "attack": [
+              144.61355806564063,
+              392.85671418000004
+            ],
+            "defense": [
+              324.05414193435934,
+              80.14328581999996
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.742392462003796
+        },
+        {
+          "id": "mesh-1230-19-interior",
+          "svg": {
+            "attack": [
+              144.11209767899803,
+              393.430615375
+            ],
+            "defense": [
+              324.55560232100197,
+              79.569384625
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.869791924352214
+        },
+        {
+          "id": "mesh-1230-20-interior",
+          "svg": {
+            "attack": [
+              144.43108305048867,
+              392.690237015
+            ],
+            "defense": [
+              324.2366169495113,
+              80.30976298500002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.738464820866692
+        },
+        {
+          "id": "mesh-1230-21-interior",
+          "svg": {
+            "attack": [
+              144.11940838323784,
+              392.61508691
+            ],
+            "defense": [
+              324.5482916167621,
+              80.38491309
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.739301892879613
+        },
+        {
+          "id": "mesh-1230-22-interior",
+          "svg": {
+            "attack": [
+              143.63800373169914,
+              392.670745215
+            ],
+            "defense": [
+              325.0296962683008,
+              80.32925478499999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.747461211523266
+        },
+        {
+          "id": "mesh-1230-23-interior",
+          "svg": {
+            "attack": [
+              143.68736809092658,
+              393.37937320000003
+            ],
+            "defense": [
+              324.98033190907336,
+              79.62062679999997
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.866122022428833
+        },
+        {
+          "id": "mesh-1230-24-interior",
+          "svg": {
+            "attack": [
+              142.9000738989854,
+              393.58206929000005
+            ],
+            "defense": [
+              325.76762610101457,
+              79.41793070999995
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.769810224886136
+        },
+        {
+          "id": "mesh-1230-25-interior",
+          "svg": {
+            "attack": [
+              143.15973347343876,
+              392.908687725
+            ],
+            "defense": [
+              325.5079665265612,
+              80.091312275
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.752100304372384
+        },
+        {
+          "id": "mesh-1230-26-interior",
+          "svg": {
+            "attack": [
+              142.61678909769194,
+              392.98712307
+            ],
+            "defense": [
+              326.05091090230803,
+              80.01287693
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.707144689875342
+        },
+        {
+          "id": "mesh-1230-27-interior",
+          "svg": {
+            "attack": [
+              142.4790764111902,
+              393.545297795
+            ],
+            "defense": [
+              326.1886235888098,
+              79.45470220499999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.725759769823604
+        },
+        {
+          "id": "mesh-1231-0-interior",
+          "svg": {
+            "attack": [
+              150.31368102262434,
+              386.60239656
+            ],
+            "defense": [
+              318.35401897737563,
+              86.39760344000001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.750358085148722
+        },
+        {
+          "id": "mesh-1231-1-interior",
+          "svg": {
+            "attack": [
+              150.4703012406617,
+              386.80600465
+            ],
+            "defense": [
+              318.1973987593383,
+              86.19399535000002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.768302594488333
+        },
+        {
+          "id": "mesh-1231-2-interior",
+          "svg": {
+            "attack": [
+              151.32780016750002,
+              386.475217365
+            ],
+            "defense": [
+              317.33989983249995,
+              86.52478263500001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.91524125439257
+        },
+        {
+          "id": "mesh-1231-3-interior",
+          "svg": {
+            "attack": [
+              150.47596027226376,
+              387.15318134
+            ],
+            "defense": [
+              318.1917397277362,
+              85.84681866
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.742238835487555
+        },
+        {
+          "id": "mesh-1231-4-interior",
+          "svg": {
+            "attack": [
+              151.129109189434,
+              387.32563575999995
+            ],
+            "defense": [
+              317.538590810566,
+              85.67436424000005
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.79365369211542
+        },
+        {
+          "id": "mesh-1231-5-interior",
+          "svg": {
+            "attack": [
+              151.66536846045295,
+              386.73828771499996
+            ],
+            "defense": [
+              317.002331539547,
+              86.26171228500004
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.921218515564487
+        },
+        {
+          "id": "mesh-1231-6-interior",
+          "svg": {
+            "attack": [
+              151.2630200901213,
+              387.635495015
+            ],
+            "defense": [
+              317.40467990987867,
+              85.364504985
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.769153349165933
+        },
+        {
+          "id": "mesh-1231-7-interior",
+          "svg": {
+            "attack": [
+              151.6284714110849,
+              387.61468231000003
+            ],
+            "defense": [
+              317.0392285889151,
+              85.38531768999997
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.783110645489465
+        },
+        {
+          "id": "mesh-1231-8-interior",
+          "svg": {
+            "attack": [
+              152.1494954521649,
+              387.65042924
+            ],
+            "defense": [
+              316.51820454783507,
+              85.34957076
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.778998552027623
+        },
+        {
+          "id": "mesh-1231-9-interior",
+          "svg": {
+            "attack": [
+              152.40620677704595,
+              387.65861676500003
+            ],
+            "defense": [
+              316.261493222954,
+              85.34138323499997
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.773677862018907
+        },
+        {
+          "id": "mesh-1231-10-interior",
+          "svg": {
+            "attack": [
+              152.45275984749998,
+              386.53987402
+            ],
+            "defense": [
+              316.2149401525,
+              86.46012597999999
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.91116336793924
+        },
+        {
+          "id": "mesh-1231-11-interior",
+          "svg": {
+            "attack": [
+              152.99412616879658,
+              386.600040425
+            ],
+            "defense": [
+              315.6735738312034,
+              86.39995957500003
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.804208935501876
+        },
+        {
+          "id": "mesh-1231-12-interior",
+          "svg": {
+            "attack": [
+              152.68148429411275,
+              387.37801784
+            ],
+            "defense": [
+              315.9862157058872,
+              85.62198216000002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.786280998670705
+        },
+        {
+          "id": "mesh-1231-13-interior",
+          "svg": {
+            "attack": [
+              152.98598077319664,
+              386.976364135
+            ],
+            "defense": [
+              315.68171922680335,
+              86.02363586500002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.794612986422322
+        },
+        {
+          "id": "mesh-1231-14-interior",
+          "svg": {
+            "attack": [
+              153.2975391665491,
+              386.62089194
+            ],
+            "defense": [
+              315.3701608334509,
+              86.37910806000002
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.775339363855974
+        },
+        {
+          "id": "mesh-1231-15-interior",
+          "svg": {
+            "attack": [
+              153.4288835941001,
+              385.92286115
+            ],
+            "defense": [
+              315.23881640589985,
+              87.07713884999998
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.75753458022337
+        },
+        {
+          "id": "mesh-1231-16-interior",
+          "svg": {
+            "attack": [
+              153.34287527227008,
+              385.69971877
+            ],
+            "defense": [
+              315.3248247277299,
+              87.30028123
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.76353102418164
+        },
+        {
+          "id": "mesh-1231-17-interior",
+          "svg": {
+            "attack": [
+              153.0442456416411,
+              385.5207577
+            ],
+            "defense": [
+              315.62345435835886,
+              87.47924230000001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.785993725626284
+        },
+        {
+          "id": "mesh-1231-18-interior",
+          "svg": {
+            "attack": [
+              152.70767564010742,
+              385.122310685
+            ],
+            "defense": [
+              315.96002435989254,
+              87.877689315
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.781909347126
+        },
+        {
+          "id": "mesh-1231-19-interior",
+          "svg": {
+            "attack": [
+              152.17375839674804,
+              385.68634734
+            ],
+            "defense": [
+              316.4939416032519,
+              87.31365266
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.912208389329837
+        },
+        {
+          "id": "mesh-1231-20-interior",
+          "svg": {
+            "attack": [
+              152.50991320934673,
+              384.93006132
+            ],
+            "defense": [
+              316.15778679065323,
+              88.06993868
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.775981605989287
+        },
+        {
+          "id": "mesh-1231-21-interior",
+          "svg": {
+            "attack": [
+              152.17495467053953,
+              384.854576985
+            ],
+            "defense": [
+              316.49274532946043,
+              88.145423015
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.777605696435263
+        },
+        {
+          "id": "mesh-1231-22-interior",
+          "svg": {
+            "attack": [
+              151.65824828184975,
+              384.917454175
+            ],
+            "defense": [
+              317.0094517181502,
+              88.08254582500001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.787181889457308
+        },
+        {
+          "id": "mesh-1231-23-interior",
+          "svg": {
+            "attack": [
+              151.69921504999235,
+              385.65862717
+            ],
+            "defense": [
+              316.9684849500076,
+              87.34137283000001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.910724861920343
+        },
+        {
+          "id": "mesh-1231-24-interior",
+          "svg": {
+            "attack": [
+              150.78470274564762,
+              385.910974695
+            ],
+            "defense": [
+              317.88299725435235,
+              87.089025305
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.802270103357642
+        },
+        {
+          "id": "mesh-1231-25-interior",
+          "svg": {
+            "attack": [
+              151.14261419715476,
+              385.1800207
+            ],
+            "defense": [
+              317.5250858028452,
+              87.8199793
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.7929807145119
+        },
+        {
+          "id": "mesh-1231-26-interior",
+          "svg": {
+            "attack": [
+              150.5194801832651,
+              385.222492435
+            ],
+            "defense": [
+              318.14821981673487,
+              87.77750756500001
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.73661924804484
+        },
+        {
+          "id": "mesh-1231-27-interior",
+          "svg": {
+            "attack": [
+              150.3850022152123,
+              385.844288215
+            ],
+            "defense": [
+              318.2826977847877,
+              87.155711785
+            ]
+          },
+          "expectedFloorMeters": 8.5,
+          "expectedFloorDomain": "volume-125-0",
+          "savedRoofFloorMeters": 23.75981050305689
+        }
+      ],
+      "rays": [],
+      "assemblyEvidence": {
+        "path": "work/all-map-vision-followup-2026-09-14/floor-inventory/assembly-review/proposals.json",
+        "sha256": "d32eb377e53294aa2392ae2e0c53f5e6e99ba8fc6a84692994aaffa60673a7c4"
+      }
+    }
+  }
+}

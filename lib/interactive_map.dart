@@ -15,6 +15,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/delete_area.dart';
@@ -268,11 +269,15 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                           .updateData(null);
                                     },
                                     child: RepaintBoundary(
-                                      child: SvgPicture.asset(
-                                        assetName,
-                                        colorMapper: mapColorMapper,
-                                        semanticsLabel: 'Map',
-                                        fit: BoxFit.contain,
+                                      child: CanonicalMapArtwork(
+                                        map: ref.watch(mapProvider).currentMap,
+                                        isAttack: isAttack,
+                                        child: SvgPicture.asset(
+                                          assetName,
+                                          colorMapper: mapColorMapper,
+                                          semanticsLabel: 'Map',
+                                          fit: BoxFit.contain,
+                                        ),
                                       ),
                                     ),
                                   ),

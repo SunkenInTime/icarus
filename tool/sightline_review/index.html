@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icarus sightline review</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div><strong>Icarus</strong><span class="muted">Sightline review</span></div>
+  <span id="connection" role="status">Connecting to Icarus…</span>
+  <button id="save" class="primary" disabled>Save review</button>
+</header>
+<main>
+  <aside>
+    <section>
+      <h1>Map</h1>
+      <label for="map">Location</label><select id="map"></select>
+      <label for="side">Side</label><select id="side"><option value="attack">Attack</option><option value="defense">Defense</option></select>
+      <button id="fit" class="wide">Fit map</button>
+    </section>
+    <section>
+      <div class="section-title"><h2>View cones</h2><button id="add" title="Add a view cone">+ Add</button></div>
+      <div class="row"><select id="cone" aria-label="Selected cone"></select><button id="remove" title="Remove selected cone">Remove</button></div>
+      <label for="level">Standing surface</label><select id="level"><option value="">Ground</option></select>
+      <p id="height" class="micro">Place a cone to inspect its elevation.</p>
+      <div class="two"><label>Range <input id="range" type="number" min="1" max="500" step="1" value="90"></label><label>Angle <input id="angle" type="number" min="5" max="360" step="1" value="90"></label></div>
+      <label for="opacity">Cone opacity <span id="opacityValue">35%</span></label><input id="opacity" type="range" min="5" max="80" value="35">
+      <label class="check"><input id="walls" type="checkbox"> Highlight blocking walls</label>
+      <p id="pose" class="micro"></p>
+    </section>
+    <section>
+      <h2>Annotations</h2>
+      <p class="hint">Choose a drawing tool above the map. Marks stay attached to the map as you zoom.</p>
+      <label for="label">Text to place</label><input id="label" type="text" maxlength="160" placeholder="e.g. Gap along this wall">
+      <div class="row"><button id="undo">Undo mark</button><button id="clear">Clear marks</button></div>
+      <label for="note">Review notes</label><textarea id="note" rows="5" maxlength="20000" placeholder="What looks wrong, and what should be visible here?"></textarea>
+      <p class="micro">Your draft is kept in this browser. Save review stores the scene, notes, and an annotated image on the host.</p>
+      <div class="row"><button id="png">Download PNG</button><button id="json">Export scene</button></div>
+      <button id="import" class="wide">Import scene</button><input type="file" id="file" accept="application/json,.json" hidden>
+    </section>
+    <section id="saved" hidden>
+      <h2>Saved review</h2><a id="savedLink" href="#">Open saved scene</a>
+      <button id="copy" class="wide">Copy review link</button>
+    </section>
+    <details><summary>About this preview</summary><p class="micro">The server runs Icarus's current height selection and corrected native sightline engine against the bundled SVG artwork. This page draws those polygons in your browser. It is a geometry review tool; its overlay styling and performance differ from the desktop app.</p></details>
+  </aside>
+  <div class="workbench">
+    <nav aria-label="Map tools">
+      <button data-tool="move" class="active" title="Move selected cone">Move cone</button>
+      <button data-tool="pan">Pan</button>
+      <span class="divider"></span>
+      <button data-tool="pen">Pen</button><button data-tool="arrow">Arrow</button><button data-tool="text">Text</button>
+      <span class="grow"></span><button id="minus" aria-label="Zoom out">−</button><span id="zoom">100%</span><button id="plus" aria-label="Zoom in">+</button>
+    </nav>
+    <div id="viewport">
+      <svg id="scene" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Interactive map with movable view cones and annotations"></svg>
+      <div id="loading">Loading map…</div>
+    </div>
+    <footer><span id="help">Drag the round handle to move. Drag the diamond to aim and resize. Scroll to zoom; Space + drag to pan.</span><span id="status" role="status"></span></footer>
+    <div id="wallInfo" class="micro" hidden></div>
+  </div>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4438 @@
+{
+  "version": 1,
+  "standingHeightMeters": 1.75,
+  "scope": "Independent source triangle ray fixtures and detailed navigation floor branches. Live Split evidence confirms landmarks only. No full gameplay certification.",
+  "sources": [
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\tactical-visibility-revision\\baseline-world\\height_catalog.json",
+      "sha256": "e593d0761af12bd97f4e271bc206b33036d80aa2aeb82e46989f956138c23caa"
+    },
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-05\\in-game\\evidence.json",
+      "sha256": "153e50a3b9bf02b500bd5e365eda9b50db0d1d2bbbcfbfc440a5206c577d0dfc"
+    },
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-05\\camera-fit-provisional.json",
+      "sha256": "a621eebe8ff845442680e012d1e05b56bddea8ec13e76fb569cc772fff2a921e"
+    },
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-05\\standing-precise\\split\\world-rays.json",
+      "sha256": "b4da55a55787d00b05c2581b66e1bdd5e30674a13a05851fff40aadf4e24568f"
+    },
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-05\\in-game\\split-b-crate-approach.png",
+      "sha256": "6e3338a13e4aceffca87568c5c9ccf8c573861684714cd18205d2d33c7b2f5e6"
+    },
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-05\\in-game\\split-b-crate-standing.png",
+      "sha256": "2abd4b53c6de2dfac8f5371cbd39726f87e2f8cb399b057d0daca945cc0e3ebc"
+    },
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-05\\in-game\\split-b-crate-crouched.png",
+      "sha256": "3f29b2c4a338a698743e835db141e40acb848b7bfb5523e2786d3b4ed4b74cd5"
+    },
+    {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\tactical-visibility-revision\\all-map-floor-sheets.json",
+      "sha256": "89f28c96e79f4dd131d6c6e2232e8082104c0f31ecd3dd2db2d60611a0161b9c"
+    }
+  ],
+  "lowCoverCases": [
+    {
+      "id": "split-b-crate-1.75",
+      "map": "split",
+      "category": "standing-low-cover",
+      "liveExactPoseVerified": false,
+      "liveLandmarkMatched": true,
+      "observerAboveFloorMeters": 1.75,
+      "floorMeters": 3.0000009536743164,
+      "legacySourceRayId": "44-1.75-18",
+      "legacyHitMeters": 2.6806321144104004,
+      "sourceObject": "Bonsai_Art_B/Shell_10_BSiteBackWallB_0",
+      "crateTopMeters": 4.00216007232666,
+      "openingLowerEdgeMeters": 4.8603,
+      "openingUpperEdgeMeters": 5.2372,
+      "modelRay": {
+        "origin": [
+          -32.4748649597168,
+          54.555320739746094,
+          4.750000953674316
+        ],
+        "target": [
+          -55.57185363769531,
+          44.98823547363281,
+          4.750000953674316
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 721216,
+          "distanceMeters": 2.6806325500407016,
+          "point": [
+            -34.951446533203125,
+            53.52948713812949,
+            4.750000953674316
+          ],
+          "normal": [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          "masked": false
+        }
+      },
+      "clearTargetBeforeWall": {
+        "origin": [
+          -32.4748649597168,
+          54.555320739746094,
+          4.750000953674316
+        ],
+        "target": [
+          -33.86068428039551,
+          53.981295623779296,
+          4.750000953674316
+        ],
+        "blocked": false,
+        "hit": null
+      },
+      "interpretation": "Standing clears low crate and hits wall below decorative opening."
+    },
+    {
+      "id": "split-b-crate-1.95",
+      "map": "split",
+      "category": "height-sensitivity-only",
+      "liveExactPoseVerified": false,
+      "liveLandmarkMatched": true,
+      "observerAboveFloorMeters": 1.95,
+      "floorMeters": 3.0000009536743164,
+      "legacySourceRayId": "44-1.95-18",
+      "legacyHitMeters": 2.9106013774871826,
+      "sourceObject": "Bonsai_Art_B/Shell_10_BSiteBackWallB_0",
+      "crateTopMeters": 4.00216007232666,
+      "openingLowerEdgeMeters": 4.8603,
+      "openingUpperEdgeMeters": 5.2372,
+      "modelRay": {
+        "origin": [
+          -32.4748649597168,
+          54.555320739746094,
+          4.950000762939453
+        ],
+        "target": [
+          -55.57185363769531,
+          44.98823547363281,
+          4.950000762939453
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 721230,
+          "distanceMeters": 2.9106017126195023,
+          "point": [
+            -35.16391033787642,
+            53.44148175510697,
+            4.950000762939453
+          ],
+          "normal": [
+            0.0,
+            0.8620092272236254,
+            -0.5068925844607792
+          ],
+          "masked": false
+        }
+      },
+      "clearTargetBeforeWall": {
+        "origin": [
+          -32.4748649597168,
+          54.555320739746094,
+          4.950000762939453
+        ],
+        "target": [
+          -33.86068428039551,
+          53.981295623779296,
+          4.950000762939453
+        ],
+        "blocked": false,
+        "hit": null
+      },
+      "interpretation": "Sensitivity plane enters recess then hits its angled back face. This is not a supported stance or evidence of a through-window."
+    },
+    {
+      "id": "split-live-landmark-horizontal",
+      "map": "split",
+      "category": "approximate-live-landmark-position",
+      "liveExactPoseVerified": false,
+      "liveLandmarkMatched": true,
+      "observerAboveFloorMeters": 1.75,
+      "floorMeters": 3.0000009536743164,
+      "modelRay": {
+        "origin": [
+          -30.113367442256422,
+          53.58372917917155,
+          4.750000953674316
+        ],
+        "target": [
+          -35.3,
+          53.7581,
+          4.750000953674316
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 721217,
+          "distanceMeters": 4.840812451762227,
+          "point": [
+            -34.951446533203125,
+            53.74638188551409,
+            4.750000953674316
+          ],
+          "normal": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "masked": false
+        }
+      },
+      "interpretation": "Fixed fitted XY for repeatability only. Working standing eye is below the decorative opening. Live capture aim was upward and its exact pose remains unverified."
+    }
+  ],
+  "overlapCases": [
+    {
+      "id": "abyss-overlap-0",
+      "map": "abyss",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        -54.025000000000006,
+        17.225
+      ],
+      "parentPolygons": [
+        678,
+        691
+      ],
+      "components": [
+        1,
+        1
+      ],
+      "floorMeters": [
+        5.9731000000000005,
+        9.9193
+      ],
+      "overlapAreaMeters2": 6.2125000000000234,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "7747acadc8e209ea6320f4d4651cfb8c3ab4b546b76a96d7ecb6e5041009fff5",
+      "sourcePackSha256": "f1cb22add6a08de3a47516a9674920e9e77eb3439f1d1bbdcc8688e3e3d8621d",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          -54.025000000000006,
+          17.225,
+          7.7231000000000005
+        ],
+        "target": [
+          -54.025000000000006,
+          17.225,
+          11.6693
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 197148,
+          "distanceMeters": 2.123331732177734,
+          "point": [
+            -54.025000000000006,
+            17.225,
+            9.846431732177734
+          ],
+          "normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -48.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -48.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -49.78235931288072,
+              21.467640687119285,
+              7.7231000000000005
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -49.78235931288072,
+              21.467640687119285,
+              11.6693
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -54.025000000000006,
+              23.225,
+              7.7231000000000005
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 49841,
+              "distanceMeters": 4.497617997554627,
+              "point": [
+                -54.025000000000006,
+                21.72261799755463,
+                7.7231000000000005
+              ],
+              "normal": [
+                0.0,
+                -0.17366255456253193,
+                0.9848052178694097
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -54.025000000000006,
+              23.225,
+              11.6693
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 386254,
+              "distanceMeters": 5.776533722782772,
+              "point": [
+                -54.025000000000006,
+                23.001533722782774,
+                11.6693
+              ],
+              "normal": [
+                -7.258491294980416e-09,
+                -0.999999999994069,
+                3.444121034787315e-06
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -58.26764068711929,
+              21.467640687119285,
+              7.7231000000000005
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 22635,
+              "distanceMeters": 5.3385375124330245,
+              "point": [
+                -57.79991607666016,
+                20.999916076660156,
+                7.7231000000000005
+              ],
+              "normal": [
+                0.0,
+                -1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -58.26764068711929,
+              21.467640687119285,
+              11.6693
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 385491,
+              "distanceMeters": 5.502411674567284,
+              "point": [
+                -57.91579260796656,
+                21.115792607966554,
+                11.6693
+              ],
+              "normal": [
+                0.9218657402013296,
+                -0.3875093700747652,
+                0.00021247897172538117
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -60.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -60.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -58.26764068711929,
+              12.982359312880718,
+              7.7231000000000005
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -58.26764068711929,
+              12.982359312880718,
+              11.6693
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -54.025000000000006,
+              11.225000000000001,
+              7.7231000000000005
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 45708,
+              "distanceMeters": 2.411973731187951,
+              "point": [
+                -54.025000000000006,
+                14.81302626881205,
+                7.7231000000000005
+              ],
+              "normal": [
+                -3.2060735857840394e-06,
+                0.9999999999947282,
+                5.145075491378419e-07
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -54.025000000000006,
+              11.225000000000001,
+              11.6693
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              7.7231000000000005
+            ],
+            "target": [
+              -49.78235931288072,
+              12.982359312880716,
+              7.7231000000000005
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -54.025000000000006,
+              17.225,
+              11.6693
+            ],
+            "target": [
+              -49.78235931288072,
+              12.982359312880716,
+              11.6693
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "ascent-overlap-0",
+      "map": "ascent",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        63.250000000000014,
+        82.27906976744188
+      ],
+      "parentPolygons": [
+        93,
+        90
+      ],
+      "components": [
+        0,
+        0
+      ],
+      "floorMeters": [
+        5.0,
+        8.0612
+      ],
+      "overlapAreaMeters2": 19.311046511627904,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "5bfd59285db8681c8abfbc5be7419d83b5561806ee4bb68c053619273ec98f4e",
+      "sourcePackSha256": "c63347ef629dc56e735798eb31789b0adbd4b1bb516c50c84a50f8c656f949e2",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          63.250000000000014,
+          82.27906976744188,
+          6.75
+        ],
+        "target": [
+          63.250000000000014,
+          82.27906976744188,
+          9.8112
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 1533355,
+          "distanceMeters": 1.0774910838148324,
+          "point": [
+            63.250000000000014,
+            82.27906976744188,
+            7.827491083814833
+          ],
+          "normal": [
+            -3.862327613621471e-07,
+            5.76385105331145e-07,
+            -0.9999999999997592
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              69.25000000000001,
+              82.27906976744188,
+              6.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1540517,
+              "distanceMeters": 3.7652779242029504,
+              "point": [
+                67.01527792420296,
+                82.27906976744188,
+                6.75
+              ],
+              "normal": [
+                -0.9999955577584587,
+                0.0029806816920575382,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              69.25000000000001,
+              82.27906976744188,
+              9.8112
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              67.4926406871193,
+              86.52171045456117,
+              6.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1537980,
+              "distanceMeters": 2.439674336019169,
+              "point": [
+                64.97511026688596,
+                84.00418003432783,
+                6.75
+              ],
+              "normal": [
+                -0.02116036844230183,
+                -0.9911395759646351,
+                0.13112810440187572
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              67.4926406871193,
+              86.52171045456117,
+              9.8112
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1538205,
+              "distanceMeters": 2.510963516022082,
+              "point": [
+                65.02551932949125,
+                84.05458909693311,
+                9.8112
+              ],
+              "normal": [
+                0.0035605473094165213,
+                -0.999845972520008,
+                0.017185858674411858
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              63.250000000000014,
+              88.27906976744188,
+              6.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1532958,
+              "distanceMeters": 1.7280713735799216,
+              "point": [
+                63.250000000000014,
+                84.0071411410218,
+                6.75
+              ],
+              "normal": [
+                -0.01997349913251119,
+                -0.9811459814304426,
+                0.19223325012936027
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              63.250000000000014,
+              88.27906976744188,
+              9.8112
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1533096,
+              "distanceMeters": 1.7720373957993858,
+              "point": [
+                63.250000000000014,
+                84.05110716324127,
+                9.8112
+              ],
+              "normal": [
+                -0.1546047761569321,
+                -0.9851168140399805,
+                -0.07511475144858845
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              59.00735931288073,
+              86.52171045456117,
+              6.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1530120,
+              "distanceMeters": 2.4388509527431994,
+              "point": [
+                61.52547195301203,
+                84.00359781442987,
+                6.75
+              ],
+              "normal": [
+                -0.025128545461279635,
+                -0.9866272323644331,
+                0.16104428136354101
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              59.00735931288073,
+              86.52171045456117,
+              9.8112
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1530472,
+              "distanceMeters": 2.509195146709604,
+              "point": [
+                61.47573109644128,
+                84.05333867100062,
+                9.8112
+              ],
+              "normal": [
+                0.0016161407710231358,
+                -0.9997554372450014,
+                0.022055697405983756
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              57.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              57.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              59.00735931288073,
+              78.03642908032259,
+              6.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              59.00735931288073,
+              78.03642908032259,
+              9.8112
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              63.250000000000014,
+              76.27906976744188,
+              6.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              63.250000000000014,
+              76.27906976744188,
+              9.8112
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              6.75
+            ],
+            "target": [
+              67.49264068711929,
+              78.03642908032259,
+              6.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1349951,
+              "distanceMeters": 4.708023244567461,
+              "point": [
+                66.57907516221755,
+                78.94999460522433,
+                6.75
+              ],
+              "normal": [
+                -2.049717958804562e-06,
+                0.9999999999978992,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              63.250000000000014,
+              82.27906976744188,
+              9.8112
+            ],
+            "target": [
+              67.49264068711929,
+              78.03642908032259,
+              9.8112
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "bind-overlap-0",
+      "map": "bind",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        115.325,
+        46.30974576271187
+      ],
+      "parentPolygons": [
+        218,
+        237
+      ],
+      "components": [
+        2,
+        7
+      ],
+      "floorMeters": [
+        3.0539595072063745,
+        5.8972
+      ],
+      "overlapAreaMeters2": 11.147500000000097,
+      "floorHeightSources": [
+        "refined-navigation-fallback",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "daa79808f146d08773622c11e2482172da339e81338f33c103c9702cf1ac4c3b",
+      "sourcePackSha256": "3db021fe4371b8303e0342e580fc693d9cc4835b67bcc33e8c3c04156e0d7744",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          115.325,
+          46.30974576271187,
+          4.8039595072063745
+        ],
+        "target": [
+          115.325,
+          46.30974576271187,
+          7.6472
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 1246621,
+          "distanceMeters": 0.8881534154620825,
+          "point": [
+            115.325,
+            46.30974576271187,
+            5.692112922668457
+          ],
+          "normal": [
+            -0.0,
+            0.0,
+            -1.0
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              121.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1251718,
+              "distanceMeters": 1.7946975708007784,
+              "point": [
+                117.11969757080078,
+                46.30974576271187,
+                4.8039595072063745
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              121.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              119.5676406871193,
+              50.552386449831154,
+              4.8039595072063745
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1252537,
+              "distanceMeters": 2.5380856449845064,
+              "point": [
+                117.11969757080078,
+                48.10444333351265,
+                4.8039595072063745
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              119.5676406871193,
+              50.552386449831154,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              115.325,
+              52.30974576271187,
+              4.8039595072063745
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              115.325,
+              52.30974576271187,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              111.08235931288071,
+              50.552386449831154,
+              4.8039595072063745
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1246956,
+              "distanceMeters": 2.4409016209442393,
+              "point": [
+                113.5990219116211,
+                48.03572385109078,
+                4.8039595072063745
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              111.08235931288071,
+              50.552386449831154,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              109.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1247384,
+              "distanceMeters": 1.8342315673828153,
+              "point": [
+                113.49076843261719,
+                46.30974576271187,
+                4.8039595072063745
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              109.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              111.08235931288071,
+              42.067105075592586,
+              4.8039595072063745
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1247384,
+              "distanceMeters": 2.5939951591256345,
+              "point": [
+                113.49076843261719,
+                44.475514195329055,
+                4.8039595072063745
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              111.08235931288071,
+              42.067105075592586,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              115.325,
+              40.30974576271187,
+              4.8039595072063745
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              115.325,
+              40.30974576271187,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              4.8039595072063745
+            ],
+            "target": [
+              119.56764068711928,
+              42.067105075592586,
+              4.8039595072063745
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1241763,
+              "distanceMeters": 2.5380856449845104,
+              "point": [
+                117.11969757080078,
+                44.51504819191109,
+                4.8039595072063745
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              115.325,
+              46.30974576271187,
+              7.6472
+            ],
+            "target": [
+              119.56764068711928,
+              42.067105075592586,
+              7.6472
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "breeze-overlap-0",
+      "map": "breeze",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        85.475,
+        -38.49438775510204
+      ],
+      "parentPolygons": [
+        187,
+        193
+      ],
+      "components": [
+        0,
+        0
+      ],
+      "floorMeters": [
+        6.0,
+        10.0
+      ],
+      "overlapAreaMeters2": 9.23169642857141,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "9dc838f417749960315eb0b53f5d8ef29fe94353363b7a9a34ad33268cf0f7fa",
+      "sourcePackSha256": "6c3f4f72a6edd529a321f05a81b9fb45f44972cbabbe125a04ac7ac7f5e87d13",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          85.475,
+          -38.49438775510204,
+          7.75
+        ],
+        "target": [
+          85.475,
+          -38.49438775510204,
+          11.75
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 299693,
+          "distanceMeters": 1.3633935261552796,
+          "point": [
+            85.475,
+            -38.49438775510204,
+            9.11339352615528
+          ],
+          "normal": [
+            -1.7922006646270372e-06,
+            -0.9510522300084441,
+            -0.3090301858925007
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              91.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              91.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              89.71764068711929,
+              -34.251747067982755,
+              7.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 300321,
+              "distanceMeters": 2.8203715263707307,
+              "point": [
+                87.46930383176219,
+                -36.500083923339844,
+                7.75
+              ],
+              "normal": [
+                -0.0,
+                -1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              89.71764068711929,
+              -34.251747067982755,
+              11.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 300676,
+              "distanceMeters": 2.847193444377915,
+              "point": [
+                87.4882697918695,
+                -36.481117963232535,
+                11.75
+              ],
+              "normal": [
+                -0.8027438479544529,
+                -0.5963240013375936,
+                -0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              85.475,
+              -32.49438775510204,
+              7.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 300321,
+              "distanceMeters": 1.9943038317621957,
+              "point": [
+                85.475,
+                -36.500083923339844,
+                7.75
+              ],
+              "normal": [
+                -0.0,
+                -1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              85.475,
+              -32.49438775510204,
+              11.75
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              81.2323593128807,
+              -34.251747067982755,
+              7.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 297291,
+              "distanceMeters": 2.820371316905008,
+              "point": [
+                83.48069631635242,
+                -36.500084071454474,
+                7.75
+              ],
+              "normal": [
+                7.627648700789534e-06,
+                -0.9999999999709095,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              81.2323593128807,
+              -34.251747067982755,
+              11.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 297943,
+              "distanceMeters": 2.8203713169050086,
+              "point": [
+                83.48069631635242,
+                -36.500084071454474,
+                11.75
+              ],
+              "normal": [
+                7.627648700789534e-06,
+                -0.9999999999709095,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              79.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              79.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              81.2323593128807,
+              -42.73702844222132,
+              7.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 299702,
+              "distanceMeters": 2.840631321714279,
+              "point": [
+                83.46637032956492,
+                -40.50301742553711,
+                7.75
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              81.2323593128807,
+              -42.73702844222132,
+              11.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 294187,
+              "distanceMeters": 4.499265539521363,
+              "point": [
+                82.29353882664549,
+                -41.675848928456546,
+                11.75
+              ],
+              "normal": [
+                -1.3499553532929702e-06,
+                0.9999092302733964,
+                -0.013473351930440677
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              85.475,
+              -44.49438775510204,
+              7.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 299703,
+              "distanceMeters": 2.00862967043507,
+              "point": [
+                85.475,
+                -40.50301742553711,
+                7.75
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              85.475,
+              -44.49438775510204,
+              11.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 294707,
+              "distanceMeters": 3.1814604643704274,
+              "point": [
+                85.475,
+                -41.67584821947246,
+                11.75
+              ],
+              "normal": [
+                0.0,
+                0.999909230454671,
+                -0.01347333854498182
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              7.75
+            ],
+            "target": [
+              89.71764068711929,
+              -42.73702844222132,
+              7.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 299703,
+              "distanceMeters": 2.840631321714279,
+              "point": [
+                87.48362967043506,
+                -40.50301742553711,
+                7.75
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.475,
+              -38.49438775510204,
+              11.75
+            ],
+            "target": [
+              89.71764068711929,
+              -42.73702844222132,
+              11.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 294707,
+              "distanceMeters": 4.499264536866467,
+              "point": [
+                88.65646046437043,
+                -41.67584821947246,
+                11.75
+              ],
+              "normal": [
+                0.0,
+                0.999909230454671,
+                -0.01347333854498182
+              ],
+              "masked": false
+            }
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "corrode-overlap-0",
+      "map": "corrode",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        -34.18750000000001,
+        18.13942307692308
+      ],
+      "parentPolygons": [
+        553,
+        554
+      ],
+      "components": [
+        0,
+        25
+      ],
+      "floorMeters": [
+        5.999499999999999,
+        9.957294467617483
+      ],
+      "overlapAreaMeters2": 5.674759615384619,
+      "floorHeightSources": [
+        "detailed-floor",
+        "refined-navigation-fallback"
+      ],
+      "sourceNavigationSha256": "0e444492619effb5cd4f1d6a868f6b16f1bfc6501939327a8f54bd0a9c30fb31",
+      "sourcePackSha256": "982836f61a9273a207949d0708c325ca6f2a43c7f760cdd29a2fb6ea1ce20a75",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          -34.18750000000001,
+          18.13942307692308,
+          7.749499999999999
+        ],
+        "target": [
+          -34.18750000000001,
+          18.13942307692308,
+          11.707294467617483
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 603407,
+          "distanceMeters": 1.339647567749024,
+          "point": [
+            -34.18750000000001,
+            18.13942307692308,
+            9.089147567749023
+          ],
+          "normal": [
+            0.0,
+            -0.0,
+            -1.0
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -28.187500000000007,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 605763,
+              "distanceMeters": 1.032749176025398,
+              "point": [
+                -33.15475082397461,
+                18.13942307692308,
+                7.749499999999999
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -28.187500000000007,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -29.944859312880723,
+              22.382063764042364,
+              7.749499999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 605765,
+              "distanceMeters": 1.4605278912647561,
+              "point": [
+                -33.15475082397461,
+                19.172172252948478,
+                7.749499999999999
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -29.944859312880723,
+              22.382063764042364,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -34.18750000000001,
+              24.13942307692308,
+              7.749499999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 603579,
+              "distanceMeters": 2.8395140628980897,
+              "point": [
+                -34.18750000000001,
+                20.97893713982117,
+                7.749499999999999
+              ],
+              "normal": [
+                -5.531661849426507e-06,
+                -0.9999999999847003,
+                -0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -34.18750000000001,
+              24.13942307692308,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -38.43014068711929,
+              22.382063764042364,
+              7.749499999999999
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -38.43014068711929,
+              22.382063764042364,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -40.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -40.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -38.43014068711929,
+              13.896782389803796,
+              7.749499999999999
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -38.43014068711929,
+              13.896782389803796,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -34.18750000000001,
+              12.13942307692308,
+              7.749499999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 602556,
+              "distanceMeters": 3.160906014491595,
+              "point": [
+                -34.18750000000001,
+                14.978517062431486,
+                7.749499999999999
+              ],
+              "normal": [
+                -4.148746387097651e-06,
+                0.999999999991394,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -34.18750000000001,
+              12.13942307692308,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              7.749499999999999
+            ],
+            "target": [
+              -29.944859312880723,
+              13.896782389803795,
+              7.749499999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 604721,
+              "distanceMeters": 1.4605278912647566,
+              "point": [
+                -33.15475082397461,
+                17.106673900897682,
+                7.749499999999999
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -34.18750000000001,
+              18.13942307692308,
+              11.707294467617483
+            ],
+            "target": [
+              -29.944859312880723,
+              13.896782389803795,
+              11.707294467617483
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "fracture-overlap-0",
+      "map": "fracture",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        85.56145833333333,
+        29.125
+      ],
+      "parentPolygons": [
+        279,
+        278
+      ],
+      "components": [
+        0,
+        0
+      ],
+      "floorMeters": [
+        0.9762669125186032,
+        5.5
+      ],
+      "overlapAreaMeters2": 15.53489583333333,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "d4643158ea7904bd4e2cfb25bfca3f0cbedf559ac2d9c1764f643dd3d06351c8",
+      "sourcePackSha256": "91a28bb19b4c59c3b216e33d23590b85f198e7636e37ed784979714ee96d2416",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          85.56145833333333,
+          29.125,
+          2.726266912518603
+        ],
+        "target": [
+          85.56145833333333,
+          29.125,
+          7.25
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 318872,
+          "distanceMeters": 2.183703370989697,
+          "point": [
+            85.56145833333333,
+            29.125,
+            4.909970283508301
+          ],
+          "normal": [
+            0.0,
+            -0.0,
+            -1.0
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              91.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              91.56145833333333,
+              29.125,
+              7.25
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              89.80409902045263,
+              33.367640687119284,
+              2.726266912518603
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 369699,
+              "distanceMeters": 4.453199598783954,
+              "point": [
+                88.71034596761068,
+                32.273887634277344,
+                2.726266912518603
+              ],
+              "normal": [
+                0.0,
+                -1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              89.80409902045263,
+              33.367640687119284,
+              7.25
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 367837,
+              "distanceMeters": 3.4407089811585267,
+              "point": [
+                87.99440698599999,
+                31.55794865266665,
+                7.25
+              ],
+              "normal": [
+                -0.9999999999851751,
+                3.85028820793042e-06,
+                -3.8503281201116175e-06
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              85.56145833333333,
+              35.125,
+              2.726266912518603
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 328932,
+              "distanceMeters": 3.1488876342773438,
+              "point": [
+                85.56145833333333,
+                32.273887634277344,
+                2.726266912518603
+              ],
+              "normal": [
+                0.0,
+                -1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              85.56145833333333,
+              35.125,
+              7.25
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              81.31881764621404,
+              33.367640687119284,
+              2.726266912518603
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              81.31881764621404,
+              33.367640687119284,
+              7.25
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              79.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              79.56145833333333,
+              29.125,
+              7.25
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              81.31881764621404,
+              24.882359312880716,
+              2.726266912518603
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 314286,
+              "distanceMeters": 3.544655455328331,
+              "point": [
+                83.05500842390077,
+                26.61855009056745,
+                2.726266912518603
+              ],
+              "normal": [
+                -1.1610437318724222e-06,
+                0.999999999999326,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              81.31881764621404,
+              24.882359312880716,
+              7.25
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 314095,
+              "distanceMeters": 3.7110644601788034,
+              "point": [
+                82.9373394881205,
+                26.500881154787177,
+                7.25
+              ],
+              "normal": [
+                -1.6432998554416147e-05,
+                0.9999999998649782,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              85.56145833333333,
+              23.125,
+              2.726266912518603
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 314286,
+              "distanceMeters": 2.5064469993345933,
+              "point": [
+                85.56145833333333,
+                26.618553000665408,
+                2.726266912518603
+              ],
+              "normal": [
+                -1.1610437318724222e-06,
+                0.999999999999326,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              85.56145833333333,
+              23.125,
+              7.25
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 313235,
+              "distanceMeters": 4.412033338433447,
+              "point": [
+                85.56145833333333,
+                24.712966661566554,
+                7.25
+              ],
+              "normal": [
+                0.7027997707082881,
+                0.7113877158711539,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              2.726266912518603
+            ],
+            "target": [
+              89.80409902045261,
+              24.882359312880716,
+              2.726266912518603
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 314353,
+              "distanceMeters": 3.544651112202611,
+              "point": [
+                88.06790517171224,
+                26.618553161621094,
+                2.726266912518603
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              85.56145833333333,
+              29.125,
+              7.25
+            ],
+            "target": [
+              89.80409902045261,
+              24.882359312880716,
+              7.25
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "haven-overlap-0",
+      "map": "haven",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        66.07612140138221,
+        103.84839176083281
+      ],
+      "parentPolygons": [
+        78,
+        80
+      ],
+      "components": [
+        0,
+        0
+      ],
+      "floorMeters": [
+        3.0,
+        9.0
+      ],
+      "overlapAreaMeters2": 14.153513739247703,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "8d4a51eccf984e4c5479db29c877bb718398c012d0317251edc231c0881ddf72",
+      "sourcePackSha256": "ec63de786d30b6c0bec3a75ba1cbe49c8b61bb8fe1e2f4f2ec3b7b0aa8a65b20",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          66.07612140138221,
+          103.84839176083281,
+          4.75
+        ],
+        "target": [
+          66.07612140138221,
+          103.84839176083281,
+          10.75
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 1195702,
+          "distanceMeters": 2.75,
+          "point": [
+            66.07612140138221,
+            103.84839176083281,
+            7.5
+          ],
+          "normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              72.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1197572,
+              "distanceMeters": 3.9468888525240398,
+              "point": [
+                70.02301025390625,
+                103.84839176083281,
+                4.75
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              72.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1212161,
+              "distanceMeters": 5.914875913070916,
+              "point": [
+                71.99099731445312,
+                103.84839176083281,
+                10.75
+              ],
+              "normal": [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              70.3187620885015,
+              108.0910324479521,
+              4.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1195433,
+              "distanceMeters": 4.533337890088057,
+              "point": [
+                69.2816753648734,
+                107.053945724324,
+                4.75
+              ],
+              "normal": [
+                3.948612333791433e-06,
+                0.9999999998994943,
+                1.3616898825192978e-05
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              70.3187620885015,
+              108.0910324479521,
+              10.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1195974,
+              "distanceMeters": 3.7776048509434546,
+              "point": [
+                68.74729140812752,
+                106.51956176757812,
+                10.75
+              ],
+              "normal": [
+                0.0,
+                -1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              66.07612140138221,
+              109.84839176083281,
+              4.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              66.07612140138221,
+              109.84839176083281,
+              10.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1195755,
+              "distanceMeters": 2.671170006745314,
+              "point": [
+                66.07612140138221,
+                106.51956176757812,
+                10.75
+              ],
+              "normal": [
+                0.0,
+                -1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              61.833480714262926,
+              108.0910324479521,
+              4.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1226410,
+              "distanceMeters": 4.367070422796073,
+              "point": [
+                62.988136291503906,
+                106.93637687071111,
+                4.75
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              61.833480714262926,
+              108.0910324479521,
+              10.75
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              60.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1193752,
+              "distanceMeters": 3.0879851098783035,
+              "point": [
+                62.988136291503906,
+                103.84839176083281,
+                4.75
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              60.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1191365,
+              "distanceMeters": 5.106223177505257,
+              "point": [
+                60.96989822387695,
+                103.84839176083281,
+                10.75
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              61.833480714262926,
+              99.60575107371352,
+              4.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              61.833480714262926,
+              99.60575107371352,
+              10.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1194413,
+              "distanceMeters": 2.005908433344287,
+              "point": [
+                64.65772994572518,
+                102.43000030517578,
+                10.75
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              66.07612140138221,
+              97.84839176083281,
+              4.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              66.07612140138221,
+              97.84839176083281,
+              10.75
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              4.75
+            ],
+            "target": [
+              70.3187620885015,
+              99.60575107371352,
+              4.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              66.07612140138221,
+              103.84839176083281,
+              10.75
+            ],
+            "target": [
+              70.3187620885015,
+              99.60575107371352,
+              10.75
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "icebox-overlap-0",
+      "map": "icebox",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        -75.0,
+        -42.47500000000001
+      ],
+      "parentPolygons": [
+        926,
+        927
+      ],
+      "components": [
+        0,
+        0
+      ],
+      "floorMeters": [
+        2.0,
+        4.9711
+      ],
+      "overlapAreaMeters2": 20.5,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "691028e3a455d246df6cb01b7ddffea7b5a025f7cc242e1c78ad019e75ee1636",
+      "sourcePackSha256": "4e50e23392ef51949247966cbe4e90f295b2d9c5639fef4988924c64d6029dc7",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          -75.0,
+          -42.47500000000001,
+          3.75
+        ],
+        "target": [
+          -75.0,
+          -42.47500000000001,
+          6.7211
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 22220,
+          "distanceMeters": 0.7500004768371582,
+          "point": [
+            -75.0,
+            -42.47500000000001,
+            4.500000476837158
+          ],
+          "normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -69.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -69.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -70.75735931288071,
+              -38.232359312880725,
+              3.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -70.75735931288071,
+              -38.232359312880725,
+              6.7211
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -75.0,
+              -36.47500000000001,
+              3.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -75.0,
+              -36.47500000000001,
+              6.7211
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -79.24264068711929,
+              -38.232359312880725,
+              3.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -79.24264068711929,
+              -38.232359312880725,
+              6.7211
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -81.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -81.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -79.24264068711929,
+              -46.71764068711929,
+              3.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 22072,
+              "distanceMeters": 2.1566648930257406,
+              "point": [
+                -76.52499237060546,
+                -43.99999237060547,
+                3.75
+              ],
+              "normal": [
+                -0.0,
+                1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -79.24264068711929,
+              -46.71764068711929,
+              6.7211
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 22184,
+              "distanceMeters": 2.156664893025741,
+              "point": [
+                -76.52499237060546,
+                -43.99999237060547,
+                6.7211
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -75.0,
+              -48.47500000000001,
+              3.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 22153,
+              "distanceMeters": 1.5613016170336778,
+              "point": [
+                -75.0,
+                -44.036301617033686,
+                3.75
+              ],
+              "normal": [
+                -2.294146256397886e-06,
+                0.9999999999937873,
+                2.6762603419751447e-06
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -75.0,
+              -48.47500000000001,
+              6.7211
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 22185,
+              "distanceMeters": 1.5249923706054602,
+              "point": [
+                -75.0,
+                -43.99999237060547,
+                6.7211
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              3.75
+            ],
+            "target": [
+              -70.75735931288071,
+              -46.71764068711929,
+              3.75
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 22688,
+              "distanceMeters": 2.15695515972686,
+              "point": [
+                -73.47480237984182,
+                -44.00019762015818,
+                3.75
+              ],
+              "normal": [
+                0.009381972825906271,
+                0.9999557808776951,
+                0.000644108044513034
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -75.0,
+              -42.47500000000001,
+              6.7211
+            ],
+            "target": [
+              -70.75735931288071,
+              -46.71764068711929,
+              6.7211
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 22185,
+              "distanceMeters": 2.156664893025741,
+              "point": [
+                -73.47500762939454,
+                -43.99999237060547,
+                6.7211
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "icebox-overlap-1",
+      "map": "icebox",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        -55.0,
+        -42.47500000000001
+      ],
+      "parentPolygons": [
+        725,
+        726
+      ],
+      "components": [
+        0,
+        0
+      ],
+      "floorMeters": [
+        1.5023546961725223,
+        4.971099999999999
+      ],
+      "overlapAreaMeters2": 20.499999999999957,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "691028e3a455d246df6cb01b7ddffea7b5a025f7cc242e1c78ad019e75ee1636",
+      "sourcePackSha256": "4e50e23392ef51949247966cbe4e90f295b2d9c5639fef4988924c64d6029dc7",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          -55.0,
+          -42.47500000000001,
+          3.2523546961725223
+        ],
+        "target": [
+          -55.0,
+          -42.47500000000001,
+          6.721099999999999
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 89110,
+          "distanceMeters": 1.247645780664636,
+          "point": [
+            -55.0,
+            -42.47500000000001,
+            4.500000476837158
+          ],
+          "normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -49.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -49.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -50.757359312880716,
+              -38.232359312880725,
+              3.2523546961725223
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -50.757359312880716,
+              -38.232359312880725,
+              6.721099999999999
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -55.0,
+              -36.47500000000001,
+              3.2523546961725223
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -55.0,
+              -36.47500000000001,
+              6.721099999999999
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -59.242640687119284,
+              -38.232359312880725,
+              3.2523546961725223
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -59.242640687119284,
+              -38.232359312880725,
+              6.721099999999999
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -61.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -61.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -59.242640687119284,
+              -46.71764068711929,
+              3.2523546961725223
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 89323,
+              "distanceMeters": 2.1566702878223483,
+              "point": [
+                -56.524996185302726,
+                -43.999996185302734,
+                3.2523546961725223
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -59.242640687119284,
+              -46.71764068711929,
+              6.721099999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 89089,
+              "distanceMeters": 2.1566648930257393,
+              "point": [
+                -56.52499237060546,
+                -43.99999237060547,
+                6.721099999999999
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -55.0,
+              -48.47500000000001,
+              3.2523546961725223
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 89323,
+              "distanceMeters": 1.5249961853027258,
+              "point": [
+                -55.0,
+                -43.999996185302734,
+                3.2523546961725223
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -55.0,
+              -48.47500000000001,
+              6.721099999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 89088,
+              "distanceMeters": 1.5249923706054602,
+              "point": [
+                -55.0,
+                -43.99999237060547,
+                6.721099999999999
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              3.2523546961725223
+            ],
+            "target": [
+              -50.757359312880716,
+              -46.71764068711929,
+              3.2523546961725223
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 89324,
+              "distanceMeters": 2.1566702878223483,
+              "point": [
+                -53.475003814697274,
+                -43.999996185302734,
+                3.2523546961725223
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              -55.0,
+              -42.47500000000001,
+              6.721099999999999
+            ],
+            "target": [
+              -50.757359312880716,
+              -46.71764068711929,
+              6.721099999999999
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 89088,
+              "distanceMeters": 2.1566648930257393,
+              "point": [
+                -53.47500762939454,
+                -43.99999237060547,
+                6.721099999999999
+              ],
+              "normal": [
+                0.0,
+                1.0,
+                -0.0
+              ],
+              "masked": false
+            }
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    },
+    {
+      "id": "pearl-overlap-0",
+      "map": "pearl",
+      "category": "overlapping-native-floor-branches",
+      "liveExactPoseVerified": false,
+      "originXY": [
+        71.775,
+        24.875
+      ],
+      "parentPolygons": [
+        208,
+        202
+      ],
+      "components": [
+        0,
+        0
+      ],
+      "floorMeters": [
+        2.5013149898334204,
+        7.0001999999999995
+      ],
+      "overlapAreaMeters2": 15.119006249999973,
+      "floorHeightSources": [
+        "detailed-floor",
+        "detailed-floor"
+      ],
+      "sourceNavigationSha256": "a3c22336fd3f31823aca84f4e90d56ad31df9ce16b4143f8a916a4d392058fe8",
+      "sourcePackSha256": "c1d17b551e09ebbd0a97c2a3736bc133e5278b2b520b410ca7136057cacfb967",
+      "verticalBetweenStandingEyes": {
+        "origin": [
+          71.775,
+          24.875,
+          4.25131498983342
+        ],
+        "target": [
+          71.775,
+          24.875,
+          8.7502
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 1230898,
+          "distanceMeters": 1.9236634102350119,
+          "point": [
+            71.775,
+            24.875,
+            6.174978400068432
+          ],
+          "normal": [
+            -1.5946683632593071e-06,
+            2.024103323226883e-06,
+            -0.99999999999668
+          ],
+          "masked": false
+        }
+      },
+      "horizontalRays": [
+        {
+          "directionIndex": 0,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              77.775,
+              24.875,
+              4.25131498983342
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1232014,
+              "distanceMeters": 2.225587831230924,
+              "point": [
+                74.00058783123093,
+                24.875,
+                4.25131498983342
+              ],
+              "normal": [
+                -0.999999999689886,
+                1.071569175162978e-05,
+                -2.248114385358271e-05
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              77.775,
+              24.875,
+              8.7502
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 1,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              76.0176406871193,
+              29.117640687119284,
+              4.25131498983342
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1235187,
+              "distanceMeters": 3.1475085344702456,
+              "point": [
+                74.00062462856646,
+                27.10062462856644,
+                4.25131498983342
+              ],
+              "normal": [
+                -0.9999999999002389,
+                1.0327666321057476e-05,
+                -9.636448491144614e-06
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              76.0176406871193,
+              29.117640687119284,
+              8.7502
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1235287,
+              "distanceMeters": 3.7122819980664077,
+              "point": [
+                74.39997977450952,
+                27.4999797745095,
+                8.7502
+              ],
+              "normal": [
+                -6.690629855478175e-07,
+                -0.9999999999967815,
+                -2.447276935479779e-06
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 2,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              71.775,
+              30.875,
+              4.25131498983342
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              71.775,
+              30.875,
+              8.7502
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1234824,
+              "distanceMeters": 2.624978334962375,
+              "point": [
+                71.775,
+                27.499978334962375,
+                8.7502
+              ],
+              "normal": [
+                -1.478706127842176e-10,
+                -0.9999999999995107,
+                9.892723232370562e-07
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 3,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              67.53235931288071,
+              29.117640687119284,
+              4.25131498983342
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1227890,
+              "distanceMeters": 3.924259212500624,
+              "point": [
+                69.00012969970703,
+                27.64987030029297,
+                4.25131498983342
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              67.53235931288071,
+              29.117640687119284,
+              8.7502
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1234036,
+              "distanceMeters": 3.71227978273158,
+              "point": [
+                69.15002179196878,
+                27.499978208031223,
+                8.7502
+              ],
+              "normal": [
+                -4.820189424835891e-11,
+                -0.999999999992273,
+                3.9311536873191594e-06
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 4,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              65.775,
+              24.875,
+              4.25131498983342
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1226384,
+              "distanceMeters": 2.771963500976568,
+              "point": [
+                69.00303649902344,
+                24.875,
+                4.25131498983342
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              65.775,
+              24.875,
+              8.7502
+            ],
+            "blocked": false,
+            "hit": null
+          }
+        },
+        {
+          "directionIndex": 5,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              67.53235931288071,
+              20.632359312880716,
+              4.25131498983342
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1226311,
+              "distanceMeters": 3.924259212500624,
+              "point": [
+                69.00012969970703,
+                22.10012969970703,
+                4.25131498983342
+              ],
+              "normal": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              67.53235931288071,
+              20.632359312880716,
+              8.7502
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1226519,
+              "distanceMeters": 3.7123198271974394,
+              "point": [
+                69.14999347625542,
+                22.24999347625542,
+                8.7502
+              ],
+              "normal": [
+                -4.1082878727497546e-07,
+                0.9999999999999155,
+                -1.6408084486679268e-10
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 6,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              71.775,
+              18.875,
+              4.25131498983342
+            ],
+            "blocked": false,
+            "hit": null
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              71.775,
+              18.875,
+              8.7502
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1229090,
+              "distanceMeters": 2.625005037842629,
+              "point": [
+                71.775,
+                22.24999496215737,
+                8.7502
+              ],
+              "normal": [
+                -1.4787053964210144e-10,
+                0.9999999999995107,
+                9.892718339074336e-07
+              ],
+              "masked": false
+            }
+          }
+        },
+        {
+          "directionIndex": 7,
+          "lower": {
+            "origin": [
+              71.775,
+              24.875,
+              4.25131498983342
+            ],
+            "target": [
+              76.0176406871193,
+              20.632359312880716,
+              4.25131498983342
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1229594,
+              "distanceMeters": 3.147405730666097,
+              "point": [
+                74.0005519352994,
+                22.649448064700604,
+                4.25131498983342
+              ],
+              "normal": [
+                -0.9999999994566229,
+                2.0655586482866156e-05,
+                -2.5692429963113636e-05
+              ],
+              "masked": false
+            }
+          },
+          "upper": {
+            "origin": [
+              71.775,
+              24.875,
+              8.7502
+            ],
+            "target": [
+              76.0176406871193,
+              20.632359312880716,
+              8.7502
+            ],
+            "blocked": true,
+            "hit": {
+              "face": 1229685,
+              "distanceMeters": 3.7123197616191757,
+              "point": [
+                74.40000647737375,
+                22.249993522626255,
+                8.7502
+              ],
+              "normal": [
+                -6.690637757292929e-07,
+                0.9999999999967816,
+                -2.4472769694976916e-06
+              ],
+              "masked": false
+            }
+          }
+        }
+      ],
+      "interpretation": "Same XY has two separate admitted floor branches. Component identity alone cannot choose a height. Separate observer and destination floors must remain distinguishable."
+    }
+  ],
+  "mapAssets": {
+    "icebox": {
+      "packSha256": "4e50e23392ef51949247966cbe4e90f295b2d9c5639fef4988924c64d6029dc7",
+      "navigationSha256": "691028e3a455d246df6cb01b7ddffea7b5a025f7cc242e1c78ad019e75ee1636"
+    },
+    "haven": {
+      "packSha256": "ec63de786d30b6c0bec3a75ba1cbe49c8b61bb8fe1e2f4f2ec3b7b0aa8a65b20",
+      "navigationSha256": "8d4a51eccf984e4c5479db29c877bb718398c012d0317251edc231c0881ddf72"
+    },
+    "breeze": {
+      "packSha256": "6c3f4f72a6edd529a321f05a81b9fb45f44972cbabbe125a04ac7ac7f5e87d13",
+      "navigationSha256": "9dc838f417749960315eb0b53f5d8ef29fe94353363b7a9a34ad33268cf0f7fa"
+    },
+    "ascent": {
+      "packSha256": "c63347ef629dc56e735798eb31789b0adbd4b1bb516c50c84a50f8c656f949e2",
+      "navigationSha256": "5bfd59285db8681c8abfbc5be7419d83b5561806ee4bb68c053619273ec98f4e"
+    },
+    "split": {
+      "packSha256": "fb9a54947fe648aa974ae122a6e0fbc2635404b49d6afc1c40cdf4ae23fede40",
+      "navigationSha256": "a832bce4af6a01337b6366d3b66efc18fdd527f309aaf2e51ae514cfafd49993"
+    },
+    "abyss": {
+      "packSha256": "f1cb22add6a08de3a47516a9674920e9e77eb3439f1d1bbdcc8688e3e3d8621d",
+      "navigationSha256": "7747acadc8e209ea6320f4d4651cfb8c3ab4b546b76a96d7ecb6e5041009fff5"
+    },
+    "corrode": {
+      "packSha256": "982836f61a9273a207949d0708c325ca6f2a43c7f760cdd29a2fb6ea1ce20a75",
+      "navigationSha256": "0e444492619effb5cd4f1d6a868f6b16f1bfc6501939327a8f54bd0a9c30fb31"
+    },
+    "bind": {
+      "packSha256": "3db021fe4371b8303e0342e580fc693d9cc4835b67bcc33e8c3c04156e0d7744",
+      "navigationSha256": "daa79808f146d08773622c11e2482172da339e81338f33c103c9702cf1ac4c3b"
+    },
+    "fracture": {
+      "packSha256": "91a28bb19b4c59c3b216e33d23590b85f198e7636e37ed784979714ee96d2416",
+      "navigationSha256": "d4643158ea7904bd4e2cfb25bfca3f0cbedf559ac2d9c1764f643dd3d06351c8"
+    },
+    "pearl": {
+      "packSha256": "c1d17b551e09ebbd0a97c2a3736bc133e5278b2b520b410ca7136057cacfb967",
+      "navigationSha256": "a3c22336fd3f31823aca84f4e90d56ad31df9ce16b4143f8a916a4d392058fe8"
+    }
+  },
+  "opaqueCornerCases": [
+    {
+      "id": "split-tower-corner-wall",
+      "map": "split",
+      "liveExactPoseVerified": false,
+      "interpretation": "Small cone is expected: a tall A Tower wall is about two meters ahead. Do not force this corner open.",
+      "sourceObject": "Bonsai_Art_ATower/Shell_6_ARampBuildingLeftTowerA_0/StaticMeshComponent0.108",
+      "sourceFace": 1892377,
+      "sourceTriangleMeters": [
+        [
+          40.0001335144043,
+          46.62588882446289,
+          7.726729393005371
+        ],
+        [
+          40.0001335144043,
+          58.37411117553711,
+          7.726729393005371
+        ],
+        [
+          40.0001335144043,
+          46.62588882446289,
+          9.849800109863281
+        ]
+      ],
+      "modelRay": {
+        "origin": [
+          42.00000000000001,
+          49.616666666666674,
+          8.227230405735702
+        ],
+        "target": [
+          39.00295858060138,
+          49.48346482580452,
+          8.227230405735702
+        ],
+        "blocked": true,
+        "hit": {
+          "face": 1160201,
+          "distanceMeters": 2.0018406879378348,
+          "point": [
+            40.0001335144043,
+            49.52778371175131,
+            8.227230405735702
+          ],
+          "normal": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "masked": false
+        }
+      }
+    }
+  ]
+}

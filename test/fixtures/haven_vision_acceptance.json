@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "map": "haven",
+  "sourceSha256": "c0a2ea2365095a661e39febb584ccda0e64b45e754af7b5f27c5a2f7be961fc3",
+  "evidence": {
+    "algorithmSha256": "a48e3740019a3b2da665813b97f8bf9d9b52dee7ac347a250d74664f305c870b",
+    "wallBaselineSha256": {
+      "attack": "c8042682950699430c1d5a975f94e19cf753382a92e3f734e5d15dcc45597776",
+      "defense": "65af3fc7197ff6704826b800ae20f7e73a245e4d9e49342908eb27f3e323faf5"
+    },
+    "gameplayReviewSha256": "bbf8204e30b660a96f2f336c43998d8131bd4d780c2e444ecd433ea75603d231",
+    "groundReviewSha256": "661078e7b442c947c13868e9e4df2d125c3045bdf52d68e6dffb81d830cd27f9",
+    "selectedPointerJoins": [
+      "join-276",
+      "join-932"
+    ],
+    "basis": "Reviewed source poses; highest locally clear source level; ordinary-floor joins that remain the source default throughout. Frozen baseline supplies only SVG floor footprints and previously reviewed wall intervals."
+  },
+  "dragFrom": "reviewed-standing-241",
+  "dragTo": "reviewed-standing-250",
+  "cases": [
+    {
+      "id": "reviewed-standing-241",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-7025-0a8a1247a768f025",
+      "reviewedDomain": "reviewed-mesh-7025-0a8a1247a768f025",
+      "nativeXY": [
+        20.1,
+        76.73333333333333
+      ],
+      "svg": {
+        "attack": [
+          201.4793736136849,
+          244.50282568757927
+        ],
+        "defense": [
+          191.5116263863151,
+          228.49717431242073
+        ]
+      },
+      "sourceObject": 7025,
+      "sourcePath": "Triad_Art_AtkPathB/Floor_10_Mid_0/StaticMeshComponent0.449",
+      "expectedFloorMeters": 2.9867977499,
+      "expectedEyeMeters": 4.7367977499,
+      "sourceLocalLevelsMeters": [
+        2.9867977499
+      ]
+    },
+    {
+      "id": "reviewed-standing-242",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-7025-533d8e40739329ad",
+      "reviewedDomain": "reviewed-mesh-7025-533d8e40739329ad",
+      "nativeXY": [
+        20.18,
+        76.12
+      ],
+      "svg": {
+        "attack": [
+          201.7600366584627,
+          246.65457569754244
+        ],
+        "defense": [
+          191.2309633415373,
+          226.34542430245756
+        ]
+      },
+      "sourceObject": 7025,
+      "sourcePath": "Triad_Art_AtkPathB/Floor_10_Mid_0/StaticMeshComponent0.449",
+      "expectedFloorMeters": 2.924816140996004,
+      "expectedEyeMeters": 4.674816140996004,
+      "sourceLocalLevelsMeters": [
+        2.924816140996004
+      ]
+    },
+    {
+      "id": "reviewed-standing-243",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-7025-1b93a7cd13a450f8",
+      "reviewedDomain": "reviewed-mesh-7025-1b93a7cd13a450f8",
+      "nativeXY": [
+        20.06,
+        78.04
+      ],
+      "svg": {
+        "attack": [
+          201.339042091296,
+          239.918662622875
+        ],
+        "defense": [
+          191.65195790870402,
+          233.081337377125
+        ]
+      },
+      "sourceObject": 7025,
+      "sourcePath": "Triad_Art_AtkPathB/Floor_10_Mid_0/StaticMeshComponent0.449",
+      "expectedFloorMeters": 2.999903631864,
+      "expectedEyeMeters": 4.749903631864,
+      "sourceLocalLevelsMeters": [
+        2.999903631864
+      ]
+    },
+    {
+      "id": "reviewed-standing-245",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-7025-b62eefeb38bd748a",
+      "reviewedDomain": "reviewed-mesh-7025-b62eefeb38bd748a",
+      "nativeXY": [
+        21.766666666666666,
+        76.8
+      ],
+      "svg": {
+        "attack": [
+          207.32652037988922,
+          244.2689398169311
+        ],
+        "defense": [
+          185.6644796201108,
+          228.7310601830689
+        ]
+      },
+      "sourceObject": 7025,
+      "sourcePath": "Triad_Art_AtkPathB/Floor_10_Mid_0/StaticMeshComponent0.449",
+      "expectedFloorMeters": 3.0082999836399997,
+      "expectedEyeMeters": 4.75829998364,
+      "sourceLocalLevelsMeters": [
+        3.0082999836399997
+      ]
+    },
+    {
+      "id": "reviewed-standing-246",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "mesh-7025-6",
+      "reviewedDomain": "reviewed-mesh-7025-d7198f62a4367d18",
+      "nativeXY": [
+        22.06,
+        78.08
+      ],
+      "svg": {
+        "attack": [
+          208.35561821074117,
+          239.77833110048613
+        ],
+        "defense": [
+          184.63538178925884,
+          233.22166889951387
+        ]
+      },
+      "sourceObject": 7025,
+      "sourcePath": "Triad_Art_AtkPathB/Floor_10_Mid_0/StaticMeshComponent0.449",
+      "expectedFloorMeters": 3.01626,
+      "expectedEyeMeters": 4.76626,
+      "sourceLocalLevelsMeters": [
+        3.015248268982,
+        3.01626
+      ]
+    },
+    {
+      "id": "reviewed-standing-248",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "mesh-7025-32",
+      "reviewedDomain": "reviewed-mesh-7025-66c87e568e63221a",
+      "nativeXY": [
+        18.891666666666666,
+        77.30833333333332
+      ],
+      "svg": {
+        "attack": [
+          197.24019220818678,
+          242.48556005323877
+        ],
+        "defense": [
+          195.75080779181326,
+          230.51443994676123
+        ]
+      },
+      "sourceObject": 7025,
+      "sourcePath": "Triad_Art_AtkPathB/Floor_10_Mid_0/StaticMeshComponent0.449",
+      "expectedFloorMeters": 2.9828691666666667,
+      "expectedEyeMeters": 4.732869166666667,
+      "sourceLocalLevelsMeters": [
+        2.978503466335833,
+        2.9828691666666667
+      ]
+    },
+    {
+      "id": "reviewed-standing-250",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "reviewed-mesh-7025-e10336cf539770b2",
+      "reviewedDomain": "reviewed-mesh-7025-e10336cf539770b2",
+      "nativeXY": [
+        18.005,
+        76.815
+      ],
+      "svg": {
+        "attack": [
+          194.12951012856607,
+          244.21631549603524
+        ],
+        "defense": [
+          198.86148987143395,
+          228.78368450396476
+        ]
+      },
+      "sourceObject": 7025,
+      "sourcePath": "Triad_Art_AtkPathB/Floor_10_Mid_0/StaticMeshComponent0.449",
+      "expectedFloorMeters": 2.99376182845,
+      "expectedEyeMeters": 4.743761828449999,
+      "sourceLocalLevelsMeters": [
+        2.9931530000000004,
+        2.99376182845
+      ]
+    }
+  ]
+}

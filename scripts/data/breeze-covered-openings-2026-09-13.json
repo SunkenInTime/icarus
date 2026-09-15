@@ -1,0 +1,224 @@
+{
+  "version": 1,
+  "map": "breeze",
+  "basis": "September 13 follow-up screenshots identify Courtyard Window interior and Mid Nest Window as usable broad openings. The first must use its 4 m interior floor rather than the two connected overhead slabs. The second retains its 9 m interior floor. Measure complete sill, frame and header sections, and keep the two exterior box outlines at their own source heights.",
+  "standingSource": "work\\breeze-gameplay-v3\\source\\regional-floors.json",
+  "standingSourceSha256": "99ebcb19a44bcae74b1901366be0f3c54c8c0a213fa56cb8853bce031c0b2c3b",
+  "sourceSha256": {
+    "geometry": "143c64fa7b45eb2975639ac94203a412d89f271e6fe3c93086d6775d87d58240",
+    "metadata": "8f644d9b691d7c09bef5f92ee205ea4cad8cf876542bf76dbf71b47d4cd24563",
+    "alignment": "2470275ac55bbf8ae89c3433780dbc51bd290c24b62cc484d1fbb22584296b99"
+  },
+  "baselineSha256": {
+    "attack": "f7ee80ce1faed036e19b6caa6bd9b1ae08b4e115cef6267b98d62877adb6ab9a",
+    "defense": "7b7bc1de74ae2044fc3f75abc288b5de657bc43c0b0623d5ad473135d820c483"
+  },
+  "excludedStandingDomains": [
+    {
+      "id": "volume-387-0",
+      "sourceCollision": "/Foxtrot_BVPawn/BP_BlockingVolume543/Cube#0",
+      "sourceFaces": [
+        [
+          387,
+          39
+        ],
+        [
+          387,
+          40
+        ],
+        [
+          387,
+          41
+        ],
+        [
+          387,
+          42
+        ],
+        [
+          387,
+          43
+        ],
+        [
+          387,
+          44
+        ],
+        [
+          387,
+          45
+        ],
+        [
+          387,
+          46
+        ],
+        [
+          387,
+          47
+        ],
+        [
+          387,
+          48
+        ],
+        [
+          387,
+          49
+        ],
+        [
+          387,
+          50
+        ]
+      ],
+      "nativePlane": [
+        -0.0,
+        0.0,
+        10.75
+      ],
+      "areaSquareMeters": 28.085445637506336
+    },
+    {
+      "id": "volume-388-0",
+      "sourceCollision": "/Foxtrot_BVPawn/BP_BlockingVolume544/Cube#0",
+      "sourceFaces": [
+        [
+          388,
+          39
+        ],
+        [
+          388,
+          40
+        ],
+        [
+          388,
+          41
+        ],
+        [
+          388,
+          42
+        ],
+        [
+          388,
+          43
+        ],
+        [
+          388,
+          44
+        ],
+        [
+          388,
+          45
+        ],
+        [
+          388,
+          46
+        ],
+        [
+          388,
+          47
+        ],
+        [
+          388,
+          48
+        ],
+        [
+          388,
+          49
+        ],
+        [
+          388,
+          50
+        ]
+      ],
+      "nativePlane": [
+        0.0,
+        -0.0,
+        10.75
+      ],
+      "areaSquareMeters": 27.342773209621193
+    }
+  ],
+  "excludedSupportIds": [
+    "breeze-physical-top-4d4527da7cc2",
+    "breeze-physical-top-07f701395c14"
+  ],
+  "windows": [
+    {
+      "name": "Courtyard Window",
+      "parents": [
+        "p5-stroke-2",
+        "p5-stroke-3"
+      ],
+      "clipBox": [
+        36.7866,
+        292.885,
+        60.8077,
+        295.941
+      ],
+      "sourceObjects": [
+        5480,
+        5482,
+        5483,
+        5485,
+        5478
+      ],
+      "cross": [
+        292.4,
+        296.1
+      ],
+      "eyeElevationMeters": 5.75
+    },
+    {
+      "name": "Mid Nest Window",
+      "parents": [
+        "p5-stroke-7"
+      ],
+      "clipBox": [
+        183.469,
+        126.263,
+        203.912,
+        126.763
+      ],
+      "sourceObjects": [
+        5856,
+        5857,
+        5858,
+        5852
+      ],
+      "cross": [
+        124.1,
+        126.6
+      ],
+      "eyeElevationMeters": 10.75
+    }
+  ],
+  "lowCover": [
+    {
+      "parent": "p5-stroke-7",
+      "clipBox": [
+        189.863,
+        126.763,
+        196.507,
+        130.085
+      ],
+      "sourceObject": 6468
+    },
+    {
+      "parent": "p5-stroke-7",
+      "clipBox": [
+        196.507,
+        126.763,
+        203.912,
+        133.408
+      ],
+      "sourceObject": 4037
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-50aad8e1-6975-4fa9-a9e9-3afed84251ef.png",
+      "sha256": "dbe5a4aff62951249d6409e572f7e1bfca47d5da4b4074ec51c93d4443974344"
+    },
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-137b3a32-e2d9-4cac-8516-68e8ce46fc06.png",
+      "sha256": "5e749357cac33193fbfe675b78e99d4ab261430274d1815d52fd5b3436989f68"
+    }
+  ]
+}

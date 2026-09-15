@@ -1,0 +1,2701 @@
+{
+  "map": "fracture",
+  "basis": "Highest wall-clear independently measured source domain after explicit roof-role exclusions; unchanged pre-fix SVG wall data supplies only contact filtering. Expected elevations never come from candidate supports.",
+  "sourceSha256": "b6cc237ddeaf1fe8fbc112d60fa22da0df50657602e02ed3539a284af576501f",
+  "reviewSha256": "b76f90ab999ef75f6880ef6ff9a0b5c657daef7cd39b8b1f049eff8ab9373fe5",
+  "excludedSupportIds": [
+    "fracture-measured-mesh-100-0",
+    "fracture-measured-mesh-100-1",
+    "fracture-measured-mesh-107-0",
+    "fracture-measured-mesh-107-1",
+    "fracture-measured-mesh-107-2",
+    "fracture-measured-mesh-130-0",
+    "fracture-measured-mesh-130-1",
+    "fracture-measured-mesh-130-2",
+    "fracture-measured-mesh-130-3",
+    "fracture-measured-mesh-130-4",
+    "fracture-measured-mesh-130-5",
+    "fracture-measured-mesh-1502-0",
+    "fracture-measured-mesh-1503-0",
+    "fracture-measured-mesh-1513-0",
+    "fracture-measured-mesh-3306-0",
+    "fracture-measured-mesh-3306-1",
+    "fracture-measured-mesh-3306-2",
+    "fracture-measured-mesh-3306-3",
+    "fracture-measured-mesh-3306-4",
+    "fracture-measured-mesh-3306-5",
+    "fracture-measured-mesh-3306-6",
+    "fracture-measured-mesh-3306-7",
+    "fracture-measured-mesh-3306-8",
+    "fracture-measured-mesh-3307-0",
+    "fracture-measured-mesh-3307-1",
+    "fracture-measured-mesh-3307-2",
+    "fracture-measured-mesh-3307-3",
+    "fracture-measured-mesh-3307-4",
+    "fracture-measured-mesh-3307-5",
+    "fracture-measured-mesh-3367-0",
+    "fracture-measured-mesh-3367-1",
+    "fracture-measured-mesh-3367-2",
+    "fracture-measured-mesh-3367-3",
+    "fracture-measured-mesh-3367-4",
+    "fracture-measured-mesh-3367-5",
+    "fracture-measured-volume-188-0",
+    "fracture-measured-volume-192-0",
+    "fracture-measured-volume-193-0",
+    "fracture-measured-volume-194-0",
+    "fracture-measured-volume-197-0",
+    "fracture-measured-volume-205-0",
+    "fracture-measured-volume-209-0",
+    "fracture-measured-volume-210-0",
+    "fracture-physical-top-3c5c83b9e9e5",
+    "fracture-physical-top-50e88c37c36e",
+    "fracture-physical-top-579592ebaa9e",
+    "fracture-physical-top-65811b32e4de",
+    "fracture-physical-top-7e11817ae314",
+    "fracture-physical-top-869f5773534f",
+    "fracture-physical-top-a5b8a2f66d57",
+    "fracture-physical-top-c988cf52c2f3",
+    "fracture-physical-top-dc3d5945a67f",
+    "fracture-physical-top-dc49e9a43c9b",
+    "fracture-physical-top-e6f6cac994f5",
+    "fracture-physical-top-eff08ab01c14"
+  ],
+  "cases": [
+    {
+      "id": "volume-188-0-interior-0",
+      "svg": {
+        "attack": [
+          326.4828830237741,
+          236.65466428000002
+        ],
+        "defense": [
+          133.2551169762259,
+          236.34533571999998
+        ]
+      },
+      "native": [
+        84.21090414962426,
+        -13.638557615076971
+      ],
+      "originDomain": "volume-243-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "mesh-5483-401",
+          "floor": -32.3089
+        },
+        {
+          "domain": "volume-243-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-188-0-interior-1",
+      "svg": {
+        "attack": [
+          305.62005349749995,
+          204.95263615
+        ],
+        "defense": [
+          154.11794650250005,
+          268.04736385
+        ]
+      },
+      "native": [
+        92.20742820067332,
+        -8.37611455005697
+      ],
+      "originDomain": "volume-245-0",
+      "expectedFloorMeters": 6.4998,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-245-0",
+          "floor": 6.4998
+        }
+      ]
+    },
+    {
+      "id": "volume-188-0-interior-2",
+      "svg": {
+        "attack": [
+          305.61122976499996,
+          217.824720805
+        ],
+        "defense": [
+          154.12677023500004,
+          255.17527919500003
+        ]
+      },
+      "native": [
+        88.96057175007795,
+        -8.37388885052548
+      ],
+      "originDomain": "volume-244-0",
+      "expectedFloorMeters": 6.4998,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "mesh-5483-397",
+          "floor": -30.7197
+        },
+        {
+          "domain": "volume-244-0",
+          "floor": 6.4998
+        }
+      ]
+    },
+    {
+      "id": "volume-192-0-interior-0",
+      "svg": {
+        "attack": [
+          143.5367617447962,
+          286.05494288499995
+        ],
+        "defense": [
+          316.2012382552038,
+          186.94505711500005
+        ]
+      },
+      "native": [
+        71.75017090020846,
+        32.50779784377436
+      ],
+      "originDomain": "volume-226-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-226-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-192-0-interior-1",
+      "svg": {
+        "attack": [
+          159.12237338780633,
+          279.4279817120188
+        ],
+        "defense": [
+          300.61562661219364,
+          193.57201828798122
+        ]
+      },
+      "native": [
+        73.42175652204332,
+        28.576480962640776
+      ],
+      "originDomain": "volume-262-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-262-0",
+          "floor": 5.5017
+        },
+        {
+          "domain": "volume-226-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-192-0-interior-2",
+      "svg": {
+        "attack": [
+          122.2804775079459,
+          291.677425095
+        ],
+        "defense": [
+          337.45752249205407,
+          181.322574905
+        ]
+      },
+      "native": [
+        70.33195519380341,
+        37.86948598053611
+      ],
+      "originDomain": "volume-222-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "mesh-5483-106",
+          "floor": -32.93769845291048
+        },
+        {
+          "domain": "volume-222-0",
+          "floor": 1.0317
+        },
+        {
+          "domain": "volume-226-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-192-0-interior-3",
+      "svg": {
+        "attack": [
+          185.38608767973665,
+          276.5560214412908
+        ],
+        "defense": [
+          274.35191232026335,
+          196.4439785587092
+        ]
+      },
+      "native": [
+        74.1461801861811,
+        21.951717961861068
+      ],
+      "originDomain": "volume-560-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-560-0",
+          "floor": 1.7159
+        },
+        {
+          "domain": "volume-262-0",
+          "floor": 5.5017
+        },
+        {
+          "domain": "volume-226-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-192-0-interior-4",
+      "svg": {
+        "attack": [
+          148.75714198644806,
+          296.95793274201014
+        ],
+        "defense": [
+          310.98085801355194,
+          176.04206725798986
+        ]
+      },
+      "native": [
+        68.99999919944523,
+        31.19100839463225
+      ],
+      "originDomain": "volume-261-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-261-0",
+          "floor": 5.5017
+        },
+        {
+          "domain": "volume-226-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-193-0-interior-0",
+      "svg": {
+        "attack": [
+          147.93556585109434,
+          300.8386186030508
+        ],
+        "defense": [
+          311.80243414890566,
+          172.1613813969492
+        ]
+      },
+      "native": [
+        68.02113445000002,
+        31.398242874999987
+      ],
+      "originDomain": "volume-261-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-261-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-194-0-interior-0",
+      "svg": {
+        "attack": [
+          199.33833244598907,
+          209.643566765
+        ],
+        "defense": [
+          260.39966755401093,
+          263.356433235
+        ]
+      },
+      "native": [
+        91.024187200103,
+        18.43240177231163
+      ],
+      "originDomain": "volume-241-0",
+      "expectedFloorMeters": 6.4998,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-241-0",
+          "floor": 6.4998
+        }
+      ]
+    },
+    {
+      "id": "volume-194-0-interior-1",
+      "svg": {
+        "attack": [
+          195.6556458522801,
+          215.91666525941565
+        ],
+        "defense": [
+          264.0823541477199,
+          257.08333474058435
+        ]
+      },
+      "native": [
+        89.4418599502661,
+        19.361323158612528
+      ],
+      "originDomain": "volume-560-0",
+      "expectedFloorMeters": 6.4998,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-560-0",
+          "floor": 1.7159
+        },
+        {
+          "domain": "volume-241-0",
+          "floor": 6.4998
+        }
+      ]
+    },
+    {
+      "id": "volume-194-0-interior-2",
+      "svg": {
+        "attack": [
+          201.59930220230342,
+          247.326101375
+        ],
+        "defense": [
+          258.1386977976966,
+          225.673898625
+        ]
+      },
+      "native": [
+        81.51913935023998,
+        17.8620944417862
+      ],
+      "originDomain": "volume-299-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-299-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-194-0-interior-3",
+      "svg": {
+        "attack": [
+          196.01246598560078,
+          253.361818145
+        ],
+        "defense": [
+          263.7255340143992,
+          219.63818185499997
+        ]
+      },
+      "native": [
+        79.99668930008208,
+        19.271318797809588
+      ],
+      "originDomain": "volume-301-0",
+      "expectedFloorMeters": 6.1541714823531155,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-560-0",
+          "floor": 1.7159
+        },
+        {
+          "domain": "volume-301-0",
+          "floor": 6.1541714823531155
+        }
+      ]
+    },
+    {
+      "id": "volume-194-0-interior-4",
+      "svg": {
+        "attack": [
+          187.45259249018977,
+          257.06410963124114
+        ],
+        "defense": [
+          272.2854075098102,
+          215.93589036875886
+        ]
+      },
+      "native": [
+        79.06282277292115,
+        21.43046249673329
+      ],
+      "originDomain": "volume-262-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-560-0",
+          "floor": 1.7159
+        },
+        {
+          "domain": "volume-262-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-194-0-interior-5",
+      "svg": {
+        "attack": [
+          203.5389797697864,
+          256.05347384137843
+        ],
+        "defense": [
+          256.1990202302136,
+          216.94652615862157
+        ]
+      },
+      "native": [
+        79.31774568723276,
+        17.372829898330068
+      ],
+      "originDomain": "volume-301-1",
+      "expectedFloorMeters": 6.4993,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-301-1",
+          "floor": 6.4993
+        }
+      ]
+    },
+    {
+      "id": "volume-195-0-interior-0",
+      "svg": {
+        "attack": [
+          155.47228710737213,
+          209.9887582565914
+        ],
+        "defense": [
+          304.2657128926279,
+          263.0112417434086
+        ]
+      },
+      "native": [
+        90.93711604953153,
+        29.497179241318896
+      ],
+      "originDomain": "volume-231-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-231-0",
+          "floor": 1.0317
+        },
+        {
+          "domain": "volume-265-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-195-0-interior-1",
+      "svg": {
+        "attack": [
+          171.60735615450994,
+          195.70295591000001
+        ],
+        "defense": [
+          288.13064384549006,
+          277.29704409
+        ]
+      },
+      "native": [
+        94.5405688502357,
+        25.427267146998428
+      ],
+      "originDomain": "volume-240-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-195-0-interior-2",
+      "svg": {
+        "attack": [
+          155.7372487415921,
+          209.48683774313486
+        ],
+        "defense": [
+          304.0007512584079,
+          263.51316225686514
+        ]
+      },
+      "native": [
+        91.0637205507045,
+        29.430345281297257
+      ],
+      "originDomain": "volume-265-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-231-0",
+          "floor": 1.0317
+        },
+        {
+          "domain": "volume-265-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-195-0-interior-3",
+      "svg": {
+        "attack": [
+          171.83677745157343,
+          212.31194855500001
+        ],
+        "defense": [
+          287.9012225484266,
+          260.688051445
+        ]
+      },
+      "native": [
+        90.35111420068425,
+        25.369397886638556
+      ],
+      "originDomain": "volume-266-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-196-0-interior-0",
+      "svg": {
+        "attack": [
+          171.81101006672048,
+          212.720781385
+        ],
+        "defense": [
+          287.9269899332795,
+          260.279218615
+        ]
+      },
+      "native": [
+        90.24799014992803,
+        25.375897455431573
+      ],
+      "originDomain": "volume-266-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-196-0-interior-1",
+      "svg": {
+        "attack": [
+          171.82929025976384,
+          206.7662090828884
+        ],
+        "defense": [
+          287.9087097402362,
+          266.2337909171116
+        ]
+      },
+      "native": [
+        91.74997230805016,
+        25.37128645695761
+      ],
+      "originDomain": "volume-240-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "volume-197-0-interior-0",
+      "svg": {
+        "attack": [
+          182.25427564763027,
+          272.12095884999997
+        ],
+        "defense": [
+          277.48372435236973,
+          200.87904115000003
+        ]
+      },
+      "native": [
+        75.26488100032883,
+        22.741686670973543
+      ],
+      "originDomain": "volume-262-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-262-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-197-0-interior-1",
+      "svg": {
+        "attack": [
+          198.31047957593665,
+          263.228461255
+        ],
+        "defense": [
+          261.42752042406335,
+          209.771538745
+        ]
+      },
+      "native": [
+        77.5079258490911,
+        18.69166752536091
+      ],
+      "originDomain": "volume-301-0",
+      "expectedFloorMeters": 5.605492642240057,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-301-0",
+          "floor": 5.605492642240057
+        }
+      ]
+    },
+    {
+      "id": "volume-197-0-interior-2",
+      "svg": {
+        "attack": [
+          186.46666843176945,
+          272.438238445
+        ],
+        "defense": [
+          273.27133156823055,
+          200.56176155499998
+        ]
+      },
+      "native": [
+        75.18485035049403,
+        21.67915212041719
+      ],
+      "originDomain": "volume-560-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-560-0",
+          "floor": 1.7159
+        },
+        {
+          "domain": "volume-262-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-197-0-interior-3",
+      "svg": {
+        "attack": [
+          163.72578824250002,
+          298.747620525
+        ],
+        "defense": [
+          296.0122117575,
+          174.252379475
+        ]
+      },
+      "native": [
+        68.54856810040447,
+        27.415314949805165
+      ],
+      "originDomain": "volume-261-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-261-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "volume-205-0-interior-0",
+      "svg": {
+        "attack": [
+          284.377279356593,
+          306.07039176116916
+        ],
+        "defense": [
+          175.36072064340698,
+          166.92960823883084
+        ]
+      },
+      "native": [
+        66.70147125,
+        -3.0178342018032636
+      ],
+      "originDomain": "volume-259-0",
+      "expectedFloorMeters": 8.9117,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "mesh-5483-400",
+          "floor": -32.309
+        },
+        {
+          "domain": "volume-259-0",
+          "floor": 8.9117
+        }
+      ]
+    },
+    {
+      "id": "volume-205-0-interior-1",
+      "svg": {
+        "attack": [
+          295.7116819749723,
+          276.95053495520347
+        ],
+        "defense": [
+          164.0263180250277,
+          196.04946504479653
+        ]
+      },
+      "native": [
+        74.04666804173627,
+        -5.876825518398983
+      ],
+      "originDomain": "volume-206-0",
+      "expectedFloorMeters": 8.9113,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-206-0",
+          "floor": 8.9113
+        }
+      ]
+    },
+    {
+      "id": "volume-205-0-interior-2",
+      "svg": {
+        "attack": [
+          283.42352217529907,
+          294.79864280000004
+        ],
+        "defense": [
+          176.31447782470093,
+          178.20135719999996
+        ]
+      },
+      "native": [
+        69.54465879925588,
+        -2.777258355746886
+      ],
+      "originDomain": "volume-558-0",
+      "expectedFloorMeters": 8.9117,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "mesh-5483-400",
+          "floor": -32.309
+        },
+        {
+          "domain": "volume-558-0",
+          "floor": 3.4321595619275405
+        },
+        {
+          "domain": "volume-259-0",
+          "floor": 8.9117
+        }
+      ]
+    },
+    {
+      "id": "volume-205-0-interior-3",
+      "svg": {
+        "attack": [
+          274.7946697194848,
+          296.4987825863559
+        ],
+        "defense": [
+          184.94333028051523,
+          176.5012174136441
+        ]
+      },
+      "native": [
+        69.11581529952804,
+        -0.6007153941129443
+      ],
+      "originDomain": "volume-561-0",
+      "expectedFloorMeters": 8.9117,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-561-0",
+          "floor": 0.06823971279982854
+        },
+        {
+          "domain": "volume-259-0",
+          "floor": 8.9117
+        }
+      ]
+    },
+    {
+      "id": "volume-205-0-interior-4",
+      "svg": {
+        "attack": [
+          275.2303204663291,
+          313.1210258978082
+        ],
+        "defense": [
+          184.5076795336709,
+          159.87897410219182
+        ]
+      },
+      "native": [
+        64.9230183,
+        -0.7106040000000045
+      ],
+      "originDomain": "volume-346-0",
+      "expectedFloorMeters": 9.8276,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-561-0",
+          "floor": -0.023967816400003672
+        },
+        {
+          "domain": "volume-346-0",
+          "floor": 9.8276
+        }
+      ]
+    },
+    {
+      "id": "volume-205-0-interior-5",
+      "svg": {
+        "attack": [
+          280.45720536729027,
+          283.0452321932173
+        ],
+        "defense": [
+          179.28079463270973,
+          189.95476780678268
+        ]
+      },
+      "native": [
+        72.50934075,
+        -2.0290341853245937
+      ],
+      "originDomain": "volume-300-0",
+      "expectedFloorMeters": 8.9123,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-558-0",
+          "floor": 3.6460020298342313
+        },
+        {
+          "domain": "volume-300-0",
+          "floor": 8.9123
+        }
+      ]
+    },
+    {
+      "id": "volume-205-0-interior-6",
+      "svg": {
+        "attack": [
+          277.9837200344152,
+          313.76474062364275
+        ],
+        "defense": [
+          181.75427996558477,
+          159.23525937635725
+        ]
+      },
+      "native": [
+        64.76064760667899,
+        -1.4051218957655862
+      ],
+      "originDomain": "volume-363-0",
+      "expectedFloorMeters": 9.4648,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-363-0",
+          "floor": 9.4648
+        }
+      ]
+    },
+    {
+      "id": "volume-209-0-interior-0",
+      "svg": {
+        "attack": [
+          405.6410423565974,
+          330.3371643750896
+        ],
+        "defense": [
+          54.09695764340262,
+          142.66283562491037
+        ]
+      },
+      "native": [
+        60.58041709999999,
+        -33.605422900351535
+      ],
+      "originDomain": "volume-225-0",
+      "expectedFloorMeters": 5.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-225-0",
+          "floor": 5.5
+        }
+      ]
+    },
+    {
+      "id": "volume-209-0-interior-1",
+      "svg": {
+        "attack": [
+          421.1586068731413,
+          330.33716437508957
+        ],
+        "defense": [
+          38.57939312685869,
+          142.66283562491043
+        ]
+      },
+      "native": [
+        60.580417100000005,
+        -37.51957556469872
+      ],
+      "originDomain": "volume-169-0",
+      "expectedFloorMeters": 8.0101,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-169-0",
+          "floor": 8.0101
+        }
+      ]
+    },
+    {
+      "id": "volume-209-0-interior-2",
+      "svg": {
+        "attack": [
+          401.34817195456105,
+          378.61515789
+        ],
+        "defense": [
+          58.389828045438946,
+          94.38484211000002
+        ]
+      },
+      "native": [
+        48.40276920014713,
+        -32.522588664095366
+      ],
+      "originDomain": "volume-257-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-257-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-209-0-interior-3",
+      "svg": {
+        "attack": [
+          402.70493776493385,
+          365.32219673
+        ],
+        "defense": [
+          57.033062235066154,
+          107.67780327000003
+        ]
+      },
+      "native": [
+        51.75578759978101,
+        -32.86481946364538
+      ],
+      "originDomain": "volume-282-0",
+      "expectedFloorMeters": 5.645571482742566,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-282-0",
+          "floor": 5.645571482742566
+        }
+      ]
+    },
+    {
+      "id": "volume-209-0-interior-4",
+      "svg": {
+        "attack": [
+          396.04203000231547,
+          385.51278585057594
+        ],
+        "defense": [
+          63.69596999768453,
+          87.48721414942406
+        ]
+      },
+      "native": [
+        46.66291054959794,
+        -31.184166668965673
+      ],
+      "originDomain": "volume-268-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-268-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-209-0-interior-5",
+      "svg": {
+        "attack": [
+          394.46527157480307,
+          357.59551770089917
+        ],
+        "defense": [
+          65.27272842519693,
+          115.40448229910083
+        ]
+      },
+      "native": [
+        53.704766208896295,
+        -30.786444900610874
+      ],
+      "originDomain": "volume-283-0",
+      "expectedFloorMeters": 5.492850671087366,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-283-0",
+          "floor": 5.492850671087366
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-0",
+      "svg": {
+        "attack": [
+          357.24673110019455,
+          366.28098782
+        ],
+        "defense": [
+          102.49126889980545,
+          106.71901218
+        ]
+      },
+      "native": [
+        51.51394199988194,
+        -21.398434996963434
+      ],
+      "originDomain": "volume-218-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-218-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-1",
+      "svg": {
+        "attack": [
+          306.0234610580903,
+          371.575927375
+        ],
+        "defense": [
+          153.71453894190972,
+          101.42407262500001
+        ]
+      },
+      "native": [
+        50.17834569901498,
+        -8.477870130091388
+      ],
+      "originDomain": "volume-212-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-212-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-2",
+      "svg": {
+        "attack": [
+          376.7959745281816,
+          385.59984158
+        ],
+        "defense": [
+          82.9420254718184,
+          87.40015842000003
+        ]
+      },
+      "native": [
+        46.640951600117916,
+        -26.32953891910582
+      ],
+      "originDomain": "volume-268-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-268-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-3",
+      "svg": {
+        "attack": [
+          391.06590680480554,
+          357.7384442929489
+        ],
+        "defense": [
+          68.67209319519446,
+          115.26155570705112
+        ]
+      },
+      "native": [
+        53.66871438513999,
+        -29.928988651120942
+      ],
+      "originDomain": "volume-283-0",
+      "expectedFloorMeters": 5.735167807193221,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-283-0",
+          "floor": 5.735167807193221
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-4",
+      "svg": {
+        "attack": [
+          377.382728207452,
+          355.26572023739516
+        ],
+        "defense": [
+          82.35527179254802,
+          117.73427976260484
+        ]
+      },
+      "native": [
+        54.29243465,
+        -26.47754175
+      ],
+      "originDomain": "volume-170-0",
+      "expectedFloorMeters": 10.0063,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-170-0",
+          "floor": 10.0063
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-5",
+      "svg": {
+        "attack": [
+          389.5796729949232,
+          378.56172032
+        ],
+        "defense": [
+          70.15832700507679,
+          94.43827968
+        ]
+      },
+      "native": [
+        48.416248300347974,
+        -29.554100825096977
+      ],
+      "originDomain": "volume-257-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-257-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-6",
+      "svg": {
+        "attack": [
+          360.0717473836966,
+          349.337617385
+        ],
+        "defense": [
+          99.66625261630338,
+          123.66238261500001
+        ]
+      },
+      "native": [
+        55.78774015038883,
+        -22.11101750313603
+      ],
+      "originDomain": "volume-258-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-7",
+      "svg": {
+        "attack": [
+          349.75093564425106,
+          351.57003477191967
+        ],
+        "defense": [
+          109.98706435574894,
+          121.42996522808033
+        ]
+      },
+      "native": [
+        55.2246348735504,
+        -19.50769449293637
+      ],
+      "originDomain": "volume-263-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-218-0",
+          "floor": 6.0
+        },
+        {
+          "domain": "volume-263-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-8",
+      "svg": {
+        "attack": [
+          349.3099653842238,
+          349.53897164033435
+        ],
+        "defense": [
+          110.4280346157762,
+          123.46102835966565
+        ]
+      },
+      "native": [
+        55.73695052459708,
+        -19.396464092293062
+      ],
+      "originDomain": "volume-264-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-263-0",
+          "floor": 6.0
+        },
+        {
+          "domain": "volume-264-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-9",
+      "svg": {
+        "attack": [
+          390.785777163498,
+          367.1348549396909
+        ],
+        "defense": [
+          68.95222283650202,
+          105.86514506030909
+        ]
+      },
+      "native": [
+        51.298562437066316,
+        -29.858328710850188
+      ],
+      "originDomain": "volume-282-0",
+      "expectedFloorMeters": 5.776200711730155,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-282-0",
+          "floor": 5.776200711730155
+        }
+      ]
+    },
+    {
+      "id": "volume-210-0-interior-10",
+      "svg": {
+        "attack": [
+          387.33194940095075,
+          359.92770837449734
+        ],
+        "defense": [
+          72.40605059904925,
+          113.07229162550266
+        ]
+      },
+      "native": [
+        53.11649410414057,
+        -28.9871347084307
+      ],
+      "originDomain": "volume-283-1",
+      "expectedFloorMeters": 6.0002,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-218-0",
+          "floor": 6.0
+        },
+        {
+          "domain": "volume-283-1",
+          "floor": 6.0002
+        }
+      ]
+    },
+    {
+      "id": "volume-326-0-interior-0",
+      "svg": {
+        "attack": [
+          364.3657983496448,
+          342.4468273564438
+        ],
+        "defense": [
+          95.37220165035518,
+          130.5531726435562
+        ]
+      },
+      "native": [
+        57.525874,
+        -23.194149524999997
+      ],
+      "originDomain": "volume-258-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-326-0-interior-1",
+      "svg": {
+        "attack": [
+          357.76059217654256,
+          344.7071078376729
+        ],
+        "defense": [
+          101.97740782345744,
+          128.29289216232712
+        ]
+      },
+      "native": [
+        56.955740532319396,
+        -21.52805138740586
+      ],
+      "originDomain": "volume-263-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        },
+        {
+          "domain": "volume-263-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "volume-421-0-interior-0",
+      "svg": {
+        "attack": [
+          328.2838838749301,
+          222.16703898
+        ],
+        "defense": [
+          131.4541161250699,
+          250.83296101999997
+        ]
+      },
+      "native": [
+        87.8652648005886,
+        -14.092842324029087
+      ],
+      "originDomain": "volume-243-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-243-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-100-0-lower",
+      "svg": {
+        "attack": [
+          369.8747628171014,
+          352.74236038662104
+        ],
+        "defense": [
+          89.86323718289862,
+          120.25763961337896
+        ]
+      },
+      "native": [
+        54.92892729499491,
+        -24.5837315
+      ],
+      "originDomain": "mesh-100-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-218-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-100-1-lower",
+      "svg": {
+        "attack": [
+          369.8517985895482,
+          343.95505181350495
+        ],
+        "defense": [
+          89.88620141045182,
+          129.04494818649502
+        ]
+      },
+      "native": [
+        57.14543925002711,
+        -24.577939
+      ],
+      "originDomain": "mesh-100-1",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-107-0-lower",
+      "svg": {
+        "attack": [
+          360.697203927326,
+          341.02719375354866
+        ],
+        "defense": [
+          99.04079607267404,
+          131.9728062464513
+        ]
+      },
+      "native": [
+        57.883962580411215,
+        -22.26878275
+      ],
+      "originDomain": "mesh-107-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-107-1-lower",
+      "svg": {
+        "attack": [
+          365.572799834744,
+          341.2912101391121
+        ],
+        "defense": [
+          94.165200165256,
+          131.7087898608879
+        ]
+      },
+      "native": [
+        57.817367050044155,
+        -23.49860375
+      ],
+      "originDomain": "mesh-107-1",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-107-2-lower",
+      "svg": {
+        "attack": [
+          365.5727863555254,
+          340.76319554817746
+        ],
+        "defense": [
+          94.16521364447459,
+          132.2368044518225
+        ]
+      },
+      "native": [
+        57.950553525004025,
+        -23.49860035
+      ],
+      "originDomain": "mesh-107-2",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-130-0-lower",
+      "svg": {
+        "attack": [
+          366.5781945305229,
+          340.83662220416244
+        ],
+        "defense": [
+          93.15980546947708,
+          132.16337779583756
+        ]
+      },
+      "native": [
+        57.93203237493237,
+        -23.75220465
+      ],
+      "originDomain": "mesh-130-0",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-130-1-lower",
+      "svg": {
+        "attack": [
+          366.57821098309853,
+          341.36463826048976
+        ],
+        "defense": [
+          93.15978901690146,
+          131.63536173951027
+        ]
+      },
+      "native": [
+        57.79884553034164,
+        -23.7522088
+      ],
+      "originDomain": "mesh-130-1",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-130-2-lower",
+      "svg": {
+        "attack": [
+          369.60629563465966,
+          342.2453718622351
+        ],
+        "defense": [
+          90.13170436534037,
+          130.75462813776488
+        ]
+      },
+      "native": [
+        57.5766891622997,
+        -24.5160133
+      ],
+      "originDomain": "mesh-130-2",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-130-3-lower",
+      "svg": {
+        "attack": [
+          368.32065331583914,
+          341.0243250269611
+        ],
+        "defense": [
+          91.41734668416088,
+          131.9756749730389
+        ]
+      },
+      "native": [
+        57.88468618841067,
+        -24.1917227
+      ],
+      "originDomain": "mesh-130-3",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-130-4-lower",
+      "svg": {
+        "attack": [
+          368.7381243397191,
+          341.21803928762506
+        ],
+        "defense": [
+          90.99987566028094,
+          131.78196071237494
+        ]
+      },
+      "native": [
+        57.83582367595315,
+        -24.297025650000002
+      ],
+      "originDomain": "mesh-130-4",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-130-5-lower",
+      "svg": {
+        "attack": [
+          368.63697449940764,
+          341.8059326174574
+        ],
+        "defense": [
+          91.10102550059239,
+          131.1940673825426
+        ]
+      },
+      "native": [
+        57.68753337944033,
+        -24.2715116
+      ],
+      "originDomain": "mesh-130-5",
+      "expectedFloorMeters": 6.0,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-258-0",
+          "floor": 6.0
+        }
+      ]
+    },
+    {
+      "id": "mesh-1502-0-lower",
+      "svg": {
+        "attack": [
+          136.7210003904921,
+          301.39479823739686
+        ],
+        "defense": [
+          323.01699960950793,
+          171.60520176260314
+        ]
+      },
+      "native": [
+        67.88084362051383,
+        34.227006450000005
+      ],
+      "originDomain": "mesh-1502-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "mesh-5483-297",
+          "floor": -34.635395195683486
+        },
+        {
+          "domain": "volume-261-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "mesh-1503-0-lower",
+      "svg": {
+        "attack": [
+          146.61155325165583,
+          301.39479810885933
+        ],
+        "defense": [
+          313.12644674834416,
+          171.60520189114067
+        ]
+      },
+      "native": [
+        67.88084365293616,
+        31.732212
+      ],
+      "originDomain": "mesh-1503-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-261-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "mesh-1513-0-lower",
+      "svg": {
+        "attack": [
+          151.83900156284489,
+          301.39477484872407
+        ],
+        "defense": [
+          307.8989984371551,
+          171.60522515127593
+        ]
+      },
+      "native": [
+        67.88084952007596,
+        30.413639699999997
+      ],
+      "originDomain": "mesh-1513-0",
+      "expectedFloorMeters": 5.5017,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-261-0",
+          "floor": 5.5017
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-0-lower",
+      "svg": {
+        "attack": [
+          167.87177723906933,
+          209.61397888948488
+        ],
+        "defense": [
+          291.86622276093067,
+          263.3860211105151
+        ]
+      },
+      "native": [
+        91.03165045,
+        26.3695301
+      ],
+      "originDomain": "mesh-3306-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-1-lower",
+      "svg": {
+        "attack": [
+          168.8115124806359,
+          211.23160831634414
+        ],
+        "defense": [
+          290.92648751936406,
+          261.76839168365586
+        ]
+      },
+      "native": [
+        90.62361937499998,
+        26.13249115
+      ],
+      "originDomain": "mesh-3306-1",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-2-lower",
+      "svg": {
+        "attack": [
+          168.96211222191033,
+          209.61264806777797
+        ],
+        "defense": [
+          290.77588777808967,
+          263.38735193222203
+        ]
+      },
+      "native": [
+        91.03198613665523,
+        26.094503850000002
+      ],
+      "originDomain": "mesh-3306-2",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-3-lower",
+      "svg": {
+        "attack": [
+          171.12140117355207,
+          209.61397888948488
+        ],
+        "defense": [
+          288.6165988264479,
+          263.3860211105151
+        ]
+      },
+      "native": [
+        91.03165045,
+        25.5498445
+      ],
+      "originDomain": "mesh-3306-3",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-4-lower",
+      "svg": {
+        "attack": [
+          172.26578683181884,
+          209.60978395496835
+        ],
+        "defense": [
+          287.47221316818116,
+          263.39021604503165
+        ]
+      },
+      "native": [
+        91.03270858087467,
+        25.2611845
+      ],
+      "originDomain": "mesh-3306-4",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-5-lower",
+      "svg": {
+        "attack": [
+          172.4187333446945,
+          211.22731482862213
+        ],
+        "defense": [
+          287.3192666553055,
+          261.7726851713779
+        ]
+      },
+      "native": [
+        90.62470236494912,
+        25.22260525
+      ],
+      "originDomain": "mesh-3306-5",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-6-lower",
+      "svg": {
+        "attack": [
+          166.33225899193042,
+          200.65379906057007
+        ],
+        "defense": [
+          293.4057410080696,
+          272.34620093942993
+        ]
+      },
+      "native": [
+        93.291767475,
+        26.7578584
+      ],
+      "originDomain": "mesh-3306-6",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-7-lower",
+      "svg": {
+        "attack": [
+          166.4868983360819,
+          209.61397829481348
+        ],
+        "defense": [
+          293.2511016639181,
+          263.3860217051865
+        ]
+      },
+      "native": [
+        91.0316506,
+        26.71885215
+      ],
+      "originDomain": "mesh-3306-7",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-265-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3306-8-lower",
+      "svg": {
+        "attack": [
+          172.4296126598868,
+          200.71244277973022
+        ],
+        "defense": [
+          287.3083873401132,
+          272.2875572202698
+        ]
+      },
+      "native": [
+        93.276975175,
+        25.21986105
+      ],
+      "originDomain": "mesh-3306-8",
+      "expectedFloorMeters": 12.331794671934999,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        },
+        {
+          "domain": "mesh-1605-0",
+          "floor": 12.331794671934999
+        }
+      ]
+    },
+    {
+      "id": "mesh-3307-0-lower",
+      "svg": {
+        "attack": [
+          171.4457619181141,
+          220.46950365744362
+        ],
+        "defense": [
+          288.2922380818859,
+          252.53049634255638
+        ]
+      },
+      "native": [
+        88.29345135,
+        25.4680277
+      ],
+      "originDomain": "mesh-3307-0",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3307-1-lower",
+      "svg": {
+        "attack": [
+          171.41106462544997,
+          219.94111358622752
+        ],
+        "defense": [
+          288.32693537455003,
+          253.05888641377248
+        ]
+      },
+      "native": [
+        88.42673253615908,
+        25.47677975
+      ],
+      "originDomain": "mesh-3307-1",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3307-2-lower",
+      "svg": {
+        "attack": [
+          171.35902651629397,
+          226.82681082050124
+        ],
+        "defense": [
+          288.37897348370603,
+          246.17318917949876
+        ]
+      },
+      "native": [
+        86.6898832936967,
+        25.48990585
+      ],
+      "originDomain": "mesh-3307-2",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3307-3-lower",
+      "svg": {
+        "attack": [
+          172.5141053576022,
+          224.16817499705667
+        ],
+        "defense": [
+          287.2238946423978,
+          248.83182500294333
+        ]
+      },
+      "native": [
+        87.36049796913561,
+        25.1985486
+      ],
+      "originDomain": "mesh-3307-3",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3307-4-lower",
+      "svg": {
+        "attack": [
+          172.5282363360555,
+          228.58856842161714
+        ],
+        "defense": [
+          287.2097636639445,
+          244.41143157838286
+        ]
+      },
+      "native": [
+        86.24549730767487,
+        25.1949842
+      ],
+      "originDomain": "mesh-3307-4",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3307-5-lower",
+      "svg": {
+        "attack": [
+          172.52080096121284,
+          220.20370476561118
+        ],
+        "defense": [
+          287.21719903878716,
+          252.79629523438882
+        ]
+      },
+      "native": [
+        88.36049650000001,
+        25.196859699999997
+      ],
+      "originDomain": "mesh-3307-5",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3367-0-lower",
+      "svg": {
+        "attack": [
+          170.02269797465246,
+          204.0270502263486
+        ],
+        "defense": [
+          289.71530202534757,
+          268.9729497736514
+        ]
+      },
+      "native": [
+        92.44089812472487,
+        25.82698155
+      ],
+      "originDomain": "mesh-3367-0",
+      "expectedFloorMeters": 11.966301131101389,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        },
+        {
+          "domain": "mesh-1605-5",
+          "floor": 11.966301131101389
+        }
+      ]
+    },
+    {
+      "id": "mesh-3367-1-lower",
+      "svg": {
+        "attack": [
+          169.49106768228398,
+          203.4887641546498
+        ],
+        "defense": [
+          290.246932317716,
+          269.5112358453502
+        ]
+      },
+      "native": [
+        92.57667547944277,
+        25.96108005
+      ],
+      "originDomain": "mesh-3367-1",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3367-2-lower",
+      "svg": {
+        "attack": [
+          173.5325352506526,
+          209.61060611148042
+        ],
+        "defense": [
+          286.2054647493474,
+          263.3893938885196
+        ]
+      },
+      "native": [
+        91.0325012,
+        24.9416597
+      ],
+      "originDomain": "mesh-3367-2",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-266-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3367-3-lower",
+      "svg": {
+        "attack": [
+          165.5964421265603,
+          214.88239173531088
+        ],
+        "defense": [
+          294.1415578734397,
+          258.1176082646891
+        ]
+      },
+      "native": [
+        89.70274524999999,
+        26.943460950000002
+      ],
+      "originDomain": "mesh-3367-3",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-265-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3367-4-lower",
+      "svg": {
+        "attack": [
+          165.5459119058721,
+          203.12498159474336
+        ],
+        "defense": [
+          294.19208809412794,
+          269.87501840525664
+        ]
+      },
+      "native": [
+        92.66843604371061,
+        26.956206700000003
+      ],
+      "originDomain": "mesh-3367-4",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        }
+      ]
+    },
+    {
+      "id": "mesh-3367-5-lower",
+      "svg": {
+        "attack": [
+          165.60348581116864,
+          203.49464610840437
+        ],
+        "defense": [
+          294.13451418883136,
+          269.50535389159563
+        ]
+      },
+      "native": [
+        92.57519181459733,
+        26.94168425
+      ],
+      "originDomain": "mesh-3367-5",
+      "expectedFloorMeters": 6.5,
+      "sourceLevels": [
+        {
+          "domain": "mesh-5395-0",
+          "floor": -58.22
+        },
+        {
+          "domain": "volume-240-0",
+          "floor": 6.5
+        }
+      ]
+    }
+  ],
+  "positionsWithoutVerifiedLocalFloor": []
+}

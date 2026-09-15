@@ -57,6 +57,8 @@ provider.PostMount();
 provider.LoadVirtualPaths(EGame.GAME_Valorant.GetVersion());
 var initializationWarnings = sink.Warnings;
 File.WriteAllLines(Path.Combine(output, "package-index.txt"), provider.Files.Keys.Order());
+if (selection.Value<bool>("collisionEvidence"))
+    CollisionSidecar.WriteConfiguration(provider, output);
 var results = new List<object>();
 foreach (var token in selection["properties"] ?? new JArray())
 {
@@ -71,6 +73,11 @@ foreach (var token in selection["properties"] ?? new JArray())
         var file = Path.Combine(output, "properties", Path.ChangeExtension(packagePath, ".json"));
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, json);
+        NavigationSidecar.Write(objects, output, packagePath);
+        if (selection.Value<bool>("collisionEvidence"))
+            CollisionSidecar.Write(objects, output, packagePath);
+        if (selection.Value<bool>("instanceTransformEvidence"))
+            InstanceTransformSidecar.Write(objects, output, packagePath);
         results.Add(new { packagePath, objects = objects.Length, errors = sink.Errors - before, sha256 = Hash(file) });
         Console.WriteLine($"Properties: {packagePath}, {objects.Length} objects, {sink.Errors - before} errors");
     }

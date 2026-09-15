@@ -1,0 +1,2043 @@
+{
+  "version": 1,
+  "basis": "Separate default-only collision-body covered-interior role review; physical eligibility and saved upper levels are unchanged. This addendum does not alter the original123-domain mesh-roof review.",
+  "maps": {
+    "abyss": {
+      "standingSource": "work\\systematic-map-review\\focused\\roof-candidate\\abyss\\source\\regional-floors.json",
+      "standingSourceSha256": "5b538f94bbea376c4c8d5ab86795703ceb45b1a4be3673f8fecb76b9065d95d7",
+      "sourceSha256": {
+        "E:/IcarusWorldAudit/2026-09-06/supplemented-v2/world/abyss/geometry.npz": "a1886a686ac84ce797c4c17d0d7fa6133569c2a5d7436510658bfb40b8d3ada6",
+        "E:/IcarusWorldAudit/2026-09-06/supplemented-v2/world/abyss/geometry.json": "cd221848132fd8b493e7fd1864b7c0792b45a5af062fcd25b5d037150eb56502",
+        "E:/IcarusWorldAudit/2026-09-06/tactical-alignment-sides-v1/abyss.json": "7ef66db3984df05a8fb00517258ee71c1a0876c977ca3bfdb5137be6e72408f2",
+        "E:/IcarusWorldAudit/2026-09-06/tactical-visibility-revision/all-map-standing-surfaces-v9/abyss/physical-top-build.json": "714924152184c5d7d30df5358e2b7d6002025f1960c94ea805083395275103a5"
+      },
+      "baselineSha256": {
+        "attack": "6aa65589c9dd7f8f17b7405d684f6e5fab3d2c2ca6b5d372a98aa99b1e4e342e",
+        "defense": "d87a4c5b7a208cccddfcf48b9c8c84cdcbdcaa5fa77d0c4b74a9bc1c64002394"
+      },
+      "defaultExcludedStandingDomains": [
+        {
+          "domain": {
+            "id": "volume-133-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_514/Cube#0",
+            "sourceFaces": [
+              [
+                133,
+                0
+              ],
+              [
+                133,
+                1
+              ]
+            ],
+            "nativePlane": [
+              -0.0,
+              0.0,
+              20.0
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -6.0002246,
+                    -9.5810679
+                  ],
+                  [
+                    -10.0002246,
+                    -9.5810679
+                  ],
+                  [
+                    -10.0002246,
+                    -8.4188535
+                  ],
+                  [
+                    -7.9778009,
+                    -8.4188535
+                  ],
+                  [
+                    -7.9710459,
+                    -8.4187463
+                  ],
+                  [
+                    -7.9640795,
+                    -8.4185216
+                  ],
+                  [
+                    -7.9568977,
+                    -8.4181683
+                  ],
+                  [
+                    -7.949497,
+                    -8.417675
+                  ],
+                  [
+                    -7.9418745,
+                    -8.417029
+                  ],
+                  [
+                    -7.9340282,
+                    -8.4162173
+                  ],
+                  [
+                    -7.9259567,
+                    -8.4152261
+                  ],
+                  [
+                    -7.9176599,
+                    -8.4140408
+                  ],
+                  [
+                    -7.9091387,
+                    -8.4126464
+                  ],
+                  [
+                    -7.9003952,
+                    -8.4110273
+                  ],
+                  [
+                    -7.8914332,
+                    -8.4091672
+                  ],
+                  [
+                    -7.8822579,
+                    -8.4070499
+                  ],
+                  [
+                    -7.8728765,
+                    -8.4046585
+                  ],
+                  [
+                    -7.8632979,
+                    -8.4019765
+                  ],
+                  [
+                    -7.8535333,
+                    -8.3989873
+                  ],
+                  [
+                    -7.8435958,
+                    -8.3956749
+                  ],
+                  [
+                    -7.8335011,
+                    -8.3920236
+                  ],
+                  [
+                    -7.823267,
+                    -8.3880189
+                  ],
+                  [
+                    -7.8129138,
+                    -8.3836476
+                  ],
+                  [
+                    -7.8024642,
+                    -8.3788977
+                  ],
+                  [
+                    -7.791943,
+                    -8.3737595
+                  ],
+                  [
+                    -7.7813774,
+                    -8.3682251
+                  ],
+                  [
+                    -7.7707964,
+                    -8.3622894
+                  ],
+                  [
+                    -7.7602307,
+                    -8.35595
+                  ],
+                  [
+                    -7.7497127,
+                    -8.3492077
+                  ],
+                  [
+                    -7.7392754,
+                    -8.3420664
+                  ],
+                  [
+                    -7.7289526,
+                    -8.3345335
+                  ],
+                  [
+                    -7.7187783,
+                    -8.3266202
+                  ],
+                  [
+                    -7.708786,
+                    -8.3183408
+                  ],
+                  [
+                    -7.6990083,
+                    -8.3097135
+                  ],
+                  [
+                    -7.6894766,
+                    -8.3007594
+                  ],
+                  [
+                    -7.6802201,
+                    -8.291503
+                  ],
+                  [
+                    -7.6712661,
+                    -8.2819713
+                  ],
+                  [
+                    -7.6626388,
+                    -8.2721936
+                  ],
+                  [
+                    -7.6543594,
+                    -8.2622013
+                  ],
+                  [
+                    -7.6464461,
+                    -8.252027
+                  ],
+                  [
+                    -7.6389132,
+                    -8.2417042
+                  ],
+                  [
+                    -7.6317719,
+                    -8.2312669
+                  ],
+                  [
+                    -7.6250295,
+                    -8.2207489
+                  ],
+                  [
+                    -7.6186902,
+                    -8.2101832
+                  ],
+                  [
+                    -7.6127545,
+                    -8.1996022
+                  ],
+                  [
+                    -7.6072201,
+                    -8.1890366
+                  ],
+                  [
+                    -7.6020819,
+                    -8.1785154
+                  ],
+                  [
+                    -7.597332,
+                    -8.1680658
+                  ],
+                  [
+                    -7.5929607,
+                    -8.1577126
+                  ],
+                  [
+                    -7.588956,
+                    -8.1474785
+                  ],
+                  [
+                    -7.5853047,
+                    -8.1373837
+                  ],
+                  [
+                    -7.5819923,
+                    -8.1274463
+                  ],
+                  [
+                    -7.5790031,
+                    -8.1176817
+                  ],
+                  [
+                    -7.5763211,
+                    -8.1081031
+                  ],
+                  [
+                    -7.5739297,
+                    -8.0987217
+                  ],
+                  [
+                    -7.5718124,
+                    -8.0895464
+                  ],
+                  [
+                    -7.5699523,
+                    -8.0805844
+                  ],
+                  [
+                    -7.5683332,
+                    -8.0718409
+                  ],
+                  [
+                    -7.5669388,
+                    -8.0633197
+                  ],
+                  [
+                    -7.5657535,
+                    -8.0550229
+                  ],
+                  [
+                    -7.5647623,
+                    -8.0469514
+                  ],
+                  [
+                    -7.5639506,
+                    -8.0391051
+                  ],
+                  [
+                    -7.5633046,
+                    -8.0314826
+                  ],
+                  [
+                    -7.5628112,
+                    -8.0240819
+                  ],
+                  [
+                    -7.562458,
+                    -8.0169001
+                  ],
+                  [
+                    -7.5622333,
+                    -8.0099337
+                  ],
+                  [
+                    -7.5621261,
+                    -8.0031787
+                  ],
+                  [
+                    -7.5621261,
+                    -4.0106383
+                  ],
+                  [
+                    -7.5621081,
+                    -4.0100802
+                  ],
+                  [
+                    -7.5620009,
+                    -4.0033252
+                  ],
+                  [
+                    -7.5620009,
+                    3.0033263
+                  ],
+                  [
+                    -7.5621081,
+                    3.0100813
+                  ],
+                  [
+                    -7.5623328,
+                    3.0170477
+                  ],
+                  [
+                    -7.562686,
+                    3.0242295
+                  ],
+                  [
+                    -7.5631794,
+                    3.0316302
+                  ],
+                  [
+                    -7.5638254,
+                    3.0392527
+                  ],
+                  [
+                    -7.5646371,
+                    3.047099
+                  ],
+                  [
+                    -7.5656283,
+                    3.0551704
+                  ],
+                  [
+                    -7.5668136,
+                    3.0634673
+                  ],
+                  [
+                    -7.568208,
+                    3.0719885
+                  ],
+                  [
+                    -7.5698271,
+                    3.080732
+                  ],
+                  [
+                    -7.5716872,
+                    3.089694
+                  ],
+                  [
+                    -7.5738045,
+                    3.0988693
+                  ],
+                  [
+                    -7.5761959,
+                    3.1082507
+                  ],
+                  [
+                    -7.5788779,
+                    3.1178292
+                  ],
+                  [
+                    -7.5818671,
+                    3.1275939
+                  ],
+                  [
+                    -7.5851795,
+                    3.1375313
+                  ],
+                  [
+                    -7.5888308,
+                    3.1476261
+                  ],
+                  [
+                    -7.5928355,
+                    3.1578602
+                  ],
+                  [
+                    -7.5972068,
+                    3.1682134
+                  ],
+                  [
+                    -7.6019567,
+                    3.178663
+                  ],
+                  [
+                    -7.6070949,
+                    3.1891842
+                  ],
+                  [
+                    -7.6126293,
+                    3.1997498
+                  ],
+                  [
+                    -7.618565,
+                    3.2103308
+                  ],
+                  [
+                    -7.6249043,
+                    3.2208964
+                  ],
+                  [
+                    -7.6316467,
+                    3.2314145
+                  ],
+                  [
+                    -7.638788,
+                    3.2418518
+                  ],
+                  [
+                    -7.6463209,
+                    3.2521746
+                  ],
+                  [
+                    -7.6542342,
+                    3.2623489
+                  ],
+                  [
+                    -7.6625136,
+                    3.2723412
+                  ],
+                  [
+                    -7.6711409,
+                    3.2821189
+                  ],
+                  [
+                    -7.6800949,
+                    3.2916506
+                  ],
+                  [
+                    -7.6893514,
+                    3.300907
+                  ],
+                  [
+                    -7.6988831,
+                    3.3098611
+                  ],
+                  [
+                    -7.7086608,
+                    3.3184884
+                  ],
+                  [
+                    -7.7186531,
+                    3.3267678
+                  ],
+                  [
+                    -7.7288274,
+                    3.3346811
+                  ],
+                  [
+                    -7.7391502,
+                    3.342214
+                  ],
+                  [
+                    -7.746976,
+                    3.3475685
+                  ],
+                  [
+                    -7.746976,
+                    9.9999323
+                  ],
+                  [
+                    -6.0002246,
+                    9.9999323
+                  ],
+                  [
+                    -6.0002246,
+                    -9.5810679
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 34.70271161417664
+          },
+          "supportIds": [
+            "abyss-measured-volume-133-0",
+            "abyss-physical-top-79f5021f2132"
+          ],
+          "reason": "These collision bodies form the suspended Mid tower floor/ceiling and upper interior structure above the independently represented Mid rooms and routes. The full tower shell and adjoining ceiling components identify the covered-interior role; the represented lower rooms, not their overhead collision tops, supply automatic placement. Preserve every upper physical level for explicit/saved selection.",
+          "assembly": "mid-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-136-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_517/Cube#0",
+            "sourceFaces": [
+              [
+                136,
+                8
+              ],
+              [
+                136,
+                9
+              ]
+            ],
+            "nativePlane": [
+              -0.0,
+              0.0,
+              22.0
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    14.0000388,
+                    -0.7605512
+                  ],
+                  [
+                    9.5140683,
+                    -0.7605512
+                  ],
+                  [
+                    9.5140663,
+                    0.9999615
+                  ],
+                  [
+                    14.0000369,
+                    0.9999664
+                  ],
+                  [
+                    14.0000388,
+                    -0.7605512
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 7.89761911573361
+          },
+          "supportIds": [
+            "abyss-physical-top-4c75f300a2ab"
+          ],
+          "reason": "These collision bodies form the suspended Mid tower floor/ceiling and upper interior structure above the independently represented Mid rooms and routes. The full tower shell and adjoining ceiling components identify the covered-interior role; the represented lower rooms, not their overhead collision tops, supply automatic placement. Preserve every upper physical level for explicit/saved selection.",
+          "assembly": "mid-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-137-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_518/Cube#0",
+            "sourceFaces": [
+              [
+                137,
+                10
+              ],
+              [
+                137,
+                11
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              0.0,
+              17.6371
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    14.4189194,
+                    1.0103639
+                  ],
+                  [
+                    14.4189194,
+                    7.5813143
+                  ],
+                  [
+                    19.5810373,
+                    7.5813143
+                  ],
+                  [
+                    19.5810391,
+                    6.0083725
+                  ],
+                  [
+                    19.5810391,
+                    6.0083717
+                  ],
+                  [
+                    19.5809646,
+                    6.0036789
+                  ],
+                  [
+                    19.5809646,
+                    -0.5807144
+                  ],
+                  [
+                    14.4190386,
+                    -0.5807144
+                  ],
+                  [
+                    14.4190368,
+                    1.0032921
+                  ],
+                  [
+                    14.4189296,
+                    1.0100471
+                  ],
+                  [
+                    14.4189194,
+                    1.0103633
+                  ],
+                  [
+                    14.4189194,
+                    1.0103639
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 42.13268919592955
+          },
+          "supportIds": [
+            "abyss-measured-volume-137-0",
+            "abyss-physical-top-5fe403a59515"
+          ],
+          "reason": "These collision bodies form the suspended Mid tower floor/ceiling and upper interior structure above the independently represented Mid rooms and routes. The full tower shell and adjoining ceiling components identify the covered-interior role; the represented lower rooms, not their overhead collision tops, supply automatic placement. Preserve every upper physical level for explicit/saved selection.",
+          "assembly": "mid-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-611-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1019/Cube#0",
+            "sourceFaces": [
+              [
+                611,
+                10
+              ],
+              [
+                611,
+                11
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              0.0,
+              25.0
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    9.0950682,
+                    -0.7605512
+                  ],
+                  [
+                    8.8459954,
+                    -0.7605512
+                  ],
+                  [
+                    8.8459954,
+                    0.9999611
+                  ],
+                  [
+                    9.0950663,
+                    0.9999614
+                  ],
+                  [
+                    9.0950682,
+                    -0.7605512
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.438494092869675
+          },
+          "supportIds": [
+            "abyss-physical-top-075b6d82b9d7"
+          ],
+          "reason": "These collision bodies form the suspended Mid tower floor/ceiling and upper interior structure above the independently represented Mid rooms and routes. The full tower shell and adjoining ceiling components identify the covered-interior role; the represented lower rooms, not their overhead collision tops, supply automatic placement. Preserve every upper physical level for explicit/saved selection.",
+          "assembly": "mid-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-640-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1050/Cube#0",
+            "sourceFaces": [
+              [
+                640,
+                10
+              ],
+              [
+                640,
+                11
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              0.0,
+              22.98
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    20.8047641,
+                    21.5813443
+                  ],
+                  [
+                    20.8047799,
+                    18.890291
+                  ],
+                  [
+                    19.3292466,
+                    18.890291
+                  ],
+                  [
+                    19.3224916,
+                    18.8901838
+                  ],
+                  [
+                    19.3155252,
+                    18.8899591
+                  ],
+                  [
+                    19.3083434,
+                    18.8896058
+                  ],
+                  [
+                    19.3009427,
+                    18.8891125
+                  ],
+                  [
+                    19.2933202,
+                    18.8884665
+                  ],
+                  [
+                    19.2854739,
+                    18.8876548
+                  ],
+                  [
+                    19.2774024,
+                    18.8866636
+                  ],
+                  [
+                    19.2691056,
+                    18.8854783
+                  ],
+                  [
+                    19.2605844,
+                    18.8840839
+                  ],
+                  [
+                    19.2518409,
+                    18.8824648
+                  ],
+                  [
+                    19.2428789,
+                    18.8806047
+                  ],
+                  [
+                    19.2337036,
+                    18.8784874
+                  ],
+                  [
+                    19.2243222,
+                    18.876096
+                  ],
+                  [
+                    19.2147436,
+                    18.873414
+                  ],
+                  [
+                    19.204979,
+                    18.8704248
+                  ],
+                  [
+                    19.1950415,
+                    18.8671124
+                  ],
+                  [
+                    19.1849468,
+                    18.8634611
+                  ],
+                  [
+                    19.1747127,
+                    18.8594564
+                  ],
+                  [
+                    19.1643595,
+                    18.8550851
+                  ],
+                  [
+                    19.1539099,
+                    18.8503352
+                  ],
+                  [
+                    19.1433887,
+                    18.845197
+                  ],
+                  [
+                    19.1328231,
+                    18.8396626
+                  ],
+                  [
+                    19.1222421,
+                    18.8337269
+                  ],
+                  [
+                    19.1116764,
+                    18.8273875
+                  ],
+                  [
+                    19.1011584,
+                    18.8206452
+                  ],
+                  [
+                    19.090721,
+                    18.8135039
+                  ],
+                  [
+                    19.0803983,
+                    18.805971
+                  ],
+                  [
+                    19.070224,
+                    18.7980577
+                  ],
+                  [
+                    19.0602316,
+                    18.7897783
+                  ],
+                  [
+                    19.050454,
+                    18.781151
+                  ],
+                  [
+                    19.0409223,
+                    18.7721969
+                  ],
+                  [
+                    19.0316658,
+                    18.7629405
+                  ],
+                  [
+                    19.0227118,
+                    18.7534088
+                  ],
+                  [
+                    19.0140844,
+                    18.7436311
+                  ],
+                  [
+                    19.0058051,
+                    18.7336388
+                  ],
+                  [
+                    18.9978917,
+                    18.7234645
+                  ],
+                  [
+                    18.9903589,
+                    18.7131417
+                  ],
+                  [
+                    18.9832176,
+                    18.7027044
+                  ],
+                  [
+                    18.9764752,
+                    18.6921864
+                  ],
+                  [
+                    18.9701359,
+                    18.6816207
+                  ],
+                  [
+                    18.9642002,
+                    18.6710397
+                  ],
+                  [
+                    18.9586658,
+                    18.6604741
+                  ],
+                  [
+                    18.9535275,
+                    18.6499529
+                  ],
+                  [
+                    18.9487777,
+                    18.6395033
+                  ],
+                  [
+                    18.9444064,
+                    18.6291501
+                  ],
+                  [
+                    18.9404017,
+                    18.618916
+                  ],
+                  [
+                    18.9367504,
+                    18.6088212
+                  ],
+                  [
+                    18.9334379,
+                    18.5988838
+                  ],
+                  [
+                    18.9304488,
+                    18.5891192
+                  ],
+                  [
+                    18.9277668,
+                    18.5795406
+                  ],
+                  [
+                    18.9253754,
+                    18.5701592
+                  ],
+                  [
+                    18.9232581,
+                    18.5609839
+                  ],
+                  [
+                    18.921398,
+                    18.5520219
+                  ],
+                  [
+                    18.9197789,
+                    18.5432784
+                  ],
+                  [
+                    18.9183845,
+                    18.5347572
+                  ],
+                  [
+                    18.9171992,
+                    18.5264604
+                  ],
+                  [
+                    18.916208,
+                    18.5183889
+                  ],
+                  [
+                    18.9153963,
+                    18.5105426
+                  ],
+                  [
+                    18.9147503,
+                    18.5029201
+                  ],
+                  [
+                    18.9142569,
+                    18.4955194
+                  ],
+                  [
+                    18.9139037,
+                    18.4883376
+                  ],
+                  [
+                    18.913679,
+                    18.4813712
+                  ],
+                  [
+                    18.9135718,
+                    18.4746162
+                  ],
+                  [
+                    18.9135718,
+                    18.3590797
+                  ],
+                  [
+                    13.8955508,
+                    18.3590797
+                  ],
+                  [
+                    13.8887764,
+                    18.3589722
+                  ],
+                  [
+                    13.8817901,
+                    18.3587468
+                  ],
+                  [
+                    13.8745877,
+                    18.3583926
+                  ],
+                  [
+                    13.8671658,
+                    18.3578978
+                  ],
+                  [
+                    13.8595215,
+                    18.35725
+                  ],
+                  [
+                    13.8516527,
+                    18.356436
+                  ],
+                  [
+                    13.8435581,
+                    18.3554419
+                  ],
+                  [
+                    13.8352376,
+                    18.3542532
+                  ],
+                  [
+                    13.8266919,
+                    18.3528548
+                  ],
+                  [
+                    13.8179234,
+                    18.351231
+                  ],
+                  [
+                    13.8089357,
+                    18.3493657
+                  ],
+                  [
+                    13.7997342,
+                    18.3472422
+                  ],
+                  [
+                    13.7903259,
+                    18.3448441
+                  ],
+                  [
+                    13.7807199,
+                    18.3421544
+                  ],
+                  [
+                    13.7709273,
+                    18.3391566
+                  ],
+                  [
+                    13.7609614,
+                    18.3358347
+                  ],
+                  [
+                    13.7508377,
+                    18.3321729
+                  ],
+                  [
+                    13.7405743,
+                    18.3281568
+                  ],
+                  [
+                    13.7301915,
+                    18.3237729
+                  ],
+                  [
+                    13.7197119,
+                    18.3190095
+                  ],
+                  [
+                    13.7091606,
+                    18.3138565
+                  ],
+                  [
+                    13.6985647,
+                    18.3083063
+                  ],
+                  [
+                    13.6879534,
+                    18.3023536
+                  ],
+                  [
+                    13.6773575,
+                    18.2959961
+                  ],
+                  [
+                    13.6668093,
+                    18.2892344
+                  ],
+                  [
+                    13.6563421,
+                    18.2820727
+                  ],
+                  [
+                    13.6459898,
+                    18.2745182
+                  ],
+                  [
+                    13.6357863,
+                    18.2665822
+                  ],
+                  [
+                    13.6257654,
+                    18.2582792
+                  ],
+                  [
+                    13.6159597,
+                    18.2496271
+                  ],
+                  [
+                    13.6064007,
+                    18.2406474
+                  ],
+                  [
+                    13.5971178,
+                    18.2313645
+                  ],
+                  [
+                    13.5881381,
+                    18.2218055
+                  ],
+                  [
+                    13.579486,
+                    18.2119998
+                  ],
+                  [
+                    13.571183,
+                    18.2019789
+                  ],
+                  [
+                    13.5632469,
+                    18.1917754
+                  ],
+                  [
+                    13.5556925,
+                    18.1814231
+                  ],
+                  [
+                    13.5485308,
+                    18.1709559
+                  ],
+                  [
+                    13.5417691,
+                    18.1604077
+                  ],
+                  [
+                    13.5354116,
+                    18.1498118
+                  ],
+                  [
+                    13.5294589,
+                    18.1392005
+                  ],
+                  [
+                    13.5239087,
+                    18.1286046
+                  ],
+                  [
+                    13.5187557,
+                    18.1180533
+                  ],
+                  [
+                    13.5139922,
+                    18.1075737
+                  ],
+                  [
+                    13.5096084,
+                    18.0971909
+                  ],
+                  [
+                    13.5055923,
+                    18.0869275
+                  ],
+                  [
+                    13.5019305,
+                    18.0768038
+                  ],
+                  [
+                    13.4986085,
+                    18.0668379
+                  ],
+                  [
+                    13.4956108,
+                    18.0570453
+                  ],
+                  [
+                    13.4929211,
+                    18.0474393
+                  ],
+                  [
+                    13.4905229,
+                    18.038031
+                  ],
+                  [
+                    13.4883995,
+                    18.0288295
+                  ],
+                  [
+                    13.4865341,
+                    18.0198418
+                  ],
+                  [
+                    13.4849103,
+                    18.0110733
+                  ],
+                  [
+                    13.483512,
+                    18.0025276
+                  ],
+                  [
+                    13.4831442,
+                    17.9999533
+                  ],
+                  [
+                    12.0000391,
+                    17.9999517
+                  ],
+                  [
+                    12.0000351,
+                    21.5813443
+                  ],
+                  [
+                    20.8047641,
+                    21.5813443
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 27.9730431574732
+          },
+          "supportIds": [
+            "abyss-physical-top-9c80b5dfdce7"
+          ],
+          "reason": "These collision bodies form the suspended Mid tower floor/ceiling and upper interior structure above the independently represented Mid rooms and routes. The full tower shell and adjoining ceiling components identify the covered-interior role; the represented lower rooms, not their overhead collision tops, supply automatic placement. Preserve every upper physical level for explicit/saved selection.",
+          "assembly": "mid-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-1464-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1857/Cube#0",
+            "sourceFaces": [
+              [
+                1464,
+                0
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              -0.0,
+              23.9716
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -36.958662,
+                    21.372109
+                  ],
+                  [
+                    -36.9586677,
+                    21.841029
+                  ],
+                  [
+                    -36.2478125,
+                    21.8410376
+                  ],
+                  [
+                    -36.958662,
+                    21.372109
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.16666711021650965
+          },
+          "supportIds": [
+            "abyss-physical-top-2948aba53bd2"
+          ],
+          "reason": "The seven adjoining upper collision bodies follow the B Site tower shell over its represented10m interior floor. They are the upper enclosure of that room, not its automatic floor. Retain all physically standable upper tops as manual levels; retain the separate10m B Site plank/crate walkway as automatic.",
+          "assembly": "b-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-1465-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1858/Cube#0",
+            "sourceFaces": [
+              [
+                1465,
+                1
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              0.0,
+              23.9707
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -36.9584981,
+                    21.8393865
+                  ],
+                  [
+                    -36.9584936,
+                    21.3704665
+                  ],
+                  [
+                    -37.6693533,
+                    21.8393796
+                  ],
+                  [
+                    -36.9584981,
+                    21.8393865
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.16666711020752464
+          },
+          "supportIds": [
+            "abyss-measured-volume-1465-0",
+            "abyss-physical-top-81074fa3a5b2"
+          ],
+          "reason": "The seven adjoining upper collision bodies follow the B Site tower shell over its represented10m interior floor. They are the upper enclosure of that room, not its automatic floor. Retain all physically standable upper tops as manual levels; retain the separate10m B Site plank/crate walkway as automatic.",
+          "assembly": "b-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-1466-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1859/Cube#0",
+            "sourceFaces": [
+              [
+                1466,
+                1
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              -0.0,
+              23.7721
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -35.9389228,
+                    22.025588
+                  ],
+                  [
+                    -35.9683061,
+                    22.0669524
+                  ],
+                  [
+                    -36.0057593,
+                    22.1070441
+                  ],
+                  [
+                    -36.0990124,
+                    22.1712543
+                  ],
+                  [
+                    -36.1982278,
+                    22.1968902
+                  ],
+                  [
+                    -36.2109392,
+                    22.1973537
+                  ],
+                  [
+                    -36.2634548,
+                    22.1973531
+                  ],
+                  [
+                    -36.2634618,
+                    22.7772232
+                  ],
+                  [
+                    -34.421549,
+                    22.7772232
+                  ],
+                  [
+                    -35.9257976,
+                    21.9946506
+                  ],
+                  [
+                    -35.9389228,
+                    22.025588
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.8021694318022111
+          },
+          "supportIds": [
+            "abyss-measured-volume-1466-0",
+            "abyss-physical-top-78dc6f7340e2"
+          ],
+          "reason": "The seven adjoining upper collision bodies follow the B Site tower shell over its represented10m interior floor. They are the upper enclosure of that room, not its automatic floor. Retain all physically standable upper tops as manual levels; retain the separate10m B Site plank/crate walkway as automatic.",
+          "assembly": "b-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-1467-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1860/Cube#0",
+            "sourceFaces": [
+              [
+                1467,
+                1
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              0.0,
+              23.7716
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -37.6660725,
+                    22.7772232
+                  ],
+                  [
+                    -37.6660668,
+                    22.1954672
+                  ],
+                  [
+                    -37.7226725,
+                    22.1954666
+                  ],
+                  [
+                    -37.7268027,
+                    22.1950635
+                  ],
+                  [
+                    -37.8315139,
+                    22.1610941
+                  ],
+                  [
+                    -37.8590735,
+                    22.1449427
+                  ],
+                  [
+                    -37.9159322,
+                    22.1004626
+                  ],
+                  [
+                    -37.9819975,
+                    22.0205047
+                  ],
+                  [
+                    -37.9848893,
+                    22.0158592
+                  ],
+                  [
+                    -37.9965719,
+                    21.9828743
+                  ],
+                  [
+                    -39.5606421,
+                    22.7772232
+                  ],
+                  [
+                    -37.6660725,
+                    22.7772232
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.8323305355256132
+          },
+          "supportIds": [
+            "abyss-measured-volume-1467-0",
+            "abyss-physical-top-ae8fd7c5bfe7"
+          ],
+          "reason": "The seven adjoining upper collision bodies follow the B Site tower shell over its represented10m interior floor. They are the upper enclosure of that room, not its automatic floor. Retain all physically standable upper tops as manual levels; retain the separate10m B Site plank/crate walkway as automatic.",
+          "assembly": "b-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-1468-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_711/Cube#0",
+            "sourceFaces": [
+              [
+                1468,
+                10
+              ],
+              [
+                1468,
+                11
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              -0.0,
+              22.5
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -37.2470724,
+                    22.7739204
+                  ],
+                  [
+                    -37.2470724,
+                    22.7772232
+                  ],
+                  [
+                    -36.6824618,
+                    22.7772232
+                  ],
+                  [
+                    -36.6824555,
+                    22.2600323
+                  ],
+                  [
+                    -36.961998,
+                    22.2600289
+                  ],
+                  [
+                    -36.968753,
+                    22.2599216
+                  ],
+                  [
+                    -36.9757194,
+                    22.2596968
+                  ],
+                  [
+                    -36.9829012,
+                    22.2593435
+                  ],
+                  [
+                    -36.9903019,
+                    22.25885
+                  ],
+                  [
+                    -36.9957748,
+                    22.2583862
+                  ],
+                  [
+                    -37.2470674,
+                    22.2583837
+                  ],
+                  [
+                    -37.2470724,
+                    22.7739204
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.29244653623851063
+          },
+          "supportIds": [
+            "abyss-measured-volume-1468-0",
+            "abyss-physical-top-db0bb212a25c"
+          ],
+          "reason": "The seven adjoining upper collision bodies follow the B Site tower shell over its represented10m interior floor. They are the upper enclosure of that room, not its automatic floor. Retain all physically standable upper tops as manual levels; retain the separate10m B Site plank/crate walkway as automatic.",
+          "assembly": "b-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-1469-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1861/Cube#0",
+            "sourceFaces": [
+              [
+                1469,
+                0
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              -0.0,
+              23.3181
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -40.4606208,
+                    22.7772232
+                  ],
+                  [
+                    -40.3575672,
+                    22.7772232
+                  ],
+                  [
+                    -40.3499408,
+                    22.7653802
+                  ],
+                  [
+                    -40.3363445,
+                    22.7467587
+                  ],
+                  [
+                    -40.3235487,
+                    22.7310045
+                  ],
+                  [
+                    -40.3116299,
+                    22.7176198
+                  ],
+                  [
+                    -40.3005975,
+                    22.7061893
+                  ],
+                  [
+                    -40.2904215,
+                    22.6963722
+                  ],
+                  [
+                    -40.2810515,
+                    22.6878913
+                  ],
+                  [
+                    -40.2724273,
+                    22.6805216
+                  ],
+                  [
+                    -40.2662985,
+                    22.6755504
+                  ],
+                  [
+                    -40.4606166,
+                    22.4331391
+                  ],
+                  [
+                    -40.4606208,
+                    22.7772232
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.03815520708614059
+          },
+          "supportIds": [
+            "abyss-physical-top-c754a3f2193d"
+          ],
+          "reason": "The seven adjoining upper collision bodies follow the B Site tower shell over its represented10m interior floor. They are the upper enclosure of that room, not its automatic floor. Retain all physically standable upper tops as manual levels; retain the separate10m B Site plank/crate walkway as automatic.",
+          "assembly": "b-tower-ceiling"
+        },
+        {
+          "domain": {
+            "id": "volume-1470-0",
+            "sourceCollision": "/Infinity_BV_Pawn/SuperGrid_Box_1862/Cube#0",
+            "sourceFaces": [
+              [
+                1470,
+                1
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              0.0,
+              23.3172
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -40.4606685,
+                    22.7772232
+                  ],
+                  [
+                    -40.4606651,
+                    22.4313764
+                  ],
+                  [
+                    -40.7379099,
+                    22.7772232
+                  ],
+                  [
+                    -40.4606685,
+                    22.7772232
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.047941525508760255
+          },
+          "supportIds": [
+            "abyss-physical-top-4a1aa0686aa1"
+          ],
+          "reason": "The seven adjoining upper collision bodies follow the B Site tower shell over its represented10m interior floor. They are the upper enclosure of that room, not its automatic floor. Retain all physically standable upper tops as manual levels; retain the separate10m B Site plank/crate walkway as automatic.",
+          "assembly": "b-tower-ceiling"
+        }
+      ]
+    },
+    "corrode": {
+      "standingSource": "work\\corrode-all-reviewed-v1\\regional-floors.json",
+      "standingSourceSha256": "8c44872a9cbaf2e95893d0296e150dcae011c5fe55a83c4d8a7c5524615acc94",
+      "sourceSha256": {
+        "E:/IcarusWorldAudit/2026-09-06/supplemented-v2/world/corrode/geometry.npz": "cef1e5167bcd94486cff29ef43bd3150dc73f00b3e3eaa2142479f7a113a24e2",
+        "E:/IcarusWorldAudit/2026-09-06/supplemented-v2/world/corrode/geometry.json": "bf6f65fd1e60046385f4dcf06874f1974604d8be29d5fb44a459ce7d9d5932d5",
+        "E:/IcarusWorldAudit/2026-09-06/tactical-alignment-sides-v1/corrode.json": "22756583233762f34969cc9e84c9ed388f83f32923a648112f151fd6195a85a0",
+        "E:/IcarusWorldAudit/2026-09-06/tactical-visibility-revision/all-map-standing-surfaces-v9/corrode/physical-top-build.json": "b06ebdcde3ba5dbd7c80d0364d5499202d3457376674bb35c344f5409ad367cb"
+      },
+      "baselineSha256": {
+        "attack": "bd8c82830b498ef3621a82a4e2a220e98bbac3a9d57acbca409672893b7df31c",
+        "defense": "f73993e1c93812102241bd4183b66f9533f1a1a1418e2f0b3b8e35423313190e"
+      },
+      "defaultExcludedStandingDomains": [
+        {
+          "domain": {
+            "id": "volume-168-0",
+            "sourceCollision": "/Rook_BVPawn/BP_BlockingVolume178/Cube#0",
+            "sourceFaces": [
+              [
+                168,
+                6
+              ],
+              [
+                168,
+                7
+              ]
+            ],
+            "nativePlane": [
+              -0.0,
+              0.7002,
+              -1.435
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -28.4190001,
+                    31.1956147
+                  ],
+                  [
+                    -28.4190001,
+                    30.4190003
+                  ],
+                  [
+                    -31.9966748,
+                    30.4190003
+                  ],
+                  [
+                    -32.0033252,
+                    30.4190003
+                  ],
+                  [
+                    -35.581,
+                    30.4190003
+                  ],
+                  [
+                    -35.581,
+                    31.1956147
+                  ],
+                  [
+                    -28.4190001,
+                    31.1956147
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 5.562112255138559
+          },
+          "supportIds": [
+            "corrode-measured-volume-168-0"
+          ],
+          "reason": "The sloping collision body is the B Tower roof above the12m B Tower floor: complete ceiling, woodwork, roof, walls and ground components distinguish the upper enclosure from the usable room. Only the roof top loses automatic selection; the12m ground/platform and Mid stairs remain automatic and every saved roof level remains physical.",
+          "assembly": "b-tower-roof"
+        }
+      ]
+    },
+    "summit": {
+      "standingSource": "work\\summit-all-reviewed-v1\\regional-floors.json",
+      "standingSourceSha256": "48e25b95189d47554e63b2c200f00e468cbeae50df340ded28af4d0146eb1118",
+      "sourceSha256": {
+        "E:/IcarusWorldAudit/2026-09-06/supplemented-v2/world/summit/geometry.npz": "f8e33ea91c883bbeb8c1a297107634cd153f83e450ea04a8271f511267fa4aed",
+        "E:/IcarusWorldAudit/2026-09-06/supplemented-v2/world/summit/geometry.json": "113da3e45c4b203ddc101c02e5f671f7494644607ed91bdb592602a0127fcfbd",
+        "E:/IcarusWorldAudit/2026-09-06/tactical-alignment-sides-v1/summit.json": "cea189fc8dc9c59ccafd0697f8e7c6713c97f0542b5a1cc0358f906ce97633d7",
+        "E:/IcarusWorldAudit/2026-09-06/tactical-visibility-revision/all-map-standing-surfaces-v9/summit/physical-top-build.json": "0be5005dfa604e5898938411d979f08ace172faed30cb9263295e9553db4f821"
+      },
+      "baselineSha256": {
+        "attack": "51a5019b83bba3e2728f362a864c534fee03687443de4f4285457a78a3c48de5",
+        "defense": "9947a3edefe04d92a0593a6b52e3f53f176f91a93ed24bbb6277df5658d21269"
+      },
+      "defaultExcludedStandingDomains": [
+        {
+          "domain": {
+            "id": "volume-320-0",
+            "sourceCollision": "/Plummet_BVPawn/BP_BlockingVolume353/Cube#0",
+            "sourceFaces": [
+              [
+                320,
+                8
+              ],
+              [
+                320,
+                9
+              ]
+            ],
+            "nativePlane": [
+              -0.0,
+              -0.7002,
+              -66.1847
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    90.5809999,
+                    -112.419
+                  ],
+                  [
+                    90.5809999,
+                    -112.496691
+                  ],
+                  [
+                    89.4190001,
+                    -112.496691
+                  ],
+                  [
+                    89.4190001,
+                    -112.419
+                  ],
+                  [
+                    90.5809999,
+                    -112.419
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.09027692646180094
+          },
+          "supportIds": [
+            "summit-measured-volume-320-0"
+          ],
+          "reason": "The adjoining sloped collision bodies form the exterior over the A Site cave/interior assembly, above its independently measured1m lower floors. Complete interior, cave roof, back wall and exit components establish covered interior. Preserve these physical upper levels for manual/saved use, but default to the represented lower interior.",
+          "assembly": "a-cave-roof"
+        },
+        {
+          "domain": {
+            "id": "volume-322-0",
+            "sourceCollision": "/Plummet_BVPawn/BP_BlockingVolume355/Cube#0",
+            "sourceFaces": [
+              [
+                322,
+                10
+              ],
+              [
+                322,
+                11
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              -0.0875,
+              3.0156
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    89.4190001,
+                    -117.2223082
+                  ],
+                  [
+                    89.4190001,
+                    -115.2299184
+                  ],
+                  [
+                    90.5809999,
+                    -115.2299184
+                  ],
+                  [
+                    90.5809999,
+                    -117.2223082
+                  ],
+                  [
+                    89.4190001,
+                    -117.2223082
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 2.3151565491220167
+          },
+          "supportIds": [
+            "summit-measured-volume-322-0"
+          ],
+          "reason": "The adjoining sloped collision bodies form the exterior over the A Site cave/interior assembly, above its independently measured1m lower floors. Complete interior, cave roof, back wall and exit components establish covered interior. Preserve these physical upper levels for manual/saved use, but default to the represented lower interior.",
+          "assembly": "a-cave-roof"
+        },
+        {
+          "domain": {
+            "id": "volume-323-0",
+            "sourceCollision": "/Plummet_BVPawn/BP_BlockingVolume356/Cube#0",
+            "sourceFaces": [
+              [
+                323,
+                10
+              ],
+              [
+                323,
+                11
+              ]
+            ],
+            "nativePlane": [
+              -0.0,
+              0.1763,
+              34.0316
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    90.5809999,
+                    -118.4979668
+                  ],
+                  [
+                    90.5809999,
+                    -118.5033252
+                  ],
+                  [
+                    90.5809999,
+                    -118.5037647
+                  ],
+                  [
+                    90.581,
+                    -118.5037711
+                  ],
+                  [
+                    90.581,
+                    -118.5037712
+                  ],
+                  [
+                    89.7664279,
+                    -119.9146512
+                  ],
+                  [
+                    89.4190001,
+                    -119.9146512
+                  ],
+                  [
+                    89.4190001,
+                    -118.1912372
+                  ],
+                  [
+                    90.5809999,
+                    -118.1912372
+                  ],
+                  [
+                    90.5809999,
+                    -118.4979644
+                  ],
+                  [
+                    90.5809999,
+                    -118.4979668
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 1.427975122181512
+          },
+          "supportIds": [
+            "summit-measured-volume-323-0"
+          ],
+          "reason": "The adjoining sloped collision bodies form the exterior over the A Site cave/interior assembly, above its independently measured1m lower floors. Complete interior, cave roof, back wall and exit components establish covered interior. Preserve these physical upper levels for manual/saved use, but default to the represented lower interior.",
+          "assembly": "a-cave-roof"
+        },
+        {
+          "domain": {
+            "id": "volume-378-0",
+            "sourceCollision": "/Plummet_BVPawn/BP_BlockingVolume416/Cube#0",
+            "sourceFaces": [
+              [
+                378,
+                78
+              ],
+              [
+                378,
+                79
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              -0.031,
+              8.3414
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    78.7980409,
+                    -77.6580078
+                  ],
+                  [
+                    78.7980411,
+                    -77.6580078
+                  ],
+                  [
+                    79.0267565,
+                    -77.6580078
+                  ],
+                  [
+                    88.9193393,
+                    -77.6580078
+                  ],
+                  [
+                    88.9193393,
+                    -77.736995
+                  ],
+                  [
+                    76.4190001,
+                    -77.7369953
+                  ],
+                  [
+                    76.4190001,
+                    -77.6580078
+                  ],
+                  [
+                    78.7980409,
+                    -77.6580078
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 0.9873686675091895
+          },
+          "supportIds": [
+            "summit-measured-volume-378-0",
+            "summit-physical-top-f2b7b112a09e"
+          ],
+          "reason": "This suspended body spans the A Link upper glass/ceiling assembly above the2m lower interior. The full ceiling, interior walls and inner/outer glass identify an overhead enclosure rather than the lower room floor. Preserve the upper support for explicit/saved levels and select the physical interior floor by default.",
+          "assembly": "a-link-ceiling"
+        }
+      ]
+    }
+  }
+}

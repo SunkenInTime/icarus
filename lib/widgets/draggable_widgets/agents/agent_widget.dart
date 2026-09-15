@@ -15,7 +15,11 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/svg_height_runtime_provider.dart';
+import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -212,6 +216,27 @@ class AgentWidget extends ConsumerWidget {
     final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
     final viewConeAgent =
         placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
+    final svgHeightMap = mapState?.currentMap;
+    final svgHeightRuntime = viewConeAgent != null &&
+            svgHeightMap != null &&
+            hasSvgHeightRuntime(svgHeightMap) &&
+            ref.watch(worldGeometryEnabledProvider(svgHeightMap))
+        ? ref.watch(svgHeightRuntimeProvider(svgHeightMap)).asData?.value
+        : null;
+    final svgHeightModel = svgHeightRuntime?.model(mapState!.isAttack);
+    final svgHeightOrigin = svgHeightModel == null
+        ? null
+        : SvgHeightMapTransform.forMap(svgHeightMap!).sourceFromSideWorld(
+            coordinateSystem.positionForSide(
+              canonicalPosition: viewConeAgent!.position +
+                  coordinateSystem.virtualOffsetToWorld(
+                    Offset(agentSize / 2, agentSize / 2),
+                  ),
+              reflectionOffset: Offset.zero,
+              isAttack: mapState!.isAttack,
+            ),
+            isAttack: mapState.isAttack,
+          );
     final adjacentPageCopyItems =
         canInteract && lineUpId == null && placedAgentNode != null
             ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
@@ -267,6 +292,18 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).deleteGroupById(lineUpId!);
           },
         ),
+      if (canInteract && viewConeAgent != null)
+        if (svgHeightModel != null && svgHeightOrigin != null)
+          buildSvgHeightElevationMenuItem(
+            model: svgHeightModel,
+            origin: svgHeightOrigin,
+            selectedElevationCm: viewConeAgent.visionElevation,
+            onChanged: (elevation) =>
+                ref.read(agentProvider.notifier).updateViewConeElevation(
+                      id: viewConeAgent.id,
+                      elevation: elevation,
+                    ),
+          ),
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.eyeOff),

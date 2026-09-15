@@ -1,0 +1,52 @@
+{
+  "version": 2,
+  "map": "bind",
+  "sourceCollidersSha256": "ab4f0e9e2702f148674dee80dadff6b9a761b31fc4eaf628431b7873e618b73b",
+  "sourceColliderTrianglesSha256": "e763e5e2b9b33e71add4bc89edac03ffbf6315951d54ffc613dedd93b6256082",
+  "decisions": [
+    {
+      "id": "ceiling-upper-face-2026-09-09",
+      "status": "approved",
+      "reviewer": "Dara",
+      "date": "2026-09-09",
+      "userDecision": "Exclude the ceiling\u2019s upper face",
+      "scope": "specified-collision-faces",
+      "sourceCollision": "/Duality_Gameplay/CatchAllBlockingVolumeCeiling/Cube#0",
+      "sourceFaces": [
+        10,
+        11
+      ],
+      "nativePlane": [
+        -2.4483884649307107e-18,
+        -3.857092420306878e-17,
+        27.109858829091284
+      ],
+      "nativeLevelSha256": "fa601f3b1fe6639d2fb2a56dd2782302587b979241bd865c53b79e29bd2ec994",
+      "reason": "The ceiling upper face is outside playable space. Retain the ceiling collider for player clearance."
+    },
+    {
+      "id": "ceiling-playable-boundary-2026-09-09",
+      "status": "approved",
+      "reviewer": "Dara",
+      "date": "2026-09-09",
+      "userDecision": "Can confirm that the volume, Nothing that's in that volume ceiling actually matters. Yep",
+      "followUpAuthorization": "You can continue on with your work",
+      "reviewContext": "The browser viewer showed the ceiling within Bind and the 136 other measured surfaces above it. The stated application includes surfaces inside the ceiling volume and above it within its footprint; Dara authorized continuing.",
+      "scope": "at-or-above-collision-face-within-footprint",
+      "sourceCollision": "/Duality_Gameplay/CatchAllBlockingVolumeCeiling/Cube#0",
+      "sourceFaces": [
+        0,
+        1
+      ],
+      "nativePlane": [
+        0.0,
+        0.0,
+        12.999999858901424
+      ],
+      "nativeLevelSha256": "fa601f3b1fe6639d2fb2a56dd2782302587b979241bd865c53b79e29bd2ec994",
+      "viewerSourceCommit": "7936a0141f25fc7693db0c20ea38cbcaf897120a",
+      "viewerUrl": "https://bind-ceiling-inspector.daradoescode.chatgpt.site",
+      "reason": "The ceiling volume and the environment beyond it are outside playable space. Exclude local standing portions at or above its underside within the exact source footprint, preserving portions below or outside it. Retain the collider for player clearance."
+    }
+  ]
+}

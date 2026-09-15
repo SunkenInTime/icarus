@@ -1,0 +1,597 @@
+{
+  "status": "source-measured-correction-ready-for-production-review",
+  "map": "ascent",
+  "sources": {
+    "geometry": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\ascent\\geometry.npz",
+      "sha256": "7e9e8684ec3f6bfad32473b4de45f9b35cef9e14832a08ba22d79f6fc3242786"
+    },
+    "metadata": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\ascent\\geometry.json",
+      "sha256": "103dd3986537173cde881995b24a05fe05b64a5d6a1a004096a9e947d6e9e160"
+    },
+    "alignment": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\tactical-alignment-sides-v1\\ascent.json",
+      "sha256": "6a2268353d417837bf08c3f97eaa8d3485b5f33a4e6ee0c835d980865b8203bd"
+    }
+  },
+  "baseline": {
+    "attack": {
+      "path": "work/fracture-wall-review-2026-09-14/ascent/before-attack.json.gz",
+      "sha256": "5f6e1a9af3b490f253d8f2a672bb4d6c542b085c3dc61be215463565148a6e84"
+    },
+    "defense": {
+      "path": "work/fracture-wall-review-2026-09-14/ascent/before-defense.json.gz",
+      "sha256": "351b3dd1a998bf80fd5dc4fe39eaa4c03d74e5a0804df9d4649e9ae7c12ee6d9"
+    }
+  },
+  "domains": {
+    "attack": {
+      "wallIds": [
+        "p1-fill-2-local-71-0"
+      ],
+      "sideRings": [
+        [
+          157.1505,
+          163.5,
+          158.15015,
+          163.5,
+          158.15015,
+          162.5,
+          157.1505,
+          162.5,
+          157.1505,
+          163.5
+        ]
+      ],
+      "areaSvg": 0.9996500000000026,
+      "boundsNative": [
+        [
+          -1.330544339672358,
+          66.50382371775804
+        ],
+        [
+          -1.027335490884959,
+          66.80713872679861
+        ]
+      ],
+      "originalWalls": [
+        {
+          "id": "p1-fill-2-local-71-0",
+          "rings": [
+            [
+              157.1505,
+              162.5,
+              157.1505,
+              163.5,
+              158.15015,
+              163.5,
+              158.15015,
+              162.5,
+              157.1505,
+              162.5
+            ]
+          ],
+          "fillRule": "evenodd",
+          "floorElevationMeters": 0.0,
+          "bands": [
+            [
+              0.0,
+              2.74069
+            ]
+          ],
+          "unknownHeight": false
+        }
+      ]
+    },
+    "defense": {
+      "wallIds": [
+        "p1-fill-7-local-113"
+      ],
+      "sideRings": [
+        [
+          253.8495,
+          310.5,
+          252.84985,
+          310.5,
+          252.84985,
+          311.5,
+          253.8495,
+          311.5,
+          253.8495,
+          310.5
+        ]
+      ],
+      "areaSvg": 0.9996500000000026,
+      "boundsNative": [
+        [
+          -1.330544339672358,
+          66.50382371775804
+        ],
+        [
+          -1.027335490884959,
+          66.80713872679861
+        ]
+      ],
+      "originalWalls": [
+        {
+          "id": "p1-fill-7-local-113",
+          "rings": [
+            [
+              253.8495,
+              311.5,
+              253.8495,
+              310.5,
+              252.84985,
+              310.5,
+              252.84985,
+              311.5,
+              253.8495,
+              311.5
+            ]
+          ],
+          "fillRule": "evenodd",
+          "floorElevationMeters": 0.0,
+          "bands": [
+            [
+              0.0,
+              2.74069
+            ]
+          ],
+          "unknownHeight": false
+        }
+      ]
+    }
+  },
+  "subsections": [
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.33,
+        -1.3061538461538462
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499151276823
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.3061538461538462,
+        -1.2823076923076924
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.86349916324392
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.2823076923076924,
+        -1.2584615384615385
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499175211018
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.2584615384615385,
+        -1.2346153846153847
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499187178116
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.2346153846153847,
+        -1.2107692307692308
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499199145213
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.2107692307692308,
+        -1.186923076923077
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.86349921111231
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.186923076923077,
+        -1.1630769230769231
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499223079408
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.1630769230769231,
+        -1.1392307692307693
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499235046506
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.1392307692307693,
+        -1.1153846153846154
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499247013603
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.1153846153846154,
+        -1.0915384615384616
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499258980704
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.0915384615384616,
+        -1.0676923076923077
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499270947804
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.0676923076923077,
+        -1.0438461538461539
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499282914905
+        ]
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        66.8,
+        67.1
+      ],
+      "along": [
+        -1.0438461538461539,
+        -1.02
+      ],
+      "measuredBands": [
+        [
+          3.0,
+          11.25
+        ],
+        [
+          11.25037670135498,
+          12.863499294882004
+        ]
+      ]
+    }
+  ],
+  "sourceObjects": {
+    "4416": {
+      "path": "Ascent_Art_DefPathB/WoodPlanks_0_SmallLongA.006/Instances.1160",
+      "boundsMeters": [
+        [
+          -1.1483536958694458,
+          66.92962646484375,
+          1.8980180025100708
+        ],
+        [
+          -0.31483888626098633,
+          67.02529907226562,
+          4.757684230804443
+        ]
+      ],
+      "faceCount": 28
+    },
+    "7558": {
+      "path": "Ascent_Art_DefPathB/CourtyardWall_3/StaticMeshComponent0.1392",
+      "boundsMeters": [
+        [
+          -3.0078563690185547,
+          62.99998092651367,
+          3.0
+        ],
+        [
+          8.0,
+          79.0,
+          11.250005722045898
+        ]
+      ],
+      "faceCount": 133
+    },
+    "7559": {
+      "path": "Ascent_Art_DefPathB/CourtyardWall_4/StaticMeshComponent0.1393",
+      "boundsMeters": [
+        [
+          -7.000001907348633,
+          62.9999885559082,
+          1.75
+        ],
+        [
+          8.000000953674316,
+          78.22074890136719,
+          13.600377082824707
+        ]
+      ],
+      "faceCount": 571
+    }
+  },
+  "corrections": [
+    {
+      "id": "ascent-courtyard-wall-plank-rematch",
+      "parents": {
+        "attack": "p1-fill-2",
+        "defense": "p1-fill-7"
+      },
+      "sourceObjects": [
+        4416,
+        7558,
+        7559
+      ],
+      "sourcePaths": [
+        "Ascent_Art_DefPathB/WoodPlanks_0_SmallLongA.006/Instances.1160",
+        "Ascent_Art_DefPathB/CourtyardWall_3/StaticMeshComponent0.1392",
+        "Ascent_Art_DefPathB/CourtyardWall_4/StaticMeshComponent0.1393"
+      ],
+      "sectionSpace": "native",
+      "sections": [
+        {
+          "axis": 1,
+          "cross": [
+            66.8,
+            67.1
+          ],
+          "along": [
+            -1.33,
+            -1.02
+          ]
+        }
+      ],
+      "mode": "complete-solid-facade",
+      "rings": [
+        [
+          157.1505,
+          163.5,
+          158.15015,
+          163.5,
+          158.15015,
+          162.5,
+          157.1505,
+          162.5,
+          157.1505,
+          163.5
+        ]
+      ],
+      "sideRings": {
+        "attack": [
+          [
+            157.1505,
+            163.5,
+            158.15015,
+            163.5,
+            158.15015,
+            162.5,
+            157.1505,
+            162.5,
+            157.1505,
+            163.5
+          ]
+        ],
+        "defense": [
+          [
+            253.8495,
+            310.5,
+            252.84985,
+            310.5,
+            252.84985,
+            311.5,
+            253.8495,
+            311.5,
+            253.8495,
+            310.5
+          ]
+        ]
+      },
+      "measuredSections": [
+        [
+          [
+            3.0,
+            11.25
+          ],
+          [
+            11.25037670135498,
+            12.863499294882004
+          ]
+        ]
+      ],
+      "bands": [
+        [
+          0.0,
+          12.863499151276823
+        ]
+      ],
+      "sourceFaces": [
+        2797664,
+        2797665,
+        2797670,
+        2797671,
+        2797672,
+        2797673,
+        2797674,
+        2797675,
+        2797677,
+        2797678,
+        2797679,
+        2797680,
+        2797722,
+        2797723,
+        2797780,
+        2797781,
+        2797782,
+        2797783,
+        2798257,
+        2798258,
+        2798318,
+        2798320,
+        2798321,
+        2798322
+      ],
+      "rationale": "The selected source is a slanted loose plank. Behind it, CourtyardWall_3 and CourtyardWall_4 form the complete drawn boundary from 3.0 m through at least 12.863499151276823 m across all thirteen local subdivisions. The plank must not truncate the facade."
+    }
+  ],
+  "version": 1,
+  "retains": "All unrelated cells, ground, supports, and openings remain outside the exact side rings.",
+  "limitation": "Source role and local intervals measured; root must validate production cones and unchanged geometry/supports."
+}

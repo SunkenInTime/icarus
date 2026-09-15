@@ -1,0 +1,82 @@
+{
+  "status": "approved",
+  "map": "fracture",
+  "reviewer": "Dara",
+  "reviewDate": "2026-09-10",
+  "questionSha256": "19dcb06ae854e7ffb1f244d79629e068a73689abeefa38bf801a619e01d4d95a",
+  "sourceMeasurementSha256": "e82bf6b363c7242f56392954481d27f5ce22e59acaa1cb7029f00c823e4903b6",
+  "sourceSceneSha256": "b25bb44ec70e6db3ff9a416d2170840336376dd5e6d1afa2fd6c8b6e014e9b5f",
+  "sourceSha256": "51df414d4fe0063dc37d05bcf7d244cd086e17beab5eb8a04d2e480420413a1b",
+  "sourceInventorySha256": "b9df52edeed8c9a86ee7c1c7f8c9e08ba2b4f3a0db912a5654e3b52aa608b7ad",
+  "sourceCollidersSha256": "0c83a7ce5a5e949b8dc2a6053cf8362368c67f2b28d22652ef35213af1c04eaf",
+  "sourceColliderTrianglesSha256": "f62f5087865e905e51976151b8fca49027975a48687532690c2ec2baf461f6a9",
+  "retainedDomainCountIfApproved": 4904,
+  "approval": {
+    "question": "Is the red upper face at 74.54 m outside playable space, even allowing agent abilities?",
+    "answer": "Yes, that upper face is outside play",
+    "scope": "Exactly the red upper face volume-507-0 at 74.54 m in the linked Fracture viewer. Its collision body remains.",
+    "viewerUrl": "https://bind-ceiling-inspector.daradoescode.chatgpt.site/fracture/"
+  },
+  "decisions": [
+    {
+      "id": "fracture-ceiling-upper-face",
+      "scope": "specified-standing-domain",
+      "status": "approved",
+      "domain": {
+        "id": "volume-507-0",
+        "sourceCollision": "/Canyon_BVPawn/BP_BlockingVolume242/Cube#0",
+        "sourceFaces": [
+          [
+            507,
+            8
+          ],
+          [
+            507,
+            9
+          ]
+        ],
+        "nativePlane": [
+          -0.0,
+          0.0,
+          74.5399
+        ],
+        "nativeGeometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                14.7577578,
+                68.7135309
+              ],
+              [
+                25.0707655,
+                68.7135309
+              ],
+              [
+                143.9047101,
+                68.7135309
+              ],
+              [
+                143.9047101,
+                -51.0044428
+              ],
+              [
+                143.9047101,
+                -58.312811
+              ],
+              [
+                14.7577578,
+                -58.3125671
+              ],
+              [
+                14.7577578,
+                68.7135309
+              ]
+            ]
+          ]
+        },
+        "areaSquareMeters": 16405.049168731955
+      }
+    }
+  ]
+}

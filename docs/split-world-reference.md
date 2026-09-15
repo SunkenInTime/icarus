@@ -1,5 +1,9 @@
 # Valorant world reference, updated September 5, 2026
 
+Historical extraction and prototype results. Follow [the visibility model](vision-model.md)
+for current work: SVG artwork supplies planar walls; this extraction supplies
+height, opening, and support evidence.
+
 Version-matched mappings repair the Split import. All 13 Icarus maps now have
 exported 3D references. The standing-only prototype takes horizontal
 cross-sections from those triangles and feeds them into Icarus's existing

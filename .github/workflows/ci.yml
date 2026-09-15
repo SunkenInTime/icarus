@@ -54,6 +54,9 @@ jobs:
       - name: Analyze
         shell: pwsh
         run: fvm flutter analyze --no-fatal-infos
+      - name: Check Bundled Wall Heights
+        shell: pwsh
+        run: fvm dart run tool/check_bundled_wall_heights.dart
       - name: Run Tests
         shell: pwsh
         run: fvm flutter test

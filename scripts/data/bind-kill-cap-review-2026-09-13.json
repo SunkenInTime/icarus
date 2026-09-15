@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "basis": "Exact player kill-volume upper cap is not a local physical standing floor. Preserve all other domains, including the real sloped bridge face volume-468-0 whose plane intercept is not its local elevation.",
+  "maps": {
+    "bind": {
+      "standingSource": "work\\bind-all-reviewed-v3\\regional-floors.json",
+      "standingSourceSha256": "0303e80ee6e20b359643931b523f0b47a7ea200d72ec65186a8159506fe56988",
+      "baselineSha256": {
+        "attack": "b6b0fbe25bf74b6ddf213285822a30ed2332e46df11da9bb5f7968a255b6d673",
+        "defense": "c561804a229f07259dfdb3c57f02947b89c8d217c435da8aa2d19edd5e271c84"
+      },
+      "sourceSha256": {
+        "work\\systematic-map-review\\reopened\\role-review\\bind-verdicts.json": "a9ef949648df9bbfd1eee09a7e604c07ede9cf34cbd3d852901cf779d031c044"
+      },
+      "excludedStandingDomains": [
+        {
+          "domain": {
+            "id": "volume-748-0",
+            "sourceCollision": "/Duality_KillVolumes/BP_PlayerKillVolume23/Cube#0",
+            "sourceFaces": [
+              [
+                748,
+                10
+              ],
+              [
+                748,
+                11
+              ]
+            ],
+            "nativePlane": [
+              0.0,
+              0.0,
+              26.0
+            ],
+            "nativeGeometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    10.4146378,
+                    -60.5539477
+                  ],
+                  [
+                    10.3995312,
+                    -59.4189994
+                  ],
+                  [
+                    95.6823177,
+                    -59.4189994
+                  ],
+                  [
+                    10.4146378,
+                    -60.5539477
+                  ]
+                ]
+              ]
+            },
+            "areaSquareMeters": 48.39577677871919
+          },
+          "supportIds": [
+            "bind-physical-top-a3491fb95d39",
+            "bind-measured-volume-748-0"
+          ],
+          "reason": "The full collision body spans 158 by 139 meters from 19 to 26 m above the map, belongs to Duality_KillVolumes/BP_PlayerKillVolume23, and has no local physical floor assembly at its upper cap. Complete source sections show the map below it."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,284 @@
+{
+  "map": "icebox",
+  "sources": {
+    "geometry": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\icebox\\geometry.npz",
+      "sha256": "f207f609d6d50c9fa224bb5d38714a9082ad47eeea3ed851c82bb27a9dc0e469"
+    },
+    "metadata": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\icebox\\geometry.json",
+      "sha256": "d3384e4a86672a5b48cf2e8704e75f877e280c38f58adef547491b8adc4674a6"
+    },
+    "alignment": {
+      "path": "E:\\IcarusWorldAudit\\2026-09-06\\tactical-alignment-sides-v1\\icebox.json",
+      "sha256": "b4ca76f2eedc5cb50180aacf5fe1e062259aa7f61eaf1e3fa04cfc53074d218a"
+    },
+    "standing": {
+      "path": "work\\icebox-all-v6\\regional-floors.json",
+      "sha256": "cd097400e2f86ff52f085a04a859e11f935cfe44eb8de62dd1e5d560b1588c4c"
+    }
+  },
+  "baseline": {
+    "attack": {
+      "path": "work\\all-map-vision-followup-2026-09-14\\icebox-front-window\\before-attack.json.gz",
+      "sha256": "54675ef71921791a41ce921e730e9a1f7b9ad95dc7efb1d5236aeb9936787e71"
+    },
+    "defense": {
+      "path": "work\\all-map-vision-followup-2026-09-14\\icebox-front-window\\before-defense.json.gz",
+      "sha256": "a4e9b24cc984779682e5f55f9e48e9c99ca4b2747dfa01e4957b3ed71f742250"
+    }
+  },
+  "sourceObjects": [
+    3747,
+    3748,
+    3749,
+    3750
+  ],
+  "sourceFloorObject": 3749,
+  "openingEyeMeters": 7.5,
+  "expectedOpeningMeters": [
+    6.25200080871582,
+    8.031307220458984
+  ],
+  "sections": [
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -65,
+        -64.5
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -64.5,
+        -64.0
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -64,
+        -63.5
+      ]
+    }
+  ],
+  "jambSections": [
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -66.5,
+        -66.0
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -66,
+        -65.5
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -65.5,
+        -65.0
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -63.5,
+        -63.0
+      ]
+    },
+    {
+      "axis": 1,
+      "cross": [
+        -34.32,
+        -33.95
+      ],
+      "along": [
+        -63,
+        -62.5
+      ]
+    }
+  ],
+  "selectedWalls": {
+    "attack": [
+      {
+        "id": "p16-stroke-5-local-0-0",
+        "rings": [
+          [
+            322.9252,
+            154.23,
+            323.9073,
+            154.23,
+            324.8894,
+            154.23,
+            325.8715,
+            154.23,
+            326.85360000000003,
+            154.23,
+            327.8357,
+            154.23,
+            328.8178,
+            154.23,
+            329.7999,
+            154.23,
+            330.532,
+            154.23,
+            330.532,
+            153.73,
+            329.7999,
+            153.73,
+            328.8178,
+            153.73,
+            327.8357,
+            153.73,
+            326.85360000000003,
+            153.73,
+            325.8715,
+            153.73,
+            324.8894,
+            153.73,
+            323.9073,
+            153.73,
+            322.9252,
+            153.73,
+            321.9431,
+            153.73,
+            321.211,
+            153.73,
+            321.211,
+            154.23,
+            321.9431,
+            154.23,
+            322.9252,
+            154.23
+          ]
+        ]
+      }
+    ],
+    "defense": [
+      {
+        "id": "p16-stroke-3-local-0",
+        "rings": [
+          [
+            66.2483,
+            319.27,
+            66.2483,
+            318.77,
+            65.69999999999999,
+            318.77,
+            65.69999999999999,
+            319.27,
+            66.2483,
+            319.27
+          ]
+        ]
+      },
+      {
+        "id": "p16-stroke-3-local-1",
+        "rings": [
+          [
+            57.659100000000024,
+            319.27,
+            58.641200000000026,
+            319.27,
+            59.62330000000003,
+            319.27,
+            60.605399999999975,
+            319.27,
+            61.58749999999998,
+            319.27,
+            62.56959999999998,
+            319.27,
+            63.55169999999998,
+            319.27,
+            64.53379999999999,
+            319.27,
+            65.51589999999999,
+            319.27,
+            66.24799999999999,
+            319.27,
+            66.24799999999999,
+            318.77,
+            65.51589999999999,
+            318.77,
+            64.53379999999999,
+            318.77,
+            63.55169999999998,
+            318.77,
+            62.56959999999998,
+            318.77,
+            61.58749999999998,
+            318.77,
+            60.605399999999975,
+            318.77,
+            59.62330000000003,
+            318.77,
+            58.641200000000026,
+            318.77,
+            57.659100000000024,
+            318.77,
+            56.9271,
+            318.77,
+            56.9271,
+            319.27,
+            57.659100000000024,
+            319.27
+          ]
+        ]
+      },
+      {
+        "id": "p16-stroke-3-local-2",
+        "rings": [
+          [
+            57.47500000000002,
+            319.27,
+            57.47500000000002,
+            318.77,
+            56.9271,
+            318.77,
+            56.9271,
+            319.27,
+            57.47500000000002,
+            319.27
+          ]
+        ]
+      }
+    ]
+  },
+  "destinationDomain": "volume-129-0",
+  "reason": "Gameplay-confirmed defender Nest assembly (saved review 1788837450544-1eab447c, cone 4) has a usable front window above its 5.75m interior floor. The complete base/interior/floor/top assembly measures the aperture. SVG path M321.211 153.98H330.532 is the full thin window bar between thicker wall jambs. Its authored XY span differs from source aperture XY: transfer only the measured vertical opening onto the complete thin bar; retain neighboring thick jambs and all existing base/upper intervals. Source XY does not move artwork.",
+  "destinationFloorReview": "Source volume-129-0 is the physical 2m target floor for 36 independently recast rays, 18 clear and 18 sill/floor blocked. Project this exact source domain through the existing receiver and eye-clear wall applicability filter; preserve all physical ground and existing supports. The destination selection is necessary to distinguish near targets blocked by the sill from distant targets visible through the window."
+}

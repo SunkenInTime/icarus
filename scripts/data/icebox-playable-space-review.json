@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "map": "icebox",
+  "metadataSha256": "d3384e4a86672a5b48cf2e8704e75f877e280c38f58adef547491b8adc4674a6",
+  "decisions": [
+    {
+      "sourceObject": 3514,
+      "sourcePath": "Port_Art_A/Cube9/StaticMeshComponent0.024",
+      "status": "excluded",
+      "reason": "Dara excluded this buried collider as outside playable space on 2026-09-08. Local contact and clearance alone do not admit it. Legitimate ability-accessible platforms and ledges remain eligible.",
+      "measuredTopMeters": -4.550577,
+      "reviewImage": "work/icebox-acceptance/buried-collider-review.png"
+    }
+  ]
+}

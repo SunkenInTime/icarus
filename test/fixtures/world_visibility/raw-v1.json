@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "map": "split",
+  "coordinateScale": 1048576,
+  "planarized": true,
+  "observerHeightCm": 175,
+  "defaultFloorElevationCm": 300,
+  "uvUnitsPerMeter": [
+    0.0078,
+    0.0078
+  ],
+  "menuElevationsCm": [
+    475
+  ],
+  "maxDistanceMeters": 40,
+  "vertices": [
+    -2147483648,
+    2147483647,
+    0,
+    -7,
+    100,
+    50,
+    1048576,
+    2097152
+  ],
+  "edges": [
+    0,
+    1,
+    1,
+    2,
+    2,
+    3
+  ],
+  "layers": [
+    {
+      "elevationCm": 475,
+      "globalOrigins": true,
+      "edges": [
+        2,
+        0
+      ]
+    },
+    {
+      "elevationCm": 477.125,
+      "globalOrigins": false,
+      "edges": []
+    },
+    {
+      "elevationCm": 480,
+      "globalOrigins": false,
+      "edges": [
+        1,
+        2
+      ],
+      "fixtureLabel": "preserved"
+    }
+  ],
+  "source": {
+    "geometrySha256": "0123456789abcdef",
+    "note": "standing 1.75 m; café"
+  },
+  "unknownMetadata": {
+    "futureVersion": null,
+    "flags": [
+      true,
+      false
+    ]
+  }
+}

@@ -17,6 +17,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
 
 Offset viewConeAgentCompositeAgentOffsetVirtual(double agentSize) {
   return Offset(
@@ -53,6 +54,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
     this.applyRotation = true,
     this.clipToGeometry = true,
     this.isInteractive = true,
+    this.worldOriginOverride,
   });
 
   final PlacedViewConeAgent agent;
@@ -62,6 +64,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
   final bool applyRotation;
   final bool clipToGeometry;
   final bool isInteractive;
+  final Offset? worldOriginOverride;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -96,12 +99,13 @@ class ViewConeAgentComposite extends ConsumerWidget {
               angle: UtilityData.getViewConeAngle(agent.presetType),
               rotation: rotation,
               length: length,
-              worldOrigin: clipToGeometry
-                  ? agent.position +
-                      coordinateSystem.virtualOffsetToWorld(
-                        Offset(agentSize / 2, agentSize / 2),
-                      )
-                  : null,
+              worldOrigin: worldOriginOverride ??
+                  (clipToGeometry
+                      ? agent.position +
+                          coordinateSystem.virtualOffsetToWorld(
+                            Offset(agentSize / 2, agentSize / 2),
+                          )
+                      : null),
               visionElevation: agent.visionElevation,
               showCenterMarker: false,
             ),
@@ -161,6 +165,13 @@ class _PlacedViewConeAgentWidgetState
   double? _localLength;
   bool _isDragging = false;
   String? _activeDragId;
+  final _dragOrigin = ViewConeDragOrigin();
+
+  @override
+  void dispose() {
+    _dragOrigin.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -273,6 +284,13 @@ class _PlacedViewConeAgentWidgetState
         child: Draggable<PlacedWidget>(
           data: current,
           dragAnchorStrategy: (draggable, context, position) {
+            _dragOrigin.start(
+                origin: current.position +
+                    coordinateSystem.virtualOffsetToWorld(
+                        Offset(agentSize / 2, agentSize / 2)),
+                coordinates: coordinateSystem,
+                zoom: ref.read(screenZoomProvider),
+                isAttack: isAttack);
             final renderObject = context.findRenderObject()! as RenderBox;
             final rotatedPosition = _rotateOffset(
               renderObject.globalToLocal(position),
@@ -287,17 +305,21 @@ class _PlacedViewConeAgentWidgetState
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
             child: ZoomTransform(
-              child: ViewConeAgentComposite(
-                agent: current,
-                rotation: displayRotation,
-                length: localLength,
-                forcedAgentSize: agentSize,
-                clipToGeometry: false,
-                isInteractive: false,
+              child: ValueListenableBuilder<Offset?>(
+                valueListenable: _dragOrigin,
+                builder: (context, origin, child) => ViewConeAgentComposite(
+                  agent: current,
+                  rotation: displayRotation,
+                  length: localLength,
+                  forcedAgentSize: agentSize,
+                  worldOriginOverride: origin,
+                  isInteractive: false,
+                ),
               ),
             ),
           ),
           childWhenDragging: const SizedBox.shrink(),
+          onDragUpdate: _dragOrigin.update,
           onDragStarted: () {
             final shouldDuplicate = ref.read(duplicateDragModifierProvider);
             final duplicateId = shouldDuplicate
@@ -312,6 +334,7 @@ class _PlacedViewConeAgentWidgetState
             });
           },
           onDragEnd: (details) {
+            _dragOrigin.end();
             final dragId = _activeDragId ?? current.id;
             setState(() {
               _isDragging = false;

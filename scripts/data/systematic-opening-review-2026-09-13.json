@@ -1,0 +1,515 @@
+{
+  "version": 1,
+  "basis": "Focused source review following all-map scan; retains cosmetic, inaccessible and represented railing gaps under the visibility model.",
+  "verdicts": {
+    "status": "reviewed-no-opening-changes-supported",
+    "scope": {
+      "familiesReviewed": 20,
+      "stationsReviewed": 63
+    },
+    "counts": {
+      "reviewedNonOpenings": 18,
+      "retainedStructuralRailings": 2,
+      "changedFamilies": 0,
+      "unresolvedFamilies": 0
+    },
+    "conclusion": "No change is supported for the twenty flagged opening families: eighteen are exterior boundaries, source seams, or already reviewed structures; two are represented ramp railings. This classification does not certify every height elsewhere on these parents.",
+    "inputs": {
+      "work\\systematic-map-review\\openings\\summary.json": "9e0b7aca039b1abd37e6d292f7844028c9e39160f3e4599e3786df3abafa89f6",
+      "work\\systematic-map-review\\openings-current-standing-check.json": "e79a6590f90abc19e0f5ad69ed1b1154a709f8bd4e3db344a9930823aade36fb",
+      "explicitBreezeDecision": "work/breeze-gameplay-review/p0-stroke-16.json",
+      "sourceDispositionRoots": [
+        "work/icebox-all-v6/physical-levels/source-dispositions.json",
+        "work/ascent-all-reviewed-v2/physical-levels/source-dispositions.json",
+        "work/bind-all-reviewed-v3/physical-levels/source-dispositions.json",
+        "work/fracture-all-reviewed-v2/physical-levels/source-dispositions.json"
+      ]
+    },
+    "limits": [
+      "The earlier unequal-elevation and constant-height rays are retained only as investigation history. Rays offset from the authored front skin do not establish a cap elevation.",
+      "The correction uses the continuous front facade and its explicit top-skin faces recorded in icebox-elevation-edge-front-topology.json. Frozen/clipped section maxima are not cap oracles.",
+      "Caps are absolute native elevations because the affected wall rows use floorElevationMeters=0.0. Integration must mirror the change through the existing side-alignment path.",
+      "No cap is inferred where a parent endpoint lies outside the recorded source top-skin X range; those endpoint pieces require another source owner.",
+      "The initial two ramp-cap proposals were rejected after inspecting complete rail assemblies. No Icebox wall asset was changed. Finite far-side sampling cannot certify all geometry elsewhere on a parent."
+    ],
+    "families": [
+      {
+        "map": "icebox",
+        "parent": "p1-fill-9",
+        "assembly": "Port_Art_A/Shell_2_WarehouseRampC/StaticMeshComponent0.244",
+        "stations": 18,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "wrong-source-association",
+        "evidence": "The associated object is a ramp and every candidate uses sourceRole=ground. The 18 samples trace one horizontal boundary at y=270.221. A vertical gap between ramp facets cannot define a sight opening through that boundary. This invalidates the detector evidence but does not prove the current wall correct.",
+        "gapRangeMeters": [
+          2.111119508743286,
+          3.405472457902901
+        ],
+        "standingEyeRangeMeters": [
+          2.75,
+          2.75
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "At all 18 stations, current complete source object 3645 (Port_Art_A/Plane_0_A_0) spans 2.01-3.52 m through the 2.75 m eye in a 0.30 m along-wall by 1.70 m cross-wall native clip. The opposite normal remains outside the receiver with no retained standing triangle through 20 SVG units, about 5.96 m."
+      },
+      {
+        "map": "icebox",
+        "parent": "p1-fill-1",
+        "assembly": "Port_Art_DefPathB/Shell_7_LiftGate3/StaticMeshComponent0.978",
+        "stations": 10,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "All 10 samples lie on the outer edge of the B-side approach. The extracted component is explicitly pawn-nonblocking, so its render-mesh void is not the gameplay collision boundary. Current walls block contact from clear retained ground on both sides as the authored outline requires.",
+        "gapRangeMeters": [
+          2.4596031876508633,
+          4.20498505992335
+        ],
+        "standingEyeRangeMeters": [
+          2.75,
+          2.75
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "All 10 stations have receiver coverage only on the retained interior side at 0.2, 0.6, 1.0, 1.5, 3.0, and 5.0 SVG offsets. There is no receiver domain on the far side."
+      },
+      {
+        "map": "ascent",
+        "parent": "p1-fill-0-p1-fill-0-original-remainder-0",
+        "assembly": "Ascent_Art_Atk/AtkBridge_0_MainA/StaticMeshComponent0.159",
+        "stations": 4,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "The four samples sit on the closed attacker-spawn perimeter. They are sub-meter vertical separations between facade sections around the sloped spawn floor, not a mapped passage.",
+        "gapRangeMeters": [
+          3.7637923989814874,
+          5.06535655923276
+        ],
+        "standingEyeRangeMeters": [
+          4.149515433322867,
+          4.911275119800637
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "All four stations have receiver coverage only on the retained interior side at 0.2 through 5.0 SVG offsets. There is no receiver domain on the far side."
+      },
+      {
+        "map": "bind",
+        "parent": "p2-fill-0",
+        "assembly": "Duality_Art_Vista/RockCliff_3_ATK_Spawn_LeftRockWall_0/StaticMeshComponent0.1512",
+        "stations": 4,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "The four samples are on the closed attacker-spawn exterior boundary. The named vista cliff is scenery outside the playable route; gaps in its render triangles do not open the authored boundary.",
+        "gapRangeMeters": [
+          0.022798592689775396,
+          2.610406442968813
+        ],
+        "standingEyeRangeMeters": [
+          0.5166476732031635,
+          0.599696135430829
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 4 station(s): 0 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "fracture",
+        "parent": "p1-fill-5",
+        "assembly": "Canyon_Asite/Shell_2_AsiteAlleyB/StaticMeshComponent0.115",
+        "stations": 4,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "The four samples follow A-site alley exterior wall, not a crossing in the map outline. The component is explicitly pawn-nonblocking, so its render sections cannot establish a gameplay opening; retained-ground contact remains blocked on both sides.",
+        "gapRangeMeters": [
+          6.030976800143796,
+          8.785971975700523
+        ],
+        "standingEyeRangeMeters": [
+          7.120989253992249,
+          7.222841149761031
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "All four stations have receiver coverage only on the retained interior side at 0.2 through 5.0 SVG offsets. There is no receiver domain on the far side."
+      },
+      {
+        "map": "icebox",
+        "parent": "p7-stroke-10",
+        "assembly": "Port_Art_SnowAll/Snow_0_SnowPileGroundD93/StaticMeshComponent0.1462",
+        "stations": 4,
+        "verdict": "retain-represented-railing",
+        "classification": "ramp-edge-with-front-railing",
+        "evidence": "Complete source assembly, including front railing, supersedes the isolated facade-top interpretation.",
+        "gapRangeMeters": [
+          2.016418764588184,
+          3.0089580111656744
+        ],
+        "standingEyeRangeMeters": [
+          2.75,
+          2.75
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "resolution": "complete-assembly-and-vision-policy",
+        "independentEvidence": "Full original source assembly rendered from two viewpoints shows the front railing directly above the facade. The proposed cap removes that rail; its roughly 1.2 m height above the ramp is real structure. Retain represented structural railings under docs/vision-model.md. Gaps between rail bars do not establish a tactical opening.",
+        "physicalRole": "Ramp or stair edge with structural front railing",
+        "rejectedProposal": {
+          "scope": "five affected attack local wall pieces and their aligned defense counterparts",
+          "operation": "Cap covered elevation-edge wall pieces at the authored front top skin recorded in icebox-elevation-edge-front-topology.json. Do not derive caps from clipped vertical bands or from separate rail geometry.",
+          "localCaps": [
+            {
+              "stationIndex": 7,
+              "wallId": "p7-stroke-10-local-7-0",
+              "currentTopMeters": 3.69012,
+              "excessHeightMeters": 1.206137,
+              "authoredFrontTopMeters": 2.483983
+            },
+            {
+              "stationIndex": 9,
+              "wallId": "p7-stroke-10-local-9-0",
+              "currentTopMeters": 3.126,
+              "excessHeightMeters": 1.203778,
+              "authoredFrontTopMeters": 1.922222
+            },
+            {
+              "stationIndex": 14,
+              "wallId": "p7-stroke-10-local-14-0",
+              "currentTopMeters": 2.99153,
+              "excessHeightMeters": 1.204073,
+              "authoredFrontTopMeters": 1.787457
+            },
+            {
+              "stationIndex": 16,
+              "wallId": "p7-stroke-10-local-16-0",
+              "currentTopMeters": 3.55469,
+              "excessHeightMeters": 1.205472,
+              "authoredFrontTopMeters": 2.349218
+            }
+          ],
+          "requiredValidation": "Apply the piecewise front-top profile only within its proven source X range, mirror through the existing side alignment, and run the existing Icebox regressions. Resolve parent endpoint pieces outside that range with their actual source owner."
+        },
+        "assemblyRender": "p7-stroke-10-assembly.png"
+      },
+      {
+        "map": "bind",
+        "parent": "p2-fill-0",
+        "assembly": "Duality_Art_Atk/Rocks_1_MediumChunkD/Instances.108",
+        "stations": 3,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "The three samples lie on the closed attacker-spawn exterior. Source disposition marks the rock instances pawn-nonblocking; irregular gaps between rock faces do not define a traversable or sight opening.",
+        "gapRangeMeters": [
+          1.7495811679867723,
+          4.516486760472744
+        ],
+        "standingEyeRangeMeters": [
+          2.6132957108425727,
+          3.2752696451413885
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 3 station(s): 0 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "ascent",
+        "parent": "p2-stroke-7",
+        "assembly": "Ascent_Art_Atk/AtkBridge_0_MainE/StaticMeshComponent0.163",
+        "stations": 2,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "Both samples are on the closed attacker-spawn perimeter. Their roughly 0.55 m gaps straddle the sloped ground eye, while the bridge render component is explicitly pawn-nonblocking and has no eligible standing domain.",
+        "gapRangeMeters": [
+          3.7767656265024185,
+          4.349087468917952
+        ],
+        "standingEyeRangeMeters": [
+          4.071025650531887,
+          4.228719776473911
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Current complete geometry fills both eye-height gaps: Gondola_1_ServiceBuilding object 6414 spans 2.000-5.435 m at station 2 and 2.000-5.465 m at station 29. At station 29, AtkBridge_0_RailB object 624 also spans 3.432-4.553 m."
+      },
+      {
+        "map": "breeze",
+        "parent": "p0-stroke-16",
+        "assembly": "Foxtrot_Art_AtkPath_A/Metal_0_CorrugatedMetalThickA5/Instances.184",
+        "stations": 2,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "The prior explicit gameplay review classifies p0-stroke-16 as a solid connected authored structural outline with no remaining uncertainty. The two thin gaps in corrugated-metal instances do not override that decision.",
+        "gapRangeMeters": [
+          6.551731643139092,
+          7.471941232063906
+        ],
+        "standingEyeRangeMeters": [
+          6.999949472495285,
+          7.334809323588573
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "explicit-gameplay-decision"
+      },
+      {
+        "map": "fracture",
+        "parent": "p1-fill-0",
+        "assembly": "Canyon_BackPathtoA/Shell_9_RadarDishOuter/StaticMeshComponent0.1053",
+        "stations": 2,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "Both samples are on the remote attacker-side exterior boundary. The radar-dish shell is explicitly pawn-nonblocking scenery; its large internal render gap is unrelated to a playable passage.",
+        "gapRangeMeters": [
+          5.93590585899786,
+          15.33976047295152
+        ],
+        "standingEyeRangeMeters": [
+          7.12865475240577,
+          7.139866900389117
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 2 station(s): 0 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "ascent",
+        "parent": "p1-fill-0-p1-fill-0-original-remainder-0",
+        "assembly": "Ascent_Art_Atk/AtkBridge_0_MainD/StaticMeshComponent0.162",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "The single 3 cm seam sits on the closed attacker-spawn perimeter. It is below any meaningful opening size and comes from adjacent bridge facade pieces.",
+        "gapRangeMeters": [
+          4.697899941341695,
+          4.72799539360827
+        ],
+        "standingEyeRangeMeters": [
+          4.716516188987414,
+          4.716516188987414
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Current complete geometry fills the 4.698-4.728 m seam: neighboring AtkBridge_0_RailB object 624 spans 4.622-4.847 m at the 4.717 m eye."
+      },
+      {
+        "map": "ascent",
+        "parent": "p1-fill-0-p1-fill-0-original-remainder-0",
+        "assembly": "Ascent_Art_Atk/AtkBridge_0_MainE/StaticMeshComponent0.163",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "The sample sits on the same closed attacker-spawn perimeter. The bridge component is explicitly pawn-nonblocking and has no eligible standing domain; the 0.57 m render separation is not passage ownership.",
+        "gapRangeMeters": [
+          4.2838022481755385,
+          4.856511574665819
+        ],
+        "standingEyeRangeMeters": [
+          4.722285900487181,
+          4.727161258715846
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "The opposite side has no retained standing triangle at 0.2, 0.6, 1.0, 1.5, 2.0, 3.0, or 5.0 SVG. The interior side retains ground from 0.6 through 5.0 SVG."
+      },
+      {
+        "map": "bind",
+        "parent": "p2-fill-3",
+        "assembly": "Duality_Art_AtkPathB/Rocks_1_MediumChunkD.001/Instances.314",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "The sample lies on a closed attacker-side exterior boundary. Extracted metadata marks this rock instance NoCollision, so its 9.2 m render gap cannot define the gameplay blocker.",
+        "gapRangeMeters": [
+          1.4505422115325928,
+          10.66578415677545
+        ],
+        "standingEyeRangeMeters": [
+          3.00068020141223,
+          3.0132058087421782
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 1 station(s): 1 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "bind",
+        "parent": "p2-fill-3",
+        "assembly": "Duality_Art_AtkPathB/Wood_0_BeamSmall_7/StaticMeshComponent0.414",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "The sample lies on the same closed exterior boundary. A narrow decorative beam supplies only disconnected local faces; the 9.5 m absence around it is lack of source ownership, not evidence that the boundary opens.",
+        "gapRangeMeters": [
+          1.1184315503594644,
+          10.593356132507324
+        ],
+        "standingEyeRangeMeters": [
+          2.8183907146326463,
+          2.821387205865027
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 1 station(s): 1 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "bind",
+        "parent": "p2-fill-6",
+        "assembly": "Duality_Art_Atk/Rocks_1_MediumChunkD_1/Instances.109",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "The sample is on the closed attacker-spawn exterior. Extracted metadata marks the rock pawn-nonblocking; the local rock-face gap cannot override the continuous authored boundary.",
+        "gapRangeMeters": [
+          2.8604630746661104,
+          5.907202963183741
+        ],
+        "standingEyeRangeMeters": [
+          2.9728393951125964,
+          2.9954013238675463
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 1 station(s): 0 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "fracture",
+        "parent": "p1-fill-0",
+        "assembly": "Canyon_BackPathtoA/Rubble_0_DebrisMetalSheetD2/Instances.584",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "The sample is on the attacker-side exterior near the radar area. The debris instance is explicitly pawn-nonblocking scenery, so its 1.1 m render seam does not define a gameplay opening.",
+        "gapRangeMeters": [
+          6.970127275852477,
+          8.084089279174805
+        ],
+        "standingEyeRangeMeters": [
+          7.2573718850504925,
+          7.2573718850504925
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 1 station(s): 1 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "fracture",
+        "parent": "p1-fill-6",
+        "assembly": "Canyon_BackPathtoA/Rock_7_CanyonMedChunkC_24/StaticMeshComponent0.1013",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "cosmetic-exterior-seam",
+        "evidence": "The sample lies on the far attacker-side outer boundary. The rock is explicitly pawn-nonblocking scenery; its internal 4.6 m render gap is not a playable opening.",
+        "gapRangeMeters": [
+          5.688303470611572,
+          10.290868759155273
+        ],
+        "standingEyeRangeMeters": [
+          6.399522507854105,
+          6.399522507854105
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "Far-side check across 1 station(s): 0 had receiver on both sides, and 0 had retained standing triangles on both sides at 0.6, 1.0, or 1.5 SVG. The alleged gap therefore has no standing gameplay space across it."
+      },
+      {
+        "map": "icebox",
+        "parent": "p1-fill-0",
+        "assembly": "Port_Art_SnowAll/Snow_1_PileUpEdgeB_1_1/StaticMeshComponent0.1509",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "wrong-source-association",
+        "evidence": "The source is a snow pile excluded for lacking a simple player shape. A single 0.35 m separation in decorative snow at the outer map edge cannot own a vertical sight opening. This invalidates the detector evidence but does not prove the current wall correct.",
+        "gapRangeMeters": [
+          3.4406914667656725,
+          3.7876224123895947
+        ],
+        "standingEyeRangeMeters": [
+          3.6897865611235265,
+          3.6897865611235265
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "The opposite normal remains outside the receiver and has no retained standing triangle at every tested offset from 0.2 through 20 SVG units, about 0.06-5.96 m. The interior side has retained ground. This is an exterior boundary, so the snow seam cannot be a usable opening."
+      },
+      {
+        "map": "icebox",
+        "parent": "p15-stroke-1",
+        "assembly": "Port_Art_DefPathB/DefPathB_0_TunnelEntrance/StaticMeshComponent0.815",
+        "stations": 1,
+        "verdict": "not-usable-gameplay-opening",
+        "classification": "intended-structural-blocker",
+        "evidence": "The sample is on the side wall of the upper-left tunnel approach, not across the route mouth. The entrance render mesh is explicitly pawn-nonblocking; its large disconnected-face interval cannot replace the authored side boundary.",
+        "gapRangeMeters": [
+          2.378011359092874,
+          8.983465311814637
+        ],
+        "standingEyeRangeMeters": [
+          3.5060425032104696,
+          3.5344871502613255
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "proposedCorrection": null,
+        "resolution": "independently-resolved",
+        "independentEvidence": "The opposite side has no retained standing triangle at 0.2 through 5.0 SVG. The interior side retains ground at 1.0 through 5.0 SVG, proving the sample follows the tunnel side boundary rather than crossing its mouth."
+      },
+      {
+        "map": "icebox",
+        "parent": "p7-stroke-18",
+        "assembly": "Port_Art_DefSpawn/Floor_1_DefStairsToWarehouse/StaticMeshComponent0.1075",
+        "stations": 1,
+        "verdict": "retain-represented-railing",
+        "classification": "ramp-edge-with-front-railing",
+        "evidence": "Complete source assembly, including front railing, supersedes the isolated facade-top interpretation.",
+        "gapRangeMeters": [
+          2.6436686539107765,
+          3.5719053531480247
+        ],
+        "standingEyeRangeMeters": [
+          2.75,
+          2.75
+        ],
+        "currentContactCheck": "Every retained member has a clear origin and filled contact on attack and defense in openings-current-standing-check.json.",
+        "resolution": "complete-assembly-and-vision-policy",
+        "independentEvidence": "Full original source assembly rendered from two viewpoints shows the front railing directly above the facade. The proposed cap removes that rail; its roughly 1.2 m height above the ramp is real structure. Retain represented structural railings under docs/vision-model.md. Gaps between rail bars do not establish a tactical opening.",
+        "physicalRole": "Ramp or stair edge with structural front railing",
+        "rejectedProposal": {
+          "scope": "five affected attack local wall pieces and their aligned defense counterparts",
+          "operation": "Cap covered elevation-edge wall pieces at the authored front top skin recorded in icebox-elevation-edge-front-topology.json. Do not derive caps from clipped vertical bands or from separate rail geometry.",
+          "localCaps": [
+            {
+              "stationIndex": 21,
+              "wallId": "p7-stroke-18-local-21-0",
+              "currentTopMeters": 3.73088,
+              "excessHeightMeters": 1.167344,
+              "authoredFrontTopMeters": 2.563536
+            }
+          ],
+          "requiredValidation": "Apply the piecewise front-top profile only within its proven source X range, mirror through the existing side alignment, and run the existing Icebox regressions. Resolve parent endpoint pieces outside that range with their actual source owner."
+        },
+        "assemblyRender": "p7-stroke-18-assembly.png"
+      }
+    ],
+    "unresolvedFamilies": []
+  },
+  "evidenceSha256": {
+    "work\\systematic-map-review\\focused-openings\\verdicts.json": "54724d3bd4566c08082ea8cb9b487e196c2d5d605cc20e760da989e57156a3c1",
+    "work\\systematic-map-review\\focused-openings\\icebox-elevation-edge-front-topology.json": "6d9c503ebad2c1ed599b731e1d00877dd8a05b34585583145d421d36eaead679",
+    "work\\systematic-map-review\\focused-openings\\p7-stroke-10-assembly.png": "847daf599b0c91f386fbd68ddfc2d092ac17c478a4d81cf25a5f4f1a4e32953e",
+    "work\\systematic-map-review\\focused-openings\\p7-stroke-18-assembly.png": "39d45c8324e5bb8fdb8d309fbe26f5ec473b0905d1d47bf1f246927d2cb2ec94"
+  }
+}

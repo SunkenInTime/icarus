@@ -1,0 +1,129 @@
+{
+  "status": "approved",
+  "map": "summit",
+  "reviewer": "Dara",
+  "reviewDate": "2026-09-12",
+  "questionSha256": "63026dae68582e3a5820e09a972827c9fdc3f9e5619919a96c9ca3080901662a",
+  "sourceSceneSha256": "34d327d642af2e7145292633607c01e9f7ef0ddffc464ccf5492fb5d9ad34fc5",
+  "sourceSha256": "8b6b2683a22f73980f84ff68689ce51dc73472ada3cbceade477ca869a57c9f8",
+  "sourceInventorySha256": "0c24396c246990ecc769220ff2ba4c8a8d7a1d6c48e6e1389773e2cfb80cc90c",
+  "sourceCollidersSha256": "daa791c224acc416de15d7d9c8daaae681e23023e58c84d36547b1d3dbfbd28e",
+  "sourceColliderTrianglesSha256": "5d02ed0560e1da055d13f2abe3c73791e25ec1f8d37ed0a6f2e62f55da8a1b3f",
+  "retainedDomainCountIfApproved": 436,
+  "approval": {
+    "question": "Can both red box tops, at 65 m and 42.75 m, be marked outside play even with abilities? Their collision bodies stay intact.",
+    "answer": "Both tops are outside play",
+    "scope": "Only standing domains volume-0-0 and volume-328-0. Both collision bodies retained.",
+    "viewerUrl": "https://dara-pc-duo.tailba589e.ts.net:8446/summit/"
+  },
+  "decisions": [
+    {
+      "id": "summit-outside-play-volume-0-0",
+      "scope": "specified-standing-domain",
+      "status": "approved",
+      "domain": {
+        "id": "volume-0-0",
+        "sourceCollision": "/Plummet_BVPawn/BP_BlockingVolume/Cube#0",
+        "sourceFaces": [
+          [
+            0,
+            10
+          ],
+          [
+            0,
+            11
+          ]
+        ],
+        "nativePlane": [
+          0.0,
+          -0.0,
+          65.0
+        ],
+        "nativeGeometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                133.5706187,
+                1.3582021
+              ],
+              [
+                133.5706187,
+                -124.4999993
+              ],
+              [
+                -2.25,
+                -124.4999993
+              ],
+              [
+                -2.25,
+                1.3582021
+              ],
+              [
+                124.5319123,
+                1.3582021
+              ],
+              [
+                133.5706187,
+                1.3582021
+              ]
+            ]
+          ]
+        },
+        "areaSquareMeters": 17094.138782617207
+      }
+    },
+    {
+      "id": "summit-outside-play-volume-328-0",
+      "scope": "specified-standing-domain",
+      "status": "approved",
+      "domain": {
+        "id": "volume-328-0",
+        "sourceCollision": "/Plummet_BVPawn/BP_BlockingVolume361/Cube#0",
+        "sourceFaces": [
+          [
+            328,
+            10
+          ],
+          [
+            328,
+            11
+          ]
+        ],
+        "nativePlane": [
+          0.0,
+          -0.0,
+          42.75
+        ],
+        "nativeGeometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                84.3749986,
+                -130.0908782
+              ],
+              [
+                87.360985,
+                -124.9189993
+              ],
+              [
+                98.0419656,
+                -124.9189993
+              ],
+              [
+                92.3857331,
+                -134.715879
+              ],
+              [
+                84.3749986,
+                -130.0908782
+              ]
+            ]
+          ]
+        },
+        "areaSquareMeters": 79.9405101195375
+      }
+    }
+  ]
+}

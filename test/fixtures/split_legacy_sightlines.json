@@ -1,0 +1,560 @@
+{
+  "scope": "Legacy Split source-reviewed floor transitions, low planter, and two box families on both sides; not complete independent floor-domain coverage.",
+  "sourceFiles": {
+    "E:\\IcarusWorldAudit\\2026-09-06\\tactical-visibility-revision\\split-svg-semantic-prototype-v7\\floor-transition-corrections.json": "b4326de6e55f552cb21848c8b00d40d0857347437c842102b35967a675839128",
+    "tool\\verify_split_low_planter_test.dart": "2907bbb01e26763b03a571ffa15d3cb8378facb7401632107998f509cecdd9b2",
+    "E:\\IcarusWorldAudit\\2026-09-06\\tactical-visibility-revision\\split-svg-semantic-prototype-v3\\annotation-extension.json": "bbde8fba9720d9c896074c38d1445f20419b649cfa6d380980f166fb3953d7da"
+  },
+  "floorTransitions": [
+    {
+      "id": "a-ramp-floor-transition",
+      "attackWall": "p2-unknown-0",
+      "sourceObjects": [
+        575,
+        577,
+        589,
+        5922,
+        5924
+      ],
+      "center": [
+        332.769,
+        248.196
+      ],
+      "defenseWall": "p2-unknown-0"
+    },
+    {
+      "id": "mailroom-floor-transition",
+      "attackWall": "p9-unknown-9",
+      "sourceObjects": [
+        6959
+      ],
+      "center": [
+        189.4945,
+        223.209
+      ],
+      "defenseWall": "p9-unknown-4"
+    }
+  ],
+  "boxes": [
+    {
+      "id": "b-north-box6694",
+      "bands": [
+        [
+          0,
+          2.005642681898445
+        ]
+      ],
+      "floorMeters": 3.9999973480087814,
+      "topMeters": 6.005462646484375,
+      "sourceObjects": [
+        {
+          "index": 6694,
+          "path": "Bonsai_Art_B/Shard_0_Box_1/StaticMeshComponent0.699",
+          "firstFace": 2283269,
+          "faceCount": 952,
+          "boundsMeters": [
+            [
+              -20.989999771118164,
+              62.5099983215332,
+              4.005640029907227
+            ],
+            [
+              -18.989999771118164,
+              64.51000213623047,
+              6.005640029907227
+            ]
+          ]
+        }
+      ],
+      "sourceGeometry": {
+        "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\split\\geometry.npz",
+        "sha256": "fb5882c6796c646a27d358bd218fba196b2d1acbbac1b69f87baad0b151c1da0"
+      },
+      "sourceMetadata": {
+        "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\split\\geometry.json",
+        "sha256": "630ceadf97491802500fe2d25f10d2a80c60bd85004f59031c2f82419edf5462"
+      },
+      "sourceTopSamples": [
+        {
+          "nativeXY": [
+            -19.99,
+            63.51
+          ],
+          "selectedTop": {
+            "object": 6694,
+            "rawFace": 2283863,
+            "z": 6.005462646484375,
+            "barycentrics": [
+              0.49774211323271456,
+              0.5000224530358869,
+              0.00223543373139853
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -20.49,
+            63.01
+          ],
+          "selectedTop": {
+            "object": 6694,
+            "rawFace": 2283951,
+            "z": 6.005462646484375,
+            "barycentrics": [
+              0.3997254207748824,
+              0.49582099044690325,
+              0.10445358877821431
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -20.49,
+            64.00999999999999
+          ],
+          "selectedTop": {
+            "object": 6694,
+            "rawFace": 2283854,
+            "z": 6.005462646484375,
+            "barycentrics": [
+              0.10231515389709744,
+              0.3995370297175933,
+              0.4981478163853093
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -19.49,
+            63.01
+          ],
+          "selectedTop": {
+            "object": 6694,
+            "rawFace": 2283845,
+            "z": 6.005462646484375,
+            "barycentrics": [
+              0.39975590109976333,
+              0.49808967927810605,
+              0.1021544196221306
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -19.49,
+            64.00999999999999
+          ],
+          "selectedTop": {
+            "object": 6694,
+            "rawFace": 2283937,
+            "z": 6.005462646484375,
+            "barycentrics": [
+              0.10218539878086341,
+              0.39972001974077154,
+              0.4980945814783651
+            ]
+          }
+        }
+      ],
+      "sourceGroundSamples": [
+        {
+          "nativeXY": [
+            -19.99,
+            65.1
+          ],
+          "object": 6713,
+          "rawFace": 2294059,
+          "z": 3.9999973480087814,
+          "barycentrics": [
+            0.32020797607367024,
+            0.3707103556394986,
+            0.3090816682868311
+          ]
+        },
+        {
+          "nativeXY": [
+            -21.6,
+            63.51
+          ],
+          "object": 6713,
+          "rawFace": 2294059,
+          "z": 3.9999969601437457,
+          "barycentrics": [
+            0.0022867341519444695,
+            0.9363769445018197,
+            0.06133632134623581
+          ]
+        },
+        {
+          "nativeXY": [
+            -18.4,
+            63.51
+          ],
+          "object": 6713,
+          "rawFace": 2294059,
+          "z": 3.99999742974207,
+          "barycentrics": [
+            0.0022777198860626235,
+            0.4439719195144776,
+            0.5537503605994598
+          ]
+        }
+      ],
+      "wallsBySide": {
+        "attack": [
+          "p13-unknown-1"
+        ],
+        "defense": [
+          "p13-unknown-2"
+        ]
+      },
+      "poses": [
+        {
+          "id": "b-north-box6694-ground-attack",
+          "side": "attack",
+          "originSvg": [
+            60.0426,
+            157.53999999999996
+          ],
+          "directionRadians": 1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-north-box6694: standing beside the solid cover.",
+          "sourceEvidence": {
+            "annotation": "b-north-box6694",
+            "localFloorZ": 3.9999973480087814,
+            "supportHeightAboveFloorMeters": 0.0,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          }
+        },
+        {
+          "id": "b-north-box6694-top-attack",
+          "side": "attack",
+          "originSvg": [
+            60.0426,
+            165.26149999999998
+          ],
+          "directionRadians": -1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-north-box6694: standing on its measured exposed top.",
+          "sourceEvidence": {
+            "annotation": "b-north-box6694",
+            "localFloorZ": 3.9999973480087814,
+            "supportHeightAboveFloorMeters": 2.0054652984755936,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          },
+          "supportId": "b-north-box6694"
+        },
+        {
+          "id": "b-north-box6694-ground-defense",
+          "side": "defense",
+          "originSvg": [
+            406.1335,
+            315.46
+          ],
+          "directionRadians": -1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-north-box6694: standing beside the solid cover.",
+          "sourceEvidence": {
+            "annotation": "b-north-box6694",
+            "localFloorZ": 3.9999973480087814,
+            "supportHeightAboveFloorMeters": 0.0,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          }
+        },
+        {
+          "id": "b-north-box6694-top-defense",
+          "side": "defense",
+          "originSvg": [
+            406.1335,
+            307.7385
+          ],
+          "directionRadians": 1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-north-box6694: standing on its measured exposed top.",
+          "sourceEvidence": {
+            "annotation": "b-north-box6694",
+            "localFloorZ": 3.9999973480087814,
+            "supportHeightAboveFloorMeters": 2.0054652984755936,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          },
+          "supportId": "b-north-box6694"
+        }
+      ],
+      "interpretation": "Represented solid cover remains solid from tactical ground to its measured top; no cosmetic asset gap becomes an opening.",
+      "accessLimitation": "Existing source contacts establish represented box identity. Physical access onto the top has not been live-game tested; on-top poses test selected support semantics."
+    },
+    {
+      "id": "b-south-box-stack6692-6693",
+      "bands": [
+        [
+          0,
+          3.982552650187891
+        ]
+      ],
+      "floorMeters": 2.9999994013562983,
+      "topMeters": 6.9825520515441895,
+      "sourceObjects": [
+        {
+          "index": 6692,
+          "path": "Bonsai_Art_B/Shard_0_Box/StaticMeshComponent0.697",
+          "firstFace": 2282233,
+          "faceCount": 518,
+          "boundsMeters": [
+            [
+              -17.50096321105957,
+              56.02302932739258,
+              3.0000228881835938
+            ],
+            [
+              -15.50096321105957,
+              58.02302932739258,
+              5.000022888183594
+            ]
+          ]
+        },
+        {
+          "index": 6693,
+          "path": "Bonsai_Art_B/Shard_0_Box2/StaticMeshComponent0.698",
+          "firstFace": 2282751,
+          "faceCount": 518,
+          "boundsMeters": [
+            [
+              -17.50096321105957,
+              56.0178108215332,
+              4.9825520515441895
+            ],
+            [
+              -15.50096321105957,
+              58.0178108215332,
+              6.9825520515441895
+            ]
+          ]
+        }
+      ],
+      "sourceGeometry": {
+        "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\split\\geometry.npz",
+        "sha256": "fb5882c6796c646a27d358bd218fba196b2d1acbbac1b69f87baad0b151c1da0"
+      },
+      "sourceMetadata": {
+        "path": "E:\\IcarusWorldAudit\\2026-09-06\\supplemented-v2\\world\\split\\geometry.json",
+        "sha256": "630ceadf97491802500fe2d25f10d2a80c60bd85004f59031c2f82419edf5462"
+      },
+      "sourceTopSamples": [
+        {
+          "nativeXY": [
+            -16.5,
+            57.02
+          ],
+          "selectedTop": {
+            "object": 6693,
+            "rawFace": 2283168,
+            "z": 6.9825520515441895,
+            "barycentrics": [
+              0.49856916962270437,
+              0.14572840070546483,
+              0.35570242967183074
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -17.0,
+            56.52
+          ],
+          "selectedTop": {
+            "object": 6693,
+            "rawFace": 2282752,
+            "z": 6.975088119506836,
+            "barycentrics": [
+              0.001963100663988304,
+              0.7514459975300282,
+              0.24659090180598353
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -17.0,
+            57.52
+          ],
+          "selectedTop": {
+            "object": 6693,
+            "rawFace": 2282752,
+            "z": 6.975088119506836,
+            "barycentrics": [
+              0.5072999397295602,
+              0.24610719206900405,
+              0.2465928682014357
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -16.0,
+            56.52
+          ],
+          "selectedTop": {
+            "object": 6693,
+            "rawFace": 2282753,
+            "z": 6.975088119506836,
+            "barycentrics": [
+              0.24337626098545784,
+              0.5080717067205224,
+              0.24855203229401981
+            ]
+          }
+        },
+        {
+          "nativeXY": [
+            -16.0,
+            57.52
+          ],
+          "selectedTop": {
+            "object": 6693,
+            "rawFace": 2282753,
+            "z": 6.975088119506836,
+            "barycentrics": [
+              0.24337429459379623,
+              0.0027358417944640715,
+              0.7538898636117397
+            ]
+          }
+        }
+      ],
+      "sourceGroundSamples": [
+        {
+          "nativeXY": [
+            -16.5,
+            55.5
+          ],
+          "object": 6712,
+          "rawFace": 2293824,
+          "z": 2.9999994013562983,
+          "barycentrics": [
+            0.29999325493849427,
+            0.4592411394373364,
+            0.24076560562416927
+          ]
+        },
+        {
+          "nativeXY": [
+            -18.1,
+            56.5
+          ],
+          "object": 6712,
+          "rawFace": 2293824,
+          "z": 2.999999646730942,
+          "barycentrics": [
+            0.09999029029235884,
+            0.3734764851331181,
+            0.526533224574523
+          ]
+        },
+        {
+          "nativeXY": [
+            -14.9,
+            56.5
+          ],
+          "object": 6712,
+          "rawFace": 2293824,
+          "z": 2.9999991505538337,
+          "barycentrics": [
+            0.09999042260817248,
+            0.5469029544173347,
+            0.35310662297449275
+          ]
+        }
+      ],
+      "wallsBySide": {
+        "attack": [
+          "p13-unknown-2"
+        ],
+        "defense": [
+          "p13-unknown-1"
+        ]
+      },
+      "poses": [
+        {
+          "id": "b-south-box-stack6692-6693-ground-attack",
+          "side": "attack",
+          "originSvg": [
+            73.59915,
+            198.50100000000003
+          ],
+          "directionRadians": -1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-south-box-stack6692-6693: standing beside the solid cover.",
+          "sourceEvidence": {
+            "annotation": "b-south-box-stack6692-6693",
+            "localFloorZ": 2.9999994013562983,
+            "supportHeightAboveFloorMeters": 0.0,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          }
+        },
+        {
+          "id": "b-south-box-stack6692-6693-top-attack",
+          "side": "attack",
+          "originSvg": [
+            73.59915,
+            190.51400000000004
+          ],
+          "directionRadians": 1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-south-box-stack6692-6693: standing on its measured exposed top.",
+          "sourceEvidence": {
+            "annotation": "b-south-box-stack6692-6693",
+            "localFloorZ": 2.9999994013562983,
+            "supportHeightAboveFloorMeters": 3.982552650187891,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          },
+          "supportId": "b-south-box-stack6692-6693"
+        },
+        {
+          "id": "b-south-box-stack6692-6693-ground-defense",
+          "side": "defense",
+          "originSvg": [
+            392.57699999999994,
+            274.499
+          ],
+          "directionRadians": 1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-south-box-stack6692-6693: standing beside the solid cover.",
+          "sourceEvidence": {
+            "annotation": "b-south-box-stack6692-6693",
+            "localFloorZ": 2.9999994013562983,
+            "supportHeightAboveFloorMeters": 0.0,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          }
+        },
+        {
+          "id": "b-south-box-stack6692-6693-top-defense",
+          "side": "defense",
+          "originSvg": [
+            392.57699999999994,
+            282.486
+          ],
+          "directionRadians": -1.5707963267948966,
+          "rangeSvg": 80.0,
+          "apertureRadians": 1.7976891295541595,
+          "description": "b-south-box-stack6692-6693: standing on its measured exposed top.",
+          "sourceEvidence": {
+            "annotation": "b-south-box-stack6692-6693",
+            "localFloorZ": 2.9999994013562983,
+            "supportHeightAboveFloorMeters": 3.982552650187891,
+            "gameplayAccess": "Diagnostic selected support; no live-game access claim."
+          },
+          "supportId": "b-south-box-stack6692-6693"
+        }
+      ],
+      "interpretation": "Represented solid cover remains solid from tactical ground to its measured top; no cosmetic asset gap becomes an opening.",
+      "accessLimitation": "Existing source contacts establish represented box identity. Physical access onto the top has not been live-game tested; on-top poses test selected support semantics."
+    }
+  ]
+}

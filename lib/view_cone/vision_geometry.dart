@@ -1,9 +1,15 @@
+import 'dart:collection';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/page_transition/navigation_geometry.dart';
 import 'package:icarus/view_cone/vision_collision.dart';
+import 'package:icarus/view_cone/vision_world_data.dart';
+import 'package:icarus/view_cone/vision_world_index.dart';
+import 'package:icarus/view_cone/vision_world_projection.dart';
 
 export 'package:icarus/view_cone/vision_collision.dart';
 
@@ -15,6 +21,9 @@ class VisionGeometryMap {
     required this.heightField,
     required this.attackLayers,
     required this.defenseLayers,
+    this.navigationGeometry,
+    this.worldData,
+    this.isDirectHeight = false,
   });
 
   final MapValue map;
@@ -23,14 +32,46 @@ class VisionGeometryMap {
   final VisionHeightField? heightField;
   final List<VisionGeometryLayer> attackLayers;
   final List<VisionGeometryLayer> defenseLayers;
+  final NavigationGeometry? navigationGeometry;
+  final VisionWorldData? worldData;
+  final bool isDirectHeight;
 
-  List<double> get elevations => [
+  factory VisionGeometryMap.forStandingHeight({
+    required MapValue map,
+    required NavigationGeometry navigationGeometry,
+    required double observerHeight,
+    required double defaultElevation,
+    required List<double> elevations,
+  }) {
+    final layers = List<VisionGeometryLayer>.unmodifiable([
+      for (final elevation in elevations)
+        VisionGeometryLayer(
+            elevation: elevation,
+            segments: const [],
+            observerContains: (_) => false),
+    ]);
+    return VisionGeometryMap._(
+        map: map,
+        defaultElevation: defaultElevation,
+        observerHeight: observerHeight,
+        heightField: null,
+        attackLayers: layers,
+        defenseLayers: layers,
+        navigationGeometry: navigationGeometry,
+        isDirectHeight: true);
+  }
+
+  List<double> get elevations =>
+      worldData?.menuElevations ??
+      [
         for (final layer in attackLayers) layer.elevation,
       ];
 
   VisionGeometryLayer layerFor({required bool isAttack, double? elevation}) {
     final layers = isAttack ? attackLayers : defenseLayers;
     final target = elevation ?? defaultElevation;
+    final world = worldData;
+    if (world != null) return layers[world.nearestGlobalLayer(target)];
     return layers.reduce((best, candidate) {
       final bestDistance = (best.elevation - target).abs();
       final candidateDistance = (candidate.elevation - target).abs();
@@ -44,9 +85,17 @@ class VisionGeometryMap {
   }
 
   double? inferredHeightAt({required bool isAttack, required Offset position}) {
+    final navigation = navigationGeometry;
+    final attackPosition = isAttack ? position : _flipForDefense(position);
+    if (navigation != null) {
+      final floor = navigation.floorHeightAt(
+        attackPosition,
+        preferredElevation: defaultElevation - observerHeight,
+      );
+      return floor == null ? null : floor + observerHeight;
+    }
     final field = heightField;
     if (field == null) return null;
-    final attackPosition = isAttack ? position : _flipForDefense(position);
     return field.heightAt(attackPosition) + observerHeight;
   }
 
@@ -55,6 +104,15 @@ class VisionGeometryMap {
     required Offset position,
     double? elevationOverride,
   }) {
+    final world = worldData;
+    if (world != null && elevationOverride == null) {
+      final elevation =
+          inferredHeightAt(isAttack: isAttack, position: position) ??
+              defaultElevation;
+      return (isAttack
+          ? attackLayers
+          : defenseLayers)[world.nearestLayer(elevation)];
+    }
     return layerFor(
       isAttack: isAttack,
       elevation: elevationOverride ??
@@ -615,6 +673,60 @@ class VisionGeometryMap {
     );
   }
 
+  factory VisionGeometryMap.fromWorldJson(
+    MapValue map,
+    Map<String, dynamic> json, {
+    required NavigationGeometry navigationGeometry,
+    Map<String, Uint8List>? compressedChunks,
+  }) {
+    final world = compressedChunks == null
+        ? VisionWorldData.fromJson(
+            map,
+            json,
+            projectUv: (uv) => projectUv(map, uv),
+          )
+        : VisionWorldData.fromChunkManifest(map, json,
+            compressedChunks: compressedChunks,
+            projectUv: (uv) => projectUv(map, uv));
+    final projection = world.projection;
+    bool originAllowed(Offset canonicalPosition, int layerIndex) {
+      final floor = navigationGeometry.floorHeightAt(canonicalPosition,
+          preferredElevation: world.defaultFloorElevationCm);
+      if (floor == null) return false;
+      return world.globalOrigins[layerIndex] ||
+          world.nearestLayer(floor + world.observerHeightCm) == layerIndex;
+    }
+
+    final metricLayers = projection == null
+        ? null
+        : _WorldLayers(
+            world,
+            isAttack: true,
+            metric: true,
+            observerContains: (position, index) =>
+                originAllowed(projection.toCanvas(position), index),
+          );
+    List<VisionGeometryLayer> layers(bool isAttack) => _WorldLayers(world,
+        isAttack: isAttack,
+        metricLayers: metricLayers,
+        observerContains: (position, index) => originAllowed(
+            isAttack ? position : _flipForDefense(position), index));
+    return VisionGeometryMap._(
+      map: map,
+      defaultElevation: world.defaultFloorElevationCm + world.observerHeightCm,
+      observerHeight: world.observerHeightCm,
+      heightField: null,
+      navigationGeometry: navigationGeometry,
+      worldData: world,
+      attackLayers: layers(true),
+      defenseLayers: layers(false),
+    );
+  }
+
+  /// Projects both baked world geometry and navigation through the same SVG
+  /// registration. Updating collision sources never resizes the artwork.
+  static Offset projectUv(MapValue map, Offset uv) => _projectUv(map, uv);
+
   static Offset _projectUv(MapValue map, Offset uv) {
     final viewBox = Maps.mapViewBox[map];
     final padding = Maps.visionGeometryPadding[map];
@@ -671,6 +783,100 @@ class VisionGeometryMap {
     const worldWidth = normalizedHeight * (16 / 9);
     return Offset(worldWidth - point.dx, normalizedHeight - point.dy);
   }
+}
+
+/// Fine height sampling can yield thousands of planes. Build only the planes
+/// currently occupied by observers, and release indexes from older positions.
+class _WorldLayers extends ListBase<VisionGeometryLayer> {
+  _WorldLayers(this.world,
+      {required this.isAttack,
+      required this.observerContains,
+      this.metric = false,
+      this.metricLayers});
+
+  final VisionWorldData world;
+  final bool isAttack;
+  final bool Function(Offset, int) observerContains;
+  final bool metric;
+  final List<VisionGeometryLayer>? metricLayers;
+  final _cache = <int, VisionGeometryLayer>{};
+  var _cachedSegments = 0;
+
+  @override
+  int get length => world.elevations.length;
+
+  @override
+  set length(int value) =>
+      throw UnsupportedError('World layers are immutable.');
+
+  @override
+  VisionGeometryLayer operator [](int index) {
+    RangeError.checkValidIndex(index, this);
+    final cached = _cache.remove(index);
+    if (cached != null) {
+      _cache[index] = cached;
+      return cached;
+    }
+    final metricLayer = metricLayers?[index];
+    final projection = isAttack ? world.projection : world.projection?.defense;
+    final segments = metricLayer == null
+        ? world.segmentsForLayer(index, isAttack: isAttack, metric: metric)
+        : _ProjectedWorldSegments(metricLayer.segments, projection!);
+    final layer = VisionGeometryLayer(
+      elevation: world.elevations[index],
+      segments: segments,
+      worldIndex: metricLayer == null
+          ? VisionWorldIndex(segments,
+              planarized: world.planarized,
+              spatiallyOrdered: world.spatiallyOrdered)
+          : null,
+      metricLayer: metricLayer,
+      worldProjection: metricLayer == null ? null : projection,
+      observerContains: (position) => observerContains(position, index),
+      maximumRange: metric ? world.maxDistanceMeters : null,
+      layerIndex: index,
+    );
+    _cache[index] = layer;
+    _cachedSegments += segments.length;
+    // Moving agents revisit neighboring stair and slope heights. Keep those
+    // indexes bounded by both layer count and their total segment footprint.
+    while (
+        _cache.length > 1 && (_cache.length > 12 || _cachedSegments > 400000)) {
+      _cachedSegments -= _cache.remove(_cache.keys.first)!.segments.length;
+    }
+    return layer;
+  }
+
+  @override
+  void operator []=(int index, VisionGeometryLayer value) =>
+      throw UnsupportedError('World layers are immutable.');
+}
+
+/// Normal cone queries use the shared metric index directly. Canvas geometry
+/// remains available to diagnostics without allocating two map-sized copies.
+class _ProjectedWorldSegments extends ListBase<VisionSegment> {
+  _ProjectedWorldSegments(this.source, this.projection);
+
+  final List<VisionSegment> source;
+  final VisionWorldProjection projection;
+
+  @override
+  int get length => source.length;
+
+  @override
+  set length(int value) =>
+      throw UnsupportedError('World segments are immutable.');
+
+  @override
+  VisionSegment operator [](int index) {
+    final segment = source[index];
+    return VisionSegment.unthickened(
+        projection.toCanvas(segment.start), projection.toCanvas(segment.end));
+  }
+
+  @override
+  void operator []=(int index, VisionSegment value) =>
+      throw UnsupportedError('World segments are immutable.');
 }
 
 enum VisionFillRule { nonZero, evenOdd }
@@ -986,6 +1192,11 @@ class VisionGeometryLayer {
     this.debugCollisionGroups = const [],
     this.layerIndex = 0,
     this.segmentIndex,
+    this.worldIndex,
+    this.observerContains,
+    this.metricLayer,
+    this.worldProjection,
+    this.maximumRange,
   });
 
   final double elevation;
@@ -1001,10 +1212,19 @@ class VisionGeometryLayer {
   final List<VisionCollisionGroup> debugCollisionGroups;
   final int layerIndex;
   final VisionSegmentIndex? segmentIndex;
+  final VisionWorldIndex? worldIndex;
+  final bool Function(Offset)? observerContains;
+  final VisionGeometryLayer? metricLayer;
+  final VisionWorldProjection? worldProjection;
+
+  /// Optional source coverage limit in this layer's own coordinate units.
+  final double? maximumRange;
 
   List<VisionSegment> get riotSegments => sourceSegments ?? segments;
 
   bool contains(Offset point) {
+    final worldContains = observerContains;
+    if (worldContains != null) return worldContains(point);
     final mask = boundary;
     if (mask == null || mask.contains(point)) return true;
     if (!mask.containsOuterFootprint(point)) return false;
@@ -1020,6 +1240,10 @@ class VisionGeometryLayer {
   }
 
   List<VisionSegment> segmentsForObserver(Offset origin, double range) {
+    final world = worldIndex;
+    if (world != null && collisionGroups.isEmpty) {
+      return world.queryBounds(Rect.fromCircle(center: origin, radius: range));
+    }
     final indexes = segmentIndex?.queryBounds(
           Rect.fromCircle(center: origin, radius: range),
         ) ??
@@ -1066,7 +1290,11 @@ typedef _VisionRayCandidate = ({
 
 class VisionPolygon {
   static const double _eventAngleEpsilon = 0.00001;
+  // World edges already have exact intersections. A broad corner offset
+  // creates a visible wedge between foreground and background walls.
+  static const double _worldEventAngleEpsilon = 0.00000001;
   static const double _maxArcStep = math.pi / 90;
+  static final _worldCaches = Expando<VisionWorldPolygonCache>();
 
   static List<Offset> compute({
     required VisionGeometryLayer layer,
@@ -1076,7 +1304,8 @@ class VisionPolygon {
     required double range,
     double surfaceClearance = 0,
   }) {
-    final safeRange = math.max(0.0, range);
+    final safeRange =
+        math.min(math.max(0.0, range), layer.maximumRange ?? double.infinity);
     final safeCone = coneAngle.clamp(0.0, math.pi * 2).toDouble();
     final safeClearance =
         surfaceClearance.isFinite ? math.max(0.0, surfaceClearance) : 0.0;
@@ -1085,8 +1314,45 @@ class VisionPolygon {
     }
     if (!layer.contains(origin)) return <Offset>[origin];
 
+    final worldIndex = layer.collisionGroups.isEmpty ? layer.worldIndex : null;
+    final metricLayer = layer.metricLayer;
+    final projection = layer.worldProjection;
+    final cache = worldIndex == null && metricLayer == null
+        ? null
+        : _worldCaches[layer] ??= VisionWorldPolygonCache();
+    final cacheKey = (
+      origin: origin,
+      facing: facingAngle,
+      cone: safeCone,
+      range: safeRange,
+      clearance: safeClearance,
+    );
+    final cached = cache?.get(cacheKey);
+    if (cached != null) return cached;
+
+    if (metricLayer != null && projection != null) {
+      final direction = projection
+          .vectorToMeters(Offset(math.cos(facingAngle), math.sin(facingAngle)));
+      final metersPerCanvasUnit = direction.distance;
+      final points = compute(
+        layer: metricLayer,
+        origin: projection.toMeters(origin),
+        facingAngle: math.atan2(direction.dy, direction.dx),
+        coneAngle: safeCone,
+        range: safeRange * metersPerCanvasUnit,
+        surfaceClearance: safeClearance * metersPerCanvasUnit,
+      );
+      return cache!.put(
+          cacheKey, [for (final point in points) projection.toCanvas(point)]);
+    }
+
     final halfCone = safeCone / 2;
-    final candidateSegments = layer.segmentsForObserver(origin, safeRange);
+    final eventAngleEpsilon = worldIndex?.planarized == true
+        ? _worldEventAngleEpsilon
+        : _eventAngleEpsilon;
+    final candidateSegments = worldIndex == null
+        ? layer.segmentsForObserver(origin, safeRange)
+        : const <VisionSegment>[];
     // A segment's shortest possible hit cannot be nearer than this radial
     // bound. Nearest-first ordering lets every ray stop after a proven hit.
     final orderedCandidates = <_VisionRayCandidate>[
@@ -1098,28 +1364,107 @@ class VisionPolygon {
       });
     final relativeAngles = <double>[];
     final arcSteps = math.max(1, (safeCone / _maxArcStep).ceil());
-    for (var index = 0; index <= arcSteps; index += 1) {
-      relativeAngles.add(-halfCone + safeCone * index / arcSteps);
+    final seedSteps = worldIndex == null ? arcSteps : arcSteps * 4;
+    final seedEdges = <int?>[];
+    final seedDistances = <double, double>{};
+    for (var index = 0; index <= seedSteps; index += 1) {
+      final relative = -halfCone + safeCone * index / seedSteps;
+      if (worldIndex == null || index % 4 == 0) relativeAngles.add(relative);
+      if (worldIndex != null) {
+        int? edge;
+        final angle = facingAngle + relative;
+        final hit = worldIndex.nearestHit(
+          origin: origin,
+          direction: Offset(math.cos(angle), math.sin(angle)),
+          range: safeRange,
+          onNearestEdge: (id) => edge = id,
+        );
+        seedEdges.add(hit != null && hit > _epsilon ? edge : null);
+        seedDistances[relative] = hit ?? safeRange;
+      }
     }
     relativeAngles.add(0);
 
     void addEventAngle(double angle) {
       final relative = _normalizeSigned(angle - facingAngle);
-      if (relative < -halfCone - _eventAngleEpsilon ||
-          relative > halfCone + _eventAngleEpsilon) {
+      if (relative < -halfCone - eventAngleEpsilon ||
+          relative > halfCone + eventAngleEpsilon) {
         return;
       }
       final clamped = relative.clamp(-halfCone, halfCone).toDouble();
       relativeAngles.add(clamped);
       if (clamped > -halfCone) {
-        relativeAngles.add(math.max(-halfCone, clamped - _eventAngleEpsilon));
+        relativeAngles.add(math.max(-halfCone, clamped - eventAngleEpsilon));
       }
       if (clamped < halfCone) {
-        relativeAngles.add(math.min(halfCone, clamped + _eventAngleEpsilon));
+        relativeAngles.add(math.min(halfCone, clamped + eventAngleEpsilon));
       }
     }
 
     final rangeSquared = safeRange * safeRange;
+    final testedVertices = <Offset>{};
+    void addVertexEvent(Offset vertex, {bool atRange = false}) {
+      final delta = vertex - origin;
+      if (!atRange && delta.distanceSquared > rangeSquared + _epsilon) return;
+      if (worldIndex?.planarized == true && !testedVertices.add(vertex)) return;
+      final angle = math.atan2(delta.dy, delta.dx);
+      final relative = _normalizeSigned(angle - facingAngle);
+      if (relative < -halfCone - eventAngleEpsilon ||
+          relative > halfCone + eventAngleEpsilon) return;
+      if (worldIndex?.planarized == true) {
+        final distance = delta.distance;
+        if (distance > _epsilon) {
+          final direction = delta / distance;
+          // Nearby seed hits suggest likely occluders. Each test below is an
+          // exact ray/segment intersection, so only a proven nearer blocker
+          // skips the BVH search. Sampled distances never approximate a hit.
+          final bin = ((relative + halfCone) / safeCone * seedSteps)
+              .floor()
+              .clamp(0, seedSteps - 1);
+          bool hiddenBy(int? edge) {
+            if (edge == null) return false;
+            final blocker = worldIndex!.segments[edge];
+            final certifiedHit = _rayLineSegmentDistance(
+                origin: origin,
+                direction: direction,
+                start: blocker.start,
+                end: blocker.end,
+                maxDistance: distance,
+                endpointTolerance: 1e-12);
+            return certifiedHit != null && certifiedHit < distance - 1e-7;
+          }
+
+          if (hiddenBy(seedEdges[bin]) ||
+              (seedEdges[bin] != seedEdges[bin + 1] &&
+                  hiddenBy(seedEdges[bin + 1]))) return;
+          final hit = worldIndex!.nearestHit(
+            origin: origin,
+            direction: direction,
+            range: distance,
+          );
+          if (hit != null && hit < distance - 1e-7) return;
+        }
+      }
+      addEventAngle(angle);
+    }
+
+    if (worldIndex != null) {
+      worldIndex.visitConeSegments(
+        origin: origin,
+        facingAngle: facingAngle,
+        coneAngle: safeCone + 2 * eventAngleEpsilon,
+        range: safeRange,
+        visit: (ax, ay, bx, by) {
+          final start = Offset(ax, ay), end = Offset(bx, by);
+          addVertexEvent(start);
+          addVertexEvent(end);
+          for (final intersection in _lineSegmentCircleIntersections(
+              start, end, origin, safeRange)) {
+            addVertexEvent(intersection, atRange: true);
+          }
+        },
+      );
+    }
     for (final segment in candidateSegments) {
       final collisionVertices = segment.collisionVertices;
       final hasStrokeArea = segment.collisionRadius > _epsilon;
@@ -1129,10 +1474,7 @@ class VisionPolygon {
         final eventVertices =
             hasStrokeArea ? _polygonSilhouetteVertices(shape, origin) : shape;
         for (final vertex in eventVertices) {
-          final delta = vertex - origin;
-          if (delta.distanceSquared <= rangeSquared + _epsilon) {
-            addEventAngle(math.atan2(delta.dy, delta.dx));
-          }
+          addVertexEvent(vertex);
         }
 
         final collisionEdgeCount = hasStrokeArea ? shape.length : 1;
@@ -1144,8 +1486,7 @@ class VisionPolygon {
             origin,
             safeRange,
           )) {
-            final delta = intersection - origin;
-            addEventAngle(math.atan2(delta.dy, delta.dx));
+            addVertexEvent(intersection, atRange: true);
           }
         }
       }
@@ -1165,6 +1506,17 @@ class VisionPolygon {
       final angle = facingAngle + relativeAngle;
       final direction = Offset(math.cos(angle), math.sin(angle));
       var distance = safeRange;
+      if (worldIndex != null) {
+        final hit = seedDistances[relativeAngle] ??
+            worldIndex.nearestHit(
+              origin: origin,
+              direction: direction,
+              range: safeRange,
+            );
+        if (hit != null && hit < safeRange) {
+          distance = hit;
+        }
+      }
       for (final candidate in orderedCandidates) {
         if (candidate.minimumDistance > distance + _epsilon) break;
         final segment = candidate.segment;
@@ -1175,12 +1527,15 @@ class VisionPolygon {
           maxDistance: distance,
         );
         if (hitDistance != null && hitDistance < distance) {
-          distance = math.max(0, hitDistance - safeClearance);
+          distance = hitDistance;
         }
+      }
+      if (distance < safeRange) {
+        distance = math.max(0, distance - safeClearance);
       }
       points.add(origin + direction * distance);
     }
-    return points;
+    return cache?.put(cacheKey, points) ?? points;
   }
 
   static List<Offset> _polygonSilhouetteVertices(
@@ -1236,11 +1591,16 @@ class VisionPolygon {
     double radius,
   ) {
     final start = segmentStart - center;
+    final radiusSquared = radius * radius;
+    // A disk is convex: an edge with both endpoints strictly inside cannot
+    // cross its boundary. Avoid the quadratic and temporary root list there.
+    if (start.distanceSquared < radiusSquared &&
+        (segmentEnd - center).distanceSquared < radiusSquared) return const [];
     final delta = segmentEnd - segmentStart;
     final a = delta.distanceSquared;
     if (a <= _epsilon) return const [];
     final b = 2 * (start.dx * delta.dx + start.dy * delta.dy);
-    final c = start.distanceSquared - radius * radius;
+    final c = start.distanceSquared - radiusSquared;
     final discriminant = b * b - 4 * a * c;
     if (discriminant < 0) return const [];
 
@@ -1287,6 +1647,7 @@ class VisionPolygon {
     required Offset start,
     required Offset end,
     required double maxDistance,
+    double endpointTolerance = _epsilon,
   }) {
     final edge = end - start;
     final originToStart = start - origin;
@@ -1297,8 +1658,8 @@ class VisionPolygon {
     final segmentPosition = _cross(originToStart, direction) / denominator;
     if (distance <= _epsilon ||
         distance > maxDistance + _epsilon ||
-        segmentPosition < -_epsilon ||
-        segmentPosition > 1 + _epsilon) {
+        segmentPosition < -endpointTolerance ||
+        segmentPosition > 1 + endpointTolerance) {
       return null;
     }
     return distance;

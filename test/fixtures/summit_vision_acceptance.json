@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "map": "summit",
+  "sourceSha256": "48e25b95189d47554e63b2c200f00e468cbeae50df340ded28af4d0146eb1118",
+  "evidence": {
+    "algorithmSha256": "0433f2aad01858a28414cd60d790d643c1b364788fd2ea53dd3c1e9723d08e32",
+    "wallBaselineSha256": {
+      "attack": "e222174d33d821f3cc0e61233d3536af088a0c78b42bdf056ff2a860e9770b6e",
+      "defense": "6ca80915fd80578acc34c65f0c3ef05e442e28ed66571aa4f83686d23464207f"
+    },
+    "gameplayReviewSha256": null,
+    "groundReviewSha256": "e99271e34dc2b4f32609b554e752d9fc4f00bb6918c3897ce4b222596fff7fff",
+    "selectedPointerJoins": [
+      "join-25"
+    ],
+    "basis": "Measured physical source poses; highest locally clear source level; ordinary-floor joins that remain the source default throughout. Frozen baseline supplies only SVG floor footprints and previously reviewed wall intervals."
+  },
+  "dragFrom": "physical-volume-322-0-12",
+  "dragTo": "physical-volume-925-0-4",
+  "cases": [
+    {
+      "id": "physical-volume-322-0-12",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "volume-322-0",
+      "nativeXY": [
+        90.0,
+        -116.5
+      ],
+      "svg": {
+        "attack": [
+          400.3785618248217,
+          148.0146594594416
+        ],
+        "defense": [
+          34.23643817517831,
+          324.9853405405584
+        ]
+      },
+      "sourceObject": null,
+      "sourcePath": "/Plummet_BVPawn/BP_BlockingVolume355/Cube#0",
+      "sourceAreaSquareMeters": 2.3151565491220167,
+      "expectedFloorMeters": 13.20935,
+      "expectedEyeMeters": 14.95935,
+      "sourceLocalLevelsMeters": [
+        1.0,
+        13.20935
+      ],
+      "eligibilityBasis": "Measured player contact and standing clearance",
+      "savedReferenceEyeMeters": 2.75
+    },
+    {
+      "id": "physical-volume-446-0-46",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "volume-446-0",
+      "nativeXY": [
+        94.0,
+        -1.0
+      ],
+      "svg": {
+        "attack": [
+          8.01109767426005,
+          134.42617585249576
+        ],
+        "defense": [
+          426.60390232573997,
+          338.57382414750424
+        ]
+      },
+      "sourceObject": null,
+      "sourcePath": "/Plummet_BVPawn/BP_BlockingVolume472/Cube#0",
+      "sourceAreaSquareMeters": 40.22883324104425,
+      "expectedFloorMeters": 1.0,
+      "expectedEyeMeters": 2.75,
+      "sourceLocalLevelsMeters": [
+        1.0
+      ],
+      "eligibilityBasis": "Measured player contact and standing clearance"
+    },
+    {
+      "id": "physical-volume-930-0-9",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "volume-930-0",
+      "nativeXY": [
+        0.60911118,
+        -58.7772946
+      ],
+      "svg": {
+        "attack": [
+          204.2875528057054,
+          451.68631629466336
+        ],
+        "defense": [
+          230.32744719429462,
+          21.313683705336622
+        ]
+      },
+      "sourceObject": null,
+      "sourcePath": "/Plummet_BVPawn/BP_BlockingVolume905/Cube#0",
+      "sourceAreaSquareMeters": 0.7912373512620502,
+      "expectedFloorMeters": 2.6955,
+      "expectedEyeMeters": 4.4455,
+      "sourceLocalLevelsMeters": [
+        2.6955
+      ],
+      "eligibilityBasis": "Measured player contact and standing clearance"
+    },
+    {
+      "id": "physical-volume-925-0-4",
+      "selection": "automatic",
+      "directionAttack": 0.0,
+      "sourceDomain": "volume-925-0",
+      "nativeXY": [
+        127.44033127,
+        -59.7493698
+      ],
+      "svg": {
+        "attack": [
+          207.58980978568505,
+          20.825327534187522
+        ],
+        "defense": [
+          227.02519021431496,
+          452.1746724658125
+        ]
+      },
+      "sourceObject": null,
+      "sourcePath": "/Plummet_BVPawn/BP_BlockingVolume900/Cube#0",
+      "sourceAreaSquareMeters": 0.6489238527995533,
+      "expectedFloorMeters": 4.6955,
+      "expectedEyeMeters": 6.4455,
+      "sourceLocalLevelsMeters": [
+        4.6955
+      ],
+      "eligibilityBasis": "Measured player contact and standing clearance"
+    }
+  ]
+}

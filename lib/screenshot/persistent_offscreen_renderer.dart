@@ -15,6 +15,7 @@ class PersistentOffscreenRenderer {
     required this.targetSize,
     this.pixelRatio = 1.0,
     this.wrapWidget,
+    this.waitForFrameData,
   })  : assert(pixelRatio > 0),
         _repaintBoundary = RenderRepaintBoundary(),
         _focusManager = FocusManager(),
@@ -56,6 +57,9 @@ class PersistentOffscreenRenderer {
   /// Keeping themes, providers, and navigators outside the changing frame is
   /// what lets their elements and render objects survive the whole export.
   final Widget Function(Widget child)? wrapWidget;
+
+  /// Await queries requested by this exact mounted frame before reading pixels.
+  final Future<void> Function()? waitForFrameData;
 
   final RenderRepaintBoundary _repaintBoundary;
   final FocusManager _focusManager;
@@ -129,6 +133,8 @@ class PersistentOffscreenRenderer {
   Future<ui.Image> _captureImage(Widget widget) async {
     _checkNotDisposed();
     _updateWidget(widget);
+    await _flushPendingFrames();
+    await waitForFrameData?.call();
     await _flushPendingFrames();
     return _repaintBoundary.toImage(pixelRatio: pixelRatio);
   }

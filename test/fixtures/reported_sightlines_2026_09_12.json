@@ -1,0 +1,742 @@
+{
+  "version": 1,
+  "review": "scripts/data/reported-sightlines-2026-09-12.json",
+  "maps": {
+    "abyss": {
+      "poses": [
+        {
+          "id": "mid",
+          "positions": {
+            "attack": [
+              206.875,
+              196.25
+            ],
+            "defense": [
+              246.6427,
+              276.556
+            ]
+          },
+          "expectedFloor": 8,
+          "rays": [
+            {
+              "targets": {
+                "attack": [
+                  239,
+                  160
+                ],
+                "defense": [
+                  214.5177,
+                  312.806
+                ]
+              },
+              "visible": false
+            },
+            {
+              "targets": {
+                "attack": [
+                  239,
+                  175
+                ],
+                "defense": [
+                  214.5177,
+                  297.806
+                ]
+              },
+              "visible": false
+            },
+            {
+              "targets": {
+                "attack": [
+                  235,
+                  188
+                ],
+                "defense": [
+                  218.5177,
+                  284.806
+                ]
+              },
+              "visible": false
+            }
+          ]
+        },
+        {
+          "id": "ramp",
+          "positions": {
+            "attack": [
+              81.875,
+              345
+            ],
+            "defense": [
+              371.6427,
+              127.80599999999998
+            ]
+          },
+          "expectedFloor": 4,
+          "rays": [
+            {
+              "targets": {
+                "attack": [
+                  100,
+                  345
+                ],
+                "defense": [
+                  353.5177,
+                  127.80599999999998
+                ]
+              },
+              "visible": false
+            },
+            {
+              "targets": {
+                "attack": [
+                  70,
+                  345
+                ],
+                "defense": [
+                  383.5177,
+                  127.80599999999998
+                ]
+              },
+              "visible": false
+            }
+          ]
+        },
+        {
+          "id": "ledge",
+          "positions": {
+            "attack": [
+              38.125,
+              321.25
+            ],
+            "defense": [
+              415.3927,
+              151.55599999999998
+            ]
+          },
+          "expectedFloor": 8,
+          "rays": [
+            {
+              "targets": {
+                "attack": [
+                  38.125,
+                  300
+                ],
+                "defense": [
+                  415.3927,
+                  172.80599999999998
+                ]
+              },
+              "visible": true
+            }
+          ]
+        },
+        {
+          "id": "landing",
+          "positions": {
+            "attack": [
+              88,
+              320
+            ],
+            "defense": [
+              365.5177,
+              152.80599999999998
+            ]
+          },
+          "expectedFloor": 6,
+          "rays": [
+            {
+              "targets": {
+                "attack": [
+                  105,
+                  320
+                ],
+                "defense": [
+                  348.5177,
+                  152.80599999999998
+                ]
+              },
+              "visible": true
+            },
+            {
+              "targets": {
+                "attack": [
+                  100,
+                  330
+                ],
+                "defense": [
+                  353.5177,
+                  142.80599999999998
+                ]
+              },
+              "visible": false
+            }
+          ]
+        },
+        {
+          "id": "ledge-edge",
+          "positions": {
+            "attack": [
+              37.88374056,
+              308.30762434
+            ],
+            "defense": [
+              415.63395944,
+              164.49837565999997
+            ]
+          },
+          "expectedFloor": 8,
+          "rays": []
+        }
+      ],
+      "rampPath": [
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              320.0
+            ],
+            "defense": [
+              371.5177,
+              152.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              321.0
+            ],
+            "defense": [
+              371.5177,
+              151.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              322.0
+            ],
+            "defense": [
+              371.5177,
+              150.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              323.0
+            ],
+            "defense": [
+              371.5177,
+              149.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              324.0
+            ],
+            "defense": [
+              371.5177,
+              148.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              325.0
+            ],
+            "defense": [
+              371.5177,
+              147.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              326.0
+            ],
+            "defense": [
+              371.5177,
+              146.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              327.0
+            ],
+            "defense": [
+              371.5177,
+              145.80599999999998
+            ]
+          },
+          "expectedFloor": 6.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              328.0
+            ],
+            "defense": [
+              371.5177,
+              144.80599999999998
+            ]
+          },
+          "expectedFloor": 5.870475962207726
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              329.0
+            ],
+            "defense": [
+              371.5177,
+              143.80599999999998
+            ]
+          },
+          "expectedFloor": 5.737837631335832
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              330.0
+            ],
+            "defense": [
+              371.5177,
+              142.80599999999998
+            ]
+          },
+          "expectedFloor": 5.605199300463941
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              331.0
+            ],
+            "defense": [
+              371.5177,
+              141.80599999999998
+            ]
+          },
+          "expectedFloor": 5.472560969592047
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              332.0
+            ],
+            "defense": [
+              371.5177,
+              140.80599999999998
+            ]
+          },
+          "expectedFloor": 5.3399226387201555
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              333.0
+            ],
+            "defense": [
+              371.5177,
+              139.80599999999998
+            ]
+          },
+          "expectedFloor": 5.207284307848262
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              334.0
+            ],
+            "defense": [
+              371.5177,
+              138.80599999999998
+            ]
+          },
+          "expectedFloor": 5.07464597697637
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              335.0
+            ],
+            "defense": [
+              371.5177,
+              137.80599999999998
+            ]
+          },
+          "expectedFloor": 4.942007646104477
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              336.0
+            ],
+            "defense": [
+              371.5177,
+              136.80599999999998
+            ]
+          },
+          "expectedFloor": 4.809369315232585
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              337.0
+            ],
+            "defense": [
+              371.5177,
+              135.80599999999998
+            ]
+          },
+          "expectedFloor": 4.676730984360692
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              338.0
+            ],
+            "defense": [
+              371.5177,
+              134.80599999999998
+            ]
+          },
+          "expectedFloor": 4.5440926534888
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              339.0
+            ],
+            "defense": [
+              371.5177,
+              133.80599999999998
+            ]
+          },
+          "expectedFloor": 4.4114543226169065
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              340.0
+            ],
+            "defense": [
+              371.5177,
+              132.80599999999998
+            ]
+          },
+          "expectedFloor": 4.278815991745015
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              341.0
+            ],
+            "defense": [
+              371.5177,
+              131.80599999999998
+            ]
+          },
+          "expectedFloor": 4.146177660873121
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              342.0
+            ],
+            "defense": [
+              371.5177,
+              130.80599999999998
+            ]
+          },
+          "expectedFloor": 4.01353933000123
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              343.0
+            ],
+            "defense": [
+              371.5177,
+              129.80599999999998
+            ]
+          },
+          "expectedFloor": 4.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              344.0
+            ],
+            "defense": [
+              371.5177,
+              128.80599999999998
+            ]
+          },
+          "expectedFloor": 4.0
+        },
+        {
+          "positions": {
+            "attack": [
+              82.0,
+              345.0
+            ],
+            "defense": [
+              371.5177,
+              127.80599999999998
+            ]
+          },
+          "expectedFloor": 4.0
+        }
+      ]
+    },
+    "haven": {
+      "poses": [
+        {
+          "id": "tower",
+          "positions": {
+            "attack": [
+              357.5,
+              128.125
+            ],
+            "defense": [
+              35.490999999999985,
+              344.875
+            ]
+          },
+          "expectedFloor": 9,
+          "rays": [
+            {
+              "targets": {
+                "attack": [
+                  330,
+                  128.125
+                ],
+                "defense": [
+                  62.991000000000014,
+                  344.875
+                ]
+              },
+              "visible": false
+            },
+            {
+              "targets": {
+                "attack": [
+                  350,
+                  133
+                ],
+                "defense": [
+                  42.991000000000014,
+                  340.0
+                ]
+              },
+              "visible": true
+            },
+            {
+              "targets": {
+                "attack": [
+                  370,
+                  170
+                ],
+                "defense": [
+                  22.990999999999985,
+                  303.0
+                ]
+              },
+              "visible": false
+            },
+            {
+              "targets": {
+                "attack": [
+                  363,
+                  160
+                ],
+                "defense": [
+                  29.991000000000014,
+                  313.0
+                ]
+              },
+              "visible": false
+            }
+          ]
+        },
+        {
+          "id": "tower-window",
+          "positions": {
+            "attack": [
+              368,
+              145
+            ],
+            "defense": [
+              24.991000000000014,
+              328.0
+            ]
+          },
+          "expectedFloor": 9,
+          "rays": [
+            {
+              "targets": {
+                "attack": [
+                  368,
+                  170
+                ],
+                "defense": [
+                  24.991000000000014,
+                  303.0
+                ]
+              },
+              "visible": true
+            },
+            {
+              "targets": {
+                "attack": [
+                  360,
+                  160
+                ],
+                "defense": [
+                  32.991000000000014,
+                  313.0
+                ]
+              },
+              "visible": false
+            }
+          ]
+        },
+        {
+          "id": "window-inside",
+          "positions": {
+            "attack": [
+              193.33,
+              320.61
+            ],
+            "defense": [
+              199.661,
+              152.39
+            ]
+          },
+          "expectedFloor": 3,
+          "rays": [
+            {
+              "targets": {
+                "attack": [
+                  193.33,
+                  300
+                ],
+                "defense": [
+                  199.661,
+                  173.0
+                ]
+              },
+              "visible": true
+            }
+          ]
+        },
+        {
+          "id": "window-sill",
+          "positions": {
+            "attack": [
+              194.15343009,
+              308.51867448
+            ],
+            "defense": [
+              198.83756991,
+              164.48132551999998
+            ]
+          },
+          "expectedFloor": 4,
+          "rays": []
+        }
+      ],
+      "rampPath": [],
+      "towerLowerRays": [
+        {
+          "targets": {
+            "attack": [
+              350,
+              133
+            ],
+            "defense": [
+              42.991000000000014,
+              340.0
+            ]
+          },
+          "visible": false
+        },
+        {
+          "targets": {
+            "attack": [
+              363,
+              160
+            ],
+            "defense": [
+              29.991000000000014,
+              313.0
+            ]
+          },
+          "visible": true
+        }
+      ],
+      "reverseWindow": {
+        "positions": {
+          "attack": [
+            198.18,
+            256.97
+          ],
+          "defense": [
+            194.811,
+            216.02999999999997
+          ]
+        },
+        "targets": {
+          "attack": [
+            193.33,
+            320.61
+          ],
+          "defense": [
+            199.661,
+            152.39
+          ]
+        }
+      }
+    }
+  }
+}

@@ -4,14 +4,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/page_transition/agent_path.dart';
+import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
+import 'package:icarus/screenshot/capture_geometry.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/services/video_export/ffmpeg_png_sequence_writer.dart';
@@ -43,12 +46,16 @@ class VideoExporter {
     required this.strategyState,
     required this.mapState,
     required this.geometry,
+    this.navigation,
+    this.requireNavigation = false,
   });
 
   final StrategyData strategy;
   final StrategyState strategyState;
   final MapState mapState;
   final VisionGeometryMap? geometry;
+  final NavigationGeometryMap? navigation;
+  final bool requireNavigation;
 
   static int transitionFrameCountFor(int fps) {
     if (fps <= 0) throw ArgumentError.value(fps, 'fps');
@@ -95,6 +102,22 @@ class VideoExporter {
     if (pages.isEmpty) {
       throw VideoExportException('No pages selected.');
     }
+    if (requireNavigation &&
+        navigation == null &&
+        geometry?.navigationGeometry == null) {
+      for (var i = 1; i < pages.length; i++) {
+        final entries = TransitionPlanner.diff(
+          TransitionPlanner.placedWidgetMapForPage(pages[i - 1]),
+          TransitionPlanner.placedWidgetMapForPage(pages[i]),
+        );
+        if (entries.any((entry) =>
+            entry.kind == TransitionKind.move &&
+            entry.visualWidget is PlacedAgentNode)) {
+          throw VideoExportException(
+              'Movement paths could not load. Please try the export again.');
+        }
+      }
+    }
 
     await runPreservingScreenshotMode(
       () => _export(
@@ -131,13 +154,22 @@ class VideoExporter {
       'icarus_video_export_',
     );
     ProviderContainer? captureContainer;
+    CaptureGeometryLease? captureGeometry;
     PersistentOffscreenRenderer? renderer;
     FfmpegPngSequenceWriter? frameWriter;
     try {
       final offscreenContainer = ProviderContainer();
       captureContainer = offscreenContainer;
+      onProgress?.call(0, 'Preparing map');
+      captureGeometry = await prepareCaptureGeometry(
+        offscreenContainer,
+        strategy.mapData,
+        pages,
+      );
+      if (_cancelled) throw VideoExportCancelled();
       renderer = PersistentOffscreenRenderer(
         targetSize: CoordinateSystem.screenShotSize,
+        waitForFrameData: captureGeometry?.waitForFrame,
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: offscreenContainer),
       );
@@ -204,6 +236,8 @@ class VideoExporter {
         final agentPaths = AgentTransitionPathPlanner.plan(
           entries: entries,
           geometry: geometry,
+          navigation: navigation,
+          requireNavigation: requireNavigation,
           startAgentSize: page.settings.agentSize,
           endAgentSize: nextPage.settings.agentSize,
           coordinateSystem: CoordinateSystem.instance,
@@ -263,6 +297,7 @@ class VideoExporter {
       try {
         await renderer?.dispose();
       } finally {
+        captureGeometry?.close();
         captureContainer?.dispose();
         try {
           await tempDir.delete(recursive: true);

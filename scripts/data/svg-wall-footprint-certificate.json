@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "gridSvg": 1e-08,
+  "status": "passed",
+  "algorithmSha256": "de372eafae50134ceb9d813f4bd5d1a142318457579a5bba0a1f3bd3ec160312",
+  "polygonReaderSha256": "47e476c690b09e45100b0db0ec2c7dbd9bb15c2ece6750e80331b840b54c98e4",
+  "assets": {
+    "assets/maps/abyss_svg_height_attack.json.gz": {
+      "sha256": "f3e6dc758a3499e787b039f95f437963be8660c6a7e710776656da94f11b84ec",
+      "wallCount": 1632
+    },
+    "assets/maps/abyss_svg_height_defense.json.gz": {
+      "sha256": "a06f07717d3ba51ee1b2c273b2d1c3e8b4cd9639ff9208806e7e3e2d15949fe1",
+      "wallCount": 3105
+    },
+    "assets/maps/ascent_svg_height_attack.json.gz": {
+      "sha256": "786fbc593c8c57ea23add5beb7c58f004eabd24da163de0ddb1e0a6cfc275a46",
+      "wallCount": 2642
+    },
+    "assets/maps/ascent_svg_height_defense.json.gz": {
+      "sha256": "9cf64157755c28e51e11f67b36f6bb7251f2efbc47df949132090b809c88dee7",
+      "wallCount": 2796
+    },
+    "assets/maps/bind_svg_height_attack.json.gz": {
+      "sha256": "952f384251c74bf0784d1849301befc98e46fb8a58a65bac1869e363f5baa5ad",
+      "wallCount": 3063
+    },
+    "assets/maps/bind_svg_height_defense.json.gz": {
+      "sha256": "824990502b4f32de797ee5fb0bba58adb9e612f1c548f2f264db159ae6112c0a",
+      "wallCount": 4568
+    },
+    "assets/maps/breeze_svg_height_attack.json.gz": {
+      "sha256": "cd1b0a3247efaa0f17e1794178b2c967575c0eb486b8ebbac36567a68cb63834",
+      "wallCount": 3663
+    },
+    "assets/maps/breeze_svg_height_defense.json.gz": {
+      "sha256": "2e14ca876734ccb19b59be8a706eda84a15995a166ce61f558df6649fde80efa",
+      "wallCount": 5106
+    },
+    "assets/maps/corrode_svg_height_attack.json.gz": {
+      "sha256": "5f94f9e98afdd741165ea268669c9ca343fa98b6b477bad73a638982c3b6fa32",
+      "wallCount": 3318
+    },
+    "assets/maps/corrode_svg_height_defense.json.gz": {
+      "sha256": "f619045313b1fcd179495529ddfd7f8d51e6a7bd1484f00cced72bc27c6d251b",
+      "wallCount": 4281
+    },
+    "assets/maps/fracture_svg_height_attack.json.gz": {
+      "sha256": "a69d07d9d09644c4e70136d90b3679bf4b5cbb1a9ec2224c64eb3bf09ad38060",
+      "wallCount": 3371
+    },
+    "assets/maps/fracture_svg_height_defense.json.gz": {
+      "sha256": "efabd944faeba1a1c77bd0de5676f7a5ea96c7e751819b0622604838c5242f0e",
+      "wallCount": 5484
+    },
+    "assets/maps/haven_svg_height_attack.json.gz": {
+      "sha256": "c26a025b76494bc91de63ae2841f8f5ee5aef6c7afa353cf847675a24bc91bcc",
+      "wallCount": 3780
+    },
+    "assets/maps/haven_svg_height_defense.json.gz": {
+      "sha256": "2d42067bc0f30af9a513b83348d88622f4612cc5cca5fdeb10ad8bbec1480e63",
+      "wallCount": 5312
+    },
+    "assets/maps/icebox_svg_height_attack.json.gz": {
+      "sha256": "d1055d94904bb2565b66c1480b55d85cd39ff490cad3e351422ca953eb5bbe63",
+      "wallCount": 3633
+    },
+    "assets/maps/icebox_svg_height_defense.json.gz": {
+      "sha256": "a0b53ef7673a22c46288e52770373be01c0322e90132bcf30ef79925c8709e21",
+      "wallCount": 5054
+    },
+    "assets/maps/lotus_svg_height_attack.json.gz": {
+      "sha256": "0148ee18c665469720e2fcc44c88b7fbbc9fa3fd6ae42dd8e9c70bb337d07d00",
+      "wallCount": 3328
+    },
+    "assets/maps/lotus_svg_height_defense.json.gz": {
+      "sha256": "0abe08395f443803f51765d61cdd95c869553312ad1851a774974714d6083a17",
+      "wallCount": 5044
+    },
+    "assets/maps/pearl_svg_height_attack.json.gz": {
+      "sha256": "b094970f304bcc2527f33a420d0f8c929026e57cdf8429642099303a41b6aa4a",
+      "wallCount": 3821
+    },
+    "assets/maps/pearl_svg_height_defense.json.gz": {
+      "sha256": "0f397a418b6725a24203159427a530d66d9bf062a383f9bca5414287b4ea968c",
+      "wallCount": 7109
+    },
+    "assets/maps/split_svg_height_attack.json.gz": {
+      "sha256": "80fda739529335c5fbb83015ac71eaffd22e56d45108c42de838211605b91e0d",
+      "wallCount": 69
+    },
+    "assets/maps/split_svg_height_defense.json.gz": {
+      "sha256": "03c4c1304e7271f763b7ff6c6aa6cf61049f1d83510a064ce0b9b514816c5518",
+      "wallCount": 69
+    },
+    "assets/maps/summit_svg_height_attack.json.gz": {
+      "sha256": "4c90c2844e41f7dbab226d6a0f6a76b507ca66ae3f18c88d21d144a3781446d6",
+      "wallCount": 2958
+    },
+    "assets/maps/summit_svg_height_defense.json.gz": {
+      "sha256": "22ab82ccf2391de7d3176ba503278ac7f608f813c461b3d2ba31b82e5bcfac57",
+      "wallCount": 4087
+    },
+    "assets/maps/sunset_svg_height_attack.json.gz": {
+      "sha256": "c72a2897f636e6097de9730144b641ccdd5df7e01ea29a6baa44b52db00723a9",
+      "wallCount": 2379
+    },
+    "assets/maps/sunset_svg_height_defense.json.gz": {
+      "sha256": "d2b04a8c315b38ec3bbf78418cd2d0e0330882f44d1d5fc75ca5a471fdeabb70",
+      "wallCount": 3457
+    }
+  }
+}

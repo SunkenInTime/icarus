@@ -238,6 +238,7 @@
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
+				ACF08380D4524C41B9367A01 /* Build standing visibility */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				F4B940F9442DB0FF89EE4EA2 /* [CP] Embed Pods Frameworks */,
 			);
@@ -322,6 +323,26 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		ACF08380D4524C41B9367A01 /* Build standing visibility */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/../native/height/build_macos.sh",
+				"$(SRCROOT)/../native/height/icarus_height.cpp",
+				"$(SRCROOT)/../native/height/icarus_height.h",
+				"$(SRCROOT)/../native/height/icarus_svg_height.cpp",
+				"$(SRCROOT)/../native/height/icarus_svg_height.h",
+				"$(SRCROOT)/../native/height/height_pipeline.hpp",
+				"$(SRCROOT)/../native/height/query_model.hpp",
+				"$(SRCROOT)/../native/height/native_alpha.hpp",
+			);
+			name = "Build standing visibility";
+			outputPaths = ("$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libicarus_height.dylib");
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$SRCROOT/../native/height/build_macos.sh\"\n";
+		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

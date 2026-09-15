@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "map": "breeze",
+  "basis": "September 13 user screenshots: use the passage below the overhead box and keep the reported building outline opaque from the adjacent box. Source meshes identify complete facade assemblies; isolated trim and cistern tops do not define wall openings.",
+  "standingSource": "work\\breeze-all-reviewed-v2\\regional-floors.json",
+  "standingSourceSha256": "5721ee9799ce5e32ae10cf46107282e0a0b6f7f1c32fbc1db90edb57652185c0",
+  "excludedStandingDomains": [
+    {
+      "id": "volume-583-0",
+      "sourceCollision": "/Foxtrot_BVPawn/SuperGrid_Box343/Cube#0",
+      "sourceFaces": [
+        [
+          583,
+          10
+        ],
+        [
+          583,
+          11
+        ]
+      ],
+      "nativePlane": [
+        0.0,
+        -0.0,
+        16.0
+      ],
+      "areaSquareMeters": 12.218314946951342
+    }
+  ],
+  "excludedSupportIds": [
+    "breeze-physical-top-6ee4ff5d7bc1"
+  ],
+  "wallRegions": [
+    {
+      "parent": "p0-stroke-12",
+      "clipBox": [
+        299,
+        209,
+        310,
+        223
+      ],
+      "sourceObject": 5091
+    },
+    {
+      "parent": "p0-stroke-12",
+      "clipBox": [
+        310,
+        209,
+        324,
+        223
+      ],
+      "sourceObject": 5089
+    },
+    {
+      "parent": "p0-stroke-16",
+      "clipBox": [
+        299,
+        225,
+        312,
+        255
+      ],
+      "sourceObject": 5091
+    }
+  ],
+  "baselineSha256": {
+    "attack": "e7bad6c182f1eb18a90c4863ba406cd8041e9743c56bfb4a1ae3196ef4ecb6fe",
+    "defense": "cb34817a9739dea6c91b50353ec25113f1b1ecde8e49850f91c12aebd23237cf"
+  },
+  "screenshots": [
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-8e2d75a4-e480-4d0b-a2a1-b4ea7dda8d4c.png",
+      "sha256": "4192cf688bba4551fe4b9009474e79834ea7c7fe56b7077b2abac627ba13a888"
+    },
+    {
+      "file": "a8f37998-2019-4c53-9765-79d68259bd73-2e2c9d33-845e-41da-8aa7-dd24e85fcdcb.png",
+      "sha256": "b46b63344ddca25bb4e02f69a1e25d2a46312f6c57fa8381ce16dcd04c325e5d"
+    }
+  ],
+  "sourceSha256": {
+    "geometry": "143c64fa7b45eb2975639ac94203a412d89f271e6fe3c93086d6775d87d58240",
+    "metadata": "8f644d9b691d7c09bef5f92ee205ea4cad8cf876542bf76dbf71b47d4cd24563",
+    "alignment": "2470275ac55bbf8ae89c3433780dbc51bd290c24b62cc484d1fbb22584296b99"
+  }
+}
