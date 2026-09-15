@@ -4026,6 +4026,31 @@ class StrategyProvider extends Notifier<StrategyState> {
     setUnsaved();
   }
 
+  /// Flips the side the map is drawn from. Placements are stored
+  /// attack-canonical, so the only thing that changes is each page's side.
+  /// With [allPages] every page takes the active page's new side; otherwise
+  /// only the active page changes and the strategy may become mixed.
+  Future<void> switchSide({required bool allPages}) async {
+    final isAttack = !ref.read(mapProvider).isAttack;
+    ref.read(mapProvider.notifier).setAttack(isAttack);
+    setUnsaved();
+    if (!allPages || state.stratName == null) return;
+
+    await _syncCurrentPageToHive();
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    final updated = strat.copyWith(
+      pages: [
+        for (final page in strat.pages) page.copyWith(isAttack: isAttack),
+      ],
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
+  }
+
   Future<void> applyNeutralTeamColorsToAllPages(bool value) async {
     if (state.stratName == null) return;
 
