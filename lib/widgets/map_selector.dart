@@ -221,9 +221,10 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                 ),
               ),
               const SizedBox(width: _innerGap),
-              const SizedBox(
+              const _SideToggle(
                 width: _sideToggleWidth,
-                child: _SideToggle(borderRadius: _innerRadius),
+                height: _cardHeight - 2 * (_borderWidth + _innerGap),
+                borderRadius: _innerRadius,
               ),
             ],
           ),
@@ -237,8 +238,14 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
 /// Shift+click applies to this page only, which is how a strategy becomes
 /// mixed. When it is mixed, a dot warns that a plain click will unify it.
 class _SideToggle extends ConsumerWidget {
-  const _SideToggle({required this.borderRadius});
+  const _SideToggle({
+    required this.width,
+    required this.height,
+    required this.borderRadius,
+  });
 
+  final double width;
+  final double height;
   final double borderRadius;
 
   @override
@@ -260,19 +267,28 @@ class _SideToggle extends ConsumerWidget {
                 'Shift+click: this page only'
             : 'Switch side on all pages\nShift+click: this page only';
 
+        // A Shad button, not an InkWell: ShadTooltip only follows hover
+        // through Shad's own buttons.
         return ShadTooltip(
           builder: (context) => Text(tooltip),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                ref.read(strategyProvider.notifier).switchSide(
-                      allPages: !HardwareKeyboard.instance.isShiftPressed,
-                    );
-              },
-              mouseCursor: SystemMouseCursors.click,
-              borderRadius: BorderRadius.circular(borderRadius),
-              hoverColor: Colors.white.withValues(alpha: 0.08),
+          child: ShadButton.ghost(
+            width: width,
+            height: height,
+            padding: EdgeInsets.zero,
+            hoverBackgroundColor: Colors.white.withValues(alpha: 0.08),
+            decoration: ShadDecoration(
+              border: ShadBorder.all(
+                radius: BorderRadius.circular(borderRadius),
+              ),
+            ),
+            onPressed: () {
+              ref.read(strategyProvider.notifier).switchSide(
+                    allPages: !HardwareKeyboard.instance.isShiftPressed,
+                  );
+            },
+            child: SizedBox(
+              width: width,
+              height: height,
               child: Stack(
                 // Fill the toggle so the column centres in the box, not in
                 // the width of its own label.
