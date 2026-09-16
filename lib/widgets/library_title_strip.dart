@@ -183,6 +183,18 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     );
   }
 
+  /// The primary button's raised look with one side's corners squared off.
+  /// Spelled out in full because merging a partial decoration drops the
+  /// theme's gradient and shadow.
+  static ShadDecoration _halfDecoration(BorderRadius radius) => ShadDecoration(
+        gradient: Settings.raisedPrimaryFill,
+        shadows: const [Settings.raisedDropShadow],
+        border: ShadBorder(
+          radius: radius,
+          top: const ShadBorderSide(color: Settings.raisedTopLight, width: 1),
+        ),
+      );
+
   Widget _buildNewMenu() {
     const showLibraryTools = !kIsWeb;
     return ShadPopover(
@@ -199,13 +211,6 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _MenuItem(
-              menu: _newController,
-              key: const ValueKey('library-new-strategy'),
-              icon: LucideIcons.filePlus,
-              label: 'New Strategy',
-              onPressed: widget.onCreateStrategy,
-            ),
             _MenuItem(
               menu: _newController,
               key: const ValueKey('library-new-folder'),
@@ -237,14 +242,40 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           ],
         ),
       ),
-      child: ShadButton(
-        key: const ValueKey('library-new-menu'),
-        height: _controlHeight,
-        padding: const EdgeInsets.only(left: 8, right: 6),
-        onPressed: _newController.toggle,
-        leading: const Icon(LucideIcons.plus, size: 16),
-        trailing: const Icon(LucideIcons.chevronDown, size: 14),
-        child: const Text('New'),
+      // A split button: the body goes straight to the map picker, the
+      // chevron opens everything else. Each half keeps only its outer corners.
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShadButton(
+            key: const ValueKey('library-new-strategy'),
+            height: _controlHeight,
+            padding: const EdgeInsets.only(left: 8, right: 10),
+            decoration: _halfDecoration(
+              const BorderRadius.horizontal(left: Radius.circular(6)),
+            ),
+            onPressed: widget.onCreateStrategy,
+            leading: const Icon(LucideIcons.plus, size: 16),
+            child: const Text('New Strategy'),
+          ),
+          // A rounded border must be one colour, so the seam is its own strip.
+          const SizedBox(
+            width: 1,
+            height: _controlHeight,
+            child: ColoredBox(color: Settings.raisedBottomShade),
+          ),
+          ShadIconButton(
+            key: const ValueKey('library-new-menu'),
+            width: 24,
+            height: _controlHeight,
+            padding: EdgeInsets.zero,
+            decoration: _halfDecoration(
+              const BorderRadius.horizontal(right: Radius.circular(6)),
+            ),
+            onPressed: _newController.toggle,
+            icon: const Icon(LucideIcons.chevronDown, size: 14),
+          ),
+        ],
       ),
     );
   }
