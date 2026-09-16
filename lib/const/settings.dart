@@ -188,6 +188,12 @@ class Settings {
           // ),
         ),
       ));
+
+  /// Violet for lines, glyphs, text, and strokes on dark surfaces: two
+  /// steps lighter than [tacticalVioletTheme.primary], which is the fill
+  /// under white text and too dark to read as a thin mark.
+  static const Color accentInk = Color(0xff8b5cf6); // violet-500
+
   static const ShadColorScheme tacticalVioletTheme = ShadColorScheme(
     // --- THE GRAYS (UNCHANGED) ---
     // These are the "Zinc" cool grays you liked.
@@ -204,15 +210,16 @@ class Settings {
     accent: Color(0xff27272a),
     accentForeground: Color(0xfffafafa),
     border: Color(0xff27272a),
-    input: Color(0xff27272a),
+    // Zinc-700: field edges sit one step above the panel border so a field
+    // on a card still reads as a field.
+    input: Color(0xff3f3f46),
 
     // --- THE NEW PURPLE (UPDATED) ---
     // Violet-700: Higher contrast, deeper, premium look.
     primary: Color(0xff7c3aed),
     primaryForeground: Color(0xfff9fafb), // Pure white text pops perfectly here
 
-    // Updated ring to match the new primary
-    ring: Color(0xff7c3aed),
+    ring: accentInk,
 
     // Selection can stay a bit darker (Violet-800) or match primary
     selection: Color(0xff4c1d95),
@@ -293,6 +300,18 @@ class Settings {
   /// active page, anything that would otherwise be a flat `primary` fill.
   static InsetShadowDecoration raisedPrimary(double radius) =>
       raised(tacticalVioletTheme.primary, radius);
+
+  /// Dialogs are panels: one surface step above the canvas at the dialog
+  /// radius, one step above the floating panels, so they read as a sheet
+  /// from the same family rather than a black box on black.
+  static final ShadDialogTheme dialogTheme = ShadDialogTheme(
+    backgroundColor: tacticalVioletTheme.card,
+    radius: const BorderRadius.all(Radius.circular(16)),
+  );
+
+  /// The destructive fill, raised the same way as the primary one.
+  static final LinearGradient raisedDestructiveFill =
+      raisedGradient(tacticalVioletTheme.destructive);
 
   /// The primary fill alone, for the Shad theme and animated fills.
   static final LinearGradient raisedPrimaryFill =

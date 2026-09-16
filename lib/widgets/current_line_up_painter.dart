@@ -95,7 +95,7 @@ class CurrentLineUpPainter extends ConsumerWidget {
       child: CustomPaint(
         painter: _CurrentLinePainter(
           strokeWidth: coordinateSystem.scale(Settings.brushSize),
-          color: Settings.tacticalVioletTheme.primary,
+          color: Settings.accentInk,
           originAnchor: originAnchor,
           landingAnchor: landingAnchor,
           dragHover: ref.watch(lineUpDragHoverProvider),

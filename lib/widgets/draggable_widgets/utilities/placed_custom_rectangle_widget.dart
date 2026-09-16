@@ -844,7 +844,7 @@ class _RotationBadge extends StatelessWidget {
       child: Icon(
         LucideIcons.rotateCw,
         size: size,
-        color: isActive ? Settings.tacticalVioletTheme.primary : Colors.white,
+        color: isActive ? Settings.accentInk : Colors.white,
         shadows: const [
           Shadow(color: Colors.black87, blurRadius: 4),
           Shadow(color: Colors.black87, blurRadius: 1),

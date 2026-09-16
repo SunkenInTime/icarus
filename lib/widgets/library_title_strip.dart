@@ -74,22 +74,24 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           const SizedBox(width: _tabGap),
           // Shared and Community have nowhere to go yet; they hold their
           // place so the library's shape does not move when they land.
-          const _TabButton(
-            key: ValueKey('library-tab-shared'),
+          _TabButton(
+            key: const ValueKey('library-tab-shared'),
             icon: LucideIcons.users,
             label: 'Shared',
             semanticsLabel: 'Shared library',
             selected: false,
-            dimmed: true,
+            comingSoon: true,
+            onTap: () => _comingSoon('Shared libraries'),
           ),
           const SizedBox(width: _tabGap),
-          const _TabButton(
-            key: ValueKey('library-tab-community'),
+          _TabButton(
+            key: const ValueKey('library-tab-community'),
             icon: LucideIcons.globe,
             label: 'Community',
             semanticsLabel: 'Community library',
             selected: false,
-            dimmed: true,
+            comingSoon: true,
+            onTap: () => _comingSoon('The community library'),
           ),
           if (kIsWeb) ...[
             const SizedBox(width: 8),
@@ -105,7 +107,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             height: _controlHeight,
             child: SearchTextField(
               key: ValueKey('library-search'),
-              collapsedWidth: 34,
+              collapsedWidth: _controlHeight,
               expandedWidth: 220,
               compact: true,
               hintText: 'Search',
@@ -118,6 +120,13 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           const SizedBox(width: 10),
         ],
       ),
+    );
+  }
+
+  void _comingSoon(String what) {
+    Settings.showToast(
+      message: "$what aren't ready yet. Coming very soon.",
+      backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
 
@@ -183,6 +192,18 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     );
   }
 
+  /// The primary button's raised look with one side's corners squared off.
+  /// Spelled out in full because merging a partial decoration drops the
+  /// theme's gradient and shadow.
+  static ShadDecoration _halfDecoration(BorderRadius radius) => ShadDecoration(
+        gradient: Settings.raisedPrimaryFill,
+        shadows: const [Settings.raisedDropShadow],
+        border: ShadBorder(
+          radius: radius,
+          top: const ShadBorderSide(color: Settings.raisedTopLight, width: 1),
+        ),
+      );
+
   Widget _buildNewMenu() {
     const showLibraryTools = !kIsWeb;
     return ShadPopover(
@@ -199,13 +220,6 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _MenuItem(
-              menu: _newController,
-              key: const ValueKey('library-new-strategy'),
-              icon: LucideIcons.filePlus,
-              label: 'New Strategy',
-              onPressed: widget.onCreateStrategy,
-            ),
             _MenuItem(
               menu: _newController,
               key: const ValueKey('library-new-folder'),
@@ -237,14 +251,40 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           ],
         ),
       ),
-      child: ShadButton(
-        key: const ValueKey('library-new-menu'),
-        height: _controlHeight,
-        padding: const EdgeInsets.only(left: 8, right: 6),
-        onPressed: _newController.toggle,
-        leading: const Icon(LucideIcons.plus, size: 16),
-        trailing: const Icon(LucideIcons.chevronDown, size: 14),
-        child: const Text('New'),
+      // A split button: the body goes straight to the map picker, the
+      // chevron opens everything else. Each half keeps only its outer corners.
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShadButton(
+            key: const ValueKey('library-new-strategy'),
+            height: _controlHeight,
+            padding: const EdgeInsets.only(left: 8, right: 10),
+            decoration: _halfDecoration(
+              const BorderRadius.horizontal(left: Radius.circular(6)),
+            ),
+            onPressed: widget.onCreateStrategy,
+            leading: const Icon(LucideIcons.plus, size: 16),
+            child: const Text('New Strategy'),
+          ),
+          // A rounded border must be one colour, so the seam is its own strip.
+          const SizedBox(
+            width: 1,
+            height: _controlHeight,
+            child: ColoredBox(color: Settings.raisedBottomShade),
+          ),
+          ShadIconButton(
+            key: const ValueKey('library-new-menu'),
+            width: 24,
+            height: _controlHeight,
+            padding: EdgeInsets.zero,
+            decoration: _halfDecoration(
+              const BorderRadius.horizontal(right: Radius.circular(6)),
+            ),
+            onPressed: _newController.toggle,
+            icon: const Icon(LucideIcons.chevronDown, size: 14),
+          ),
+        ],
       ),
     );
   }
@@ -258,16 +298,17 @@ class _TabButton extends StatelessWidget {
     required this.semanticsLabel,
     required this.selected,
     this.onTap,
-    this.dimmed = false,
+    this.comingSoon = false,
   });
 
   final IconData icon;
   final String label;
   final String semanticsLabel;
   final bool selected;
-  final bool dimmed;
 
-  /// Null while the tab has nowhere to go; the button reads as disabled.
+  /// Dims the tab and says so on hover; the tap should explain itself too.
+  final bool comingSoon;
+
   final VoidCallback? onTap;
 
   @override
@@ -281,7 +322,7 @@ class _TabButton extends StatelessWidget {
       enabled: onTap != null,
       onTap: onTap,
       child: Opacity(
-        opacity: dimmed ? 0.45 : 1,
+        opacity: comingSoon ? 0.45 : 1,
         child: DecoratedBox(
           decoration: selected
               ? Settings.raisedSurface(_tabRadius)
@@ -305,7 +346,7 @@ class _TabButton extends StatelessWidget {
         ),
       ),
     );
-    if (onTap != null) return button;
+    if (!comingSoon) return button;
     return ShadTooltip(
       builder: (context) => const Text('Coming soon'),
       child: button,
@@ -349,7 +390,7 @@ class _MenuItem extends StatelessWidget {
                 icon,
                 size: 16,
                 color: icon == LucideIcons.check
-                    ? Settings.tacticalVioletTheme.primary
+                    ? Settings.accentInk
                     : Settings.tacticalVioletTheme.mutedForeground,
               ),
       ),

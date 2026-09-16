@@ -318,7 +318,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       selectedIcon: FolderIconView(
                         iconId: iconId,
                         size: iconSize,
-                        color: Settings.tacticalVioletTheme.primary,
+                        color: Settings.accentInk,
                       ));
                 },
               ),

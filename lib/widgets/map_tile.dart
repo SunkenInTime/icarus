@@ -32,12 +32,10 @@ class _MapTileState extends ConsumerState<MapTile> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: widget.isPreview
-          ? null
-          : (_) => setState(() => _isHovered = true),
-      onExit: widget.isPreview
-          ? null
-          : (_) => setState(() => _isHovered = false),
+      onEnter:
+          widget.isPreview ? null : (_) => setState(() => _isHovered = true),
+      onExit:
+          widget.isPreview ? null : (_) => setState(() => _isHovered = false),
       child: ClipRRect(
         borderRadius: BorderRadius.all(Radius.circular(widget.borderRadius)),
         child: InkWell(
@@ -75,9 +73,8 @@ class _MapTileState extends ConsumerState<MapTile> {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: widget.isActive
-                          ? Settings.tacticalVioletTheme.primary
-                          : Colors.white,
+                      color:
+                          widget.isActive ? Settings.accentInk : Colors.white,
                       shadows: const [
                         Shadow(
                           color: Colors.black,
