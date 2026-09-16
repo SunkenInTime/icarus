@@ -48,67 +48,66 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   Widget build(BuildContext context) {
     const style = kEditorToolbarButtonStyle;
 
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Settings.tacticalVioletTheme.card,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Settings.tacticalVioletTheme.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const AutoSaveButton(style: style),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Export .ica',
-                  onPressed: _exportStrategy,
-                  icon: const Icon(LucideIcons.upload200),
-                ),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Export video',
-                  onPressed: _exportVideo,
-                  icon: const Icon(LucideIcons.clapperboard200),
-                ),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Screenshot',
-                  onPressed: _captureScreenshot,
-                  icon: _isCapturingScreenshot
-                      ? SizedBox(
-                          width: style.iconSize - 2,
-                          height: style.iconSize - 2,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.8,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Settings.tacticalVioletTheme.mutedForeground,
-                            ),
-                          ),
-                        )
-                      : const Icon(LucideIcons.camera200),
-                ),
-                const EditorToolbarDivider(),
-                EditorToolbarButton(
-                  style: style,
-                  tooltip: 'Settings',
-                  onPressed: () {
-                    showShadDialog(
-                      context: context,
-                      builder: (context) => const SettingsTab(),
-                    );
-                  },
-                  icon: const Icon(LucideIcons.settings200),
-                ),
-              ],
-            ),
+    // The strategy view owns the spacing around this card, so it aligns
+    // with the map card above it.
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-        ],
-      ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AutoSaveButton(style: style),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Export .ica',
+                onPressed: _exportStrategy,
+                icon: const Icon(LucideIcons.upload200),
+              ),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Export video',
+                onPressed: _exportVideo,
+                icon: const Icon(LucideIcons.clapperboard200),
+              ),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Screenshot',
+                onPressed: _captureScreenshot,
+                icon: _isCapturingScreenshot
+                    ? SizedBox(
+                        width: style.iconSize - 2,
+                        height: style.iconSize - 2,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.8,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Settings.tacticalVioletTheme.mutedForeground,
+                          ),
+                        ),
+                      )
+                    : const Icon(LucideIcons.camera200),
+              ),
+              const EditorToolbarDivider(),
+              EditorToolbarButton(
+                style: style,
+                tooltip: 'Settings',
+                onPressed: () {
+                  showShadDialog(
+                    context: context,
+                    builder: (context) => const SettingsTab(),
+                  );
+                },
+                icon: const Icon(LucideIcons.settings200),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
