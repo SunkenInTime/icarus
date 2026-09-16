@@ -119,11 +119,19 @@ Future<void> _dispose(WidgetTester tester, ProviderContainer container) async {
   container.dispose();
 }
 
-Future<void> _openCategory(
-    WidgetTester tester, TestGesture mouse, String category) async {
+/// Right-clicks the agent and opens the Weapon submenu.
+Future<void> _openWeaponMenu(WidgetTester tester, TestGesture mouse) async {
   await tester.tapAt(tester.getCenter(find.byType(AgentWidget).first),
       buttons: kSecondaryButton, kind: PointerDeviceKind.mouse);
   await tester.pumpAndSettle();
+  await mouse.moveTo(tester.getCenter(find.text('Weapon')));
+  await tester.pumpAndSettle();
+}
+
+/// Opens the Weapon submenu, then the given category inside it.
+Future<void> _openCategory(
+    WidgetTester tester, TestGesture mouse, String category) async {
+  await _openWeaponMenu(tester, mouse);
   await mouse.moveTo(tester.getCenter(find.text(category)));
   await tester.pumpAndSettle();
 }
@@ -191,9 +199,7 @@ void main() {
       expect(tester.getRect(find.byType(AgentWidget)), originalRect);
       await _capture(tester, '$kind-vandal-badge');
 
-      await tester.tapAt(tester.getCenter(find.byType(AgentWidget)),
-          buttons: kSecondaryButton, kind: PointerDeviceKind.mouse);
-      await tester.pumpAndSettle();
+      await _openWeaponMenu(tester, mouse);
       await tester.tap(find.text('None'));
       await tester.pumpAndSettle();
       expect(container.read(agentProvider).single.weapon, WeaponType.none);
@@ -284,7 +290,7 @@ void main() {
     await tester.tapAt(Offset(agentRect.right + 1, badgeRect.center.dy),
         buttons: kSecondaryButton, kind: PointerDeviceKind.mouse);
     await tester.pumpAndSettle();
-    expect(find.text('Sidearms'), findsNothing);
+    expect(find.text('Weapon'), findsNothing);
     await mouse.removePointer();
 
     final boundary =
