@@ -105,7 +105,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             height: _controlHeight,
             child: SearchTextField(
               key: ValueKey('library-search'),
-              collapsedWidth: 34,
+              collapsedWidth: _controlHeight,
               expandedWidth: 220,
               compact: true,
               hintText: 'Search',
