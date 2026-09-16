@@ -27,8 +27,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
   static const double _sideToggleWidth = 66;
   // Sized from the contents so the gap on the right of the side toggle equals
   // the gap on the left of the map tile.
-  static const double _cardWidth =
-      2 * _borderWidth +
+  static const double _cardWidth = 2 * _borderWidth +
       2 * _innerGap +
       MapTile.width +
       _innerGap +
@@ -67,20 +66,19 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
   @override
   Widget build(BuildContext context) {
     final MapValue currentMap = ref.watch(mapProvider).currentMap;
-    final List<MapValue> availableMaps =
-        Maps.mapNames.keys
-            .where((mapValue) => Maps.availableMaps.contains(mapValue))
-            .toList()
-          ..sort(
-            (a, b) => Maps.mapNames[a]!.toLowerCase().compareTo(
+    final List<MapValue> availableMaps = Maps.mapNames.keys
+        .where((mapValue) => Maps.availableMaps.contains(mapValue))
+        .toList()
+      ..sort(
+        (a, b) => Maps.mapNames[a]!.toLowerCase().compareTo(
               Maps.mapNames[b]!.toLowerCase(),
             ),
-          );
+      );
     final List<MapValue> outOfRotationMaps = Maps.outofplayMaps.toList()
       ..sort(
         (a, b) => Maps.mapNames[a]!.toLowerCase().compareTo(
-          Maps.mapNames[b]!.toLowerCase(),
-        ),
+              Maps.mapNames[b]!.toLowerCase(),
+            ),
       );
 
     return CompositedTransformTarget(
@@ -135,8 +133,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                 Expanded(
                                   child: ListView.separated(
                                     padding: const EdgeInsets.all(_innerGap),
-                                    itemCount:
-                                        availableMaps.length +
+                                    itemCount: availableMaps.length +
                                         outOfRotationMaps.length +
                                         1,
                                     separatorBuilder: (_, __) =>
@@ -183,10 +180,8 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                         );
                                       }
 
-                                      final mapValue =
-                                          outOfRotationMaps[index -
-                                              availableMaps.length -
-                                              1];
+                                      final mapValue = outOfRotationMaps[
+                                          index - availableMaps.length - 1];
                                       final mapName = Maps.mapNames[mapValue]!;
                                       return MapTile(
                                         name: mapName,
@@ -279,6 +274,9 @@ class _SideToggle extends ConsumerWidget {
               borderRadius: BorderRadius.circular(borderRadius),
               hoverColor: Colors.white.withValues(alpha: 0.08),
               child: Stack(
+                // Fill the toggle so the column centres in the box, not in
+                // the width of its own label.
+                fit: StackFit.expand,
                 children: [
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
