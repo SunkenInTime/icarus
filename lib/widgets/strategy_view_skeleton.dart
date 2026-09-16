@@ -175,6 +175,7 @@ class _SkeletonTopBar extends StatelessWidget {
             children: [
               SizedBox(width: 6),
               _SkeletonBlock(width: 28, height: 28, radius: 8),
+              IcarusWordmark(),
               Spacer(),
               _SkeletonBlock(width: 200, height: 28, radius: 8),
               SizedBox(width: 10),

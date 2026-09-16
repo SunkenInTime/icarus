@@ -193,8 +193,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       body: Column(
         children: [
           // The same 40px strip as the library, so the traffic lights never
-          // move: Library on the left, the strategy in the middle, Discord on
-          // the right. The map card lives on the canvas with the toolbar.
+          // move: Library and the wordmark on the left, the strategy in the
+          // middle, Discord on the right. The map card lives on the canvas
+          // with the toolbar.
           AppWindowStrip(
             child: Stack(
               children: [
@@ -214,6 +215,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                         icon: const Icon(LucideIcons.house300, size: 18),
                       ),
                     ),
+                    const IcarusWordmark(),
                     if (kIsWeb)
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8.0),

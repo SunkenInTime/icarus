@@ -40,7 +40,7 @@ class WindowDragArea extends StatelessWidget {
   }
 }
 
-/// The compact Icarus lockup at the start of the library strip. On macOS it
+/// The compact Icarus lockup at the start of every window strip. On macOS it
 /// follows the traffic-light inset; on Windows and Linux it leads the strip.
 class IcarusWordmark extends StatelessWidget {
   const IcarusWordmark({super.key});
