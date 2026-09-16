@@ -146,7 +146,7 @@ class AgentWidget extends ConsumerWidget {
     bgColor = Color.lerp(bgColor, deadBgColor, deadProgress) ?? bgColor;
 
     if (isLineUpHovered) {
-      bgColor = Colors.deepPurple;
+      bgColor = Settings.tacticalVioletTheme.primary;
     }
 
     // Determine outline color
@@ -162,7 +162,7 @@ class AgentWidget extends ConsumerWidget {
         outlineColor;
 
     if (isLineUpHovered) {
-      outlineColor = Colors.deepPurpleAccent;
+      outlineColor = Settings.accentInk;
     }
 
     Widget agentDisplay = agentImage;

@@ -36,10 +36,12 @@ class FramedAbilityIconShell extends ConsumerWidget {
       padding: EdgeInsets.all(coordinateSystem.scale(3)),
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.all(Radius.circular(3)),
-        color: isLineUpHovered ? Colors.deepPurple : Settings.abilityBGColor,
+        color: isLineUpHovered
+            ? Settings.tacticalVioletTheme.primary
+            : Settings.abilityBGColor,
         border: Border.all(
           color: isLineUpHovered
-              ? Colors.deepPurpleAccent
+              ? Settings.accentInk
               : useNeutralTeamColors
                   ? Settings.neutralTeamShade(outlineColor)
                   : outlineColor,

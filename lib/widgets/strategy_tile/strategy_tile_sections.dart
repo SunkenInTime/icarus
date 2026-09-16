@@ -256,7 +256,7 @@ class StrategyTileDragPreview extends StatelessWidget {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.deepPurpleAccent, width: 2),
+        border: Border.all(color: Settings.accentInk, width: 2),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(

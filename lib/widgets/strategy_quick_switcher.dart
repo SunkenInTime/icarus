@@ -416,8 +416,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                       enabled: !_isRenaming,
                                       textAlign: TextAlign.center,
                                       textInputAction: TextInputAction.done,
-                                      cursorColor:
-                                          Settings.tacticalVioletTheme.primary,
+                                      cursorColor: Settings.accentInk,
                                       style: ShadTheme.of(context)
                                           .textTheme
                                           .small

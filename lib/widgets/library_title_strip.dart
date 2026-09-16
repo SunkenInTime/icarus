@@ -349,7 +349,7 @@ class _MenuItem extends StatelessWidget {
                 icon,
                 size: 16,
                 color: icon == LucideIcons.check
-                    ? Settings.tacticalVioletTheme.primary
+                    ? Settings.accentInk
                     : Settings.tacticalVioletTheme.mutedForeground,
               ),
       ),
