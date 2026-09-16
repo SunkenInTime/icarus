@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _tileWidth = 220;
@@ -13,8 +12,8 @@ const double _tileGap = 8;
 const int _columns = 4;
 const double _gridWidth = _columns * _tileWidth + (_columns - 1) * _tileGap;
 
-/// Creating a strategy is picking its map. One tap on a tile creates the
-/// strategy, auto-named after the map, and pops with its id.
+/// Creating a strategy is picking its map. One tap on a tile pops with the
+/// map; the library creates the strategy and opens it.
 class CreateStrategyDialog extends ConsumerStatefulWidget {
   const CreateStrategyDialog({super.key});
 
@@ -24,29 +23,13 @@ class CreateStrategyDialog extends ConsumerStatefulWidget {
 }
 
 class _CreateStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
-  bool _isSubmitting = false;
   bool _showOutOfRotation = false;
   MapValue? _hoveredMap;
 
   static List<MapValue> _sorted(List<MapValue> maps) => maps.toList()
     ..sort((a, b) => Maps.displayName(a).compareTo(Maps.displayName(b)));
 
-  Future<void> _create(MapValue map) async {
-    if (_isSubmitting) return;
-    setState(() => _isSubmitting = true);
-    try {
-      final strategyID =
-          await ref.read(strategyProvider.notifier).createNewStrategy(map: map);
-      if (!mounted) return;
-      Navigator.of(context).pop(strategyID);
-    } catch (_) {
-      if (mounted) setState(() => _isSubmitting = false);
-      Settings.showToast(
-        message: "Couldn't create strategy right now.",
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
-    }
-  }
+  void _pick(MapValue map) => Navigator.of(context).pop(map);
 
   Widget _grid(List<MapValue> maps) {
     return Wrap(
@@ -64,7 +47,7 @@ class _CreateStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
               () => _hoveredMap =
                   over ? map : (_hoveredMap == map ? null : _hoveredMap),
             ),
-            onTap: () => _create(map),
+            onTap: () => _pick(map),
           ),
       ],
     );
@@ -79,52 +62,45 @@ class _CreateStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
       constraints: const BoxConstraints(maxWidth: _gridWidth + 48),
       child: Material(
         color: Colors.transparent,
-        child: IgnorePointer(
-          ignoring: _isSubmitting,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 150),
-            opacity: _isSubmitting ? 0.6 : 1,
-            child: SizedBox(
-              width: _gridWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 8),
-                  _grid(_sorted(Maps.availableMaps)),
-                  const SizedBox(height: 12),
-                  ShadButton.ghost(
-                    key: const ValueKey('create-strategy-out-of-rotation'),
-                    size: ShadButtonSize.sm,
-                    padding: EdgeInsets.zero,
-                    onPressed: () => setState(
-                      () => _showOutOfRotation = !_showOutOfRotation,
-                    ),
-                    trailing: AnimatedRotation(
-                      duration: const Duration(milliseconds: 120),
-                      turns: _showOutOfRotation ? 0.5 : 0,
-                      child: const Icon(LucideIcons.chevronDown, size: 14),
-                    ),
-                    child: Text(
-                      'Out of rotation',
-                      style: theme.textTheme.small
-                          .copyWith(color: theme.colorScheme.mutedForeground),
-                    ),
-                  ),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 120),
-                    curve: Curves.easeOutCubic,
-                    alignment: Alignment.topCenter,
-                    child: _showOutOfRotation
-                        ? Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: _grid(_sorted(Maps.outofplayMaps)),
-                          )
-                        : const SizedBox(width: _gridWidth),
-                  ),
-                ],
+        child: SizedBox(
+          width: _gridWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              _grid(_sorted(Maps.availableMaps)),
+              const SizedBox(height: 12),
+              ShadButton.ghost(
+                key: const ValueKey('create-strategy-out-of-rotation'),
+                size: ShadButtonSize.sm,
+                padding: EdgeInsets.zero,
+                onPressed: () => setState(
+                  () => _showOutOfRotation = !_showOutOfRotation,
+                ),
+                trailing: AnimatedRotation(
+                  duration: const Duration(milliseconds: 120),
+                  turns: _showOutOfRotation ? 0.5 : 0,
+                  child: const Icon(LucideIcons.chevronDown, size: 14),
+                ),
+                child: Text(
+                  'Out of rotation',
+                  style: theme.textTheme.small
+                      .copyWith(color: theme.colorScheme.mutedForeground),
+                ),
               ),
-            ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _showOutOfRotation
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _grid(_sorted(Maps.outofplayMaps)),
+                      )
+                    : const SizedBox(width: _gridWidth),
+              ),
+            ],
           ),
         ),
       ),

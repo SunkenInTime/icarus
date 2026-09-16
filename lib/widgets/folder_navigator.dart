@@ -5,11 +5,11 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -234,45 +234,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final currentFolder = currentFolderId != null
         ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
         : null;
-    Future<void> navigateWithLoading(
-        BuildContext context, String strategyId) async {
-      // Show loading overlay
-      // showLoadingOverlay(context);
-
-      try {
-        await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
-
-        if (!context.mounted) return;
-
-        Navigator.push(
-          context,
-          PageRouteBuilder(
-            settings: const RouteSettings(name: Routes.strategyView),
-            transitionDuration: const Duration(milliseconds: 200),
-            reverseTransitionDuration:
-                const Duration(milliseconds: 200), // pop duration
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const StrategyView(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.9, end: 1.0)
-                      .chain(CurveTween(curve: Curves.easeOut))
-                      .animate(animation),
-                  child: child,
-                ),
-              );
-            },
-          ),
-        );
-      } catch (e) {
-        // Handle errors
-        // Show error message
-      }
-    }
-
     Future<void> showCreateFolderDialog() async {
       await showDialog<String>(
         context: context,
@@ -282,18 +243,37 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       );
     }
 
+    /// Pick a map, then go straight to the editor: the view paints on the
+    /// chosen map at once and loads the new strategy inside itself.
     void showCreateDialog() async {
-      final String? strategyId = await showDialog<String>(
+      final map = await showDialog<MapValue>(
         context: context,
-        builder: (context) {
-          return const CreateStrategyDialog();
-        },
+        builder: (context) => const CreateStrategyDialog(),
       );
+      if (map == null || !context.mounted) return;
 
-      if (strategyId != null) {
-        if (!context.mounted) return;
-        await navigateWithLoading(context, strategyId);
+      final StrategyData strategy;
+      try {
+        strategy = await ref
+            .read(strategyProvider.notifier)
+            .createNewStrategy(map: map);
+      } catch (_) {
+        Settings.showToast(
+          message: "Couldn't create strategy right now.",
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
       }
+      if (!context.mounted) return;
+
+      Navigator.push(
+        context,
+        StrategyView.route(
+          initialStrategyId: strategy.id,
+          initialStrategyName: strategy.name,
+          initialMapValue: strategy.mapData,
+        ),
+      );
     }
 
     return Stack(

@@ -3353,9 +3353,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  /// Creates an empty strategy on [map] and returns its id. Without [name]
-  /// it is auto-named after the map ("Haven", then "Haven 2", ...).
-  Future<String> createNewStrategy({
+  /// Creates an empty strategy on [map] and returns it. Without [name] it
+  /// is auto-named after the map ("Haven", then "Haven 2", ...).
+  Future<StrategyData> createNewStrategy({
     required MapValue map,
     String? name,
   }) async {
@@ -3406,7 +3406,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     unawaited(AnalyticsService.instance.capture('strategy_created'));
 
-    return newStrategy.id;
+    return newStrategy;
   }
 
   void setThemeProfileForCurrentStrategy(String profileId) {
