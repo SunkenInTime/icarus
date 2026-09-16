@@ -4037,21 +4037,28 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// attack-canonical, so the only thing that changes is each page's side.
   /// With [allPages] every page takes the active page's new side; otherwise
   /// only the active page changes and the strategy may become mixed.
+  /// Flips the side of the active page, or of every page when [allPages].
+  ///
+  /// The active page's side lives in [mapProvider] and reaches Hive through
+  /// the normal save, so "Don't save" still reverts it and none of its other
+  /// pending edits are flushed here. The other pages are held in Hive
+  /// between visits (a page switch writes there the same way), so they are
+  /// flipped in place.
   Future<void> switchSide({required bool allPages}) async {
     final isAttack = !ref.read(mapProvider).isAttack;
     ref.read(mapProvider.notifier).setAttack(isAttack);
     setUnsaved();
     if (!allPages || state.stratName == null) return;
 
-    await _syncCurrentPageToHive();
-
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strat = box.get(state.id);
     if (strat == null || strat.pages.isEmpty) return;
 
+    final activeId = activePageID ?? strat.pages.first.id;
     final updated = strat.copyWith(
       pages: [
-        for (final page in strat.pages) page.copyWith(isAttack: isAttack),
+        for (final page in strat.pages)
+          page.id == activeId ? page : page.copyWith(isAttack: isAttack),
       ],
       lastEdited: DateTime.now(),
     );

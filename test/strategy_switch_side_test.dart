@@ -125,13 +125,29 @@ void main() {
         .switchSide(allPages: true);
 
     expect(container.read(mapProvider).isAttack, isTrue);
-    final pages = storedPages();
+    expect(container.read(strategyProvider).isSaved, isFalse);
+    expect(
+      storedPages().map((p) => p.isAttack).toList(),
+      [true, false, true],
+      reason: 'the active page is written on the next save, not here',
+    );
+
+    final notifier = container.read(strategyProvider.notifier);
+    await notifier.forceSaveNow(container.read(strategyProvider).id);
+    var pages = storedPages();
     expect(pages.map((p) => p.isAttack), everyElement(isTrue));
     expect(
       pages.skip(1).map((p) => p.agentData.single.position).toList(),
       [const Offset(20, 20), const Offset(30, 20)],
       reason: 'side is a view choice; canonical placements must not move',
     );
+
+    // Back the other way: the other pages flip in place, the active page
+    // again waits for the save.
+    await notifier.switchSide(allPages: true);
+    expect(container.read(mapProvider).isAttack, isFalse);
+    pages = storedPages();
+    expect(pages.map((p) => p.isAttack).toList(), [false, true, false]);
   });
 
   test('switching side on this page leaves the other pages alone', () async {
