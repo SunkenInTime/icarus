@@ -147,7 +147,8 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
             color: Colors.transparent,
             child: CustomTextField(
               controller: controller,
-              hintText: 'Optional, for telling this apart from other lineups here',
+              hintText:
+                  'Optional, for telling this apart from other lineups here',
             ),
           ),
         ),
@@ -165,7 +166,6 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
 
   @override
   Widget build(BuildContext context) {
-    const theme = Settings.tacticalVioletTheme;
     final state = ref.watch(lineUpProvider);
     final links = _links(state);
 
@@ -184,9 +184,8 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
       _selectedLinkId = selected.id;
     }
 
-    final landing = widget.landingId == null
-        ? null
-        : state.landingById(widget.landingId!);
+    final landing =
+        widget.landingId == null ? null : state.landingById(widget.landingId!);
     final origin =
         widget.originId == null ? null : state.originById(widget.originId!);
     final title = landing != null
@@ -195,6 +194,12 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     final subtitle = landing != null
         ? '${links.length} lineups land here'
         : '${links.length} lineups from here';
+
+    // The media is the point of this dialog, so it takes most of the window
+    // and gives the pane whatever the list doesn't need.
+    final window = MediaQuery.sizeOf(context);
+    final bodyWidth = (window.width - 120).clamp(640.0, 1400.0);
+    final bodyHeight = (window.height - 200).clamp(360.0, 900.0);
 
     return CallbackShortcuts(
       bindings: {
@@ -207,17 +212,17 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
         child: ShadDialog(
           title: Text(title),
           description: Text(subtitle),
-          constraints: const BoxConstraints(maxWidth: 960),
+          constraints: BoxConstraints(maxWidth: bodyWidth + 48),
           child: SizedBox(
-            width: 900,
-            height: 520,
+            width: bodyWidth,
+            height: bodyHeight,
             child: Material(
               color: Colors.transparent,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(
-                    width: 280,
+                    width: 240,
                     child: ListView.separated(
                       itemCount: links.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -260,7 +265,9 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
                           },
                           onRename: () => _rename(link),
                           onDelete: () {
-                            ref.read(lineUpProvider.notifier).deleteLink(link.id);
+                            ref
+                                .read(lineUpProvider.notifier)
+                                .deleteLink(link.id);
                           },
                         );
                       },
@@ -268,18 +275,12 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: theme.card,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: theme.border),
-                      ),
-                      clipBehavior: Clip.antiAlias,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
                       child: LineUpMediaPages(
                         key: ValueKey(selected.id),
                         images: selected.images,
                         youtubeLink: selected.youtubeLink,
-                        padding: const EdgeInsets.all(48),
                       ),
                     ),
                   ),

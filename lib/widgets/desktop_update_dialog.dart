@@ -268,7 +268,7 @@ class _PatchNotes extends StatelessWidget {
       case 'warning':
         return theme.colorScheme.destructive;
       case 'feature':
-        return theme.colorScheme.primary;
+        return Settings.accentInk;
       default:
         return theme.colorScheme.mutedForeground;
     }
@@ -383,7 +383,7 @@ class _DownloadFillButton extends StatelessWidget {
                     duration: const Duration(milliseconds: 120),
                     curve: Curves.easeOut,
                     width: width * fill,
-                    color: theme.colorScheme.primary,
+                    color: Settings.accentInk,
                   ),
                 ),
                 Center(

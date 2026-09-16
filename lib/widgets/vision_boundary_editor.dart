@@ -567,7 +567,7 @@ class VisionBoundaryEditorPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.25 / zoom;
     final selectedPaint = Paint()
-      ..color = Settings.tacticalVioletTheme.primary
+      ..color = Settings.accentInk
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5 / zoom;
     final pointPaint = Paint()

@@ -15,6 +15,7 @@ import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 @visibleForTesting
 bool strategyBelongsToVisibleFolder({
@@ -122,9 +123,12 @@ Set<String> _folderAndDescendantIds(Folder root, Iterable<Folder> allFolders) {
 }
 
 class FolderContent extends ConsumerWidget {
-  FolderContent({super.key, this.folder});
+  FolderContent({super.key, this.folder, required this.onCreateStrategy});
 
   final Folder? folder; // null for root
+
+  /// Opens the create-strategy dialog; offered from the empty state.
+  final VoidCallback onCreateStrategy;
   final strategiesListenable =
       Provider<ValueListenable<Box<StrategyData>>>((ref) {
     return Hive.box<StrategyData>(HiveBoxNames.strategiesBox).listenable();
@@ -253,16 +257,10 @@ class FolderContent extends ConsumerWidget {
 
                           // Check if both folders and strategies are empty
                           if (folders.isEmpty && strategies.isEmpty) {
-                            return const IcaDropTarget(
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text('No strategies available'),
-                                    Text(
-                                        "Create a new strategy or drop strategies, folders, or .zip archives")
-                                  ],
-                                ),
+                            return IcaDropTarget(
+                              child: _EmptyState(
+                                searching: search.isNotEmpty,
+                                onCreateStrategy: onCreateStrategy,
                               ),
                             );
                           }
@@ -393,6 +391,47 @@ class FolderContent extends ConsumerWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the grid shows when nothing is in it: an invitation to create the
+/// first strategy, or a plain "no matches" when a search filtered it out.
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({
+    required this.searching,
+    required this.onCreateStrategy,
+  });
+
+  final bool searching;
+  final VoidCallback onCreateStrategy;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final title = searching ? 'No matches' : 'No strategies yet';
+    final hint = searching
+        ? 'Try a different search'
+        : 'Create one, or drop strategies, folders, or .zip archives here';
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title, style: theme.textTheme.p),
+          const SizedBox(height: 4),
+          Text(hint, style: theme.textTheme.muted),
+          if (!searching) ...[
+            const SizedBox(height: 16),
+            ShadButton(
+              key: const ValueKey('library-empty-new-strategy'),
+              onPressed: onCreateStrategy,
+              leading: const Icon(LucideIcons.plus, size: 16),
+              child: const Text('New Strategy'),
+            ),
+          ],
         ],
       ),
     );

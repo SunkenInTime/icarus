@@ -323,7 +323,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       child: const Text('Create Strategy'),
                     ),
                   ],
-                  child: FolderContent(folder: currentFolder),
+                  child: FolderContent(
+                    folder: currentFolder,
+                    onCreateStrategy: showCreateDialog,
+                  ),
                 ),
               ),
             ],
