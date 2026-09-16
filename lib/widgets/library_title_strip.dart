@@ -74,22 +74,24 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           const SizedBox(width: _tabGap),
           // Shared and Community have nowhere to go yet; they hold their
           // place so the library's shape does not move when they land.
-          const _TabButton(
-            key: ValueKey('library-tab-shared'),
+          _TabButton(
+            key: const ValueKey('library-tab-shared'),
             icon: LucideIcons.users,
             label: 'Shared',
             semanticsLabel: 'Shared library',
             selected: false,
-            dimmed: true,
+            comingSoon: true,
+            onTap: () => _comingSoon('Shared libraries'),
           ),
           const SizedBox(width: _tabGap),
-          const _TabButton(
-            key: ValueKey('library-tab-community'),
+          _TabButton(
+            key: const ValueKey('library-tab-community'),
             icon: LucideIcons.globe,
             label: 'Community',
             semanticsLabel: 'Community library',
             selected: false,
-            dimmed: true,
+            comingSoon: true,
+            onTap: () => _comingSoon('The community library'),
           ),
           if (kIsWeb) ...[
             const SizedBox(width: 8),
@@ -118,6 +120,13 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           const SizedBox(width: 10),
         ],
       ),
+    );
+  }
+
+  void _comingSoon(String what) {
+    Settings.showToast(
+      message: "$what aren't ready yet. Coming very soon.",
+      backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
 
@@ -289,16 +298,17 @@ class _TabButton extends StatelessWidget {
     required this.semanticsLabel,
     required this.selected,
     this.onTap,
-    this.dimmed = false,
+    this.comingSoon = false,
   });
 
   final IconData icon;
   final String label;
   final String semanticsLabel;
   final bool selected;
-  final bool dimmed;
 
-  /// Null while the tab has nowhere to go; the button reads as disabled.
+  /// Dims the tab and says so on hover; the tap should explain itself too.
+  final bool comingSoon;
+
   final VoidCallback? onTap;
 
   @override
@@ -312,7 +322,7 @@ class _TabButton extends StatelessWidget {
       enabled: onTap != null,
       onTap: onTap,
       child: Opacity(
-        opacity: dimmed ? 0.45 : 1,
+        opacity: comingSoon ? 0.45 : 1,
         child: DecoratedBox(
           decoration: selected
               ? Settings.raisedSurface(_tabRadius)
@@ -336,7 +346,7 @@ class _TabButton extends StatelessWidget {
         ),
       ),
     );
-    if (onTap != null) return button;
+    if (!comingSoon) return button;
     return ShadTooltip(
       builder: (context) => const Text('Coming soon'),
       child: button,
