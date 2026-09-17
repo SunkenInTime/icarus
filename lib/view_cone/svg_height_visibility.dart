@@ -255,6 +255,58 @@ class SvgHeightVisibility {
       .where((support) => support.contains(point))
       .toList(growable: false);
 
+  /// How far beneath a clear reference floor an automatic support may sit
+  /// without meeting the ground anywhere. A room under a bridge meets the
+  /// reference floor at its doorway; Fracture's void mesh never does.
+  static const double buriedSupportMeters = 3;
+  static const double _groundMeetingMeters = 1;
+  final _meetsGroundCache = <String, bool>{};
+
+  /// True when the reference ground comes within a metre of the support's
+  /// surface somewhere on or beside its footprint: the level is walked onto,
+  /// not buried. Ground vertices are checked inside the footprint and the
+  /// reference is sampled along the footprint's edges, so a room under a
+  /// bridge is found at its doorway while a void far below never matches.
+  bool _meetsGround(SvgHeightSupport support) {
+    final field = ground;
+    if (field == null) return true;
+    return _meetsGroundCache.putIfAbsent(support.id, () {
+      final bounds = support.bounds;
+      for (final (position, height) in field.vertices) {
+        if (!bounds.contains(position)) continue;
+        final surface = support.surfaceElevationAt(position);
+        if (surface == null ||
+            (height - surface).abs() > _groundMeetingMeters ||
+            !support.contains(position)) continue;
+        return true;
+      }
+      for (final ring in support.rings) {
+        for (var i = 0; i < ring.length; i++) {
+          final a = ring[i], b = ring[(i + 1) % ring.length];
+          final edge = b - a;
+          final length = edge.distance;
+          if (length == 0) continue;
+          final normal = Offset(-edge.dy, edge.dx) / length;
+          final steps = math.max(1, length.ceil());
+          for (var step = 0; step <= steps; step++) {
+            final along = a + edge * (step / steps);
+            for (final sign in const [0.3, -0.3]) {
+              final p = along + normal * sign;
+              final surface = support.surfaceElevationAt(p);
+              final reference = field.heightAt(p);
+              if (surface != null &&
+                  reference != null &&
+                  (reference - surface).abs() <= _groundMeetingMeters) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+      return false;
+    });
+  }
+
   /// Choose among supports verified as physically standable, including boosts.
   /// A support is local to its footprint; the highest face elsewhere on the
   /// same source object says nothing about the standing height at this point.
@@ -270,13 +322,24 @@ class SvgHeightVisibility {
     if (ground != null && !clearEye(elevation)) {
       elevation = double.negativeInfinity;
     }
+    // An uncertified reference floor still says where the ground is. A
+    // measured surface far beneath it (Fracture's void mesh, Breeze's pit)
+    // is not where the player stands unless the reference eye is walled in,
+    // as at a passage under a bridge.
+    final reference = ground?.heightAt(point);
+    final floorLimit = reference != null && clearEye(reference)
+        ? reference - buriedSupportMeters
+        : double.negativeInfinity;
     SvgHeightSupport? selected;
     for (final support in supportsAt(point)) {
       if (!support.automaticStandingAllowed) continue;
       final height = ground == null
           ? support.heightAboveFloorMeters
           : support.surfaceElevationAt(point);
-      if (height != null && height > elevation && clearEye(height)) {
+      if (height != null &&
+          height > elevation &&
+          (height >= floorLimit || _meetsGround(support)) &&
+          clearEye(height)) {
         elevation = height;
         selected = support;
       }

@@ -35,6 +35,7 @@ class SvgGroundHeight {
         (values[2] as num).toDouble()
       ));
     }
+    this.vertices = List.unmodifiable(vertices);
     for (var i = 0; i < rawTriangles.length; i += 3) {
       final indices = rawTriangles.sublist(i, i + 3);
       if (indices.any((v) => v is! int || v < 0 || v >= vertices.length)) {
@@ -60,6 +61,9 @@ class SvgGroundHeight {
   }
 
   final _cells = <(int, int), List<_GroundTriangle>>{};
+
+  /// Every reference vertex with its height, in load order.
+  late final List<(Offset, double)> vertices;
 
   double? heightAt(Offset point) {
     return _heightAt(point, requireStanding: false);
