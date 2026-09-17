@@ -8,7 +8,7 @@
       "map": "abyss",
       "side": "attack",
       "asset": "assets/maps/abyss_svg_height_attack.json.gz",
-      "assetSha256": "54290a7d37484e87f6140eaec44346a7f877672b10c710188ae5f6628aeb1f46",
+      "assetSha256": "0fe10b44f6957da84a9b183f63e8282ed1b897f62a2256cf431d80a7bc947fd3",
       "measuredAliases": 253,
       "unknown": [],
       "manualAliases": [
@@ -25,7 +25,7 @@
       "map": "abyss",
       "side": "defense",
       "asset": "assets/maps/abyss_svg_height_defense.json.gz",
-      "assetSha256": "c9bb004f3a8c0e3e36d7ece8f204222fa9ffb92784f035fe494cdf64ccbc6757",
+      "assetSha256": "fcce4663fc389c888f2c0f79d6a96104aa34deeb84dd5a045292df98e131363f",
       "measuredAliases": 258,
       "unknown": [],
       "manualAliases": [
@@ -43,7 +43,7 @@
       "map": "ascent",
       "side": "attack",
       "asset": "assets/maps/ascent_svg_height_attack.json.gz",
-      "assetSha256": "b3011e8c8d8c8737293a7ffe532524d16f7a0a6bc54da1fead022a4f46b6233f",
+      "assetSha256": "4da529695de849c1f42d0494d1af8d56d14fcce15810d5d1201eac97951e8824",
       "measuredAliases": 2786,
       "unknown": [],
       "manualAliases": [
@@ -56,7 +56,7 @@
       "map": "ascent",
       "side": "defense",
       "asset": "assets/maps/ascent_svg_height_defense.json.gz",
-      "assetSha256": "3245c94eb46d75ca83712198f2e74fdd33f9272a8cdacd9acdb4931ea8986125",
+      "assetSha256": "f41e9627451a90f3e4b314a62abda645f05442746b91be0027fbde16c8f76625",
       "measuredAliases": 2785,
       "unknown": [],
       "manualAliases": [
@@ -69,7 +69,7 @@
       "map": "bind",
       "side": "attack",
       "asset": "assets/maps/bind_svg_height_attack.json.gz",
-      "assetSha256": "bea3eb408eec1bfcac253ce3a699f954016a3430730ffa61362b703e394f55a3",
+      "assetSha256": "bf26b8e8d1faf824e847afc2238f3a6cb29b7308c1057112cf95b91c7310fe81",
       "measuredAliases": 1674,
       "unknown": [],
       "manualAliases": [
@@ -82,7 +82,7 @@
       "map": "bind",
       "side": "defense",
       "asset": "assets/maps/bind_svg_height_defense.json.gz",
-      "assetSha256": "231afdd265f146bfe4196ff6e1e4f306a5db8c48e336602eed1f56bcbad98580",
+      "assetSha256": "6fff60de82383330d585d46d3e4bae74e2457b40b00c21df32102b4ae1243a52",
       "measuredAliases": 1676,
       "unknown": [],
       "manualAliases": [
@@ -95,7 +95,7 @@
       "map": "breeze",
       "side": "attack",
       "asset": "assets/maps/breeze_svg_height_attack.json.gz",
-      "assetSha256": "ed661b532ff6a31331d2b73eb6e6f2fbd92418d09f70696433bdb1eb03b13d8b",
+      "assetSha256": "780441fe595b6bc7628f09727ce1fad1f83abc5704b1ea1ba0f049987ffc15d5",
       "measuredAliases": 2098,
       "unknown": [],
       "manualAliases": [
@@ -122,7 +122,7 @@
       "map": "breeze",
       "side": "defense",
       "asset": "assets/maps/breeze_svg_height_defense.json.gz",
-      "assetSha256": "a4cd86c7f39df7c2250e70ea5627a9eafe7474826eae3bb41120d009b4db177b",
+      "assetSha256": "10746606ef125961db4197535242f016441305498eaf690763220cb9c2caf6c5",
       "measuredAliases": 2098,
       "unknown": [],
       "manualAliases": [
@@ -149,7 +149,7 @@
       "map": "corrode",
       "side": "attack",
       "asset": "assets/maps/corrode_svg_height_attack.json.gz",
-      "assetSha256": "761bb14e5c900c11c77aff446020c2502d599c56307241f507aa2e4310a98859",
+      "assetSha256": "a3dc6929835711a75a13c79ff9e8b1d1f6a39881ecffa05f788784f946eea52e",
       "measuredAliases": 331,
       "unknown": [],
       "manualAliases": [
@@ -162,7 +162,7 @@
       "map": "corrode",
       "side": "defense",
       "asset": "assets/maps/corrode_svg_height_defense.json.gz",
-      "assetSha256": "8ad79c6b6532a74097d6d2971b9d215a97f79315fdd066214ef2a36e5d055764",
+      "assetSha256": "76a856a1601ed8c317132f9a50863000bf730cc17771c25d493e7c18da87c60e",
       "measuredAliases": 331,
       "unknown": [],
       "manualAliases": [
@@ -175,7 +175,7 @@
       "map": "fracture",
       "side": "attack",
       "asset": "assets/maps/fracture_svg_height_attack.json.gz",
-      "assetSha256": "2aa915f742f31686a8d45c3b2c4100d638bf56f408bd38324b9035880409e1ff",
+      "assetSha256": "f88ea81677e5338e2d9e1b77af7c25b3034983c4af5135e0b60b8c5fce197ff3",
       "measuredAliases": 2008,
       "unknown": [],
       "manualAliases": [
@@ -190,7 +190,7 @@
       "map": "fracture",
       "side": "defense",
       "asset": "assets/maps/fracture_svg_height_defense.json.gz",
-      "assetSha256": "20230a17c52faa474f6f87756153ec3af55afdafff47fd1c70c60869d70db064",
+      "assetSha256": "2476dd4f7ed0149755775be91d497d9d67c6aa20ff2bb60ffdfe6a44f0a285ca",
       "measuredAliases": 2008,
       "unknown": [],
       "manualAliases": [
@@ -205,7 +205,7 @@
       "map": "haven",
       "side": "attack",
       "asset": "assets/maps/haven_svg_height_attack.json.gz",
-      "assetSha256": "1709035bf2bcfc4d151f1229b4b1d8f090143512dcb74a063f94ef116bbc41da",
+      "assetSha256": "3e0114f61ec679aad1febd9894d0b94743187e845d36204f801a3de4a789dbdb",
       "measuredAliases": 1560,
       "unknown": [],
       "manualAliases": [
@@ -224,7 +224,7 @@
       "map": "haven",
       "side": "defense",
       "asset": "assets/maps/haven_svg_height_defense.json.gz",
-      "assetSha256": "c4b3c4e5c3d6573d87c8dbb14059ad68edf1e995ccdd96c560ccde952a4fd9b9",
+      "assetSha256": "a47114d1a4423068a0f5ed57887b8c3951cde5485fa42dc51a8fa64ba8e293ea",
       "measuredAliases": 1560,
       "unknown": [],
       "manualAliases": [
@@ -243,7 +243,7 @@
       "map": "icebox",
       "side": "attack",
       "asset": "assets/maps/icebox_svg_height_attack.json.gz",
-      "assetSha256": "042ce4ee091f77e8eb50cb0e72facbb7dec33691853a8605ce6f97ca159216ad",
+      "assetSha256": "77fb7d73b0d33629071f0be573e36151ffdffdb7ee394462687965e7e28bc55e",
       "measuredAliases": 1596,
       "unknown": [],
       "manualAliases": [],
@@ -254,7 +254,7 @@
       "map": "icebox",
       "side": "defense",
       "asset": "assets/maps/icebox_svg_height_defense.json.gz",
-      "assetSha256": "3fa4717b01dbf1091b131b9bc95db298ccea49a2a40a1d6e313bad6ddf40c352",
+      "assetSha256": "c5e9b2b9f1afb2710866c0a3b4444cde4af21b24ccdb809d9bdbd653652a3e73",
       "measuredAliases": 1594,
       "unknown": [],
       "manualAliases": [],
@@ -265,7 +265,7 @@
       "map": "lotus",
       "side": "attack",
       "asset": "assets/maps/lotus_svg_height_attack.json.gz",
-      "assetSha256": "efa5099d33bd1376788048324cb14bd926f56a330642af3cdad6075d7f1706c3",
+      "assetSha256": "1d3c828632dd161acf6ab7fc6b864b463f4edcb79d682fc220f3378ba91df4e6",
       "measuredAliases": 595,
       "unknown": [],
       "manualAliases": [
@@ -284,7 +284,7 @@
       "map": "lotus",
       "side": "defense",
       "asset": "assets/maps/lotus_svg_height_defense.json.gz",
-      "assetSha256": "32887f01e3ef78a1baf9d2d641119cc9f2eb2dea3020589c93c8d412994a7411",
+      "assetSha256": "d8469bff7bda9ea92067a737c51018e81076343aed7813aab9e7f90c001b14c3",
       "measuredAliases": 595,
       "unknown": [],
       "manualAliases": [
@@ -303,7 +303,7 @@
       "map": "pearl",
       "side": "attack",
       "asset": "assets/maps/pearl_svg_height_attack.json.gz",
-      "assetSha256": "2630640f542d0c366d7c15d9cf41b5e3b2f5c73191d4f565c68c614303838fce",
+      "assetSha256": "4aba850bf30ca7629d8f92e9b88f841531318505bd6d8fa84edf38026d229f30",
       "measuredAliases": 346,
       "unknown": [],
       "manualAliases": [
@@ -395,7 +395,7 @@
       "map": "pearl",
       "side": "defense",
       "asset": "assets/maps/pearl_svg_height_defense.json.gz",
-      "assetSha256": "9f1c2cda85572c52dbed5778494b917198a33e8de787e33d0b49ba7dd7c55c2c",
+      "assetSha256": "0ab8c1d70d2313b85813a0497c4ea04f9ea067bb312fdb65b93b08049dd29006",
       "measuredAliases": 345,
       "unknown": [],
       "manualAliases": [
@@ -487,7 +487,7 @@
       "map": "summit",
       "side": "attack",
       "asset": "assets/maps/summit_svg_height_attack.json.gz",
-      "assetSha256": "f25cf140ed2d08cdbef53c14bde3b3d86591e8dc5e2c4d56eca09d1036228e80",
+      "assetSha256": "e250d7786af227a18e283eec2fdd536def5c003f22f805e3c7492a963b0f7e39",
       "measuredAliases": 200,
       "unknown": [],
       "manualAliases": [
@@ -503,7 +503,7 @@
       "map": "summit",
       "side": "defense",
       "asset": "assets/maps/summit_svg_height_defense.json.gz",
-      "assetSha256": "228904748acf304be2a475473667016234a16de5eaa81d72a78af5d01443da9f",
+      "assetSha256": "326748665fc9a25b35cda1398478c2c7a44467fe1156b05b0ee9c7de1167c6e3",
       "measuredAliases": 200,
       "unknown": [],
       "manualAliases": [
@@ -519,7 +519,7 @@
       "map": "sunset",
       "side": "attack",
       "asset": "assets/maps/sunset_svg_height_attack.json.gz",
-      "assetSha256": "2187407c0a067cad02988e4c1d719b73e8c9c42beeb94947d20b451fbf62bec3",
+      "assetSha256": "f0a39b113092e6536bf74ccb2cf3500b3a17de9b6ff11a47c7cba5526a0c4cac",
       "measuredAliases": 154,
       "unknown": [],
       "manualAliases": [],
@@ -530,7 +530,7 @@
       "map": "sunset",
       "side": "defense",
       "asset": "assets/maps/sunset_svg_height_defense.json.gz",
-      "assetSha256": "3df7cbf543c4fe4f2dfe601cd8302df78b731af0c5be547a4ea0a6f60822d52b",
+      "assetSha256": "377853ab04cd9620ef13717e80e1659fa2dbafcd1709b2de0147f7ebbfa2cec9",
       "measuredAliases": 154,
       "unknown": [],
       "manualAliases": [],
