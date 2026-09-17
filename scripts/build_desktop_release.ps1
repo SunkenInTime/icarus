@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("all", "build", "package", "stage")]
+    [string]$Phase = "all",
     [ValidateSet("stable", "prerelease")]
     [string]$Channel = "stable",
     [switch]$Mandatory,
@@ -19,45 +21,56 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "common_release.ps1")
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
-$env:FLUTTER_ROOT = Get-FlutterRoot -RepoRoot $repoRoot
+$runBuild = @("all", "build") -contains $Phase
+$runPackage = @("all", "package") -contains $Phase
+$runStage = @("all", "stage") -contains $Phase
 
-if (-not $SkipPubGet) {
-    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
+if ($runBuild -or $runPackage) {
+    $env:FLUTTER_ROOT = Get-FlutterRoot -RepoRoot $repoRoot
 }
 
-$dartDefinesPath = $null
-try {
-    $releaseArguments = @(
-        "dart",
-        "run",
-        "desktop_updater:release",
-        "windows",
-        "--release",
-        "--dart-define=ICARUS_UPDATE_CHANNEL=$Channel"
-    )
-    if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
-        $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
-        Write-JsonFileUtf8 -Path $dartDefinesPath -Value @{
-            POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
-            POSTHOG_HOST = $PostHogHost
+if ($runBuild) {
+    if (-not $SkipPubGet) {
+        Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
+    }
+
+    $dartDefinesPath = $null
+    try {
+        $releaseArguments = @(
+            "dart",
+            "run",
+            "desktop_updater:release",
+            "windows",
+            "--release",
+            "--dart-define=ICARUS_UPDATE_CHANNEL=$Channel"
+        )
+        if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
+            $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
+            Write-JsonFileUtf8 -Path $dartDefinesPath -Value @{
+                POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
+                POSTHOG_HOST = $PostHogHost
+            }
+            $releaseArguments += "--dart-define-from-file=$dartDefinesPath"
         }
-        $releaseArguments += "--dart-define-from-file=$dartDefinesPath"
+        Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $releaseArguments
     }
-    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $releaseArguments
-}
-finally {
-    if ($null -ne $dartDefinesPath -and (Test-Path -LiteralPath $dartDefinesPath)) {
-        Remove-Item -LiteralPath $dartDefinesPath -Force
+    finally {
+        if ($null -ne $dartDefinesPath -and (Test-Path -LiteralPath $dartDefinesPath)) {
+            Remove-Item -LiteralPath $dartDefinesPath -Force
+        }
     }
-}
-# Stage the video-export encoder into the build output before archiving.
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
-    "-ExecutionPolicy", "Bypass", "-File", "scripts/fetch_ffmpeg.ps1"
-)
 
-# desktop_updater:release snapshots the Windows build into its app-prefixed
-# dist folder before returning. Refresh that snapshot after staging FFmpeg;
-# desktop_updater:archive hashes the snapshot, not the live build output.
+    # Stage the video-export encoder before signing and packaging the build.
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
+        "-ExecutionPolicy", "Bypass", "-File", "scripts/fetch_ffmpeg.ps1"
+    )
+
+    if ($Phase -eq "build") {
+        Write-Host "Desktop binaries are ready for signing." -ForegroundColor Green
+        return
+    }
+}
+
 $versionInfo = Get-VersionInfo -RepoRoot $repoRoot
 $releaseOutputPath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\windows\x64\runner\Release"
 $desktopUpdaterSourcePath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath (
@@ -66,53 +79,72 @@ $desktopUpdaterSourcePath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath (
 $distArchivePath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath (
     "dist\{0}\{1}" -f $versionInfo.BuildNumber, $versionInfo.WindowsArchiveFolderName
 )
-if (-not (Test-Path -LiteralPath $releaseOutputPath)) {
-    throw "Windows release output not found at $releaseOutputPath"
-}
-if (Test-Path -LiteralPath $desktopUpdaterSourcePath) {
-    Remove-Item -LiteralPath $desktopUpdaterSourcePath -Recurse -Force
-}
-Copy-Item -LiteralPath $releaseOutputPath -Destination $desktopUpdaterSourcePath -Recurse -Force
-if (Test-Path -LiteralPath $distArchivePath) {
-    Remove-Item -LiteralPath $distArchivePath -Recurse -Force
+
+if ($runPackage) {
+    if (-not (Test-Path -LiteralPath $releaseOutputPath)) {
+        throw "Windows release output not found at $releaseOutputPath"
+    }
+
+    # desktop_updater:archive hashes this snapshot, so refresh it only after
+    # every shipped executable and DLL in the release output has been signed.
+    if (Test-Path -LiteralPath $desktopUpdaterSourcePath) {
+        Remove-Item -LiteralPath $desktopUpdaterSourcePath -Recurse -Force
+    }
+    Copy-Item -LiteralPath $releaseOutputPath -Destination $desktopUpdaterSourcePath -Recurse -Force
+    if (Test-Path -LiteralPath $distArchivePath) {
+        Remove-Item -LiteralPath $distArchivePath -Recurse -Force
+    }
+
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:archive", "windows")
+    if (-not (Test-Path -LiteralPath $distArchivePath)) {
+        throw "Desktop Updater archive folder not found at $distArchivePath"
+    }
+    $archivedFfmpegDirectory = Join-Path $distArchivePath "ffmpeg"
+    $archivedFfmpegPath = Join-Path $archivedFfmpegDirectory "ffmpeg.exe"
+    $archiveHashesPath = Join-Path $distArchivePath "hashes.json"
+    if (-not (Test-Path -LiteralPath $archivedFfmpegPath)) {
+        throw "FFmpeg was not included in the Desktop Updater archive at $archivedFfmpegPath"
+    }
+    if (-not (Get-ChildItem -LiteralPath $archivedFfmpegDirectory -File -Filter "*.dll")) {
+        throw "FFmpeg shared runtime DLLs were not included in the Desktop Updater archive at $archivedFfmpegDirectory"
+    }
+    if (-not (Test-Path -LiteralPath $archiveHashesPath)) {
+        throw "Desktop Updater hashes file not found at $archiveHashesPath"
+    }
+    $archiveHashes = Get-Content -LiteralPath $archiveHashesPath -Raw | ConvertFrom-Json
+    $archiveHashPaths = @($archiveHashes | ForEach-Object { [string]$_.path })
+    foreach ($ffmpegRuntimeFile in Get-ChildItem -LiteralPath $archivedFfmpegDirectory -File) {
+        $runtimeRelativePath = "ffmpeg\$($ffmpegRuntimeFile.Name)"
+        if ($archiveHashPaths -notcontains $runtimeRelativePath) {
+            throw "FFmpeg runtime file '$runtimeRelativePath' was not included in the Desktop Updater hashes at $archiveHashesPath"
+        }
+    }
+
+    $oversizedPagesFiles = @(Get-ChildItem -LiteralPath $distArchivePath -Recurse -File | Where-Object {
+        $_.Length -gt 100MB
+    })
+    if ($oversizedPagesFiles.Count -gt 0) {
+        $oversizedFileList = $oversizedPagesFiles | ForEach-Object {
+            "$($_.FullName) ($($_.Length) bytes)"
+        }
+        throw "Desktop Updater files exceed GitHub Pages' 100 MiB blob limit:`n$($oversizedFileList -join "`n")"
+    }
+
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
+
+    if ($Phase -eq "package") {
+        Write-Host "Updater archive and installer are ready for signing." -ForegroundColor Green
+        return
+    }
 }
 
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:archive", "windows")
+if (-not $runStage) {
+    return
+}
+
 if (-not (Test-Path -LiteralPath $distArchivePath)) {
     throw "Desktop Updater archive folder not found at $distArchivePath"
 }
-$archivedFfmpegDirectory = Join-Path $distArchivePath "ffmpeg"
-$archivedFfmpegPath = Join-Path $archivedFfmpegDirectory "ffmpeg.exe"
-$archiveHashesPath = Join-Path $distArchivePath "hashes.json"
-if (-not (Test-Path -LiteralPath $archivedFfmpegPath)) {
-    throw "FFmpeg was not included in the Desktop Updater archive at $archivedFfmpegPath"
-}
-if (-not (Get-ChildItem -LiteralPath $archivedFfmpegDirectory -File -Filter "*.dll")) {
-    throw "FFmpeg shared runtime DLLs were not included in the Desktop Updater archive at $archivedFfmpegDirectory"
-}
-if (-not (Test-Path -LiteralPath $archiveHashesPath)) {
-    throw "Desktop Updater hashes file not found at $archiveHashesPath"
-}
-$archiveHashes = Get-Content -LiteralPath $archiveHashesPath -Raw | ConvertFrom-Json
-$archiveHashPaths = @($archiveHashes | ForEach-Object { [string]$_.path })
-foreach ($ffmpegRuntimeFile in Get-ChildItem -LiteralPath $archivedFfmpegDirectory -File) {
-    $runtimeRelativePath = "ffmpeg\$($ffmpegRuntimeFile.Name)"
-    if ($archiveHashPaths -notcontains $runtimeRelativePath) {
-        throw "FFmpeg runtime file '$runtimeRelativePath' was not included in the Desktop Updater hashes at $archiveHashesPath"
-    }
-}
-
-$oversizedPagesFiles = @(Get-ChildItem -LiteralPath $distArchivePath -Recurse -File | Where-Object {
-    $_.Length -gt 100MB
-})
-if ($oversizedPagesFiles.Count -gt 0) {
-    $oversizedFileList = $oversizedPagesFiles | ForEach-Object {
-        "$($_.FullName) ($($_.Length) bytes)"
-    }
-    throw "Desktop Updater files exceed GitHub Pages' 100 MiB blob limit:`n$($oversizedFileList -join "`n")"
-}
-
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
 
 $metadataRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath $MetadataDir
 New-Item -ItemType Directory -Force -Path $metadataRoot | Out-Null
@@ -173,31 +205,33 @@ Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments 
 )
 
 $installerOutputDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\installer"
-if (Test-Path $installerOutputDir) {
-    $desktopArtifactDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("release\out\desktop\{0}" -f $versionInfo.FullVersion)
-    New-Item -ItemType Directory -Force -Path $desktopArtifactDir | Out-Null
-    Copy-Item -Path (Join-Path $installerOutputDir "*") -Destination $desktopArtifactDir -Recurse -Force
-
-    $installerFileName = "icarus-setup-{0}.exe" -f $versionInfo.VersionName
-    $installerSourcePath = Join-Path $installerOutputDir $installerFileName
-    if (-not (Test-Path $installerSourcePath)) {
-        throw "Expected installer not found at $installerSourcePath"
-    }
-
-    $downloadsRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\downloads\windows\{1}" -f $PagesStageRoot, $Channel)
-    if (Test-Path $downloadsRoot) {
-        Remove-Item -Path $downloadsRoot -Recurse -Force
-    }
-    New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
-
-    $versionedInstallerPath = Join-Path $downloadsRoot $installerFileName
-    $latestInstallerPath = Join-Path $downloadsRoot "icarus-setup-latest.exe"
-    Copy-Item -Path $installerSourcePath -Destination $versionedInstallerPath -Force
-    Copy-Item -Path $installerSourcePath -Destination $latestInstallerPath -Force
-
-    Write-Host ("Published installer downloads to {0}" -f $downloadsRoot) -ForegroundColor Green
-    Write-Host ("Latest installer URL path: /downloads/windows/{0}/icarus-setup-latest.exe" -f $Channel) -ForegroundColor Green
+if (-not (Test-Path -LiteralPath $installerOutputDir)) {
+    throw "Signed installer output not found at $installerOutputDir"
 }
+
+$desktopArtifactDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("release\out\desktop\{0}" -f $versionInfo.FullVersion)
+New-Item -ItemType Directory -Force -Path $desktopArtifactDir | Out-Null
+Copy-Item -Path (Join-Path $installerOutputDir "*") -Destination $desktopArtifactDir -Recurse -Force
+
+$installerFileName = "icarus-setup-{0}.exe" -f $versionInfo.VersionName
+$installerSourcePath = Join-Path $installerOutputDir $installerFileName
+if (-not (Test-Path $installerSourcePath)) {
+    throw "Expected installer not found at $installerSourcePath"
+}
+
+$downloadsRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\downloads\windows\{1}" -f $PagesStageRoot, $Channel)
+if (Test-Path $downloadsRoot) {
+    Remove-Item -Path $downloadsRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
+
+$versionedInstallerPath = Join-Path $downloadsRoot $installerFileName
+$latestInstallerPath = Join-Path $downloadsRoot "icarus-setup-latest.exe"
+Copy-Item -Path $installerSourcePath -Destination $versionedInstallerPath -Force
+Copy-Item -Path $installerSourcePath -Destination $latestInstallerPath -Force
+
+Write-Host ("Published installer downloads to {0}" -f $downloadsRoot) -ForegroundColor Green
+Write-Host ("Latest installer URL path: /downloads/windows/{0}/icarus-setup-latest.exe" -f $Channel) -ForegroundColor Green
 
 Write-Host "Desktop release staging complete for $($versionInfo.FullVersion)." -ForegroundColor Green
 Write-Host "Pages output: $channelRoot"
