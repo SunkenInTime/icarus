@@ -384,3 +384,27 @@ than treating spaces between their bars as windows.
 retained physical parapets and railings, and Pearl's moving lower tunnel
 sightline with overhead and end-frame controls on both sides. Both packaging
 scripts include these checks against the exact bundled assets.
+
+## Wall bands re-derived by ray probing (2026-09-17)
+
+The bundled wall bands were re-derived from the extracted 3D scene by
+measuring the quantity a band encodes: the eye heights at which a horizontal
+sightline crossing the painted stroke is blocked. `scripts/derive_wall_bands_by_rays.py`
+probes each stroke at stations along its centreline with a 1 m horizontal
+segment across the ink at every 0.1 m up to 40 m, against opaque and masked
+render geometry with decor excluded. A height blocks when 60% of stations are
+stopped; runs form bands relative to the wall's floor. Runs set back more than
+0.3 m behind the wall's own face are dropped as neighbouring structure. A
+stroke with fewer than six faces in its corridor keeps its previous bands.
+
+Three passes then decide what may replace the reviewed data:
+`scripts/protect_reviewed_walls.py` keeps every wall named in a recorded
+review, fixture or partition (both sides, mirrored through the alignment);
+`scripts/smooth_wall_band_neighbours.py` rejects a lowered piece whose
+touching neighbours on the same stroke stayed high, so no notch is cut into a
+solid wall; `scripts/cap_unsupported_raises.py` rejects a raised top that the
+narrow-footprint reading from `scripts/audit_svg_wall_heights_vs_world.py`
+cannot support. Split's outline-blob model is passed through unchanged.
+
+Acceptance is the existing gameplay suite with `ICARUS_VERIFY_BUNDLED_GAMEPLAY`.
+Baselines for comparison sit in `work/head-assets/`.
