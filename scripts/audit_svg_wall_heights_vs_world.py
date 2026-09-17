@@ -25,10 +25,13 @@ SIDES = ['attack', 'defense']
 WORLD = Path(r'E:\IcarusWorldAudit\2026-09-06\supplemented-v2\world')
 ALIGN = Path(r'E:\IcarusWorldAudit\2026-09-06\tactical-alignment-sides-v1')
 
-DECOR = re.compile(r'foliage|bush|tree|grass|vine|leaf|ivy', re.IGNORECASE)
-SOLID_BLEND_MODES = {0}          # UE EBlendMode: 0 opaque. 1 masked, 2+ translucent-ish.
+DECOR = re.compile(r'foliage|bush|tree|grass|vine|leaf|ivy|plant|moss|fern|overgrowth|flower|petunia|cabbage|weed|shrub|hedge|gravel|pebble|decal|vfx|light', re.IGNORECASE)
+SOLID_BLEND_MODES = {0, 1}       # UE EBlendMode: 0 opaque, 1 masked (fences, grates). 2+ translucent.
 BUFFER_SVG = 0.25
+BUFFER_WIDE_SVG = 1.0            # second reading; a lowering must hold at both widths.
+BUFFER_WIDER_SVG = 2.0           # third reading; the real wall face can sit half a metre off the ink.
 HORIZONTAL_NZ = 0.7              # |normal z| at or above this reads as floor/ceiling slab.
+SLAB_CLEARANCE = 0.3             # horizontal faces this far above the floor are solid slabs, not the floor.
 OVERSTATED_DROP = 1.5            # metres the bake must exceed the 3D by before we care.
 UNDERSTATED_RISE = 1.5
 STANDING_EYE = 1.9               # a standing eye clears anything below this above its floor.
@@ -126,15 +129,16 @@ class Ground:
         return min(heights, key=lambda h: abs(h - prefer))
 
 
-def column_top(base, low, high):
-    """Top of the geometry stack that actually stands on this floor.
+def column_runs(base, low, high):
+    """Solid runs of the geometry stack over this floor, lowest first.
 
     A footprint is a vertical column through the whole map, so its highest face is
     usually a roof or the sky. What blocks a player standing here is the run of
-    geometry that rises from the floor without a gap they could see through.
+    geometry that rises from the floor without a gap they could see through; later
+    runs are headers and overhangs with an opening beneath them.
     """
     if not len(low):
-        return None
+        return []
     start = base - COLUMN_GAP
     bins = int(COLUMN_REACH / COLUMN_BIN) + 1
     lo = np.clip(np.ceil((low - start) / COLUMN_BIN).astype(np.int64), 0, bins)
@@ -144,21 +148,28 @@ def column_top(base, low, high):
     np.add.at(marks, hi, -1)
     occupied = np.cumsum(marks)[:bins] > 0
     if not occupied.any():
-        return None
+        return []
     gap = int(COLUMN_GAP / COLUMN_BIN)
     if int(np.argmax(occupied)) > 2 * gap:
-        return None                                  # nothing stands on this floor
-    reached, run = -1, 0
+        return []                                    # nothing stands on this floor
+    runs, first, last, empty = [], -1, -1, 0
     for index, filled in enumerate(occupied):
         if filled:
-            reached, run = index, 0
+            if first < 0 or empty > gap:
+                if first >= 0:
+                    runs.append((start + first * COLUMN_BIN, start + (last + 1) * COLUMN_BIN))
+                first = index
+            last, empty = index, 0
         else:
-            run += 1
-            if run > gap and reached >= 0:
-                break
-    if reached < 0:
-        return None
-    return start + (reached + 1) * COLUMN_BIN
+            empty += 1
+    if first >= 0:
+        runs.append((start + first * COLUMN_BIN, start + (last + 1) * COLUMN_BIN))
+    return [(round(max(lo, base), 3), round(hi, 3)) for lo, hi in runs]
+
+
+def column_top(base, low, high):
+    runs = column_runs(base, low, high)
+    return runs[0][1] if runs else None
 
 
 def barycentric_z(a, b, c, x, y):
@@ -196,6 +207,8 @@ def classify(assigned, solid, ground, faces):
 
 def audit_side(root, map_name, side, scene, alignment, out_dir):
     model = load_model(root, map_name, side)
+    reviewed_path = out_dir / 'reviewed-wall-ids.json'
+    reviewed = set(json.loads(reviewed_path.read_text()).get(map_name, [])) if reviewed_path.exists() else set()
     inv, offset, scale = inverse_affine(alignment[f'nativeTo{side.capitalize()}Svg'])
     ground = Ground(model['ground'])
 
@@ -216,16 +229,20 @@ def audit_side(root, map_name, side, scene, alignment, out_dir):
                    lengthEstimate=round(shape.length / 2.0, 3))
         rows.append(row)
         if top is not None:
-            prepared.append((row, to_native(shape.buffer(BUFFER_SVG), inv, offset)))
+            prepared.append((row, to_native(shape.buffer(BUFFER_SVG), inv, offset),
+                             to_native(shape.buffer(BUFFER_WIDE_SVG), inv, offset),
+                             to_native(shape.buffer(BUFFER_WIDER_SVG), inv, offset)))
 
     for start in range(0, len(prepared), WALL_CHUNK):
         chunk = prepared[start:start + WALL_CHUNK]
-        pairs = scene.tree.query(np.array([shape for _, shape in chunk], dtype=object))
-        for local, (row, shape) in enumerate(chunk):
+        pairs = scene.tree.query(np.array([wider for _, _, _, wider in chunk], dtype=object))
+        for local, (row, shape, wide, wider) in enumerate(chunk):
             candidates = pairs[1][pairs[0] == local]
-            hit = candidates
+            hit = wide_hit = wider_hit = candidates
             if len(candidates):
                 triangles = shapely.polygons(scene.tri_xy[candidates])
+                wider_hit = candidates[shapely.intersects(triangles, wider)]
+                wide_hit = candidates[shapely.intersects(triangles, wide)]
                 hit = candidates[shapely.intersects(triangles, shape)]
             if not len(hit):
                 row['verdict'] = 'NO_GEOMETRY'
@@ -240,8 +257,39 @@ def audit_side(root, map_name, side, scene, alignment, out_dir):
             stack = hit[solid] if solid.any() else hit
             row['measuredTopSolidish'] = round(float(scene.top[stack].max()), 3)
             base = row['ground'] if row['ground'] is not None else row['floor']
-            reached = column_top(base, scene.bottom[stack], scene.top[stack])
+            # A slab between two storeys is solid; only the floor itself is not.
+            slab = hit[~solid & (scene.bottom[hit] > base + SLAB_CLEARANCE)]
+            stack = np.concatenate([stack, slab]) if len(slab) else stack
+            runs = column_runs(base, scene.bottom[stack], scene.top[stack])
+            reached = runs[0][1] if runs else None
             row['measuredColumnTop'] = None if reached is None else round(float(reached), 3)
+            row['measuredRuns'] = [[float(lo), float(hi)] for lo, hi in runs]
+            wide_solid = scene.solidish[wide_hit]
+            wide_stack = wide_hit[wide_solid] if wide_solid.any() else wide_hit
+            wide_slab = wide_hit[~wide_solid & (scene.bottom[wide_hit] > base + SLAB_CLEARANCE)]
+            wide_stack = np.concatenate([wide_stack, wide_slab]) if len(wide_slab) else wide_stack
+            wide_runs = column_runs(base, scene.bottom[wide_stack], scene.top[wide_stack])
+            wide_top = wide_runs[0][1] if wide_runs else None
+            row['measuredColumnTopWide'] = None if wide_top is None else round(float(wide_top), 3)
+            row['measuredRunsWide'] = [[float(lo), float(hi)] for lo, hi in wide_runs]
+            row['reviewed'] = row['id'] in reviewed
+            wider_solid = scene.solidish[wider_hit]
+            wider_stack = wider_hit[wider_solid] if wider_solid.any() else wider_hit
+            wider_slab = wider_hit[~wider_solid & (scene.bottom[wider_hit] > base + SLAB_CLEARANCE)]
+            wider_stack = np.concatenate([wider_stack, wider_slab]) if len(wider_slab) else wider_stack
+            wider_runs = column_runs(base, scene.bottom[wider_stack], scene.top[wider_stack])
+            wider_top = wider_runs[0][1] if wider_runs else None
+            row['measuredColumnTopWider'] = None if wider_top is None else round(float(wider_top), 3)
+            # A wider reading that climbs much higher means the ink sits beside the real
+            # face, or the narrow one cut through a seam; never call that overstated.
+            for other in (wide_top, wider_top):
+                if other is not None and reached is not None and other - reached > OVERSTATED_DROP:
+                    reached = max(reached, other)
+            # With no structural face at all in the narrow footprint there is nothing to
+            # measure; the ink is off its wall and the verdict must stay open.
+            if not solid.any():
+                row['verdict'] = 'NO_STRUCTURE'
+                continue
             row['verdict'] = classify(row['assignedTop'], reached, row['ground'], row['faceCount'])
 
     for row in rows:
