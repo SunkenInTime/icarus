@@ -143,7 +143,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byType(ShadContextMenuItem), findsNWidgets(2));
+    expect(find.byType(ShadContextMenuItem), findsNWidgets(3));
     expect(tester.getSize(find.byType(ShadContextMenuItem).first).height, 40);
     final menuItemRect = tester.getRect(find.byType(ShadContextMenuItem).first);
     final abilityButtons = find.byWidgetPredicate(
@@ -165,6 +165,7 @@ void main() {
     expect(find.text('View elevation'), findsNothing);
     expect(find.text('Vision calibration'), findsNothing);
     expect(find.text('Remove View Cone'), findsOneWidget);
+    expect(find.text('Copy sightline report'), findsOneWidget);
 
     await tester.tap(find.text('Remove View Cone'));
     await tester.pumpAndSettle();
@@ -232,7 +233,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(ShadContextMenuRegion), findsNothing);
+    // The cone still offers its sightline report on a legacy map; only the
+    // elevation controls belong to the SVG-height runtime.
+    expect(find.byType(ShadContextMenuRegion), findsOneWidget);
     expect(find.text('View elevation'), findsNothing);
     expect(find.text('Vision calibration'), findsNothing);
 

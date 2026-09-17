@@ -226,6 +226,12 @@ class Settings {
   static const Color settingsDiscordAccent = Color(0xff5865f2); // brand blurple
   static const Color settingsMapAccent = Color(0xffb27c40); // map layers
 
+  // Sightline report crop. A diagnostic image we send ourselves, never app
+  // chrome: walls that block the reported eye, walls that do not, the cone.
+  static const Color sightlineReportBlockingWall = Color(0xffd6a24a);
+  static const Color sightlineReportClearWall = Color(0xff6b5527);
+  static const Color sightlineReportCone = Color(0xff5da0e8);
+
   static const cardForegroundBackdrop = BoxShadow(
     color: Colors.black54, // High opacity because the background is dark
     blurRadius: 12,

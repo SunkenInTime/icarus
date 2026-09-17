@@ -6,6 +6,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -18,6 +19,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -304,6 +306,24 @@ class AgentWidget extends ConsumerWidget {
                       elevation: elevation,
                     ),
           ),
+      if (canInteract && viewConeAgent != null && mapState != null)
+        buildSightlineReportMenuItem(
+          map: mapState.currentMap,
+          isAttack: mapState.isAttack,
+          model: svgHeightModel,
+          canonicalOrigin: viewConeAgent.position +
+              coordinateSystem.virtualOffsetToWorld(
+                Offset(agentSize / 2, agentSize / 2),
+              ),
+          rotation: coordinateSystem.rotationForSide(
+            viewConeAgent.rotation,
+            isAttack: mapState.isAttack,
+          ),
+          coneAngleDegrees:
+              UtilityData.getViewConeAngle(viewConeAgent.presetType),
+          lengthVirtual: viewConeAgent.length,
+          visionElevationCm: viewConeAgent.visionElevation,
+        ),
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.eyeOff),

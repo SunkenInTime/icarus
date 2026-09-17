@@ -20,8 +20,10 @@ import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ViewConeWidget extends ConsumerWidget {
   static const Offset anchorPointVirtual = Offset(
@@ -102,6 +104,7 @@ class ViewConeWidget extends ConsumerWidget {
     VisionGeometryMap? geometry;
     SvgHeightVisibility? svgHeightModel;
     Offset? svgHeightOrigin;
+    ShadContextMenuItem? sightlineReportItem;
     Widget? heightCone;
     if (resolvedWorldOrigin != null) {
       final mapState = ref.watch(mapProvider);
@@ -292,6 +295,21 @@ class ViewConeWidget extends ConsumerWidget {
                   '${((nearestCoverage ?? 0) * 100).round()}%';
         }
       }
+      // Only a placed cone carries a context menu; a drag preview has none.
+      if (placedUtility != null) {
+        sightlineReportItem = buildSightlineReportMenuItem(
+          map: mapState.currentMap,
+          isAttack: mapState.isAttack,
+          model: svgHeightModel,
+          canonicalOrigin: resolvedWorldOrigin,
+          rotation: rotation ??
+              coord.rotationForSide(placedUtility.rotation,
+                  isAttack: mapState.isAttack),
+          coneAngleDegrees: angle,
+          lengthVirtual: currentLength,
+          visionElevationCm: resolvedElevation,
+        );
+      }
     }
 
     final contextMenuItems = placedUtility == null
@@ -306,6 +324,7 @@ class ViewConeWidget extends ConsumerWidget {
                     .read(utilityProvider.notifier)
                     .updateViewConeElevation(placedUtility!.id, elevation),
               ),
+            if (sightlineReportItem != null) sightlineReportItem,
             ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
           ];
 
