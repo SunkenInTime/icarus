@@ -54,6 +54,11 @@ void main() {
       expect(hit['distanceSvg'] as double, lessThanOrEqualTo(70));
       expect(hit['bands'], isA<List<Object?>>());
     }
+    // Every ray carries both answers: where the eye stops, and whether a
+    // player standing at that distance would be seen there at all.
+    for (final hit in hits) {
+      expect(hit['groundVisible'], isA<bool>(), reason: '$hit');
+    }
 
     final decoded = jsonDecode(report.encode()) as Map<String, dynamic>;
     expect(decoded['map'], 'pearl');

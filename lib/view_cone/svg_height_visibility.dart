@@ -472,25 +472,21 @@ class SvgHeightVisibility {
     final stats = _Counters();
     final inside = _insideWall(origin, active);
     if (inside != null) return _hit(origin, Offset.zero, 0, inside);
-    final direction =
-        Offset(math.cos(directionRadians), math.sin(directionRadians));
-    final hit = _cast(origin, direction, range, active, stats);
-    if (hit != null) return hit;
-    // Clearing a wall's top is not the same as seeing the ground behind it.
-    // A player standing there is hidden until the descending line from this
-    // eye to their head passes over that top.
-    return _descendingSightline(
-            origin,
-            eye,
-            cameraHeightMeters ?? defaultCameraHeightMeters,
-            active,
-            supportId,
-            range)
-        ?.blockerAt(origin, direction, range);
+    // What stops the eye, and only that. The wall data is checked ray by ray
+    // against this answer, so it stays the plain horizontal first hit; where
+    // the ground behind a cleared wall begins is [visibleIntervalsAlong].
+    return _cast(
+        origin,
+        Offset(math.cos(directionRadians), math.sin(directionRadians)),
+        range,
+        active,
+        stats);
   }
 
-  /// The stretches of ground one ray can see, as distances in SVG units.
-  /// Empty intervals are dropped, so an entirely hidden ray returns nothing.
+  /// The stretches of ground one ray can see, as distances in SVG units: the
+  /// ground a player standing there would be visible on, which is not all the
+  /// ground the eye has a clear horizontal line to. Empty intervals are
+  /// dropped, so an entirely hidden ray returns nothing.
   List<(double, double)> visibleIntervalsAlong({
     required Offset origin,
     required Offset direction,
@@ -1168,9 +1164,9 @@ class _DescendingSightline {
     return false;
   }
 
-  /// Every wall along this ray that hides the ground behind it, as the near
-  /// face's distance and the factor that distance grows by before a standing
-  /// player reappears, sorted by distance.
+  /// Every wall along this ray that hides the ground behind it, as the far
+  /// face where its hidden strip starts and the distance at which a standing
+  /// player rises back into view, sorted by distance.
   List<(double, double, int)> _crossings(
       Offset origin, Offset direction, double limit) {
     if (limit <= 0) return const [];
@@ -1210,7 +1206,12 @@ class _DescendingSightline {
                   _model.walls[entry.key].floorElevationMeters!) +
               _camera;
       if (head >= top) continue;
-      result.add((near, (_eye - head) / (_eye - top), entry.key));
+      // The strip runs from where that floor was sampled to where a head on it
+      // rises over the wall. Nearer than the sample the ray is still inside or
+      // against the footprint, with no floor measured and nobody standing on
+      // the wall itself, so that ground reads as the polygon drew it.
+      result.add(
+          (far + _stepBehind, near * (_eye - head) / (_eye - top), entry.key));
     }
     result.sort((a, b) => a.$1.compareTo(b.$1));
     return result;
@@ -1225,26 +1226,15 @@ class _DescendingSightline {
     final result = <(double, double)>[];
     var start = 0.0, minVisible = 0.0;
     for (var i = 0; i <= crossings.length; i++) {
-      final end = i == crossings.length ? limit : crossings[i].$1;
+      final end =
+          i == crossings.length ? limit : math.min(limit, crossings[i].$1);
       final from = math.max(start, minVisible);
       if (from < end) result.add((from, end));
       if (i == crossings.length) break;
       start = crossings[i].$1;
-      minVisible = math.max(minVisible, crossings[i].$1 * crossings[i].$2);
+      minVisible = math.max(minVisible, crossings[i].$2);
     }
     return result;
-  }
-
-  /// The wall hiding a player at exactly `range`, if one does. The nearest
-  /// wall that pushes the first visible ground past the target is the one the
-  /// sightline actually runs into.
-  SvgVisibilityHit? blockerAt(Offset origin, Offset direction, double range) {
-    for (final crossing in _crossings(origin, direction, range)) {
-      if (crossing.$1 * crossing.$2 > range) {
-        return _model._hit(origin, direction, crossing.$1, crossing.$3);
-      }
-    }
-    return null;
   }
 }
 
