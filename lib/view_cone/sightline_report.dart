@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:ui' show Offset, Path;
 
 import 'package:icarus/view_cone/svg_height_visibility.dart';
@@ -169,22 +168,9 @@ List<Map<String, Object?>> _hits({
       supportId: supportId,
     );
     final wall = hit == null ? null : walls[hit.wallId];
-    // Where the ray stops is what the eye runs into. Whether a player standing
-    // at that distance would be seen there is the other half of the answer: a
-    // wall this eye clears still hides the ground behind it until the line
-    // down to a head passes over the wall's top.
-    final distance = hit?.distance ?? rangeSvg;
-    final visible = model.visibleIntervalsAlong(
-      origin: origin,
-      direction: Offset(math.cos(angle), math.sin(angle)),
-      range: rangeSvg,
-      supportId: supportId,
-    );
     rows.add({
       'angleRadians': _round(angle),
-      'distanceSvg': _round(distance),
-      'groundVisible':
-          visible.any((span) => distance >= span.$1 && distance <= span.$2),
+      'distanceSvg': _round(hit?.distance ?? rangeSvg),
       'wallId': hit?.wallId,
       if (wall != null)
         'bands': [
