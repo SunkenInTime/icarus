@@ -449,7 +449,7 @@ class _EdgeFinding {
   final String wallId;
   final ui.Offset mid;
   final double length, high, low, bandTop, eye;
-  Map<String, Object> toJson() => {
+  Map<String, Object?> toJson() => {
         'wall': wallId,
         'x': mid.dx,
         'y': mid.dy,
