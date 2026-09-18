@@ -456,7 +456,7 @@ class _EdgeFinding {
         'length': length,
         'groundHigh': high,
         'groundLow': low,
-        'bandTop': bandTop,
+        'bandTop': bandTop.isFinite ? bandTop : null,
         'eye': eye,
       };
 }
