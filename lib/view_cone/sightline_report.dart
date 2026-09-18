@@ -57,6 +57,7 @@ SightlineReport buildSightlineReport({
     'side': side,
     'appVersion': appVersion,
     'runtime': model == null ? 'legacy' : 'svg-height',
+    'nativeAcceleration': model?.usesNativeAcceleration,
     if (svgOrigin != null) 'svgOrigin': _point(svgOrigin),
     'canonicalOrigin': _point(canonicalOrigin),
     'facingRadians': _round(facingRadians),
