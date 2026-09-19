@@ -119,10 +119,27 @@ void main() {
     final events = (raw?['traceEvents'] as List?) ?? const [];
     final durations = <String, List<int>>{};
     final open = <String, int>{};
+    final names = <String, int>{};
+    final threadNames = <int, String>{};
+    for (final e in events.cast<Map>()) {
+      if (e['ph'] == 'M' && e['name'] == 'thread_name') {
+        threadNames[(e['tid'] as num).toInt()] = '${(e['args'] as Map?)?['name']}';
+      }
+    }
+    for (final e in events.cast<Map>()) {
+      final name = e['name'] as String?;
+      if (name == null || e['ph'] == 'M') continue;
+      final thread = threadNames[(e['tid'] as num?)?.toInt()] ?? '${e['tid']}';
+      names['$thread | $name'] = (names['$thread | $name'] ?? 0) + 1;
+    }
+    final top = names.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    for (final entry in top.take(60)) {
+      debugPrint('PERF_EVENT ${entry.value} x ${entry.key}');
+    }
     for (final e in events.cast<Map>()) {
       final name = e['name'] as String?;
       if (name == null) continue;
-      if (!(name.contains('Rasterizer') || name.contains('GPURasterizer') || name.contains('Animator::BeginFrame') || name.contains('Frame') || name.contains('Paint') || name.contains('Layout') || name.contains('Build'))) continue;
+      if (!(name.contains('Rasterizer') || name.contains('GPURasterizer') || name.contains('Animator::BeginFrame') || name.contains('Frame') || name.contains('Paint') || name.contains('Layout') || name.contains('Build') || name.contains('Render') || name.contains('Present') || name.contains('Swap') || name.contains('Submit') || name.contains('Impeller') || name.contains('Aiks') || name.contains('Entity'))) continue;
       final key = '$name-${e['tid']}';
       final ts = (e['ts'] as num?)?.toInt();
       if (ts == null) continue;
