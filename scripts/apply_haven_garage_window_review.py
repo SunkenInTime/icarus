@@ -77,7 +77,8 @@ def main():
             placed = False
             for key, region in regions.items():
                 inter = shape.intersection(region)
-                if inter.is_empty or inter.area < 1e-6:
+                # A side wall's corner that pokes into the region is not the window.
+                if inter.is_empty or inter.area < 0.5 * shape.area:
                     continue
                 inside = [p for p in shapely.get_parts(inter) if p.geom_type == 'Polygon' and p.area > 1e-9]
                 outside = [p for p in shapely.get_parts(shape.difference(region)) if p.geom_type == 'Polygon' and p.area > 1e-9]

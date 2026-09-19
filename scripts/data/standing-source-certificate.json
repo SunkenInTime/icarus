@@ -205,7 +205,7 @@
       "map": "haven",
       "side": "attack",
       "asset": "assets/maps/haven_svg_height_attack.json.gz",
-      "assetSha256": "d2ab6afff1a248967760c1aaf9ffa26e1f5a1994d319c1a5b1ad20fceb66da80",
+      "assetSha256": "1039117629baaeaa33854d211fccb2f0f954b5dac8142f691ff2085912b2a698",
       "measuredAliases": 1560,
       "unknown": [],
       "manualAliases": [
@@ -224,7 +224,7 @@
       "map": "haven",
       "side": "defense",
       "asset": "assets/maps/haven_svg_height_defense.json.gz",
-      "assetSha256": "a4c5f6543f3d4ea926df7616583709e69612c7eba96415d2d666c5708dc768e0",
+      "assetSha256": "c4dfcccb8bf8c1bcead2a03b065d86da5fb2b24b950d7d7ce68dea4124716a9e",
       "measuredAliases": 1560,
       "unknown": [],
       "manualAliases": [
