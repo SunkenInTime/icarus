@@ -46,6 +46,7 @@ Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
     "test/pearl_metro_opening_test.dart",
     "test/pearl_ramp_brick_profile_test.dart",
     "test/pearl_remaining_families_test.dart",
+    "test/pearl_mid_slope_test.dart",
     "test/split_legacy_sightlines_test.dart",
     "test/split_regional_standing_test.dart",
     "test/icebox_front_window_test.dart",

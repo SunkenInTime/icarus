@@ -22,6 +22,31 @@ def one_failure(item):
 
 
 class CheckpointTests(unittest.TestCase):
+    def test_measured_slope_does_not_block_itself_after_plane_grouping(self):
+        fixture = json.loads((Path(__file__).parent/'testdata/pearl_slope_clearance.json').read_bytes())
+        triangle = np.array(fixture['triangles'])
+        bounds = [triangle.reshape(-1, 3).min(0).tolist(), triangle.reshape(-1, 3).max(0).tolist()]
+        footprint = shapely.box(*np.array(bounds)[0,:2], *np.array(bounds)[1,:2])
+        volumes = SimpleNamespace(rows=[dict(id=fixture['source'], bounds=bounds,
+            unwalkable=False, kill=False)], triangles=[triangle],
+            equations=[np.array(fixture['equations'])], tree=shapely.STRtree([footprint]))
+        result = measure_obligation(('slope', {}, [0]), volumes, 1, footprint.buffer(1), {})
+        point = shapely.Point(fixture['point'])
+        floors = [shapely.from_geojson(json.dumps(d['nativeGeometry'])) for d in result['domains']]
+        self.assertTrue(any(f.covers(point) for f in floors))
+        self.assertGreater(result['row']['standingAreaSquareMeters'], 1.5)
+        # A real ceiling still rejects the standing surface.
+        ceiling = triangle.copy(); ceiling[:,:,2] += 1
+        equations = np.array(fixture['equations']).copy()
+        equations[:,3] -= equations[:,2]
+        volumes.rows.append(dict(id='ceiling', bounds=(np.array(bounds)+[0,0,1]).tolist(),
+            unwalkable=False, kill=False))
+        volumes.triangles.append(ceiling); volumes.equations.append(equations)
+        volumes.tree = shapely.STRtree([footprint, footprint])
+        result = measure_obligation(('slope', {}, [0]), volumes, 2, footprint.buffer(1), {})
+        self.assertFalse(any(shapely.from_geojson(json.dumps(d['nativeGeometry'])).covers(point)
+            for d in result['domains']))
+
     def test_nearly_coincident_floor_faces_keep_their_input_triangle(self):
         fixture = json.loads((Path(__file__).parent/'testdata/icebox_source_union_loss.json').read_bytes())
         faces = [shapely.from_geojson(json.dumps(p)) for p in fixture['polygons']]

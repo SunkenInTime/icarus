@@ -92,6 +92,15 @@ height assignment cannot establish that assignment is correct.
 
 ## Elevation
 
+Keep source standing-plane precision through capsule clearance. The clearance
+contact tolerance is 1 mm; rounding plane coefficients to four decimals can
+move a slope inside its own collider even when the height error is below the
+runtime comparison tolerance. Pearl's September 18 Mid slope lost its whole
+standing surface this way. The measured restoration is recorded in
+`scripts/data/pearl-mid-slope-standing-2026-09-18.json` and compiled by
+`scripts/apply_pearl_mid_slope_standing.py`. It adds the recovered floor without
+changing wall footprints or bands.
+
 Standing eye height is the selected support surface plus standing camera height.
 On a box, use the box top as support; its sides are below that viewpoint and do
 not block sight as though the agent were standing beside it. By default choose

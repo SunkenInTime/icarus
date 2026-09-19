@@ -38,8 +38,8 @@
       "sourceSha256": "d9348c9b1974057d8a55cdec043bd091768c885a39e735bdc34d9bb03da647ba"
     },
     "pearl": {
-      "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/pearl/source/regional-floors.json",
-      "sourceSha256": "1e9babc0deea6fa8af1aafe5699073f95cccf587ab3800ce5299d726590a16fe"
+      "sourcePath": "work/pearl-cutoff-2026-09-18/regional-floors.json",
+      "sourceSha256": "8459f099373117206eeec79e5424dde9635a3ff4d5dc48df353a7e1201ee94cb"
     },
     "summit": {
       "sourcePath": "work/all-map-vision-followup-2026-09-14/collision-roof-addendum/candidate-v2/summit/source/regional-floors.json",

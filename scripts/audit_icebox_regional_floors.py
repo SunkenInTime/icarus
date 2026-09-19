@@ -266,9 +266,11 @@ def measure_obligation(obligation, volumes, known_volume_count, region, redundan
             domain = translate(shapely.Polygon(triangle[:, :2]), *shift).intersection(region)
             if domain.area < 1e-10:
                 continue
-            # Group near-coplanar source triangles, retaining their original
-            # face identities. This precision is below the 2 cm height tolerance.
-            plane_key = tuple(np.round(plane, 4))
+            # Clearance allows only 1 mm of floor contact. Rounding a gradient
+            # to four decimals can move a distant floor inside its own body,
+            # making an entire valid slope fail clearance. Keep geometric
+            # precision here; the 2 cm runtime comparison tolerance is unrelated.
+            plane_key = tuple(np.round(plane, 10))
             groups[plane_key].append((index, int(face), domain))
     kept, blocked_area, raw_area = [], 0., 0.
     for plane, entries in groups.items():

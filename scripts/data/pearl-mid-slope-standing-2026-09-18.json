@@ -1,0 +1,237 @@
+{
+  "row": {
+    "sourceCollision": "/Pitt_BVPawn/SuperGrid_Box902/Cube#0",
+    "status": "standing-domains-measured",
+    "candidatePlaneGroups": 3,
+    "candidateAreaSquareMeters": 1.6412906410318484,
+    "blockedAreaSquareMeters": 0.040299679557232605,
+    "standingAreaSquareMeters": 1.6009909614746158,
+    "domains": 3
+  },
+  "domains": [
+    {
+      "id": "volume-297-0",
+      "sourceCollision": "/Pitt_BVPawn/SuperGrid_Box902/Cube#0",
+      "sourceFaces": [
+        [
+          297,
+          1
+        ]
+      ],
+      "nativePlane": [
+        0.4615384968,
+        1.1773e-06,
+        -8.7387327632
+      ],
+      "nativeGeometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              38.8853543,
+              -7.761991
+            ],
+            [
+              38.8806914,
+              -7.7856589
+            ],
+            [
+              38.8905336,
+              -7.7965278
+            ],
+            [
+              39.047829,
+              -7.7871747
+            ],
+            [
+              42.0496005,
+              -8.2524517
+            ],
+            [
+              39.3351495,
+              -8.2524573
+            ],
+            [
+              39.3318692,
+              -8.2427827
+            ],
+            [
+              39.2602847,
+              -8.229813
+            ],
+            [
+              39.1205179,
+              -8.2167998
+            ],
+            [
+              38.9121809,
+              -8.203781
+            ],
+            [
+              38.8971348,
+              -8.2030748
+            ],
+            [
+              38.8874055,
+              -8.2524582
+            ],
+            [
+              38.807726,
+              -8.2524584
+            ],
+            [
+              38.807725,
+              -7.7499584
+            ],
+            [
+              38.8853543,
+              -7.761991
+            ]
+          ]
+        ]
+      },
+      "areaSquareMeters": 0.7966286751972594
+    },
+    {
+      "id": "volume-297-1",
+      "sourceCollision": "/Pitt_BVPawn/SuperGrid_Box902/Cube#0",
+      "sourceFaces": [
+        [
+          297,
+          3
+        ]
+      ],
+      "nativePlane": [
+        0.4615384615,
+        9.495e-07,
+        -8.7387331521
+      ],
+      "nativeGeometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                39.091704,
+                -7.7845658
+              ],
+              [
+                39.2408832,
+                -7.7717072
+              ],
+              [
+                39.3232139,
+                -7.7589377
+              ],
+              [
+                39.335376,
+                -7.7499572
+              ],
+              [
+                42.0495995,
+                -7.7499516
+              ],
+              [
+                42.0496006,
+                -8.2524516
+              ],
+              [
+                39.0478294,
+                -7.7871747
+              ],
+              [
+                39.091704,
+                -7.7845658
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                38.8877249,
+                -7.7499581
+              ],
+              [
+                38.8853543,
+                -7.7619909
+              ],
+              [
+                38.807725,
+                -7.7499583
+              ],
+              [
+                38.8877249,
+                -7.7499581
+              ]
+            ]
+          ]
+        ]
+      },
+      "areaSquareMeters": 0.8034353746851105
+    },
+    {
+      "id": "volume-297-2",
+      "sourceCollision": "/Pitt_BVPawn/SuperGrid_Box902/Cube#0",
+      "sourceFaces": [
+        [
+          297,
+          18
+        ],
+        [
+          297,
+          19
+        ]
+      ],
+      "nativePlane": [
+        9.2306e-06,
+        0.0,
+        10.7496100081
+      ],
+      "nativeGeometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              42.2274454,
+              -7.7499511
+            ],
+            [
+              42.227445,
+              -8.2524512
+            ],
+            [
+              42.2256011,
+              -8.2524512
+            ],
+            [
+              42.2256001,
+              -7.7499512
+            ],
+            [
+              42.2274454,
+              -7.7499511
+            ]
+          ]
+        ]
+      },
+      "areaSquareMeters": 0.0009269115922459347
+    }
+  ],
+  "sourceInputs": {
+    "work\\pearl-all-v4\\source-colliders.json": "55f70d55fbd5f1482cfc88c8f86cc9b3cc3b0fad81907a4386c805b2fda75d71",
+    "work\\pearl-all-v4\\source-colliders.npz": "25b73adf76544cb6239559e5f568dd31cd8a439dd10444149147e86794b6922e",
+    "scripts\\audit_icebox_regional_floors.py": "d1e361bfe1f9bf00ffbc5eb3648e60487ffe5eee5906dc56d58aebd5bce47be5"
+  },
+  "accountedCollisionBodies": 2824,
+  "pointNative": [
+    41.96809419,
+    -8.2326997
+  ],
+  "pointCovered": true,
+  "version": 1,
+  "basis": "Full collision-body standing measurement with 10-decimal plane grouping restores the slope omitted by 4-decimal self-clearance. User reports open area incorrectly cut off from this position.",
+  "baselineSource": {
+    "sourcePath": "work/all-map-vision-followup-2026-09-14/covered-interiors-v2/pearl/source/regional-floors.json",
+    "sourceSha256": "1e9babc0deea6fa8af1aafe5699073f95cccf587ab3800ce5299d726590a16fe"
+  }
+}

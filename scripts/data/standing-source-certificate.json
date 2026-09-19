@@ -1,7 +1,7 @@
 {
   "status": "passed",
   "scope": "Reject measured runtime standing aliases absent from their reviewed source.\n\nThis is the reverse of a source-to-model floor comparison. It does not certify\nphysical-top aliases or gameplay accessibility. All thirteen maps require an\nindependent reviewed domain source.\nManual measured domains retain physical evidence but cannot authorize automatic\nruntime standing aliases.",
-  "manifestSha256": "fff5b70286088375b7ade259c108b9367765eb0a2395aff94b581791fb83b13a",
+  "manifestSha256": "377dc98767b76a22b3ec31a4330fbb4a682175b8f3426dc07081ae503b6f2d2b",
   "algorithmSha256": "c537acf7ab8e97746451e36be3b2d69b7a5d27bec0d3db3653783afb0435bfbe",
   "rows": [
     {
@@ -303,8 +303,8 @@
       "map": "pearl",
       "side": "attack",
       "asset": "assets/maps/pearl_svg_height_attack.json.gz",
-      "assetSha256": "4aba850bf30ca7629d8f92e9b88f841531318505bd6d8fa84edf38026d229f30",
-      "measuredAliases": 346,
+      "assetSha256": "2a133c80672d7c7b190377252ee799179c73bf77be96510164c6a47c09996337",
+      "measuredAliases": 349,
       "unknown": [],
       "manualAliases": [
         "pearl-measured-mesh-1230-0",
@@ -395,8 +395,8 @@
       "map": "pearl",
       "side": "defense",
       "asset": "assets/maps/pearl_svg_height_defense.json.gz",
-      "assetSha256": "0ab8c1d70d2313b85813a0497c4ea04f9ea067bb312fdb65b93b08049dd29006",
-      "measuredAliases": 345,
+      "assetSha256": "78bcbcc30f67354bf379553d0992850523cf55743e06e222b01b507b5b07202d",
+      "measuredAliases": 348,
       "unknown": [],
       "manualAliases": [
         "pearl-measured-mesh-1230-0",
