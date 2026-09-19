@@ -30,8 +30,8 @@ class VisionGeometryAlignment {
 
 class Maps {
   static List<MapValue> availableMaps = [
+    MapValue.abyss,
     MapValue.ascent,
-    MapValue.breeze,
     MapValue.haven,
     MapValue.lotus,
     MapValue.split,
@@ -40,8 +40,8 @@ class Maps {
   ];
 
   static List<MapValue> outofplayMaps = [
-    MapValue.abyss,
     MapValue.bind,
+    MapValue.breeze,
     MapValue.corrode,
     MapValue.fracture,
     MapValue.icebox,
