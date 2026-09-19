@@ -1,7 +1,16 @@
 # Visibility model
 
-Before declaring a visibility change complete, apply
-[the acceptance contract](vision-acceptance-contract.md). It defines source
+> The offline pipeline this document describes (`scripts/`, the review data
+> under `scripts/data/`, the audit and bench harnesses under `tool/`, and the
+> per-map acceptance reports) was moved out of the repository on 2026-09-19.
+> It lives in the `icarus-vision-pipeline` archive, copied from commit
+> `f46a4a4` of `fix/all-map-vision`, where every file keeps its history. The
+> repository keeps only what the app and CI need: the bundled
+> `assets/maps/*_svg_height_*.json.gz` models, `tool/check_bundled_wall_heights.dart`
+> and this document.
+
+Before declaring a visibility change complete, apply the acceptance contract
+(`docs/vision-acceptance-contract.md` in the archive). It defines source
 accounting, independent expectations, and the evidence required for completion.
 
 ## Authority

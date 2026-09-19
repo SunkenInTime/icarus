@@ -5,7 +5,8 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 
-// Dara's ruling (scripts/data/haven-garage-window-review-2026-09-19.json):
+// Dara's ruling (haven-garage-window-review-2026-09-19.json in the
+// icarus-vision-pipeline archive):
 // the C Garage window is see-through from the garage floor, crate included.
 void main() {
   final alignment = jsonDecode(File(
