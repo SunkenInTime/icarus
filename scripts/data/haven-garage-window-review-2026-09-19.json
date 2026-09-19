@@ -1,0 +1,21 @@
+{
+  "map": "haven",
+  "ruling": "Dara, 2026-09-19: the C Garage window is see-through from the garage floor. The scene puts the sill at about 3.5 m absolute, 2.5 m above the garage floor, so physically only an eye on the crate under it clears the sill; as a tool simplification the window and the crate drawn under it must not block a standing eye on the garage floor.",
+  "attackRegions": {
+    "windowWall": [
+      130.0,
+      203.6,
+      141.5,
+      205.2
+    ],
+    "crateFrame": [
+      129.4,
+      205.6,
+      143.6,
+      211.2
+    ]
+  },
+  "standingEyeMeters": 2.75,
+  "clearanceMeters": 0.15,
+  "headerMeters": 7.0
+}
