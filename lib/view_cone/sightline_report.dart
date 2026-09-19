@@ -175,7 +175,8 @@ List<Map<String, Object?>> _hits({
       'wallId': hit?.wallId,
       if (wall != null)
         'bands': [
-          for (final band in wall.bands) [_round(band.bottom), _round(band.top)]
+          for (final band in wall.bands)
+            [_bandEdge(band.bottom), _bandEdge(band.top)]
         ],
       if (wall != null) 'floorMeters': _optional(wall.floorElevationMeters),
       'blocks': wall != null &&
@@ -188,6 +189,11 @@ List<Map<String, Object?>> _hits({
 List<double> _point(Offset point) => [_round(point.dx), _round(point.dy)];
 
 double? _optional(double? value) => value == null ? null : _round(value);
+
+/// A band edge with no bound reads as null, the same way the asset writes a
+/// sealed wall's missing top and the triage script reads it back. JSON has no
+/// infinity, so an unbounded edge that reached the encoder would throw.
+double? _bandEdge(double value) => value.isFinite ? _round(value) : null;
 
 double _round(double value) {
   if (!value.isFinite) return value;

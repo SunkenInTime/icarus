@@ -65,6 +65,7 @@ void copySightlineReport({
       transform.sourceFromSideWorld(sideOrigin, isAttack: isAttack);
   final mapName = Maps.mapNames[map] ?? map.name;
   final SightlineReport report;
+  final String encoded;
   try {
     report = buildSightlineReport(
       map: mapName,
@@ -79,6 +80,9 @@ void copySightlineReport({
       savedElevationCm: visionElevationCm,
       model: model,
     );
+    // Encoded inside the guard: a value JSON cannot hold is a report problem,
+    // and the user must hear it as one, not as a crash mid-gesture.
+    encoded = report.encode();
   } catch (error, stack) {
     AppErrorReporter.reportError(
       'Could not build the sightline report.',
@@ -89,7 +93,7 @@ void copySightlineReport({
     return;
   }
 
-  unawaited(Clipboard.setData(ClipboardData(text: report.encode())));
+  unawaited(Clipboard.setData(ClipboardData(text: encoded)));
   Settings.showToast(
     message: 'Sightline report copied',
     backgroundColor: Settings.tacticalVioletTheme.primary,
@@ -97,6 +101,7 @@ void copySightlineReport({
 
   unawaited(_saveSightlineReport(
     report: report,
+    encoded: encoded,
     model: model,
     svgOrigin: svgOrigin,
     stem: sightlineReportFileStem(mapName, isAttack, DateTime.now()),
@@ -107,6 +112,7 @@ void copySightlineReport({
 
 Future<void> _saveSightlineReport({
   required SightlineReport report,
+  required String encoded,
   required SvgHeightVisibility? model,
   required Offset svgOrigin,
   required String stem,
@@ -119,7 +125,7 @@ Future<void> _saveSightlineReport({
     );
     await directory.create(recursive: true);
     final path = '${directory.path}${Platform.pathSeparator}$stem';
-    await File('$path.json').writeAsString(report.encode());
+    await File('$path.json').writeAsString(encoded);
     if (model == null) return;
     final crop = await renderSightlineReportCrop(
       model: model,
