@@ -1,0 +1,7 @@
+{
+  "note": "Anomaly-detector hits kept out of apply_wall_anomaly_fixes.py until Dara confirms them. The ray probe and the vertical column disagree here: at the ink line the mesh between ground and band base is sparse, which reads as a doorway or overhang rather than a wall base.",
+  "bind": {
+    "attack": ["p2-fill-1-local-15-1", "p2-fill-4-local-183-0"],
+    "defense": ["p2-fill-5-local-202"]
+  }
+}
