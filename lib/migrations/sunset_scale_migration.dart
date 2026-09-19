@@ -27,15 +27,7 @@ abstract final class SunsetScaleMigration {
           utilityData: [
             for (final utility in page.utilityData) _utility(utility),
           ],
-          lineUpGroups: [
-            for (final group in page.lineUpGroups)
-              group.copyWith(
-                items: [
-                  for (final item in group.items)
-                    item.copyWith(ability: _ability(item.ability)),
-                ],
-              ),
-          ],
+          lineUpGraph: page.lineUpGraph.mapNodes(ability: _ability),
         ),
     ];
   }

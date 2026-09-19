@@ -5,20 +5,19 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
-import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
-import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
@@ -38,15 +37,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
   WindowsDesktopUpdateController? _desktopUpdaterController;
-  final GlobalKey _importExportButtonKey = GlobalKey();
   final ShadContextMenuController _backgroundMenuController =
       ShadContextMenuController();
-  final ShadPopoverController _importExportPopoverController =
-      ShadPopoverController();
 
   @override
   void dispose() {
-    _importExportPopoverController.dispose();
     _backgroundMenuController.dispose();
     _desktopUpdaterController?.dispose();
     super.dispose();
@@ -116,10 +111,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       message: 'This feature is only supported in the Windows version.',
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
-  }
-
-  void _toggleImportExportPopover() {
-    _importExportPopoverController.toggle();
   }
 
   Future<void> handleImportIca() async {
@@ -243,45 +234,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final currentFolder = currentFolderId != null
         ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
         : null;
-    Future<void> navigateWithLoading(
-        BuildContext context, String strategyId) async {
-      // Show loading overlay
-      // showLoadingOverlay(context);
-
-      try {
-        await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
-
-        if (!context.mounted) return;
-
-        Navigator.push(
-          context,
-          PageRouteBuilder(
-            settings: const RouteSettings(name: Routes.strategyView),
-            transitionDuration: const Duration(milliseconds: 200),
-            reverseTransitionDuration:
-                const Duration(milliseconds: 200), // pop duration
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const StrategyView(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.9, end: 1.0)
-                      .chain(CurveTween(curve: Curves.easeOut))
-                      .animate(animation),
-                  child: child,
-                ),
-              );
-            },
-          ),
-        );
-      } catch (e) {
-        // Handle errors
-        // Show error message
-      }
-    }
-
     Future<void> showCreateFolderDialog() async {
       await showDialog<String>(
         context: context,
@@ -291,123 +243,73 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       );
     }
 
+    /// Pick a map, then go straight to the editor: the view paints on the
+    /// chosen map at once and loads the new strategy inside itself.
     void showCreateDialog() async {
-      final String? strategyId = await showDialog<String>(
+      final map = await showDialog<MapValue>(
         context: context,
-        builder: (context) {
-          return const CreateStrategyDialog();
-        },
+        builder: (context) => const CreateStrategyDialog(),
       );
+      if (map == null || !context.mounted) return;
 
-      if (strategyId != null) {
-        if (!context.mounted) return;
-        await navigateWithLoading(context, strategyId);
+      final StrategyData strategy;
+      try {
+        strategy = await ref
+            .read(strategyProvider.notifier)
+            .createNewStrategy(map: map);
+      } catch (_) {
+        Settings.showToast(
+          message: "Couldn't create strategy right now.",
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
       }
+      if (!context.mounted) return;
+
+      Navigator.push(
+        context,
+        StrategyView.route(
+          initialStrategyId: strategy.id,
+          initialStrategyName: strategy.name,
+          initialMapValue: strategy.mapData,
+        ),
+      );
     }
 
     return Stack(
       children: [
         Scaffold(
-          appBar: AppBar(
-            title: const CurrentPathBar(),
-            toolbarHeight: 70,
-            actionsPadding: const EdgeInsets.only(right: 24),
-
-            actions: [
-              if (kIsWeb)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: DemoTag(),
+          body: Column(
+            children: [
+              LibraryTitleStrip(
+                onCreateStrategy: showCreateDialog,
+                onCreateFolder: showCreateFolderDialog,
+                onImportIca: handleImportIca,
+                onImportBackup: handleImportBackup,
+                onExportLibrary: handleExportLibrary,
+              ),
+              Expanded(
+                child: ShadContextMenuRegion(
+                  controller: _backgroundMenuController,
+                  items: [
+                    ShadContextMenuItem(
+                      leading: const Icon(LucideIcons.folderPlus),
+                      onPressed: showCreateFolderDialog,
+                      child: const Text('Create Folder'),
+                    ),
+                    ShadContextMenuItem(
+                      leading: const Icon(LucideIcons.filePlus),
+                      onPressed: showCreateDialog,
+                      child: const Text('Create Strategy'),
+                    ),
+                  ],
+                  child: FolderContent(
+                    folder: currentFolder,
+                    onCreateStrategy: showCreateDialog,
+                  ),
                 ),
-              Row(
-                spacing: 15,
-                children: [
-                  ShadPopover(
-                    controller: _importExportPopoverController,
-                    padding: const EdgeInsets.all(8),
-                    anchor: const ShadAnchor(
-                      offset: Offset(0, 8),
-                      childAlignment: Alignment.topLeft,
-                      overlayAlignment: Alignment.bottomLeft,
-                    ),
-                    popover: (context) {
-                      return SizedBox(
-                        width: 178,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ShadButton.ghost(
-                              onPressed: handleImportIca,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.file_download,
-                              ),
-                              child: const Text(
-                                'Import .ica',
-                                style: TextStyle(color: Colors.white),
-                              ),
-                            ),
-                            ShadButton.ghost(
-                              onPressed: handleImportBackup,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.archive_outlined,
-                              ),
-                              child: const Text('Import Backup',
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                            ShadButton.ghost(
-                              onPressed: handleExportLibrary,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.backup_outlined,
-                              ),
-                              child: const Text('Export Library',
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    child: ShadButton.secondary(
-                      key: _importExportButtonKey,
-                      onPressed: _toggleImportExportPopover,
-                      leading: const Icon(Icons.import_export),
-                      trailing: const Icon(Icons.keyboard_arrow_down),
-                      child: const Text('Import / Export'),
-                    ),
-                  ),
-                  ShadButton.secondary(
-                    leading: const Icon(LucideIcons.folderPlus),
-                    onPressed: showCreateFolderDialog,
-                    child: const Text('Add Folder'),
-                  ),
-                  ShadButton(
-                    onPressed: showCreateDialog,
-                    leading: const Icon(Icons.add),
-                    child: const Text('Create Strategy'),
-                  ),
-                ],
-              )
-            ],
-            // ... your existing actions
-          ),
-          body: ShadContextMenuRegion(
-            controller: _backgroundMenuController,
-            items: [
-              ShadContextMenuItem(
-                leading: const Icon(Icons.create_new_folder_outlined),
-                onPressed: showCreateFolderDialog,
-                child: const Text('Create Folder'),
-              ),
-              ShadContextMenuItem(
-                leading: const Icon(Icons.note_add_outlined),
-                onPressed: showCreateDialog,
-                child: const Text('Create Strategy'),
               ),
             ],
-            child: FolderContent(folder: currentFolder),
           ),
         ),
         if (_desktopUpdaterController != null)

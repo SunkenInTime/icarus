@@ -105,8 +105,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
     required this.color,
     required this.mapScale,
     required this.armLengthsMeters,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
     this.showCenterAbility = true,
     this.visualState,
     this.watchMouse = true,
@@ -119,8 +118,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
   final Color color;
   final double mapScale;
   final List<double> armLengthsMeters;
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
   final bool showCenterAbility;
   final AbilityVisualState? visualState;
   final bool watchMouse;
@@ -174,8 +172,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
               child: Align(
                 alignment: Alignment.center,
                 child: AbilityWidget(
-                  lineUpId: lineUpId,
-                  lineUpItemId: lineUpItemId,
+                  landingId: landingId,
                   iconPath: iconPath,
                   id: id,
                   isAlly: isAlly,

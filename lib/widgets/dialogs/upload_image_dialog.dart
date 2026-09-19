@@ -259,7 +259,9 @@ class _UploadDropSquare extends StatelessWidget {
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Settings.tacticalVioletTheme.card,
+                    // A step below the dialog: the square is a place to
+                    // drop into, not a card to read.
+                    color: Settings.tacticalVioletTheme.background,
                     border: Border.all(
                       color: Settings.tacticalVioletTheme.border,
                       width: 1,
@@ -333,9 +335,7 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isDragging
-                  ? Icons.file_download_outlined
-                  : Icons.add_photo_alternate_outlined,
+              isDragging ? LucideIcons.download : LucideIcons.imagePlus,
               size: 44,
               color: isDragging ? cs.primary : cs.onSurfaceVariant,
             ),
@@ -393,7 +393,7 @@ class _SelectionFooter extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.background,
+        color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
           Settings.cardForegroundBackdrop,
@@ -404,7 +404,7 @@ class _SelectionFooter extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
           children: [
-            const Icon(Icons.image_outlined, size: 18),
+            const Icon(LucideIcons.image, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

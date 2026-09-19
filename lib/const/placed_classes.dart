@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:json_annotation/json_annotation.dart';
@@ -312,12 +313,16 @@ sealed class PlacedAgentNode extends PlacedWidget {
   @JsonKey(defaultValue: AgentState.none)
   AgentState state;
 
+  @JsonKey(defaultValue: WeaponType.none)
+  WeaponType weapon;
+
   PlacedAgentNode({
     required this.type,
     required super.position,
     required super.id,
     this.isAlly = true,
     this.state = AgentState.none,
+    this.weapon = WeaponType.none,
   });
 
   String get kind;
@@ -362,6 +367,7 @@ class PlacedAgent extends PlacedAgentNode {
     super.isAlly = true,
     this.lineUpID,
     super.state = AgentState.none,
+    super.weapon = WeaponType.none,
   });
 
   @override
@@ -383,6 +389,7 @@ class PlacedAgent extends PlacedAgentNode {
     bool? isAlly,
     String? lineUpID,
     AgentState? state,
+    WeaponType? weapon,
   }) {
     final copied = PlacedAgent(
       type: type ?? this.type,
@@ -391,6 +398,7 @@ class PlacedAgent extends PlacedAgentNode {
       isAlly: isAlly ?? this.isAlly,
       lineUpID: lineUpID ?? this.lineUpID,
       state: state ?? this.state,
+      weapon: weapon ?? this.weapon,
     );
     copied.isDeleted = isDeleted;
     return copied;
@@ -451,6 +459,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     this.visionElevation,
     super.isAlly = true,
     super.state = AgentState.none,
+    super.weapon = WeaponType.none,
   }) : assert(
           UtilityData.isViewConePresetType(presetType),
           'presetType must be a view cone preset.',
@@ -546,6 +555,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     String? id,
     bool? isAlly,
     AgentState? state,
+    WeaponType? weapon,
     UtilityType? presetType,
     double? rotation,
     double? length,
@@ -557,6 +567,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
       id: id ?? this.id,
       isAlly: isAlly ?? this.isAlly,
       state: state ?? this.state,
+      weapon: weapon ?? this.weapon,
       presetType: presetType ?? this.presetType,
       rotation: rotation ?? this.rotation,
       length: length ?? this.length,
@@ -584,6 +595,7 @@ class PlacedCircleAgent extends PlacedAgentNode {
     this.opacityPercent = 100,
     super.isAlly = true,
     super.state = AgentState.none,
+    super.weapon = WeaponType.none,
   });
 
   @override
@@ -674,6 +686,7 @@ class PlacedCircleAgent extends PlacedAgentNode {
     String? id,
     bool? isAlly,
     AgentState? state,
+    WeaponType? weapon,
     double? diameterMeters,
     int? colorValue,
     int? opacityPercent,
@@ -684,6 +697,7 @@ class PlacedCircleAgent extends PlacedAgentNode {
       id: id ?? this.id,
       isAlly: isAlly ?? this.isAlly,
       state: state ?? this.state,
+      weapon: weapon ?? this.weapon,
       diameterMeters: diameterMeters ?? this.diameterMeters,
       colorValue: colorValue ?? this.colorValue,
       opacityPercent: opacityPercent ?? this.opacityPercent,

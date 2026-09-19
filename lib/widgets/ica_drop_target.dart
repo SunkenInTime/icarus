@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 String buildImportSummaryMessage(ImportBatchResult result) {
   final skippedCount = result.issues.length;
@@ -143,7 +144,7 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.download, size: 60),
+                    Icon(LucideIcons.download, size: 60),
                     SizedBox(
                       height: 10,
                     ),

@@ -3,7 +3,6 @@ import 'dart:ui';
 
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/ability_vision.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/placed_media_geometry.dart';
@@ -49,20 +48,10 @@ abstract final class CanonicalCoordinatesMigration {
       imageData: [
         for (final image in page.imageData) _migrateImage(image),
       ],
-      lineUpGroups: [
-        for (final group in page.lineUpGroups)
-          LineUpGroup(
-            id: group.id,
-            agent: _migrateAgent(group.agent) as PlacedAgent,
-            items: [
-              for (final item in group.items)
-                item.copyWith(
-                  ability: _migrateAbility(item.ability, mapScale),
-                  images: item.images.map((image) => image.copyWith()).toList(),
-                ),
-            ],
-          ),
-      ],
+      lineUpGraph: page.lineUpGraph.mapNodes(
+        agent: (agent) => _migrateAgent(agent) as PlacedAgent,
+        ability: (ability) => _migrateAbility(ability, mapScale),
+      ),
     );
   }
 

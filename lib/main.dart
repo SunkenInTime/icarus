@@ -10,7 +10,6 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 
-import 'package:windows_single_instance/windows_single_instance.dart';
 import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -28,10 +27,10 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/desktop_runtime.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
-import 'package:icarus/startup/windows_process_termination.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -41,7 +40,6 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
-import 'package:window_manager/window_manager.dart';
 
 CustomMouseCursor? staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
@@ -65,17 +63,11 @@ Future<void> main(List<String> args) async {
         );
       }
 
-      if (!kIsWeb && Platform.isWindows) {
-        await WindowsSingleInstance.ensureSingleInstance(
-          launch.fileOpenArgs,
-          alternateHiveStore?.windowsSingleInstanceId ??
-              HiveStoreLaunch.defaultWindowsSingleInstanceId,
-          onSecondWindow: (args) {
-            publishSecondInstanceArgs(args);
-          },
-          exitFunction: terminateDuplicateWindowsProcess,
-        );
-      }
+      await ensureIcarusSingleInstance(
+        launch.fileOpenArgs,
+        instanceId: alternateHiveStore?.windowsSingleInstanceId ??
+            HiveStoreLaunch.defaultWindowsSingleInstanceId,
+      );
 
       if (kIsWeb) {
         // On web, Hive uses IndexedDB; no path needed.
@@ -123,18 +115,9 @@ Future<void> main(List<String> args) async {
       await _initWebViewEnvironment();
 
       if (!kIsWeb) {
-        await windowManager.ensureInitialized();
-        WindowOptions windowOptions = const WindowOptions(
-          size: Size(1600, 900),
-          minimumSize: Size(1280, 720),
-          center: true,
-          title:
-              "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
+        await initializeIcarusDesktopWindow(
+          "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
         );
-        windowManager.waitUntilReadyToShow(windowOptions, () async {
-          await windowManager.show();
-          await windowManager.focus();
-        });
       }
 
       // Ensure WebView2 environment is initialized on Windows before any InAppWebView
@@ -379,6 +362,54 @@ class _MyAppState extends ConsumerState<MyApp> {
           brightness: Brightness.dark,
           colorScheme: Settings.tacticalVioletTheme,
           breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+          // Dialogs are panels: one surface step above the canvas, so they
+          // read as a sheet rather than a black box on a black screen.
+          // Fields keep the panel's surface and take the lighter input
+          // edge, so they read on a card without becoming a dark well.
+          inputTheme: ShadInputTheme(
+            decoration: ShadDecoration(
+              border: ShadBorder.all(
+                width: 1,
+                color: Settings.tacticalVioletTheme.input,
+                radius: const BorderRadius.all(Radius.circular(6)),
+              ),
+            ),
+          ),
+          primaryDialogTheme: Settings.dialogTheme,
+          alertDialogTheme: Settings.dialogTheme,
+          // Ghost buttons are quiet controls (menu items, icon buttons),
+          // not primary commands, so they don't get the command color.
+          ghostButtonTheme: ShadButtonTheme(
+            foregroundColor: Settings.tacticalVioletTheme.foreground,
+          ),
+          outlineButtonTheme: ShadButtonTheme(
+            foregroundColor: Settings.tacticalVioletTheme.foreground,
+          ),
+          // Primary commands are raised like the selected tab: a lighter top
+          // of the fill, a bright 1px edge inside the top, a 1px shadow
+          // beneath. A rounded Border must be one color, so the theme paints
+          // the top light only and the gradient carries the bottom shade.
+          primaryButtonTheme: ShadButtonTheme(
+            decoration: ShadDecoration(
+              gradient: Settings.raisedPrimaryFill,
+              shadows: const [Settings.raisedDropShadow],
+              border: const ShadBorder(
+                radius: BorderRadius.all(Radius.circular(6)),
+                top: ShadBorderSide(color: Settings.raisedTopLight, width: 1),
+              ),
+            ),
+          ),
+          // Destructive commands are raised the same way, in red.
+          destructiveButtonTheme: ShadButtonTheme(
+            decoration: ShadDecoration(
+              gradient: Settings.raisedDestructiveFill,
+              shadows: const [Settings.raisedDropShadow],
+              border: const ShadBorder(
+                radius: BorderRadius.all(Radius.circular(6)),
+                top: ShadBorderSide(color: Settings.raisedTopLight, width: 1),
+              ),
+            ),
+          ),
         ),
         home: const MyHomePage(),
         routes: {

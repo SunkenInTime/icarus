@@ -191,7 +191,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).startNewGroup(placedAgent);
+                ref.read(lineUpProvider.notifier).setDraftAgent(placedAgent);
                 return;
               }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
@@ -218,9 +218,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref
-                    .read(lineUpProvider.notifier)
-                    .setCurrentAbility(placedAbility);
+                ref.read(lineUpProvider.notifier).setDraftAbility(placedAbility);
                 return;
               }
 
@@ -245,9 +243,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref
-                    .read(lineUpProvider.notifier)
-                    .setCurrentAbility(placedAbility);
+                ref.read(lineUpProvider.notifier).setDraftAbility(placedAbility);
                 return;
               }
 
@@ -586,6 +582,7 @@ class _AgentListState extends ConsumerState<_AgentList> {
                         isAlly: agent.isAlly,
                         id: "",
                         agent: AgentData.agents[agent.type]!,
+                        weapon: agent.weapon,
                       ),
                     ),
                   ),
@@ -620,6 +617,7 @@ class _AgentListState extends ConsumerState<_AgentList> {
                     isAlly: agent.isAlly,
                     id: agent.id,
                     agent: AgentData.agents[agent.type]!,
+                    weapon: agent.weapon,
                   ),
                 ),
               ),
@@ -1143,12 +1141,12 @@ class _LineUpAgents extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
-    final groups = ref.watch(lineUpProvider).groups;
+    final origins = ref.watch(lineUpProvider.select((state) => state.origins));
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final group in groups) LineUpGroupAgentWidget(group: group),
+        for (final origin in origins) LineUpOriginAgentWidget(origin: origin),
       ],
     );
   }
@@ -1160,14 +1158,14 @@ class _LineUpAbilities extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
-    final groups = ref.watch(lineUpProvider).groups;
+    final landings =
+        ref.watch(lineUpProvider.select((state) => state.landings));
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final group in groups)
-          for (final item in group.items)
-            LineUpItemAbilityWidget(groupId: group.id, item: item),
+        for (final landing in landings)
+          LineUpLandingAbilityWidget(landing: landing),
       ],
     );
   }

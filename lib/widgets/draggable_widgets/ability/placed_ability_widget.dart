@@ -136,7 +136,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final bool isAlly = widget.ability.isAlly;
 
     final abilityRef = widget.isLineUp
-        ? ref.watch(lineUpProvider).currentAbility!
+        ? ref.watch(lineUpProvider).placement!.draftAbility!
         : index >= 0
             ? ref.watch(abilityProvider)[index]
             : widget.ability;
@@ -334,9 +334,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           },
           onPanEnd: (details) {
             if (widget.isLineUp) {
-              ref
-                  .read(lineUpProvider.notifier)
-                  .updateRotation(localRotation!, localLength ?? 0);
+              ref.read(lineUpProvider.notifier).updateDraftAbilityGeometry(
+                    rotation: localRotation!,
+                    length: localLength ?? 0,
+                  );
             } else {
               ref
                   .read(abilityProvider.notifier)

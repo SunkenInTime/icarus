@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/agent_weapon_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/agent_weapon_badge.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -91,6 +94,10 @@ class AgentWidget extends ConsumerWidget {
     required this.isAlly,
     this.lineUpId,
     this.state = AgentState.none,
+    this.weapon = WeaponType.none,
+    this.previousWeapon,
+    this.weaponTransitionProgress = 1,
+    this.onWeaponSelected,
     this.forcedAgentSize,
     this.deadStateProgress,
     this.isInteractive = true,
@@ -101,6 +108,12 @@ class AgentWidget extends ConsumerWidget {
   final bool isAlly;
   final AgentData agent;
   final AgentState state;
+  final WeaponType weapon;
+  final WeaponType? previousWeapon;
+  final double weaponTransitionProgress;
+
+  /// Lineup drafts supply their own editor because they are not placed agents.
+  final ValueChanged<WeaponType>? onWeaponSelected;
   final double? forcedAgentSize;
   final double? deadStateProgress;
   final bool isInteractive;
@@ -125,7 +138,7 @@ class AgentWidget extends ConsumerWidget {
         ? ref.watch(hoveredLineUpTargetProvider)
         : null;
     final isLineUpHovered =
-        lineUpId != null && (hoverTarget?.matchesAgent(lineUpId!) ?? false);
+        lineUpId != null && (hoverTarget?.matchesOrigin(lineUpId!) ?? false);
 
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
 
@@ -139,7 +152,7 @@ class AgentWidget extends ConsumerWidget {
     bgColor = Color.lerp(bgColor, deadBgColor, deadProgress) ?? bgColor;
 
     if (isLineUpHovered) {
-      bgColor = Colors.deepPurple;
+      bgColor = Settings.tacticalVioletTheme.primary;
     }
 
     // Determine outline color
@@ -155,7 +168,7 @@ class AgentWidget extends ConsumerWidget {
         outlineColor;
 
     if (isLineUpHovered) {
-      outlineColor = Colors.deepPurpleAccent;
+      outlineColor = Settings.accentInk;
     }
 
     Widget agentDisplay = agentImage;
@@ -269,29 +282,30 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
-          child: const Text('Add Lineup Item'),
+          child: const Text('Add lineup'),
           onPressed: () {
-            final group =
-                ref.read(lineUpProvider.notifier).getGroupById(lineUpId!);
-            if (group == null) return;
+            final origin =
+                ref.read(lineUpProvider.notifier).originById(lineUpId!);
+            if (origin == null) return;
             ref
                 .read(abilityBarProvider.notifier)
-                .updateData(AgentData.agents[group.agent.type]!);
+                .updateData(AgentData.agents[origin.agent.type]!);
+            ref.read(lineUpProvider.notifier).startFromOrigin(lineUpId!);
             ref
                 .read(interactionStateProvider.notifier)
                 .update(InteractionState.lineUpPlacing);
-            ref.read(lineUpProvider.notifier).startNewItemForGroup(lineUpId!);
           },
         ),
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: Icon(
-            Icons.delete,
+            LucideIcons.trash2,
+            size: 16,
             color: Settings.tacticalVioletTheme.destructive,
           ),
-          child: const Text('Delete Lineup Group'),
+          child: const Text('Delete origin'),
           onPressed: () {
-            ref.read(lineUpProvider.notifier).deleteGroupById(lineUpId!);
+            ref.read(lineUpProvider.notifier).deleteOrigin(lineUpId!);
           },
         ),
       if (canInteract && viewConeAgent != null)
@@ -347,10 +361,32 @@ class AgentWidget extends ConsumerWidget {
           leading: const Icon(LucideIcons.plus),
           child: const Text('Create Lineup'),
           onPressed: () {
+            ref.read(abilityBarProvider.notifier).updateData(agent);
+            final lineUps = ref.read(lineUpProvider.notifier);
+            lineUps.startFresh();
+            lineUps.setDraftAgent(plainAgent);
             ref
                 .read(interactionStateProvider.notifier)
                 .update(InteractionState.lineUpPlacing);
-            ref.read(lineUpProvider.notifier).startNewGroup(plainAgent);
+          },
+        ),
+      if (canInteract &&
+          (placedAgentNode != null ||
+              lineUpId != null ||
+              onWeaponSelected != null))
+        ...buildAgentWeaponMenu(
+          selectedWeapon: weapon,
+          onSelected: (selectedWeapon) {
+            if (onWeaponSelected != null) {
+              onWeaponSelected!(selectedWeapon);
+            } else if (lineUpId != null) {
+              ref.read(lineUpProvider.notifier).setOriginWeapon(
+                    lineUpId!,
+                    selectedWeapon,
+                  );
+            } else if (id != null) {
+              ref.read(agentProvider.notifier).setWeapon(id!, selectedWeapon);
+            }
           },
         ),
       ...adjacentPageCopyItems,
@@ -388,12 +424,34 @@ class AgentWidget extends ConsumerWidget {
       );
     }
 
+    // Only the square portrait participates in layout and hit testing.
+    // A positioned decoration can paint outside it without moving its anchor.
+    if (weapon != WeaponType.none ||
+        (previousWeapon != null && previousWeapon != WeaponType.none)) {
+      agentCard = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          agentCard,
+          Positioned(
+            right: -scaledSize * Settings.agentWeaponRightOverhangRatio,
+            bottom: -scaledSize * Settings.agentWeaponBottomOverhangRatio,
+            child: AgentWeaponBadge(
+              weapon: weapon,
+              agentSize: scaledSize,
+              previousWeapon: previousWeapon,
+              transitionProgress: weaponTransitionProgress,
+            ),
+          ),
+        ],
+      );
+    }
+
     if (!canInteract) {
       return RepaintBoundary(child: agentCard);
     }
 
     return MouseWatch(
-      lineUpId: lineUpId,
+      lineUpOriginId: lineUpId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       contextMenuItems: contextMenuItems.isEmpty ? null : contextMenuItems,

@@ -1004,7 +1004,7 @@ class _ModeField extends material.StatelessWidget {
           );
         },
         trailing: material.Icon(
-          material.Icons.unfold_more,
+          LucideIcons.chevronsUpDown,
           size: 16,
           color: palette.mutedForeground,
         ),

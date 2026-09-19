@@ -62,7 +62,7 @@ class DeleteStrategyAlertDialog extends ConsumerWidget {
           child: const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.delete_forever, color: Colors.white),
+              Icon(LucideIcons.trash2, color: Colors.white),
               SizedBox(width: 5),
               Text(
                 "Delete",

@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -43,25 +42,12 @@ class AbilityScaleMigration {
             for (final ability in page.abilityData)
               migratePlacedAbilityPosition(ability: ability, map: map),
           ],
-          lineUpGroups: [
-            for (final group in page.lineUpGroups)
-              _migrateLineUpGroupAbilityPosition(group: group, map: map),
-          ],
+          lineUpGraph: page.lineUpGraph.mapNodes(
+            ability: (ability) =>
+                migratePlacedAbilityPosition(ability: ability, map: map),
+          ),
         ),
     ];
-  }
-
-  static LineUpGroup _migrateLineUpGroupAbilityPosition({
-    required LineUpGroup group,
-    required MapValue map,
-  }) {
-    final migratedItems = [
-      for (final item in group.items)
-        item.copyWith(
-          ability: migratePlacedAbilityPosition(ability: item.ability, map: map),
-        ),
-    ];
-    return group.copyWith(items: migratedItems);
   }
 
   static PlacedAbility migratePlacedAbilityPosition({
@@ -289,15 +275,7 @@ class SquareAoeCenterMigration {
             for (final ability in page.abilityData)
               migratePlacedAbility(ability),
           ],
-          lineUpGroups: [
-            for (final group in page.lineUpGroups)
-              group.copyWith(
-                items: [
-                  for (final item in group.items)
-                    item.copyWith(ability: migratePlacedAbility(item.ability)),
-                ],
-              ),
-          ],
+          lineUpGraph: page.lineUpGraph.mapNodes(ability: migratePlacedAbility),
         ),
     ];
   }

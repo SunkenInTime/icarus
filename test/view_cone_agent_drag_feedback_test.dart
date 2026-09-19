@@ -134,6 +134,9 @@ void main() {
       ),
     );
     await tester.pump();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(10, 10));
+    addTearDown(mouse.removePointer);
 
     await tester.tapAt(
       tester.getCenter(find.byType(AgentWidget)),
@@ -143,7 +146,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byType(ShadContextMenuItem), findsNWidgets(3));
+    expect(find.text('Copy sightline report'), findsOneWidget);
+    // Weapons live under one Weapon entry; its categories open on hover.
+    expect(find.text('Weapon'), findsOneWidget);
+    await mouse.moveTo(tester.getCenter(find.text('Weapon')));
+    await tester.pumpAndSettle();
+    expect(find.text('Sidearms'), findsOneWidget);
+    // "None" only leads the submenu while a weapon is equipped.
+    expect(find.text('None'), findsNothing);
     expect(tester.getSize(find.byType(ShadContextMenuItem).first).height, 40);
     final menuItemRect = tester.getRect(find.byType(ShadContextMenuItem).first);
     final abilityButtons = find.byWidgetPredicate(

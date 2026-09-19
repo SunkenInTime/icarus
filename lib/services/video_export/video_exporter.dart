@@ -354,7 +354,7 @@ class VideoExporter {
       strategySettings: page.settings,
       strategyState: strategyState,
       pageName: page.name,
-      lineUpGroups: page.lineUpGroups,
+      lineUpGraph: page.lineUpGraph,
       themeProfileId: strategy.themeProfileId,
       themeOverridePalette: strategy.themeOverridePalette,
       placedWidgetsOverride: placedWidgetsOverride,

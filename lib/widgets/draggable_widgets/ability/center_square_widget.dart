@@ -16,8 +16,7 @@ class CenterSquareWidget extends ConsumerWidget {
     this.rotation,
     required this.id,
     required this.isAlly,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
@@ -29,8 +28,7 @@ class CenterSquareWidget extends ConsumerWidget {
   final double? rotation;
   final String? id;
   final bool isAlly;
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
@@ -73,8 +71,7 @@ class CenterSquareWidget extends ConsumerWidget {
                 angle: -(rotation ?? 0),
                 alignment: Alignment.center,
                 child: AbilityWidget(
-                  lineUpId: lineUpId,
-                  lineUpItemId: lineUpItemId,
+                  landingId: landingId,
                   iconPath: iconPath,
                   id: id,
                   isAlly: isAlly,

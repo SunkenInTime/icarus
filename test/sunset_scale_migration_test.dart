@@ -227,7 +227,7 @@ void main() {
       map: MapValue.sunset,
     );
     const shift = 30 * (5.5 * 1.048 - 5.78 * _oldScale);
-    _expectPoint(migrated.position, Offset(shift, shift));
+    _expectPoint(migrated.position, const Offset(shift, shift));
     final source = _page(true);
     final oldCircle = source.utilityData.singleWhere(
       (u) => u.type == UtilityType.customCircle,
@@ -240,7 +240,8 @@ void main() {
       (u) => u.type == UtilityType.customCircle,
     );
     const inset = (40 - 14) * 5.78 * _oldScale;
-    _expectPoint(circle.position, oldCircle.position - Offset(inset, inset));
+    _expectPoint(
+        circle.position, oldCircle.position - const Offset(inset, inset));
   });
 
   for (final version in [16, 38, 39, 44, 45, 96]) {

@@ -281,7 +281,9 @@ void main() {
     container.read(utilityProvider.notifier).fromHive([utility]);
     container.read(textProvider.notifier).fromHive([text]);
     container.read(placedImageProvider.notifier).fromHive([image]);
-    container.read(lineUpProvider.notifier).fromHive([group]);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
 
     String snapshot() => jsonEncode({
           'agents':
@@ -296,11 +298,7 @@ void main() {
               .images
               .map((e) => e.toJson())
               .toList(),
-          'lineups': container
-              .read(lineUpProvider)
-              .groups
-              .map((e) => e.toJson())
-              .toList(),
+          'lineups': container.read(lineUpProvider).graph.toJson(),
         });
 
     final before = snapshot();

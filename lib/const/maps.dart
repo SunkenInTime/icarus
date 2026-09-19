@@ -48,6 +48,12 @@ class Maps {
     MapValue.pearl,
   ];
 
+  /// The map's name as users read it: "Ascent", "Icebox".
+  static String displayName(MapValue map) {
+    final raw = mapNames[map]!;
+    return raw[0].toUpperCase() + raw.substring(1);
+  }
+
   static Map<MapValue, String> mapNames = {
     MapValue.ascent: 'ascent',
     MapValue.breeze: 'breeze',

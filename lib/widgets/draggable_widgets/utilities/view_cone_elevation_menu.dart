@@ -10,7 +10,7 @@ ShadContextMenuItem buildViewConeElevationMenuItem({
   required ValueChanged<double?> onChanged,
 }) {
   return ShadContextMenuItem(
-    leading: const Icon(Icons.layers_outlined),
+    leading: const Icon(LucideIcons.layers, size: 16),
     trailing: Text(
       selectedElevation == null
           ? 'Auto ${formatVisionElevation(automaticElevation)}'
@@ -99,7 +99,7 @@ ShadContextMenuItem buildViewConeDebugMenuItem({
   required ValueChanged<bool> onChanged,
 }) {
   return ShadContextMenuItem(
-    leading: Icon(enabled ? Icons.visibility : Icons.visibility_outlined),
+    leading: Icon(enabled ? LucideIcons.eye : LucideIcons.eyeOff, size: 16),
     trailing: Text(enabled ? 'On' : 'Off'),
     onPressed: () => onChanged(!enabled),
     child: const Text('Vision calibration'),
@@ -113,7 +113,8 @@ ShadContextMenuItem _elevationItem({
 }) {
   return ShadContextMenuItem(
     leading: Icon(
-      selected ? Icons.radio_button_checked : Icons.radio_button_off,
+      selected ? LucideIcons.circleDot : LucideIcons.circle,
+      size: 16,
     ),
     onPressed: onPressed,
     child: Text(label),
