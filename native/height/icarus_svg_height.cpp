@@ -207,6 +207,14 @@ struct Crossing { Point point; uint32_t first, second; };
 // the polygon is assembled serially afterwards, so the result is bitwise the
 // same as the single-threaded query; only the wall-clock time changes. The
 // caller thread works too, so a query never waits on a sleeping worker.
+//
+// A run is published as one 64-bit ticket: the chunk count in the high half
+// and the next chunk index in the low half. A worker claims a chunk with a
+// single fetch-add on that word, so the index it receives is always paired
+// with the count of the same run. A stale claim from an earlier run carries
+// that run's count, fails the bounds test, and touches nothing; a claim
+// within range keeps the run alive until the chunk is done, so the callback
+// and the remaining counter it then reads belong to that run.
 struct Pool {
   explicit Pool(unsigned workers) {
     for (unsigned i = 0; i < workers; ++i)
@@ -222,7 +230,7 @@ struct Pool {
   }
   void run(size_t count, const std::function<void(size_t)> &task) {
     if (count == 0) return;
-    if (threads.empty() || count == 1) {
+    if (threads.empty() || count == 1 || count > kMaximumChunks) {
       for (size_t i = 0; i < count; ++i) task(i);
       return;
     }
@@ -230,31 +238,34 @@ struct Pool {
       std::lock_guard<std::mutex> lock(mutex);
       job = &task;
       remaining.store(count, std::memory_order_relaxed);
-      next.store(0, std::memory_order_relaxed);
-      chunks.store(count, std::memory_order_release);
+      ticket.store(uint64_t(count) << 32, std::memory_order_release);
     }
     wake.notify_all();
     work();
     // The caller spins on the last chunks: they finish within microseconds
     // and a condition-variable sleep here would cost more than the work.
+    // Every claimed chunk is counted, so once remaining reaches zero no
+    // thread is inside the callback and the stack-owned task may go.
     while (remaining.load(std::memory_order_acquire) != 0)
       std::this_thread::yield();
-    std::lock_guard<std::mutex> lock(mutex);
-    job = nullptr;
   }
 
 private:
+  static constexpr size_t kMaximumChunks = size_t(1) << 31;
+  static uint64_t countOf(uint64_t ticket) { return ticket >> 32; }
+  static uint64_t indexOf(uint64_t ticket) { return ticket & 0xffffffffu; }
   void work() {
-    const size_t total = chunks.load(std::memory_order_acquire);
     for (;;) {
-      const size_t index = next.fetch_add(1, std::memory_order_acq_rel);
-      if (index >= total) return;
-      (*job)(index);
+      const uint64_t claim = ticket.fetch_add(1, std::memory_order_acq_rel);
+      const uint64_t index = indexOf(claim);
+      if (index >= countOf(claim)) return;
+      (*job)(size_t(index));
       remaining.fetch_sub(1, std::memory_order_acq_rel);
     }
   }
   bool pending() const {
-    return next.load(std::memory_order_acquire) < chunks.load(std::memory_order_acquire);
+    const uint64_t current = ticket.load(std::memory_order_acquire);
+    return indexOf(current) < countOf(current);
   }
   void loop() {
     for (;;) {
@@ -278,7 +289,8 @@ private:
   std::mutex mutex;
   std::condition_variable wake;
   const std::function<void(size_t)> *job = nullptr;
-  std::atomic<size_t> chunks{0}, next{0}, remaining{0};
+  std::atomic<uint64_t> ticket{0};
+  std::atomic<size_t> remaining{0};
   std::atomic<bool> stop{false};
 };
 
