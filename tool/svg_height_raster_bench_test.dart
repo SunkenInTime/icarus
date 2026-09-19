@@ -2,7 +2,6 @@
 // rasteriser: two clips plus a circle, versus one clip plus a filled path.
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart' show Colors, RadialGradient;

@@ -14,10 +14,22 @@ void main() {
         ],
       };
 
-  test('release rejects the old reviewed infinite-height fallback', () {
+  test('release accepts a measured open top only on the last band', () {
     expect(
         unresolvedWallHeights(model([
           [0, null]
+        ])),
+        isEmpty);
+    expect(
+        unresolvedWallHeights(model([
+          [0, 2.5],
+          [4, null]
+        ])),
+        isEmpty);
+    expect(
+        unresolvedWallHeights(model([
+          [0, null],
+          [4, 6]
         ])),
         ['reviewed-wall']);
     expect(

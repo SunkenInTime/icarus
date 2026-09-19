@@ -17,6 +17,6 @@ void main() {
     print('supportsAt scan: ${(w.elapsedMicroseconds / 400).round()} us per frame');
     w.reset();
     for (final p in pts) { final l = List.unmodifiable([for (var i = 0; i < 764; i++) Offset(p.dx + i, p.dy)]); s += l.length; }
-    print('764 Offsets list: ${(w.elapsedMicroseconds / 400).round()} us');
+    print('764 Offsets list: ${(w.elapsedMicroseconds / 400).round()} us (touched $s)');
   });
 }

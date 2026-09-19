@@ -56,7 +56,7 @@ void main() {
     }
     final n = poses.length;
     print('per cone (us): ' + t.entries.map((e) => '${e.key}=${(e.value / n).round()}').join('  '));
-    print('native inside cone(): ${(nativeMicros / n).round()} us; polygon points avg ${(points / n).round()}');
+    print('native inside cone(): ${(nativeMicros / n).round()} us; polygon points avg ${(points / n).round()}, path points avg ${(pathPoints / n).round()}');
     print('native split: arc rays ${(prep / n).round()} us, events ${(cand / n).round()} us, final rays ${((nativeMicros - prep - cand) / n).round()} us');
     print('rays avg ${(rays / n).round()} edgeTests avg ${(edges / n).round()}');
     print('cache stats: queries=${cache.queryCount} reuse=${cache.reuseCount}');

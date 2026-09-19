@@ -44,8 +44,6 @@ class _Map extends MapProvider {
 
 class _DeliveredAssets extends SvgHeightRuntimeDependencies {
   final hashes = <String, String>{};
-  static const folder = String.fromEnvironment('ICARUS_ACCEPTANCE_BUNDLE',
-      defaultValue: 'build/windows/x64/runner/Profile/data/flutter_assets');
   Future<Uint8List> _load(String asset) async {
     final candidate = asset.contains('_svg_height_')
         ? 'work/remaining-ownership-2026-09-15/candidate-v1/$_mapName/candidate-${asset.contains('_defense') ? 'defense' : 'attack'}.json.gz'

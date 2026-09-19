@@ -418,6 +418,12 @@ cannot support. Split joined this pipeline on 2026-09-19; see below.
 Acceptance is the existing gameplay suite with `ICARUS_VERIFY_BUNDLED_GAMEPLAY`.
 Baselines for comparison sit in `work/head-assets/`.
 
+A wall that blocks every probed eye height up to the 40 m ceiling is recorded
+with an open top (`null`) on its last band. That is a measurement, not the old
+reviewed-label fallback, so `tool/check_bundled_wall_heights.dart` accepts an
+open top there and nowhere else; unknown walls, non-finite floors and
+unbounded lower edges still block the release.
+
 ## Split brought onto the piece model (2026-09-19)
 
 Split was the prototype. Its wall layer stayed at 69 records, one per

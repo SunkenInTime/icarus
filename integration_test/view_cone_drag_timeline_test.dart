@@ -2,7 +2,6 @@
 //
 // flutter drive --driver=test_driver/performance_test.dart \
 //   --target=integration_test/view_cone_drag_performance_test.dart --profile -d windows
-import 'dart:convert';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -13,7 +12,6 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -23,8 +21,6 @@ import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-const _viewportSize = Size(1200, 675);
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();

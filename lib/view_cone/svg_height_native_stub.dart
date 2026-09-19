@@ -39,6 +39,11 @@ class SvgHeightNativeCone {
 
 /// Web uses the visibility model's Dart ray caster.
 class SvgHeightNative {
+  factory SvgHeightNative.open(
+          {required List<String> wallIds,
+          required Float64List edgeRecords,
+          String? libraryPath}) =>
+      throw UnsupportedError('Native acceleration is unavailable on web.');
   static SvgHeightNative? tryOpen(
           {required List<String> wallIds,
           required Float64List edgeRecords,

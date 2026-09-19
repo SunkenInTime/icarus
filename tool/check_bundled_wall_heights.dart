@@ -1,7 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-/// Release preflight. A reviewed label never substitutes for a finite height.
+/// Release preflight. Every wall must carry a measured floor and bands:
+/// finite bottoms, each band taller than nothing, and an open top (null)
+/// only on the last band, which is how the ray derivation records a wall
+/// that blocks every probed eye height. A wall still marked unknown, or a
+/// band with an unbounded lower edge, has no measurement behind it.
 List<String> unresolvedWallHeights(Map<String, dynamic> model) {
   final failures = <String>[];
   final walls = model['walls'];
@@ -13,19 +17,27 @@ List<String> unresolvedWallHeights(Map<String, dynamic> model) {
     if (wall['unknownHeight'] != false ||
         floor is! num ||
         !floor.isFinite ||
-        bands is! List ||
-        bands.any((band) =>
-            band is! List ||
-            band.length != 2 ||
-            band[0] is! num ||
-            band[1] is! num ||
-            !(band[0] as num).isFinite ||
-            !(band[1] as num).isFinite ||
-            band[0] >= band[1])) {
+        bands is! List) {
       failures.add('$id');
+      continue;
+    }
+    for (var index = 0; index < bands.length; index++) {
+      if (!_isMeasuredBand(bands[index], last: index == bands.length - 1)) {
+        failures.add('$id');
+        break;
+      }
     }
   }
   return failures;
+}
+
+bool _isMeasuredBand(Object? band, {required bool last}) {
+  if (band is! List || band.length != 2) return false;
+  final bottom = band[0];
+  final top = band[1];
+  if (bottom is! num || !bottom.isFinite) return false;
+  if (top == null) return last;
+  return top is num && top.isFinite && bottom < top;
 }
 
 void main(List<String> args) {
