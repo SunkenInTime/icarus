@@ -1,10 +1,12 @@
 """Two gameplay rules applied on top of derived wall bands.
 
-1. The map's outer edge is never transparent. Every wall piece that touches
-   the receiver union's exterior ring blocks at every height, because what
-   lies beyond it is not playable space and a sightline that leaves the map
-   and re-enters somewhere else means nothing to a player. Interior holes
-   (boxes, voids drawn inside the map) keep their derived bands.
+1. The map's outer edge is never transparent. Every wall piece with at
+   least OUTSIDE_FRACTION of its ink outside the receiver's exterior ring
+   blocks at every height, because what lies beyond it is not playable
+   space and a sightline that leaves the map and re-enters somewhere else
+   means nothing to a player. A long stroke that only touches the edge at
+   one end (Haven's Garden platform rail) is interior and keeps its bands.
+   Interior holes (boxes, voids drawn inside the map) keep theirs too.
 
 2. A wall stands on its floor. A derived lowest band that starts above the
    floor is kept only when the reviewed data already had it lifted (a known
@@ -21,6 +23,8 @@ from compile_reviewed_svg_height_map import polygon
 
 MAPS = ['abyss','ascent','bind','breeze','corrode','fracture','haven','icebox','lotus','pearl','split','summit','sunset']
 EDGE_TOUCH = 0.35
+OUTSIDE_FRACTION = 0.25   # an edge piece straddles the ring (~half outside); a wall that merely
+                          # touches the edge at one end is interior and keeps its measured bands
 OPENING_M = 1.9
 DENSE_FACES = 100
 
@@ -43,11 +47,13 @@ def main():
             if diff_path.exists():
                 d = json.loads(diff_path.read_text()); rows = {r['id']: r for r in (d['walls'] if isinstance(d, dict) else d)}
             receiver = shapely.union_all([polygon(r) for r in cand['receiver']])
-            outer = shapely.Polygon(max(shapely.get_parts(receiver), key=lambda p: p.area).exterior).buffer(EDGE_TOUCH)
+            outer_ring = shapely.Polygon(max(shapely.get_parts(receiver), key=lambda p: p.area).exterior)
+            outer = outer_ring.buffer(EDGE_TOUCH)
             sealed = anchored = 0
             for w in cand['walls']:
                 shape = polygon(w)
-                if not outer.contains(shape):
+                outside = shape.difference(outer_ring).area / shape.area if shape.area > 0 else 0.0
+                if outside >= OUTSIDE_FRACTION:
                     if not (w['bands'] and w['bands'][0][0] <= 0.05 and w['bands'][-1][1] is None):
                         w['bands'] = [[0.0, None]]; w['unknownHeight'] = False; sealed += 1
                     continue
