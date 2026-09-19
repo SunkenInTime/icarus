@@ -120,11 +120,13 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       reflectionOffset: Offset.zero,
       isAttack: widget.isAttack,
     );
-    final sourceOrigin =
+    final rawOrigin =
         mapTransform.sourceFromSideWorld(sideOrigin, isAttack: widget.isAttack);
-    if (!model.receiverContains(sourceOrigin) ||
-        (model.ground != null &&
-            model.ground!.heightAt(sourceOrigin) == null)) {
+    // An agent hugging a wall has its centre inside the stroke's ink for a
+    // few frames at a time. Stand the cone just outside that ink, or just
+    // inside the floor edge, rather than blinking it off.
+    final sourceOrigin = model.standablePointNear(rawOrigin);
+    if (sourceOrigin == null) {
       return const SizedBox.expand();
     }
 

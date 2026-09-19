@@ -262,6 +262,103 @@ class SvgHeightVisibility {
 
   int get runtimeEdgeCount => _edges.length;
 
+  /// Where a dragged agent's cone should stand when its centre sits inside
+  /// wall ink or just off the painted floor. Wall strokes are drawn wider
+  /// than the real wall, so an agent hugging a wall lands in ink several
+  /// times per second; hiding the cone there reads as a flicker. The point
+  /// is pushed out of every active wall it lies in and onto the floor, by at
+  /// most [maxDistance] SVG units. Returns null when no such point exists.
+  Offset? standablePointNear(Offset point, {double maxDistance = 2.5}) {
+    var current = point;
+    for (var step = 0; step < 4; step++) {
+      final wall = _blockingWallAt(current);
+      if (wall == null && receiverContains(current) &&
+          (ground == null || ground!.heightAt(current) != null)) {
+        return current;
+      }
+      Offset? target;
+      if (wall != null) {
+        target = _pushedOut(current, wall.rings, 0.02);
+      } else {
+        target = _pulledIn(current, 0.02);
+      }
+      if (target == null || (target - point).distance > maxDistance) return null;
+      current = target;
+    }
+    return null;
+  }
+
+  SvgHeightWall? _blockingWallAt(Offset point) {
+    // A wall that does not block a standing eye (a kerb, a floor mark) is
+    // not something an agent stands inside of.
+    final floor = ground?.heightAt(point);
+    final eye = (floor ?? 0) + defaultCameraHeightMeters;
+    for (final wall in walls) {
+      if (wall.contains(point) && wall.blocks(eye)) return wall;
+    }
+    return null;
+  }
+
+  /// Nearest point just outside the rings, offset along the boundary normal.
+  static Offset? _pushedOut(Offset point, List<List<Offset>> rings, double clearance) {
+    Offset? best;
+    var bestDistance = double.infinity;
+    Offset normal = Offset.zero;
+    for (final ring in rings) {
+      for (var i = 0; i < ring.length; i++) {
+        final a = ring[i], b = ring[(i + 1) % ring.length];
+        final edge = b - a;
+        final length = edge.distanceSquared;
+        if (length == 0) continue;
+        final t = (((point - a).dx * edge.dx + (point - a).dy * edge.dy) / length).clamp(0.0, 1.0);
+        final foot = a + edge * t;
+        final d = (point - foot).distance;
+        if (d < bestDistance) {
+          bestDistance = d;
+          best = foot;
+          normal = d > 1e-9 ? (point - foot) / d : Offset(-edge.dy, edge.dx) / edge.distance;
+        }
+      }
+    }
+    if (best == null) return null;
+    // Step past the boundary away from the point's own side... unless the point
+    // is inside, in which case the outward side is the far side of the edge.
+    final outward = best + normal * clearance;
+    final inward = best - normal * clearance;
+    return _insideRings(outward, rings) ? inward : outward;
+  }
+
+  Offset? _pulledIn(Offset point, double clearance) {
+    Offset? best;
+    var bestDistance = double.infinity;
+    for (final receiver in receivers) {
+      final candidate = _pushedOut(point, receiver.rings, clearance);
+      if (candidate == null) continue;
+      final inside = receiver.contains(candidate)
+          ? candidate
+          : _pushedOut(point, receiver.rings, -clearance);
+      if (inside == null || !receiver.contains(inside)) continue;
+      final d = (inside - point).distance;
+      if (d < bestDistance) { bestDistance = d; best = inside; }
+    }
+    return best;
+  }
+
+  static bool _insideRings(Offset point, List<List<Offset>> rings) {
+    var winding = 0;
+    for (final ring in rings) {
+      for (var i = 0; i < ring.length; i++) {
+        final a = ring[i], b = ring[(i + 1) % ring.length];
+        if (a.dy <= point.dy) {
+          if (b.dy > point.dy && _cross(b - a, point - a) > 0) winding++;
+        } else if (b.dy <= point.dy && _cross(b - a, point - a) < 0) {
+          winding--;
+        }
+      }
+    }
+    return winding != 0;
+  }
+
   /// Lists choices without silently selecting the highest overlapping surface.
   List<SvgHeightSupport> supportsAt(Offset point) => supports
       .where((support) => support.contains(point))

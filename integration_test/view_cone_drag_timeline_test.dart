@@ -30,12 +30,10 @@ void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('dragging a view cone agent on Haven, timeline', (tester) async {
-    tester.view
-      ..physicalSize = _viewportSize
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    final coordinateSystem = CoordinateSystem(playAreaSize: _viewportSize);
+    // Render into the real window so the raster thread does real work.
+    final viewport = tester.view.physicalSize / tester.view.devicePixelRatio;
+    debugPrint('PERF_VIEWPORT $viewport dpr ${tester.view.devicePixelRatio}');
+    final coordinateSystem = CoordinateSystem(playAreaSize: viewport);
     final container = ProviderContainer(
       overrides: [mapProvider.overrideWith(_BenchmarkMapProvider.new)],
     );
@@ -82,7 +80,7 @@ void main() {
               colorScheme: Settings.tacticalVioletTheme),
           home: Scaffold(
             body: SizedBox.fromSize(
-              size: _viewportSize,
+              size: viewport,
               child: const Stack(
                   children: [Positioned.fill(child: PlacedWidgetBuilder())]),
             ),
@@ -135,6 +133,23 @@ void main() {
     final top = names.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     for (final entry in top.take(60)) {
       debugPrint('PERF_EVENT ${entry.value} x ${entry.key}');
+    }
+    // Total time per event name on the raster thread, so the heavy draw ops
+    // stand out even when they are few.
+    final rasterTotals = <String, int>{};
+    final openRaster = <String, int>{};
+    for (final e in events.cast<Map>()) {
+      final thread = threadNames[(e['tid'] as num?)?.toInt()] ?? '';
+      if (!thread.contains('raster')) continue;
+      final name = e['name'] as String?; final ts = (e['ts'] as num?)?.toInt();
+      if (name == null || ts == null) continue;
+      if (e['ph'] == 'B') openRaster[name] = ts;
+      else if (e['ph'] == 'E' && openRaster.containsKey(name)) rasterTotals[name] = (rasterTotals[name] ?? 0) + ts - openRaster.remove(name)!;
+      else if (e['ph'] == 'X' && e['dur'] != null) rasterTotals[name] = (rasterTotals[name] ?? 0) + (e['dur'] as num).toInt();
+    }
+    final heavy = rasterTotals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    for (final entry in heavy.take(25)) {
+      debugPrint('PERF_RASTER ${entry.value ~/ 1000} ms total  ${entry.key}');
     }
     for (final e in events.cast<Map>()) {
       final name = e['name'] as String?;
