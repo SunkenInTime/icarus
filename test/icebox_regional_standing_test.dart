@@ -119,13 +119,25 @@ void runRegionalStandingTests(
         final p = Offset((xy[0] as num).toDouble(), (xy[1] as num).toDouble());
         final expected = (row['expectedFloorMeters'] as num).toDouble();
         final ground = model.ground?.heightAt(p);
-        final levels = <double>[
+        // A measured level must exist in the model. Whether it is chosen
+        // automatically is policy: unreachable mesh tops keep their surface
+        // for explicit selection only, so they count as present but are
+        // never expected as the automatic answer.
+        final automaticLevels = <double>[
           if (ground != null) ground,
           for (final support in model.supportsAt(p))
             if (support.automaticStandingAllowed &&
                 support.surfaceElevationAt(p) != null)
               support.surfaceElevationAt(p)!,
         ];
+        final levels = <double>[
+          if (ground != null) ground,
+          for (final support in model.supportsAt(p))
+            if (support.surfaceElevationAt(p) != null)
+              support.surfaceElevationAt(p)!,
+        ];
+        bool automaticLevel(double z) =>
+            automaticLevels.any((level) => (level - z).abs() <= .02);
         final inside = model.receiverContains(p);
         final blocked =
             model.walls.any((w) => w.contains(p) && w.blocks(expected + 1.75));
@@ -137,6 +149,7 @@ void runRegionalStandingTests(
             ?.cast<num>()
             .map((z) => z.toDouble())
             .where((z) =>
+                automaticLevel(z) &&
                 !model.walls.any((w) => w.contains(p) && w.blocks(z + 1.75)))
             .toList();
         final expectedDefault = sourceLevels == null ||
@@ -146,6 +159,7 @@ void runRegionalStandingTests(
             : sourceLevels.reduce((a, b) => a > b ? a : b);
         final correct = present &&
             (!automatic ||
+                !automaticLevel(expected) ||
                 chosen != null && (chosen - expected).abs() <= .02) &&
             (expectedDefault == null ||
                 chosen != null && (chosen - expectedDefault).abs() <= .02);
