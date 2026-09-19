@@ -439,32 +439,27 @@ notch closing. The neighbour-smoothing pass is skipped for Split on purpose:
 its baseline bands are upper bounds rather than reviews, and smoothing would
 restore three quarters of the measured lowerings.
 
-## Stacked areas, tunnels and voids (2026-09-19)
+## Stacked areas and tunnels (2026-09-19)
 
 Dara's rule for stacked areas: the top layer is the default, and an agent
 placed on a lower layer sees that layer's view. The data already carries
 this: the painted ground is the lower floor, the upper floor is a standing
 surface that automatic standing prefers, and explicit elevation selection
 reaches the lower one. Rays never consult the ground; the layers separate
-by height bands alone, so what a tunnel wall carries above its ceiling is
-what decides whether the upper level can look across it.
+by height bands alone.
 
-Three passes make that data honest:
+`scripts/apply_reviewed_openings.py` with
+`scripts/data/reviewed-openings-2026-09-19.json` records spots Dara ruled
+see-through where a protected record kept the ray derivation out: Pearl's
+B Hall tunnel west mouth is a passage under a 7 m header. Walls at least
+half inside the region take the derived bands; the sealed map edge beside
+a mouth stays sealed.
 
-* `scripts/remeasure_above_openings.py`: a tunnel-review piece keeps its
-  reviewed ceiling, but the blanket the review filled above it is
-  intersected with the ray derivation, so only the slab edge and the real
-  structure above remain. The scene may remove structure above a reviewed
-  opening, never add it.
-* `scripts/apply_reviewed_openings.py` with
-  `scripts/data/reviewed-openings-2026-09-19.json`: spots Dara ruled
-  see-through where a protected record kept the derivation out. Walls at
-  least half inside the region take the derived bands; the sealed map edge
-  beside a mouth stays sealed.
-* `scripts/seal_void_walls.py`: the painted floor's interior holes are
-  buildings, rock and crate clusters nobody stands in. Each hole's roof is
-  the median of the scene's column tops over it, and every unprotected
-  wall piece bounding the hole carries at least [floor, roof]. A crate
-  cluster can still be seen over from a box; a building blocks every eye
-  below its roof, so a ray no longer crosses a block and comes out the far
-  side.
+Two further passes were built and withdrawn the same day, and stay in
+`scripts/` unapplied. `remeasure_above_openings.py` replaced the tunnel
+review's blanket above the ceiling with what the horizontal probe found,
+which was nothing until 11 m; Dara confirmed the ramp into that tunnel is
+walled on both sides, so the probe was missing a set-back wall and the
+blanket was right. `seal_void_walls.py` only existed to stop the leak that
+change caused. A reading of "nothing above the ceiling" on a covered
+passage is not evidence without Dara.
