@@ -79,10 +79,20 @@ void main() {
         }
       }
       final bad = SvgHeightVisibility.fromJson(data);
-      expect(
-          visible(bad, breezePoint(side, 345.75, 175.125),
-              breezePoint(side, 299, 240)),
-          isTrue);
+      // The lowered facade must no longer be what stops this ray. The wall
+      // behind it bounds a building void and is sealed to that building's
+      // roof (2026-09-19), so the ray can still end there; the detector only
+      // has to show the facade sections no longer hold it.
+      final origin = breezePoint(side, 345.75, 175.125);
+      final target = breezePoint(side, 299, 240);
+      final delta = target - origin;
+      final hit = bad.castRay(
+          origin: origin,
+          directionRadians: math.atan2(delta.dy, delta.dx),
+          range: delta.distance,
+          supportId: bad.automaticSupportAt(origin)?.id);
+      expect(hit == null || !hit.wallId.contains('-facade-'), isTrue,
+          reason: 'stopped at ${hit?.wallId}');
     });
 
     test('Breeze $side regression rejects a reintroduced overhead standing top',

@@ -127,8 +127,12 @@ void main() {
             range: delta.distance,
             absoluteEyeElevationMeters: eye);
         expect(ray(4.25), isNull, reason: 'Lower tunnel $side at y=$y');
-        expect(ray(6.5), isNotNull,
-            reason: 'Keep the overhead structure at y=$y');
+        // Dara (2026-09-19): an eye on the upper Hall looks over the tunnel
+        // into the yard beside it. Above the ceiling the scene carries only
+        // a slab edge and then structure from about 11 m, so that is what
+        // stays solid; the old blanket to 11.7 m is gone.
+        expect([6.9, 11.05, 11.2, 11.45].any((eye) => ray(eye) != null), isTrue,
+            reason: 'Keep the measured slab edge or upper structure at y=$y');
       }
       final origin = focusedPoint('pearl', side, 141.5, 160.15);
       final target = focusedPoint('pearl', side, 145, 160.15);
