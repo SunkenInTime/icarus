@@ -48,7 +48,12 @@ void main() {
           if (supportId == null) {
             expect(hit, isNotNull,
                 reason: 'Ground eye must hit solid box cover');
-            expect(box['wallsBySide'][side], contains(hit!.wallId));
+            // The blob walls were cut into pieces named <parent>-local-<n>.
+            expect(
+                (box['wallsBySide'][side] as List)
+                    .any((id) => hit!.wallId == id || hit.wallId.startsWith('$id-local-')),
+                isTrue,
+                reason: 'hit ${hit!.wallId} is not part of ${box['wallsBySide'][side]}');
           } else {
             expect(hit, isNull,
                 reason: 'Selected exposed top clears its own edge');

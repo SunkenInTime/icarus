@@ -49,7 +49,7 @@ from audit_svg_wall_heights_vs_world import (
     to_native,
 )
 
-BLOB_MAPS = {'split'}            # one outline per room; per-piece detectors say nothing.
+BLOB_MAPS = set()                # Split's blobs are pieces since partition_split_walls.py
 BUFFER_SVG = 0.25                # the narrow footprint reading, as in the heights audit.
 WALL_CHUNK = 128
 

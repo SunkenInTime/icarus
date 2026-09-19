@@ -9,7 +9,8 @@ narrower than a player. A doorway is not like this: it is wider than
 MAX_SPAN_M and its own pieces are lifted too. So a piece is anchored to the
 floor when it is at most MAX_SPAN_M across, every touching neighbour on its
 stroke starts at the floor, at least MIN_NEIGHBOURS of them exist, and
-their tops reach the piece's lifted base. Reviewed and protected pieces are
+their tops reach the piece's lifted base. A piece the probe left with no
+band at all is the same hole and takes its lowest neighbour's top. Reviewed and protected pieces are
 left alone.
 
 Writes candidates under --out and, with --install, copies them over
@@ -82,18 +83,28 @@ def main():
                 tree = shapely.STRtree([sh.buffer(TOUCH_SVG) for sh in shapes])
                 for i, w in enumerate(members):
                     bands = w['bands']
-                    if not bands or bands[0][0] < MIN_LIFT_M or w['id'] in keep or PROTECTED.search(w['id']):
+                    if w['id'] in keep or PROTECTED.search(w['id']):
+                        continue
+                    # A piece with no band at all is the same hole, one step further:
+                    # the probe found nothing where both neighbours are solid.
+                    empty = not bands
+                    if not empty and bands[0][0] < MIN_LIFT_M:
                         continue
                     if shapes[i].is_empty or span(shapes[i]) / scale > MAX_SPAN_M:
                         continue
                     neighbours = [members[int(j)] for j in tree.query(shapes[i].buffer(TOUCH_SVG), predicate='intersects') if int(j) != i]
                     if len(neighbours) < MIN_NEIGHBOURS:
                         continue
-                    if not all(n['bands'] and n['bands'][0][0] <= 0.05 and top_of(n['bands']) >= bands[0][0]
+                    base = 0.0 if empty else bands[0][0]
+                    if not all(n['bands'] and n['bands'][0][0] <= 0.05 and top_of(n['bands']) >= base
                                and n['floorElevationMeters'] == w['floorElevationMeters'] for n in neighbours):
                         continue
                     before = [list(b) for b in bands]
-                    bands[0][0] = 0.0
+                    if empty:
+                        lowest = min(top_of(n['bands']) for n in neighbours)
+                        w['bands'] = bands = [[0.0, None if lowest == float('inf') else lowest]]
+                    else:
+                        bands[0][0] = 0.0
                     log.append(dict(map=m, side=s, wall=w['id'], before=before, after=bands,
                                     spanM=round(span(shapes[i]) / scale, 2), neighbours=[n['id'] for n in neighbours]))
                     anchored += 1

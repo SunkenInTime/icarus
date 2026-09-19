@@ -47,7 +47,7 @@ def main():
             sealed = anchored = 0
             for w in cand['walls']:
                 shape = polygon(w)
-                if m != 'split' and not outer.contains(shape):
+                if not outer.contains(shape):
                     if not (w['bands'] and w['bands'][0][0] <= 0.05 and w['bands'][-1][1] is None):
                         w['bands'] = [[0.0, None]]; w['unknownHeight'] = False; sealed += 1
                     continue

@@ -11,7 +11,7 @@ void main() {
     final map = env['ICARUS_PROBE_MAP']!, side = env['ICARUS_PROBE_SIDE'] ?? 'attack';
     final p = env['ICARUS_PROBE_POSE']!.split(',').map(double.parse).toList();
     final model = SvgHeightVisibility.fromJson(jsonDecode(utf8.decode(gzip.decode(
-        File('assets/maps/${map}_svg_height_$side.json.gz').readAsBytesSync()))));
+        File('${env['ICARUS_PROBE_DIR'] ?? 'assets/maps'}/${map}_svg_height_$side.json.gz').readAsBytesSync()))));
     final origin = Offset(p[0], p[1]);
     final support = model.automaticSupportAt(origin);
     final centre = p[2] * math.pi / 180;
@@ -27,6 +27,15 @@ void main() {
     }
     print('longest ray ${longest.toStringAsFixed(1)} at ${(longestDir * 180 / math.pi).toStringAsFixed(2)} deg');
     final dx = math.cos(longestDir), dy = math.sin(longestDir);
+    var wasInside = true;
+    for (var t = 0.0; t < longest; t += 0.25) {
+      final q = origin + Offset(dx * t, dy * t);
+      final inside = model.receiverContains(q);
+      if (inside != wasInside) {
+        print('  receiver ${inside ? 'entered' : 'left'} at t=${t.toStringAsFixed(1)} (${q.dx.toStringAsFixed(1)},${q.dy.toStringAsFixed(1)})');
+        wasInside = inside;
+      }
+    }
     final seen = <String>{};
     for (var t = 0.0; t < longest; t += 0.25) {
       final q = origin + Offset(dx * t, dy * t);

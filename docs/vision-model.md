@@ -413,7 +413,28 @@ review, fixture or partition (both sides, mirrored through the alignment);
 touching neighbours on the same stroke stayed high, so no notch is cut into a
 solid wall; `scripts/cap_unsupported_raises.py` rejects a raised top that the
 narrow-footprint reading from `scripts/audit_svg_wall_heights_vs_world.py`
-cannot support. Split's outline-blob model is passed through unchanged.
+cannot support. Split joined this pipeline on 2026-09-19; see below.
 
 Acceptance is the existing gameplay suite with `ICARUS_VERIFY_BUNDLED_GAMEPLAY`.
 Baselines for comparison sit in `work/head-assets/`.
+
+## Split brought onto the piece model (2026-09-19)
+
+Split was the prototype. Its wall layer stayed at 69 records, one per
+painted run with a single hand-assigned band, while the other twelve maps
+were compiled from reviewed decisions into pieces about a metre long with
+bands measured from the 3D scene. Every rule on this branch works piece by
+piece, so Split was skipped by all of them.
+
+Rather than author the decisions review Split never had,
+`scripts/partition_split_walls.py` cuts each record into pieces about two SVG
+units long along its medial line (`<parent>-local-<n>`), keeping the parent's
+floor and bands so the cut alone changes nothing (the ink union is asserted
+unchanged). Records whose names carry a reviewed prop cut (`-low-`,
+`-counter-`, `-planter-`, `vent…-opening`, …) stay whole and are protected.
+The pieces then go through the same passes as the other maps: ray derivation,
+reviewed-wall protection, the perimeter seal (its Split exemption removed),
+the narrow-footprint audit and raise cap, the anomaly rules, box outlines and
+notch closing. The neighbour-smoothing pass is skipped for Split on purpose:
+its baseline bands are upper bounds rather than reviews, and smoothing would
+restore three quarters of the measured lowerings.

@@ -64,7 +64,7 @@ ANCHOR_M = 0.4            # a run starting this close to the ground starts at th
 MIN_EVIDENCE_FACES = 6    # fewer faces than this in the corridor is silence, not an answer.
 MIN_BAND_M = 0.05         # the loader rejects a band no taller than this.
 OFFSET_LEVELS = int(round(CORRIDOR_M / OFFSET_BIN_M)) + 1
-SKIP_MAPS = {'split': 'skipped: outline-blob model'}
+SKIP_MAPS = {}   # Split's blobs are cut into pieces by partition_split_walls.py first
 UNCHANGED_M = 0.3
 EPS = 1e-9
 
