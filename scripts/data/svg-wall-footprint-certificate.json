@@ -6,67 +6,67 @@
   "polygonReaderSha256": "47e476c690b09e45100b0db0ec2c7dbd9bb15c2ece6750e80331b840b54c98e4",
   "assets": {
     "assets/maps/abyss_svg_height_attack.json.gz": {
-      "sha256": "4fcba674f36bbfe9a240d69c8f0eaf4e9275207a65ba9c588b189077fc565d92",
+      "sha256": "8a99248439a25e2906ccfec57dfab781ed5dd4d57681e89eb423acd60f6e33d3",
       "wallCount": 1632
     },
     "assets/maps/abyss_svg_height_defense.json.gz": {
-      "sha256": "298cfed953e3635f6fbeceac3f9e7fdd12e0ac249d19d15d3dbc38074743bf72",
+      "sha256": "f0afbd29644e96e62922cbb1af08aeacb7e8e73f4f24ce2de9712bfc93c01812",
       "wallCount": 3105
     },
     "assets/maps/ascent_svg_height_attack.json.gz": {
-      "sha256": "9a05596a0176f661c751465795db55953572a7736e4c9bccd6fa23e032dad17e",
+      "sha256": "03a6e1484f48002f9f9d57976a689b883aded22d7590ebac02f6ca35eb95bb5c",
       "wallCount": 2642
     },
     "assets/maps/ascent_svg_height_defense.json.gz": {
-      "sha256": "6381ea45f393e7e3aef07fb4dede7e9c8d49adf35a07b76198fb87c31ccf71cb",
+      "sha256": "0fb4074c86f6a89ea52145b4a56c4e7951ded8a9e9e0ad4c8446ee6a9bf04b3e",
       "wallCount": 2796
     },
     "assets/maps/bind_svg_height_attack.json.gz": {
-      "sha256": "8bd5647b738941de09c86ebf8ea1bd753b47a80cb09a79b8ab40594dd6e95ce4",
+      "sha256": "5df484d4f10041c2223d059bd0418419dd8de2e2ed7004deda0af689d717a778",
       "wallCount": 3063
     },
     "assets/maps/bind_svg_height_defense.json.gz": {
-      "sha256": "0179c7f8e97ec4cdda2dc3b501b794ed8d172793f1227aed6cb87d4926d1b6c5",
+      "sha256": "39e4f01aa04552b7de9d0c4c30a850b85f844f3f2cc59d3f065ade2b6cf2022c",
       "wallCount": 4568
     },
     "assets/maps/breeze_svg_height_attack.json.gz": {
-      "sha256": "f1be94fcaf9f8c5c0758979f31a1c29aeacfc541ce715c0ee771b020f986e513",
+      "sha256": "a03538da6e36ac8c05f00410890523637130bd76812fef9bbd72dd43c5fd862b",
       "wallCount": 3663
     },
     "assets/maps/breeze_svg_height_defense.json.gz": {
-      "sha256": "59674bf6827fa8386e0394d4ec5e81c958a33565faab6e634d6f3f58f20a0d12",
+      "sha256": "89e9f51f6a00d4990cec7cd93f3291e47458714285ad051ded73c0ea79b6e7e1",
       "wallCount": 5106
     },
     "assets/maps/corrode_svg_height_attack.json.gz": {
-      "sha256": "aac4dcc1ab4465b5fe2b57430111cde6e65579ac74f0d54be123ea03f59865fd",
+      "sha256": "569dbbb398d0efd27e8b1c9979e04c5261d0877b69def6abf2d2eece46921519",
       "wallCount": 3318
     },
     "assets/maps/corrode_svg_height_defense.json.gz": {
-      "sha256": "dd3f9bb7e77a1e7532d7c5cee0ebc8681f3cdaee0a9eec5bec596ffaeb755fd2",
+      "sha256": "da6bbaabd8eabeaf3248135d14af2d6d9c96f92b4e9bb939f8be51390fbe0e76",
       "wallCount": 4281
     },
     "assets/maps/fracture_svg_height_attack.json.gz": {
-      "sha256": "19b66973c6449fecd6e593cbdee096a8c271fa3d18786a51912741dfdded59bd",
+      "sha256": "fbf386a130a62e8cdb239e7a415bf704aed550ca97067262dc893d67d12b4660",
       "wallCount": 3371
     },
     "assets/maps/fracture_svg_height_defense.json.gz": {
-      "sha256": "9e20fef7ea7cbfaf4e03bcf3091cf35ea99f1b3e8d89888b7c8b747e7e6f6ef4",
+      "sha256": "e01876eb7d7c4c79317d0ed1aa2026f528a3299d82bc2471f2d66963790b5612",
       "wallCount": 5484
     },
     "assets/maps/haven_svg_height_attack.json.gz": {
-      "sha256": "166cd00a1bbe5c32ea156d4768458b3016b8ff639185addae7e8962a3d309e66",
+      "sha256": "d2ea5d8f4c1e506336c2588e7040049f6ff9290392b1145c4eb9462f86eb745b",
       "wallCount": 3780
     },
     "assets/maps/haven_svg_height_defense.json.gz": {
-      "sha256": "51cb32b16d0c83bc08051d8111582276bcabadf84ce55ad972e9444ca9d7a412",
+      "sha256": "4a18398c9299da3df8cfb8b5b163fed6758a2c5e7da70d9956d62ef2e08e2d2e",
       "wallCount": 5312
     },
     "assets/maps/icebox_svg_height_attack.json.gz": {
-      "sha256": "0e3a3ff231606fa81c58888ad70672f1f262949df676ade26c19a1c2dfeb51a9",
+      "sha256": "151cdf451a8834b29bfdb1794b48a99ea9caaece789b394685d9d7f0a45caf5b",
       "wallCount": 3633
     },
     "assets/maps/icebox_svg_height_defense.json.gz": {
-      "sha256": "37d21b60f63d97b50dabe200003bb17668a62fc5fa64906d310891418bbe6f74",
+      "sha256": "5b99c98377d7e47099fbeb7c22739af236d5bcff81b6b2fe474ea479fc2bdda5",
       "wallCount": 5054
     },
     "assets/maps/lotus_svg_height_attack.json.gz": {
@@ -78,35 +78,35 @@
       "wallCount": 5044
     },
     "assets/maps/pearl_svg_height_attack.json.gz": {
-      "sha256": "4022a8dabd48897b31749c25d9a1369643327181eeb4c37a37ae005d20f7be21",
+      "sha256": "2b81a355a3ccf1872bb7fb2b9a3aea5f398058f0ccff1c5a87547c4a74e476cd",
       "wallCount": 3821
     },
     "assets/maps/pearl_svg_height_defense.json.gz": {
-      "sha256": "54347482b06464cefd021542ab552d9735b25a4050d2e7b5d394b7f1f1c225ad",
+      "sha256": "a5b5171c80c6498eeea76109498e9f9227c88c562e06e6a5f2cba3990ab68aec",
       "wallCount": 7109
     },
     "assets/maps/split_svg_height_attack.json.gz": {
-      "sha256": "4043aa734f3f73cc797143fa292d6add203c971f0347ba2662e134f34bed59f5",
+      "sha256": "efbb65b87f2d2567d57240bc7ff4efb4cefcfd9d1cca2d6d5620e296b88f077e",
       "wallCount": 69
     },
     "assets/maps/split_svg_height_defense.json.gz": {
-      "sha256": "9b7d722900221c093ac35d92c1fde071532ec3a3f2da3af11c44de923dbb203f",
+      "sha256": "75b487f23a87e0f76c9ea7cc12782f6fe35c4780ab0920fd73922cf64c75e4ad",
       "wallCount": 69
     },
     "assets/maps/summit_svg_height_attack.json.gz": {
-      "sha256": "191aad63ca17ddef3285e8ae9d715c899d4032958940230c9549aebc8286d1a5",
+      "sha256": "bd1984e387f897fd6cba73ec535efc3c7ef4651c07f75df9ae7703f526c36e43",
       "wallCount": 2958
     },
     "assets/maps/summit_svg_height_defense.json.gz": {
-      "sha256": "40363df6aa4cd22cea948273163ca347399f5e2326553bfda2eca0b78adf5bd7",
+      "sha256": "a9c47028f71ac60b1fe676fb8204dbe5e7db5e3dd45a780fcfa1d48e8070dbba",
       "wallCount": 4087
     },
     "assets/maps/sunset_svg_height_attack.json.gz": {
-      "sha256": "7701073c232ddf868fdbe042a4ddb7bec81272509cd2b523db51bfb97b9344f6",
+      "sha256": "bebc7321c938af513b9ac91194ab4a5c44decebfc1fdb9b0317f07d79b7ace4c",
       "wallCount": 2379
     },
     "assets/maps/sunset_svg_height_defense.json.gz": {
-      "sha256": "5c2d8e5dac847765dff537f4f31e034bf65bdd5a4d700052606a6ba8c8c72422",
+      "sha256": "ae8988fef45ece927f4e78d73653b58b7a80ce4cdcb7c565c64168e383099300",
       "wallCount": 3457
     }
   }
