@@ -4,10 +4,15 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
+#include <functional>
+#include <thread>
+#include <atomic>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -187,9 +192,104 @@ struct Counters {
   uint64_t edgeTests = 0, nodes = 0;
 };
 
+// One per chunk, padded to a cache line: neighbouring chunks run on different
+// threads and must not bounce the same line while counting.
+struct alignas(64) ChunkCounters {
+  Counters value;
+  char padding[64 - sizeof(Counters)];
+};
+
 void collectCandidates(const Node *node, const Bounds &area,
                        std::vector<uint32_t> &output);
 struct Crossing { Point point; uint32_t first, second; };
+
+// A persistent pool for the per-query ray casts. Rays are independent and
+// the polygon is assembled serially afterwards, so the result is bitwise the
+// same as the single-threaded query; only the wall-clock time changes. The
+// caller thread works too, so a query never waits on a sleeping worker.
+struct Pool {
+  explicit Pool(unsigned workers) {
+    for (unsigned i = 0; i < workers; ++i)
+      threads.emplace_back([this] { loop(); });
+  }
+  ~Pool() {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      stop.store(true, std::memory_order_release);
+    }
+    wake.notify_all();
+    for (std::thread &thread : threads) thread.join();
+  }
+  void run(size_t count, const std::function<void(size_t)> &task) {
+    if (count == 0) return;
+    if (threads.empty() || count == 1) {
+      for (size_t i = 0; i < count; ++i) task(i);
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      job = &task;
+      remaining.store(count, std::memory_order_relaxed);
+      next.store(0, std::memory_order_relaxed);
+      chunks.store(count, std::memory_order_release);
+    }
+    wake.notify_all();
+    work();
+    // The caller spins on the last chunks: they finish within microseconds
+    // and a condition-variable sleep here would cost more than the work.
+    while (remaining.load(std::memory_order_acquire) != 0)
+      std::this_thread::yield();
+    std::lock_guard<std::mutex> lock(mutex);
+    job = nullptr;
+  }
+
+private:
+  void work() {
+    const size_t total = chunks.load(std::memory_order_acquire);
+    for (;;) {
+      const size_t index = next.fetch_add(1, std::memory_order_acq_rel);
+      if (index >= total) return;
+      (*job)(index);
+      remaining.fetch_sub(1, std::memory_order_acq_rel);
+    }
+  }
+  bool pending() const {
+    return next.load(std::memory_order_acquire) < chunks.load(std::memory_order_acquire);
+  }
+  void loop() {
+    for (;;) {
+      // A query issues three runs a few hundred microseconds apart, and a
+      // drag issues a query every frame. Spin briefly before sleeping so the
+      // next run finds the workers awake; sleep for real between frames.
+      bool ready = false;
+      for (int spin = 0; spin < 4000 && !ready; ++spin) {
+        ready = pending() || stop.load(std::memory_order_acquire);
+        if (!ready) std::this_thread::yield();
+      }
+      if (!ready) {
+        std::unique_lock<std::mutex> lock(mutex);
+        wake.wait(lock, [this] { return stop.load(std::memory_order_acquire) || pending(); });
+      }
+      if (stop.load(std::memory_order_acquire)) return;
+      work();
+    }
+  }
+  std::vector<std::thread> threads;
+  std::mutex mutex;
+  std::condition_variable wake;
+  const std::function<void(size_t)> *job = nullptr;
+  std::atomic<size_t> chunks{0}, next{0}, remaining{0};
+  std::atomic<bool> stop{false};
+};
+
+unsigned poolWorkers() {
+  if (const char *override = std::getenv("ICARUS_HEIGHT_THREADS")) {
+    const long value = std::strtol(override, nullptr, 10);
+    if (value >= 0 && value <= 64) return unsigned(value);
+  }
+  const unsigned cores = std::thread::hardware_concurrency();
+  return cores > 2 ? std::min(5u, cores - 1) : 0;
+}
 
 struct Handle {
   std::vector<Edge> edges;
@@ -200,9 +300,11 @@ struct Handle {
   std::vector<uint8_t> activeScratch;
   ISHResult resultScratch{};
   std::vector<double> angles, arcAngles, vertexAngles;
-  std::vector<Hit> arcHits;
-  std::vector<uint32_t> candidates, vertexStamps;
-  uint32_t nextVertexStamp = 1;
+  std::vector<Hit> arcHits, hits;
+  std::vector<ChunkCounters> chunkCounters;
+  std::vector<std::vector<double>> chunkAngles, chunkVertexAngles;
+  std::vector<uint32_t> candidates;
+  Pool pool{poolWorkers()};
   std::mutex mutex;
   std::string error;
 
@@ -223,7 +325,6 @@ struct Handle {
       edge.aVertex = id(edge.a);
       edge.bVertex = id(edge.b);
     }
-    vertexStamps.resize(vertices.size());
     candidates.reserve(edges.size());
     angles.reserve(std::min(maximumPoints, size_t(4097) + vertices.size() * 3));
     arcAngles.reserve(maximumArcSteps + 1);
@@ -436,14 +537,31 @@ int32_t ish_query(void *opaque, double originX, double originY,
     vertexAngles.clear();
     arcHits.clear();
     Counters counters;
+    constexpr size_t chunkSize = 32;
+    constexpr size_t eventChunk = 256;
     for (uint32_t i = 0; i <= arcSteps; ++i) {
       const double angle = -half + apertureRadians * i / arcSteps;
       angles.push_back(angle);
       arcAngles.push_back(angle);
-      const double world = directionRadians + angle;
-      arcHits.push_back(castRay(handle, origin,
-                                {std::cos(world), std::sin(world)}, range,
-                                active, counters));
+    }
+    arcHits.resize(arcAngles.size());
+    {
+      const size_t chunks = (arcAngles.size() + chunkSize - 1) / chunkSize;
+      handle.chunkCounters.assign(chunks, ChunkCounters{});
+      handle.pool.run(chunks, [&](size_t chunk) {
+        Counters local;
+        const size_t end = std::min(arcAngles.size(), (chunk + 1) * chunkSize);
+        for (size_t i = chunk * chunkSize; i < end; ++i) {
+          const double world = directionRadians + arcAngles[i];
+          arcHits[i] = castRay(handle, origin, {std::cos(world), std::sin(world)},
+                               range, active, local);
+        }
+        handle.chunkCounters[chunk].value = local;
+      });
+      for (const ChunkCounters &local : handle.chunkCounters) {
+        counters.edgeTests += local.value.edgeTests;
+        counters.nodes += local.value.nodes;
+      }
     }
     const auto prepared = Clock::now();
 
@@ -454,12 +572,17 @@ int32_t ish_query(void *opaque, double originX, double originY,
                         origin.y + range};
       collectCandidates(handle.tree.get(), area, candidates);
     }
-    uint32_t vertexStamp = handle.nextVertexStamp++;
-    if (vertexStamp == 0) {
-      std::fill(handle.vertexStamps.begin(), handle.vertexStamps.end(), 0);
-      vertexStamp = handle.nextVertexStamp++;
-    }
     const double rangeSquared = range * range;
+    // Sector culling: a vertex outside the aperture (with slack for the
+    // corner offsets) cannot start a ray inside it, so skip its trig.
+    const Point facing{std::cos(directionRadians), std::sin(directionRadians)};
+    const bool cullSector = half + 1e-6 < pi;
+    const double cosSlack = std::cos(std::min(pi, half + 1e-6));
+    auto inSector = [&](Point delta) {
+      if (!cullSector) return true;
+      const double length = std::sqrt(dot(delta, delta));
+      return dot(delta, facing) >= cosSlack * length;
+    };
     auto hiddenEvent = [&](double angle, Point delta) {
       if (apertureRadians / arcSteps >= pi || angle <= -half || angle >= half) return false;
       int interval=int(std::floor((angle+half)/apertureRadians*double(arcSteps)));
@@ -473,21 +596,51 @@ int32_t ish_query(void *opaque, double originX, double originY,
       return handle.edges[first.edge].intersection(origin,{delta.x/distance,delta.y/distance},distance,hitDistance)
           && hitDistance<distance-1e-7;
     };
-    for (const Crossing &crossing : handle.crossings) {
-      if (!active[crossing.first] || !active[crossing.second]) continue;
-      const Point delta = crossing.point - origin;
-      if (dot(delta, delta) > rangeSquared || (delta.x == 0 && delta.y == 0)) continue;
-      const double relative = std::atan2(delta.y, delta.x) - directionRadians;
-      const double angle = std::atan2(std::sin(relative), std::cos(relative));
-      if (hiddenEvent(angle,delta)) continue;
-      for (double event : {angle - cornerOffset, angle, angle + cornerOffset}) {
-        if (event >= -half && event <= half) {
-          angles.push_back(event);
-          if (event == angle) vertexAngles.push_back(event);
+    // Events come from static crossings, range-circle transitions and edge
+    // endpoints. Each chunk writes its own buffers; the buffers are merged and
+    // sorted afterwards, and shared vertices reached from several chunks
+    // collapse in the unique pass because equal points give equal angles.
+    const size_t crossingChunks = (handle.crossings.size() + eventChunk - 1) / eventChunk;
+    const size_t candidateChunks = (candidates.size() + eventChunk - 1) / eventChunk;
+    const size_t eventChunks = crossingChunks + candidateChunks;
+    handle.chunkAngles.resize(eventChunks);
+    handle.chunkVertexAngles.resize(eventChunks);
+    handle.pool.run(eventChunks, [&](size_t chunk) {
+      std::vector<double> localAngles = std::move(handle.chunkAngles[chunk]);
+      std::vector<double> localVertex = std::move(handle.chunkVertexAngles[chunk]);
+      localAngles.clear();
+      localVertex.clear();
+      struct Store {
+        std::vector<double> &angles, &vertex, &outAngles, &outVertex;
+        ~Store() { outAngles = std::move(angles); outVertex = std::move(vertex); }
+      } store{localAngles, localVertex, handle.chunkAngles[chunk], handle.chunkVertexAngles[chunk]};
+      auto emit = [&](double angle, bool vertex) {
+        for (double event : {angle - cornerOffset, angle, angle + cornerOffset}) {
+          if (event >= -half && event <= half) {
+            localAngles.push_back(event);
+            if (vertex && event == angle) localVertex.push_back(event);
+          }
         }
+      };
+      if (chunk < crossingChunks) {
+        const size_t end = std::min(handle.crossings.size(), (chunk + 1) * eventChunk);
+        for (size_t c = chunk * eventChunk; c < end; ++c) {
+          const Crossing &crossing = handle.crossings[c];
+          if (!active[crossing.first] || !active[crossing.second]) continue;
+          const Point delta = crossing.point - origin;
+          if (dot(delta, delta) > rangeSquared || (delta.x == 0 && delta.y == 0)) continue;
+          if (!inSector(delta)) continue;
+          const double relative = std::atan2(delta.y, delta.x) - directionRadians;
+          const double angle = std::atan2(std::sin(relative), std::cos(relative));
+          if (hiddenEvent(angle, delta)) continue;
+          emit(angle, true);
+        }
+        return;
       }
-    }
-    for (uint32_t id : candidates) {
+      const size_t first = (chunk - crossingChunks) * eventChunk;
+      const size_t end = std::min(candidates.size(), first + eventChunk);
+      for (size_t c = first; c < end; ++c) {
+      const uint32_t id = candidates[c];
       const Edge &edge = handle.edges[id];
       if (!active[edge.wall])
         continue;
@@ -506,27 +659,24 @@ int32_t ish_query(void *opaque, double originX, double originY,
           if (t < 0 || t > 1) continue;
           const Point delta{relativeStart.x + segment.x * t,
                             relativeStart.y + segment.y * t};
+          if (!inSector(delta)) continue;
           const double relative = std::atan2(delta.y, delta.x) - directionRadians;
           const double angle = std::atan2(std::sin(relative), std::cos(relative));
           if (angle >= -half && angle <= half && !hiddenEvent(angle,delta)) {
-            angles.push_back(angle);
-            vertexAngles.push_back(angle);
+            localAngles.push_back(angle);
+            localVertex.push_back(angle);
           }
         }
       }
       const Point endpoints[] = {edge.a, edge.b};
-      const uint32_t vertexIds[] = {edge.aVertex, edge.bVertex};
       for (int endpoint = 0; endpoint < 2; ++endpoint) {
         const Point point = endpoints[endpoint];
-        const uint32_t vertexId = vertexIds[endpoint];
-        if (handle.vertexStamps[vertexId] == vertexStamp)
-          continue;
-        handle.vertexStamps[vertexId] = vertexStamp;
         const Point delta = point - origin;
         const double distanceSquared = dot(delta, delta);
         if (distanceSquared > rangeSquared ||
             (delta.x == 0 && delta.y == 0))
           continue;
+        if (!inSector(delta)) continue;
         const double relative = std::atan2(delta.y, delta.x) - directionRadians;
         const double angle = std::atan2(std::sin(relative), std::cos(relative));
         if (apertureRadians / arcSteps < pi && angle > -half && angle < half) {
@@ -547,16 +697,13 @@ int32_t ish_query(void *opaque, double originX, double originY,
               continue;
           }
         }
-        const double events[] = {angle - cornerOffset, angle,
-                                 angle + cornerOffset};
-        for (double event : events) {
-          if (event >= -half && event <= half) {
-            angles.push_back(event);
-            if (event == angle)
-              vertexAngles.push_back(event);
-          }
-        }
+        emit(angle, true);
       }
+      }
+    });
+    for (size_t chunk = 0; chunk < eventChunks; ++chunk) {
+      angles.insert(angles.end(), handle.chunkAngles[chunk].begin(), handle.chunkAngles[chunk].end());
+      vertexAngles.insert(vertexAngles.end(), handle.chunkVertexAngles[chunk].begin(), handle.chunkVertexAngles[chunk].end());
     }
     std::sort(angles.begin(), angles.end());
     angles.erase(std::unique(angles.begin(), angles.end()), angles.end());
@@ -572,18 +719,40 @@ int32_t ish_query(void *opaque, double originX, double originY,
     handle.output.reserve((angles.size() + 1) * 2);
     handle.output.push_back(origin.x);
     handle.output.push_back(origin.y);
+    auto &hits = handle.hits;
+    hits.resize(angles.size());
+    {
+      const size_t chunks = (angles.size() + chunkSize - 1) / chunkSize;
+      handle.chunkCounters.assign(chunks, ChunkCounters{});
+      handle.pool.run(chunks, [&](size_t chunk) {
+        Counters local;
+        const size_t end = std::min(angles.size(), (chunk + 1) * chunkSize);
+        for (size_t i = chunk * chunkSize; i < end; ++i) {
+          const double angle = angles[i];
+          const auto found = std::lower_bound(arcAngles.begin(), arcAngles.end(), angle);
+          if (found != arcAngles.end() && *found == angle) {
+            hits[i] = arcHits[size_t(found - arcAngles.begin())];
+          } else {
+            const double world = directionRadians + angle;
+            hits[i] = castRay(handle, origin, {std::cos(world), std::sin(world)},
+                              range, active, local);
+          }
+        }
+        handle.chunkCounters[chunk].value = local;
+      });
+      for (const ChunkCounters &local : handle.chunkCounters) {
+        counters.edgeTests += local.value.edgeTests;
+        counters.nodes += local.value.nodes;
+      }
+    }
     Hit previousHit;
     size_t sameEdgeRun = 0;
     Point runAnchor{};
-    for (double angle : angles) {
+    for (size_t rayIndex = 0; rayIndex < angles.size(); ++rayIndex) {
+      const double angle = angles[rayIndex];
       const double world = directionRadians + angle;
       const Point direction{std::cos(world), std::sin(world)};
-      Hit hit;
-      const auto found = std::lower_bound(arcAngles.begin(), arcAngles.end(), angle);
-      if (found != arcAngles.end() && *found == angle)
-        hit = arcHits[size_t(found - arcAngles.begin())];
-      else
-        hit = castRay(handle, origin, direction, range, active, counters);
+      const Hit hit = hits[rayIndex];
       const double distance = hit.found ? hit.distance : range;
       const double x = origin.x + direction.x * distance;
       const double y = origin.y + direction.y * distance;

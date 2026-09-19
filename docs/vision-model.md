@@ -463,3 +463,36 @@ walled on both sides, so the probe was missing a set-back wall and the
 blanket was right. `seal_void_walls.py` only existed to stop the leak that
 change caused. A reading of "nothing above the ceiling" on a covered
 passage is not evidence without Dara.
+
+## Drag performance on Windows (2026-09-19)
+
+Dara's bar: dragging an agent with a cone must feel instant on Windows.
+Measured before the change, with the native query at the app's usual range
+(about 140 SVG units): 1.44 ms in the native query, about 0.3 ms of Dart
+around it, and a profile-build frame build time of 1.9 ms at the 90th
+percentile. Windows frame timings report raster time as zero, so raster
+was reasoned about rather than measured.
+
+Changes, all exact (the polygon is bitwise the same):
+
+* `native/height/icarus_svg_height.cpp` owns a small persistent thread pool.
+  The arc rays, event generation and the event rays run in chunks across
+  it; the polygon is assembled serially afterwards in the original order.
+  Workers spin briefly between the runs of one query and sleep between
+  frames. `ICARUS_HEIGHT_THREADS` overrides the worker count for diagnosis.
+* Event generation culls vertices outside the aperture before any trig.
+* `SvgHeightVisibility` caches the wall activity mask per eye height.
+* A native result keeps its packed doubles; the cone outline path is built
+  from them directly, and the `polygon` list is only materialised on demand
+  (reports, tests).
+* The drag preview no longer sits in an `Opacity` widget. The cone paints at
+  the preview alpha and only the small agent icon takes an opacity layer, so
+  the engine does not composite the whole preview offscreen every frame.
+* The receiver clip path is rotated and scaled once per drag and translated
+  on the canvas, so the clip path object is stable across frames.
+
+Instruments: `tool/svg_height_drag_bench_test.dart` and
+`tool/svg_height_native_phase_bench_test.dart` (set
+`ICARUS_SVG_NATIVE_LIBRARY` to the built `icarus_height.dll`),
+`integration_test/view_cone_drag_performance_test.dart` and
+`view_cone_drag_timeline_test.dart` under `flutter drive --profile -d windows`.

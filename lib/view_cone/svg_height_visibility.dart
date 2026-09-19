@@ -194,6 +194,18 @@ class SvgHeightVisibility {
   final _edges = <_Edge>[];
   _EdgeNode? _tree;
   SvgHeightNative? _native;
+
+  // A dragged cone asks for the same eye height frame after frame; the wall
+  // activity mask only depends on that height. Callers read it, never write.
+  double? _activeEye;
+  List<bool>? _activeWalls;
+  List<bool> _activeWallsAt(double eye) {
+    if (_activeEye == eye && _activeWalls != null) return _activeWalls!;
+    final active = List<bool>.unmodifiable([for (final wall in walls) wall.blocks(eye)]);
+    _activeEye = eye;
+    _activeWalls = active;
+    return active;
+  }
   // Static SVG topology, computed only if the Dart fallback is used.
   late final _crossings = _findCrossings();
 
@@ -468,7 +480,7 @@ class SvgHeightVisibility {
     _validateQuery(origin, directionRadians, range);
     final eye = _eye(origin, cameraHeightMeters, supportHeightAboveFloorMeters,
         supportId, absoluteEyeElevationMeters);
-    final active = [for (final wall in walls) wall.blocks(eye)];
+    final active = _activeWallsAt(eye);
     final stats = _Counters();
     final inside = _insideWall(origin, active);
     if (inside != null) return _hit(origin, Offset.zero, 0, inside);
@@ -584,7 +596,7 @@ class SvgHeightVisibility {
     final timer = Stopwatch()..start();
     final eye = _eye(origin, cameraHeightMeters, supportHeightAboveFloorMeters,
         supportId, absoluteEyeElevationMeters);
-    final active = [for (final wall in walls) wall.blocks(eye)];
+    final active = _activeWallsAt(eye);
     final stats = _Counters();
     final inside = _insideWall(origin, active);
     if (inside != null || range == 0) {
@@ -608,14 +620,13 @@ class SvgHeightVisibility {
           apertureRadians: apertureRadians,
           activeWalls: active,
           arcSteps: arcSteps);
-      return SvgVisibilityCone(
-          List.unmodifiable([
-            for (var i = 0; i < result.xy.length; i += 2)
-              Offset(result.xy[i], result.xy[i + 1])
-          ]),
+      return SvgVisibilityCone.packed(
+          result.xy,
           eye - (ground?.heightAt(origin) ?? 0),
           SvgVisibilityStats(result.rayCount, result.edgeTests,
               result.spatialNodes, 0, timer.elapsedMicroseconds,
+              preparationMicros: result.preparationMicros.round(),
+              candidateMicros: result.candidateMicros.round(),
               nativeMicros: result.queryMicros),
           eyeElevationMeters: ground == null ? null : eye);
     }
@@ -956,10 +967,24 @@ class SvgVisibilityHit {
 }
 
 class SvgVisibilityCone {
-  const SvgVisibilityCone(
-      this.polygon, this.eyeHeightAboveFloorMeters, this.stats,
-      {this.eyeElevationMeters, this.visibilityPath});
-  final List<Offset> polygon;
+  SvgVisibilityCone(List<Offset> polygon, this.eyeHeightAboveFloorMeters, this.stats,
+      {this.eyeElevationMeters, this.visibilityPath})
+      : _polygon = polygon,
+        xy = null;
+
+  /// A native result keeps its packed x,y doubles. A dragged cone is drawn
+  /// straight from them; [polygon] is only materialised when something asks.
+  SvgVisibilityCone.packed(Float64List this.xy, this.eyeHeightAboveFloorMeters, this.stats,
+      {this.eyeElevationMeters})
+      : _polygon = null,
+        visibilityPath = null;
+
+  final List<Offset>? _polygon;
+  final Float64List? xy;
+  late final List<Offset> polygon = _polygon ??
+      List.unmodifiable([
+        for (var i = 0; i < xy!.length; i += 2) Offset(xy![i], xy![i + 1])
+      ]);
   final double eyeHeightAboveFloorMeters;
   final double? eyeElevationMeters;
   final SvgVisibilityStats stats;
@@ -967,6 +992,30 @@ class SvgVisibilityCone {
   /// Includes projected visibility on explicitly measured destination floors.
   /// The polygon retains the horizontal slice for native-query diagnostics.
   final Path? visibilityPath;
+
+  /// The cone outline under a 4x4 column-major affine [transform], built
+  /// without allocating a point object per vertex.
+  Path outlinePath(Float64List transform) {
+    final path = Path()..fillType = PathFillType.nonZero;
+    final points = xy;
+    if (points == null) {
+      final source = _polygon!;
+      for (var i = 0; i < source.length; i++) {
+        final p = source[i];
+        final x = transform[0] * p.dx + transform[4] * p.dy + transform[12];
+        final y = transform[1] * p.dx + transform[5] * p.dy + transform[13];
+        i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+      }
+    } else {
+      for (var i = 0; i < points.length; i += 2) {
+        final x = transform[0] * points[i] + transform[4] * points[i + 1] + transform[12];
+        final y = transform[1] * points[i] + transform[5] * points[i + 1] + transform[13];
+        i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+      }
+    }
+    path.close();
+    return path;
+  }
 }
 
 Path _footprintPath(_Footprint footprint) {

@@ -73,6 +73,7 @@ class SvgHeightViewCone extends StatefulWidget {
     required this.angle,
     required this.isAttack,
     this.elevation,
+    this.opacity = 1,
   });
 
   final SvgHeightRuntime runtime;
@@ -80,6 +81,7 @@ class SvgHeightViewCone extends StatefulWidget {
   final double rotation, range, angle;
   final bool isAttack;
   final double? elevation;
+  final double opacity;
 
   @override
   State<SvgHeightViewCone> createState() => _SvgHeightViewConeState();
@@ -90,6 +92,8 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
   final _observer = Object();
   Object? _paintInputs;
   SvgHeightViewConePainter? _painter;
+  Object? _receiverKey;
+  Path? _rotatedReceiver;
 
   @override
   void didUpdateWidget(SvgHeightViewCone oldWidget) {
@@ -145,7 +149,8 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       widget.rotation,
       widget.isAttack,
       size,
-      coordinates.worldOffsetToScreen(const Offset(1, 1))
+      coordinates.worldOffsetToScreen(const Offset(1, 1)),
+      widget.opacity,
     );
     if (_paintInputs == paintInputs) {
       return RepaintBoundary(child: CustomPaint(size: size, painter: _painter));
@@ -153,15 +158,6 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
     final apex = Offset(size.width / 2, size.height);
     final inverse = -widget.rotation;
     final cosine = math.cos(inverse), sine = math.sin(inverse);
-    Offset toLocal(Offset sourcePoint) {
-      final world = mapTransform.sideWorldFromSource(sourcePoint,
-          isAttack: widget.isAttack);
-      final delta = world - sideOrigin;
-      return apex +
-          coordinates.worldOffsetToScreen(Offset(
-              delta.dx * cosine - delta.dy * sine,
-              delta.dx * sine + delta.dy * cosine));
-    }
 
     final sourceReceiver = _receiverPaths[model] ??= _combinedReceiver(model);
     final sx = coordinates.worldWidthToScreen(mapTransform.scale);
@@ -179,15 +175,29 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
     transform[13] = apex.dy -
         transform[1] * sourceOrigin.dx -
         transform[5] * sourceOrigin.dy;
+    // During a drag only the translation changes frame to frame. Keep the
+    // rotated, scaled receiver path and translate it on the canvas, so the
+    // clip path object stays the same and the raster cache can keep it.
+    final receiverKey = (model, cosine, sine, sx, sy);
+    if (_receiverKey != receiverKey) {
+      _receiverKey = receiverKey;
+      _rotatedReceiver = sourceReceiver.transform(Float64List(16)
+        ..[0] = transform[0]
+        ..[1] = transform[1]
+        ..[4] = transform[4]
+        ..[5] = transform[5]
+        ..[10] = 1
+        ..[15] = 1);
+    }
     _paintInputs = paintInputs;
     _painter = SvgHeightViewConePainter.fromPaths(
       visibility: result.cone.visibilityPath?.transform(transform) ??
-          SvgHeightViewConePainter._path(
-              [result.cone.polygon.map(toLocal).toList()],
-              evenOdd: false),
-      receiver: sourceReceiver.transform(transform),
+          result.cone.outlinePath(transform),
+      receiver: _rotatedReceiver!,
+      receiverOffset: Offset(transform[12], transform[13]),
       apex: apex,
       radius: coordinates.worldHeightToScreen(widget.range),
+      opacity: widget.opacity,
     );
     return RepaintBoundary(child: CustomPaint(size: size, painter: _painter));
   }
@@ -212,14 +222,18 @@ class SvgHeightViewConePainter extends CustomPainter {
     required this.receiverEvenOdd,
     required this.apex,
     required this.radius,
-  })  : _visibility = null,
+    this.opacity = 1,
+  })  : receiverOffset = Offset.zero,
+        _visibility = null,
         _receiver = null;
 
   const SvgHeightViewConePainter.fromPaths(
       {required Path visibility,
       required Path receiver,
       required this.apex,
-      required this.radius})
+      required this.radius,
+      this.receiverOffset = Offset.zero,
+      this.opacity = 1})
       : _visibility = visibility,
         _receiver = receiver,
         visibilityPolygon = const [],
@@ -233,6 +247,10 @@ class SvgHeightViewConePainter extends CustomPainter {
   final bool receiverEvenOdd;
   final Offset apex;
   final double radius;
+  final double opacity;
+
+  /// Translation applied to [_receiver] at paint time; see the widget.
+  final Offset receiverOffset;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -246,11 +264,13 @@ class SvgHeightViewConePainter extends CustomPainter {
     canvas.clipPath(visibility);
     // Receiver fill is the last geometric clip. No cone pixels can appear in
     // the SVG's blank exterior or in authored holes in the playable fill.
+    canvas.translate(receiverOffset.dx, receiverOffset.dy);
     canvas.clipPath(receiver);
+    canvas.translate(-receiverOffset.dx, -receiverOffset.dy);
     final paint = Paint()
       ..shader = RadialGradient(
         colors: [
-          const Color.fromARGB(255, 147, 147, 147).withValues(alpha: .5),
+          const Color.fromARGB(255, 147, 147, 147).withValues(alpha: .5 * opacity),
           Colors.transparent,
         ],
         stops: const [0, 1],
@@ -281,5 +301,7 @@ class SvgHeightViewConePainter extends CustomPainter {
       oldDelegate.receiverRings != receiverRings ||
       oldDelegate.receiverEvenOdd != receiverEvenOdd ||
       oldDelegate.apex != apex ||
-      oldDelegate.radius != radius;
+      oldDelegate.radius != radius ||
+      oldDelegate.receiverOffset != receiverOffset ||
+      oldDelegate.opacity != opacity;
 }

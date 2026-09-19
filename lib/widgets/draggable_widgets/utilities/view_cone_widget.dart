@@ -42,6 +42,10 @@ class ViewConeWidget extends ConsumerWidget {
   final double? visionElevation;
   final bool showCenterMarker;
 
+  /// Paint alpha for a drag preview. Applied inside the cone painter so the
+  /// preview needs no offscreen opacity layer.
+  final double opacity;
+
   const ViewConeWidget({
     super.key,
     required this.id,
@@ -51,6 +55,7 @@ class ViewConeWidget extends ConsumerWidget {
     this.worldOrigin,
     this.visionElevation,
     this.showCenterMarker = true,
+    this.opacity = 1,
   });
 
   @override
@@ -142,6 +147,7 @@ class ViewConeWidget extends ConsumerWidget {
             angle: angle * pi / 180,
             isAttack: mapState.isAttack,
             elevation: resolvedElevation,
+            opacity: opacity,
           );
         }
       } else {
@@ -342,7 +348,9 @@ class ViewConeWidget extends ConsumerWidget {
                 width: containerWidth,
                 height: containerHeight,
                 child: heightCone ??
-                    CustomPaint(
+                    _faded(
+                        opacity,
+                        CustomPaint(
                       size: Size(containerWidth, containerHeight),
                       painter: ViewConePainter(
                         angle: angle,
@@ -355,7 +363,7 @@ class ViewConeWidget extends ConsumerWidget {
                         debugBoundarySegments: debugBoundarySegments,
                         debugLabel: debugLabel,
                       ),
-                    ),
+                    )),
               ),
             ),
           ),
@@ -580,3 +588,6 @@ class ViewConePainter extends CustomPainter {
         oldDelegate.debugLabel != debugLabel;
   }
 }
+
+Widget _faded(double opacity, Widget child) =>
+    opacity >= 1 ? child : Opacity(opacity: opacity, child: child);

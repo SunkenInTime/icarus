@@ -55,6 +55,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
     this.clipToGeometry = true,
     this.isInteractive = true,
     this.worldOriginOverride,
+    this.previewOpacity = 1,
   });
 
   final PlacedViewConeAgent agent;
@@ -65,6 +66,10 @@ class ViewConeAgentComposite extends ConsumerWidget {
   final bool clipToGeometry;
   final bool isInteractive;
   final Offset? worldOriginOverride;
+
+  /// A drag preview fades to this. The cone paints at the alpha directly and
+  /// only the small agent icon takes an opacity layer.
+  final double previewOpacity;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -108,6 +113,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
                       : null),
               visionElevation: agent.visionElevation,
               showCenterMarker: false,
+              opacity: previewOpacity,
             ),
           ),
           Positioned(
@@ -116,13 +122,16 @@ class ViewConeAgentComposite extends ConsumerWidget {
             child: Transform.rotate(
               angle: -rotation,
               alignment: Alignment.center,
-              child: AgentWidget(
-                state: agent.state,
-                isAlly: agent.isAlly,
-                id: agent.id,
-                agent: AgentData.agents[agent.type]!,
-                forcedAgentSize: agentSize,
-                isInteractive: isInteractive,
+              child: Opacity(
+                opacity: previewOpacity,
+                child: AgentWidget(
+                  state: agent.state,
+                  isAlly: agent.isAlly,
+                  id: agent.id,
+                  agent: AgentData.agents[agent.type]!,
+                  forcedAgentSize: agentSize,
+                  isInteractive: isInteractive,
+                ),
               ),
             ),
           ),
@@ -302,19 +311,20 @@ class _PlacedViewConeAgentWidgetState
                 .read(screenZoomProvider.notifier)
                 .zoomOffset(rotatedPosition);
           },
-          feedback: Opacity(
-            opacity: Settings.feedbackOpacity,
-            child: ZoomTransform(
-              child: ValueListenableBuilder<Offset?>(
-                valueListenable: _dragOrigin,
-                builder: (context, origin, child) => ViewConeAgentComposite(
-                  agent: current,
-                  rotation: displayRotation,
-                  length: localLength,
-                  forcedAgentSize: agentSize,
-                  worldOriginOverride: origin,
-                  isInteractive: false,
-                ),
+          // No Opacity wrapper: the cone paints at the preview alpha itself,
+          // so the engine does not composite the whole preview offscreen on
+          // every drag frame.
+          feedback: ZoomTransform(
+            child: ValueListenableBuilder<Offset?>(
+              valueListenable: _dragOrigin,
+              builder: (context, origin, child) => ViewConeAgentComposite(
+                agent: current,
+                rotation: displayRotation,
+                length: localLength,
+                forcedAgentSize: agentSize,
+                worldOriginOverride: origin,
+                isInteractive: false,
+                previewOpacity: Settings.feedbackOpacity,
               ),
             ),
           ),
