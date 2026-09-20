@@ -283,12 +283,13 @@ class SvgHeightNative implements Finalizable {
 
   void close() {
     if (_closed) return;
-    final status = _close(_handle);
-    if (status != 0) {
-      throw StateError('Could not close SVG native geometry: status $status.');
-    }
-    _finalizer.detach(this);
-    _handle = nullptr;
     _closed = true;
+    // A refused close (a query still holds the handle) is not an error the
+    // disposing caller can act on: the handle stays with the finalizer,
+    // which frees it once nothing else does, and no further queries reach it.
+    if (_close(_handle) == 0) {
+      _finalizer.detach(this);
+      _handle = nullptr;
+    }
   }
 }

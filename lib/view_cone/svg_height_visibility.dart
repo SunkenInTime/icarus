@@ -201,11 +201,13 @@ class SvgHeightVisibility {
   List<bool>? _activeWalls;
   List<bool> _activeWallsAt(double eye) {
     if (_activeEye == eye && _activeWalls != null) return _activeWalls!;
-    final active = List<bool>.unmodifiable([for (final wall in walls) wall.blocks(eye)]);
+    final active =
+        List<bool>.unmodifiable([for (final wall in walls) wall.blocks(eye)]);
     _activeEye = eye;
     _activeWalls = active;
     return active;
   }
+
   // Static SVG topology, computed only if the Dart fallback is used.
   late final _crossings = _findCrossings();
 
@@ -272,7 +274,8 @@ class SvgHeightVisibility {
     var current = point;
     for (var step = 0; step < 4; step++) {
       final wall = _blockingWallAt(current);
-      if (wall == null && receiverContains(current) &&
+      if (wall == null &&
+          receiverContains(current) &&
           (ground == null || ground!.heightAt(current) != null)) {
         return current;
       }
@@ -282,7 +285,8 @@ class SvgHeightVisibility {
       } else {
         target = _pulledIn(current, 0.02);
       }
-      if (target == null || (target - point).distance > maxDistance) return null;
+      if (target == null || (target - point).distance > maxDistance)
+        return null;
       current = target;
     }
     return null;
@@ -299,9 +303,36 @@ class SvgHeightVisibility {
     return null;
   }
 
-  /// Nearest point just outside the rings, offset along the boundary normal.
-  static Offset? _pushedOut(Offset point, List<List<Offset>> rings, double clearance) {
+  /// The point just outside the wall, across its nearest boundary edge.
+  static Offset? _pushedOut(
+          Offset point, List<List<Offset>> rings, double clearance) =>
+      _steppedAcross(point, rings, clearance,
+          inside: (candidate) => _insideRings(candidate, rings));
+
+  /// The point just inside the nearest floor, across its nearest edge.
+  Offset? _pulledIn(Offset point, double clearance) {
     Offset? best;
+    var bestDistance = double.infinity;
+    for (final receiver in receivers) {
+      final inside = _steppedAcross(point, receiver.rings, clearance,
+          inside: receiver.contains, wantInside: true);
+      if (inside == null) continue;
+      final d = (inside - point).distance;
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = inside;
+      }
+    }
+    return best;
+  }
+
+  /// The nearest point on the rings' boundary, stepped [clearance] to the
+  /// side of the edge that [inside] reports as [wantInside]. Null when the
+  /// rings have no edges or neither side satisfies the test.
+  static Offset? _steppedAcross(
+      Offset point, List<List<Offset>> rings, double clearance,
+      {required bool Function(Offset) inside, bool wantInside = false}) {
+    Offset? foot;
     var bestDistance = double.infinity;
     Offset normal = Offset.zero;
     for (final ring in rings) {
@@ -310,38 +341,25 @@ class SvgHeightVisibility {
         final edge = b - a;
         final length = edge.distanceSquared;
         if (length == 0) continue;
-        final t = (((point - a).dx * edge.dx + (point - a).dy * edge.dy) / length).clamp(0.0, 1.0);
-        final foot = a + edge * t;
-        final d = (point - foot).distance;
+        final t =
+            (((point - a).dx * edge.dx + (point - a).dy * edge.dy) / length)
+                .clamp(0.0, 1.0);
+        final candidate = a + edge * t;
+        final d = (point - candidate).distance;
         if (d < bestDistance) {
           bestDistance = d;
-          best = foot;
-          normal = d > 1e-9 ? (point - foot) / d : Offset(-edge.dy, edge.dx) / edge.distance;
+          foot = candidate;
+          normal = d > 1e-9
+              ? (point - candidate) / d
+              : Offset(-edge.dy, edge.dx) / edge.distance;
         }
       }
     }
-    if (best == null) return null;
-    // Step past the boundary away from the point's own side... unless the point
-    // is inside, in which case the outward side is the far side of the edge.
-    final outward = best + normal * clearance;
-    final inward = best - normal * clearance;
-    return _insideRings(outward, rings) ? inward : outward;
-  }
-
-  Offset? _pulledIn(Offset point, double clearance) {
-    Offset? best;
-    var bestDistance = double.infinity;
-    for (final receiver in receivers) {
-      final candidate = _pushedOut(point, receiver.rings, clearance);
-      if (candidate == null) continue;
-      final inside = receiver.contains(candidate)
-          ? candidate
-          : _pushedOut(point, receiver.rings, -clearance);
-      if (inside == null || !receiver.contains(inside)) continue;
-      final d = (inside - point).distance;
-      if (d < bestDistance) { bestDistance = d; best = inside; }
+    if (foot == null) return null;
+    for (final side in [foot + normal * clearance, foot - normal * clearance]) {
+      if (inside(side) == wantInside) return side;
     }
-    return best;
+    return null;
   }
 
   static bool _insideRings(Offset point, List<List<Offset>> rings) {
@@ -1064,14 +1082,16 @@ class SvgVisibilityHit {
 }
 
 class SvgVisibilityCone {
-  SvgVisibilityCone(List<Offset> polygon, this.eyeHeightAboveFloorMeters, this.stats,
+  SvgVisibilityCone(
+      List<Offset> polygon, this.eyeHeightAboveFloorMeters, this.stats,
       {this.eyeElevationMeters, this.visibilityPath})
       : _polygon = polygon,
         xy = null;
 
   /// A native result keeps its packed x,y doubles. A dragged cone is drawn
   /// straight from them; [polygon] is only materialised when something asks.
-  SvgVisibilityCone.packed(Float64List this.xy, this.eyeHeightAboveFloorMeters, this.stats,
+  SvgVisibilityCone.packed(
+      Float64List this.xy, this.eyeHeightAboveFloorMeters, this.stats,
       {this.eyeElevationMeters})
       : _polygon = null,
         visibilityPath = null;
@@ -1079,9 +1099,8 @@ class SvgVisibilityCone {
   final List<Offset>? _polygon;
   final Float64List? xy;
   late final List<Offset> polygon = _polygon ??
-      List.unmodifiable([
-        for (var i = 0; i < xy!.length; i += 2) Offset(xy![i], xy![i + 1])
-      ]);
+      List.unmodifiable(
+          [for (var i = 0; i < xy!.length; i += 2) Offset(xy![i], xy![i + 1])]);
   final double eyeHeightAboveFloorMeters;
   final double? eyeElevationMeters;
   final SvgVisibilityStats stats;
@@ -1105,8 +1124,12 @@ class SvgVisibilityCone {
       }
     } else {
       for (var i = 0; i < points.length; i += 2) {
-        final x = transform[0] * points[i] + transform[4] * points[i + 1] + transform[12];
-        final y = transform[1] * points[i] + transform[5] * points[i + 1] + transform[13];
+        final x = transform[0] * points[i] +
+            transform[4] * points[i + 1] +
+            transform[12];
+        final y = transform[1] * points[i] +
+            transform[5] * points[i + 1] +
+            transform[13];
         i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
       }
     }
