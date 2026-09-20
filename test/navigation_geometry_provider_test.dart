@@ -43,39 +43,24 @@ class _NavigationBundle extends CachingAssetBundle {
   @override
   Future<ByteData> load(String key) async {
     requested.add(key);
-    if (key.endsWith('/height_catalog.json')) {
+    if (key.endsWith('/navigation_catalog.json')) {
       final bytes = _navigationBytes();
       final hash = (await Sha256().hash(bytes))
           .bytes
           .map((value) => value.toRadixString(16).padLeft(2, '0'))
           .join();
-      final zeroHash = '0' * 64;
       return ByteData.sublistView(Uint8List.fromList(utf8.encode(jsonEncode({
         'version': 1,
-        'format': 'icarus-height-assets-v1',
+        'format': 'icarus-navigation-catalog-v1',
         'maps': {
           for (final map in MapValue.values)
             map.name: {
-              'pack': '${map.name}.height.bin.gz',
-              'packSha256': zeroHash,
-              'compressedBytes': 1,
-              'rawSha256': zeroHash,
-              'rawBytes': 1,
               'navigation': '${map.name}_navigation.json.gz',
               'navigationSha256': hash,
               'navigationBytes': bytes.length,
-              'sourceGeometrySha256': zeroHash,
-              'policySha256': zeroHash,
               'observerHeightCm': 175,
               'defaultFloorElevationCm': 300,
-              'heightDomainMeters': [0, 10],
               'menuElevationsCm': [175, 475],
-              'uiTransform': {
-                'XMultiplier': .000078,
-                'YMultiplier': -.000078,
-                'XScalarToAdd': .842188,
-                'YScalarToAdd': .697578
-              },
             }
         }
       }))));
@@ -222,7 +207,7 @@ void main() {
     final navigation =
         await loadNavigationGeometry(MapValue.split, bundle: bundle);
     expect(bundle.requested, [
-      'assets/maps/world/height_catalog.json',
+      'assets/maps/world/navigation_catalog.json',
       'assets/maps/world/split_navigation.json.gz'
     ]);
     expect(navigation.observerHeightCm, 175);

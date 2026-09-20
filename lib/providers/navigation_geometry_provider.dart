@@ -10,7 +10,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/world_geometry_source_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
-import 'package:icarus/view_cone/height_catalog.dart';
+import 'package:icarus/view_cone/navigation_catalog.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
 
 final navigationGeometryBundleProvider =
@@ -46,14 +46,13 @@ final navigationGeometryProvider = FutureProvider.autoDispose
 
 Future<NavigationGeometryMap> loadNavigationGeometry(MapValue map,
     {AssetBundle? bundle}) async {
-  final entry = (await loadHeightCatalog(bundle: bundle))[map]!;
-  final data = await loadVerifiedHeightNavigation(map,
-      bundle: bundle, catalogEntry: entry);
+  final entry = (await loadNavigationCatalog(bundle: bundle))[map]!;
+  final data =
+      await loadVerifiedNavigation(map, bundle: bundle, catalogEntry: entry);
   return compute(_decodeNavigation, (
     map: map,
     bytes: data,
     defenseOffset: entry.defenseOffsetCanvas,
-    additionalCharts: entry.variants.length,
   ));
 }
 
@@ -62,7 +61,6 @@ NavigationGeometryMap _decodeNavigation(
       MapValue map,
       Uint8List bytes,
       Offset defenseOffset,
-      int additionalCharts
     }) source) {
   final decoded = jsonDecode(utf8.decode(decodeWorldGzip(source.bytes)));
   if (decoded is! Map<String, dynamic> || decoded['map'] != source.map.name) {
@@ -79,7 +77,8 @@ NavigationGeometryMap _decodeNavigation(
   }
   final geometry = NavigationGeometry.fromJson(decoded,
       projectUv: (uv) => VisionGeometryMap.projectUv(source.map, uv));
-  if (geometry.maximumGroundChartId > source.additionalCharts) {
+  // Every map ships one ground chart; a reference beyond it is corrupt data.
+  if (geometry.maximumGroundChartId > 0) {
     throw const FormatException(
         'Navigation refers to an unavailable ground chart.');
   }

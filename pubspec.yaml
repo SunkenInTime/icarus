@@ -95,7 +95,7 @@ flutter:
     - assets/brand/
     - assets/maps/
     # Sightlines use the SVG-height pairs above; retain source navigation only.
-    - assets/maps/world/height_catalog.json
+    - assets/maps/world/navigation_catalog.json
     - assets/maps/world/ascent_navigation.json.gz
     - assets/maps/world/breeze_navigation.json.gz
     - assets/maps/world/lotus_navigation.json.gz

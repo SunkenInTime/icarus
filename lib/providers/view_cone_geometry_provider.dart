@@ -12,7 +12,7 @@ import 'package:icarus/view_cone/authored_vision_boundary.dart';
 import 'package:icarus/view_cone/svg_vision_boundary.dart';
 import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
-import 'package:icarus/view_cone/height_catalog.dart';
+import 'package:icarus/view_cone/navigation_catalog.dart';
 
 export 'package:icarus/providers/world_geometry_source_provider.dart';
 
@@ -43,7 +43,7 @@ Future<VisionGeometryMap?> _loadViewConeGeometrySource(
   if (ref.watch(worldGeometryEnabledProvider(map))) {
     final navigation =
         (await ref.watch(navigationGeometryProvider(map).future))!;
-    final entry = (await loadHeightCatalog())[map]!;
+    final entry = (await loadNavigationCatalog())[map]!;
     // The chart carries the standing heights it was sealed with; the catalog
     // only adds the elevations the menu offers.
     return VisionGeometryMap.forStandingHeight(
