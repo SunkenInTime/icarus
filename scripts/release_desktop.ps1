@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "build", "package", "stage")]
+    [ValidateSet("all", "build", "package", "stage", "publish")]
     [string]$Phase = "all",
     [ValidateSet("none", "patch", "minor", "major")]
     [string]$VersionBump = "none",
@@ -30,8 +30,8 @@ if ([string]::IsNullOrWhiteSpace($AppArchiveBaseUrl)) {
     $AppArchiveBaseUrl = "https://sunkenintime.github.io/icarus/updates/windows/$Channel"
 }
 
-if ($PublishPages -and (@("all", "stage") -notcontains $Phase)) {
-    throw "Pages can only be published during the 'all' or 'stage' release phase."
+if ($PublishPages -and (@("all", "stage", "publish") -notcontains $Phase)) {
+    throw "Pages can only be published during the 'all', 'stage', or 'publish' release phase."
 }
 
 if ($VersionBump -ne "none" -and (@("all", "build") -notcontains $Phase)) {
@@ -80,7 +80,9 @@ if ($SkipPubGet) {
     $buildArgs += "-SkipPubGet"
 }
 
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments $buildArgs
+if ($Phase -ne "publish") {
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments $buildArgs
+}
 
 if (-not $PublishPages) {
     return

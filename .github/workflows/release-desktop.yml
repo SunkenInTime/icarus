@@ -163,12 +163,11 @@ jobs:
           Assert-AuthenticodeSignatures -Path "build/windows/x64/runner/Release"
           Assert-AuthenticodeSignatures -Path "build/installer"
 
-      - name: Stage And Publish Desktop Release
+      - name: Stage Desktop Release
         shell: pwsh
         env:
           CHANGE_MESSAGE: ${{ inputs.change_message }}
           RELEASE_TITLE: ${{ inputs.release_title }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $args = @(
             "-ExecutionPolicy", "Bypass",
@@ -177,10 +176,6 @@ jobs:
             "-Channel", "${{ inputs.channel }}",
             "-ChangeMessage", $env:CHANGE_MESSAGE
           )
-
-          if ("${{ inputs.publish_pages }}" -eq "true") {
-            $args += @("-PublishPages", "-PagesPublishMode", "git-branch")
-          }
 
           if ("${{ inputs.mandatory }}" -eq "true") {
             $args += "-Mandatory"
@@ -191,6 +186,36 @@ jobs:
           }
 
           & powershell @args
+
+      - name: Commit Version And Metadata Changes
+        if: ${{ inputs.publish_pages && github.ref_type == 'branch' }}
+        shell: pwsh
+        run: |
+          $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart release/metadata
+          if ([string]::IsNullOrWhiteSpace(($changes | Out-String))) {
+            Write-Host "No version or metadata changes to commit."
+            exit 0
+          }
+
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+\+\d+)\b'
+          if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
+            throw "Could not parse full version from pubspec.yaml"
+          }
+          $version = $versionLine.Matches[0].Groups[1].Value.Trim()
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml lib/const/settings.dart release/metadata
+          git commit -m "chore(release): desktop $version"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Publish Signed Desktop Release
+        if: ${{ inputs.publish_pages }}
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase publish -Channel "${{ inputs.channel }}" -PublishPages -PagesPublishMode git-branch
 
       - name: Upload Desktop Artifacts
         if: ${{ always() }}
@@ -224,25 +249,3 @@ jobs:
           Write-Host "https://github.com/SunkenInTime/icarus/releases/download/desktop-$channel-v$fullVersion/icarus-setup.exe"
           Write-Host "Updater manifest:"
           Write-Host "https://sunkenintime.github.io/icarus/updates/windows/$channel/app-archive.json"
-
-      - name: Commit Version And Metadata Changes
-        if: ${{ inputs.publish_pages && github.ref_type == 'branch' }}
-        shell: pwsh
-        run: |
-          $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart release/metadata
-          if ([string]::IsNullOrWhiteSpace(($changes | Out-String))) {
-            Write-Host "No version or metadata changes to commit."
-            exit 0
-          }
-
-          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+\+\d+)\b'
-          if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
-            throw "Could not parse full version from pubspec.yaml"
-          }
-          $version = $versionLine.Matches[0].Groups[1].Value.Trim()
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pubspec.yaml lib/const/settings.dart release/metadata
-          git commit -m "chore(release): desktop $version"
-          git push origin HEAD:${{ github.ref_name }}

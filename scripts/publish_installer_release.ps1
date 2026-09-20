@@ -10,6 +10,11 @@ $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
 $version = Get-VersionInfo -RepoRoot $repoRoot
 $installer = Join-Path $repoRoot "release/out/desktop/$($version.FullVersion)/icarus-setup.exe"
 Assert-AuthenticodeSignatures -Path $installer
+$pendingMetadata = & git -C $repoRoot status --porcelain -- pubspec.yaml lib/const/settings.dart $MetadataDir
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect release source status.' }
+if (-not [string]::IsNullOrWhiteSpace(($pendingMetadata | Out-String))) {
+    throw 'Commit the release version and metadata before publishing, so the release tag identifies the built source.'
+}
 $metadata = Get-Content (Join-Path $repoRoot "$MetadataDir/$($version.FullVersion).json") -Raw | ConvertFrom-Json
 $tag = "desktop-$Channel-v$($version.FullVersion)"
 $releaseList = & gh release list --repo $Repository --limit 100 --json tagName,isDraft

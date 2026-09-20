@@ -353,8 +353,28 @@ void main() {
     expect(migrated.lastEdited, original.lastEdited);
     expect(migrated.id, original.id);
     expect(AgentWeaponMigration.migrate(migrated), same(migrated));
-    expect(
-        StrategyProvider.migrateToCurrentVersion(original).versionNumber, 100);
+    expect(StrategyProvider.migrateToCurrentVersion(original).versionNumber,
+        Settings.versionNumber);
+  });
+
+  test('patch releases advance only the version and preserve newer strategies',
+      () {
+    for (final version in [100, Settings.versionNumber - 1]) {
+      final original = _strategy(version: version);
+      final migrated = StrategyProvider.migrateToCurrentVersion(original);
+      expect(migrated.versionNumber, Settings.versionNumber);
+      expect(migrated.pages, same(original.pages));
+      expect(migrated.id, original.id);
+      expect(migrated.name, original.name);
+      expect(migrated.mapData, original.mapData);
+      expect(migrated.createdAt, original.createdAt);
+      expect(migrated.lastEdited, original.lastEdited);
+      expect(migrated.folderID, original.folderID);
+      expect(
+          StrategyProvider.migrateToCurrentVersion(migrated), same(migrated));
+    }
+    final newer = _strategy(version: Settings.versionNumber + 1);
+    expect(StrategyProvider.migrateToCurrentVersion(newer), same(newer));
   });
 
   test('Hive reopen, real .ica export/import and library backup retain weapons',
@@ -402,7 +422,8 @@ void main() {
     expect(box.length, 4);
     for (final strategy in box.values) {
       _expectWeapons(strategy);
-      expect(strategy.versionNumber, Settings.versionNumber);
+      expect(strategy.versionNumber,
+          strategy.id == 'firearm-strategy' ? 100 : Settings.versionNumber);
     }
   });
 }
