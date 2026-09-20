@@ -126,7 +126,15 @@ GitHub repository secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
 The Azure application needs a federated credential with issuer
 `https://token.actions.githubusercontent.com`, audience
 `api://AzureADTokenExchange`, and subject
-`repo:SunkenInTime/icarus:ref:refs/heads/main`. Assign its service principal the
+`repo:SunkenInTime@76637177/icarus@890026480:ref:refs/heads/main`.
+This repository uses GitHub's immutable OIDC subject format. Check it with
+`gh api repos/SunkenInTime/icarus/actions/oidc/customization/sub`:
+`use_immutable_subject` must be `true`, and `sub_claim_prefix` must match the
+repository portion of the Azure subject. A legacy subject without the numeric
+IDs does not match this credential and causes Azure login error `AADSTS700213`.
+See [GitHub's OIDC reference](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims).
+
+Assign its service principal the
 Artifact Signing Certificate Profile Signer role on the signing profile.
 The public trust identity validation and certificate profile must be active.
 
