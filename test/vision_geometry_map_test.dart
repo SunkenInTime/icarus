@@ -679,10 +679,17 @@ void main() {
         layer.collisionGroups.map((group) => group.id),
         contains(expectedId),
       );
+      final admittedCurve = layer.collisionGroups.singleWhere(
+        (group) => group.id == oneEndedCurve.id,
+      );
+      expect(admittedCurve.kind, VisionCollisionKind.structuralChain);
+      expect(admittedCurve.isAuthoritative, isFalse);
+      expect(admittedCurve.confidence, VisionCollisionConfidence.matched);
       expect(
-        layer.collisionGroups.map((group) => group.id),
-        isNot(contains(oneEndedCurve.id)),
-        reason: 'the one-ended curve must remain evidence-gated',
+        admittedCurve.evidenceLayerMask,
+        isNot(0),
+        reason: 'legacy authored chains require support in at least one '
+            'source layer before they become active',
       );
       for (final ray in const <(Offset, double)>[
         (Offset(653.9081278, 599.6913319), 0),
@@ -691,13 +698,27 @@ void main() {
       ]) {
         expect(
           centerRayDistance(
-            layer: layer,
+            layer: VisionGeometryLayer(
+              elevation: layer.elevation,
+              segments: compound.segments,
+            ),
             origin: ray.$1,
             facingAngle: ray.$2,
             range: 20,
           ),
           closeTo(10 - compound.segments.first.collisionRadius, 0.1),
           reason: 'Icebox B ray from ${ray.$1} crossed a box side',
+        );
+        expect(
+          centerRayDistance(
+            layer: layer,
+            origin: ray.$1,
+            facingAngle: ray.$2,
+            range: 20,
+          ),
+          lessThanOrEqualTo(10 - compound.segments.first.collisionRadius + 0.1),
+          reason: 'the full layer must retain the box side even when '
+              'another source-supported obstacle blocks the ray sooner',
         );
       }
     });

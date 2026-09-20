@@ -14,6 +14,8 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 
 class PlacedViewConeWidget extends ConsumerStatefulWidget {
   final PlacedUtility utility;
@@ -43,6 +45,13 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
   double? localRotation;
   double? localLength;
   bool isDragging = false;
+  final _dragOrigin = ViewConeDragOrigin();
+
+  @override
+  void dispose() {
+    _dragOrigin.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -105,12 +114,12 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     // This is exactly like how abilities calculate their anchor points
     final anchorPoint = viewConeUtility.getAnchorPoint();
 
-    final utilityChild = UtilityData.utilityWidgets[widget.utility.type]!
-        .createWidget(
-          id: widget.id,
-          rotation: displayRotation,
-          length: localLength,
-        );
+    final utilityChild =
+        UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+      id: widget.id,
+      rotation: displayRotation,
+      length: localLength,
+    );
 
     return Positioned(
       left: screenPositionForWidget(
@@ -168,7 +177,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
           // Calculate new length from distance
           double newLength =
               coordinateSystem.normalize(currentPositionNormalized.distance) /
-              ref.watch(screenZoomProvider);
+                  ref.watch(screenZoomProvider);
 
           // Clamp length to valid range
           newLength = newLength.clamp(
@@ -193,6 +202,12 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
         child: Draggable<PlacedUtility>(
           data: widget.utility,
           dragAnchorStrategy: (draggable, context, position) {
+            _dragOrigin.start(
+                origin: utilityRef.position +
+                    coordinateSystem.virtualOffsetToWorld(anchorPoint),
+                coordinates: coordinateSystem,
+                zoom: ref.read(screenZoomProvider),
+                isAttack: widget.isAttack);
             final RenderBox renderObject =
                 context.findRenderObject()! as RenderBox;
             final scaledAnchor = anchorPoint.scale(
@@ -208,32 +223,41 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
 
             return ref.read(screenZoomProvider.notifier).zoomOffset(rotatedPos);
           },
-          feedback: Opacity(
-            opacity: Settings.feedbackOpacity,
-            child: Transform.rotate(
-              angle: displayRotation,
-              alignment: Alignment.topLeft,
-              origin: anchorPoint.scale(
-                coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
-                coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
-              ),
-              child: ZoomTransform(
-                child: UtilityData.utilityWidgets[widget.utility.type]!
-                    .createWidget(
-                      id: null,
-                      rotation: displayRotation,
-                      length: localLength,
-                    ),
+          // The cone paints its own preview opacity, so the drag feedback
+          // needs no offscreen layer per frame.
+          feedback: Transform.rotate(
+            angle: displayRotation,
+            alignment: Alignment.topLeft,
+            origin: anchorPoint.scale(
+              coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
+              coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
+            ),
+            child: ZoomTransform(
+              child: ValueListenableBuilder<Offset?>(
+                valueListenable: _dragOrigin,
+                builder: (context, origin, child) => ViewConeWidget(
+                  id: null,
+                  angle: viewConeUtility.angle,
+                  rotation: displayRotation,
+                  length: localLength,
+                  worldOrigin: origin ??
+                      utilityRef.position +
+                          coordinateSystem.virtualOffsetToWorld(anchorPoint),
+                  visionElevation: utilityRef.visionElevation,
+                  opacity: Settings.feedbackOpacity,
+                ),
               ),
             ),
           ),
           childWhenDragging: const SizedBox.shrink(),
+          onDragUpdate: _dragOrigin.update,
           onDragStarted: () {
             setState(() {
               isDragging = true;
             });
           },
           onDragEnd: (details) {
+            _dragOrigin.end();
             setState(() {
               isDragging = false;
             });

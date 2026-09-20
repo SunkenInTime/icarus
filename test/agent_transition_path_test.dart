@@ -21,6 +21,17 @@ void main() {
       expect(path.positionAt(-1), const Offset(2, 3));
       expect(path.positionAt(2), const Offset(8, 9));
     });
+
+    test('unreachable moves stay at their source until the destination page',
+        () {
+      final path = AgentTransitionPath.unreachable(
+          const Offset(2, 3), const Offset(8, 9));
+      expect(path.isReachable, isFalse);
+      expect(path.length, 0);
+      expect(path.positionAt(.5), const Offset(2, 3));
+      expect(path.positionAt(.999), const Offset(2, 3));
+      expect(path.positionAt(1), const Offset(8, 9));
+    });
   });
 
   test('A* routes around view-cone collision segments', () {
@@ -70,6 +81,13 @@ void main() {
     expect(path.points.any((point) => point.dy > 85), isTrue);
     expect(path.positionAt(0), const Offset(20, 30));
     expect(path.positionAt(1), const Offset(100, 30));
+
+    const boundedSearch = AgentTransitionPathfinder(
+        gridSpacing: 10, clearance: 2, maxExpandedNodes: 0);
+    final unreachable = boundedSearch.findPath(
+        start: const Offset(20, 30), end: const Offset(100, 30), layer: layer);
+    expect(unreachable.isReachable, isFalse);
+    expect(unreachable.positionAt(.5), const Offset(20, 30));
   });
 
   test('smoothed paths preserve clearance from wall corners', () {

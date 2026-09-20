@@ -280,7 +280,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       return;
     }
     if (_isClosingWindow) {
-      await windowManager.close();
       return;
     }
 

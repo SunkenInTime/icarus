@@ -19,6 +19,8 @@ The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in 
 
 Here's the philosophy we work by:
 
+After audits, investigations, or substantial testing runs, read [answers.md](answers.md) before reporting the outcome.
+
 ## The library is sacred
 Corrupted or dropped library data is unrecoverable. Schema changes are the dangerous moment: a change to the Hive models means source models, generated adapters, and a migration (`lib/migrations/`) so that data written by any past version loads in this one. When a write path is uncertain, fail loudly without saving rather than save something wrong.
 

@@ -49,6 +49,8 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/providers/navigation_geometry_provider.dart';
+import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/services/archive_manifest.dart';
@@ -1246,19 +1248,24 @@ class StrategyProvider extends Notifier<StrategyState> {
             entry.visualWidget is PlacedAgentNode,
       );
 
-      // Page-transition routes use the same collision geometry as view cones.
-      // Only resolve it when a moved agent actually needs a route; transitions
-      // containing abilities, drawings, or unchanged agents can start without
-      // paying the map geometry initialization cost.
+      // Agent routes load the small movement mesh independently of sightlines.
+      // Unchanged agents, abilities and drawings need no route initialization.
       VisionGeometryMap? transitionGeometry;
+      NavigationGeometryMap? transitionNavigation;
+      final map = ref.read(mapProvider).currentMap;
+      final requireNavigation = ref.read(worldGeometryEnabledProvider(map));
       if (needsAgentRouting) {
         try {
-          transitionGeometry = await ref.read(
-            viewConeGeometryProvider(ref.read(mapProvider).currentMap).future,
-          );
+          if (requireNavigation) {
+            transitionNavigation =
+                await ref.read(navigationGeometryProvider(map).future);
+          } else {
+            transitionGeometry =
+                await ref.read(viewConeGeometryProvider(map).future);
+          }
         } on Object {
-          // Geometry is an enhancement. Keep page navigation functional and
-          // let the overlay retain its direct-path fallback if loading fails.
+          // The provider reports the failure. Required native routes hold at
+          // their sources, so changing pages cannot invent movement through walls.
         }
       }
 
@@ -1285,6 +1292,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       final agentPaths = AgentTransitionPathPlanner.plan(
         entries: entries,
         geometry: transitionGeometry,
+        navigation: transitionNavigation,
+        requireNavigation: requireNavigation,
         startAgentSize: startSettings.agentSize,
         endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,

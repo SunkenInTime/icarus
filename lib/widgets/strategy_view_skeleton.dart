@@ -5,6 +5,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class StrategyViewSkeleton extends StatelessWidget {
@@ -343,10 +344,14 @@ class _MapCanvasSkeleton extends StatelessWidget {
                                 colorFilter: _grayscaleFilter,
                                 child: Opacity(
                                   opacity: 0.46,
-                                  child: SvgPicture.asset(
-                                    assetName,
-                                    semanticsLabel: 'Map',
-                                    fit: BoxFit.contain,
+                                  child: CanonicalMapArtwork(
+                                    map: mapValue,
+                                    isAttack: isAttack,
+                                    child: SvgPicture.asset(
+                                      assetName,
+                                      semanticsLabel: 'Map',
+                                      fit: BoxFit.contain,
+                                    ),
                                   ),
                                 ),
                               ),

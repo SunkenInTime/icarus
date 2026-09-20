@@ -10,13 +10,18 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ViewConeWidget extends ConsumerWidget {
   static const Offset anchorPointVirtual = Offset(
@@ -35,6 +40,10 @@ class ViewConeWidget extends ConsumerWidget {
   final double? visionElevation;
   final bool showCenterMarker;
 
+  /// Paint alpha for a drag preview. Applied inside the cone painter so the
+  /// preview needs no offscreen opacity layer.
+  final double opacity;
+
   const ViewConeWidget({
     super.key,
     required this.id,
@@ -44,6 +53,7 @@ class ViewConeWidget extends ConsumerWidget {
     this.worldOrigin,
     this.visionElevation,
     this.showCenterMarker = true,
+    this.opacity = 1,
   });
 
   @override
@@ -80,12 +90,11 @@ class ViewConeWidget extends ConsumerWidget {
 
     final totalHeight = totalHeightVirtual * coord.scaleFactor;
     final totalWidth = totalWidthVirtual * coord.scaleFactor;
-    final resolvedWorldOrigin =
-        worldOrigin ??
+    final resolvedWorldOrigin = worldOrigin ??
         (placedUtility == null
             ? null
             : placedUtility.position +
-                  coord.virtualOffsetToWorld(anchorPointVirtual));
+                coord.virtualOffsetToWorld(anchorPointVirtual));
     final resolvedElevation = visionElevation ?? placedUtility?.visionElevation;
     final debugEnabled = ref.watch(viewConeDebugProvider);
     List<Offset>? visibilityPolygon;
@@ -95,6 +104,10 @@ class ViewConeWidget extends ConsumerWidget {
     List<VisionSegment>? debugBoundarySegments;
     String? debugLabel;
     VisionGeometryMap? geometry;
+    SvgHeightVisibility? svgHeightModel;
+    Offset? svgHeightOrigin;
+    ShadContextMenuItem? sightlineReportItem;
+    Widget? heightCone;
     if (resolvedWorldOrigin != null) {
       final mapState = ref.watch(mapProvider);
       final sideWorldOrigin = coord.positionForSide(
@@ -102,11 +115,50 @@ class ViewConeWidget extends ConsumerWidget {
         reflectionOffset: Offset.zero,
         isAttack: mapState.isAttack,
       );
-      geometry = ref
-          .watch(viewConeGeometryProvider(mapState.currentMap))
-          .asData
-          ?.value;
-      if (geometry != null) {
+      final worldGeometryEnabled =
+          ref.watch(worldGeometryEnabledProvider(mapState.currentMap));
+      final usesSvgHeight =
+          hasSvgHeightRuntime(mapState.currentMap) && worldGeometryEnabled;
+      if (usesSvgHeight) {
+        // Registered maps only paint results from their reviewed SVG semantic
+        // assets. The icon remains available while loading or after a failure.
+        visibilityPolygon = const [Offset.zero];
+        final runtime = ref
+            .watch(svgHeightRuntimeProvider(mapState.currentMap))
+            .asData
+            ?.value;
+        if (runtime != null) {
+          svgHeightModel = runtime.model(mapState.isAttack);
+          svgHeightOrigin = SvgHeightMapTransform.forMap(mapState.currentMap)
+              .sourceFromSideWorld(
+            sideWorldOrigin,
+            isAttack: mapState.isAttack,
+          );
+          heightCone = SvgHeightViewCone(
+            runtime: runtime,
+            canonicalOrigin: resolvedWorldOrigin,
+            rotation: rotation ??
+                coord.rotationForSide(placedUtility?.rotation ?? 0,
+                    isAttack: mapState.isAttack),
+            range: coord.virtualLengthToWorld(currentLength),
+            angle: angle * pi / 180,
+            isAttack: mapState.isAttack,
+            elevation: resolvedElevation,
+            opacity: opacity,
+          );
+        }
+      } else {
+        geometry = ref
+            .watch(viewConeGeometryProvider(mapState.currentMap))
+            .asData
+            ?.value;
+      }
+      if (!usesSvgHeight && geometry == null && worldGeometryEnabled) {
+        // An enabled world map may only show sightlines from validated data.
+        // Keep the icon visible while loading or reporting an asset failure.
+        visibilityPolygon = const [Offset.zero];
+      }
+      if (!usesSvgHeight && geometry != null) {
         final inferredHeight = geometry.inferredHeightAt(
           isAttack: mapState.isAttack,
           position: sideWorldOrigin,
@@ -119,7 +171,9 @@ class ViewConeWidget extends ConsumerWidget {
         // Placed free cones normally pass their drag-preview rotation directly,
         // while this provider fallback keeps clipping correct for any caller
         // that only supplies the persisted utility id.
-        final effectiveRotation = rotation ?? placedUtility?.rotation ?? 0;
+        final effectiveRotation = rotation ??
+            coord.rotationForSide(placedUtility?.rotation ?? 0,
+                isAttack: mapState.isAttack);
         final screenZoom = ref.watch(screenZoomProvider).clamp(1.0, 8.0);
         final worldPolygon = VisionPolygon.compute(
           layer: layer,
@@ -177,8 +231,7 @@ class ViewConeWidget extends ConsumerWidget {
               ? layer.debugCollisionGroups
               : layer.boundary?.collisionGroups ?? layer.collisionGroups;
           for (final candidate in debugGroups) {
-            final group =
-                activeGroupsById[candidate.id] ??
+            final group = activeGroupsById[candidate.id] ??
                 observerGroupsById[candidate.id] ??
                 candidate;
             if (group.isOuterBoundary) continue;
@@ -194,32 +247,58 @@ class ViewConeWidget extends ConsumerWidget {
               }
             }
           }
-          final nearestCoverage =
-              nearestGroup == null ||
+          final nearestCoverage = nearestGroup == null ||
                   layer.layerIndex >= nearestGroup.coverageByLayer.length
               ? null
               : nearestGroup.coverageByLayer[layer.layerIndex];
           final summary = inferredHeight == null
               ? 'fallback ${formatVisionElevation(layer.elevation)}'
               : 'height ${formatVisionElevation(inferredHeight)}  '
-                    'slice ${formatVisionElevation(layer.elevation)}  '
-                    '${layer.collisionGroups.where((group) => group.hasEvidenceInLayer(layer.layerIndex)).length}/'
-                    '${layer.collisionGroups.length} contours evidenced  '
-                    '${layer.matchedSourceSegments.length}/'
-                    '${layer.matchedSourceSegments.length + layer.rejectedSegments.length} Riot edges aligned';
+                  'slice ${formatVisionElevation(layer.elevation)}  '
+                  '${layer.collisionGroups.where((group) => group.hasEvidenceInLayer(layer.layerIndex)).length}/'
+                  '${layer.collisionGroups.length} contours evidenced  '
+                  '${layer.matchedSourceSegments.length}/'
+                  '${layer.matchedSourceSegments.length + layer.rejectedSegments.length} Riot edges aligned';
           debugLabel = nearestGroup == null
               ? summary
               : '$summary\nnearest ${nearestGroup.id}  '
-                    '${nearestGroupIsActive ? 'active' : 'inactive candidate'}  '
-                    '${nearestGroup.confidence.name}  '
-                    '${((nearestCoverage ?? 0) * 100).round()}%';
+                  '${nearestGroupIsActive ? 'active' : 'inactive candidate'}  '
+                  '${nearestGroup.confidence.name}  '
+                  '${((nearestCoverage ?? 0) * 100).round()}%';
         }
+      }
+      // Only a placed cone carries a context menu; a drag preview has none.
+      if (placedUtility != null) {
+        sightlineReportItem = buildSightlineReportMenuItem(
+          map: mapState.currentMap,
+          isAttack: mapState.isAttack,
+          model: svgHeightModel,
+          canonicalOrigin: resolvedWorldOrigin,
+          rotation: rotation ??
+              coord.rotationForSide(placedUtility.rotation,
+                  isAttack: mapState.isAttack),
+          coneAngleDegrees: angle,
+          lengthVirtual: currentLength,
+          visionElevationCm: resolvedElevation,
+        );
       }
     }
 
     final contextMenuItems = placedUtility == null
         ? null
-        : [...buildAdjacentPageCopyMenuItems(ref, placedUtility.id)];
+        : [
+            if (svgHeightModel != null && svgHeightOrigin != null)
+              buildSvgHeightElevationMenuItem(
+                model: svgHeightModel,
+                origin: svgHeightOrigin,
+                selectedElevationCm: placedUtility.visionElevation,
+                onChanged: (elevation) => ref
+                    .read(utilityProvider.notifier)
+                    .updateViewConeElevation(placedUtility!.id, elevation),
+              ),
+            if (sightlineReportItem != null) sightlineReportItem,
+            ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
+          ];
 
     return SizedBox(
       width: totalWidth,
@@ -234,19 +313,22 @@ class ViewConeWidget extends ConsumerWidget {
               child: SizedBox(
                 width: containerWidth,
                 height: containerHeight,
-                child: CustomPaint(
-                  size: Size(containerWidth, containerHeight),
-                  painter: ViewConePainter(
-                    angle: angle,
-                    length: scaledLength,
-                    visibilityPolygon: visibilityPolygon,
-                    debugMatchedSegments: debugMatchedSegments,
-                    debugRiotSegments: debugRiotSegments,
-                    debugRejectedSegments: debugRejectedSegments,
-                    debugBoundarySegments: debugBoundarySegments,
-                    debugLabel: debugLabel,
-                  ),
-                ),
+                child: heightCone ??
+                    _faded(
+                        opacity,
+                        CustomPaint(
+                          size: Size(containerWidth, containerHeight),
+                          painter: ViewConePainter(
+                            angle: angle,
+                            length: scaledLength,
+                            visibilityPolygon: visibilityPolygon,
+                            debugMatchedSegments: debugMatchedSegments,
+                            debugRiotSegments: debugRiotSegments,
+                            debugRejectedSegments: debugRejectedSegments,
+                            debugBoundarySegments: debugBoundarySegments,
+                            debugLabel: debugLabel,
+                          ),
+                        )),
               ),
             ),
           ),
@@ -260,17 +342,20 @@ class ViewConeWidget extends ConsumerWidget {
                     : null,
                 contextMenuItems: contextMenuItems,
                 cursor: SystemMouseCursors.click,
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: Settings.tacticalVioletTheme.border,
+                child: _faded(
+                  opacity,
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: Settings.tacticalVioletTheme.border,
+                      ),
+                      color: Settings.tacticalVioletTheme.card,
                     ),
-                    color: Settings.tacticalVioletTheme.card,
+                    width: scaledIconSize,
+                    height: scaledIconSize,
+                    child: Image.asset('assets/eye.webp'),
                   ),
-                  width: scaledIconSize,
-                  height: scaledIconSize,
-                  child: Image.asset('assets/eye.webp'),
                 ),
               ),
             ),
@@ -340,6 +425,8 @@ class ViewConePainter extends CustomPainter {
 
     // Save canvas state and apply clip
     canvas.save();
+    // World polygons already contain the physical FOV and range. Applying a
+    // second circular screen-space clip would trim them on stretched maps.
     canvas.clipPath(clipPath);
     if (visibilityPolygon != null && visibilityPolygon!.length >= 3) {
       final visibilityPath = Path()
@@ -351,7 +438,10 @@ class ViewConePainter extends CustomPainter {
       canvas.clipPath(visibilityPath);
     }
 
-    // Draw radial gradient circle (will be clipped to wedge)
+    final gradientCenter = apex;
+    final gradientRadius = length;
+
+    // The world gradient uses the same physical circle as its visibility rays.
     final gradientPaint = Paint()
       ..shader = RadialGradient(
         center: Alignment.center,
@@ -361,9 +451,10 @@ class ViewConePainter extends CustomPainter {
           Colors.transparent,
         ],
         stops: const [0.0, 1.0],
-      ).createShader(Rect.fromCircle(center: apex, radius: length));
+      ).createShader(
+          Rect.fromCircle(center: gradientCenter, radius: gradientRadius));
 
-    canvas.drawCircle(apex, length, gradientPaint);
+    canvas.drawCircle(gradientCenter, gradientRadius, gradientPaint);
 
     // Restore canvas state
     canvas.restore();
@@ -440,3 +531,6 @@ class ViewConePainter extends CustomPainter {
         oldDelegate.debugLabel != debugLabel;
   }
 }
+
+Widget _faded(double opacity, Widget child) =>
+    opacity >= 1 ? child : Opacity(opacity: opacity, child: child);

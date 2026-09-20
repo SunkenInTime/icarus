@@ -21,9 +21,16 @@ Set-StrictMode -Version Latest
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
 $env:FLUTTER_ROOT = Get-FlutterRoot -RepoRoot $repoRoot
 
+Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "tool/check_bundled_wall_heights.dart")
+
 if (-not $SkipPubGet) {
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
 }
+
+# The bundled sightline models must be the reviewed ones before packaging.
+Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
+    "flutter", "test", "--no-pub", "test/bundled_map_models_test.dart"
+)
 
 $dartDefinesPath = $null
 try {

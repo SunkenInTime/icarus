@@ -12,12 +12,14 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/screenshot/capture_geometry.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
+import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/widgets/dialogs/export_video_dialog.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
-import 'package:screenshot/screenshot.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Geometry shared by every control in the editor's floating toolbar, so the
@@ -147,38 +149,30 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     }
     if (_isCapturingScreenshot) return;
     setState(() => _isCapturingScreenshot = true);
-    CoordinateSystem.instance.setIsScreenshot(true);
-
-    final String id = ref.read(strategyProvider).id;
-
-    await ref.read(strategyProvider.notifier).forceSaveNow(id);
-
-    final newStrat = Hive.box<StrategyData>(
-      HiveBoxNames.strategiesBox,
-    ).values.where((StrategyData strategy) => strategy.id == id).firstOrNull;
-
-    if (newStrat == null) {
-      if (mounted) setState(() => _isCapturingScreenshot = false);
-      CoordinateSystem.instance.setIsScreenshot(false);
-      return;
-    }
-    final newController = ScreenshotController();
-    final currentPageID = ref.read(strategyProvider.notifier).activePageID;
-    final mapState = ref.read(mapProvider);
-
-    if (currentPageID == null) {
-      if (mounted) setState(() => _isCapturingScreenshot = false);
-      CoordinateSystem.instance.setIsScreenshot(false);
-      return;
-    }
-
-    final activePage = newStrat.pages.firstWhere(
-      (p) => p.id == currentPageID,
-      orElse: () => newStrat.pages.first,
-    );
-    final screenshotContainer = ProviderContainer();
-
+    ProviderContainer? screenshotContainer;
+    CaptureGeometryLease? captureGeometry;
     try {
+      final String id = ref.read(strategyProvider).id;
+
+      await ref.read(strategyProvider.notifier).forceSaveNow(id);
+      if (!mounted) return;
+
+      final newStrat = Hive.box<StrategyData>(
+        HiveBoxNames.strategiesBox,
+      ).values.where((StrategyData strategy) => strategy.id == id).firstOrNull;
+      if (newStrat == null) return;
+
+      final currentPageID = ref.read(strategyProvider.notifier).activePageID;
+      final mapState = ref.read(mapProvider);
+      if (currentPageID == null) return;
+
+      final activePage = newStrat.pages.firstWhere(
+        (p) => p.id == currentPageID,
+        orElse: () => newStrat.pages.first,
+      );
+      final captureContainer = ProviderContainer();
+      screenshotContainer = captureContainer;
+
       final screenshotView = ScreenshotView(
         isAttack: activePage.isAttack,
         mapValue: newStrat.mapData,
@@ -198,12 +192,40 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         themeProfileId: newStrat.themeProfileId,
         themeOverridePalette: newStrat.themeOverridePalette,
       );
-      screenshotView.hydrateProviders(screenshotContainer);
-      final image = await newController.captureFromWidget(
-        targetSize: CoordinateSystem.screenShotSize,
-        wrapForOffscreenCapture(screenshotView, container: screenshotContainer),
+      // The sightline models load asynchronously; the capture waits for the
+      // page's geometry before the first frame is taken.
+      captureGeometry = await prepareCaptureGeometry(
+        captureContainer,
+        newStrat.mapData,
+        [activePage],
       );
-      if (mounted) setState(() => _isCapturingScreenshot = false);
+      late Uint8List image;
+      try {
+        image = await withScreenshotCoordinates(() async {
+          screenshotView.hydrateProviders(captureContainer);
+          final renderer = PersistentOffscreenRenderer(
+              targetSize: CoordinateSystem.screenShotSize,
+              waitForFrameData: captureGeometry?.waitForFrame,
+              wrapWidget: (child) => wrapForOffscreenCapture(child,
+                  container: captureContainer));
+          try {
+            await renderer.prepare(screenshotView,
+                settleDuration: const Duration(milliseconds: 800));
+            return await renderer.capture(screenshotView);
+          } finally {
+            await renderer.dispose();
+          }
+        });
+      } finally {
+        if (mounted) {
+          ref.read(screenshotProvider.notifier).setIsScreenShot(false);
+          ref
+              .read(drawingProvider.notifier)
+              .rebuildAllPaths(CoordinateSystem.instance);
+        }
+      }
+      if (!mounted) return;
+      setState(() => _isCapturingScreenshot = false);
       String? outputFile = await FilePicker.platform.saveFile(
         type: FileType.custom,
         dialogTitle: 'Please select an output file:',
@@ -214,17 +236,19 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         final file = File(outputFile);
         await file.writeAsBytes(image);
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not export the screenshot. Please try again.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'EditorToolbar.screenshot',
+      );
     } finally {
-      screenshotContainer.dispose();
+      captureGeometry?.close();
+      screenshotContainer?.dispose();
       if (mounted && _isCapturingScreenshot) {
         setState(() => _isCapturingScreenshot = false);
       }
-      ref.read(screenshotProvider.notifier).setIsScreenShot(false);
-      CoordinateSystem.instance.setIsScreenshot(false);
-      ref
-          .read(drawingProvider.notifier)
-          .rebuildAllPaths(CoordinateSystem.instance);
     }
   }
 }

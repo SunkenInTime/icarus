@@ -8,6 +8,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -152,11 +153,15 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
           Positioned.fill(
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: SvgPicture.asset(
-                mapAsset,
-                colorMapper: MapSvgColorMapper.forPalette(_palette),
-                fit: BoxFit.contain,
-                semanticsLabel: 'Map theme preview',
+              child: CanonicalMapArtwork(
+                map: ref.watch(mapProvider).currentMap,
+                isAttack: ref.watch(mapProvider).isAttack,
+                child: SvgPicture.asset(
+                  mapAsset,
+                  colorMapper: MapSvgColorMapper.forPalette(_palette),
+                  fit: BoxFit.contain,
+                  semanticsLabel: 'Map theme preview',
+                ),
               ),
             ),
           ),

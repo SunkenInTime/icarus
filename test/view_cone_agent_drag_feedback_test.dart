@@ -30,12 +30,15 @@ class _FixedMapProvider extends MapProvider {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('attached view-cone drag feedback skips geometry clipping',
+  testWidgets('attached drag feedback queries the current apex without saving',
       (tester) async {
     CoordinateSystem(playAreaSize: const Size(1920, 1080));
     final container = ProviderContainer(
       overrides: [
         mapProvider.overrideWith(_FixedMapProvider.new),
+        viewConeGeometryProvider.overrideWith(
+          (ref, map) async => twoLayerAscentGeometry(),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -70,14 +73,23 @@ void main() {
         tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
     expect(placedCone.worldOrigin, isNotNull);
 
-    final draggable = tester.widget<Draggable<PlacedWidget>>(
-      find.byWidgetPredicate((widget) => widget is Draggable<PlacedWidget>),
-    );
-    await tester.pumpWidget(harness(draggable.feedback));
-
-    final feedbackCone =
-        tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
-    expect(feedbackCone.worldOrigin, isNull);
+    final gesture =
+        await tester.startGesture(tester.getCenter(find.byType(AgentWidget)));
+    await gesture.moveBy(const Offset(30, 10));
+    await tester.pump();
+    final first =
+        tester.widget<ViewConeWidget>(find.byType(ViewConeWidget)).worldOrigin!;
+    await gesture.moveBy(const Offset(24, 36));
+    await tester.pump();
+    final next =
+        tester.widget<ViewConeWidget>(find.byType(ViewConeWidget)).worldOrigin!;
+    expect((next - first).dx,
+        closeTo(CoordinateSystem.instance.screenWidthToWorld(24), 1e-9));
+    expect((next - first).dy,
+        closeTo(CoordinateSystem.instance.screenHeightToWorld(36), 1e-9));
+    expect(container.read(agentProvider).single.position, agent.position);
+    await gesture.up();
+    await tester.pump();
   });
 
   testWidgets('view-cone agent menu removes the cone with undo support',
@@ -122,6 +134,9 @@ void main() {
       ),
     );
     await tester.pump();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(10, 10));
+    addTearDown(mouse.removePointer);
 
     await tester.tapAt(
       tester.getCenter(find.byType(AgentWidget)),
@@ -131,8 +146,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
+    expect(find.text('Copy sightline report'), findsOneWidget);
+    // Weapons live under one Weapon entry; its categories open on hover.
+    expect(find.text('Weapon'), findsOneWidget);
+    await mouse.moveTo(tester.getCenter(find.text('Weapon')));
+    await tester.pumpAndSettle();
     expect(find.text('Sidearms'), findsOneWidget);
-    expect(find.text('None'), findsOneWidget);
+    // "None" only leads the submenu while a weapon is equipped.
+    expect(find.text('None'), findsNothing);
     expect(tester.getSize(find.byType(ShadContextMenuItem).first).height, 40);
     final menuItemRect = tester.getRect(find.byType(ShadContextMenuItem).first);
     final abilityButtons = find.byWidgetPredicate(
@@ -154,6 +175,7 @@ void main() {
     expect(find.text('View elevation'), findsNothing);
     expect(find.text('Vision calibration'), findsNothing);
     expect(find.text('Remove View Cone'), findsOneWidget);
+    expect(find.text('Copy sightline report'), findsOneWidget);
 
     await tester.tap(find.text('Remove View Cone'));
     await tester.pumpAndSettle();
@@ -221,8 +243,13 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(ShadContextMenuRegion), findsNothing);
+    // The cone still offers its sightline report on a legacy map; only the
+    // elevation controls belong to the SVG-height runtime.
+    expect(find.byType(ShadContextMenuRegion), findsOneWidget);
     expect(find.text('View elevation'), findsNothing);
     expect(find.text('Vision calibration'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(Duration.zero);
   });
 }

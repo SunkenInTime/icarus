@@ -239,6 +239,11 @@ class Settings {
   static const Color settingsDiscordAccent = Color(0xff5865f2); // brand blurple
   static const Color settingsMapAccent = Color(0xffb27c40); // map layers
 
+  // Sightline report crop. A diagnostic image we send ourselves, never app
+  // chrome: walls that block the reported eye, walls that do not, the cone.
+  static const Color sightlineReportBlockingWall = Color(0xffd6a24a);
+  static const Color sightlineReportClearWall = Color(0xff6b5527);
+  static const Color sightlineReportCone = Color(0xff5da0e8);
   // Resting glyph color for toolbar controls: a step under foreground so the
   // strip of icons stays quiet, but above mutedForeground, which vanishes at
   // the light stroke weights. Hover still comes up to foreground.

@@ -78,30 +78,44 @@ const Map<String, ({String vision, String spawns, String level, String uiData})>
     level: 'Content/Maps/Rook/Rook.json',
     uiData: 'Content/Maps/Rook/Rook_UIData.json',
   ),
+  'summit': (
+    vision: 'Content/UI/InGame/Minimap/Maps/Plummet/Plummet_VisionCones.json',
+    spawns: 'Content/Maps/Plummet/Plummet_TeamSpawnPoints.json',
+    level: 'Content/Maps/Plummet/Plummet.json',
+    uiData: 'Content/Maps/Plummet/Plummet_UIData.json',
+  ),
 };
 
 void main(List<String> arguments) {
-  if (arguments.length != 1) {
+  if (arguments.isEmpty || arguments.length > 2) {
     stderr.writeln(
       'Usage: dart run tool/generate_view_cone_geometry.dart '
-      '<FModel ShooterGame export>',
+      '<FModel ShooterGame export> [output map directory]',
     );
     exitCode = 64;
     return;
   }
 
-  final exportRoot = Directory(arguments.single);
+  final exportRoot = Directory(arguments.first);
+  final outputDirectory = Directory(arguments.length == 2
+      ? arguments[1]
+      : _join(Directory.current.path, 'assets/maps'));
   if (!exportRoot.existsSync()) {
     stderr.writeln('Export directory does not exist: ${exportRoot.path}');
     exitCode = 66;
     return;
   }
+  outputDirectory.createSync(recursive: true);
 
   for (final entry in _sources.entries) {
     final visionFile = File(_join(exportRoot.path, entry.value.vision));
     final spawnFile = File(_join(exportRoot.path, entry.value.spawns));
     final levelFile = File(_join(exportRoot.path, entry.value.level));
     final uiDataFile = File(_join(exportRoot.path, entry.value.uiData));
+    if (entry.key == 'summit' && !visionFile.existsSync()) {
+      _writeSummitSvgFallback(outputDirectory);
+      continue;
+    }
     if (!visionFile.existsSync()) {
       throw StateError('Missing ${entry.key} vision table: ${visionFile.path}');
     }
@@ -119,6 +133,7 @@ void main(List<String> arguments) {
     final heightData = _parseHeightData(
       levelFile: levelFile,
       uiDataFile: uiDataFile,
+      allowMissingNavigation: entry.key == 'summit',
     );
     final defaultElevation = _resolveDefaultElevation(
       layers: layers,
@@ -142,7 +157,7 @@ void main(List<String> arguments) {
     };
 
     final outputFile = File(
-      _join(Directory.current.path, 'assets/maps/${entry.key}_vision.json'),
+      _join(outputDirectory.path, '${entry.key}_vision.json'),
     );
     outputFile.writeAsStringSync(jsonEncode(output));
     stdout.writeln(
@@ -151,15 +166,12 @@ void main(List<String> arguments) {
       'default $defaultElevation, ${outputFile.lengthSync()} bytes',
     );
   }
-
-  _writeSummitSvgFallback();
 }
 
-/// Summit postdates the local ShooterGame export. Its attack-side SVG uses an
+/// Older exports lack Summit's vision table. Its attack-side SVG uses an
 /// even-odd fill path whose subpaths describe the visible floor boundaries and
-/// internal walls, so it is a deterministic boundary-clipping fallback until
-/// Riot's VisionGeometry table is available in a future export.
-void _writeSummitSvgFallback() {
+/// internal walls, so it provides boundary clipping when that source is absent.
+void _writeSummitSvgFallback(Directory outputDirectory) {
   final svgFile = File(
     _join(Directory.current.path, 'assets/maps/summit_map.svg'),
   );
@@ -192,7 +204,7 @@ void _writeSummitSvgFallback() {
     ],
   };
   final outputFile = File(
-    _join(Directory.current.path, 'assets/maps/summit_vision.json'),
+    _join(outputDirectory.path, 'summit_vision.json'),
   );
   outputFile.writeAsStringSync(jsonEncode(output));
   stdout.writeln(
@@ -363,6 +375,7 @@ List<_CompactLayer> _parseVisionLayers(File file) {
 _HeightData _parseHeightData({
   required File levelFile,
   required File uiDataFile,
+  bool allowMissingNavigation = false,
 }) {
   final uiDecoded = jsonDecode(uiDataFile.readAsStringSync());
   final uiObjects = uiDecoded is List ? uiDecoded : <Object?>[uiDecoded];
@@ -391,16 +404,26 @@ _HeightData _parseHeightData({
       : <Map<String, dynamic>>[
           if (levelDecoded is Map<String, dynamic>) levelDecoded,
         ];
-  final navProperties = levelObjects
+  final navigationCandidates = levelObjects
       .where((value) => value['Type'] == 'GeneratedNavDropOffLinks')
       .map((value) => value['Properties'])
       .whereType<Map<String, dynamic>>()
-      .firstWhere(
-        (properties) => properties['PointLinks'] is List,
-        orElse: () => throw FormatException(
-          'Missing generated navigation samples in ${levelFile.path}',
-        ),
+      .where((properties) => properties['PointLinks'] is List)
+      .toList();
+  if (navigationCandidates.isEmpty) {
+    if (!allowMissingNavigation) {
+      throw FormatException(
+        'Missing generated navigation samples in ${levelFile.path}',
       );
+    }
+    // Summit 13.05 has a vision table but no GeneratedNavDropOffLinks in
+    // either its root world or Navmesh sublevel. Keep height inference absent,
+    // as in its existing fallback, instead of inventing floor samples.
+    stderr.writeln('No generated floor samples for Summit; '
+        'automatic elevation selection remains unavailable.');
+    return const _HeightData(observerHeight: 100, samples: []);
+  }
+  final navProperties = navigationCandidates.first;
 
   var observerHeight = 100.0;
   for (final value in levelObjects) {

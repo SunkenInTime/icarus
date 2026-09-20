@@ -12,6 +12,33 @@ enum VisionCollisionConfidence {
 }
 
 class VisionSegment {
+  /// A baked world edge has no authored stroke or attached collision polygons.
+  /// Avoid building empty polygon collections for every edge in a height slice.
+  factory VisionSegment.unthickened(Offset start, Offset end) {
+    final delta = end - start;
+    final lengthSquared = delta.distanceSquared;
+    final length = math.sqrt(lengthSquared);
+    final tangent = length <= 1e-9 ? Offset.zero : delta / length;
+    return VisionSegment._(
+      start,
+      end,
+      collisionRadius: 0,
+      delta: delta,
+      lengthSquared: lengthSquared,
+      length: length,
+      tangent: tangent,
+      normal: Offset(-tangent.dy, tangent.dx),
+      collisionVertices: List<Offset>.unmodifiable([start, end]),
+      additionalCollisionPolygons: const [],
+      additionalCollisionBounds: const [],
+      collisionPolygons: const [],
+      collisionMinX: math.min(start.dx, end.dx),
+      collisionMaxX: math.max(start.dx, end.dx),
+      collisionMinY: math.min(start.dy, end.dy),
+      collisionMaxY: math.max(start.dy, end.dy),
+    );
+  }
+
   factory VisionSegment(
     Offset start,
     Offset end, {
@@ -426,6 +453,44 @@ class VisionCollisionGroup {
       segments: segments,
       collisionSegments: collisionSegments,
       bounds: bounds,
+      kind: kind,
+      isClosed: isClosed,
+      isOuterBoundary: isOuterBoundary,
+      nestingDepth: nestingDepth,
+      requiresEvidence: requiresEvidence,
+      isAuthoritative: isAuthoritative,
+      removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
+      inferObserverPassability: inferObserverPassability,
+      layerMask: layerMask,
+      evidenceLayerMask: evidenceLayerMask,
+      navigationLayerMask: navigationLayerMask,
+      observerExclusionLayerMask: observerExclusionLayerMask,
+      coverageByLayer: List<double>.unmodifiable(coverageByLayer),
+      confidence: confidence,
+      overrideApplied: overrideApplied,
+    );
+  }
+
+  /// Moves presentation coordinates without changing authored override IDs.
+  VisionCollisionGroup translated(Offset offset) {
+    if (offset == Offset.zero) return this;
+    VisionSegment shift(VisionSegment segment) => VisionSegment(
+          segment.start + offset,
+          segment.end + offset,
+          collisionRadius: segment.collisionRadius,
+          additionalCollisionPolygons: [
+            for (final polygon in segment.additionalCollisionPolygons)
+              [for (final point in polygon) point + offset],
+          ],
+        );
+    return VisionCollisionGroup._(
+      id: id,
+      points: List.unmodifiable(points.map((point) => point + offset)),
+      paths: List.unmodifiable(paths.map((path) =>
+          List<Offset>.unmodifiable(path.map((point) => point + offset)))),
+      segments: List.unmodifiable(segments.map(shift)),
+      collisionSegments: List.unmodifiable(collisionSegments.map(shift)),
+      bounds: bounds.shift(offset),
       kind: kind,
       isClosed: isClosed,
       isOuterBoundary: isOuterBoundary,

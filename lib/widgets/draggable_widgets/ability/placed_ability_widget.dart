@@ -18,6 +18,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_com
 import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
 import 'dart:math' as math;
 
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -80,6 +81,13 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   double? localLength;
   bool isDragging = false;
   String? _activeDragId;
+  final _visionDragOrigin = ViewConeDragOrigin();
+
+  @override
+  void dispose() {
+    _visionDragOrigin.dispose();
+    super.dispose();
+  }
 
   double _resolvedLengthFor(PlacedAbility ability, double rawLength) {
     final abilityData = ability.data.abilityData;
@@ -587,6 +595,13 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         child: Draggable<PlacedWidget>(
           data: widget.data,
           dragAnchorStrategy: (draggable, context, position) {
+            _visionDragOrigin.start(
+                origin: abilityRef.position +
+                    coordinateSystem.virtualOffsetToWorld(storedAbilityAnchor(
+                        ability: abilityData, mapScale: mapScale)),
+                coordinates: coordinateSystem,
+                zoom: ref.read(screenZoomProvider),
+                isAttack: isAttack);
             final renderObject = context.findRenderObject()! as RenderBox;
             final rotatedPosition = rotateOffset(
               renderObject.globalToLocal(position),
@@ -601,19 +616,23 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
             child: ZoomTransform(
-              child: AbilityVisionConeComposite(
-                ability: abilityRef,
-                spec: visionSpec,
-                rotation: displayRotation,
-                length: localLength ?? 0,
-                mapScale: mapScale,
-                abilitySize: abilitySize,
-                clipToGeometry: false,
-                child: buildAbilityChild(watchMouse: false),
+              child: ValueListenableBuilder<Offset?>(
+                valueListenable: _visionDragOrigin,
+                builder: (context, origin, child) => AbilityVisionConeComposite(
+                  ability: abilityRef,
+                  spec: visionSpec,
+                  rotation: displayRotation,
+                  length: localLength ?? 0,
+                  mapScale: mapScale,
+                  abilitySize: abilitySize,
+                  worldOriginOverride: origin,
+                  child: buildAbilityChild(watchMouse: false),
+                ),
               ),
             ),
           ),
           childWhenDragging: const SizedBox.shrink(),
+          onDragUpdate: _visionDragOrigin.update,
           onDragStarted: () {
             final shouldDuplicate = ref.read(duplicateDragModifierProvider);
             final duplicateId = shouldDuplicate
@@ -628,6 +647,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             });
           },
           onDragEnd: (details) {
+            _visionDragOrigin.end();
             final dragId = _activeDragId ?? abilityRef.id;
             setState(() {
               isDragging = false;
