@@ -60,6 +60,13 @@ jobs:
         shell: pwsh
         run: throw "Signed desktop releases must be dispatched from main."
 
+      - name: Sign In To Azure With OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - uses: dart-lang/setup-dart@v1
 
       - name: Add Pub Cache To PATH
@@ -81,13 +88,6 @@ jobs:
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase build -VersionBump "${{ inputs.version_bump }}" -Channel "${{ inputs.channel }}"
-
-      - name: Sign In To Azure With OIDC
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows Release Binaries
         uses: azure/artifact-signing-action@v2
