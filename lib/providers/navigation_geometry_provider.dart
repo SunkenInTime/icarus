@@ -10,7 +10,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/world_geometry_source_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
-import 'package:icarus/view_cone/height_assets.dart';
+import 'package:icarus/view_cone/height_catalog.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
 
 final navigationGeometryBundleProvider =

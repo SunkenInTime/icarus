@@ -424,8 +424,9 @@ solid wall; `scripts/cap_unsupported_raises.py` rejects a raised top that the
 narrow-footprint reading from `scripts/audit_svg_wall_heights_vs_world.py`
 cannot support. Split joined this pipeline on 2026-09-19; see below.
 
-Acceptance is the existing gameplay suite with `ICARUS_VERIFY_BUNDLED_GAMEPLAY`.
-Baselines for comparison sit in `work/head-assets/`.
+Acceptance was the per-map gameplay suite (`ICARUS_VERIFY_BUNDLED_GAMEPLAY`),
+now in the archive with the pipeline. The repository pins the resulting models
+by checksum in `test/bundled_map_models_test.dart`.
 
 A wall that blocks every probed eye height up to the 40 m ceiling is recorded
 with an open top (`null`) on its last band. That is a measurement, not the old

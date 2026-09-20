@@ -18,26 +18,31 @@ import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 
-import 'vision_world_geometry_test.dart'
-    show navigationFixture, visibilityFixture;
 import 'navigation_geometry_test.dart' show mesh, rect;
 
+Map<String, dynamic> navigationFixture() => {
+      'schemaVersion': 1,
+      'map': 'split',
+      'coordinateScale': 1000,
+      'vertices': [200, 200, 300, 800, 200, 400, 800, 800, 400, 200, 800, 300],
+      'polygons': [
+        [0, 1, 2, 3]
+      ],
+      'triangles': [0, 0, 1, 2, 0, 0, 2, 3],
+      'links': [],
+      'components': [0],
+      'walkable': [true],
+    };
+
 class _NavigationBundle extends CachingAssetBundle {
-  _NavigationBundle(
-      {this.visibilityOnly = false,
-      this.allowBoth = false,
-      this.wrongMap = false,
-      this.missingDefaults = false,
-      this.damage});
-  final bool visibilityOnly, allowBoth, wrongMap, missingDefaults;
+  _NavigationBundle({this.wrongMap = false, this.missingDefaults = false, this.damage});
+  final bool wrongMap, missingDefaults;
   final String? damage;
   final requested = <String>[];
   @override
   Future<ByteData> load(String key) async {
     requested.add(key);
     if (key.endsWith('/height_catalog.json')) {
-      if (visibilityOnly)
-        throw StateError('Visibility should reuse navigation.');
       final bytes = _navigationBytes();
       final hash = (await Sha256().hash(bytes))
           .bytes
@@ -74,15 +79,12 @@ class _NavigationBundle extends CachingAssetBundle {
         }
       }))));
     }
-    final isNavigation = key.endsWith('_navigation.json.gz');
-    if (!allowBoth && isNavigation == visibilityOnly)
+    if (!key.endsWith('_navigation.json.gz')) {
       throw StateError('Unexpected asset request: $key');
-    final bytes = isNavigation
-        ? _navigationBytes()
-        : Uint8List.fromList(const GZipEncoder()
-            .encode(utf8.encode(jsonEncode(visibilityFixture()))));
-    if (isNavigation && damage == 'checksum') bytes[bytes.length - 8] ^= 1;
-    if (isNavigation && damage == 'truncated') {
+    }
+    final bytes = _navigationBytes();
+    if (damage == 'checksum') bytes[bytes.length - 8] ^= 1;
+    if (damage == 'truncated') {
       return ByteData.sublistView(
           Uint8List.sublistView(bytes, 0, bytes.length - 8));
     }
@@ -221,7 +223,7 @@ void main() {
         container.exists(navigationGeometryProvider(MapValue.split)), isFalse);
   });
   test(
-      'movement loads no visibility asset and sightlines reuse parsed navigation',
+      'movement loads only the catalog and the navigation chart',
       () async {
     final bundle = _NavigationBundle();
     final navigation =
@@ -254,14 +256,6 @@ void main() {
     expect(routes['sova']!.isReachable, isTrue);
     expect(routes['sova']!.points.first, start);
     expect(routes['sova']!.points.last, end);
-    final visibility = _NavigationBundle(visibilityOnly: true);
-    final geometry = await loadWorldViewConeGeometry(MapValue.split,
-        bundle: visibility, navigationGeometry: navigation.geometry);
-    expect(
-        visibility.requested, ['assets/maps/world/split_visibility.json.gz']);
-    expect(geometry.navigationGeometry!.vertices.length,
-        navigation.geometry.vertices.length);
-    expect(geometry.layerFor(isAttack: true).segments, isNotEmpty);
   });
   test('navigation rejects wrong-map sources and missing standing defaults',
       () async {
@@ -273,18 +267,13 @@ void main() {
           throwsFormatException);
     }
   });
-  test('both movement and sightline loaders reject damaged navigation gzip',
+  test('movement rejects damaged navigation gzip',
       () async {
     for (final damage in ['checksum', 'truncated']) {
       await expectLater(
           loadNavigationGeometry(MapValue.split,
               bundle: _NavigationBundle(damage: damage)),
           throwsA(isA<Object>()),
-          reason: damage);
-      await expectLater(
-          loadWorldViewConeGeometry(MapValue.split,
-              bundle: _NavigationBundle(allowBoth: true, damage: damage)),
-          throwsFormatException,
           reason: damage);
     }
   });

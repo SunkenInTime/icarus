@@ -339,13 +339,8 @@
 			files = ();
 			inputPaths = (
 				"$(SRCROOT)/../native/height/build_macos.sh",
-				"$(SRCROOT)/../native/height/icarus_height.cpp",
-				"$(SRCROOT)/../native/height/icarus_height.h",
 				"$(SRCROOT)/../native/height/icarus_svg_height.cpp",
 				"$(SRCROOT)/../native/height/icarus_svg_height.h",
-				"$(SRCROOT)/../native/height/height_pipeline.hpp",
-				"$(SRCROOT)/../native/height/query_model.hpp",
-				"$(SRCROOT)/../native/height/native_alpha.hpp",
 			);
 			name = "Build standing visibility";
 			outputPaths = ("$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libicarus_height.dylib");

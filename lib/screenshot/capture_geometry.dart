@@ -4,7 +4,6 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/height_runtime_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 
@@ -45,20 +44,6 @@ Future<CaptureGeometryLease?> prepareCaptureGeometry(
     final geometry = await container.read(provider.future);
     if (container.read(worldGeometryEnabledProvider(map)) && geometry == null) {
       throw StateError('Sightline geometry is unavailable for ${map.name}.');
-    }
-    if (geometry?.isDirectHeight ?? false) {
-      final runtimeProvider = heightRuntimeProvider(map);
-      final runtimeLease = container.listen(runtimeProvider, (_, __) {});
-      try {
-        final runtime = await container.read(runtimeProvider.future);
-        return CaptureGeometryLease(() {
-          runtimeLease.close();
-          subscription.close();
-        }, runtime.waitIdle);
-      } catch (_) {
-        runtimeLease.close();
-        rethrow;
-      }
     }
     return CaptureGeometryLease(subscription.close, () async {});
   } catch (_) {

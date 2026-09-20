@@ -8,8 +8,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
-import 'package:icarus/providers/height_runtime_provider.dart';
-import 'height_view_cone.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
@@ -161,26 +159,7 @@ class ViewConeWidget extends ConsumerWidget {
         // Keep the icon visible while loading or reporting an asset failure.
         visibilityPolygon = const [Offset.zero];
       }
-      if (!usesSvgHeight && (geometry?.isDirectHeight ?? false)) {
-        visibilityPolygon = const [Offset.zero];
-        final runtime =
-            ref.watch(heightRuntimeProvider(mapState.currentMap)).asData?.value;
-        if (runtime != null) {
-          heightCone = HeightViewCone(
-              runtime: runtime,
-              canonicalOrigin: resolvedWorldOrigin,
-              rotation: rotation ??
-                  coord.rotationForSide(placedUtility?.rotation ?? 0,
-                      isAttack: mapState.isAttack),
-              range: coord.virtualLengthToWorld(currentLength),
-              angle: angle * pi / 180,
-              isAttack: mapState.isAttack,
-              elevation: resolvedElevation,
-              zoom: coord.isScreenshot
-                  ? 1
-                  : ref.watch(screenZoomProvider).clamp(1.0, 8.0));
-        }
-      } else if (!usesSvgHeight && geometry != null) {
+      if (!usesSvgHeight && geometry != null) {
         final inferredHeight = geometry.inferredHeightAt(
           isAttack: mapState.isAttack,
           position: sideWorldOrigin,
@@ -222,18 +201,6 @@ class ViewConeWidget extends ConsumerWidget {
         }
 
         visibilityPolygon = [for (final point in worldPolygon) toLocal(point)];
-        final projection = layer.worldProjection;
-        if (projection != null) {
-          final facing = effectiveRotation - pi / 2;
-          final physicalRange = coord.virtualLengthToWorld(currentLength) *
-              projection
-                  .vectorToMeters(Offset(cos(facing), sin(facing)))
-                  .distance;
-          rangeEllipseAxes = [
-            toLocal(sideWorldOrigin + projection.axisU * physicalRange) - apex,
-            toLocal(sideWorldOrigin + projection.axisV * physicalRange) - apex,
-          ];
-        }
         if (debugEnabled) {
           debugMatchedSegments = [
             for (final segment in layer.matchedBoundarySegments)

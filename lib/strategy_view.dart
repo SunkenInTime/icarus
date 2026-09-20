@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:icarus/providers/height_runtime_provider.dart';
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
@@ -290,12 +289,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       source: 'StrategyView.onWindowClose',
       onContinue: () async {
         _isClosingWindow = true;
-        try {
-          await closeHeightRuntimes();
-        } finally {
-          await windowManager.setPreventClose(false);
-          await windowManager.close();
-        }
+        await windowManager.setPreventClose(false);
+        await windowManager.close();
       },
     );
   }

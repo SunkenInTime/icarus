@@ -84,7 +84,6 @@ msix_config:
 
 flutter:
   shaders:
-    - shaders/world_shadow_radial.frag
     - shaders/dot_grid.frag
     - shaders/dither_fire.frag
   fonts:

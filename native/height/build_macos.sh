@@ -11,7 +11,7 @@ done
 xcrun clang++ -std=c++17 -O2 -fno-fast-math -ffp-contract=off \
   -fvisibility=hidden -fvisibility-inlines-hidden -dynamiclib -pthread \
   -isysroot "$SDKROOT" "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
-  "$@" "$source_dir/icarus_height.cpp" "$source_dir/icarus_svg_height.cpp" \
+  "$@" "$source_dir/icarus_svg_height.cpp" \
   -install_name @rpath/libicarus_height.dylib \
   -o "$output_dir/libicarus_height.dylib"
 if [ "${CODE_SIGNING_ALLOWED:-NO}" = YES ]; then
