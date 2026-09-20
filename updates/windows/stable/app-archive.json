@@ -1,7 +1,21 @@
 {
     "appName":  "Icarus",
-    "description":  "Clearer video exports and simpler view-cone controls.",
+    "description":  "Desktop release metadata for Icarus.",
     "items":  [
+                  {
+                      "version":  "4.6.2+101",
+                      "shortVersion":  101,
+                      "changes":  [
+                                      {
+                                          "message":  "Windows installers and app updates are now digitally signed with a verified publisher.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-09-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.6.2%2B101-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "4.6.1+96",
                       "shortVersion":  96,
