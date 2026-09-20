@@ -240,8 +240,11 @@ Future<SvgHeightVisibility> _loadSide(Uint8List source, List<int> artworkBytes,
   }
   final sourceSvg = decoded['sourceSvg'];
   final expectedHash = sourceSvg is Map ? sourceSvg['sha256'] : null;
+  // The SVG is text, so a checkout may carry it with either line ending.
+  // The recorded hash is of the LF form, which is what git stores.
   if (expectedHash is! String ||
-      await _sha256(artworkBytes) != expectedHash.toLowerCase()) {
+      await _sha256(_withLineFeeds(artworkBytes)) !=
+          expectedHash.toLowerCase()) {
     throw FormatException(
         '$expectedMap $expectedSide artwork does not match its sightline data.');
   }
@@ -260,6 +263,13 @@ Map<String, dynamic> _decodeModel(Uint8List source) {
   }
   return decoded;
 }
+
+List<int> _withLineFeeds(List<int> bytes) => bytes.contains(13)
+    ? [
+        for (final b in bytes)
+          if (b != 13) b
+      ]
+    : bytes;
 
 Future<String> _sha256(List<int> bytes) async {
   final hash = await Sha256().hash(bytes);

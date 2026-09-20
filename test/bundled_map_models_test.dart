@@ -11,57 +11,57 @@ import 'package:flutter_test/flutter_test.dart';
 /// with a deliberate update to this table.
 const _modelChecksums = <String, String>{
   'abyss_svg_height_attack.json.gz':
-      'b2e45e77cf67b2018a1eb13461d5a975ae94a240e51bd35b2d14d609b3f7aca1',
+      'efae5ff3235fea93570b6101d4b05cf0b1c3b49453ccc1dcf05e73b3bb535c17',
   'abyss_svg_height_defense.json.gz':
-      'be52b771b1fe22273042ae61ed48314904ef4729a1153af3881a048439a26e21',
+      '834d4e7eb0519806fb7b113b31367c53603d72ed11aa0b39c05e3968e0d5b31c',
   'ascent_svg_height_attack.json.gz':
-      'ce495b8a06a4bf30b32a559824f5fc81567f8ba033e93cbefe022b9ff0c10838',
+      '02fb29f0aa51f86ac4596db9443aad1e3c4679f20fdacf036ed956c44d5753a1',
   'ascent_svg_height_defense.json.gz':
-      '66a9012376eeb9f54d7d264c6845b247e8864ffe486bfee07370724ca59c00e8',
+      '0201a07d5ec1fdf101e33ea6b250d6bf430ea33984265708eda2b74229b72fc2',
   'bind_svg_height_attack.json.gz':
-      '9d2ddbcdc3f25e840a3b526f88c0a2b8c6f4d9dc04dea72d28f337f89d0cfbc2',
+      '77f52bf3ac047eb2b84b1b0cb16568864bdcdc435d8bf6e4caf15b59805ab668',
   'bind_svg_height_defense.json.gz':
-      '37a7683f40e1c7e7ba67eae38dd61eb6b04d4ae6372f3816d9264678ff93d162',
+      '91aea20046a7998f596ae1b38bd8ee930b4ecf871604afb03c9476bd796924c6',
   'breeze_svg_height_attack.json.gz':
-      'fef3ec33f95ae5c77fc1ab31dc71a7dc0fe9bfc1af4f917cd7cf3fb657c742d1',
+      'a8302e514bc4c86aecee75c1e374391aa4cacee0aedcd27114f217cd817a54c4',
   'breeze_svg_height_defense.json.gz':
-      '5109a94c5e9cd13cbb69d0b147f736c41a6339729c1584ead09f4e1108fff3ac',
+      'e7c6cb95ae8db3281a418f513434412be096f90fdbb4602ce3c99dc8d1b1ef16',
   'corrode_svg_height_attack.json.gz':
-      'd200095c98eb9e189c197586732ebba7cb2570ed5f8037b6f02729dfdbe017b0',
+      'b868616bd62feaa009112d3d0910b0e40675f94c6af325e4f1425796c21f8418',
   'corrode_svg_height_defense.json.gz':
-      '54b27281f869b412dad7700fd58e244e516a959812b3c9b400b911533fd503d4',
+      'e6cc0866491c39a4384bccd08604e7b2d0c1a444e0f0539b786f4bf814996233',
   'fracture_svg_height_attack.json.gz':
-      '890f034ea27fff6ebc303e84d7402fcda5afbc7cf6683b0354332af479a0644f',
+      'fbf0b3c626f7df5a94a3017405e227c324aee5d3916b1f782ebd9f5c86ee047e',
   'fracture_svg_height_defense.json.gz':
-      'c383859031437ef325b41b167f77c94304cc7713faf63019d01bbefaff8b715b',
+      'e71e906406f61dc5149ceb40a8d9fb2322ab3cea3bc801144d27e6898f515354',
   'haven_svg_height_attack.json.gz':
-      '1039117629baaeaa33854d211fccb2f0f954b5dac8142f691ff2085912b2a698',
+      '9afd040b67978dc24eb170248ce79e8fa2ddb135673043bc913a2f53d2c25a9c',
   'haven_svg_height_defense.json.gz':
-      'c4dfcccb8bf8c1bcead2a03b065d86da5fb2b24b950d7d7ce68dea4124716a9e',
+      '0552e538ac487ab9513c1fc569a4fb12b902d824b8f60b2a73a0766d945b592a',
   'icebox_svg_height_attack.json.gz':
-      '1607fbf36e5b7a6ac4754045ffbc8620db20f8c860682c13ea68e5cef4c67046',
+      '55637d9c3f63e4d8026965bcfb269d5422a67b09340e2148f7c9e59d0b0f4d67',
   'icebox_svg_height_defense.json.gz':
-      '8ab68f9d1d4440ddf53df03148dd61bc9d7c3a8590f1fb31e8fb913cc20436bc',
+      'c14c217a50800f85b45f59f45a2940f7becc96612ee05c3dbe1f01f5188013b0',
   'lotus_svg_height_attack.json.gz':
-      'b01c6ab15da8fcecedf266170e939cd0dff69c63f7655f4a324cabe8e69d1df8',
+      '6ab074b9ef748a03ffdcc434026c59fba86053ea7c4dbeef41edac1cbb0ddd9a',
   'lotus_svg_height_defense.json.gz':
-      '50b8a0e32ac32b9b3b6be7ae1f0ea8ea30eeaedc324b67cf34bf1b9118877a52',
+      '8ade7d992a5a209c6b82079b5f95281ae27f11767e943899f453f9d52d4901cd',
   'pearl_svg_height_attack.json.gz':
-      '7a078449855b2d0cf533faa8f10aa7f321fd429394e55da8c75e09a4905ddeee',
+      'a8409d077d452a919b8b9242d8ff21fd21be2aa1e2d33c4cedbe29bb6f8e0da5',
   'pearl_svg_height_defense.json.gz':
-      'c8b740a8b24822ef67b6257af3280ed528ec32ca94955a8952c0127c2c1ae8f1',
+      '06028e304b8ffe799d7095bee7a5fb939823fda1d3ee8e9c59984be93d5393fe',
   'split_svg_height_attack.json.gz':
-      'c9ca7a35ede79a6026194f669a40f918031b9f3cf9bae2821859fa382fa841b3',
+      '18f300b48b8a6b20ed6066aef154f9bea6661f297d8be3324158bfb9b26a10fd',
   'split_svg_height_defense.json.gz':
-      '599f2abfab3e0bcbe06cd2142aaebfcc9031e18acb6dd680fe67249317f1d273',
+      '4efb5853f85d218a16d96ee8a0f147cd8b8bb90585e1932008ea74b654790b02',
   'summit_svg_height_attack.json.gz':
-      '0ecd8736cc30dacec73ba7eb301fbc696b13d85efe3a998727d0d43751d29e6a',
+      '6583a040d047e646d0ef23a545bc7943202008fac0fb6f24d259581a792b10ae',
   'summit_svg_height_defense.json.gz':
-      '82457a0b7a0e0e2f32a003c04961231082b58b1c5fa22c387155fcce7518198c',
+      '50a0519df3bc7e4d94df018ad334bae0abddd48f26ce0fe6fbfa3c2628e5cf58',
   'sunset_svg_height_attack.json.gz':
-      '2846864192601bd89b619c114701c487dbe49a02a0e1d2bcf2b1f70f40fb5872',
+      '6659f36a236903bc0583b8090a016ae0c194920f5f3d3b37f319f7328ee53f4f',
   'sunset_svg_height_defense.json.gz':
-      'ab0ca460f6dc1ffc91a2c519a25d5ebae925c5602d8dfb24e81f0d0311673a00',
+      'a17517aa5bdb12b284ac56ced54214ad01c67b778998bdb8c6d3ccf6fb64c922',
 };
 
 void main() {
