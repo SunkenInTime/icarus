@@ -33,7 +33,7 @@ Use this when you want to publish the direct installer channel.
 
 1. Go to `Actions` in GitHub.
 2. Open `Release Desktop`.
-3. Click `Run workflow`.
+3. Click `Run workflow` and select `main`.
 4. Choose:
    - `version_bump`: `none` if the version is already correct, otherwise `patch`, `minor`, or `major`
    - `channel`: `stable`
@@ -51,10 +51,11 @@ Use this when you want to publish the direct installer channel.
 
 ## Desktop Prerelease Checklist
 
-Use this when you want to validate updater behavior before shipping to `main`.
+Use this to validate updater behavior before publishing to the stable channel.
+Signed releases run from `main`, matching the Azure federated credential.
 
-1. Checkout branch `update/prerelease`.
-2. Push the updater changes you want to validate.
+1. Merge the reviewed changes into `main`.
+2. Select `main` as the workflow branch.
 3. Go to `Actions` in GitHub.
 4. Open `Release Desktop`.
 5. Click `Run workflow`.
@@ -73,7 +74,7 @@ Use this when you want to validate updater behavior before shipping to `main`.
    - app exits for restart
    - relaunched app is the new version
    - second cold launch still shows the new version
-10. After validation, merge/fix as needed and publish stable from `main`.
+10. After validation, publish stable from `main`.
 
 ## Store Release Checklist
 
@@ -96,7 +97,7 @@ Use this when you want to publish the Microsoft Store channel.
 - Desktop-only update:
   - Run `Release Desktop` only.
 - Desktop prerelease validation:
-  - Use branch `update/prerelease`.
+  - Use branch `main`.
   - Run `Release Desktop` with `channel=prerelease`.
   - After validation, rerun desktop release on `main` with `channel=stable`.
 - Store-only update:
@@ -107,9 +108,34 @@ Use this when you want to publish the Microsoft Store channel.
 ## Notes
 
 - Local prerelease publish:
-  - `scripts/publish_prerelease_local.ps1` pushes the staged site content to `gh-pages`.
+  - `scripts/publish_prerelease_local.ps1` cannot publish an unsigned build. Use `Release Desktop` on `main` with `channel=prerelease` for signing and publication.
+  - The shared scripts verify EXE and DLL signatures before packaging, staging, and pushing Pages content. Manual phased releases require signing between build and package, then signing the installer before stage.
   - GitHub Pages should be configured to serve `gh-pages` from `/ (root)`.
   - No extra Pages deploy workflow is needed for prerelease testing.
 - Direct desktop installs now use a per-user install path and per-user registry registration.
 - Store installs should continue to use the Microsoft Store update path only.
 - The metadata file should not be a generic `template.json` in the live metadata folder, because the manifest generator treats every JSON file there as a real release entry.
+
+## Azure signing setup and first verification
+
+GitHub repository secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+`AZURE_SUBSCRIPTION_ID`. Repository variables:
+`AZURE_ARTIFACT_SIGNING_ENDPOINT`, `AZURE_ARTIFACT_SIGNING_ACCOUNT`, and
+`AZURE_ARTIFACT_SIGNING_PROFILE`.
+
+The Azure application needs a federated credential with issuer
+`https://token.actions.githubusercontent.com`, audience
+`api://AzureADTokenExchange`, and subject
+`repo:SunkenInTime/icarus:ref:refs/heads/main`. Assign its service principal the
+Artifact Signing Certificate Profile Signer role on the signing profile.
+The public trust identity validation and certificate profile must be active.
+
+After merging the signing workflow, first run it on `main` with
+`version_bump=none`, `channel=prerelease`, and `publish_pages=false`.
+This signs and verifies artifacts without publishing Pages or committing
+version/metadata changes. Download the installer artifact, check its expected
+publisher in Windows, and test installation and launch. Then publish a
+prerelease and test updating an older prerelease installation before stable.
+
+A green PR check validates code and the signature rejection gates. It does not
+prove Azure login, signing permissions, or an end-to-end signed release works.
