@@ -1,14 +1,28 @@
 {
     "appName":  "Icarus",
-    "description":  "Desktop release metadata for Icarus.",
+    "description":  "Signed Windows installers and app updates.",
     "items":  [
+                  {
+                      "version":  "4.6.2+102",
+                      "shortVersion":  102,
+                      "changes":  [
+                                      {
+                                          "message":  "Windows installers and app updates are now digitally signed with a verified publisher.",
+                                          "type":  "improvement"
+                                      }
+                                  ],
+                      "date":  "2026-09-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.6.2%2B102-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "4.6.2+101",
                       "shortVersion":  101,
                       "changes":  [
                                       {
                                           "message":  "Windows installers and app updates are now digitally signed with a verified publisher.",
-                                          "type":  "other"
+                                          "type":  "improvement"
                                       }
                                   ],
                       "date":  "2026-09-20",
