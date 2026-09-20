@@ -104,6 +104,32 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Missing published file: $file" }
     }
     Write-Host 'Atomic publication passed: updater and manifest in one commit; previous update and unrelated Pages content preserved.'
+
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'publish_installer_release.ps1') -Destination $scripts -Force
+    Copy-Item -LiteralPath $signedSource -Destination (Join-Path $releaseAssets 'icarus-setup.exe') -Force
+    $metadataDirectory = Join-Path $testRoot 'release/metadata'
+    New-Item -ItemType Directory -Path $metadataDirectory -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $metadataDirectory '1.2.3+4.json') -Value '{"title":"Test release","changes":[{"message":"Test"}]}'
+    Invoke-RepoCommand -WorkingDirectory $testRoot -Command 'git' -Arguments @('add', 'pubspec.yaml', 'release/metadata')
+    Invoke-RepoCommand -WorkingDirectory $testRoot -Command 'git' -Arguments @('commit', '-m', 'Release metadata fixture')
+    $global:releaseTestRemoteSource = $signedSource
+    function gh {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -eq 'release' -and $args[1] -eq 'list') {
+            '[{"tagName":"desktop-stable-v1.2.3+4","isDraft":false}]'
+        }
+        elseif ($args[0] -eq 'release' -and $args[1] -eq 'download') {
+            $directoryIndex = [Array]::IndexOf($args, '--dir') + 1
+            Copy-Item -LiteralPath $global:releaseTestRemoteSource -Destination (Join-Path $args[$directoryIndex] 'icarus-setup.exe')
+        }
+        else { throw 'A retry attempted to create or modify a public release.' }
+    }
+    & (Join-Path $scripts 'publish_installer_release.ps1')
+    $global:releaseTestRemoteSource = Join-Path $env:SystemRoot 'System32/cmd.exe'
+    Assert-Rejected { & (Join-Path $scripts 'publish_installer_release.ps1') } 'different bytes'
+    Remove-Item Function:gh
+    Remove-Variable releaseTestRemoteSource -Scope Global
+    Write-Host 'Release retry passed: identical signed asset accepted; different signed asset rejected without modifying the public release.'
     Write-Host 'Release signing tests passed: signed file accepted; missing, empty, nested unsigned DLL, unsigned installer, and direct unsigned publication rejected.'
 }
 finally {
