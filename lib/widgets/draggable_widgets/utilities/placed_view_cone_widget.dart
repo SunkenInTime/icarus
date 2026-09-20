@@ -223,28 +223,28 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
 
             return ref.read(screenZoomProvider.notifier).zoomOffset(rotatedPos);
           },
-          feedback: Opacity(
-            opacity: Settings.feedbackOpacity,
-            child: Transform.rotate(
-              angle: displayRotation,
-              alignment: Alignment.topLeft,
-              origin: anchorPoint.scale(
-                coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
-                coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
-              ),
-              child: ZoomTransform(
-                child: ValueListenableBuilder<Offset?>(
-                  valueListenable: _dragOrigin,
-                  builder: (context, origin, child) => ViewConeWidget(
-                    id: null,
-                    angle: viewConeUtility.angle,
-                    rotation: displayRotation,
-                    length: localLength,
-                    worldOrigin: origin ??
-                        utilityRef.position +
-                            coordinateSystem.virtualOffsetToWorld(anchorPoint),
-                    visionElevation: utilityRef.visionElevation,
-                  ),
+          // The cone paints its own preview opacity, so the drag feedback
+          // needs no offscreen layer per frame.
+          feedback: Transform.rotate(
+            angle: displayRotation,
+            alignment: Alignment.topLeft,
+            origin: anchorPoint.scale(
+              coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
+              coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
+            ),
+            child: ZoomTransform(
+              child: ValueListenableBuilder<Offset?>(
+                valueListenable: _dragOrigin,
+                builder: (context, origin, child) => ViewConeWidget(
+                  id: null,
+                  angle: viewConeUtility.angle,
+                  rotation: displayRotation,
+                  length: localLength,
+                  worldOrigin: origin ??
+                      utilityRef.position +
+                          coordinateSystem.virtualOffsetToWorld(anchorPoint),
+                  visionElevation: utilityRef.visionElevation,
+                  opacity: Settings.feedbackOpacity,
                 ),
               ),
             ),

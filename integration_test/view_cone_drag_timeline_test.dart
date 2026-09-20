@@ -1,7 +1,7 @@
 // Frame cost of dragging a view-cone agent across a registered SVG-height map.
 //
 // flutter drive --driver=test_driver/performance_test.dart \
-//   --target=integration_test/view_cone_drag_performance_test.dart --profile -d windows
+//   --target=integration_test/view_cone_drag_timeline_test.dart --profile -d windows
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';

@@ -35,7 +35,8 @@ Map<String, dynamic> navigationFixture() => {
     };
 
 class _NavigationBundle extends CachingAssetBundle {
-  _NavigationBundle({this.wrongMap = false, this.missingDefaults = false, this.damage});
+  _NavigationBundle(
+      {this.wrongMap = false, this.missingDefaults = false, this.damage});
   final bool wrongMap, missingDefaults;
   final String? damage;
   final requested = <String>[];
@@ -168,17 +169,15 @@ void main() {
           observerHeightCm: 175,
           defaultFloorElevationCm: 300,
           defenseOffsetCanvas: offset);
-      AgentTransitionPath route(bool isAttack) =>
-          AgentTransitionPathPlanner.plan(
-              entries: entries,
-              geometry: null,
-              navigation: navigation,
-              requireNavigation: true,
-              isAttack: isAttack,
-              startAgentSize: 0,
-              endAgentSize: 0,
-              coordinateSystem: coordinates)['sova']!;
-      final defense = route(false);
+      AgentTransitionPath route() => AgentTransitionPathPlanner.plan(
+          entries: entries,
+          geometry: null,
+          navigation: navigation,
+          requireNavigation: true,
+          startAgentSize: 0,
+          endAgentSize: 0,
+          coordinateSystem: coordinates)['sova']!;
+      final defense = route();
       expect(defense.isReachable, isTrue, reason: 'defense offset $offset');
       expect(defense.points.first, start);
       expect(defense.points.last, end);
@@ -194,10 +193,6 @@ void main() {
         expect(native.floorHeightAt(point), isNotNull,
             reason: 'both sides use canonical navigation coordinates');
       }
-      final attack = route(true);
-      expect(attack.isReachable, isTrue);
-      expect(defense.points, attack.points,
-          reason: 'artwork registration must not alter a saved agent path');
     }
   });
   test('current-map navigation survives page reads and releases on map change',
@@ -222,9 +217,7 @@ void main() {
     expect(
         container.exists(navigationGeometryProvider(MapValue.split)), isFalse);
   });
-  test(
-      'movement loads only the catalog and the navigation chart',
-      () async {
+  test('movement loads only the catalog and the navigation chart', () async {
     final bundle = _NavigationBundle();
     final navigation =
         await loadNavigationGeometry(MapValue.split, bundle: bundle);
@@ -267,8 +260,7 @@ void main() {
           throwsFormatException);
     }
   });
-  test('movement rejects damaged navigation gzip',
-      () async {
+  test('movement rejects damaged navigation gzip', () async {
     for (final damage in ['checksum', 'truncated']) {
       await expectLater(
           loadNavigationGeometry(MapValue.split,

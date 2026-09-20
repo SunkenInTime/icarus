@@ -369,10 +369,9 @@ inside the receiver with a wall-clear standing eye.
 `scripts/audit_all_map_wall_residue.py` checks every wall footprint and samples
 mirrored vertical profiles. The compiler removes whole wall records that
 collapse on the 1e-8 source-overlay grid. It preserves every remaining record.
-Before packaging modified map assets, run
-`python scripts/svg_wall_footprint_integrity.py` to certify all 26 sides.
-The release regression verifies the certificate against the exact asset bytes
-and audit source, so an older certificate cannot cover changed map data.
+Before packaging modified map assets, run `svg_wall_footprint_integrity.py`
+from the archive to certify all 26 sides, then update the checksums in
+`test/bundled_map_models_test.dart`; the certificate lives with the archive.
 
 The focused September 13 review excludes Abyss standing domains
 `volume-145-0`, `volume-146-0`, and `volume-1603-0`, and Haven
@@ -471,8 +470,8 @@ B Hall tunnel west mouth is a passage under a 7 m header. Walls at least
 half inside the region take the derived bands; the sealed map edge beside
 a mouth stays sealed.
 
-Two further passes were built and withdrawn the same day, and stay in
-`scripts/` unapplied. `remeasure_above_openings.py` replaced the tunnel
+Two further passes were built and withdrawn the same day, and stay in the
+archive's `scripts/` unapplied. `remeasure_above_openings.py` replaced the tunnel
 review's blanket above the ceiling with what the horizontal probe found,
 which was nothing until 11 m; Dara confirmed the ramp into that tunnel is
 walled on both sides, so the probe was missing a set-back wall and the

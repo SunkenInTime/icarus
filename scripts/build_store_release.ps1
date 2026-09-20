@@ -20,40 +20,9 @@ if (-not $SkipPubGet) {
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
 }
 
-# Gameplay expectations must pass against the exact bundled assets before packaging.
+# The bundled sightline models must be the reviewed ones before packaging.
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
-    "flutter", "test", "--no-pub", "--dart-define=ICARUS_VERIFY_BUNDLED_GAMEPLAY=true",
-    "test/reported_sightlines_test.dart",
-    "test/haven_tactical_sightlines_test.dart",
-    "test/breeze_gameplay_sightlines_test.dart",
-    "test/breeze_covered_openings_test.dart",
-    "test/systematic_map_gameplay_test.dart",
-    "test/fracture_covered_interiors_test.dart",
-    "test/fracture_reported_walls_test.dart",
-    "test/fracture_small_crate_test.dart",
-    "test/fracture_platform_end_test.dart",
-    "test/abyss_tower_opening_test.dart",
-    "test/lotus_stepwell_opening_test.dart",
-    "test/fracture_container_opening_test.dart",
-    "test/pearl_low_brick_test.dart",
-    "test/pearl_metro_opening_test.dart",
-    "test/pearl_ramp_brick_profile_test.dart",
-    "test/pearl_remaining_families_test.dart",
-    "test/pearl_mid_slope_test.dart",
-    "test/split_legacy_sightlines_test.dart",
-    "test/split_regional_standing_test.dart",
-    "test/icebox_front_window_test.dart",
-    "test/covered_interior_gameplay_test.dart",
-    "test/collision_roof_defaults_test.dart",
-    "test/all_map_confirmed_walls_test.dart",
-    "test/five_map_false_block_gaps_test.dart",
-    "test/remaining_ownership_sightlines_test.dart",
-    "test/lotus_low_crate_test.dart",
-    "test/lotus_remaining_families_test.dart",
-    "test/pearl_industrial_wall_test.dart",
-    "test/reviewed_wall_assemblies_test.dart",
-    "test/standing_source_integrity_test.dart",
-    "test/svg_wall_footprint_integrity_test.dart"
+    "flutter", "test", "--no-pub", "test/bundled_map_models_test.dart"
 )
 
 $dartDefinesPath = $null

@@ -76,7 +76,6 @@ class AgentTransitionPathPlanner {
     required VisionGeometryMap? geometry,
     NavigationGeometryMap? navigation,
     bool requireNavigation = false,
-    bool isAttack = true,
     required double startAgentSize,
     required double endAgentSize,
     required CoordinateSystem coordinateSystem,

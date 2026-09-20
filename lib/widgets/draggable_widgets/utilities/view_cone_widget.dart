@@ -98,7 +98,6 @@ class ViewConeWidget extends ConsumerWidget {
     final resolvedElevation = visionElevation ?? placedUtility?.visionElevation;
     final debugEnabled = ref.watch(viewConeDebugProvider);
     List<Offset>? visibilityPolygon;
-    List<Offset>? rangeEllipseAxes;
     List<VisionSegment>? debugMatchedSegments;
     List<VisionSegment>? debugRiotSegments;
     List<VisionSegment>? debugRejectedSegments;
@@ -318,19 +317,18 @@ class ViewConeWidget extends ConsumerWidget {
                     _faded(
                         opacity,
                         CustomPaint(
-                      size: Size(containerWidth, containerHeight),
-                      painter: ViewConePainter(
-                        angle: angle,
-                        length: scaledLength,
-                        visibilityPolygon: visibilityPolygon,
-                        rangeEllipseAxes: rangeEllipseAxes,
-                        debugMatchedSegments: debugMatchedSegments,
-                        debugRiotSegments: debugRiotSegments,
-                        debugRejectedSegments: debugRejectedSegments,
-                        debugBoundarySegments: debugBoundarySegments,
-                        debugLabel: debugLabel,
-                      ),
-                    )),
+                          size: Size(containerWidth, containerHeight),
+                          painter: ViewConePainter(
+                            angle: angle,
+                            length: scaledLength,
+                            visibilityPolygon: visibilityPolygon,
+                            debugMatchedSegments: debugMatchedSegments,
+                            debugRiotSegments: debugRiotSegments,
+                            debugRejectedSegments: debugRejectedSegments,
+                            debugBoundarySegments: debugBoundarySegments,
+                            debugLabel: debugLabel,
+                          ),
+                        )),
               ),
             ),
           ),
@@ -344,17 +342,20 @@ class ViewConeWidget extends ConsumerWidget {
                     : null,
                 contextMenuItems: contextMenuItems,
                 cursor: SystemMouseCursors.click,
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: Settings.tacticalVioletTheme.border,
+                child: _faded(
+                  opacity,
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: Settings.tacticalVioletTheme.border,
+                      ),
+                      color: Settings.tacticalVioletTheme.card,
                     ),
-                    color: Settings.tacticalVioletTheme.card,
+                    width: scaledIconSize,
+                    height: scaledIconSize,
+                    child: Image.asset('assets/eye.webp'),
                   ),
-                  width: scaledIconSize,
-                  height: scaledIconSize,
-                  child: Image.asset('assets/eye.webp'),
                 ),
               ),
             ),
@@ -368,7 +369,6 @@ class ViewConePainter extends CustomPainter {
   final double angle;
   final double length;
   final List<Offset>? visibilityPolygon;
-  final List<Offset>? rangeEllipseAxes;
   final List<VisionSegment>? debugMatchedSegments;
   final List<VisionSegment>? debugRiotSegments;
   final List<VisionSegment>? debugRejectedSegments;
@@ -379,7 +379,6 @@ class ViewConePainter extends CustomPainter {
     required this.angle,
     required this.length,
     this.visibilityPolygon,
-    this.rangeEllipseAxes,
     this.debugMatchedSegments,
     this.debugRiotSegments,
     this.debugRejectedSegments,
@@ -428,7 +427,7 @@ class ViewConePainter extends CustomPainter {
     canvas.save();
     // World polygons already contain the physical FOV and range. Applying a
     // second circular screen-space clip would trim them on stretched maps.
-    if (rangeEllipseAxes == null) canvas.clipPath(clipPath);
+    canvas.clipPath(clipPath);
     if (visibilityPolygon != null && visibilityPolygon!.length >= 3) {
       final visibilityPath = Path()
         ..moveTo(visibilityPolygon!.first.dx, visibilityPolygon!.first.dy);
@@ -439,30 +438,8 @@ class ViewConePainter extends CustomPainter {
       canvas.clipPath(visibilityPath);
     }
 
-    final axes = rangeEllipseAxes;
-    if (axes != null) {
-      canvas.translate(apex.dx, apex.dy);
-      canvas.transform(Float64List.fromList([
-        axes[0].dx,
-        axes[0].dy,
-        0,
-        0,
-        axes[1].dx,
-        axes[1].dy,
-        0,
-        0,
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1,
-      ]));
-    }
-    final gradientCenter = axes == null ? apex : Offset.zero;
-    final gradientRadius = axes == null ? length : 1.0;
+    final gradientCenter = apex;
+    final gradientRadius = length;
 
     // The world gradient uses the same physical circle as its visibility rays.
     final gradientPaint = Paint()
@@ -547,7 +524,6 @@ class ViewConePainter extends CustomPainter {
     return oldDelegate.length != length ||
         oldDelegate.angle != angle ||
         !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon) ||
-        !listEquals(oldDelegate.rangeEllipseAxes, rangeEllipseAxes) ||
         !listEquals(oldDelegate.debugMatchedSegments, debugMatchedSegments) ||
         !listEquals(oldDelegate.debugRiotSegments, debugRiotSegments) ||
         !listEquals(oldDelegate.debugRejectedSegments, debugRejectedSegments) ||

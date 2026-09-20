@@ -1294,7 +1294,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         geometry: transitionGeometry,
         navigation: transitionNavigation,
         requireNavigation: requireNavigation,
-        isAttack: ref.read(mapProvider).isAttack,
         startAgentSize: startSettings.agentSize,
         endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,

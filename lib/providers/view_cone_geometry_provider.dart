@@ -41,13 +41,17 @@ Future<VisionGeometryMap?> _loadViewConeGeometrySource(
   MapValue map,
 ) async {
   if (ref.watch(worldGeometryEnabledProvider(map))) {
-    final navigation = await ref.watch(navigationGeometryProvider(map).future);
+    final navigation =
+        (await ref.watch(navigationGeometryProvider(map).future))!;
     final entry = (await loadHeightCatalog())[map]!;
+    // The chart carries the standing heights it was sealed with; the catalog
+    // only adds the elevations the menu offers.
     return VisionGeometryMap.forStandingHeight(
       map: map,
-      navigationGeometry: navigation!.geometry,
-      observerHeight: entry.observerHeightCm,
-      defaultElevation: entry.defaultFloorElevationCm + entry.observerHeightCm,
+      navigationGeometry: navigation.geometry,
+      observerHeight: navigation.observerHeightCm,
+      defaultElevation:
+          navigation.defaultFloorElevationCm + navigation.observerHeightCm,
       elevations: entry.menuElevationsCm,
     );
   }

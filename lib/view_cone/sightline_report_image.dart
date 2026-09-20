@@ -58,7 +58,7 @@ Future<Uint8List?> renderSightlineReportCrop({
         ..pushStyle(ui.TextStyle(color: const Color(0xffffffff)))
         ..addText(label))
       .build()
-    ..layout(ui.ParagraphConstraints(width: pixels - 16));
+    ..layout(ui.ParagraphConstraints(width: pixels - 16.0));
   canvas.drawRect(
       ui.Rect.fromLTWH(0, pixels - paragraph.height - 12, pixels.toDouble(),
           paragraph.height + 12),
