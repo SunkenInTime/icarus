@@ -41,9 +41,9 @@ Use this when you want to publish the direct installer channel.
    - `publish_pages`: `true`
 5. Wait for the workflow to finish.
 6. Verify the desktop installer artifact was uploaded.
-7. Verify GitHub Pages published:
+7. Verify the updater manifest and GitHub Release installer are published:
    - `https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json`
-   - `https://sunkenintime.github.io/icarus/downloads/windows/stable/icarus-setup-latest.exe`
+   - `https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe`
 8. Open the published `app-archive.json` and confirm it contains the expected version and notes.
 9. Open the stable installer URL and confirm it downloads the current desktop installer.
 10. Install the direct desktop build on a test machine.
@@ -65,9 +65,9 @@ Signed releases run from `main`, matching the Azure federated credential.
    - `mandatory`: `false` unless you want to force the update
    - `publish_pages`: `true`
 7. Wait for the workflow to finish.
-8. Verify GitHub Pages published:
+8. Verify GitHub Pages published the updater and a GitHub prerelease contains the installer:
    - `https://sunkenintime.github.io/icarus/updates/windows/prerelease/app-archive.json`
-   - `https://sunkenintime.github.io/icarus/downloads/windows/prerelease/icarus-setup-latest.exe`
+   - `https://github.com/SunkenInTime/icarus/releases/download/desktop-prerelease-v<VERSION+BUILD>/icarus-setup.exe`
 9. Install an older prerelease desktop build on a test machine and confirm:
    - update prompt appears
    - update downloads fully
@@ -107,6 +107,11 @@ Use this when you want to publish the Microsoft Store channel.
 
 ## Notes
 
+- Installers are GitHub Release assets because they exceed Git's 100 MiB blob limit. The stable download link follows the latest stable GitHub Release; prereleases use their exact tag.
+- Existing desktop users still update through the same Pages manifest and per-file payload. Moving the installer does not require reinstalling Icarus.
+- The signed installer is published before the updater manifest. The new payload and manifest are pushed together, preserving earlier payload folders for downloads already in progress.
+- Never reuse a publicly published build number. If publication fails after an updater went live, increment the build number before rebuilding.
+- The `publish_pages` workflow input controls both GitHub Release and Pages publication. With it disabled, all output stays in workflow artifacts.
 - Local prerelease publish:
   - `scripts/publish_prerelease_local.ps1` cannot publish an unsigned build. Use `Release Desktop` on `main` with `channel=prerelease` for signing and publication.
   - The shared scripts verify EXE and DLL signatures before packaging, staging, and pushing Pages content. Manual phased releases require signing between build and package, then signing the installer before stage.

@@ -91,34 +91,16 @@ switch ($PagesPublishMode) {
         Write-Host "Pages publish requested, but PagesPublishMode is 'none'. Files remain staged locally." -ForegroundColor Yellow
     }
     "git-branch" {
-        Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            "scripts/publish_pages_branch.ps1",
-            "-SourceDir",
-            $PagesStageRoot,
-            "-Branch",
-            $PagesBranch,
-            "-Remote",
-            $PagesRemote,
-            "-SyncPaths",
-            "updates/windows/$Channel"
-        )
-
-        Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            "scripts/publish_pages_branch.ps1",
-            "-SourceDir",
-            $PagesStageRoot,
-            "-Branch",
-            $PagesBranch,
-            "-Remote",
-            $PagesRemote,
-            "-SyncPaths",
-            "downloads/windows/$Channel"
+        $versionInfo = Get-VersionInfo -RepoRoot $repoRoot
+        $channelPath = "updates/windows/$Channel"
+        Assert-PagesFileSizes -Path (Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "$PagesStageRoot/$channelPath")
+        # The installer must be available before clients see the new update.
+        & (Join-Path $PSScriptRoot "publish_installer_release.ps1") -Channel $Channel -MetadataDir $MetadataDir
+        # Keep prior version folders available for downloads already in progress.
+        & (Join-Path $PSScriptRoot "publish_pages_branch.ps1") `
+            -SourceDir $PagesStageRoot -Branch $PagesBranch -Remote $PagesRemote -SyncPaths @(
+                "$channelPath/$($versionInfo.WindowsArchiveFolderName)",
+                "$channelPath/app-archive.json"
         )
     }
 }

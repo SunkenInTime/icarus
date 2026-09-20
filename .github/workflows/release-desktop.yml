@@ -193,13 +193,15 @@ jobs:
           & powershell @args
 
       - name: Upload Desktop Artifacts
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: desktop-release-${{ inputs.channel }}
           path: |
             release/out/desktop/**
+            build/installer/**
             dist/**
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Print Published Download URLs
         if: ${{ inputs.publish_pages }}
@@ -214,9 +216,12 @@ jobs:
           Write-Host "Published channel: $channel"
 
           Write-Host "Latest installer:"
-          Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-latest.exe"
+          if ($channel -eq 'stable') {
+            Write-Host "https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe"
+          }
           Write-Host "Versioned installer:"
-          Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-$versionName.exe"
+          $fullVersion = (Get-Content pubspec.yaml -Raw | Select-String 'version:\s*(\d+\.\d+\.\d+\+\d+)').Matches[0].Groups[1].Value
+          Write-Host "https://github.com/SunkenInTime/icarus/releases/download/desktop-$channel-v$fullVersion/icarus-setup.exe"
           Write-Host "Updater manifest:"
           Write-Host "https://sunkenintime.github.io/icarus/updates/windows/$channel/app-archive.json"
 

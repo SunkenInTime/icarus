@@ -133,6 +133,18 @@ function Invoke-RepoCommand {
     }
 }
 
+function Assert-PagesFileSizes {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $oversized = @(Get-ChildItem -LiteralPath $Path -Recurse -File | Where-Object {
+        $_.Length -gt 100MB
+    })
+    if ($oversized.Count -gt 0) {
+        $details = $oversized | ForEach-Object { "$($_.FullName) ($($_.Length) bytes)" }
+        throw "Release files exceed GitHub's 100 MiB blob limit: $($details -join ', ')"
+    }
+}
+
 function Write-JsonFileUtf8 {
     param(
         [Parameter(Mandatory = $true)]
