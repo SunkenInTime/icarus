@@ -114,12 +114,10 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
           .select((favorites) => favorites.contains(agent.type)),
     );
     final isLineupContext = interactionState == InteractionState.lineUpPlacing;
-    final activeLineupAgentType =
-        lineUpState.currentAgent?.type ?? lineUpState.lockedAgentType;
+    final placement = lineUpState.placement;
+    final activeLineupAgentType = placement?.lockedAgentType;
     final isActiveLineupAgent = activeLineupAgentType == agent.type;
-    final isLockedAddItemMode =
-        lineUpState.placementMode == LineUpPlacementMode.addItemToGroup &&
-            lineUpState.currentGroupId != null;
+    final isLockedAddItemMode = placement?.pinnedAgentType != null;
     final shouldDimForLineup = isLineupContext &&
         activeLineupAgentType != null &&
         !isActiveLineupAgent;
@@ -144,8 +142,8 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
         DateTime.now().isAfter(_starOffEnabledAt);
     final iconData = canShowStarOff
         ? LucideIcons.starOff
-        : (isFavorite ? Icons.star_rounded : LucideIcons.star);
-    final iconSize = iconData == Icons.star_rounded ? 18.5 : 16.0;
+        : (isFavorite ? LucideIcons.star600 : LucideIcons.star);
+    const iconSize = 16.0;
     final iconColor = isFavorite
         ? (canShowStarOff ? const Color(0xFFE53935) : const Color(0xFFFF9800))
         : (_isStarHovered ? const Color(0xFFFF9800) : const Color(0xFF9AA0A6));

@@ -3,7 +3,9 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/window_chrome.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class StrategyViewSkeleton extends StatelessWidget {
@@ -41,11 +43,22 @@ class StrategyViewSkeleton extends StatelessWidget {
                         isAttack: isAttack,
                       ),
                     ),
-                    const Align(
+                    Align(
                       alignment: Alignment.topLeft,
                       child: Padding(
-                        padding: EdgeInsets.all(8),
-                        child: _FloatingControlSkeleton(),
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _MapSelectorSkeleton(
+                              mapValue: resolvedMap,
+                              isAttack: isAttack,
+                            ),
+                            const SizedBox(height: 8),
+                            const _FloatingControlSkeleton(),
+                          ],
+                        ),
                       ),
                     ),
                     const Align(
@@ -156,23 +169,23 @@ class _SkeletonTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = strategyName?.trim();
-    return Padding(
-      padding: const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return AppWindowStrip(
+      child: Stack(
         children: [
-          Row(
+          const Row(
             children: [
-              const _SkeletonBlock(width: 40, height: 40, radius: 8),
-              const SizedBox(width: 5),
-              _MapSelectorSkeleton(mapValue: mapValue, isAttack: isAttack),
+              SizedBox(width: 6),
+              _SkeletonBlock(width: 28, height: 28, radius: 8),
+              IcarusWordmark(),
+              Spacer(),
+              _SkeletonBlock(width: 200, height: 28, radius: 8),
+              SizedBox(width: 10),
             ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
+          Center(
             child: Container(
               width: 280,
-              height: 40,
+              height: 30,
               decoration: BoxDecoration(
                 color: _tone(Settings.tacticalVioletTheme.card, 0.95),
                 borderRadius: BorderRadius.circular(8),
@@ -195,7 +208,6 @@ class _SkeletonTopBar extends StatelessWidget {
               ),
             ),
           ),
-          const _SkeletonBlock(width: 238, height: 40, radius: 8),
         ],
       ),
     );
@@ -205,7 +217,7 @@ class _SkeletonTopBar extends StatelessWidget {
 class _MapSelectorSkeleton extends StatelessWidget {
   const _MapSelectorSkeleton({required this.mapValue, required this.isAttack});
 
-  static const double _outerRadius = 10;
+  static const double _outerRadius = 12;
   static const double _innerGap = 4;
   static const double _innerRadius = _outerRadius - _innerGap;
 
@@ -221,11 +233,8 @@ class _MapSelectorSkeleton extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Settings.tacticalVioletTheme.border,
-          width: 2,
-        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -252,7 +261,7 @@ class _MapSelectorSkeleton extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  isAttack ? CustomIcons.sword : Icons.shield,
+                  isAttack ? CustomIcons.sword : LucideIcons.shield,
                   size: 20,
                   color: Settings.tacticalVioletTheme.mutedForeground,
                 ),
@@ -335,10 +344,14 @@ class _MapCanvasSkeleton extends StatelessWidget {
                                 colorFilter: _grayscaleFilter,
                                 child: Opacity(
                                   opacity: 0.46,
-                                  child: SvgPicture.asset(
-                                    assetName,
-                                    semanticsLabel: 'Map',
-                                    fit: BoxFit.contain,
+                                  child: CanonicalMapArtwork(
+                                    map: mapValue,
+                                    isAttack: isAttack,
+                                    child: SvgPicture.asset(
+                                      assetName,
+                                      semanticsLabel: 'Map',
+                                      fit: BoxFit.contain,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -364,16 +377,25 @@ class _FloatingControlSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-        SizedBox(width: 8),
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-        SizedBox(width: 8),
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-        SizedBox(width: 8),
-        _SkeletonBlock(width: 40, height: 40, radius: 8),
-      ],
+    // Mirrors EditorToolbar: five 32px controls in one 12px card.
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: _tone(Settings.tacticalVioletTheme.card, 0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _tone(Settings.highlightColor, 0.88)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+          SizedBox(width: 9),
+          _SkeletonBlock(width: 32, height: 32, radius: 8),
+        ],
+      ),
     );
   }
 }

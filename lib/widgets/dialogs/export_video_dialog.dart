@@ -14,6 +14,8 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/providers/navigation_geometry_provider.dart';
+import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
@@ -134,13 +136,21 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     if (selectedPages.isEmpty) return;
 
     final mapState = ref.read(mapProvider);
+    final requireNavigation =
+        ref.read(worldGeometryEnabledProvider(mapState.currentMap));
     VisionGeometryMap? geometry;
+    NavigationGeometryMap? navigation;
     try {
-      geometry = await ref.read(
-        viewConeGeometryProvider(mapState.currentMap).future,
-      );
+      if (requireNavigation) {
+        navigation = await ref
+            .read(navigationGeometryProvider(mapState.currentMap).future);
+      } else {
+        geometry = await ref
+            .read(viewConeGeometryProvider(mapState.currentMap).future);
+      }
     } on Object {
-      // Geometry is an enhancement; transitions fall back to direct paths.
+      // The provider reports the failure. The exporter rejects movement on
+      // enabled maps when their required navigation data is unavailable.
     }
     if (!mounted) return;
 
@@ -149,6 +159,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       strategyState: ref.read(strategyProvider),
       mapState: mapState,
       geometry: geometry,
+      navigation: navigation,
+      requireNavigation: requireNavigation,
     );
     setState(() {
       _exporter = exporter;

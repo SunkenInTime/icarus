@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/custom_icons.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/map_tile.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MapSelector extends ConsumerStatefulWidget {
   const MapSelector({super.key});
@@ -15,12 +19,19 @@ class MapSelector extends ConsumerStatefulWidget {
 }
 
 class _MapSelectorState extends ConsumerState<MapSelector> {
-  static const double _cardWidth = 262;
   static const double _cardHeight = 65;
-  static const double _outerRadius = 10;
+  static const double _outerRadius = 12;
   static const double _innerGap = 4;
   static const double _innerRadius = _outerRadius - _innerGap;
+  static const double _borderWidth = 1;
   static const double _sideToggleWidth = 66;
+  // Sized from the contents so the gap on the right of the side toggle equals
+  // the gap on the left of the map tile.
+  static const double _cardWidth = 2 * _borderWidth +
+      2 * _innerGap +
+      MapTile.width +
+      _innerGap +
+      _sideToggleWidth;
 
   final OverlayPortalController _controller = OverlayPortalController();
   final _link = LayerLink();
@@ -59,15 +70,15 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
         .where((mapValue) => Maps.availableMaps.contains(mapValue))
         .toList()
       ..sort(
-        (a, b) => Maps.mapNames[a]!
-            .toLowerCase()
-            .compareTo(Maps.mapNames[b]!.toLowerCase()),
+        (a, b) => Maps.mapNames[a]!.toLowerCase().compareTo(
+              Maps.mapNames[b]!.toLowerCase(),
+            ),
       );
     final List<MapValue> outOfRotationMaps = Maps.outofplayMaps.toList()
       ..sort(
-        (a, b) => Maps.mapNames[a]!
-            .toLowerCase()
-            .compareTo(Maps.mapNames[b]!.toLowerCase()),
+        (a, b) => Maps.mapNames[a]!.toLowerCase().compareTo(
+              Maps.mapNames[b]!.toLowerCase(),
+            ),
       );
 
     return CompositedTransformTarget(
@@ -78,7 +89,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
           borderRadius: const BorderRadius.all(Radius.circular(_outerRadius)),
           border: Border.all(
             color: Settings.tacticalVioletTheme.border,
-            width: 2,
+            width: _borderWidth,
           ),
         ),
         width: _cardWidth,
@@ -103,8 +114,9 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                           width: 260,
                           decoration: BoxDecoration(
                             color: Settings.tacticalVioletTheme.card,
-                            borderRadius:
-                                const BorderRadius.all(Radius.circular(10)),
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(10),
+                            ),
                             border: Border.all(
                               color: Settings.tacticalVioletTheme.border,
                               width: 2,
@@ -112,8 +124,9 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                           ),
                           child: ClipRRect(
                             clipBehavior: Clip.antiAlias,
-                            borderRadius:
-                                const BorderRadius.all(Radius.circular(10)),
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(10),
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
@@ -156,7 +169,11 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                             style: TextStyle(
                                               fontWeight: FontWeight.w500,
                                               color: Color.fromARGB(
-                                                  255, 160, 160, 160),
+                                                255,
+                                                160,
+                                                160,
+                                                160,
+                                              ),
                                             ),
                                             textAlign: TextAlign.center,
                                           ),
@@ -204,49 +221,115 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                 ),
               ),
               const SizedBox(width: _innerGap),
-              SizedBox(
+              const _SideToggle(
                 width: _sideToggleWidth,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {
-                      ref.read(mapProvider.notifier).switchSide();
-                      ref.read(strategyProvider.notifier).setUnsaved();
-                    },
-                    mouseCursor: SystemMouseCursors.click,
-                    borderRadius: BorderRadius.circular(_innerRadius),
-                    hoverColor: Colors.white.withValues(alpha: 0.08),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          (ref.watch(mapProvider).isAttack)
-                              ? CustomIcons.sword
-                              : Icons.shield,
-                          size: 20,
-                          color: (ref.watch(mapProvider).isAttack)
-                              ? Colors.redAccent
-                              : Colors.blueAccent,
-                        ),
-                        Text(
-                          (ref.watch(mapProvider).isAttack)
-                              ? "Attack"
-                              : "Defense",
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
-                          ),
-                        )
-                      ],
-                    ),
-                  ),
-                ),
-              )
+                height: _cardHeight - 2 * (_borderWidth + _innerGap),
+                borderRadius: _innerRadius,
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Flips the side the map is drawn from. A click applies to every page;
+/// Shift+click applies to this page only, which is how a strategy becomes
+/// mixed. When it is mixed, a dot warns that a plain click will unify it.
+class _SideToggle extends ConsumerWidget {
+  const _SideToggle({
+    required this.width,
+    required this.height,
+    required this.borderRadius,
+  });
+
+  final double width;
+  final double height;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isAttack = ref.watch(mapProvider.select((state) => state.isAttack));
+    final strategyId = ref.watch(strategyProvider.select((state) => state.id));
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+
+    return ValueListenableBuilder(
+      valueListenable: box.listenable(keys: [strategyId]),
+      builder: (context, Box<StrategyData> b, _) {
+        final pages = b.get(strategyId)?.pages ?? const [];
+        final mixed =
+            pages.any((page) => page.isAttack != pages.first.isAttack);
+        final nextSide = isAttack ? 'Defense' : 'Attack';
+        final tooltip = mixed
+            ? 'Pages are on mixed sides\n'
+                'Click: all pages to $nextSide\n'
+                'Shift+click: this page only'
+            : 'Switch side on all pages\nShift+click: this page only';
+
+        // A Shad button, not an InkWell: ShadTooltip only follows hover
+        // through Shad's own buttons.
+        return ShadTooltip(
+          builder: (context) => Text(tooltip),
+          child: ShadButton.ghost(
+            width: width,
+            height: height,
+            padding: EdgeInsets.zero,
+            hoverBackgroundColor: Colors.white.withValues(alpha: 0.08),
+            decoration: ShadDecoration(
+              border: ShadBorder.all(
+                radius: BorderRadius.circular(borderRadius),
+              ),
+            ),
+            onPressed: () {
+              ref.read(strategyProvider.notifier).switchSide(
+                    allPages: !HardwareKeyboard.instance.isShiftPressed,
+                  );
+            },
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Stack(
+                // Fill the toggle so the column centres in the box, not in
+                // the width of its own label.
+                fit: StackFit.expand,
+                children: [
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isAttack ? CustomIcons.sword : LucideIcons.shield,
+                        size: 20,
+                        color: isAttack ? Colors.redAccent : Colors.blueAccent,
+                      ),
+                      Text(
+                        isAttack ? "Attack" : "Defense",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (mixed)
+                    const Positioned(
+                      top: 6,
+                      right: 6,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.orangeAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: SizedBox(width: 6, height: 6),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -98,7 +98,7 @@ class DrawingTools extends ConsumerWidget {
                               ),
                               SelectableIconButton(
                                 icon: const Icon(
-                                  Icons.crop_square,
+                                  LucideIcons.square,
                                   size: 20,
                                 ),
                                 isSelected: penMode == PenMode.square,
@@ -111,7 +111,7 @@ class DrawingTools extends ConsumerWidget {
                               ),
                               SelectableIconButton(
                                 icon: const Icon(
-                                  Icons.circle_outlined,
+                                  LucideIcons.circle,
                                   size: 20,
                                 ),
                                 isSelected: penMode == PenMode.ellipse,

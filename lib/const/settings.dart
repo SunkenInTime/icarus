@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/color_option.dart';
+import 'package:icarus/widgets/inset_shadow_decoration.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -40,6 +41,11 @@ class Settings {
   static const double agentSize = 35;
   static const double agentSizeMin = 15;
   static const double agentSizeMax = 45;
+  static const double agentWeaponWidthRatio = 0.70;
+  static const double agentWeaponHeightRatio = 0.40;
+  static const double agentWeaponRightOverhangRatio = 0.18;
+  static const double agentWeaponBottomOverhangRatio = 0.12;
+  static const double agentWeaponOutlineWidthRatio = 0.035;
 
   static const double abilitySize = 25;
   static const double abilitySizeMin = 15;
@@ -100,7 +106,7 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 96;
+  static const int versionNumber = 100;
   static const String versionName = "4.6.1";
   static final Uri desktopUpdaterArchiveUrl =
       buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);
@@ -182,6 +188,12 @@ class Settings {
           // ),
         ),
       ));
+
+  /// Violet for lines, glyphs, text, and strokes on dark surfaces: two
+  /// steps lighter than [tacticalVioletTheme.primary], which is the fill
+  /// under white text and too dark to read as a thin mark.
+  static const Color accentInk = Color(0xff8b5cf6); // violet-500
+
   static const ShadColorScheme tacticalVioletTheme = ShadColorScheme(
     // --- THE GRAYS (UNCHANGED) ---
     // These are the "Zinc" cool grays you liked.
@@ -198,15 +210,16 @@ class Settings {
     accent: Color(0xff27272a),
     accentForeground: Color(0xfffafafa),
     border: Color(0xff27272a),
-    input: Color(0xff27272a),
+    // Zinc-700: field edges sit one step above the panel border so a field
+    // on a card still reads as a field.
+    input: Color(0xff3f3f46),
 
     // --- THE NEW PURPLE (UPDATED) ---
     // Violet-700: Higher contrast, deeper, premium look.
     primary: Color(0xff7c3aed),
     primaryForeground: Color(0xfff9fafb), // Pure white text pops perfectly here
 
-    // Updated ring to match the new primary
-    ring: Color(0xff7c3aed),
+    ring: accentInk,
 
     // Selection can stay a bit darker (Violet-800) or match primary
     selection: Color(0xff4c1d95),
@@ -225,6 +238,96 @@ class Settings {
   static const Color settingsPersistenceAccent = Color(0xff4b8f86); // saving
   static const Color settingsDiscordAccent = Color(0xff5865f2); // brand blurple
   static const Color settingsMapAccent = Color(0xffb27c40); // map layers
+
+  // Sightline report crop. A diagnostic image we send ourselves, never app
+  // chrome: walls that block the reported eye, walls that do not, the cone.
+  static const Color sightlineReportBlockingWall = Color(0xffd6a24a);
+  static const Color sightlineReportClearWall = Color(0xff6b5527);
+  static const Color sightlineReportCone = Color(0xff5da0e8);
+  // Resting glyph color for toolbar controls: a step under foreground so the
+  // strip of icons stays quiet, but above mutedForeground, which vanishes at
+  // the light stroke weights. Hover still comes up to foreground.
+  static const Color toolbarGlyph = Color(0xffd4d4d8); // zinc-300
+
+  // Raised surfaces (a selected tab, a checked tool, a primary command) are
+  // lit from above: the fill runs lighter at the top, a bright 1px edge sits
+  // inside the top, a dark 1px edge inside the bottom, and a 1px shadow drops
+  // beneath. The sides stay bare. Everything paints inside or 1px under the
+  // box, so the footprint never changes. Hover stays flat.
+  static const Color raisedTopLight = Color(0x24ffffff); // white 14%
+  static const Color raisedBottomShade = Color(0x4d000000); // black 30%
+  static const List<InsetShadow> raisedRim = [
+    InsetShadow(color: raisedTopLight, offset: Offset(0, 1)),
+    InsetShadow(color: raisedBottomShade, offset: Offset(0, -1)),
+  ];
+  static const BoxShadow raisedDropShadow = BoxShadow(
+    color: Color(0x73000000), // black 45%
+    offset: Offset(0, 1),
+  );
+  // How far the fill's top and bottom move from the base color, in HSL
+  // lightness. These two numbers set the lift for every raised surface.
+  static const double raisedTopLift = 0.06;
+  static const double raisedBottomDrop = 0.03;
+
+  /// The lit fill for any base color: lighter at the top, darker at the
+  /// bottom, so one recipe serves violet, zinc, red, and the rest.
+  static LinearGradient raisedGradient(Color base) {
+    final hsl = HSLColor.fromColor(base);
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        hsl
+            .withLightness((hsl.lightness + raisedTopLift).clamp(0, 1))
+            .toColor(),
+        hsl
+            .withLightness((hsl.lightness - raisedBottomDrop).clamp(0, 1))
+            .toColor(),
+      ],
+    );
+  }
+
+  /// A raised surface of [base] color at [radius]. Use this wherever a
+  /// selected or primary state would otherwise be a flat fill.
+  static InsetShadowDecoration raised(Color base, double radius) =>
+      InsetShadowDecoration(
+        gradient: raisedGradient(base),
+        borderRadius: BorderRadius.circular(radius),
+        boxShadows: const [raisedDropShadow],
+        shadows: raisedRim,
+      );
+
+  /// The raised neutral surface: a selected tab or chip.
+  static InsetShadowDecoration raisedSurface(double radius) =>
+      raised(tacticalVioletTheme.secondary, radius);
+
+  /// The raised command surface: a checked tool, the active segment, the
+  /// active page, anything that would otherwise be a flat `primary` fill.
+  static InsetShadowDecoration raisedPrimary(double radius) =>
+      raised(tacticalVioletTheme.primary, radius);
+
+  /// Dialogs are panels: one surface step above the canvas at the dialog
+  /// radius, one step above the floating panels, so they read as a sheet
+  /// from the same family rather than a black box on black.
+  static final ShadDialogTheme dialogTheme = ShadDialogTheme(
+    backgroundColor: tacticalVioletTheme.card,
+    radius: const BorderRadius.all(Radius.circular(16)),
+  );
+
+  /// The destructive fill, raised the same way as the primary one.
+  static final LinearGradient raisedDestructiveFill =
+      raisedGradient(tacticalVioletTheme.destructive);
+
+  /// The primary fill alone, for the Shad theme and animated fills.
+  static final LinearGradient raisedPrimaryFill =
+      raisedGradient(tacticalVioletTheme.primary);
+
+  // The shadow a floating menu earns (DESIGN.md: 0 8px 24px rgba(0,0,0,0.28)).
+  static const BoxShadow floatingMenuShadow = BoxShadow(
+    color: Color(0x47000000),
+    blurRadius: 24,
+    offset: Offset(0, 8),
+  );
 
   static const cardForegroundBackdrop = BoxShadow(
     color: Colors.black54, // High opacity because the background is dark
@@ -249,13 +352,7 @@ class Settings {
         return Container(
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Settings.tacticalVioletTheme.border,
-            ),
-          ),
+          decoration: Settings.raised(backgroundColor, 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

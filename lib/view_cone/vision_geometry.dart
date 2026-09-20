@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/page_transition/navigation_geometry.dart';
 import 'package:icarus/view_cone/vision_collision.dart';
 
 export 'package:icarus/view_cone/vision_collision.dart';
@@ -15,6 +16,7 @@ class VisionGeometryMap {
     required this.heightField,
     required this.attackLayers,
     required this.defenseLayers,
+    this.navigationGeometry,
   });
 
   final MapValue map;
@@ -23,6 +25,31 @@ class VisionGeometryMap {
   final VisionHeightField? heightField;
   final List<VisionGeometryLayer> attackLayers;
   final List<VisionGeometryLayer> defenseLayers;
+  final NavigationGeometry? navigationGeometry;
+
+  factory VisionGeometryMap.forStandingHeight({
+    required MapValue map,
+    required NavigationGeometry navigationGeometry,
+    required double observerHeight,
+    required double defaultElevation,
+    required List<double> elevations,
+  }) {
+    final layers = List<VisionGeometryLayer>.unmodifiable([
+      for (final elevation in elevations)
+        VisionGeometryLayer(
+            elevation: elevation,
+            segments: const [],
+            observerContains: (_) => false),
+    ]);
+    return VisionGeometryMap._(
+        map: map,
+        defaultElevation: defaultElevation,
+        observerHeight: observerHeight,
+        heightField: null,
+        attackLayers: layers,
+        defenseLayers: layers,
+        navigationGeometry: navigationGeometry);
+  }
 
   List<double> get elevations => [
         for (final layer in attackLayers) layer.elevation,
@@ -44,9 +71,17 @@ class VisionGeometryMap {
   }
 
   double? inferredHeightAt({required bool isAttack, required Offset position}) {
+    final navigation = navigationGeometry;
+    final attackPosition = isAttack ? position : _flipForDefense(position);
+    if (navigation != null) {
+      final floor = navigation.floorHeightAt(
+        attackPosition,
+        preferredElevation: defaultElevation - observerHeight,
+      );
+      return floor == null ? null : floor + observerHeight;
+    }
     final field = heightField;
     if (field == null) return null;
-    final attackPosition = isAttack ? position : _flipForDefense(position);
     return field.heightAt(attackPosition) + observerHeight;
   }
 
@@ -615,6 +650,10 @@ class VisionGeometryMap {
     );
   }
 
+  /// Projects both baked world geometry and navigation through the same SVG
+  /// registration. Updating collision sources never resizes the artwork.
+  static Offset projectUv(MapValue map, Offset uv) => _projectUv(map, uv);
+
   static Offset _projectUv(MapValue map, Offset uv) {
     final viewBox = Maps.mapViewBox[map];
     final padding = Maps.visionGeometryPadding[map];
@@ -986,6 +1025,8 @@ class VisionGeometryLayer {
     this.debugCollisionGroups = const [],
     this.layerIndex = 0,
     this.segmentIndex,
+    this.observerContains,
+    this.maximumRange,
   });
 
   final double elevation;
@@ -1001,10 +1042,16 @@ class VisionGeometryLayer {
   final List<VisionCollisionGroup> debugCollisionGroups;
   final int layerIndex;
   final VisionSegmentIndex? segmentIndex;
+  final bool Function(Offset)? observerContains;
+
+  /// Optional source coverage limit in this layer's own coordinate units.
+  final double? maximumRange;
 
   List<VisionSegment> get riotSegments => sourceSegments ?? segments;
 
   bool contains(Offset point) {
+    final worldContains = observerContains;
+    if (worldContains != null) return worldContains(point);
     final mask = boundary;
     if (mask == null || mask.contains(point)) return true;
     if (!mask.containsOuterFootprint(point)) return false;
@@ -1076,7 +1123,8 @@ class VisionPolygon {
     required double range,
     double surfaceClearance = 0,
   }) {
-    final safeRange = math.max(0.0, range);
+    final safeRange =
+        math.min(math.max(0.0, range), layer.maximumRange ?? double.infinity);
     final safeCone = coneAngle.clamp(0.0, math.pi * 2).toDouble();
     final safeClearance =
         surfaceClearance.isFinite ? math.max(0.0, surfaceClearance) : 0.0;
@@ -1086,6 +1134,7 @@ class VisionPolygon {
     if (!layer.contains(origin)) return <Offset>[origin];
 
     final halfCone = safeCone / 2;
+    const eventAngleEpsilon = _eventAngleEpsilon;
     final candidateSegments = layer.segmentsForObserver(origin, safeRange);
     // A segment's shortest possible hit cannot be nearer than this radial
     // bound. Nearest-first ordering lets every ray stop after a proven hit.
@@ -1105,21 +1154,31 @@ class VisionPolygon {
 
     void addEventAngle(double angle) {
       final relative = _normalizeSigned(angle - facingAngle);
-      if (relative < -halfCone - _eventAngleEpsilon ||
-          relative > halfCone + _eventAngleEpsilon) {
+      if (relative < -halfCone - eventAngleEpsilon ||
+          relative > halfCone + eventAngleEpsilon) {
         return;
       }
       final clamped = relative.clamp(-halfCone, halfCone).toDouble();
       relativeAngles.add(clamped);
       if (clamped > -halfCone) {
-        relativeAngles.add(math.max(-halfCone, clamped - _eventAngleEpsilon));
+        relativeAngles.add(math.max(-halfCone, clamped - eventAngleEpsilon));
       }
       if (clamped < halfCone) {
-        relativeAngles.add(math.min(halfCone, clamped + _eventAngleEpsilon));
+        relativeAngles.add(math.min(halfCone, clamped + eventAngleEpsilon));
       }
     }
 
     final rangeSquared = safeRange * safeRange;
+    void addVertexEvent(Offset vertex, {bool atRange = false}) {
+      final delta = vertex - origin;
+      if (!atRange && delta.distanceSquared > rangeSquared + _epsilon) return;
+      final angle = math.atan2(delta.dy, delta.dx);
+      final relative = _normalizeSigned(angle - facingAngle);
+      if (relative < -halfCone - eventAngleEpsilon ||
+          relative > halfCone + eventAngleEpsilon) return;
+      addEventAngle(angle);
+    }
+
     for (final segment in candidateSegments) {
       final collisionVertices = segment.collisionVertices;
       final hasStrokeArea = segment.collisionRadius > _epsilon;
@@ -1129,10 +1188,7 @@ class VisionPolygon {
         final eventVertices =
             hasStrokeArea ? _polygonSilhouetteVertices(shape, origin) : shape;
         for (final vertex in eventVertices) {
-          final delta = vertex - origin;
-          if (delta.distanceSquared <= rangeSquared + _epsilon) {
-            addEventAngle(math.atan2(delta.dy, delta.dx));
-          }
+          addVertexEvent(vertex);
         }
 
         final collisionEdgeCount = hasStrokeArea ? shape.length : 1;
@@ -1144,8 +1200,7 @@ class VisionPolygon {
             origin,
             safeRange,
           )) {
-            final delta = intersection - origin;
-            addEventAngle(math.atan2(delta.dy, delta.dx));
+            addVertexEvent(intersection, atRange: true);
           }
         }
       }
@@ -1175,8 +1230,11 @@ class VisionPolygon {
           maxDistance: distance,
         );
         if (hitDistance != null && hitDistance < distance) {
-          distance = math.max(0, hitDistance - safeClearance);
+          distance = hitDistance;
         }
+      }
+      if (distance < safeRange) {
+        distance = math.max(0, distance - safeClearance);
       }
       points.add(origin + direction * distance);
     }
@@ -1236,11 +1294,16 @@ class VisionPolygon {
     double radius,
   ) {
     final start = segmentStart - center;
+    final radiusSquared = radius * radius;
+    // A disk is convex: an edge with both endpoints strictly inside cannot
+    // cross its boundary. Avoid the quadratic and temporary root list there.
+    if (start.distanceSquared < radiusSquared &&
+        (segmentEnd - center).distanceSquared < radiusSquared) return const [];
     final delta = segmentEnd - segmentStart;
     final a = delta.distanceSquared;
     if (a <= _epsilon) return const [];
     final b = 2 * (start.dx * delta.dx + start.dy * delta.dy);
-    final c = start.distanceSquared - radius * radius;
+    final c = start.distanceSquared - radiusSquared;
     final discriminant = b * b - 4 * a * c;
     if (discriminant < 0) return const [];
 
@@ -1287,6 +1350,7 @@ class VisionPolygon {
     required Offset start,
     required Offset end,
     required double maxDistance,
+    double endpointTolerance = _epsilon,
   }) {
     final edge = end - start;
     final originToStart = start - origin;
@@ -1297,8 +1361,8 @@ class VisionPolygon {
     final segmentPosition = _cross(originToStart, direction) / denominator;
     if (distance <= _epsilon ||
         distance > maxDistance + _epsilon ||
-        segmentPosition < -_epsilon ||
-        segmentPosition > 1 + _epsilon) {
+        segmentPosition < -endpointTolerance ||
+        segmentPosition > 1 + endpointTolerance) {
       return null;
     }
     return distance;

@@ -18,6 +18,10 @@ class MapTile extends ConsumerStatefulWidget {
   final bool isActive;
   final double borderRadius;
 
+  /// The tile's fixed footprint; the map card sizes itself from this.
+  static const double width = 180;
+  static const double height = 65;
+
   @override
   ConsumerState<MapTile> createState() => _MapTileState();
 }
@@ -38,8 +42,8 @@ class _MapTileState extends ConsumerState<MapTile> {
           mouseCursor: SystemMouseCursors.click,
           onTap: widget.onTap,
           child: SizedBox(
-            width: 180,
-            height: 65,
+            width: MapTile.width,
+            height: MapTile.height,
             child: Stack(
               children: [
                 Positioned.fill(
@@ -69,19 +73,18 @@ class _MapTileState extends ConsumerState<MapTile> {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: widget.isActive
-                          ? Settings.tacticalVioletTheme.primary
-                          : Colors.white,
+                      color:
+                          widget.isActive ? Settings.accentInk : Colors.white,
                       shadows: const [
                         Shadow(
                           color: Colors.black,
                           blurRadius: 2,
                           offset: Offset(0, 2),
-                        )
+                        ),
                       ],
                     ),
                   ),
-                )
+                ),
               ],
             ),
           ),

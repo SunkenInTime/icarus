@@ -1,5 +1,36 @@
 Set-StrictMode -Version Latest
 
+function Assert-AuthenticodeSignatures {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Signing input not found at $Path"
+    }
+    $item = Get-Item -LiteralPath $Path
+    $files = if ($item.PSIsContainer) {
+        @(Get-ChildItem -LiteralPath $Path -Recurse -File | Where-Object {
+            $_.Extension -in @('.exe', '.dll')
+        })
+    }
+    else {
+        @($item)
+    }
+    $files = @($files)
+    if ($files.Count -eq 0) {
+        throw "No Windows executables or libraries found at $Path"
+    }
+    foreach ($file in $files) {
+        $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+        if ($signature.Status -ne 'Valid') {
+            throw "Invalid Authenticode signature ($($signature.Status)): $($file.FullName). Run Release Desktop from main to build and sign release artifacts."
+        }
+    }
+    Write-Host "Verified $($files.Count) signed Windows files at $Path"
+}
+
 function Get-RepoRoot {
     param(
         [Parameter(Mandatory = $true)]

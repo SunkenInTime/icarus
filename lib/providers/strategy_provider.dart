@@ -4,8 +4,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:flutter/foundation.dart'
-    show kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -20,10 +19,14 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_vision_cone_migration.dart';
+import 'package:icarus/migrations/agent_weapon_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
+import 'package:icarus/migrations/canonical_coordinates_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
+import 'package:icarus/migrations/lineup_graph_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/migrations/page_name_provenance_migration.dart';
+import 'package:icarus/migrations/sunset_scale_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -46,6 +49,8 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/providers/navigation_geometry_provider.dart';
+import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/services/archive_manifest.dart';
@@ -494,10 +499,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       final customCircleMigrated =
           migrateCustomCircleWrapper(squareAoeMigrated);
       final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
+      final lineUpGraphMigrated = migrateLineUpGraph(lineUpGroupMigrated);
       final abilityVisionMigrated =
-          migrateAbilityVisionCones(lineUpGroupMigrated);
-      if (abilityVisionMigrated != lineUpGroupMigrated) {
+          migrateAbilityVisionCones(lineUpGraphMigrated);
+      if (abilityVisionMigrated != lineUpGraphMigrated) {
         await box.put(abilityVisionMigrated.id, abilityVisionMigrated);
+      } else if (lineUpGraphMigrated != lineUpGroupMigrated) {
+        await box.put(lineUpGraphMigrated.id, lineUpGraphMigrated);
       } else if (lineUpGroupMigrated != customCircleMigrated) {
         await box.put(lineUpGroupMigrated.id, lineUpGroupMigrated);
       } else if (customCircleMigrated != squareAoeMigrated) {
@@ -597,25 +605,89 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  static StrategyData migrateToCurrentVersion(StrategyData strat,
-      {bool forceAbilityScale = false}) {
+  static StrategyData migrateToCurrentVersion(
+    StrategyData strat, {
+    bool forceAbilityScale = false,
+  }) {
+    final originalVersion = strat.versionNumber;
+    final needsCanonicalCoordinatesMigration =
+        strat.versionNumber < CanonicalCoordinatesMigration.version;
     final needsAbilityVisionMigration =
         strat.versionNumber < AbilityVisionConeMigration.version;
     final needsPageNameProvenanceMigration =
         strat.versionNumber < PageNameProvenanceMigration.version;
     final worldMigrated = migrateToWorld16x9(strat);
-    final abilityScaleMigrated =
-        migrateAbilityScale(worldMigrated, force: forceAbilityScale);
-    final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-    final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
-    final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
-    final abilityVisionMigrated = migrateAbilityVisionCones(
+    final abilityScaleMigrated = migrateAbilityScale(
+      worldMigrated,
+      force:
+          forceAbilityScale || originalVersion < AbilityScaleMigration.version,
+    );
+    final squareAoeMigrated = migrateSquareAoeCenter(
+      abilityScaleMigrated,
+      force: originalVersion < SquareAoeCenterMigration.version,
+    );
+    final customCircleMigrated = migrateCustomCircleWrapper(
+      squareAoeMigrated,
+      force: originalVersion < CustomCircleWrapperMigration.version,
+    );
+    final lineUpGroupMigrated = migrateLineUpGroups(
+      customCircleMigrated,
+      force: originalVersion < LineUpGroupMigration.version,
+    );
+    final lineUpGraphMigrated = migrateLineUpGraph(
       lineUpGroupMigrated,
+      force: originalVersion < LineUpGraphMigration.version,
+    );
+    final abilityVisionMigrated = migrateAbilityVisionCones(
+      lineUpGraphMigrated,
       force: needsAbilityVisionMigration,
     );
-    return migratePageNameProvenance(
+    final pageNameMigrated = migratePageNameProvenance(
       abilityVisionMigrated,
       force: needsPageNameProvenanceMigration,
+    );
+    final canonicalMigrated = migrateCanonicalCoordinates(
+      pageNameMigrated,
+      force: needsCanonicalCoordinatesMigration,
+    );
+    final sunsetMigrated = migrateSunsetScale(
+      canonicalMigrated,
+      force: originalVersion < SunsetScaleMigration.version,
+    );
+    return AgentWeaponMigration.migrate(sunsetMigrated);
+  }
+
+  static StrategyData migrateSunsetScale(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force && strat.versionNumber >= SunsetScaleMigration.version) {
+      return strat;
+    }
+    return strat.copyWith(
+      pages: SunsetScaleMigration.migratePages(
+        pages: strat.pages,
+        map: strat.mapData,
+      ),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateCanonicalCoordinates(StrategyData strat,
+      {bool force = false}) {
+    if (!force &&
+        strat.versionNumber >= CanonicalCoordinatesMigration.version) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: CanonicalCoordinatesMigration.migratePages(
+        pages: strat.pages,
+        map: strat.mapData,
+      ),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
     );
   }
 
@@ -637,8 +709,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   static StrategyData migratePageNameProvenance(StrategyData strat,
       {bool force = false}) {
-    if (!force &&
-        strat.versionNumber >= PageNameProvenanceMigration.version) {
+    if (!force && strat.versionNumber >= PageNameProvenanceMigration.version) {
       return strat;
     }
 
@@ -647,6 +718,27 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     return strat.copyWith(
       pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateLineUpGraph(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= LineUpGraphMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = LineUpGraphMigration.migratePages(pages: strat.pages);
+    final hasPageChanged = migratedPages.asMap().entries.any(
+          (entry) => !identical(entry.value, strat.pages[entry.key]),
+        );
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: hasPageChanged ? migratedPages : strat.pages,
       versionNumber: Settings.versionNumber,
       lastEdited: DateTime.now(),
     );
@@ -746,10 +838,24 @@ class StrategyProvider extends Notifier<StrategyState> {
       customCircleMigrated,
       force: originalVersion < LineUpGroupMigration.version,
     );
-    return migrateAbilityVisionCones(
+    final lineUpGraphMigrated = migrateLineUpGraph(
       lineUpGroupMigrated,
+      force: originalVersion < LineUpGraphMigration.version,
+    );
+    final abilityVisionMigrated = migrateAbilityVisionCones(
+      lineUpGraphMigrated,
       force: originalVersion < AbilityVisionConeMigration.version,
     );
+    final pageNameMigrated = migratePageNameProvenance(
+      abilityVisionMigrated,
+      force: originalVersion < PageNameProvenanceMigration.version,
+    );
+    final canonicalMigrated = migrateCanonicalCoordinates(
+      pageNameMigrated,
+      force: originalVersion < CanonicalCoordinatesMigration.version,
+    );
+    return migrateSunsetScale(canonicalMigrated,
+        force: originalVersion < SunsetScaleMigration.version);
   }
 
   static StrategyData migrateToWorld16x9(StrategyData strat,
@@ -827,27 +933,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       ];
     }
 
-    List<LineUpGroup> shiftLineUpGroups(List<LineUpGroup> lineUpGroups) {
-      return [
-        for (final group in lineUpGroups)
-          () {
-            final shiftedAgent = group.agent.copyWith(
-              position: shift(group.agent.position),
-            )..isDeleted = group.agent.isDeleted;
-            final shiftedItems = [
-              for (final item in group.items)
-                item.copyWith(
-                  ability: item.ability.copyWith(
-                    position: shift(item.ability.position),
-                  )..isDeleted = item.ability.isDeleted,
-                ),
-            ];
-            return group.copyWith(
-              agent: shiftedAgent,
-              items: shiftedItems,
-            );
-          }()
-      ];
+    LineUpGraph shiftLineUpGraph(LineUpGraph graph) {
+      return graph.mapNodes(
+        agent: (agent) => agent.copyWith(position: shift(agent.position))
+          ..isDeleted = agent.isDeleted,
+        ability: (ability) =>
+            ability.copyWith(position: shift(ability.position))
+              ..isDeleted = ability.isDeleted,
+      );
     }
 
     BoundingBox? shiftBoundingBox(BoundingBox? boundingBox) {
@@ -920,7 +1013,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               imageData: shiftImages(page.imageData),
               utilityData: shiftUtilities(page.utilityData),
               drawingData: shiftDrawings(page.drawingData),
-              lineUpGroups: shiftLineUpGroups(page.lineUpGroups),
+              lineUpGraph: shiftLineUpGraph(page.lineUpGraph),
             ))
         .toList(growable: false);
 
@@ -975,7 +1068,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               MapThemeProfilesProvider.immutableDefaultProfileId,
           overridePalette: migrated.themeOverridePalette,
         );
-    ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUpGroups);
+    ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUpGraph);
 
     // Defer path rebuild until next frame (layout complete)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1155,19 +1248,24 @@ class StrategyProvider extends Notifier<StrategyState> {
             entry.visualWidget is PlacedAgentNode,
       );
 
-      // Page-transition routes use the same collision geometry as view cones.
-      // Only resolve it when a moved agent actually needs a route; transitions
-      // containing abilities, drawings, or unchanged agents can start without
-      // paying the map geometry initialization cost.
+      // Agent routes load the small movement mesh independently of sightlines.
+      // Unchanged agents, abilities and drawings need no route initialization.
       VisionGeometryMap? transitionGeometry;
+      NavigationGeometryMap? transitionNavigation;
+      final map = ref.read(mapProvider).currentMap;
+      final requireNavigation = ref.read(worldGeometryEnabledProvider(map));
       if (needsAgentRouting) {
         try {
-          transitionGeometry = await ref.read(
-            viewConeGeometryProvider(ref.read(mapProvider).currentMap).future,
-          );
+          if (requireNavigation) {
+            transitionNavigation =
+                await ref.read(navigationGeometryProvider(map).future);
+          } else {
+            transitionGeometry =
+                await ref.read(viewConeGeometryProvider(map).future);
+          }
         } on Object {
-          // Geometry is an enhancement. Keep page navigation functional and
-          // let the overlay retain its direct-path fallback if loading fails.
+          // The provider reports the failure. Required native routes hold at
+          // their sources, so changing pages cannot invent movement through walls.
         }
       }
 
@@ -1194,7 +1292,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       final agentPaths = AgentTransitionPathPlanner.plan(
         entries: entries,
         geometry: transitionGeometry,
-        isAttack: ref.read(mapProvider).isAttack,
+        navigation: transitionNavigation,
+        requireNavigation: requireNavigation,
         startAgentSize: startSettings.agentSize,
         endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,
@@ -1234,8 +1333,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   List<PageTransitionDirection> copyDirectionsForPlacedWidget(
     String widgetId,
   ) {
-    if (widgetId.isEmpty ||
-        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return const [];
+    if (widgetId.isEmpty || !Hive.isBoxOpen(HiveBoxNames.strategiesBox))
+      return const [];
 
     final strat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
       state.id,
@@ -1266,8 +1365,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String widgetId,
     required PageTransitionDirection direction,
   }) async {
-    if (widgetId.isEmpty ||
-        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return false;
+    if (widgetId.isEmpty || !Hive.isBoxOpen(HiveBoxNames.strategiesBox))
+      return false;
 
     await _syncCurrentPageToHive();
 
@@ -1436,10 +1535,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       List<String> allImageIds = [];
       for (final page in newStrat.pages) {
         allImageIds.addAll(page.imageData.map((image) => image.id));
-        for (final group in page.lineUpGroups) {
-          for (final item in group.items) {
-            allImageIds.addAll(item.images.map((image) => image.id));
-          }
+        for (final link in page.lineUpLinks) {
+          allImageIds.addAll(link.images.map((image) => image.id));
         }
       }
       await ref
@@ -1465,7 +1562,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         .fromHive(migratedStrategy.mapData, page.isAttack);
     ref.read(textProvider.notifier).fromHive(page.textData);
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
-    ref.read(lineUpProvider.notifier).fromHive(page.lineUpGroups);
+    ref.read(lineUpProvider.notifier).fromHive(page.lineUpGraph);
     ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
     ref.read(strategyThemeProvider.notifier).fromStrategy(
           profileId: migratedStrategy.themeProfileId ??
@@ -3265,7 +3362,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  Future<String> createNewStrategy(String name) async {
+  /// Creates an empty strategy on [map] and returns it. Without [name] it
+  /// is auto-named after the map ("Haven", then "Haven 2", ...).
+  Future<StrategyData> createNewStrategy({
+    required MapValue map,
+    String? name,
+  }) async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strategyName = name ??
+        autoStrategyName(map, box.values.map((strategy) => strategy.name));
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
@@ -3278,10 +3383,10 @@ class StrategyProvider extends Notifier<StrategyState> {
           appPreferences.defaultNeutralTeamColorsForNewStrategies,
     );
     final newStrategy = StrategyData(
-      mapData: MapValue.ascent,
+      mapData: map,
       versionNumber: Settings.versionNumber,
       id: newID,
-      name: name,
+      name: strategyName,
       pages: [
         StrategyPage(
           id: pageID,
@@ -3293,7 +3398,6 @@ class StrategyProvider extends Notifier<StrategyState> {
           textData: [],
           imageData: [],
           utilityData: [],
-          lineUpGroups: [],
           sortIndex: 0,
           isAttack: true,
           settings: defaultSettings,
@@ -3307,12 +3411,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeProfileId: defaultThemeProfileId,
     );
 
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(newStrategy.id, newStrategy);
+    await box.put(newStrategy.id, newStrategy);
 
     unawaited(AnalyticsService.instance.capture('strategy_created'));
 
-    return newStrategy.id;
+    return newStrategy;
   }
 
   void setThemeProfileForCurrentStrategy(String profileId) {
@@ -3886,11 +3989,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUpGroups: ref
-          .read(lineUpProvider)
-          .groups
-          .map((group) => group.deepCopy())
-          .toList(),
+      lineUpGraph: ref.read(lineUpProvider).graph,
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);
@@ -3943,6 +4042,38 @@ class StrategyProvider extends Notifier<StrategyState> {
     setUnsaved();
   }
 
+  /// Flips the side the map is drawn from. Placements are stored
+  /// attack-canonical, so the only thing that changes is each page's side.
+  /// With [allPages] every page takes the active page's new side; otherwise
+  /// only the active page changes and the strategy may become mixed.
+  /// Flips the side of the active page, or of every page when [allPages].
+  ///
+  /// The active page's side lives in [mapProvider] and reaches Hive through
+  /// the normal save, so "Don't save" still reverts it and none of its other
+  /// pending edits are flushed here. The other pages are held in Hive
+  /// between visits (a page switch writes there the same way), so they are
+  /// flipped in place.
+  Future<void> switchSide({required bool allPages}) async {
+    final isAttack = !ref.read(mapProvider).isAttack;
+    ref.read(mapProvider.notifier).setAttack(isAttack);
+    setUnsaved();
+    if (!allPages || state.stratName == null) return;
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    final activeId = activePageID ?? strat.pages.first.id;
+    final updated = strat.copyWith(
+      pages: [
+        for (final page in strat.pages)
+          page.id == activeId ? page : page.copyWith(isAttack: isAttack),
+      ],
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
+  }
+
   Future<void> applyNeutralTeamColorsToAllPages(bool value) async {
     if (state.stratName == null) return;
 
@@ -3983,5 +4114,18 @@ class StrategyProvider extends Notifier<StrategyState> {
     } else {
       log("Strategy with ID $strategyID not found.");
     }
+  }
+}
+
+/// The name a new strategy gets when the user doesn't type one: the map's
+/// name, with the first free number appended if that name is already taken.
+@visibleForTesting
+String autoStrategyName(MapValue map, Iterable<String> existingNames) {
+  final base = Maps.displayName(map);
+  final taken = existingNames.map((name) => name.trim().toLowerCase()).toSet();
+  if (!taken.contains(base.toLowerCase())) return base;
+  for (var n = 2;; n++) {
+    final candidate = '$base $n';
+    if (!taken.contains(candidate.toLowerCase())) return candidate;
   }
 }

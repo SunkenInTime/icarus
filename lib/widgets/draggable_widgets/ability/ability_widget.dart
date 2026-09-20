@@ -12,15 +12,13 @@ class AbilityWidget extends ConsumerWidget {
     required this.iconPath,
     required this.id,
     required this.isAlly,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
     this.watchMouse = true,
     this.contextMenuItems,
     this.onTapOverride,
   });
 
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
 
   final String? id;
   final bool isAlly;
@@ -32,8 +30,8 @@ class AbilityWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
-    final deleteTarget = lineUpId != null
-        ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
+    final deleteTarget = landingId != null
+        ? HoveredDeleteTarget.lineup(id: landingId!, ownerToken: Object())
         : (id?.isNotEmpty ?? false)
             ? HoveredDeleteTarget.ability(id: id!, ownerToken: Object())
             : null;
@@ -41,8 +39,7 @@ class AbilityWidget extends ConsumerWidget {
     final shell = FramedAbilityIconShell(
       size: abilitySize,
       isAlly: isAlly,
-      lineUpId: lineUpId,
-      lineUpItemId: lineUpItemId,
+      landingId: landingId,
       child: Image.asset(
         iconPath,
         fit: BoxFit.contain,
@@ -54,8 +51,7 @@ class AbilityWidget extends ConsumerWidget {
     }
 
     return MouseWatch(
-      lineUpId: lineUpId,
-      lineUpItemId: lineUpItemId,
+      lineUpLandingId: landingId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       contextMenuItems: contextMenuItems,

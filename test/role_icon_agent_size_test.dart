@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -159,8 +158,7 @@ void main() {
       expect(framedShell.size, isNot(abilitySize));
     });
 
-    test('utility side switching uses the stable default role icon footprint',
-        () {
+    test('side switching leaves role icon coordinates canonical', () {
       final container = _createContainer(
         settings: StrategySettings(
           agentSize: agentSize,
@@ -177,22 +175,12 @@ void main() {
         ),
       ]);
 
-      container.read(utilityProvider.notifier).switchSides();
+      container.read(mapProvider.notifier).switchSide();
 
-      final flippedUtility = container.read(utilityProvider).single;
-      final expectedPosition = getFlippedPosition(
-        position: initialPosition,
-        scaledSize: Offset(
-          CoordinateSystem.instance.scale(Settings.agentSize),
-          CoordinateSystem.instance.scale(Settings.agentSize),
-        ),
-      );
-
-      expect(flippedUtility.position.dx, closeTo(expectedPosition.dx, 0.0001));
-      expect(flippedUtility.position.dy, closeTo(expectedPosition.dy, 0.0001));
+      expect(container.read(utilityProvider).single.position, initialPosition);
     });
 
-    test('non-role utilities keep their existing footprint', () {
+    test('side switching leaves non-role utility coordinates canonical', () {
       final container = _createContainer(
         settings: StrategySettings(
           agentSize: agentSize,
@@ -209,21 +197,9 @@ void main() {
         ),
       ]);
 
-      container.read(utilityProvider.notifier).switchSides();
+      container.read(mapProvider.notifier).switchSide();
 
-      final flippedUtility = container.read(utilityProvider).single;
-      final expectedSize = UtilityData.utilityWidgets[UtilityType.spike]!
-          .getSize(agentSize: agentSize, abilitySize: abilitySize);
-      final expectedPosition = getFlippedPosition(
-        position: initialPosition,
-        scaledSize: expectedSize.scale(
-          CoordinateSystem.instance.scaleFactor,
-          CoordinateSystem.instance.scaleFactor,
-        ),
-      );
-
-      expect(flippedUtility.position.dx, closeTo(expectedPosition.dx, 0.0001));
-      expect(flippedUtility.position.dy, closeTo(expectedPosition.dy, 0.0001));
+      expect(container.read(utilityProvider).single.position, initialPosition);
     });
   });
 }

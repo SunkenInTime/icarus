@@ -14,6 +14,8 @@ enum IcarusShortcutAction {
   backwardPage,
   addPage,
   addLineup,
+  switchSide,
+  switchSideThisPage,
   openDeleteMenu,
   saveStrategy,
   pasteImage,
@@ -277,6 +279,23 @@ class ShortcutInfo {
       searchAliases: ['lineup'],
     ),
     IcarusShortcutDefinition(
+      action: IcarusShortcutAction.switchSide,
+      title: 'Switch Side',
+      defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyF),
+      intent: SwitchSideIntent(),
+      searchAliases: ['attack', 'defense', 'defend', 'flip', 'side'],
+    ),
+    IcarusShortcutDefinition(
+      action: IcarusShortcutAction.switchSideThisPage,
+      title: 'Switch Side (This Page)',
+      defaultBinding: IcarusKeyBinding(
+        trigger: LogicalKeyboardKey.keyF,
+        shift: true,
+      ),
+      intent: SwitchSideThisPageIntent(),
+      searchAliases: ['attack', 'defense', 'defend', 'flip', 'side', 'page'],
+    ),
+    IcarusShortcutDefinition(
       action: IcarusShortcutAction.openDeleteMenu,
       title: 'Open Delete Menu',
       defaultBinding: IcarusKeyBinding(trigger: openDeleteMenuKey),
@@ -524,4 +543,12 @@ class ToggleLineupIntent extends Intent {
 
 class OpenInAppDebugIntent extends Intent {
   const OpenInAppDebugIntent();
+}
+
+class SwitchSideIntent extends Intent {
+  const SwitchSideIntent();
+}
+
+class SwitchSideThisPageIntent extends Intent {
+  const SwitchSideThisPageIntent();
 }

@@ -820,14 +820,16 @@ void main() {
         images: const [],
         notes: 'preview',
       );
-      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
 
       await tester.pumpWidget(
         _buildHarness(
           container: container,
           child: Stack(
             children: [
-              LineUpAbilityWidget(lineUp: lineUp),
+              _LineUpLandingHost(landingId: lineUp.id),
             ],
           ),
         ),
@@ -837,7 +839,7 @@ void main() {
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
       expect(find.text('Range'), findsOneWidget);
-      expect(find.text('Delete'), findsOneWidget);
+      expect(find.text('Delete lineup'), findsOneWidget);
 
       await tester.tap(find.text('Range'));
       await tester.pumpAndSettle();
@@ -845,7 +847,7 @@ void main() {
       expect(
         container
             .read(lineUpProvider)
-            .lineUps
+            .landings
             .single
             .ability
             .visualState
@@ -871,26 +873,29 @@ void main() {
         id: 'lineup-sector-menu',
         agent: PlacedAgent(
           id: 'lineup-sector-agent',
-          type: AgentType.breach,
+          type: AgentType.miks,
           position: const Offset(20, 20),
         ),
         ability: PlacedAbility(
           id: 'lineup-sector-ability',
-          data: _sectorAbilityInfo(),
+          data: AgentData.agents[AgentType.miks]!.abilities
+              .firstWhere((info) => info.abilityData is SectorCircleAbility),
           position: const Offset(50, 50),
         ),
         youtubeLink: '',
         images: const [],
         notes: 'preview',
       );
-      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
 
       await tester.pumpWidget(
         _buildHarness(
           container: container,
           child: Stack(
             children: [
-              LineUpAbilityWidget(lineUp: lineUp),
+              _LineUpLandingHost(landingId: lineUp.id),
             ],
           ),
         ),
@@ -901,7 +906,7 @@ void main() {
 
       expect(find.text('Range Outline'), findsOneWidget);
       expect(find.text('Range Fill'), findsOneWidget);
-      expect(find.text('Delete'), findsOneWidget);
+      expect(find.text('Delete lineup'), findsOneWidget);
 
       await tester.tap(find.text('Range Outline'));
       await tester.pumpAndSettle();
@@ -909,7 +914,7 @@ void main() {
       expect(
         container
             .read(lineUpProvider)
-            .lineUps
+            .landings
             .single
             .ability
             .visualState
@@ -947,14 +952,16 @@ void main() {
         images: const [],
         notes: 'body hover note',
       );
-      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
 
       await tester.pumpWidget(
         _buildHarness(
           container: container,
           child: Stack(
             children: [
-              LineUpAbilityWidget(lineUp: lineUp),
+              _LineUpLandingHost(landingId: lineUp.id),
             ],
           ),
         ),
@@ -970,7 +977,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Range'), findsNothing);
-      expect(find.text('Delete'), findsNothing);
+      expect(find.text('Delete lineup'), findsNothing);
     });
 
     testWidgets('lineup square icon right-click still shows menu',
@@ -1002,14 +1009,16 @@ void main() {
         images: const [],
         notes: 'icon hover note',
       );
-      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
 
       await tester.pumpWidget(
         _buildHarness(
           container: container,
           child: Stack(
             children: [
-              LineUpAbilityWidget(lineUp: lineUp),
+              _LineUpLandingHost(landingId: lineUp.id),
             ],
           ),
         ),
@@ -1019,7 +1028,7 @@ void main() {
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
       expect(find.text('Range'), findsOneWidget);
-      expect(find.text('Delete'), findsOneWidget);
+      expect(find.text('Delete lineup'), findsOneWidget);
     });
 
     testWidgets('lineup note hover is icon-only', (tester) async {
@@ -1050,14 +1059,16 @@ void main() {
         images: const [],
         notes: 'icon-only note',
       );
-      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
 
       await tester.pumpWidget(
         _buildHarness(
           container: container,
           child: Stack(
             children: [
-              LineUpAbilityWidget(lineUp: lineUp),
+              _LineUpLandingHost(landingId: lineUp.id),
             ],
           ),
         ),
@@ -1110,14 +1121,16 @@ void main() {
         images: const [],
         notes: 'resizable note',
       );
-      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
 
       await tester.pumpWidget(
         _buildHarness(
           container: container,
           child: Stack(
             children: [
-              LineUpAbilityWidget(lineUp: lineUp),
+              _LineUpLandingHost(landingId: lineUp.id),
             ],
           ),
         ),
@@ -1133,7 +1146,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Range'), findsNothing);
-      expect(find.text('Delete'), findsNothing);
+      expect(find.text('Delete lineup'), findsNothing);
     });
 
     testWidgets(
@@ -1141,7 +1154,9 @@ void main() {
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1160,7 +1175,9 @@ void main() {
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1177,22 +1194,24 @@ void main() {
       await mouse.moveTo(
         tester.getCenter(
           find.byKey(
-            const ValueKey('lineup-stack-option-group-a-item-a'),
+            const ValueKey('lineup-stack-option-item-a'),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
       final hoveredTarget = container.read(hoveredLineUpTargetProvider);
-      expect(hoveredTarget?.groupId, 'group-a');
-      expect(hoveredTarget?.itemId, 'item-a');
+      expect(hoveredTarget?.kind, LineUpHoverKind.landing);
+      expect(hoveredTarget?.landingId, 'item-a');
     });
 
     testWidgets('stack selector option opens the selected lineup media',
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1205,7 +1224,7 @@ void main() {
 
       await tester.tap(
         find.byKey(
-          const ValueKey('lineup-stack-option-group-a-item-a'),
+          const ValueKey('lineup-stack-option-item-a'),
         ),
       );
       await tester.pump(const Duration(seconds: 1));
@@ -1219,7 +1238,9 @@ void main() {
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1238,7 +1259,9 @@ void main() {
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1251,7 +1274,7 @@ void main() {
 
       await tester.tap(
         find.byKey(
-          const ValueKey('lineup-stack-option-group-a-item-a'),
+          const ValueKey('lineup-stack-option-item-a'),
         ),
       );
       await tester.pumpAndSettle();
@@ -1260,13 +1283,13 @@ void main() {
       await tester.tap(find.text('Range'));
       await tester.pumpAndSettle();
 
-      final currentGroups = container.read(lineUpProvider).groups;
+      final lineUps = container.read(lineUpProvider);
       expect(
-        currentGroups.first.items.single.ability.visualState.showRangeFill,
+        lineUps.landingById('item-a')?.ability.visualState.showRangeFill,
         isFalse,
       );
       expect(
-        currentGroups.last.items.single.ability.visualState.showRangeFill,
+        lineUps.landingById('item-b')?.ability.visualState.showRangeFill,
         isTrue,
       );
     });
@@ -1276,7 +1299,9 @@ void main() {
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1289,24 +1314,24 @@ void main() {
 
       await tester.tap(
         find.byKey(
-          const ValueKey('lineup-stack-option-group-a-item-a'),
+          const ValueKey('lineup-stack-option-item-a'),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Delete'), findsOneWidget);
+      expect(find.text('Delete lineup'), findsOneWidget);
 
-      await tester.tap(find.text('Delete'));
+      await tester.tap(find.text('Delete lineup'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
       expect(
-        container.read(lineUpProvider).groups.map((group) => group.id),
+        container.read(lineUpProvider).origins.map((origin) => origin.id),
         isNot(contains('group-a')),
       );
       expect(
         container.read(lineUpAbilityHitboxRegistryProvider).keys,
-        isNot(contains('group-a::item-a')),
+        isNot(contains('item-a')),
       );
     });
 
@@ -1315,7 +1340,9 @@ void main() {
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1328,16 +1355,16 @@ void main() {
 
       await tester.tap(
         find.byKey(
-          const ValueKey('lineup-stack-option-group-a-item-a'),
+          const ValueKey('lineup-stack-option-item-a'),
         ),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Delete'));
+      await tester.tap(find.text('Delete lineup'));
       await tester.pumpAndSettle();
 
       expect(
-        container.read(lineUpProvider).groups.map((group) => group.id),
+        container.read(lineUpProvider).origins.map((origin) => origin.id),
         ['group-b'],
       );
       expect(find.byType(AbilityWidget), findsOneWidget);
@@ -1346,19 +1373,21 @@ void main() {
 
       expect(find.byKey(const ValueKey('lineup-stack-selector')), findsNothing);
       expect(find.text('Range'), findsOneWidget);
-      expect(find.text('Delete'), findsOneWidget);
+      expect(find.text('Delete lineup'), findsOneWidget);
 
-      await tester.tap(find.text('Delete'));
+      await tester.tap(find.text('Delete lineup'));
       await tester.pumpAndSettle();
 
-      expect(container.read(lineUpProvider).groups, isEmpty);
+      expect(container.read(lineUpProvider).links, isEmpty);
     });
 
     testWidgets('stacked lineup square body right-click stays non-interactive',
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1382,7 +1411,9 @@ void main() {
         (tester) async {
       final container = _createLineUpContainer();
       final groups = _stackedLineUpGroups();
-      container.read(lineUpProvider.notifier).fromHive(groups);
+      container
+          .read(lineUpProvider.notifier)
+          .fromHive(LineUpGraph.fromLegacyGroups(groups));
 
       await _pumpLineUpAbilities(
         tester,
@@ -1399,13 +1430,13 @@ void main() {
       await mouse.moveTo(
         tester.getCenter(
           find.byKey(
-            const ValueKey('lineup-stack-option-group-a-item-a'),
+            const ValueKey('lineup-stack-option-item-a'),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(container.read(hoveredLineUpTargetProvider)?.itemId, 'item-a');
+      expect(container.read(hoveredLineUpTargetProvider)?.landingId, 'item-a');
 
       await tester.tapAt(const Offset(8, 8));
       await tester.pumpAndSettle();
@@ -1475,6 +1506,21 @@ Future<void> _openContextMenu(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
 }
 
+class _LineUpLandingHost extends ConsumerWidget {
+  const _LineUpLandingHost({required this.landingId});
+
+  final String landingId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final landing = ref.watch(
+      lineUpProvider.select((state) => state.landingById(landingId)),
+    );
+    if (landing == null) return const SizedBox.shrink();
+    return LineUpLandingAbilityWidget(landing: landing);
+  }
+}
+
 ProviderContainer _createLineUpContainer() {
   return ProviderContainer(
     overrides: [
@@ -1501,12 +1547,11 @@ Future<void> _pumpLineUpAbilities(
       container: container,
       child: Consumer(
         builder: (context, ref, _) {
-          final currentGroups = ref.watch(lineUpProvider).groups;
+          final landings = ref.watch(lineUpProvider).landings;
           return Stack(
             children: [
-              for (final group in currentGroups)
-                for (final item in group.items)
-                  LineUpItemAbilityWidget(groupId: group.id, item: item),
+              for (final landing in landings)
+                LineUpLandingAbilityWidget(landing: landing),
             ],
           );
         },

@@ -71,29 +71,15 @@ class _HoveredMapItemNameCardState
   }
 
   String? _resolveLineUpName(HoveredLineUpTarget target) {
-    LineUpGroup? group;
-    for (final candidate in ref.read(lineUpProvider).groups) {
-      if (candidate.id == target.groupId) {
-        group = candidate;
-        break;
-      }
+    final state = ref.read(lineUpProvider);
+    switch (target.kind) {
+      case LineUpHoverKind.origin:
+        final origin = state.originById(target.originId!);
+        return AgentData.agents[origin?.agent.type]?.name;
+      case LineUpHoverKind.landing:
+      case LineUpHoverKind.connector:
+        return state.landingById(target.landingId!)?.ability.data.name;
     }
-    if (group == null) {
-      return null;
-    }
-
-    if (target.kind == LineUpHoverKind.item && target.itemId != null) {
-      LineUpItem? item;
-      for (final candidate in group.items) {
-        if (candidate.id == target.itemId) {
-          item = candidate;
-          break;
-        }
-      }
-      return item?.ability.data.name;
-    }
-
-    return AgentData.agents[group.agent.type]?.name;
   }
 
   String? _resolveHoveredName() {
@@ -123,12 +109,12 @@ class _HoveredMapItemNameCardState
         }
         return null;
       case DeleteTargetType.lineup:
-        for (final group in ref.read(lineUpProvider).groups) {
-          if (group.id == hoveredTarget.id) {
-            return AgentData.agents[group.agent.type]?.name;
-          }
+        final lineUps = ref.read(lineUpProvider);
+        final origin = lineUps.originById(hoveredTarget.id);
+        if (origin != null) {
+          return AgentData.agents[origin.agent.type]?.name;
         }
-        return null;
+        return lineUps.landingById(hoveredTarget.id)?.ability.data.name;
       case DeleteTargetType.text:
       case DeleteTargetType.image:
       case DeleteTargetType.utility:

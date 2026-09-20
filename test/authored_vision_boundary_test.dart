@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/svg_vision_boundary.dart';
 import 'package:icarus/view_cone/authored_vision_boundary.dart';
@@ -27,26 +28,6 @@ void main() {
     MapValue.abyss: (17, 0),
     MapValue.corrode: (9, 0),
     MapValue.summit: (13, 31),
-  };
-
-  // These are the authored walls that overlap Riot navigation samples. The
-  // overlap is useful evidence for selecting an elevation, but must never
-  // turn the whole enclosing wall into a passable floor. Icebox is the most
-  // sensitive case: the old behavior could remove seven of its nine walls.
-  const navigationOverlapCounts = <MapValue, int>{
-    MapValue.bind: 6,
-    MapValue.haven: 2,
-    MapValue.split: 4,
-    MapValue.ascent: 1,
-    MapValue.icebox: 7,
-    MapValue.breeze: 2,
-    MapValue.fracture: 3,
-    MapValue.pearl: 4,
-    MapValue.lotus: 0,
-    MapValue.sunset: 3,
-    MapValue.abyss: 2,
-    MapValue.corrode: 3,
-    MapValue.summit: 0,
   };
 
   test('loads the complete authored collision manifest for every map',
@@ -141,9 +122,10 @@ void main() {
     expect(box.bounds.bottom, closeTo(393.8, 1));
   });
 
-  test('provider selects the exact rendered Split boundary at runtime',
-      () async {
-    final container = ProviderContainer();
+  test('legacy provider selects the exact rendered Split boundary', () async {
+    final container = ProviderContainer(overrides: [
+      worldGeometryEnabledProvider.overrideWith((ref, map) => false),
+    ]);
     addTearDown(container.dispose);
     final svg = SvgVisionBoundary.parse(
       map: MapValue.split,
@@ -161,9 +143,11 @@ void main() {
     );
   });
 
-  test('provider enables exact rendered collision geometry for Summit',
+  test('legacy provider selects exact rendered collision geometry for Summit',
       () async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: [
+      worldGeometryEnabledProvider.overrideWith((ref, map) => false),
+    ]);
     addTearDown(container.dispose);
     final svg = SvgVisionBoundary.parse(
       map: MapValue.summit,
@@ -183,9 +167,11 @@ void main() {
     );
   });
 
-  test('runtime walls exactly match rendered SVG strokes on every map',
+  test('legacy walls match canonically placed SVG strokes on every map',
       () async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: [
+      worldGeometryEnabledProvider.overrideWith((ref, map) => false),
+    ]);
     addTearDown(container.dispose);
 
     for (final map in MapValue.values) {
@@ -201,6 +187,7 @@ void main() {
           'assets/maps/${map.name}_map_defense.svg',
         ),
         isAttack: false,
+        sourceTranslationSvg: -mapDefenseArtworkOffsetSvg[map]!,
       );
       final exactDraft = VisionBoundaryMapDraft.fromBoundary(
         map: map,
@@ -293,9 +280,11 @@ void main() {
     }
   });
 
-  test('Ascent B wall clips on the rendered stroke instead of beside it',
+  test('legacy Ascent B wall clips on the rendered stroke instead of beside it',
       () async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: [
+      worldGeometryEnabledProvider.overrideWith((ref, map) => false),
+    ]);
     addTearDown(container.dispose);
     final geometry =
         await container.read(viewConeGeometryProvider(MapValue.ascent).future);
@@ -367,6 +356,7 @@ void main() {
       ),
     ) as Map<String, dynamic>;
 
+    var navigationOverlappingWalls = 0;
     for (final map in MapValue.values) {
       final svg = SvgVisionBoundary.parse(
         map: map,
@@ -405,13 +395,11 @@ void main() {
               group.kind == VisionCollisionKind.maskBoundary &&
               !group.isOuterBoundary,
         );
-        expect(
-          authoredInteriors.where(
-            (group) => group.navigationLayerMask != 0,
-          ),
-          hasLength(navigationOverlapCounts[map]!),
-          reason: '${map.name} ${side.$1} navigation overlap audit',
-        );
+        // Registration determines which samples overlap a wall. Regardless of
+        // that evidence, an authored wall must remain closed and impassable.
+        navigationOverlappingWalls += authoredInteriors
+            .where((group) => group.navigationLayerMask != 0)
+            .length;
         expect(
           authoredInteriors,
           everyElement(
@@ -469,6 +457,9 @@ void main() {
         );
       }
     }
+    expect(navigationOverlappingWalls, greaterThan(0),
+        reason:
+            'The corpus must exercise navigation evidence inside authored walls.');
   });
 }
 

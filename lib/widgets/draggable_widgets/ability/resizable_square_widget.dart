@@ -23,8 +23,7 @@ class ResizableSquareWidget extends ConsumerWidget {
     required this.isTransparent,
     required this.hasTopborder,
     required this.hasSideBorders,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
     this.rotation,
     this.visualState,
     this.watchMouse = true,
@@ -44,8 +43,7 @@ class ResizableSquareWidget extends ConsumerWidget {
   final bool isTransparent;
   final bool hasTopborder;
   final bool hasSideBorders;
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
   final double? rotation;
   final AbilityVisualState? visualState;
   final bool watchMouse;
@@ -121,8 +119,7 @@ class ResizableSquareWidget extends ConsumerWidget {
               angle: -(rotation ?? 0),
               alignment: Alignment.center,
               child: AbilityWidget(
-                lineUpId: lineUpId,
-                lineUpItemId: lineUpItemId,
+                landingId: landingId,
                 iconPath: iconPath,
                 id: id,
                 isAlly: isAlly,

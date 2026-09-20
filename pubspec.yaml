@@ -3,7 +3,7 @@ description: "A new Flutter project."
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 4.6.1+96 #version number
+version: 4.6.1+100 #version number
 
 environment:
   sdk: ">=3.4.3 <4.0.0"
@@ -38,12 +38,14 @@ dependencies:
   custom_mouse_cursor: ^1.1.3
   flutter_inappwebview: ^6.1.5
   windows_single_instance: ^1.0.0
+  win32: ^5.15.0
   pasteboard: ^0.4.0
   desktop_updater: ^1.4.0
   cryptography_plus: ^2.7.1
   lucide_icons_flutter: 3.1.14+2
   xml: ^6.5.0
   discord_rich_presence: ^1.1.1
+  ffi: ^2.1.5
 
 
 dependency_overrides:
@@ -53,6 +55,7 @@ dependency_overrides:
     path: packages/custom_mouse_cursor
 
 dev_dependencies:
+  crypto: ^3.0.7
   flutter_test:
     sdk: flutter
   integration_test:
@@ -89,9 +92,26 @@ flutter:
         - asset: assets/fonts/CustomIcons.ttf
   assets:
     - assets/
+    - assets/brand/
     - assets/maps/
+    # Sightlines use the SVG-height pairs above; retain source navigation only.
+    - assets/maps/world/navigation_catalog.json
+    - assets/maps/world/ascent_navigation.json.gz
+    - assets/maps/world/breeze_navigation.json.gz
+    - assets/maps/world/lotus_navigation.json.gz
+    - assets/maps/world/icebox_navigation.json.gz
+    - assets/maps/world/sunset_navigation.json.gz
+    - assets/maps/world/split_navigation.json.gz
+    - assets/maps/world/haven_navigation.json.gz
+    - assets/maps/world/fracture_navigation.json.gz
+    - assets/maps/world/abyss_navigation.json.gz
+    - assets/maps/world/pearl_navigation.json.gz
+    - assets/maps/world/bind_navigation.json.gz
+    - assets/maps/world/corrode_navigation.json.gz
+    - assets/maps/world/summit_navigation.json.gz
     - assets/maps/thumbnails/
     - assets/agents/
+    - assets/weapons/
     - assets/agents/Omen/
     - assets/agents/Killjoy/
     - assets/agents/Sova/

@@ -15,9 +15,13 @@ obvious - the next reader never asks "why is this here?". measured by the reader
 the library - a user's saved strategies, folders, and lineups. stored only on their machine, no copy exists anywhere else.
 round-trip - export then import with nothing lost.
 
-The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in CONTEXT.md, use those words exactly. DESIGN.md defines how the app must look and how we build UI, read it before touching UI.
+The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in CONTEXT.md, use those words exactly. DESIGN.md holds the rules for how we build UI (the values themselves live in `lib/const/settings.dart`), read it before touching UI.
 
 Here's the philosophy we work by:
+
+After audits, investigations, or substantial testing runs, read [answers.md](answers.md) before reporting the outcome.
+
+Before changing view cones, map blockers, or elevation handling, read [docs/vision-model.md](docs/vision-model.md). It defines which data controls wall placement and height.
 
 ## The library is sacred
 Corrupted or dropped library data is unrecoverable. Schema changes are the dangerous moment: a change to the Hive models means source models, generated adapters, and a migration (`lib/migrations/`) so that data written by any past version loads in this one. When a write path is uncertain, fail loudly without saving rather than save something wrong.
@@ -38,3 +42,4 @@ Measure twice, cut once: understand the problem fully before building, because c
 These steer us in the right direction. They are not hard-set, but default to following them; if you think one should be ignored, be very loud about it and get approval from us first.
 
 - Never edit `*.g.dart` files. Edit the source models, then run `dart run build_runner build --delete-conflicting-outputs`.
+- Each thread owns one running instance of the app, and never touches another's. Start yours once, keyed by your worktree or branch name: `flutter run -d macos --pid-file /tmp/icarus-<key>.pid --dart-entrypoint-args "--hive-store-dir=<dir>"`, with `<dir>` = `~/Library/Containers/xyz.icarus-strats/Data/Library/Application Support/icarus-<key>` so its library is yours alone, launched from an unsandboxed shell or it draws but takes no clicks. Instances share a window frame, so move yours aside before you click. After every edit, hot reload it with `kill -USR1 $(cat /tmp/icarus-<key>.pid)`; the tool's stdin is not a terminal, so typing `r` does nothing. Keep it running for the thread, and kill it when the thread ends.

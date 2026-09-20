@@ -1,48 +1,18 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/abilities.dart';
-import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
-import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/json_converters.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part "placed_classes.g.dart";
 
 const int worldSizedMediaVersion = 1;
-
-Offset getFlippedPosition({
-  required Offset position,
-  required Offset scaledSize,
-  bool isRotatable = false,
-}) {
-  final coordinateSystem = CoordinateSystem.instance;
-  final wNorm = (scaledSize.dx / coordinateSystem.effectiveSize.width) *
-      coordinateSystem.worldNormalizedWidth;
-  final hNorm = (scaledSize.dy / coordinateSystem.effectiveSize.height) *
-      coordinateSystem.normalizedHeight;
-  final flippedX = coordinateSystem.worldNormalizedWidth - position.dx - wNorm;
-  double flippedY = 0;
-
-  if (isRotatable) {
-    // Rotatable widgets are rendered with a different anchor (their visual
-    // bounds shift when rotated/flipped). To keep their perceived position
-    // consistent after flipping, we need to compensate for the extra vertical
-    // offset introduced by rotation by subtracting the normalized height a
-    // second time.
-    flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm - hNorm;
-  } else {
-    flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm;
-  }
-
-  return Offset(flippedX, flippedY);
-}
 
 AbilityVisualState _abilityVisualStateFromJson(Map<String, dynamic>? json) {
   if (json == null) {
@@ -233,25 +203,6 @@ class PlacedText extends PlacedWidget {
     copied.isDeleted = isDeleted ?? this.isDeleted;
     return copied;
   }
-
-  void switchSides(Offset size) {
-    position = getFlippedPosition(position: position, scaledSize: size);
-
-    for (final (index, action) in _actionHistory.indexed) {
-      if (action is PositionAction) {
-        _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
-      }
-    }
-    for (final (index, action) in _poppedAction.indexed) {
-      if (action is PositionAction) {
-        _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
-      }
-    }
-  }
 }
 
 @JsonSerializable()
@@ -293,25 +244,6 @@ class PlacedImage extends PlacedWidget {
 
   void updateTagColor(int? colorValue) {
     tagColorValue = colorValue;
-  }
-
-  void switchSides(Offset size) {
-    position = getFlippedPosition(position: position, scaledSize: size);
-
-    for (final (index, action) in _actionHistory.indexed) {
-      if (action is PositionAction) {
-        _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
-      }
-    }
-    for (final (index, action) in _poppedAction.indexed) {
-      if (action is PositionAction) {
-        _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
-      }
-    }
   }
 
   /// Returns a new independent [PlacedImage] object. None of the internal
@@ -381,50 +313,19 @@ sealed class PlacedAgentNode extends PlacedWidget {
   @JsonKey(defaultValue: AgentState.none)
   AgentState state;
 
+  @JsonKey(defaultValue: WeaponType.none)
+  WeaponType weapon;
+
   PlacedAgentNode({
     required this.type,
     required super.position,
     required super.id,
     this.isAlly = true,
     this.state = AgentState.none,
+    this.weapon = WeaponType.none,
   });
 
   String get kind;
-
-  void switchSides(double agentSize) {
-    final coordinateSystem = CoordinateSystem.instance;
-    // Serialized positions use the historical default marker footprint.
-    // Runtime size changes are render-only, so side switching must not depend
-    // on the size selected when the command runs.
-    final agentScreenPx = coordinateSystem.scale(Settings.agentSize);
-    final scaledSize = Offset(agentScreenPx, agentScreenPx);
-
-    position = getFlippedPosition(position: position, scaledSize: scaledSize);
-    _flipSharedPositionHistory(scaledSize);
-  }
-
-  void _flipSharedPositionHistory(Offset scaledSize) {
-    for (final (index, action) in _actionHistory.indexed) {
-      if (action is PositionAction) {
-        _actionHistory[index] = action.copyWith(
-          position: getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-          ),
-        );
-      }
-    }
-    for (final (index, action) in _poppedAction.indexed) {
-      if (action is PositionAction) {
-        _poppedAction[index] = action.copyWith(
-          position: getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-          ),
-        );
-      }
-    }
-  }
 
   factory PlacedAgentNode.fromJson(Map<String, dynamic> json) {
     final kind = json['kind'] as String? ?? plainKind;
@@ -466,6 +367,7 @@ class PlacedAgent extends PlacedAgentNode {
     super.isAlly = true,
     this.lineUpID,
     super.state = AgentState.none,
+    super.weapon = WeaponType.none,
   });
 
   @override
@@ -487,6 +389,7 @@ class PlacedAgent extends PlacedAgentNode {
     bool? isAlly,
     String? lineUpID,
     AgentState? state,
+    WeaponType? weapon,
   }) {
     final copied = PlacedAgent(
       type: type ?? this.type,
@@ -495,6 +398,7 @@ class PlacedAgent extends PlacedAgentNode {
       isAlly: isAlly ?? this.isAlly,
       lineUpID: lineUpID ?? this.lineUpID,
       state: state ?? this.state,
+      weapon: weapon ?? this.weapon,
     );
     copied.isDeleted = isDeleted;
     return copied;
@@ -555,6 +459,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     this.visionElevation,
     super.isAlly = true,
     super.state = AgentState.none,
+    super.weapon = WeaponType.none,
   }) : assert(
           UtilityData.isViewConePresetType(presetType),
           'presetType must be a view cone preset.',
@@ -642,27 +547,6 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     }
   }
 
-  @override
-  void switchSides(double agentSize) {
-    super.switchSides(agentSize);
-    rotation = rotation + math.pi;
-
-    for (final (index, action) in _actionHistory.indexed) {
-      if (action is ViewConeAgentGeometryAction) {
-        _actionHistory[index] = action.copyWith(
-          rotation: action.rotation + math.pi,
-        );
-      }
-    }
-    for (final (index, action) in _poppedAction.indexed) {
-      if (action is ViewConeAgentGeometryAction) {
-        _poppedAction[index] = action.copyWith(
-          rotation: action.rotation + math.pi,
-        );
-      }
-    }
-  }
-
   static const Object _noChange = Object();
 
   PlacedViewConeAgent copyWith({
@@ -671,6 +555,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     String? id,
     bool? isAlly,
     AgentState? state,
+    WeaponType? weapon,
     UtilityType? presetType,
     double? rotation,
     double? length,
@@ -682,6 +567,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
       id: id ?? this.id,
       isAlly: isAlly ?? this.isAlly,
       state: state ?? this.state,
+      weapon: weapon ?? this.weapon,
       presetType: presetType ?? this.presetType,
       rotation: rotation ?? this.rotation,
       length: length ?? this.length,
@@ -709,6 +595,7 @@ class PlacedCircleAgent extends PlacedAgentNode {
     this.opacityPercent = 100,
     super.isAlly = true,
     super.state = AgentState.none,
+    super.weapon = WeaponType.none,
   });
 
   @override
@@ -799,6 +686,7 @@ class PlacedCircleAgent extends PlacedAgentNode {
     String? id,
     bool? isAlly,
     AgentState? state,
+    WeaponType? weapon,
     double? diameterMeters,
     int? colorValue,
     int? opacityPercent,
@@ -809,6 +697,7 @@ class PlacedCircleAgent extends PlacedAgentNode {
       id: id ?? this.id,
       isAlly: isAlly ?? this.isAlly,
       state: state ?? this.state,
+      weapon: weapon ?? this.weapon,
       diameterMeters: diameterMeters ?? this.diameterMeters,
       colorValue: colorValue ?? this.colorValue,
       opacityPercent: opacityPercent ?? this.opacityPercent,
@@ -927,63 +816,6 @@ class PlacedAbility extends PlacedWidget {
     visualState = next.visualState;
     armLengthsMeters = List<double>.from(next.armLengthsMeters);
     _poppedAction.removeLast();
-  }
-
-  void switchSides({required double mapScale, required double abilitySize}) {
-    // Serialized positions are defined at the historical default marker size.
-    // Side switching must use that same geometry so the result is independent
-    // of whichever runtime size happens to be selected when the switch occurs.
-    final fullAbilityWidgetSize = data.abilityData!.getSize(
-      mapScale: mapScale,
-      abilitySize: Settings.abilitySize,
-    );
-    final abilityData = data.abilityData!;
-    final hasVisionCone = AbilityVisionConeSpec.forAbility(data) != null;
-    final shouldRotate = isRotatable(abilityData) || hasVisionCone;
-    final shouldUseRotatableFlipCompensation =
-        isRotatable(abilityData) && abilityData is! DeadlockBarrierMeshAbility;
-
-    final scaledAbilitySize = fullAbilityWidgetSize.scale(
-        CoordinateSystem.instance.scaleFactor,
-        CoordinateSystem.instance.scaleFactor);
-
-    Offset flippedPosition = getFlippedPosition(
-        position: position,
-        scaledSize: scaledAbilitySize,
-        isRotatable: shouldUseRotatableFlipCompensation);
-    position = flippedPosition;
-
-    if (shouldRotate) {
-      rotation = rotation + math.pi;
-    }
-
-    for (final (index, action) in _actionHistory.indexed) {
-      if (action is PositionAction) {
-        _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: scaledAbilitySize,
-                isRotatable: shouldUseRotatableFlipCompensation));
-      } else if (action is AbilityGeometryAction) {
-        _actionHistory[index] = action.copyWith(
-          rotation: shouldRotate ? action.rotation + math.pi : action.rotation,
-        );
-      }
-    }
-
-    for (final (index, action) in _poppedAction.indexed) {
-      if (action is PositionAction) {
-        _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: scaledAbilitySize,
-                isRotatable: shouldUseRotatableFlipCompensation));
-      } else if (action is AbilityGeometryAction) {
-        _poppedAction[index] = action.copyWith(
-          rotation: shouldRotate ? action.rotation + math.pi : action.rotation,
-        );
-      }
-    }
   }
 
   @override
@@ -1200,108 +1032,6 @@ class PlacedUtility extends PlacedWidget {
 
   void updateVisionElevation(double? newElevation) {
     visionElevation = newElevation;
-  }
-
-  _getIsRotationUtility(UtilityType type) {
-    return UtilityData.isViewCone(type);
-  }
-
-  Offset _getEffectiveUtilitySize({
-    required double mapScale,
-    required double agentSize,
-    required double abilitySize,
-  }) {
-    final utility = UtilityData.utilityWidgets[type]!;
-    if (type == UtilityType.customCircle) {
-      assert(customDiameter != null,
-          'customDiameter is required for custom circle utility.');
-      if (customDiameter == null) {
-        return Offset.zero;
-      }
-      return utility.getSize(
-          diameterMeters: customDiameter, mapScale: mapScale);
-    }
-    if (type == UtilityType.customRectangle) {
-      assert(customWidth != null && customLength != null,
-          'customWidth and customLength are required for custom rectangle utility.');
-      if (customWidth == null || customLength == null) {
-        return Offset.zero;
-      }
-      return utility.getSize(
-        widthMeters: customWidth,
-        rectLengthMeters: customLength,
-        mapScale: mapScale,
-      );
-    }
-    if (UtilityData.isRoleIcon(type)) {
-      return utility.getSize(agentSize: agentSize);
-    }
-    return utility.getSize(abilitySize: abilitySize);
-  }
-
-  void switchSides({
-    required double mapScale,
-    required double agentSize,
-    required double abilitySize,
-  }) {
-    final size = _getEffectiveUtilitySize(
-      mapScale: mapScale,
-      agentSize: Settings.agentSize,
-      abilitySize: Settings.abilitySize,
-    );
-    final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
-        CoordinateSystem.instance.scaleFactor);
-    final flippedPosition = getFlippedPosition(
-        position: position,
-        scaledSize: scaledSize,
-        isRotatable: _getIsRotationUtility(type));
-
-    position = flippedPosition;
-
-    if (_getIsRotationUtility(type)) {
-      rotation = rotation + math.pi;
-    }
-
-    for (final (index, action) in _actionHistory.indexed) {
-      if (action is PositionAction) {
-        Offset actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
-
-        _actionHistory[index] =
-            action.copyWith(position: actionFlippedPosition);
-      } else if (action is RotationAction) {
-        _actionHistory[index] =
-            action.copyWith(rotation: action.rotation + math.pi);
-      } else if (action is CustomShapeGeometryAction) {
-        final actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
-        _actionHistory[index] =
-            action.copyWith(position: actionFlippedPosition);
-      }
-    }
-    for (final (index, action) in _poppedAction.indexed) {
-      if (action is PositionAction) {
-        Offset actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
-
-        _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
-      } else if (action is RotationAction) {
-        _poppedAction[index] =
-            action.copyWith(rotation: action.rotation + math.pi);
-      } else if (action is CustomShapeGeometryAction) {
-        final actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
-        _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
-      }
-    }
   }
 
   void updateRotationHistory() {

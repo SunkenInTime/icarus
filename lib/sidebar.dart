@@ -43,7 +43,11 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
         const AbiilityBar(),
         Padding(
           padding: const EdgeInsets.only(
-              left: 0, right: Settings.sideBarPanelPaddingRight, bottom: 8),
+            left: 0,
+            top: 8,
+            right: Settings.sideBarPanelPaddingRight,
+            bottom: 8,
+          ),
           child: ClipRRect(
             borderRadius: _panelBorderRadius,
             child: Container(
@@ -103,8 +107,8 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                                           .toggleFavoritesOnly();
                                     },
                                     icon: Icon(
-                                      Icons.star_rounded,
-                                      size: 24,
+                                      LucideIcons.star,
+                                      size: 20,
                                       color: filterState.favoritesOnly
                                           ? Colors.white
                                           : Settings.tacticalVioletTheme

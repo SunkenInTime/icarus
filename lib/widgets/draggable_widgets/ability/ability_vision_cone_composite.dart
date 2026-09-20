@@ -55,6 +55,7 @@ class AbilityVisionConeComposite extends StatelessWidget {
     this.coordinatePosition,
     this.applyRotation = true,
     this.clipToGeometry = true,
+    this.worldOriginOverride,
   });
 
   final PlacedAbility ability;
@@ -69,6 +70,7 @@ class AbilityVisionConeComposite extends StatelessWidget {
   final Offset? coordinatePosition;
   final bool applyRotation;
   final bool clipToGeometry;
+  final Offset? worldOriginOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -95,10 +97,11 @@ class AbilityVisionConeComposite extends StatelessWidget {
       ability: abilityData,
       mapScale: mapScale,
     );
-    final worldOrigin = clipToGeometry
-        ? (coordinatePosition ?? ability.position) +
-            coordinateSystem.virtualOffsetToWorld(storedAnchor)
-        : null;
+    final worldOrigin = worldOriginOverride ??
+        (clipToGeometry
+            ? (coordinatePosition ?? ability.position) +
+                coordinateSystem.virtualOffsetToWorld(storedAnchor)
+            : null);
 
     final composite = SizedBox(
       width: coordinateSystem.scale(ViewConeWidget.totalWidthVirtual),

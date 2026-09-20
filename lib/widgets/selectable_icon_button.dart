@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+// The secondary icon button's own corner radius (the theme default).
+const double _radius = 6;
+
 class SelectableIconButton extends ConsumerWidget {
   const SelectableIconButton({
     super.key,
@@ -24,17 +27,26 @@ class SelectableIconButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hasShortcutLabel = shortcutLabel != null && shortcutLabel!.isNotEmpty;
 
+    // A checked tool is a raised command surface: violet by default, or the
+    // caller's color (the favorites amber, the delete tools' red). A
+    // transparent color means the caller wants no fill at all.
+    final raisedColor = isSelected
+        ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
+        : null;
+    final raised = raisedColor != null && raisedColor.a > 0;
     Widget button = ShadIconButton.secondary(
       padding: EdgeInsets.zero,
       icon: icon,
-      backgroundColor: isSelected
-          ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
-          : null,
-      hoverBackgroundColor: isSelected
-          ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
-          : null,
+      backgroundColor: isSelected ? Colors.transparent : null,
+      hoverBackgroundColor: isSelected ? Colors.transparent : null,
       onPressed: onPressed,
     );
+    if (raised) {
+      button = DecoratedBox(
+        decoration: Settings.raised(raisedColor, _radius),
+        child: button,
+      );
+    }
 
     // No tooltip text means no ShadTooltip wrapper; an empty tooltip bubble
     // would still pop up on hover otherwise.

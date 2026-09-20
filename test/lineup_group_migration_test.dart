@@ -80,13 +80,19 @@ void main() {
         abilityLineUpId: null,
       );
 
-      final migrated = StrategyProvider.migrateLineUpGroups(strategy);
+      final migrated = StrategyProvider.migrateToCurrentVersion(strategy);
       final group = migrated.pages.single.lineUpGroups.single;
+      final graph = migrated.pages.single.lineUpGraph;
 
       expect(identical(migrated, strategy), isFalse);
       expect(migrated.versionNumber, Settings.versionNumber);
       expect(group.agent.lineUpID, group.id);
       expect(group.items.single.ability.lineUpID, group.id);
+      expect(graph.origins.single.agent.lineUpID, graph.origins.single.id);
+      expect(
+        graph.landings.single.ability.lineUpID,
+        graph.landings.single.id,
+      );
     });
   });
 }

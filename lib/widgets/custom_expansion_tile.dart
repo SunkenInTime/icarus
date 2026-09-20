@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CustomExpansionTile extends StatefulWidget {
   /// Creates a custom expansion tile that keeps a persistent row visible
@@ -133,18 +135,17 @@ class _CustomExpansionTileState extends State<CustomExpansionTile>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     final Color backgroundColor = _isExpanded
         ? widget.backgroundColor ?? Colors.transparent
         : widget.collapsedBackgroundColor ?? Colors.transparent;
 
     final Color? titleColor = _isExpanded
-        ? widget.textColor ?? colorScheme.primary
+        ? widget.textColor ?? Settings.accentInk
         : widget.collapsedTextColor ?? theme.textTheme.titleMedium?.color;
 
     final Color iconColor = _isExpanded
-        ? widget.iconColor ?? colorScheme.primary
+        ? widget.iconColor ?? Settings.accentInk
         : widget.collapsedIconColor ?? theme.unselectedWidgetColor;
 
     return Material(
@@ -175,7 +176,8 @@ class _CustomExpansionTileState extends State<CustomExpansionTile>
                       RotationTransition(
                         turns: _iconTurns,
                         child: Icon(
-                          Icons.expand_more,
+                          LucideIcons.chevronDown,
+                          size: 20,
                           color: iconColor,
                         ),
                       ),

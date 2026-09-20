@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "format": "icarus-navigation-catalog-v1",
+  "maps": {
+    "abyss": {
+      "navigation": "abyss_navigation.json.gz",
+      "navigationSha256": "7747acadc8e209ea6320f4d4651cfb8c3ab4b546b76a96d7ecb6e5041009fff5",
+      "navigationBytes": 576054,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 800,
+      "menuElevationsCm": [
+        575.0,
+        772,
+        975.0,
+        1075.0,
+        1175.0,
+        1375.0
+      ],
+      "defenseOffsetSvg": [
+        -0.4823000000000093,
+        -0.19400000000001683
+      ]
+    },
+    "ascent": {
+      "navigation": "ascent_navigation.json.gz",
+      "navigationSha256": "5bfd59285db8681c8abfbc5be7419d83b5561806ee4bb68c053619273ec98f4e",
+      "navigationBytes": 1259105,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 400,
+      "menuElevationsCm": [
+        275.0,
+        375.0,
+        475.0,
+        575.0,
+        675.0
+      ],
+      "defenseOffsetSvg": [
+        0.0,
+        0.0
+      ]
+    },
+    "bind": {
+      "navigation": "bind_navigation.json.gz",
+      "navigationSha256": "daa79808f146d08773622c11e2482172da339e81338f33c103c9702cf1ac4c3b",
+      "navigationBytes": 1197302,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 100,
+      "menuElevationsCm": [
+        275.0,
+        277,
+        328,
+        375.0,
+        475.0,
+        476.0,
+        675.0
+      ],
+      "defenseOffsetSvg": [
+        -0.8220000000000027,
+        0.0
+      ]
+    },
+    "breeze": {
+      "navigation": "breeze_navigation.json.gz",
+      "navigationSha256": "9dc838f417749960315eb0b53f5d8ef29fe94353363b7a9a34ad33268cf0f7fa",
+      "navigationBytes": 903826,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 600,
+      "menuElevationsCm": [
+        375.0,
+        376,
+        475.0,
+        575.0,
+        675.0,
+        775.0,
+        780.0,
+        1075.0
+      ],
+      "defenseOffsetSvg": [
+        -0.06599999999998829,
+        0.0
+      ]
+    },
+    "corrode": {
+      "navigation": "corrode_navigation.json.gz",
+      "navigationSha256": "0e444492619effb5cd4f1d6a868f6b16f1bfc6501939327a8f54bd0a9c30fb31",
+      "navigationBytes": 1271763,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 600,
+      "menuElevationsCm": [
+        575.0,
+        583,
+        584,
+        670.0,
+        675.0,
+        775.0,
+        780.0,
+        875.0,
+        975.0
+      ],
+      "defenseOffsetSvg": [
+        -0.21299999999999386,
+        0.0
+      ]
+    },
+    "fracture": {
+      "navigation": "fracture_navigation.json.gz",
+      "navigationSha256": "d4643158ea7904bd4e2cfb25bfca3f0cbedf559ac2d9c1764f643dd3d06351c8",
+      "navigationBytes": 687252,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 550,
+      "menuElevationsCm": [
+        475.0,
+        575.0,
+        675.0,
+        725.0,
+        775.0,
+        825.0,
+        925.0,
+        1175.0
+      ],
+      "defenseOffsetSvg": [
+        -0.26200000000000045,
+        0.0
+      ]
+    },
+    "haven": {
+      "navigation": "haven_navigation.json.gz",
+      "navigationSha256": "8d4a51eccf984e4c5479db29c877bb718398c012d0317251edc231c0881ddf72",
+      "navigationBytes": 906834,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 300,
+      "menuElevationsCm": [
+        175.0,
+        275.0,
+        375.0,
+        475.0
+      ],
+      "defenseOffsetSvg": [
+        -0.009000000000014552,
+        0.0
+      ]
+    },
+    "icebox": {
+      "navigation": "icebox_navigation.json.gz",
+      "navigationSha256": "691028e3a455d246df6cb01b7ddffea7b5a025f7cc242e1c78ad019e75ee1636",
+      "navigationBytes": 881667,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 100,
+      "menuElevationsCm": [
+        275.0,
+        285.0,
+        304.0,
+        375.0,
+        645.0
+      ],
+      "defenseOffsetSvg": [
+        0.4590000000000032,
+        0.0
+      ]
+    },
+    "lotus": {
+      "navigation": "lotus_navigation.json.gz",
+      "navigationSha256": "33381460f5cfac896342a8d900687687818deb8141443ee4445edcc1f91ba5e6",
+      "navigationBytes": 655831,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 300,
+      "menuElevationsCm": [
+        275.0,
+        325.0,
+        326,
+        375.0,
+        378,
+        475.0,
+        477,
+        479.0,
+        675.0,
+        702
+      ],
+      "defenseOffsetSvg": [
+        -0.9069999999999823,
+        -0.3860000000000241
+      ]
+    },
+    "pearl": {
+      "navigation": "pearl_navigation.json.gz",
+      "navigationSha256": "a3c22336fd3f31823aca84f4e90d56ad31df9ce16b4143f8a916a4d392058fe8",
+      "navigationBytes": 558334,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 250,
+      "menuElevationsCm": [
+        425.0,
+        475.0,
+        525.0,
+        575.0,
+        675.0,
+        775.0,
+        875.0,
+        975.0,
+        1025.0,
+        1175.0
+      ],
+      "defenseOffsetSvg": [
+        -0.332300000000032,
+        0.0
+      ]
+    },
+    "split": {
+      "navigation": "split_navigation.json.gz",
+      "navigationSha256": "a832bce4af6a01337b6366d3b66efc18fdd527f309aaf2e51ae514cfafd49993",
+      "navigationBytes": 635126,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 300,
+      "menuElevationsCm": [
+        175.0,
+        275.0,
+        375.0,
+        475.0,
+        575.0,
+        625.0,
+        675.0,
+        825.0,
+        1075.0
+      ],
+      "defenseOffsetSvg": [
+        -0.8238000000000056,
+        0.0
+      ]
+    },
+    "summit": {
+      "navigation": "summit_navigation.json.gz",
+      "navigationSha256": "37a8ad4dd61bf955840b90db993db8d867215f1231f11338a289d46385b4d358",
+      "navigationBytes": 1455264,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 100,
+      "menuElevationsCm": [
+        270.0,
+        273.0,
+        275.0,
+        277.0,
+        375.0,
+        475.0,
+        575.0
+      ],
+      "defenseOffsetSvg": [
+        -0.3849999999999909,
+        0.0
+      ]
+    },
+    "sunset": {
+      "navigation": "sunset_navigation.json.gz",
+      "navigationSha256": "41b3bc1019c72995ef88111fb897cf3038c9c87a532d09916409080da268787b",
+      "navigationBytes": 512294,
+      "observerHeightCm": 175,
+      "defaultFloorElevationCm": 200,
+      "menuElevationsCm": [
+        175.0,
+        275.0,
+        375.0,
+        377,
+        388,
+        475.0,
+        575.0,
+        576
+      ],
+      "defenseOffsetSvg": [
+        -0.02800000000002001,
+        0.0
+      ]
+    }
+  }
+}

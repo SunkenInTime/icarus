@@ -143,24 +143,9 @@ jobs:
       - name: Verify Authenticode Signatures
         shell: pwsh
         run: |
-          $releaseFiles = Get-ChildItem -Path "build/windows/x64/runner/Release" -Recurse -File -Include "*.exe", "*.dll"
-          $installerFiles = Get-ChildItem -Path "build/installer" -File -Filter "*.exe"
-          $signedFiles = @($releaseFiles) + @($installerFiles)
-
-          if ($signedFiles.Count -eq 0) {
-            throw "No Windows executables or libraries were found to verify."
-          }
-
-          $invalidFiles = @(
-            $signedFiles | Where-Object {
-              (Get-AuthenticodeSignature -FilePath $_.FullName).Status -ne "Valid"
-            }
-          )
-          if ($invalidFiles.Count -gt 0) {
-            throw "Invalid Authenticode signatures: $($invalidFiles.FullName -join ', ')"
-          }
-
-          Write-Host "Verified $($signedFiles.Count) signed Windows files."
+          . ./scripts/common_release.ps1
+          Assert-AuthenticodeSignatures -Path "build/windows/x64/runner/Release"
+          Assert-AuthenticodeSignatures -Path "build/installer"
 
       - name: Stage And Publish Desktop Release
         shell: pwsh
@@ -220,7 +205,7 @@ jobs:
           Write-Host "https://sunkenintime.github.io/icarus/updates/windows/$channel/app-archive.json"
 
       - name: Commit Version And Metadata Changes
-        if: ${{ github.ref_type == 'branch' }}
+        if: ${{ inputs.publish_pages && github.ref_type == 'branch' }}
         shell: pwsh
         run: |
           $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart release/metadata

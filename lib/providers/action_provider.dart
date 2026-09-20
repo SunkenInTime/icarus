@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -106,6 +107,20 @@ class UserAction {
 
 final actionProvider =
     NotifierProvider<ActionProvider, List<UserAction>>(ActionProvider.new);
+
+/// Records only the firearm, so undoing it never restores an older copy of an
+/// agent's movement history or a lineup's graph. Shared by both agent groups.
+class WeaponSelectionAction extends UserAction {
+  WeaponSelectionAction({
+    required super.id,
+    required super.group,
+    required this.before,
+    required this.after,
+  }) : super(type: ActionType.edit);
+
+  final WeaponType before;
+  final WeaponType after;
+}
 
 class ActionProvider extends Notifier<List<UserAction>> {
   static const List<ActionGroup> _clearableGroups = [
@@ -351,7 +366,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
         case ActionGroup.utility:
           if (ref.read(utilityProvider).isNotEmpty) return true;
         case ActionGroup.lineUp:
-          if (ref.read(lineUpProvider).lineUps.isNotEmpty) return true;
+          if (ref.read(lineUpProvider).links.isNotEmpty) return true;
         case ActionGroup.strategySettings:
           break;
         case ActionGroup.bulk:

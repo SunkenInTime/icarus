@@ -75,6 +75,12 @@ jobs:
             throw "PowerShell parse errors: $($parseErrors.Message -join ', ')"
           }
 
+      - name: Check Bundled Wall Heights
+        shell: pwsh
+        run: fvm dart run tool/check_bundled_wall_heights.dart
+      - name: Test Release Signing Gates
+        shell: powershell
+        run: ./scripts/test_release_signing.ps1
       - name: Run Tests
         shell: pwsh
         run: fvm flutter test

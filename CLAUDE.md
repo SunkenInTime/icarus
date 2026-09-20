@@ -19,6 +19,8 @@ The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in 
 
 Here's the philosophy we work by:
 
+After audits, investigations, or substantial testing runs, read [answers.md](answers.md) before reporting the outcome.
+
 ## The library is sacred
 Corrupted or dropped library data is unrecoverable. Schema changes are the dangerous moment: a change to the Hive models means source models, generated adapters, and a migration (`lib/migrations/`) so that data written by any past version loads in this one. When a write path is uncertain, fail loudly without saving rather than save something wrong.
 
@@ -34,7 +36,6 @@ People use Icarus while their tactical idea is still hot, the interface must nev
 ## Fight for the obvious solution
 Measure twice, cut once: understand the problem fully before building, because cleverness is what gets written when you haven't. The biggest simplicity win is refusing to solve problems we don't have. Good code is the most simple thing that delivers full functionality, nothing traded away, nothing bolted on. Push back when you see a more obvious way.
 
-## Some general rules
-These steer us in the right direction. They are not hard-set, but default to following them; if you think one should be ignored, be very loud about it and get approval from us first.
+
 
 - Never edit `*.g.dart` files. Edit the source models, then run `dart run build_runner build --delete-conflicting-outputs`.

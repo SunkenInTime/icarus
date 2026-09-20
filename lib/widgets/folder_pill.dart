@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/folder_icons.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
@@ -278,7 +279,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
                                 if (isPinned) ...[
                                   const SizedBox(width: 6),
                                   Icon(
-                                    Icons.push_pin,
+                                    LucideIcons.pin,
                                     color: Colors.white.withValues(alpha: 0.78),
                                     size: 14,
                                   ),
@@ -342,7 +343,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
               highlightColor: Colors.white.withValues(alpha: 0.08),
               onTap: _handleMenuButtonPressed,
               child: Icon(
-                Icons.more_vert,
+                LucideIcons.ellipsisVertical,
                 color: Colors.white.withValues(alpha: iconAlpha),
                 size: 18,
               ),
@@ -357,7 +358,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
     final id = widget.folder.id;
     return [
       ShadContextMenuItem(
-        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        leading: Icon(isPinned ? LucideIcons.pinOff : LucideIcons.pin),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
         onPressed: () {
           _closeMenus();
@@ -366,7 +367,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         },
       ),
       ShadContextMenuItem(
-        leading: const Icon(Icons.text_fields),
+        leading: const Icon(LucideIcons.pencil),
         child: const Text('Edit'),
         onPressed: () async {
           _closeMenus();
@@ -380,7 +381,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         },
       ),
       ShadContextMenuItem(
-        leading: const Icon(Icons.file_upload),
+        leading: const Icon(LucideIcons.upload),
         child: const Text('Export'),
         onPressed: () async {
           _closeMenus();
@@ -390,8 +391,10 @@ class _FolderPillState extends ConsumerState<FolderPill>
         },
       ),
       ShadContextMenuItem(
-        leading: const Icon(Icons.delete, color: Colors.redAccent),
-        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        leading: Icon(LucideIcons.trash2,
+            color: Settings.tacticalVioletTheme.destructive),
+        child: Text('Delete',
+            style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
         onPressed: () async {
           _closeMenus();
           ConfirmAlertDialog.show(

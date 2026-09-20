@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
@@ -11,6 +10,7 @@ import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
+import 'package:icarus/widgets/library_breadcrumb.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_card.dart';
@@ -123,9 +123,12 @@ Set<String> _folderAndDescendantIds(Folder root, Iterable<Folder> allFolders) {
 }
 
 class FolderContent extends ConsumerWidget {
-  FolderContent({super.key, this.folder});
+  FolderContent({super.key, this.folder, required this.onCreateStrategy});
 
   final Folder? folder; // null for root
+
+  /// Opens the create-strategy dialog; offered from the empty state.
+  final VoidCallback onCreateStrategy;
   final strategiesListenable =
       Provider<ValueListenable<Box<StrategyData>>>((ref) {
     return Hive.box<StrategyData>(HiveBoxNames.strategiesBox).listenable();
@@ -134,8 +137,6 @@ class FolderContent extends ConsumerWidget {
   final foldersListenable = Provider<ValueListenable<Box<Folder>>>((ref) {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).listenable();
   });
-
-  final TextEditingController searchController = TextEditingController();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -157,75 +158,11 @@ class FolderContent extends ConsumerWidget {
           Positioned.fill(
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0, left: 16, right: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        spacing: 8,
-                        children: [
-                          ShadSelect<SortBy>(
-                            decoration: ShadDecoration(
-                              color: Settings.tacticalVioletTheme.card,
-                              shadows: const [Settings.cardForegroundBackdrop],
-                            ),
-                            initialValue:
-                                ref.watch(strategyFilterProvider).sortBy,
-                            selectedOptionBuilder: (context, value) => Text(
-                                StrategyFilterProvider.sortByLabels[value]!),
-                            options: [
-                              for (final sb in SortBy.values)
-                                ShadOption(
-                                  value: sb,
-                                  child: Text(
-                                      StrategyFilterProvider.sortByLabels[sb]!),
-                                ),
-                            ],
-                            onChanged: (value) {
-                              ref
-                                  .read(strategyFilterProvider.notifier)
-                                  .setSortBy(value!);
-                            },
-                          ),
-                          ShadSelect<SortOrder>(
-                            decoration: ShadDecoration(
-                              color: Settings.tacticalVioletTheme.card,
-                              shadows: const [Settings.cardForegroundBackdrop],
-                            ),
-                            initialValue:
-                                ref.watch(strategyFilterProvider).sortOrder,
-                            selectedOptionBuilder: (context, value) => Text(
-                                StrategyFilterProvider.sortOrderLabels[value]!),
-                            options: [
-                              for (final so in SortOrder.values)
-                                ShadOption(
-                                  value: so,
-                                  child: Text(StrategyFilterProvider
-                                      .sortOrderLabels[so]!),
-                                ),
-                            ],
-                            onChanged: (value) {
-                              ref
-                                  .read(strategyFilterProvider.notifier)
-                                  .setSortOrder(value!);
-                            },
-                          ),
-                        ],
-                      ),
-                      SizedBox(
-                        height: 40,
-                        child: SearchTextField(
-                          controller: searchController,
-                          collapsedWidth: 40,
-                          expandedWidth: 250,
-                          compact: true,
-                          onChanged: (value) {},
-                        ),
-                      ),
-                    ],
+                if (folder != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: LibraryBreadcrumb(folder: folder!),
                   ),
-                ),
                 Expanded(
                   child: ValueListenableBuilder<Box<StrategyData>>(
                     valueListenable: strategiesBoxListenable,
@@ -320,16 +257,10 @@ class FolderContent extends ConsumerWidget {
 
                           // Check if both folders and strategies are empty
                           if (folders.isEmpty && strategies.isEmpty) {
-                            return const IcaDropTarget(
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text('No strategies available'),
-                                    Text(
-                                        "Create a new strategy or drop strategies, folders, or .zip archives")
-                                  ],
-                                ),
+                            return IcaDropTarget(
+                              child: _EmptyState(
+                                searching: search.isNotEmpty,
+                                onCreateStrategy: onCreateStrategy,
                               ),
                             );
                           }
@@ -460,6 +391,47 @@ class FolderContent extends ConsumerWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the grid shows when nothing is in it: an invitation to create the
+/// first strategy, or a plain "no matches" when a search filtered it out.
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({
+    required this.searching,
+    required this.onCreateStrategy,
+  });
+
+  final bool searching;
+  final VoidCallback onCreateStrategy;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final title = searching ? 'No matches' : 'No strategies yet';
+    final hint = searching
+        ? 'Try a different search'
+        : 'Create one, or drop strategies, folders, or .zip archives here';
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title, style: theme.textTheme.p),
+          const SizedBox(height: 4),
+          Text(hint, style: theme.textTheme.muted),
+          if (!searching) ...[
+            const SizedBox(height: 16),
+            ShadButton(
+              key: const ValueKey('library-empty-new-strategy'),
+              onPressed: onCreateStrategy,
+              leading: const Icon(LucideIcons.plus, size: 16),
+              child: const Text('New Strategy'),
+            ),
+          ],
         ],
       ),
     );

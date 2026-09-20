@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
@@ -28,10 +30,12 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
     ref.watch(canvasResizeProvider);
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final isAttack = ref.watch(mapProvider).isAttack;
     final screenPosition = screenPositionForWidget(
       widget: agent,
       coordinateSystem: coordinateSystem,
       agentSize: agentSize,
+      isAttack: isAttack,
     );
 
     return Positioned(
@@ -40,8 +44,9 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
       child: draggable
           ? Draggable<PlacedWidget>(
               data: agent,
-              dragAnchorStrategy:
-                  ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+              dragAnchorStrategy: ref
+                  .read(screenZoomProvider.notifier)
+                  .zoomDragAnchorStrategy,
               feedback: Opacity(
                 opacity: Settings.feedbackOpacity,
                 child: ZoomTransform(
@@ -49,6 +54,7 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
                     isAlly: agent.isAlly,
                     id: '',
                     agent: AgentData.agents[agent.type]!,
+                    weapon: agent.weapon,
                   ),
                 ),
               ),
@@ -59,6 +65,9 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
                   isAlly: agent.isAlly,
                   id: agent.id,
                   agent: AgentData.agents[agent.type]!,
+                  weapon: agent.weapon,
+                  onWeaponSelected:
+                      ref.read(lineUpProvider.notifier).setDraftAgentWeapon,
                 ),
               ),
             )
@@ -68,6 +77,7 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
                 isAlly: agent.isAlly,
                 id: agent.id,
                 agent: AgentData.agents[agent.type]!,
+                weapon: agent.weapon,
               ),
             ),
     );

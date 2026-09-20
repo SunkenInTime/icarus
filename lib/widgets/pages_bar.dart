@@ -216,7 +216,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
           ),
           ShadButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            leading: const Icon(Icons.text_fields),
+            leading: const Icon(LucideIcons.type, size: 16),
             child: const Text("Rename"),
           ),
         ],
@@ -398,7 +398,7 @@ class _CollapsedPill extends StatelessWidget {
         children: [
           const SizedBox(width: _pagesBarControlInset),
           _SquareIconButton(
-            icon: Icons.add,
+            icon: LucideIcons.plus,
             onTap: onAdd,
             tooltip: "Add page",
             color: Settings.tacticalVioletTheme.primary,
@@ -411,7 +411,7 @@ class _CollapsedPill extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium?.copyWith(
                   color: Colors.white,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   fontSize: 14),
             ),
           ),
@@ -421,7 +421,8 @@ class _CollapsedPill extends StatelessWidget {
             padding: EdgeInsets.zero,
             foregroundColor: Colors.white,
             onPressed: onToggle,
-            icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+            icon: const Icon(LucideIcons.chevronDown,
+                size: 20, color: Colors.white),
             decoration: ShadDecoration(
               border: ShadBorder(
                 radius: BorderRadius.circular(_pagesBarInnerButtonRadius),
@@ -601,7 +602,7 @@ class _ExpandedPanel extends ConsumerWidget {
               children: [
                 const SizedBox(width: _pagesBarControlInset),
                 _SquareIconButton(
-                  icon: Icons.add,
+                  icon: LucideIcons.plus,
                   onTap: onAdd,
                   tooltip: "Add page",
                   color: Settings.tacticalVioletTheme.primary,
@@ -614,8 +615,8 @@ class _ExpandedPanel extends ConsumerWidget {
                   padding: EdgeInsets.zero,
                   foregroundColor: Colors.white,
                   onPressed: onCollapse,
-                  icon:
-                      const Icon(Icons.keyboard_arrow_up, color: Colors.white),
+                  icon: const Icon(LucideIcons.chevronUp,
+                      size: 20, color: Colors.white),
                   decoration: ShadDecoration(
                     border: ShadBorder(
                       radius: BorderRadius.circular(
@@ -705,9 +706,7 @@ class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
   @override
   Widget build(BuildContext context) {
     final isHighlighted = widget.isActive || _isHovered;
-    final handleColor = isHighlighted
-        ? Settings.tacticalVioletTheme.primary
-        : Colors.transparent;
+    final handleColor = isHighlighted ? Settings.accentInk : Colors.transparent;
     final isHorizontalResize = widget.axis == Axis.horizontal;
 
     return MouseRegion(
@@ -785,9 +784,7 @@ class _PageRowState extends State<_PageRow> {
     final fillProgress = widget.transitionProgress?.clamp(0.0, 1.0);
     final showActions =
         _hovered || widget.active || widget.transitionProgress != null;
-    final bg = widget.active && fillProgress == null
-        ? Settings.tacticalVioletTheme.primary
-        : Settings.tacticalVioletTheme.card;
+    final isRaised = widget.active && fillProgress == null;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -802,34 +799,48 @@ class _PageRowState extends State<_PageRow> {
           onTap: () => widget.onSelect(widget.page.id),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(_PageRow._rowRadius),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(_PageRow._rowRadius),
-                border: Border.all(
-                  color: Settings.tacticalVioletTheme.border,
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                      color: Settings.tacticalVioletTheme.card
-                          .withValues(alpha: 0.2),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4))
-                ],
-                color: bg,
-              ),
+            // Every layer is a Positioned.fill over one fixed-size box, so
+            // the surface, the transition sweep, and the content share the
+            // same rect in every state. (A Container would inset its child
+            // by the resting border's width and shift everything 1px when
+            // the row turns active, which has no border.)
+            child: SizedBox(
               height: _PageRow._rowHeight,
               child: Stack(
                 children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: isRaised
+                          ? Settings.raisedPrimary(_PageRow._rowRadius)
+                          : BoxDecoration(
+                              borderRadius:
+                                  BorderRadius.circular(_PageRow._rowRadius),
+                              border: Border.all(
+                                color: Settings.tacticalVioletTheme.border,
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                    color: Settings.tacticalVioletTheme.card
+                                        .withValues(alpha: 0.2),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4))
+                              ],
+                              color: Settings.tacticalVioletTheme.card,
+                            ),
+                    ),
+                  ),
                   if (fillProgress != null)
                     Positioned.fill(
                       child: FractionallySizedBox(
                         widthFactor: fillProgress,
                         alignment: Alignment.centerLeft,
+                        // The same surface as the active row, so the
+                        // sweep's corners match at every width and it
+                        // lands exactly on the active state.
                         child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Settings.tacticalVioletTheme.primary,
-                          ),
+                          decoration:
+                              Settings.raisedPrimary(_PageRow._rowRadius),
                         ),
                       ),
                     ),
@@ -844,9 +855,7 @@ class _PageRowState extends State<_PageRow> {
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 color: Colors.white,
-                                fontWeight: widget.active
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
+                                fontWeight: FontWeight.w500,
                                 fontSize: 14,
                               ),
                             ),
@@ -963,11 +972,12 @@ class _SquareIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final button = ShadTooltip(
       builder: (context) => Text(tooltip),
+      // The primary button theme already raises this; the color is the base.
       child: ShadIconButton(
         backgroundColor: color,
         hoverBackgroundColor: color,
         foregroundColor: Colors.white,
-        icon: Icon(icon),
+        icon: Icon(icon, size: 20),
         width: _pagesBarControlSize,
         height: _pagesBarControlSize,
         padding: EdgeInsets.zero,

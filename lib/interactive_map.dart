@@ -15,6 +15,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/delete_area.dart';
@@ -39,6 +40,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   final controller = TransformationController();
   Size? _lastViewportSize;
   Size? _lastPlayAreaSize;
+  bool? _lastIsAttack;
   bool _placementCenterUpdateScheduled = false;
   bool _zoomSyncScheduled = false;
   double? _pendingZoom;
@@ -77,7 +79,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   }) {
     final sceneCenter =
         controller.toScene(Offset(viewportWidth / 2, viewportHeight / 2));
-    final normalizedCenter = coordinateSystem.screenToCoordinate(sceneCenter);
+    final sideCenter = coordinateSystem.screenToCoordinate(sceneCenter);
+    final normalizedCenter = coordinateSystem.positionFromSide(
+      sidePosition: sideCenter,
+      reflectionOffset: Offset.zero,
+      isAttack: ref.read(mapProvider).isAttack,
+    );
     ref
         .read(placementCenterProvider.notifier)
         .updateCenter(_clampToWorld(normalizedCenter, coordinateSystem));
@@ -149,8 +156,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
-        if (_lastViewportSize != viewportSize ||
-            _lastPlayAreaSize != playAreaSize) {
+        final dimensionsChanged = _lastViewportSize != viewportSize ||
+            _lastPlayAreaSize != playAreaSize;
+        final sideChanged = _lastIsAttack != isAttack;
+        if (dimensionsChanged) {
           final double currentScale = controller.value.getMaxScaleOnAxis();
           final double safeScale = currentScale == 0 ? 1.0 : currentScale;
           final double centeredOffsetX =
@@ -161,11 +170,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           matrix.translateByDouble(
               centeredOffsetX / safeScale, centeredOffsetY / safeScale, 0, 1);
           controller.value = matrix;
-          _schedulePlacementCenterUpdate(
-            viewportWidth: viewportWidth,
-            viewportHeight: height,
-            coordinateSystem: coordinateSystem,
-          );
           _lastViewportSize = viewportSize;
           _lastPlayAreaSize = playAreaSize;
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -173,6 +177,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             ref.read(canvasResizeProvider.notifier).increment();
           });
         }
+        if (dimensionsChanged || sideChanged) {
+          _schedulePlacementCenterUpdate(
+            viewportWidth: viewportWidth,
+            viewportHeight: height,
+            coordinateSystem: coordinateSystem,
+          );
+        }
+        _lastIsAttack = isAttack;
         final double mapWidth = height * coordinateSystem.mapAspectRatio;
         final double mapLeft = (worldWidth - mapWidth) / 2;
 
@@ -257,11 +269,15 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                           .updateData(null);
                                     },
                                     child: RepaintBoundary(
-                                      child: SvgPicture.asset(
-                                        assetName,
-                                        colorMapper: mapColorMapper,
-                                        semanticsLabel: 'Map',
-                                        fit: BoxFit.contain,
+                                      child: CanonicalMapArtwork(
+                                        map: ref.watch(mapProvider).currentMap,
+                                        isAttack: isAttack,
+                                        child: SvgPicture.asset(
+                                          assetName,
+                                          colorMapper: mapColorMapper,
+                                          semanticsLabel: 'Map',
+                                          fit: BoxFit.contain,
+                                        ),
                                       ),
                                     ),
                                   ),

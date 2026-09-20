@@ -7,7 +7,10 @@ import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:path_parsing/path_parsing.dart';
 import 'package:xml/xml.dart';
 
-/// Builds line-of-sight walls from the exact base-fill path rendered by the
+/// Legacy boundary parser. New height-aware work follows docs/vision-model.md
+/// and SvgHeightVisibility, whose footprints include the actual painted ink.
+///
+/// Builds line-of-sight walls from the base-fill path rendered by the
 /// tactical-map SVG. This avoids projecting unrelated game-export coordinates
 /// into the hand-cropped map artwork.
 class SvgVisionBoundary {
@@ -19,6 +22,8 @@ class SvgVisionBoundary {
     required String source,
     VisionBoundaryAdditions additions = const VisionBoundaryAdditions(),
     bool isAttack = true,
+    // Only raw SVG paths move; additions already use canonical side coordinates.
+    Offset sourceTranslationSvg = Offset.zero,
   }) {
     final document = XmlDocument.parse(source);
     final root = document.rootElement;
@@ -230,6 +235,18 @@ class SvgVisionBoundary {
         );
       }
     }
+    final presentationShift = sourceTranslationSvg * projectionScale;
+    if (presentationShift != Offset.zero) {
+      for (var index = 0; index < collisionGroups.length; index++) {
+        collisionGroups[index] =
+            collisionGroups[index].translated(presentationShift);
+      }
+      existingKeys
+        ..clear()
+        ..addAll(collisionGroups
+            .expand((group) => group.segments)
+            .map(visionSegmentKey));
+    }
     for (final entry in additions.entriesFor(map, isAttack: isAttack)) {
       addDetailGroup(
         [
@@ -262,8 +279,21 @@ class SvgVisionBoundary {
 
     return VisionBoundary(
       segments: List.unmodifiable(collisionSegments),
-      maskSegments: maskSegments,
-      contours: worldMaskContours,
+      maskSegments: presentationShift == Offset.zero
+          ? maskSegments
+          : List.unmodifiable([
+              for (final segment in maskSegments)
+                VisionSegment(segment.start + presentationShift,
+                    segment.end + presentationShift,
+                    collisionRadius: segment.collisionRadius),
+            ]),
+      contours: presentationShift == Offset.zero
+          ? worldMaskContours
+          : List.unmodifiable([
+              for (final contour in worldMaskContours)
+                List<Offset>.unmodifiable(
+                    contour.map((point) => point + presentationShift)),
+            ]),
       collisionGroups: List.unmodifiable(collisionGroups),
       outerGroupId: outerGroup.id,
       alwaysOnSegments: outerGroup.segments,

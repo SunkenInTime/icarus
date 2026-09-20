@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -128,29 +127,6 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     );
     addAbility(duplicatedAbility);
     return duplicatedAbility.id;
-  }
-
-  void switchSides() {
-    if (state.isEmpty && poppedAbility.isEmpty) return;
-
-    final newState = <PlacedAbility>[...state];
-    final mapState = ref.read(mapProvider);
-    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    for (final ability in state) {
-      ability.switchSides(
-        mapScale: mapScale,
-        abilitySize: Settings.abilitySize,
-      );
-    }
-
-    for (final ability in poppedAbility) {
-      ability.switchSides(
-        mapScale: mapScale,
-        abilitySize: Settings.abilitySize,
-      );
-    }
-
-    state = newState;
   }
 
   void updateRotation(int index, double rotation, double length) {

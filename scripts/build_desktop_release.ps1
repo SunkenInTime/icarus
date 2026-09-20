@@ -30,9 +30,16 @@ if ($runBuild -or $runPackage) {
 }
 
 if ($runBuild) {
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "tool/check_bundled_wall_heights.dart")
+
     if (-not $SkipPubGet) {
         Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
     }
+
+    # Keep the reviewed bundled map checks from the shared build path.
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
+        "flutter", "test", "--no-pub", "test/bundled_map_models_test.dart"
+    )
 
     $dartDefinesPath = $null
     try {
@@ -84,6 +91,8 @@ if ($runPackage) {
     if (-not (Test-Path -LiteralPath $releaseOutputPath)) {
         throw "Windows release output not found at $releaseOutputPath"
     }
+
+    Assert-AuthenticodeSignatures -Path $releaseOutputPath
 
     # desktop_updater:archive hashes this snapshot, so refresh it only after
     # every shipped executable and DLL in the release output has been signed.
@@ -146,6 +155,14 @@ if (-not (Test-Path -LiteralPath $distArchivePath)) {
     throw "Desktop Updater archive folder not found at $distArchivePath"
 }
 
+# Validate the actual archive and installer before writing any publishable output.
+Assert-AuthenticodeSignatures -Path $distArchivePath
+$installerOutputDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\installer"
+$installerFileName = "icarus-setup-{0}.exe" -f $versionInfo.VersionName
+$installerSourcePath = Join-Path $installerOutputDir $installerFileName
+Assert-AuthenticodeSignatures -Path $installerSourcePath
+Assert-AuthenticodeSignatures -Path $installerOutputDir
+
 $metadataRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath $MetadataDir
 New-Item -ItemType Directory -Force -Path $metadataRoot | Out-Null
 
@@ -204,20 +221,9 @@ Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments 
     "-Channel", $Channel
 )
 
-$installerOutputDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\installer"
-if (-not (Test-Path -LiteralPath $installerOutputDir)) {
-    throw "Signed installer output not found at $installerOutputDir"
-}
-
 $desktopArtifactDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("release\out\desktop\{0}" -f $versionInfo.FullVersion)
 New-Item -ItemType Directory -Force -Path $desktopArtifactDir | Out-Null
 Copy-Item -Path (Join-Path $installerOutputDir "*") -Destination $desktopArtifactDir -Recurse -Force
-
-$installerFileName = "icarus-setup-{0}.exe" -f $versionInfo.VersionName
-$installerSourcePath = Join-Path $installerOutputDir $installerFileName
-if (-not (Test-Path $installerSourcePath)) {
-    throw "Expected installer not found at $installerSourcePath"
-}
 
 $downloadsRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\downloads\windows\{1}" -f $PagesStageRoot, $Channel)
 if (Test-Path $downloadsRoot) {

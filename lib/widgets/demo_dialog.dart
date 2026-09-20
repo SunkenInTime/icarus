@@ -21,7 +21,7 @@ class DemoDialog extends ConsumerWidget {
       actions: [
         ShadButton.secondary(
           leading: const Icon(
-            Icons.close,
+            LucideIcons.x,
           ),
           onPressed: () {
             Navigator.of(context).pop();
@@ -29,7 +29,7 @@ class DemoDialog extends ConsumerWidget {
           child: const Text('Close'),
         ),
         ShadButton(
-          leading: const Icon(Icons.download),
+          leading: const Icon(LucideIcons.download),
           onPressed: () async {
             await launchUrl(Settings.windowsStoreLink);
           },

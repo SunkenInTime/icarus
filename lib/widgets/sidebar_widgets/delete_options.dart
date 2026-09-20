@@ -25,32 +25,32 @@ class DeleteOptions extends ConsumerWidget {
   static const List<_DeleteOptionData> _options = [
     _DeleteOptionData(
       group: ActionGroup.agent,
-      icon: Icons.person,
+      icon: LucideIcons.user,
       label: 'Agents',
     ),
     _DeleteOptionData(
       group: ActionGroup.ability,
-      icon: Icons.bolt,
+      icon: LucideIcons.zap,
       label: 'Abilities',
     ),
     _DeleteOptionData(
       group: ActionGroup.drawing,
-      icon: Icons.draw,
+      icon: LucideIcons.pencil,
       label: 'Drawings',
     ),
     _DeleteOptionData(
       group: ActionGroup.text,
-      icon: Icons.text_fields,
+      icon: LucideIcons.type,
       label: 'Text',
     ),
     _DeleteOptionData(
       group: ActionGroup.image,
-      icon: Icons.image,
+      icon: LucideIcons.image,
       label: 'Images',
     ),
     _DeleteOptionData(
       group: ActionGroup.utility,
-      icon: Icons.crop_square,
+      icon: LucideIcons.square,
       label: 'Utilities',
     ),
   ];

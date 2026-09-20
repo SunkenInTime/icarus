@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -10,12 +11,14 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
 
 Offset viewConeAgentCompositeAgentOffsetVirtual(double agentSize) {
   return Offset(
@@ -49,18 +52,29 @@ class ViewConeAgentComposite extends ConsumerWidget {
     required this.rotation,
     required this.length,
     this.forcedAgentSize,
+    this.previousWeapon,
+    this.weaponTransitionProgress = 1,
     this.applyRotation = true,
     this.clipToGeometry = true,
     this.isInteractive = true,
+    this.worldOriginOverride,
+    this.previewOpacity = 1,
   });
 
   final PlacedViewConeAgent agent;
   final double rotation;
   final double length;
   final double? forcedAgentSize;
+  final WeaponType? previousWeapon;
+  final double weaponTransitionProgress;
   final bool applyRotation;
   final bool clipToGeometry;
   final bool isInteractive;
+  final Offset? worldOriginOverride;
+
+  /// A drag preview fades to this. The cone paints at the alpha directly and
+  /// only the small agent icon takes an opacity layer.
+  final double previewOpacity;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -95,14 +109,16 @@ class ViewConeAgentComposite extends ConsumerWidget {
               angle: UtilityData.getViewConeAngle(agent.presetType),
               rotation: rotation,
               length: length,
-              worldOrigin: clipToGeometry
-                  ? agent.position +
-                      coordinateSystem.virtualOffsetToWorld(
-                        Offset(agentSize / 2, agentSize / 2),
-                      )
-                  : null,
+              worldOrigin: worldOriginOverride ??
+                  (clipToGeometry
+                      ? agent.position +
+                          coordinateSystem.virtualOffsetToWorld(
+                            Offset(agentSize / 2, agentSize / 2),
+                          )
+                      : null),
               visionElevation: agent.visionElevation,
               showCenterMarker: false,
+              opacity: previewOpacity,
             ),
           ),
           Positioned(
@@ -111,13 +127,19 @@ class ViewConeAgentComposite extends ConsumerWidget {
             child: Transform.rotate(
               angle: -rotation,
               alignment: Alignment.center,
-              child: AgentWidget(
-                state: agent.state,
-                isAlly: agent.isAlly,
-                id: agent.id,
-                agent: AgentData.agents[agent.type]!,
-                forcedAgentSize: agentSize,
-                isInteractive: isInteractive,
+              child: Opacity(
+                opacity: previewOpacity,
+                child: AgentWidget(
+                  state: agent.state,
+                  isAlly: agent.isAlly,
+                  id: agent.id,
+                  agent: AgentData.agents[agent.type]!,
+                  weapon: agent.weapon,
+                  previousWeapon: previousWeapon,
+                  weaponTransitionProgress: weaponTransitionProgress,
+                  forcedAgentSize: agentSize,
+                  isInteractive: isInteractive,
+                ),
               ),
             ),
           ),
@@ -160,6 +182,13 @@ class _PlacedViewConeAgentWidgetState
   double? _localLength;
   bool _isDragging = false;
   String? _activeDragId;
+  final _dragOrigin = ViewConeDragOrigin();
+
+  @override
+  void dispose() {
+    _dragOrigin.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -193,6 +222,7 @@ class _PlacedViewConeAgentWidgetState
     }
 
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final isAttack = ref.watch(mapProvider).isAttack;
     const anchorVirtual = ViewConeWidget.anchorPointVirtual;
     final anchorScaled = anchorVirtual.scale(
       coordinateSystem.scaleFactor,
@@ -206,6 +236,7 @@ class _PlacedViewConeAgentWidgetState
       widget: current,
       coordinateSystem: coordinateSystem,
       agentSize: agentSize,
+      isAttack: isAttack,
     );
 
     if (!_isDragging && _rotationOrigin == Offset.zero) {
@@ -219,12 +250,16 @@ class _PlacedViewConeAgentWidgetState
 
     final localRotation = _localRotation ?? current.rotation;
     final localLength = _localLength ?? current.length;
+    final displayRotation = coordinateSystem.rotationForSide(
+      localRotation,
+      isAttack: isAttack,
+    );
 
     return Positioned(
       left: agentScreenPosition.dx - compositeAgentOffset.dx,
       top: agentScreenPosition.dy - compositeAgentOffset.dy,
       child: RotatableWidget(
-        rotation: localRotation,
+        rotation: displayRotation,
         isDragging: _isDragging,
         origin: anchorVirtual,
         buttonTop: anchorVirtual.dy - localLength - 7.5,
@@ -239,7 +274,11 @@ class _PlacedViewConeAgentWidgetState
 
           final delta = details.globalPosition - _rotationOrigin;
           final currentAngle = math.atan2(delta.dy, delta.dx);
-          final nextRotation = currentAngle + (math.pi / 2);
+          final sideRotation = currentAngle + (math.pi / 2);
+          final nextRotation = coordinateSystem.rotationFromSide(
+            sideRotation,
+            isAttack: isAttack,
+          );
           final nextLength = (coordinateSystem.normalize(delta.distance) /
                   ref.watch(screenZoomProvider))
               .clamp(ViewConeUtility.minLength, ViewConeUtility.maxLength);
@@ -262,31 +301,43 @@ class _PlacedViewConeAgentWidgetState
         child: Draggable<PlacedWidget>(
           data: current,
           dragAnchorStrategy: (draggable, context, position) {
+            _dragOrigin.start(
+                origin: current.position +
+                    coordinateSystem.virtualOffsetToWorld(
+                        Offset(agentSize / 2, agentSize / 2)),
+                coordinates: coordinateSystem,
+                zoom: ref.read(screenZoomProvider),
+                isAttack: isAttack);
             final renderObject = context.findRenderObject()! as RenderBox;
             final rotatedPosition = _rotateOffset(
               renderObject.globalToLocal(position),
               anchorScaled,
-              localRotation,
+              displayRotation,
             );
 
             return ref
                 .read(screenZoomProvider.notifier)
                 .zoomOffset(rotatedPosition);
           },
-          feedback: Opacity(
-            opacity: Settings.feedbackOpacity,
-            child: ZoomTransform(
-              child: ViewConeAgentComposite(
+          // No Opacity wrapper: the cone paints at the preview alpha itself,
+          // so the engine does not composite the whole preview offscreen on
+          // every drag frame.
+          feedback: ZoomTransform(
+            child: ValueListenableBuilder<Offset?>(
+              valueListenable: _dragOrigin,
+              builder: (context, origin, child) => ViewConeAgentComposite(
                 agent: current,
-                rotation: localRotation,
+                rotation: displayRotation,
                 length: localLength,
                 forcedAgentSize: agentSize,
-                clipToGeometry: false,
+                worldOriginOverride: origin,
                 isInteractive: false,
+                previewOpacity: Settings.feedbackOpacity,
               ),
             ),
           ),
           childWhenDragging: const SizedBox.shrink(),
+          onDragUpdate: _dragOrigin.update,
           onDragStarted: () {
             final shouldDuplicate = ref.read(duplicateDragModifierProvider);
             final duplicateId = shouldDuplicate
@@ -301,6 +352,7 @@ class _PlacedViewConeAgentWidgetState
             });
           },
           onDragEnd: (details) {
+            _dragOrigin.end();
             final dragId = _activeDragId ?? current.id;
             setState(() {
               _isDragging = false;
@@ -310,7 +362,7 @@ class _PlacedViewConeAgentWidgetState
           },
           child: ViewConeAgentComposite(
             agent: current,
-            rotation: localRotation,
+            rotation: displayRotation,
             length: localLength,
             forcedAgentSize: agentSize,
             applyRotation: false,

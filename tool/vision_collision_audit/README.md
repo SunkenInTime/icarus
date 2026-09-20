@@ -1,5 +1,10 @@
 # Vision collision audit
 
+Legacy boundary-editing tool. New visibility work follows
+[the visibility model](../../docs/vision-model.md) and annotates existing SVG
+geometry with height information. This tool is not the route for adding walls
+from extracted 3D meshes.
+
 This local tool maps a missing collision boundary once and applies it to every
 vision elevation. A `shared` boundary is also mirrored onto the defense map;
 side- or elevation-specific exceptions remain available when the artwork truly

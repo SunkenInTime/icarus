@@ -203,7 +203,7 @@ class VisionBoundaryEditorHud extends ConsumerWidget {
                     );
                   }
                 },
-          icon: const Icon(Icons.polyline_outlined, size: 20),
+          icon: const Icon(LucideIcons.spline, size: 20),
         ),
       );
     }
@@ -252,7 +252,7 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.polyline_outlined, size: 18),
+                      const Icon(LucideIcons.spline, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -304,7 +304,7 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                             );
                           }
                         },
-                        icon: const Icon(Icons.close, size: 18),
+                        icon: const Icon(LucideIcons.x, size: 18),
                       ),
                     ],
                   ),
@@ -373,14 +373,14 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                           height: 32,
                           enabled: notifier.canUndo,
                           onPressed: notifier.canUndo ? notifier.undo : null,
-                          icon: const Icon(Icons.undo, size: 18),
+                          icon: const Icon(LucideIcons.undo, size: 18),
                         ),
                         ShadIconButton.ghost(
                           width: 32,
                           height: 32,
                           enabled: notifier.canRedo,
                           onPressed: notifier.canRedo ? notifier.redo : null,
-                          icon: const Icon(Icons.redo, size: 18),
+                          icon: const Icon(LucideIcons.redo, size: 18),
                         ),
                       ],
                     ),
@@ -406,19 +406,19 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                         ),
                         const SizedBox(width: 4),
                         _NudgeButton(
-                          icon: Icons.keyboard_arrow_left,
+                          icon: LucideIcons.chevronLeft,
                           onPressed: () => notifier.nudge(const Offset(-1, 0)),
                         ),
                         _NudgeButton(
-                          icon: Icons.keyboard_arrow_up,
+                          icon: LucideIcons.chevronUp,
                           onPressed: () => notifier.nudge(const Offset(0, -1)),
                         ),
                         _NudgeButton(
-                          icon: Icons.keyboard_arrow_down,
+                          icon: LucideIcons.chevronDown,
                           onPressed: () => notifier.nudge(const Offset(0, 1)),
                         ),
                         _NudgeButton(
-                          icon: Icons.keyboard_arrow_right,
+                          icon: LucideIcons.chevronRight,
                           onPressed: () => notifier.nudge(const Offset(1, 0)),
                         ),
                       ],
@@ -430,7 +430,7 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                           enabled: editor.isDirty,
                           onPressed:
                               editor.isDirty ? notifier.discardChanges : null,
-                          leading: const Icon(Icons.restart_alt, size: 16),
+                          leading: const Icon(LucideIcons.rotateCcw, size: 16),
                           child: const Text('Discard'),
                         ),
                         const SizedBox(width: 8),
@@ -445,7 +445,7 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                                   Settings.tacticalVioletTheme.primary,
                             );
                           },
-                          leading: const Icon(Icons.copy, size: 16),
+                          leading: const Icon(LucideIcons.copy, size: 16),
                           child: const Text('Copy JSON'),
                         ),
                         const Spacer(),
@@ -491,7 +491,7 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.save_outlined, size: 16),
+                              : const Icon(LucideIcons.save, size: 16),
                           child: const Text('Save asset'),
                         ),
                       ],
@@ -567,7 +567,7 @@ class VisionBoundaryEditorPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.25 / zoom;
     final selectedPaint = Paint()
-      ..color = Settings.tacticalVioletTheme.primary
+      ..color = Settings.accentInk
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5 / zoom;
     final pointPaint = Paint()
