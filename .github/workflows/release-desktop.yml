@@ -89,6 +89,15 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase build -VersionBump "${{ inputs.version_bump }}" -Channel "${{ inputs.channel }}"
 
+      # The early login checks configuration. Refresh after compilation because
+      # GitHub's OIDC assertion can expire before signing requests its own scope.
+      - name: Refresh Azure Login Before Binary Signing
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Sign Windows Release Binaries
         uses: azure/artifact-signing-action@v2
         with:
@@ -116,6 +125,13 @@ jobs:
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase package -Channel "${{ inputs.channel }}"
+
+      - name: Refresh Azure Login Before Installer Signing
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows Installer
         uses: azure/artifact-signing-action@v2
