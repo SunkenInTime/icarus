@@ -1,0 +1,17 @@
+{
+  "version": "4.6.2+101",
+  "shortVersion": 101,
+  "title": "4.6.2 Update",
+  "description": "Signed Windows installers and app updates.",
+  "date": "2026-09-20",
+  "mandatory": false,
+  "channels": ["desktop", "stable", "prerelease"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Windows installers and app updates are now digitally signed with a verified publisher.",
+      "type": "improvement"
+    }
+  ]
+}
+

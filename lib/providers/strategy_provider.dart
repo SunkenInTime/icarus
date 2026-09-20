@@ -654,7 +654,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       canonicalMigrated,
       force: originalVersion < SunsetScaleMigration.version,
     );
-    return AgentWeaponMigration.migrate(sunsetMigrated);
+    final migrated = AgentWeaponMigration.migrate(sunsetMigrated);
+    // Releases without a schema change still finish at the current version.
+    // Never downgrade a strategy written by a newer release.
+    return migrated.versionNumber < Settings.versionNumber
+        ? migrated.copyWith(versionNumber: Settings.versionNumber)
+        : migrated;
   }
 
   static StrategyData migrateSunsetScale(

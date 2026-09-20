@@ -17,6 +17,9 @@ if (-not (Test-Path $resolvedSourceDir)) {
     throw "Pages source directory not found at $resolvedSourceDir"
 }
 
+# Check the whole staged release before either channel path reaches GitHub.
+Assert-PagesFileSizes -Path $resolvedSourceDir
+
 # Check the staged bytes even when this publisher is invoked directly.
 # Both channels are checked before either half of a desktop release is pushed.
 $windowsPayloadRoots = @('updates/windows', 'downloads/windows')

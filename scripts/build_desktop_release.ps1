@@ -225,19 +225,9 @@ $desktopArtifactDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("relea
 New-Item -ItemType Directory -Force -Path $desktopArtifactDir | Out-Null
 Copy-Item -Path (Join-Path $installerOutputDir "*") -Destination $desktopArtifactDir -Recurse -Force
 
-$downloadsRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\downloads\windows\{1}" -f $PagesStageRoot, $Channel)
-if (Test-Path $downloadsRoot) {
-    Remove-Item -Path $downloadsRoot -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
-
-$versionedInstallerPath = Join-Path $downloadsRoot $installerFileName
-$latestInstallerPath = Join-Path $downloadsRoot "icarus-setup-latest.exe"
-Copy-Item -Path $installerSourcePath -Destination $versionedInstallerPath -Force
-Copy-Item -Path $installerSourcePath -Destination $latestInstallerPath -Force
-
-Write-Host ("Published installer downloads to {0}" -f $downloadsRoot) -ForegroundColor Green
-Write-Host ("Latest installer URL path: /downloads/windows/{0}/icarus-setup-latest.exe" -f $Channel) -ForegroundColor Green
+# Standalone installers are GitHub Release assets. They can exceed Git's
+# 100 MiB blob limit and must never be staged into the Pages branch.
+Copy-Item -LiteralPath $installerSourcePath -Destination (Join-Path $desktopArtifactDir 'icarus-setup.exe') -Force
 
 Write-Host "Desktop release staging complete for $($versionInfo.FullVersion)." -ForegroundColor Green
 Write-Host "Pages output: $channelRoot"
