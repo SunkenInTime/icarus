@@ -281,7 +281,8 @@ class SvgHeightVisibility {
       }
       Offset? target;
       if (wall != null) {
-        target = _pushedOut(current, wall.rings, 0.02);
+        target =
+            _steppedAcross(current, wall.rings, 0.02, inside: wall.contains);
       } else {
         target = _pulledIn(current, 0.02);
       }
@@ -302,12 +303,6 @@ class SvgHeightVisibility {
     }
     return null;
   }
-
-  /// The point just outside the wall, across its nearest boundary edge.
-  static Offset? _pushedOut(
-          Offset point, List<List<Offset>> rings, double clearance) =>
-      _steppedAcross(point, rings, clearance,
-          inside: (candidate) => _insideRings(candidate, rings));
 
   /// The point just inside the nearest floor, across its nearest edge.
   Offset? _pulledIn(Offset point, double clearance) {
@@ -360,21 +355,6 @@ class SvgHeightVisibility {
       if (inside(side) == wantInside) return side;
     }
     return null;
-  }
-
-  static bool _insideRings(Offset point, List<List<Offset>> rings) {
-    var winding = 0;
-    for (final ring in rings) {
-      for (var i = 0; i < ring.length; i++) {
-        final a = ring[i], b = ring[(i + 1) % ring.length];
-        if (a.dy <= point.dy) {
-          if (b.dy > point.dy && _cross(b - a, point - a) > 0) winding++;
-        } else if (b.dy <= point.dy && _cross(b - a, point - a) < 0) {
-          winding--;
-        }
-      }
-    }
-    return winding != 0;
   }
 
   /// Lists choices without silently selecting the highest overlapping surface.
