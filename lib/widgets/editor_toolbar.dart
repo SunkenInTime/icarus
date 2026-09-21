@@ -206,8 +206,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           final renderer = PersistentOffscreenRenderer(
               targetSize: CoordinateSystem.screenShotSize,
               waitForFrameData: captureGeometry?.waitForFrame,
-              wrapWidget: (child) => wrapForOffscreenCapture(child,
-                  container: captureContainer));
+              wrapWidget: (child) =>
+                  wrapForOffscreenCapture(child, container: captureContainer));
           try {
             await renderer.prepare(screenshotView,
                 settleDuration: const Duration(milliseconds: 800));
@@ -258,6 +258,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
 /// vanishes against the card, so the weight carries the quietness instead. [icon] is any 18px glyph, so buttons can swap
 /// in a spinner without changing size.
 class EditorToolbarButton extends StatelessWidget {
+  // The ghost icon button's own corner radius (the theme default).
+  static const double _buttonRadius = 6;
+
   const EditorToolbarButton({
     super.key,
     required this.style,
@@ -266,6 +269,7 @@ class EditorToolbarButton extends StatelessWidget {
     required this.onPressed,
     this.enabled = true,
     this.active = false,
+    this.showTooltip = true,
     this.foregroundColor,
     this.semanticsLabel,
   });
@@ -277,6 +281,10 @@ class EditorToolbarButton extends StatelessWidget {
   final bool enabled;
   final bool active;
 
+  /// False where a bubble would cover the work, like the text format bar.
+  /// [tooltip] still labels the button for screen readers.
+  final bool showTooltip;
+
   /// Overrides the resting color, e.g. destructive for a problem.
   final Color? foregroundColor;
   final String? semanticsLabel;
@@ -284,32 +292,41 @@ class EditorToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
+    // An active toggle is a checked tool: a raised violet surface under a
+    // white glyph. Violet on the glyph itself is unreadable at this stroke.
     final resting = active
-        ? theme.primary
+        ? theme.primaryForeground
         : foregroundColor ?? Settings.toolbarGlyph;
+    Widget button = ShadIconButton.ghost(
+      width: style.size,
+      height: style.size,
+      enabled: enabled,
+      foregroundColor: resting,
+      hoverForegroundColor:
+          active ? resting : foregroundColor ?? theme.foreground,
+      hoverBackgroundColor: active ? Colors.transparent : theme.accent,
+      onPressed: onPressed,
+      icon: icon,
+    );
+    if (active) {
+      button = DecoratedBox(
+        decoration: Settings.raisedPrimary(_buttonRadius),
+        child: button,
+      );
+    }
+    button = IconTheme(
+      data: IconThemeData(size: style.iconSize, color: resting),
+      child: button,
+    );
     return Semantics(
       label: semanticsLabel ?? tooltip,
       button: true,
       enabled: enabled,
       onTap: enabled ? onPressed : null,
       excludeSemantics: true,
-      child: ShadTooltip(
-        builder: (context) => Text(tooltip),
-        child: IconTheme(
-          data: IconThemeData(size: style.iconSize, color: resting),
-          child: ShadIconButton.ghost(
-            width: style.size,
-            height: style.size,
-            enabled: enabled,
-            foregroundColor: resting,
-            hoverForegroundColor:
-                active ? theme.primary : foregroundColor ?? theme.foreground,
-            hoverBackgroundColor: theme.accent,
-            onPressed: onPressed,
-            icon: icon,
-          ),
-        ),
-      ),
+      child: showTooltip
+          ? ShadTooltip(builder: (context) => Text(tooltip), child: button)
+          : button,
     );
   }
 }

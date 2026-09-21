@@ -21,8 +21,15 @@ class TextFormatBar extends StatelessWidget {
     required this.tapRegionGroupId,
   });
 
-  static const double width = 6 * 28 + 1 + 8 + 8;
-  static const double height = 36;
+  static const double _buttonSize = 28;
+  static const double _padding = 3;
+
+  static const double _gap = 2;
+
+  // Five evenly spaced buttons inside the padding and the 1px border. The
+  // overlay positions the bar from these.
+  static const double width = 5 * _buttonSize + 4 * _gap + 2 * _padding + 2;
+  static const double height = _buttonSize + 2 * _padding + 2;
 
   final TextEditingController controller;
   final ValueChanged<TextEditingValue> onApply;
@@ -37,22 +44,27 @@ class TextFormatBar extends StatelessWidget {
           listenable: controller,
           builder: (context, _) {
             final value = controller.value;
-            const style = EditorToolbarButtonStyle(size: 28, iconSize: 16);
+            const style =
+                EditorToolbarButtonStyle(size: _buttonSize, iconSize: 16);
             return Container(
               width: width,
               height: height,
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.all(_padding),
               decoration: BoxDecoration(
                 color: Settings.tacticalVioletTheme.card,
-                borderRadius: BorderRadius.circular(12),
+                // Tighter than the docked toolbar: the bar sits against the
+                // text card's near-square corners.
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Settings.tacticalVioletTheme.border),
                 boxShadow: const [Settings.floatingMenuShadow],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                spacing: _gap,
                 children: [
                   EditorToolbarButton(
                     style: style,
+                    showTooltip: false,
                     tooltip: 'Bold (Ctrl+B)',
                     active: MarkupEditing.isInlineActive(value, '**'),
                     onPressed: () => onApply(
@@ -62,6 +74,7 @@ class TextFormatBar extends StatelessWidget {
                   ),
                   EditorToolbarButton(
                     style: style,
+                    showTooltip: false,
                     tooltip: 'Italic (Ctrl+I)',
                     active: MarkupEditing.isInlineActive(value, '*'),
                     onPressed: () => onApply(
@@ -69,9 +82,9 @@ class TextFormatBar extends StatelessWidget {
                     ),
                     icon: const Icon(LucideIcons.italic200),
                   ),
-                  const EditorToolbarDivider(),
                   EditorToolbarButton(
                     style: style,
+                    showTooltip: false,
                     tooltip: 'Bullet list',
                     active: MarkupEditing.lineKindAt(value) ==
                         MarkupLineKind.bullet,
@@ -83,6 +96,7 @@ class TextFormatBar extends StatelessWidget {
                   ),
                   EditorToolbarButton(
                     style: style,
+                    showTooltip: false,
                     tooltip: 'Numbered list',
                     active: MarkupEditing.lineKindAt(value) ==
                         MarkupLineKind.numbered,
@@ -96,6 +110,7 @@ class TextFormatBar extends StatelessWidget {
                   ),
                   EditorToolbarButton(
                     style: style,
+                    showTooltip: false,
                     tooltip: 'Heading',
                     active: MarkupEditing.lineKindAt(value) ==
                         MarkupLineKind.heading,

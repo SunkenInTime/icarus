@@ -189,45 +189,39 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     final field = _editing
         ? ListenableBuilder(
             listenable: _controller,
-            builder: (context, _) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Stack(
-                children: [
-                  if (_controller.text.isEmpty)
-                    Text(
-                      'Write here...',
-                      style: bodyStyle.copyWith(color: Colors.grey),
-                    ),
-                  TextField(
-                    focusNode: _focusNode,
-                    controller: _controller,
-                    inputFormatters: [ListContinuationFormatter()],
-                    groupId: _tapGroup,
-                    style: bodyStyle,
-                    decoration: null,
-                    maxLines: null,
-                    minLines: null,
-                    expands: false,
-                    onChanged: (value) =>
-                        _draftNotifier.setDraft(widget.id, value),
-                    onTapOutside: (_) => _focusNode.unfocus(),
+            builder: (context, _) => Stack(
+              children: [
+                if (_controller.text.isEmpty)
+                  Text(
+                    'Write here...',
+                    style: bodyStyle.copyWith(color: Colors.grey),
                   ),
-                ],
-              ),
+                TextField(
+                  focusNode: _focusNode,
+                  controller: _controller,
+                  inputFormatters: [ListContinuationFormatter()],
+                  groupId: _tapGroup,
+                  style: bodyStyle,
+                  decoration: null,
+                  maxLines: null,
+                  minLines: null,
+                  expands: false,
+                  onChanged: (value) =>
+                      _draftNotifier.setDraft(widget.id, value),
+                  onTapOutside: (_) => _focusNode.unfocus(),
+                ),
+              ],
             ),
           )
         : GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _enterEditing,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: ListenableBuilder(
-                listenable: _controller,
-                builder: (context, _) => FormattedTextView(
-                  text: _controller.text,
-                  style: bodyStyle,
-                  hintText: 'Write here...',
-                ),
+            child: ListenableBuilder(
+              listenable: _controller,
+              builder: (context, _) => FormattedTextView(
+                text: _controller.text,
+                style: bodyStyle,
+                hintText: 'Write here...',
               ),
             ),
           );
@@ -344,13 +338,10 @@ class _FeedbackTextWidget extends StatelessWidget {
     return _TextBoxFrame(
       size: size,
       tagColorValue: tagColorValue,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: FormattedTextView(
-          text: text,
-          style: style,
-          hintText: 'Write here...',
-        ),
+      child: FormattedTextView(
+        text: text,
+        style: style,
+        hintText: 'Write here...',
       ),
     );
   }
@@ -393,6 +384,7 @@ class _TextBoxFrame extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 5,
+                    vertical: 4,
                   ),
                   child: child,
                 ),
