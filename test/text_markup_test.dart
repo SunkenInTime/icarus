@@ -45,6 +45,16 @@ void main() {
     expect(lines.map((line) => line.number), [4, 5, 6]);
   });
 
+  test('renumbering carries the caret past earlier prefixes that grew', () {
+    const text = '9. one\ntwo\nthird';
+    final numbered = MarkupEditing.toggleLineKind(
+      value(text, start: 7, end: text.length),
+      MarkupLineKind.numbered,
+    );
+    expect(numbered.text, '9. one\n10. two\n11. third');
+    expect(numbered.selection.extentOffset, numbered.text.length);
+  });
+
   test('toggles inline formatting', () {
     final wrapped = MarkupEditing.toggleInline(
       value('word', start: 0, end: 4),

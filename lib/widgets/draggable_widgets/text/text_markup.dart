@@ -386,6 +386,8 @@ abstract final class MarkupEditing {
     var inRun = false;
     var base = selected.baseOffset;
     var extent = selected.extentOffset;
+    // How far every prefix change on earlier lines has moved this line.
+    var carried = 0;
     for (var i = 0; i < lines.length; i++) {
       final oldPrefix = parsed[i].prefix;
       var prefix = oldPrefix;
@@ -401,14 +403,20 @@ abstract final class MarkupEditing {
       }
       final shift = prefix.length - oldPrefix.length;
       final lineStart = starts[i];
-      if (selected.baseOffset >= lineStart &&
-          selected.baseOffset <= lineStart + lines[i].length) {
-        base += shift;
+      // An offset past the prefix moves with it; one inside the prefix stays
+      // put, clamped to the new prefix.
+      int? remap(int offset) {
+        final within = offset - lineStart;
+        if (within < 0 || within > lines[i].length) return null;
+        final moved = within >= oldPrefix.length
+            ? within + shift
+            : within.clamp(0, prefix.length);
+        return lineStart + carried + moved;
       }
-      if (selected.extentOffset >= lineStart &&
-          selected.extentOffset <= lineStart + lines[i].length) {
-        extent += shift;
-      }
+
+      base = remap(selected.baseOffset) ?? base;
+      extent = remap(selected.extentOffset) ?? extent;
+      carried += shift;
       output.write(prefix);
       output.write(lines[i].substring(oldPrefix.length));
       if (i != lines.length - 1) output.write('\n');
