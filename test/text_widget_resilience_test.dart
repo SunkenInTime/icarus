@@ -19,6 +19,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -158,6 +159,8 @@ void main() {
     ]);
 
     await tester.pumpWidget(buildTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), 'edited');
     await tester.pump();
 
@@ -181,6 +184,8 @@ void main() {
     ]);
 
     await tester.pumpWidget(buildPlacedTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), 'edited during drag');
     await tester.pump();
 
@@ -201,6 +206,8 @@ void main() {
     ]);
 
     await tester.pumpWidget(buildTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), 'saved draft');
     await tester.pump();
 
@@ -218,6 +225,8 @@ void main() {
     ]);
 
     await tester.pumpWidget(buildTextHarness(container, marker: 'a'));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), 'draft survives rebuild');
     await tester.pump();
 
@@ -280,6 +289,8 @@ void main() {
       ..activePageID = page.id;
 
     await tester.pumpWidget(buildTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
     await tester.enterText(find.byType(TextField), 'before edited');
     await tester.pump();
 
@@ -328,10 +339,7 @@ void main() {
     await tester.pumpWidget(buildTextHarness(container));
     await tester.pump();
 
-    var field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.readOnly, isTrue);
-    expect(field.enableInteractiveSelection, isFalse);
-    expect(field.showCursor, isFalse);
+    expect(find.byType(FormattedTextView), findsOneWidget);
 
     container.read(textProvider.notifier).fromHive([
       PlacedText(id: 'text-1', position: const Offset(10, 20))
@@ -340,7 +348,30 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'next page');
+    expect(find.byType(FormattedTextView), findsOneWidget);
+    expect(find.text('next page'), findsOneWidget);
+  });
+
+  testWidgets('tap enters editing and tapping outside commits formatted text',
+      (tester) async {
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'before',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
+    expect(find.byType(TextField), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '**edited**');
+    await tester.pump();
+    await tester.tap(find.text('a'));
+    await tester.pump();
+
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byType(FormattedTextView), findsOneWidget);
+    expect(container.read(textProvider).single.text, '**edited**');
   });
 }

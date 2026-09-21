@@ -265,6 +265,7 @@ class EditorToolbarButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.enabled = true,
+    this.active = false,
     this.foregroundColor,
     this.semanticsLabel,
   });
@@ -274,6 +275,7 @@ class EditorToolbarButton extends StatelessWidget {
   final Widget icon;
   final VoidCallback? onPressed;
   final bool enabled;
+  final bool active;
 
   /// Overrides the resting color, e.g. destructive for a problem.
   final Color? foregroundColor;
@@ -282,18 +284,12 @@ class EditorToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    final resting = foregroundColor ?? Settings.toolbarGlyph;
-    return Semantics(
-      label: semanticsLabel ?? tooltip,
-      button: true,
-      enabled: enabled,
-      onTap: enabled ? onPressed : null,
-      excludeSemantics: true,
-      child: ShadTooltip(
-        builder: (context) => Text(tooltip),
-        child: IconTheme(
-          data: IconThemeData(size: style.iconSize, color: resting),
-          child: ShadIconButton.ghost(
+    final hasShadTheme = ShadTheme.maybeOf(context) != null;
+    final resting = active
+        ? theme.primaryForeground
+        : foregroundColor ?? Settings.toolbarGlyph;
+    final iconButton = hasShadTheme
+        ? ShadIconButton.ghost(
             width: style.size,
             height: style.size,
             enabled: enabled,
@@ -302,8 +298,36 @@ class EditorToolbarButton extends StatelessWidget {
             hoverBackgroundColor: theme.accent,
             onPressed: onPressed,
             icon: icon,
-          ),
-        ),
+          )
+        : IconButton(
+            onPressed: enabled ? onPressed : null,
+            icon: icon,
+            color: resting,
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints.tightFor(
+              width: style.size,
+              height: style.size,
+            ),
+            tooltip: tooltip,
+          );
+    final button = IconTheme(
+      data: IconThemeData(size: style.iconSize, color: resting),
+      child: iconButton,
+    );
+    return Semantics(
+      label: semanticsLabel ?? tooltip,
+      button: true,
+      enabled: enabled,
+      onTap: enabled ? onPressed : null,
+      excludeSemantics: true,
+      child: DecoratedBox(
+        decoration: active ? Settings.raisedPrimary(8) : const BoxDecoration(),
+        child: hasShadTheme
+            ? ShadTooltip(
+                builder: (context) => Text(tooltip),
+                child: button,
+              )
+            : button,
       ),
     );
   }

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
+import 'package:icarus/widgets/draggable_widgets/text/markup_text_editing_controller.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_format_bar.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_markup.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 
 class TextWidget extends ConsumerWidget {
@@ -47,9 +52,10 @@ class TextWidget extends ConsumerWidget {
 }
 
 const _textFieldDecoration = InputDecoration(
-  hintText: "Write here...",
+  hintText: 'Write here...',
   hintStyle: TextStyle(color: Colors.grey),
   border: InputBorder.none,
+  contentPadding: EdgeInsets.symmetric(vertical: 12),
 );
 
 class _EditableTextWidget extends ConsumerStatefulWidget {
@@ -73,22 +79,24 @@ class _EditableTextWidget extends ConsumerStatefulWidget {
 }
 
 class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
-  late final TextEditingController _controller;
+  late final MarkupTextEditingController _controller;
   late final FocusNode _focusNode;
   late final TextDraftProvider _draftNotifier;
   late final ProviderSubscription<Map<String, String>> _draftSubscription;
+  final _tapGroup = Object();
+  final _portalController = OverlayPortalController();
+  bool _editing = false;
 
   @override
   void initState() {
     super.initState();
     _draftNotifier = ref.read(textDraftProvider.notifier);
-    _controller = TextEditingController(text: _effectiveText());
+    _controller = MarkupTextEditingController(text: _effectiveText());
     _focusNode = FocusNode()..addListener(_onFocusChange);
     _draftSubscription = ref.listenManual<Map<String, String>>(
       textDraftProvider,
       (_, __) => _syncControllerWithExternalState(),
     );
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateMeasuredSize();
     });
@@ -124,21 +132,21 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
   void _onFocusChange() {
     if (_focusNode.hasFocus) return;
     _draftNotifier.commitDraft(widget.id);
+    if (!mounted) return;
+    setState(() => _editing = false);
+    _portalController.hide();
   }
 
   void _syncControllerWithExternalState() {
     if (!_controller.value.isComposingRangeValid) {
       _controller.clearComposing();
     }
-
     final nextText = _effectiveText();
     if (_controller.text == nextText) return;
-
     final selection = _controller.selection;
     final baseOffset = selection.baseOffset.clamp(0, nextText.length).toInt();
     final extentOffset =
         selection.extentOffset.clamp(0, nextText.length).toInt();
-
     _controller.value = TextEditingValue(
       text: nextText,
       selection: selection.isValid
@@ -147,49 +155,165 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     );
   }
 
+  TextStyle _bodyStyle(BuildContext context) {
+    return Theme.of(context).textTheme.bodyLarge!.copyWith(
+          fontSize: CoordinateSystem.instance.worldHeightToScreen(
+            widget.fontSize,
+          ),
+        );
+  }
+
+  void _applyValue(TextEditingValue value) {
+    _controller.value = value;
+    _draftNotifier.setDraft(widget.id, value.text);
+  }
+
+  void _enterEditing() {
+    if (_editing) return;
+    setState(() => _editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNode.requestFocus();
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+      _portalController.show();
+    });
+  }
+
   void _updateMeasuredSize() {
     if (!mounted) return;
-
     final renderObject = context.findRenderObject();
     if (renderObject is! RenderBox) return;
-
-    final offset = Offset(renderObject.size.width, renderObject.size.height);
-    ref.read(textWidgetHeightProvider.notifier).updateHeight(widget.id, offset);
+    ref.read(textWidgetHeightProvider.notifier).updateHeight(
+          widget.id,
+          Offset(renderObject.size.width, renderObject.size.height),
+        );
   }
 
   @override
   Widget build(BuildContext context) {
-    return TextEditingShortcutScope(
-      child: NotificationListener<SizeChangedLayoutNotification>(
-        onNotification: (notification) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _updateMeasuredSize();
-          });
-          return true;
-        },
-        child: SizeChangedLayoutNotifier(
-          child: _TextBoxFrame(
-            size: widget.size,
-            tagColorValue: widget.tagColorValue,
-            child: _SharedTextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              fontSize: widget.fontSize,
-              onChanged: (value) {
-                _draftNotifier.setDraft(widget.id, value);
-              },
-              onTapOutside: (_) {
-                _focusNode.unfocus();
-              },
+    final bodyStyle = _bodyStyle(context);
+    final field = _editing
+        ? TextField(
+            focusNode: _focusNode,
+            controller: _controller,
+            inputFormatters: [ListContinuationFormatter()],
+            groupId: _tapGroup,
+            style: bodyStyle,
+            decoration: _textFieldDecoration,
+            maxLines: null,
+            minLines: null,
+            expands: true,
+            onChanged: (value) => _draftNotifier.setDraft(widget.id, value),
+            onTapOutside: (_) => _focusNode.unfocus(),
+          )
+        : GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _enterEditing,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: ListenableBuilder(
+                listenable: _controller,
+                builder: (context, _) => FormattedTextView(
+                  text: _controller.text,
+                  style: bodyStyle,
+                  hintText: 'Write here...',
+                ),
+              ),
             ),
+          );
+
+    final measuredFrame = NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (notification) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _updateMeasuredSize();
+        });
+        return true;
+      },
+      child: SizeChangedLayoutNotifier(
+        child: _TextBoxFrame(
+          size: widget.size,
+          tagColorValue: widget.tagColorValue,
+          child: field,
+        ),
+      ),
+    );
+
+    return TextEditingShortcutScope(
+      extraShortcuts: const {
+        SingleActivator(LogicalKeyboardKey.keyB, control: true):
+            ToggleBoldIntent(),
+        SingleActivator(LogicalKeyboardKey.keyB, meta: true):
+            ToggleBoldIntent(),
+        SingleActivator(LogicalKeyboardKey.keyI, control: true):
+            ToggleItalicIntent(),
+        SingleActivator(LogicalKeyboardKey.keyI, meta: true):
+            ToggleItalicIntent(),
+      },
+      child: Actions(
+        actions: {
+          ToggleBoldIntent: CallbackAction<ToggleBoldIntent>(
+            onInvoke: (_) {
+              _applyValue(MarkupEditing.toggleInline(_controller.value, '**'));
+              return null;
+            },
           ),
+          ToggleItalicIntent: CallbackAction<ToggleItalicIntent>(
+            onInvoke: (_) {
+              _applyValue(MarkupEditing.toggleInline(_controller.value, '*'));
+              return null;
+            },
+          ),
+        },
+        child: OverlayPortal.overlayChildLayoutBuilder(
+          controller: _portalController,
+          overlayChildBuilder: (context, layoutInfo) {
+            final childRect = MatrixUtils.transformRect(
+              layoutInfo.childPaintTransform,
+              Offset.zero & layoutInfo.childSize,
+            );
+            final overlaySize = layoutInfo.overlaySize;
+            final left = (childRect.center.dx - TextFormatBar.width / 2)
+                .clamp(8.0, overlaySize.width - TextFormatBar.width - 8)
+                .toDouble();
+            final below = childRect.bottom + 8;
+            final top = below + TextFormatBar.height + 8 <= overlaySize.height
+                ? below
+                : childRect.top - TextFormatBar.height - 8;
+            return Positioned(
+              left: left,
+              top: top,
+              width: TextFormatBar.width,
+              height: TextFormatBar.height,
+              child: Material(
+                color: Colors.transparent,
+                child: TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 150),
+                  tween: Tween(begin: 0, end: 1),
+                  builder: (context, progress, child) => Opacity(
+                    opacity: progress,
+                    child: Transform.translate(
+                      offset: Offset(0, 4 * (1 - progress)),
+                      child: child,
+                    ),
+                  ),
+                  child: TextFormatBar(
+                    controller: _controller,
+                    tapRegionGroupId: _tapGroup,
+                    onApply: _applyValue,
+                  ),
+                ),
+              ),
+            );
+          },
+          child: measuredFrame,
         ),
       ),
     );
   }
 }
 
-class _FeedbackTextWidget extends StatefulWidget {
+class _FeedbackTextWidget extends StatelessWidget {
   const _FeedbackTextWidget({
     super.key,
     required this.text,
@@ -204,91 +328,21 @@ class _FeedbackTextWidget extends StatefulWidget {
   final int? tagColorValue;
 
   @override
-  State<_FeedbackTextWidget> createState() => _FeedbackTextWidgetState();
-}
-
-class _FeedbackTextWidgetState extends State<_FeedbackTextWidget> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.text);
-  }
-
-  @override
-  void didUpdateWidget(covariant _FeedbackTextWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.text == widget.text) return;
-    _controller.value = TextEditingValue(
-      text: widget.text,
-      selection: TextSelection.collapsed(offset: widget.text.length),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyLarge!.copyWith(
+          fontSize: CoordinateSystem.instance.worldHeightToScreen(fontSize),
+        );
     return _TextBoxFrame(
-      size: widget.size,
-      tagColorValue: widget.tagColorValue,
-      child: IgnorePointer(
-        child: _SharedTextField(
-          controller: _controller,
-          fontSize: widget.fontSize,
-          readOnly: true,
-          enableInteractiveSelection: false,
-          showCursor: false,
+      size: size,
+      tagColorValue: tagColorValue,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: FormattedTextView(
+          text: text,
+          style: style,
+          hintText: 'Write here...',
         ),
       ),
-    );
-  }
-}
-
-class _SharedTextField extends StatelessWidget {
-  const _SharedTextField({
-    required this.controller,
-    required this.fontSize,
-    this.focusNode,
-    this.readOnly = false,
-    this.enableInteractiveSelection = true,
-    this.showCursor = true,
-    this.onChanged,
-    this.onTapOutside,
-  });
-
-  final TextEditingController controller;
-  final double fontSize;
-  final FocusNode? focusNode;
-  final bool readOnly;
-  final bool enableInteractiveSelection;
-  final bool showCursor;
-  final ValueChanged<String>? onChanged;
-  final TapRegionCallback? onTapOutside;
-
-  @override
-  Widget build(BuildContext context) {
-    final coordinateSystem = CoordinateSystem.instance;
-    return TextField(
-      focusNode: focusNode,
-      controller: controller,
-      readOnly: readOnly,
-      enableInteractiveSelection: enableInteractiveSelection,
-      showCursor: showCursor,
-      style: TextStyle(
-        fontSize: coordinateSystem.worldHeightToScreen(fontSize),
-      ),
-      decoration: _textFieldDecoration,
-      maxLines: null,
-      minLines: null,
-      expands: true,
-      onChanged: onChanged,
-      onTapOutside: onTapOutside,
     );
   }
 }
