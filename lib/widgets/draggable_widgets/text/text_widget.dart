@@ -51,11 +51,13 @@ class TextWidget extends ConsumerWidget {
   }
 }
 
+const _textVerticalPadding = 21.5;
+
 const _textFieldDecoration = InputDecoration(
   hintText: 'Write here...',
   hintStyle: TextStyle(color: Colors.grey),
   border: InputBorder.none,
-  contentPadding: EdgeInsets.symmetric(vertical: 12),
+  contentPadding: EdgeInsets.symmetric(vertical: _textVerticalPadding),
 );
 
 class _EditableTextWidget extends ConsumerStatefulWidget {
@@ -160,6 +162,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
           fontSize: CoordinateSystem.instance.worldHeightToScreen(
             widget.fontSize,
           ),
+          height: 1,
         );
   }
 
@@ -211,7 +214,9 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
             behavior: HitTestBehavior.opaque,
             onTap: _enterEditing,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                vertical: _textVerticalPadding,
+              ),
               child: ListenableBuilder(
                 listenable: _controller,
                 builder: (context, _) => FormattedTextView(
@@ -331,12 +336,13 @@ class _FeedbackTextWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.bodyLarge!.copyWith(
           fontSize: CoordinateSystem.instance.worldHeightToScreen(fontSize),
+          height: 1,
         );
     return _TextBoxFrame(
       size: size,
       tagColorValue: tagColorValue,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: _textVerticalPadding),
         child: FormattedTextView(
           text: text,
           style: style,
