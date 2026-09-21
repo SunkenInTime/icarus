@@ -75,6 +75,43 @@ void main() {
     );
   });
 
+  test('handles collapsed caret and scoped line-kind toggles', () {
+    late TextEditingValue endOfFormattedText;
+    expect(
+      () {
+        endOfFormattedText = MarkupEditing.toggleInline(
+          value('**foo**'),
+          '**',
+        );
+      },
+      returnsNormally,
+    );
+    expect(endOfFormattedText.text, isA<String>());
+
+    final punctuation = MarkupEditing.toggleInline(value('foo.'), '**');
+    expect(punctuation.text, 'foo.****');
+    expect(punctuation.selection, const TextSelection.collapsed(offset: 6));
+
+    final bullet = MarkupEditing.toggleLineKind(
+      value('a\nb\nc', start: 2),
+      MarkupLineKind.bullet,
+    );
+    expect(bullet.text, 'a\n- b\nc');
+    expect(bullet.selection, const TextSelection.collapsed(offset: 4));
+
+    final numbered = MarkupEditing.toggleLineKind(
+      value('a\nb\nc\nd', start: 2, end: 5),
+      MarkupLineKind.numbered,
+    );
+    expect(numbered.text, 'a\n1. b\n2. c\nd');
+
+    final heading = MarkupEditing.toggleLineKind(
+      value('a\nb', start: 0),
+      MarkupLineKind.heading,
+    );
+    expect(heading.text, '# a\nb');
+  });
+
   test('toggles line kinds and preserves logical selection', () {
     final added = MarkupEditing.toggleLineKind(
       value('one\ntwo', start: 0, end: 7),

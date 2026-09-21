@@ -311,8 +311,13 @@ abstract final class MarkupEditing {
     var newSelectionExtent = 0;
     for (var i = 0; i < lines.length; i++) {
       final oldPrefix = parsed[i].prefix;
+      final inSelection = i >= first && i <= last;
       final shouldStrip = kind == MarkupLineKind.paragraph || allMatch;
-      final newPrefix = shouldStrip ? '' : _prefixFor(kind, i, lines);
+      final newPrefix = !inSelection
+          ? oldPrefix
+          : shouldStrip
+              ? ''
+              : _prefixFor(kind, i, lines);
       final lineStart = starts[i];
       int mapOffset(int offset) {
         final local = (offset - lineStart).clamp(0, lines[i].length).toInt();
@@ -544,7 +549,9 @@ abstract final class MarkupEditing {
     if (position == text.length || !_wordCharacter(text[position])) {
       if (position > 0 && _wordCharacter(text[position - 1])) position--;
     }
-    if (!_wordCharacter(text[position])) return null;
+    if (position >= text.length || !_wordCharacter(text[position])) {
+      return null;
+    }
     var start = position;
     var end = position + 1;
     while (start > 0 && _wordCharacter(text[start - 1])) start--;
