@@ -374,4 +374,31 @@ void main() {
     expect(find.byType(FormattedTextView), findsOneWidget);
     expect(container.read(textProvider).single.text, '**edited**');
   });
+
+  for (final text in ['A site execute', '', 'a\n- b\n- c']) {
+    testWidgets('text card height stays stable while editing: $text',
+        (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: ShadApp(
+            home: Scaffold(
+              body: TextWidget(
+                id: 'text-height-${text.hashCode}',
+                text: text,
+                size: 220,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final before = tester.getSize(find.byType(TextWidget));
+      await tester.tap(find.byType(FormattedTextView));
+      await tester.pumpAndSettle();
+
+      expect(tester.getSize(find.byType(TextWidget)), before);
+    });
+  }
 }

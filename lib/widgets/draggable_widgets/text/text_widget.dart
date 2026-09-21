@@ -51,13 +51,6 @@ class TextWidget extends ConsumerWidget {
   }
 }
 
-const _textFieldDecoration = InputDecoration(
-  hintText: 'Write here...',
-  hintStyle: TextStyle(color: Colors.grey),
-  border: InputBorder.none,
-  contentPadding: EdgeInsets.symmetric(vertical: 12),
-);
-
 class _EditableTextWidget extends ConsumerStatefulWidget {
   const _EditableTextWidget({
     required this.id,
@@ -194,18 +187,34 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
   Widget build(BuildContext context) {
     final bodyStyle = _bodyStyle(context);
     final field = _editing
-        ? TextField(
-            focusNode: _focusNode,
-            controller: _controller,
-            inputFormatters: [ListContinuationFormatter()],
-            groupId: _tapGroup,
-            style: bodyStyle,
-            decoration: _textFieldDecoration,
-            maxLines: null,
-            minLines: null,
-            expands: true,
-            onChanged: (value) => _draftNotifier.setDraft(widget.id, value),
-            onTapOutside: (_) => _focusNode.unfocus(),
+        ? ListenableBuilder(
+            listenable: _controller,
+            builder: (context, _) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Stack(
+                children: [
+                  if (_controller.text.isEmpty)
+                    Text(
+                      'Write here...',
+                      style: bodyStyle.copyWith(color: Colors.grey),
+                    ),
+                  TextField(
+                    focusNode: _focusNode,
+                    controller: _controller,
+                    inputFormatters: [ListContinuationFormatter()],
+                    groupId: _tapGroup,
+                    style: bodyStyle,
+                    decoration: null,
+                    maxLines: null,
+                    minLines: null,
+                    expands: false,
+                    onChanged: (value) =>
+                        _draftNotifier.setDraft(widget.id, value),
+                    onTapOutside: (_) => _focusNode.unfocus(),
+                  ),
+                ],
+              ),
+            ),
           )
         : GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -276,10 +285,10 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
             final left = (childRect.center.dx - TextFormatBar.width / 2)
                 .clamp(8.0, overlaySize.width - TextFormatBar.width - 8)
                 .toDouble();
-            final below = childRect.bottom + 8;
-            final top = below + TextFormatBar.height + 8 <= overlaySize.height
+            final below = childRect.bottom + 6;
+            final top = below + TextFormatBar.height + 6 <= overlaySize.height
                 ? below
-                : childRect.top - TextFormatBar.height - 8;
+                : childRect.top - TextFormatBar.height - 6;
             final boundedTop = top
                 .clamp(8.0, overlaySize.height - TextFormatBar.height - 8)
                 .toDouble();
@@ -295,10 +304,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
                   tween: Tween(begin: 0, end: 1),
                   builder: (context, progress, child) => Opacity(
                     opacity: progress,
-                    child: Transform.translate(
-                      offset: Offset(0, 4 * (1 - progress)),
-                      child: child,
-                    ),
+                    child: child,
                   ),
                   child: TextFormatBar(
                     controller: _controller,

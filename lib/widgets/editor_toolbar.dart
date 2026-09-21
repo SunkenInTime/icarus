@@ -285,7 +285,7 @@ class EditorToolbarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
     final resting = active
-        ? theme.primaryForeground
+        ? theme.primary
         : foregroundColor ?? Settings.toolbarGlyph;
     return Semantics(
       label: semanticsLabel ?? tooltip,
@@ -293,22 +293,20 @@ class EditorToolbarButton extends StatelessWidget {
       enabled: enabled,
       onTap: enabled ? onPressed : null,
       excludeSemantics: true,
-      child: DecoratedBox(
-        decoration: active ? Settings.raisedPrimary(8) : const BoxDecoration(),
-        child: ShadTooltip(
-          builder: (context) => Text(tooltip),
-          child: IconTheme(
-            data: IconThemeData(size: style.iconSize, color: resting),
-            child: ShadIconButton.ghost(
-              width: style.size,
-              height: style.size,
-              enabled: enabled,
-              foregroundColor: resting,
-              hoverForegroundColor: foregroundColor ?? theme.foreground,
-              hoverBackgroundColor: theme.accent,
-              onPressed: onPressed,
-              icon: icon,
-            ),
+      child: ShadTooltip(
+        builder: (context) => Text(tooltip),
+        child: IconTheme(
+          data: IconThemeData(size: style.iconSize, color: resting),
+          child: ShadIconButton.ghost(
+            width: style.size,
+            height: style.size,
+            enabled: enabled,
+            foregroundColor: resting,
+            hoverForegroundColor:
+                active ? theme.primary : foregroundColor ?? theme.foreground,
+            hoverBackgroundColor: theme.accent,
+            onPressed: onPressed,
+            icon: icon,
           ),
         ),
       ),
