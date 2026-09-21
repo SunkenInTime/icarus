@@ -280,9 +280,12 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
             final top = below + TextFormatBar.height + 8 <= overlaySize.height
                 ? below
                 : childRect.top - TextFormatBar.height - 8;
+            final boundedTop = top
+                .clamp(8.0, overlaySize.height - TextFormatBar.height - 8)
+                .toDouble();
             return Positioned(
               left: left,
-              top: top,
+              top: boundedTop,
               width: TextFormatBar.width,
               height: TextFormatBar.height,
               child: Material(
