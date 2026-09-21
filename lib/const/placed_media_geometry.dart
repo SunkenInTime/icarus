@@ -27,9 +27,8 @@ abstract final class PlacedMediaGeometry {
     final fontSizeInPixels =
         textFontSizeInWorld(text) * _referencePixelsPerWorldUnit;
 
-    // The text field sits after the 6 px tag, 2 px gap, and the card's 5 px
-    // horizontal padding on each side. Material's borderless field contributes
-    // its intrinsic vertical chrome and retains a 48 px minimum height.
+    // This describes the pre-Markdown TextField card shipped before canonical
+    // coordinates, including its intrinsic vertical chrome and 48 px minimum.
     final painter = TextPainter(
       text: TextSpan(
         text: text.text.isEmpty ? 'Write here...' : text.text,
