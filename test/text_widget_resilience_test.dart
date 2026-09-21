@@ -70,7 +70,7 @@ void main() {
   Widget buildTextHarness(ProviderContainer container, {String marker = 'a'}) {
     return UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(
+      child: ShadApp(
         home: Scaffold(
           body: Column(
             children: [

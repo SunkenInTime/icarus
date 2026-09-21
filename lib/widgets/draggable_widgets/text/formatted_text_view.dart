@@ -21,26 +21,27 @@ class FormattedTextView extends StatelessWidget {
         style: style.copyWith(color: Colors.grey),
       );
     }
+    final fontSize = style.fontSize ?? 14;
     final lines = parseMarkup(text);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final line in lines) _buildLine(line),
+        for (final line in lines) _buildLine(line, fontSize),
       ],
     );
   }
 
-  Widget _buildLine(MarkupLine line) {
+  Widget _buildLine(MarkupLine line, double fontSize) {
     if (line.plainText.isEmpty) {
       return SizedBox(
-        height: (style.fontSize ?? 14) * (style.height ?? 1.2),
+        height: fontSize * (style.height ?? 1.2),
       );
     }
     final contentStyle = line.kind == MarkupLineKind.heading
         ? style.copyWith(
             fontWeight: FontWeight.w600,
-            fontSize: (style.fontSize ?? 14) * markupHeadingScale,
+            fontSize: fontSize * markupHeadingScale,
           )
         : style;
     final content = Text.rich(
@@ -67,7 +68,7 @@ class FormattedTextView extends StatelessWidget {
     }
     final glyph =
         line.kind == MarkupLineKind.bullet ? '•' : '${line.number ?? 1}.';
-    final glyphWidth = (style.fontSize ?? 14) * 1.6;
+    final glyphWidth = fontSize * 1.6;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -79,7 +80,7 @@ class FormattedTextView extends StatelessWidget {
             style: style,
           ),
         ),
-        SizedBox(width: (style.fontSize ?? 14) * 0.4),
+        SizedBox(width: fontSize * 0.4),
         Expanded(child: content),
       ],
     );

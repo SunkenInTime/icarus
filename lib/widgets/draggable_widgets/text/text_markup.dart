@@ -40,6 +40,7 @@ class MarkupLine {
 final RegExp _bulletPrefix = RegExp(r'^[-*•]\s+');
 final RegExp _numberedPrefix = RegExp(r'^\d+[.)]\s+');
 final RegExp _headingPrefix = RegExp(r'^#{1,3}\s+');
+final RegExp _whitespace = RegExp(r'\s');
 
 List<MarkupLine> parseMarkup(String text) {
   final lines = text.split('\n');
@@ -104,7 +105,7 @@ List<MarkupInline> _parseInline(String text) {
     if (close <= match.contentStart ||
         (match.marker == '*' &&
             match.contentStart < text.length &&
-            RegExp(r'\s').hasMatch(text[match.contentStart]))) {
+            _whitespace.hasMatch(text[match.contentStart]))) {
       result.add(MarkupInline(raw: text[cursor]));
       cursor++;
       continue;
@@ -149,7 +150,7 @@ _InlineOpen? _inlineOpen(String text, int offset) {
     final marker = text[offset];
     if (marker == '*' &&
         offset + 1 < text.length &&
-        RegExp(r'\s').hasMatch(text[offset + 1])) {
+        _whitespace.hasMatch(text[offset + 1])) {
       return null;
     }
     return _InlineOpen(marker, offset + 1, italic: true);
@@ -213,12 +214,12 @@ abstract final class MarkupEditing {
     final end = selection.end;
     var contentStart = start;
     var contentEnd = end;
-    while (contentStart < contentEnd &&
-        RegExp(r'\s').hasMatch(text[contentStart])) {
+    while (
+        contentStart < contentEnd && _whitespace.hasMatch(text[contentStart])) {
       contentStart++;
     }
     while (contentEnd > contentStart &&
-        RegExp(r'\s').hasMatch(text[contentEnd - 1])) {
+        _whitespace.hasMatch(text[contentEnd - 1])) {
       contentEnd--;
     }
     if (contentStart == contentEnd) return value;
@@ -243,11 +244,10 @@ abstract final class MarkupEditing {
       );
     }
 
-    final wrapper = (marker, marker);
     final replacement =
-        '$leading${wrapper.$1}${text.substring(contentStart, contentEnd)}${wrapper.$2}$trailing';
+        '$leading$marker${text.substring(contentStart, contentEnd)}$marker$trailing';
     final next = text.replaceRange(start, end, replacement);
-    final newStart = start + leading.length + wrapper.$1.length;
+    final newStart = start + leading.length + marker.length;
     return value.copyWith(
       text: next,
       selection: TextSelection(
@@ -295,16 +295,6 @@ abstract final class MarkupEditing {
     TextEditingValue value,
     MarkupLineKind kind,
   ) {
-    if (kind == MarkupLineKind.paragraph) {
-      return _setLineKind(value, kind);
-    }
-    return _setLineKind(value, kind);
-  }
-
-  static TextEditingValue _setLineKind(
-    TextEditingValue value,
-    MarkupLineKind kind,
-  ) {
     final text = value.text;
     final lines = text.split('\n');
     final starts = _lineStarts(lines);
@@ -316,7 +306,6 @@ abstract final class MarkupEditing {
       last - first + 1,
       (index) => parsed[first + index].kind == kind,
     ).every((match) => match);
-    final offsets = <int>[];
     var output = StringBuffer();
     var newSelectionBase = 0;
     var newSelectionExtent = 0;
@@ -344,7 +333,6 @@ abstract final class MarkupEditing {
       output.write(newPrefix);
       output.write(lines[i].substring(oldPrefix.length));
       if (i != lines.length - 1) output.write('\n');
-      offsets.add(output.length);
     }
     var result = value.copyWith(
       text: output.toString(),
