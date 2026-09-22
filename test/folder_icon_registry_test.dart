@@ -84,6 +84,13 @@ void main() {
         1001: 'asset|assets/agents/duelist.webp',
         1002: 'asset|assets/agents/initiator.webp',
         1003: 'asset|assets/agents/sentinel.webp',
+        2000: 'asset|assets/gamemodes/competitive.webp',
+        2001: 'asset|assets/gamemodes/premier.webp',
+        2002: 'asset|assets/gamemodes/unrated.webp',
+        2003: 'asset|assets/gamemodes/deathmatch.webp',
+        2004: 'asset|assets/gamemodes/team_deathmatch.webp',
+        2005: 'asset|assets/gamemodes/spike_rush.webp',
+        2006: 'asset|assets/gamemodes/escalation.webp',
       },
     );
   });
@@ -105,8 +112,21 @@ void main() {
         FolderIconRegistry.sentinelRoleId,
       ]),
     );
-    expect(FolderIconRegistry.isKnownId(2000), isFalse);
-    expect(FolderIconRegistry.resolve(2000).id, FolderIconRegistry.defaultId);
+    expect(
+      FolderIconRegistry.pickerEntriesFor(FolderIconCategory.gamemode)
+          .map((entry) => entry.id),
+      containsAll([
+        FolderIconRegistry.competitiveModeId,
+        FolderIconRegistry.premierModeId,
+        FolderIconRegistry.unratedModeId,
+        FolderIconRegistry.deathmatchModeId,
+        FolderIconRegistry.teamDeathmatchModeId,
+        FolderIconRegistry.spikeRushModeId,
+        FolderIconRegistry.escalationModeId,
+      ]),
+    );
+    expect(FolderIconRegistry.isKnownId(9999), isFalse);
+    expect(FolderIconRegistry.resolve(9999).id, FolderIconRegistry.defaultId);
   });
 
   test('legacy IconData values migrate to registry ids', () {

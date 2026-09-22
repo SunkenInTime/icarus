@@ -17,6 +17,7 @@ enum _FolderIconFilter {
   all,
   symbols,
   roles,
+  modes,
 }
 
 class FolderEditDialog extends ConsumerStatefulWidget {
@@ -268,6 +269,10 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       value: _FolderIconFilter.roles,
                       child: Text("Roles"),
                     ),
+                    SegmentedTabItem<_FolderIconFilter>(
+                      value: _FolderIconFilter.modes,
+                      child: Text("Modes"),
+                    ),
                   ],
                   onChanged: (value) {
                     setState(() {
@@ -336,6 +341,8 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
         FolderIconRegistry.pickerEntriesFor(FolderIconCategory.symbol),
       _FolderIconFilter.roles =>
         FolderIconRegistry.pickerEntriesFor(FolderIconCategory.role),
+      _FolderIconFilter.modes =>
+        FolderIconRegistry.pickerEntriesFor(FolderIconCategory.gamemode),
     };
   }
 }

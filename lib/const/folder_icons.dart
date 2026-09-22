@@ -11,6 +11,7 @@ enum FolderIconRenderKind {
 enum FolderIconCategory {
   symbol,
   role,
+  gamemode,
 }
 
 class FolderIconDefinition {
@@ -28,7 +29,7 @@ class FolderIconDefinition {
     required this.id,
     required this.assetPath,
     this.label = '',
-    this.category = FolderIconCategory.role,
+    required this.category,
     this.hiddenFromPicker = false,
   })  : kind = FolderIconRenderKind.asset,
         iconData = null;
@@ -66,6 +67,13 @@ class FolderIconRegistry {
   static const int duelistRoleId = 1001;
   static const int initiatorRoleId = 1002;
   static const int sentinelRoleId = 1003;
+  static const int competitiveModeId = 2000;
+  static const int premierModeId = 2001;
+  static const int unratedModeId = 2002;
+  static const int deathmatchModeId = 2003;
+  static const int teamDeathmatchModeId = 2004;
+  static const int spikeRushModeId = 2005;
+  static const int escalationModeId = 2006;
 
   static const List<FolderIconDefinition> _baseEntries = [
     FolderIconDefinition.material(
@@ -119,21 +127,67 @@ class FolderIconRegistry {
       id: controllerRoleId,
       assetPath: 'assets/agents/controller.webp',
       label: 'Controller',
+      category: FolderIconCategory.role,
     ),
     FolderIconDefinition.asset(
       id: duelistRoleId,
       assetPath: 'assets/agents/duelist.webp',
       label: 'Duelist',
+      category: FolderIconCategory.role,
     ),
     FolderIconDefinition.asset(
       id: initiatorRoleId,
       assetPath: 'assets/agents/initiator.webp',
       label: 'Initiator',
+      category: FolderIconCategory.role,
     ),
     FolderIconDefinition.asset(
       id: sentinelRoleId,
       assetPath: 'assets/agents/sentinel.webp',
       label: 'Sentinel',
+      category: FolderIconCategory.role,
+    ),
+    FolderIconDefinition.asset(
+      id: competitiveModeId,
+      assetPath: 'assets/gamemodes/competitive.webp',
+      label: 'Competitive',
+      category: FolderIconCategory.gamemode,
+    ),
+    FolderIconDefinition.asset(
+      id: premierModeId,
+      assetPath: 'assets/gamemodes/premier.webp',
+      label: 'Premier',
+      category: FolderIconCategory.gamemode,
+    ),
+    FolderIconDefinition.asset(
+      id: unratedModeId,
+      assetPath: 'assets/gamemodes/unrated.webp',
+      label: 'Unrated',
+      category: FolderIconCategory.gamemode,
+    ),
+    FolderIconDefinition.asset(
+      id: deathmatchModeId,
+      assetPath: 'assets/gamemodes/deathmatch.webp',
+      label: 'Deathmatch',
+      category: FolderIconCategory.gamemode,
+    ),
+    FolderIconDefinition.asset(
+      id: teamDeathmatchModeId,
+      assetPath: 'assets/gamemodes/team_deathmatch.webp',
+      label: 'Team Deathmatch',
+      category: FolderIconCategory.gamemode,
+    ),
+    FolderIconDefinition.asset(
+      id: spikeRushModeId,
+      assetPath: 'assets/gamemodes/spike_rush.webp',
+      label: 'Spike Rush',
+      category: FolderIconCategory.gamemode,
+    ),
+    FolderIconDefinition.asset(
+      id: escalationModeId,
+      assetPath: 'assets/gamemodes/escalation.webp',
+      label: 'Escalation',
+      category: FolderIconCategory.gamemode,
     ),
   ];
 
