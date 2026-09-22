@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/release_notes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/release_notes_provider.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dot_matrix_loaders.dart';
@@ -66,7 +67,8 @@ class _ReleaseList extends StatelessWidget {
   }
 }
 
-/// One release: version, date, and its notes on a card surface.
+/// One release: version, date, and its notes on a raised surface, one step
+/// above the dialog sheet. No lines; the lift does the separating.
 class _ReleaseCard extends StatelessWidget {
   const _ReleaseCard({required this.entry});
 
@@ -76,50 +78,41 @@ class _ReleaseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.card,
-        border: Border.all(color: theme.colorScheme.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: Settings.raisedSurface(16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            child: Row(
-              children: [
+          Row(
+            children: [
+              Text(
+                entry.versionName,
+                style: theme.textTheme.large.copyWith(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (entry.isInstalled) ...[
+                const SizedBox(width: 10),
+                const ShadBadge.outline(child: Text('Installed')),
+              ] else if (entry.isNewerThanInstalled) ...[
+                const SizedBox(width: 10),
+                const ShadBadge(child: Text('Available')),
+              ],
+              const Spacer(),
+              if (entry.date != null)
                 Text(
-                  entry.versionName,
-                  style: theme.textTheme.large.copyWith(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                  entry.date!,
+                  style: theme.textTheme.small.copyWith(
+                    color: theme.colorScheme.mutedForeground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
-                if (entry.isInstalled) ...[
-                  const SizedBox(width: 10),
-                  const ShadBadge.secondary(child: Text('Installed')),
-                ] else if (entry.isNewerThanInstalled) ...[
-                  const SizedBox(width: 10),
-                  const ShadBadge(child: Text('Available')),
-                ],
-                const Spacer(),
-                if (entry.date != null)
-                  Text(
-                    entry.date!,
-                    style: theme.textTheme.small.copyWith(
-                      color: theme.colorScheme.mutedForeground,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
-          Divider(height: 1, color: theme.colorScheme.border),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
-            child: PatchNotesList(notes: entry.changes),
-          ),
+          const SizedBox(height: 12),
+          PatchNotesList(notes: entry.changes),
         ],
       ),
     );
