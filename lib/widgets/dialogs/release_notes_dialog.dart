@@ -11,8 +11,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class ReleaseNotesDialog extends ConsumerWidget {
   const ReleaseNotesDialog({super.key});
 
-  static const double _width = 460;
-  static const double _bodyHeight = 420;
+  static const double _width = 520;
+  static const double _bodyHeight = 460;
 
   static Future<void> show(BuildContext context) {
     return showShadDialog<void>(
@@ -54,20 +54,39 @@ class _ReleaseList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return ListView.separated(
-      padding: const EdgeInsets.only(top: 8),
-      itemCount: entries.length,
-      separatorBuilder: (_, __) => Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Divider(height: 1, color: theme.colorScheme.border),
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: ListView.separated(
+        padding: const EdgeInsets.only(top: 8, bottom: 4),
+        itemCount: entries.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) => _ReleaseCard(entry: entries[index]),
       ),
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    );
+  }
+}
+
+/// One release: version, date, and its notes on a card surface.
+class _ReleaseCard extends StatelessWidget {
+  const _ReleaseCard({required this.entry});
+
+  final ReleaseNotesEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.card,
+        border: Border.all(color: theme.colorScheme.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Row(
               children: [
                 Text(
                   entry.versionName,
@@ -77,10 +96,10 @@ class _ReleaseList extends StatelessWidget {
                   ),
                 ),
                 if (entry.isInstalled) ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   const ShadBadge.secondary(child: Text('Installed')),
                 ] else if (entry.isNewerThanInstalled) ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   const ShadBadge(child: Text('Available')),
                 ],
                 const Spacer(),
@@ -89,16 +108,20 @@ class _ReleaseList extends StatelessWidget {
                     entry.date!,
                     style: theme.textTheme.small.copyWith(
                       color: theme.colorScheme.mutedForeground,
+                      fontSize: 12,
                       fontWeight: FontWeight.w400,
                     ),
                   ),
               ],
             ),
-            const SizedBox(height: 12),
-            PatchNotesList(notes: entry.changes),
-          ],
-        );
-      },
+          ),
+          Divider(height: 1, color: theme.colorScheme.border),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+            child: PatchNotesList(notes: entry.changes),
+          ),
+        ],
+      ),
     );
   }
 }
