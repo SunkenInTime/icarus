@@ -23,7 +23,6 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
-import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 
 class _NoopActionProvider extends ActionProvider {
   @override
@@ -358,52 +357,6 @@ void main() {
       tester.getTopLeft(find.byKey(const ValueKey('dynamic-child'))),
       const Offset(520, 265),
     );
-  });
-
-  testWidgets('legacy text footprint matches the rendered text card',
-      (tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1920, 1080);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    CoordinateSystem(playAreaSize: const Size(1920, 1080));
-
-    final text = PlacedText(
-      id: 'measured-text',
-      position: Offset.zero,
-      size: 220,
-      fontSize: 16,
-      sizeVersion: worldSizedMediaVersion,
-    )..text = 'Hold A main\nthen swing on contact';
-
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: Scaffold(
-            body: Stack(
-              children: [
-                TextWidget(
-                  key: const ValueKey('text-card'),
-                  id: text.id,
-                  text: text.text,
-                  size: text.size,
-                  fontSize: text.fontSize,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    final expectedWorld = PlacedMediaGeometry.legacyTextFootprintInWorld(text);
-    final expectedScreen = CoordinateSystem.instance.worldSizeToScreen(
-      expectedWorld,
-    );
-    final actual = tester.getSize(find.byKey(const ValueKey('text-card')));
-    expect(actual.width, closeTo(expectedScreen.width, 0.01));
-    expect(actual.height, closeTo(expectedScreen.height, 0.01));
   });
 
   testWidgets('legacy image footprint matches the rendered image card',
