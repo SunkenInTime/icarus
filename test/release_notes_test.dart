@@ -45,8 +45,7 @@ void main() {
       expect(entries.last.date, '2026-09-01');
     });
 
-    test('derives the build from the version when shortVersion is missing',
-        () {
+    test('derives the build from the version when shortVersion is missing', () {
       final entries = ReleaseNotes.parse({
         'items': [
           {'version': '4.5.0+90', 'changes': []},
@@ -66,12 +65,12 @@ void main() {
     });
 
     test('marks the installed and newer builds', () {
-      final installed = ReleaseNotesEntry(
+      const installed = ReleaseNotesEntry(
         version: '${Settings.versionName}+${Settings.versionNumber}',
         shortVersion: Settings.versionNumber,
         changes: const [],
       );
-      final newer = ReleaseNotesEntry(
+      const newer = ReleaseNotesEntry(
         version: 'x+${Settings.versionNumber + 1}',
         shortVersion: Settings.versionNumber + 1,
         changes: const [],
