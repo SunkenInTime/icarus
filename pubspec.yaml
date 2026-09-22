@@ -112,6 +112,7 @@ flutter:
     - assets/maps/thumbnails/
     - assets/agents/
     - assets/weapons/
+    - assets/gamemodes/
     - assets/agents/Omen/
     - assets/agents/Killjoy/
     - assets/agents/Sova/
