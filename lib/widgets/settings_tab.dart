@@ -1086,7 +1086,41 @@ class _SettingsNavigationRail extends StatelessWidget {
             isSelected: selectedSection == _SettingsSection.shortcuts,
             onTap: () => onSectionSelected(_SettingsSection.shortcuts),
           ),
+          const Spacer(),
+          const _VersionFooter(),
         ],
+      ),
+    );
+  }
+}
+
+/// The build number, tucked under the navigation. Click copies it for bug
+/// reports.
+class _VersionFooter extends StatelessWidget {
+  const _VersionFooter();
+
+  static const String _label =
+      'Icarus ${Settings.versionName} (${Settings.versionNumber})';
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    return ShadTooltip(
+      builder: (context) => const Text('Copy version'),
+      child: ShadButton.ghost(
+        key: const ValueKey('settings-version'),
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        foregroundColor: theme.mutedForeground,
+        hoverForegroundColor: theme.foreground,
+        onPressed: () {
+          Clipboard.setData(const ClipboardData(text: _label));
+          Settings.showToast(
+            message: 'Version copied',
+            backgroundColor: theme.primary,
+          );
+        },
+        child: const Text(_label, style: TextStyle(fontSize: 11)),
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/material.dart';
+import 'package:icarus/const/release_notes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
@@ -51,14 +52,7 @@ class _DesktopUpdateDialogListenerState
 
     _dialogOpen = true;
 
-    await showShadDialog<void>(
-      context: context,
-      barrierDismissible: !widget.controller.isMandatory,
-      builder: (context) => DesktopUpdateDialog(
-        controller: widget.controller,
-      ),
-      variant: ShadDialogVariant.alert,
-    );
+    await DesktopUpdateDialog.show(context, widget.controller);
 
     if (!mounted) {
       return;
@@ -85,6 +79,18 @@ class DesktopUpdateDialog extends StatelessWidget {
   static const double _width = 420;
   static const double _heroHeight = 180;
 
+  static Future<void> show(
+    BuildContext context,
+    WindowsDesktopUpdateController controller,
+  ) {
+    return showShadDialog<void>(
+      context: context,
+      barrierDismissible: !controller.isMandatory,
+      builder: (context) => DesktopUpdateDialog(controller: controller),
+      variant: ShadDialogVariant.alert,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
@@ -95,6 +101,8 @@ class DesktopUpdateDialog extends StatelessWidget {
         final bool canDismiss = !controller.isMandatory;
         final notes = (controller.releaseNotes ?? const <ChangeModel?>[])
             .whereType<ChangeModel>()
+            .map((note) =>
+                ReleaseNoteChange(message: note.message, type: note.type))
             .toList();
 
         final double fireProgress = controller.isDownloaded
@@ -190,7 +198,12 @@ class DesktopUpdateDialog extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (notes.isNotEmpty) ...[
-                            _PatchNotes(notes: notes),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 280),
+                              child: SingleChildScrollView(
+                                child: PatchNotesList(notes: notes),
+                              ),
+                            ),
                             const SizedBox(height: 18),
                           ],
                           _UpdateButton(controller: controller),
@@ -208,54 +221,51 @@ class DesktopUpdateDialog extends StatelessWidget {
   }
 }
 
-class _PatchNotes extends StatelessWidget {
-  const _PatchNotes({required this.notes});
+/// Patch notes as a bulleted column, each bullet tinted by the note's type.
+/// Shared by the update dialog and the What's new dialog.
+class PatchNotesList extends StatelessWidget {
+  const PatchNotesList({super.key, required this.notes});
 
-  final List<ChangeModel> notes;
+  final List<ReleaseNoteChange> notes;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 280),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final note in notes)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      height: 4,
-                      width: 4,
-                      decoration: BoxDecoration(
-                        color: _colorForNoteType(theme, note.type)
-                            .withValues(alpha: 0.55),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        note.message,
-                        style: theme.textTheme.small.copyWith(
-                          color: theme.colorScheme.foreground,
-                          fontWeight: FontWeight.w400,
-                          height: 1.55,
-                        ),
-                      ),
-                    ),
-                  ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final note in notes)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  height: 4,
+                  width: 4,
+                  decoration: BoxDecoration(
+                    color: _colorForNoteType(theme, note.type)
+                        .withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-          ],
-        ),
-      ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    note.message,
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.foreground,
+                      fontWeight: FontWeight.w400,
+                      height: 1.55,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
