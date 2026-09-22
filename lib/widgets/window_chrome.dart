@@ -206,7 +206,7 @@ class AppWindowStrip extends StatelessWidget {
         children: [
           const MacTrafficLightInset(),
           Expanded(child: child),
-          const Center(child: StripStatusIcons()),
+          const Center(child: UpdateAvailableIcon()),
           const WindowCaptionButtons(),
         ],
       ),

@@ -6,6 +6,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -103,6 +104,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               child: SizedBox.expand(),
             ),
           ),
+          const WhatsNewIcon(),
+          const SizedBox(width: 4),
           const SizedBox(
             height: _controlHeight,
             child: SearchTextField(

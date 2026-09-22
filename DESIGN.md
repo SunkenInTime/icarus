@@ -16,8 +16,9 @@ The palette, theme, and sizing constants live in `lib/const/settings.dart`, with
 ## Window chrome
 
 - Desktop builds hide the native title bar. Each top-level screen draws its own 40px strip (`lib/widgets/window_chrome.dart`): macOS keeps its traffic lights, so the strip leaves a 78px inset on the left; Windows and Linux get app-drawn caption buttons on the right; the strip is the drag handle. Web renders the same strip with no inset and no buttons.
-- Every strip ends with the same three ghost icons before the caption buttons (`lib/widgets/strip_status_icons.dart`): an update icon that exists only while an update is waiting, What's new (past patch notes), and About (version). They are drawn by `AppWindowStrip` itself, so screens never place them.
-- The library strip holds the three tabs on the left and only search, sort, and New on the right (there is no account yet). Nothing else goes in it. Inside a folder, the breadcrumb lives in the content area, not the strip.
+- An update icon exists only while an update is waiting, drawn by `AppWindowStrip` itself just before the caption buttons (`lib/widgets/strip_status_icons.dart`), so it shows on every screen and no screen places it.
+- The library strip holds the three tabs on the left and only What's new (past patch notes), search, sort, and New on the right (there is no account yet). Nothing else goes in it. Inside a folder, the breadcrumb lives in the content area, not the strip.
+- The app version lives at the foot of the settings navigation rail, muted; click copies it. It is not in any strip.
 - The editor's document actions (save, export, video, screenshot, settings) sit in one card at the top-left of the canvas (`lib/widgets/editor_toolbar.dart`). No status chips or labels in the editor.
 
 ## Icons
