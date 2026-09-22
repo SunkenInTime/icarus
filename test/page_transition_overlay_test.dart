@@ -286,7 +286,7 @@ void main() {
       preview.worldOrigin,
       animatedPosition +
           CoordinateSystem.instance.virtualOffsetToWorld(
-            const Offset(20, 20),
+            storedAgentAnchor,
           ),
     );
 
