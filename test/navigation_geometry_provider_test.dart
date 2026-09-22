@@ -136,13 +136,16 @@ void main() {
       0
     ]);
     const start = Offset(5, 5), end = Offset(25, 5);
+    final coordinates = CoordinateSystem(playAreaSize: const Size(1920, 1080));
+    final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
     final entries = [
       PageTransitionEntry.move(
-        from: PlacedAgent(id: 'sova', type: AgentType.sova, position: start),
-        to: PlacedAgent(id: 'sova', type: AgentType.sova, position: end),
+        from: PlacedAgent(
+            id: 'sova', type: AgentType.sova, position: start - anchor),
+        to: PlacedAgent(
+            id: 'sova', type: AgentType.sova, position: end - anchor),
       )
     ];
-    final coordinates = CoordinateSystem(playAreaSize: const Size(1920, 1080));
     for (final offset in [
       Offset.zero,
       const Offset(100, 50),
@@ -217,11 +220,14 @@ void main() {
         VisionGeometryMap.projectUv(MapValue.split, const Offset(.3, .4));
     final end =
         VisionGeometryMap.projectUv(MapValue.split, const Offset(.7, .6));
+    final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
     final routes = AgentTransitionPathPlanner.plan(
       entries: [
         PageTransitionEntry.move(
-          from: PlacedAgent(id: 'sova', type: AgentType.sova, position: start),
-          to: PlacedAgent(id: 'sova', type: AgentType.sova, position: end),
+          from: PlacedAgent(
+              id: 'sova', type: AgentType.sova, position: start - anchor),
+          to: PlacedAgent(
+              id: 'sova', type: AgentType.sova, position: end - anchor),
         )
       ],
       geometry: null,
@@ -281,9 +287,9 @@ void main() {
         final path = routes['sova']!;
         expect(path.isReachable, isFalse);
         expect(path.positionAt(.999),
-            start + coordinates.virtualOffsetToWorld(const Offset(10, 10)));
+            start + coordinates.virtualOffsetToWorld(storedAgentAnchor));
         expect(path.positionAt(1),
-            end + coordinates.virtualOffsetToWorld(const Offset(20, 20)));
+            end + coordinates.virtualOffsetToWorld(storedAgentAnchor));
       }
     });
   }

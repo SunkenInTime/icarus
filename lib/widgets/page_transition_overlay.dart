@@ -235,7 +235,7 @@ class _EntryRenderer {
             ? null
             : pathPosition -
                 coordinateSystem.virtualOffsetToWorld(
-                  Offset(agentSize / 2, agentSize / 2),
+                  storedAgentAnchor,
                 );
         final coordinatePosition = pathTopLeft ??
             (Offset.lerp(entry.startPos, entry.endPos, t) ?? entry.endPos);

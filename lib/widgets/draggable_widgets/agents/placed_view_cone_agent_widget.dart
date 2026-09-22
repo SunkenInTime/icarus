@@ -113,7 +113,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
                   (clipToGeometry
                       ? agent.position +
                           coordinateSystem.virtualOffsetToWorld(
-                            Offset(agentSize / 2, agentSize / 2),
+                            storedAgentAnchor,
                           )
                       : null),
               visionElevation: agent.visionElevation,
@@ -303,8 +303,7 @@ class _PlacedViewConeAgentWidgetState
           dragAnchorStrategy: (draggable, context, position) {
             _dragOrigin.start(
                 origin: current.position +
-                    coordinateSystem.virtualOffsetToWorld(
-                        Offset(agentSize / 2, agentSize / 2)),
+                    coordinateSystem.virtualOffsetToWorld(storedAgentAnchor),
                 coordinates: coordinateSystem,
                 zoom: ref.read(screenZoomProvider),
                 isAttack: isAttack);

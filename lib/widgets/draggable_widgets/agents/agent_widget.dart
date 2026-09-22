@@ -9,6 +9,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -245,7 +246,7 @@ class AgentWidget extends ConsumerWidget {
             coordinateSystem.positionForSide(
               canonicalPosition: viewConeAgent!.position +
                   coordinateSystem.virtualOffsetToWorld(
-                    Offset(agentSize / 2, agentSize / 2),
+                    storedAgentAnchor,
                   ),
               reflectionOffset: Offset.zero,
               isAttack: mapState!.isAttack,
@@ -327,7 +328,7 @@ class AgentWidget extends ConsumerWidget {
           model: svgHeightModel,
           canonicalOrigin: viewConeAgent.position +
               coordinateSystem.virtualOffsetToWorld(
-                Offset(agentSize / 2, agentSize / 2),
+                storedAgentAnchor,
               ),
           rotation: coordinateSystem.rotationForSide(
             viewConeAgent.rotation,
