@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
@@ -18,19 +19,21 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       await tester.pumpWidget(
-        ShadApp(
-          themeMode: ThemeMode.dark,
-          darkTheme: ShadThemeData(
-            brightness: Brightness.dark,
-            colorScheme: Settings.tacticalVioletTheme,
-          ),
-          home: const MediaQuery(
-            data: MediaQueryData(
-              size: Size(800, 630),
-              disableAnimations: true,
+        ProviderScope(
+          child: ShadApp(
+            themeMode: ThemeMode.dark,
+            darkTheme: ShadThemeData(
+              brightness: Brightness.dark,
+              colorScheme: Settings.tacticalVioletTheme,
             ),
-            child: StrategyViewSkeleton(
-              strategyName: 'SYNC BOUNDARY PROBE',
+            home: const MediaQuery(
+              data: MediaQueryData(
+                size: Size(800, 630),
+                disableAnimations: true,
+              ),
+              child: StrategyViewSkeleton(
+                strategyName: 'SYNC BOUNDARY PROBE',
+              ),
             ),
           ),
         ),

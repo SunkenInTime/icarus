@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Height of the strip the app draws in place of the native title bar. Every
@@ -205,6 +206,7 @@ class AppWindowStrip extends StatelessWidget {
         children: [
           const MacTrafficLightInset(),
           Expanded(child: child),
+          const Center(child: StripStatusIcons()),
           const WindowCaptionButtons(),
         ],
       ),

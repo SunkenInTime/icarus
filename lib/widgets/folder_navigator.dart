@@ -1,19 +1,18 @@
 import 'dart:io';
 
-import 'package:desktop_updater/desktop_updater.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
+import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
-import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
@@ -36,41 +35,18 @@ class FolderNavigator extends ConsumerStatefulWidget {
 class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
-  WindowsDesktopUpdateController? _desktopUpdaterController;
   final ShadContextMenuController _backgroundMenuController =
       ShadContextMenuController();
 
   @override
   void dispose() {
     _backgroundMenuController.dispose();
-    _desktopUpdaterController?.dispose();
     super.dispose();
   }
-
-  static const _desktopUpdateLocalization = DesktopUpdateLocalization(
-    updateAvailableText: 'Update Available',
-    newVersionAvailableText: '{} {} is available',
-    newVersionLongText:
-        'A desktop update is ready. Downloading will fetch {} MB of files.',
-    downloadText: 'Download Update',
-    restartText: 'Restart to update',
-    skipThisVersionText: 'Later',
-    warningTitleText: 'Restart Required',
-    restartWarningText:
-        'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
-    warningCancelText: 'Not now',
-    warningConfirmText: 'Restart',
-  );
 
   @override
   void initState() {
     super.initState();
-
-    if (kDebugMode && kDebugForceDesktopUpdateDialog) {
-      _desktopUpdaterController = WindowsDesktopUpdateController.debugPreview(
-        localization: _desktopUpdateLocalization,
-      );
-    }
 
     // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -202,19 +178,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           return;
         }
 
-        final bool isDirectWindowsInstall =
-            !kIsWeb && Platform.isWindows && !result.isSupported;
-        if (isDirectWindowsInstall && _desktopUpdaterController == null) {
-          debugPrint(
-            'Desktop updater channel: $kResolvedUpdateChannel | Manifest: ${Settings.desktopUpdaterArchiveUrl}',
-          );
-          _desktopUpdaterController = WindowsDesktopUpdateController(
-            appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
-            localization: _desktopUpdateLocalization,
-          );
-          setState(() {});
-        }
-
         if (_hasPromptedUpdateDialog || !result.isUpdateAvailable) {
           return;
         }
@@ -226,6 +189,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         });
       });
     });
+
+    final desktopUpdateController = ref.watch(desktopUpdateControllerProvider);
 
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
@@ -312,10 +277,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             ],
           ),
         ),
-        if (_desktopUpdaterController != null)
-          DesktopUpdateDialogListener(
-            controller: _desktopUpdaterController!,
-          ),
+        if (desktopUpdateController != null)
+          DesktopUpdateDialogListener(controller: desktopUpdateController),
       ],
     );
   }
