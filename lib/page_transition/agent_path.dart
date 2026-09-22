@@ -81,9 +81,8 @@ class AgentTransitionPathPlanner {
     required CoordinateSystem coordinateSystem,
   }) {
     final native = navigation?.geometry ?? geometry?.navigationGeometry;
-    Offset centerFor(Offset position, double size) =>
-        position +
-        coordinateSystem.virtualOffsetToWorld(Offset(size / 2, size / 2));
+    Offset centerFor(Offset position) =>
+        position + coordinateSystem.virtualOffsetToWorld(storedAgentAnchor);
     if (requireNavigation && native == null) {
       // Missing map data cannot establish a safe route. Page navigation still
       // finishes, but agents wait for the destination page instead of crossing
@@ -93,8 +92,8 @@ class AgentTransitionPathPlanner {
           if (entry.kind == TransitionKind.move &&
               entry.visualWidget is PlacedAgentNode)
             entry.id: AgentTransitionPath.unreachable(
-              centerFor(entry.startPos, startAgentSize),
-              centerFor(entry.endPos, endAgentSize),
+              centerFor(entry.startPos),
+              centerFor(entry.endPos),
             ),
       };
     }
@@ -129,8 +128,8 @@ class AgentTransitionPathPlanner {
         if (entry.kind == TransitionKind.move &&
             entry.visualWidget is PlacedAgentNode)
           entry.id: () {
-            final startCenter = centerFor(entry.startPos, startAgentSize);
-            final endCenter = centerFor(entry.endPos, endAgentSize);
+            final startCenter = centerFor(entry.startPos);
+            final endCenter = centerFor(entry.endPos);
             final startElevation = elevationFor(entry.from!, startCenter);
             final endElevation = elevationFor(entry.to!, endCenter);
             if (native != null) {

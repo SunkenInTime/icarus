@@ -10,8 +10,10 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/role_icon_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -298,6 +300,61 @@ void main() {
     );
     await tester.pump();
   });
+
+  for (final attack in [true, false]) {
+    testWidgets('animated cone and marker follow the path center, side=$attack',
+        (tester) async {
+      final container = attack ? _createContainer() : _createDefenseContainer();
+      addTearDown(container.dispose);
+      final coordinates = CoordinateSystem.instance;
+      const startCenter = Offset(500, 250), endCenter = Offset(700, 350);
+      final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
+      final from = PlacedViewConeAgent(
+        id: 'path-cone',
+        type: AgentType.jett,
+        presetType: UtilityType.viewCone90,
+        position: startCenter - anchor,
+        rotation: .3,
+        length: 90,
+      );
+      final to = from.copyWith(position: endCenter - anchor);
+      final path = AgentTransitionPath([startCenter, endCenter]);
+      for (final size in [15.0, 25.0, 35.0, 45.0]) {
+        for (final progress in [0.0, .5, 1.0]) {
+          await tester.pumpWidget(UncontrolledProviderScope(
+            container: container,
+            child: ShadApp(
+                home: Scaffold(
+                    body: TransitionEntriesLayer(
+              entries: [PageTransitionEntry.move(from: from, to: to)],
+              agentPaths: {from.id: path},
+              t: progress,
+              direction: PageTransitionDirection.forward,
+              agentSize: size,
+              abilitySize: 40,
+            ))),
+          ));
+          final center = path.positionAt(progress);
+          final cone =
+              tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
+          expect((cone.worldOrigin! - center).distance, lessThan(1e-7),
+              reason:
+                  'size=$size progress=$progress must raycast from the path');
+          final expectedScreen = coordinates.coordinateToScreen(
+              coordinates.positionForSide(
+                  canonicalPosition: center,
+                  reflectionOffset: Offset.zero,
+                  isAttack: attack));
+          expect(
+              (tester.getCenter(find.byType(AgentWidget)) - expectedScreen)
+                  .distance,
+              lessThan(1e-7),
+              reason: 'The marker must follow that same center.');
+        }
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets(
       'defense appear and disappear offsets keep view-cone geometry aligned',
