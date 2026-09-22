@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/release_notes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/release_notes_provider.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dot_matrix_loaders.dart';
@@ -28,7 +27,6 @@ class ReleaseNotesDialog extends ConsumerWidget {
 
     return ShadDialog(
       title: const Text("What's new"),
-      description: const Text('Everything that changed, release by release.'),
       constraints: const BoxConstraints(maxWidth: _width),
       child: SizedBox(
         height: _bodyHeight,
@@ -67,8 +65,8 @@ class _ReleaseList extends StatelessWidget {
   }
 }
 
-/// One release: version, date, and its notes on a raised surface, one step
-/// above the dialog sheet. No lines; the lift does the separating.
+/// One release: version, date, and its notes on a flat surface one step
+/// above the dialog sheet. No lines; the tonal step does the separating.
 class _ReleaseCard extends StatelessWidget {
   const _ReleaseCard({required this.entry});
 
@@ -78,7 +76,10 @@ class _ReleaseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return Container(
-      decoration: Settings.raisedSurface(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary,
+        borderRadius: BorderRadius.circular(16),
+      ),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
