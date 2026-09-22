@@ -68,12 +68,12 @@ void main() {
       const installed = ReleaseNotesEntry(
         version: '${Settings.versionName}+${Settings.versionNumber}',
         shortVersion: Settings.versionNumber,
-        changes: const [],
+        changes: [],
       );
       const newer = ReleaseNotesEntry(
         version: 'x+${Settings.versionNumber + 1}',
         shortVersion: Settings.versionNumber + 1,
-        changes: const [],
+        changes: [],
       );
 
       expect(installed.isInstalled, isTrue);
