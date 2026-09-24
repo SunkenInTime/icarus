@@ -188,6 +188,8 @@ jobs:
         shell: powershell
         run: ./scripts/test_release_signing.ps1
 
+      # Keep identical to "Build Web Client" in deploy-web.yml, so this job
+      # proves the exact web build that ships to the beta.
       - name: Build Web Client
         shell: pwsh
         run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development

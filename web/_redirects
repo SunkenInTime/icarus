@@ -1,0 +1,3 @@
+# Flutter web is a single-page app. Share links (/share/<code>) and the
+# Supabase auth callback must load index.html, which then routes in Dart.
+/* /index.html 200

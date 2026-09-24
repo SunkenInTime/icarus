@@ -99,6 +99,44 @@ the [`convex deploy` reference](https://docs.convex.dev/cli/reference/deploy).
 The production workflow never reads `CONVEX_PREVIEW_DEPLOY_KEY`. That secret is
 only for the isolated contract deployment in CI.
 
+## Web beta deploy
+
+The web beta lives at `https://beta.icarusstrats.com`, served by the Cloudflare
+Pages project `icarus-web` (also reachable at `https://icarus-web.pages.dev`).
+It uses the development Convex deployment, like every non-stable build.
+
+- A push to `icarus-cloud` that changes `lib/`, `web/`, `assets/`,
+  `pubspec.yaml`, `pubspec.lock`, or `.fvmrc` deploys automatically.
+- To redeploy by hand: `Actions` > `Deploy Web` > `Run workflow` on
+  `icarus-cloud`. GitHub only shows that button once the workflow is on the
+  default branch; until then, re-run the latest `Deploy Web` run.
+- The run summary links the deployment. To roll back, promote an earlier
+  deployment in the Cloudflare dashboard under the project's `Deployments`.
+
+The workflow builds with the same command as CI's `Build Web Client` step and
+uploads `build/web` with `wrangler pages deploy --branch=main`. `main` is the
+Pages project's production branch, and the custom domain follows production.
+`web/_redirects` sends unknown paths (share links, the auth callback) to
+`index.html`. `web/_headers` makes browsers revalidate Flutter's unhashed entry
+files, so testers get a new deploy on refresh.
+
+GitHub repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`: a Cloudflare API token with one permission,
+  `Account` > `Cloudflare Pages` > `Edit`, scoped to the Icarus account.
+- `CLOUDFLARE_ACCOUNT_ID`: the account ID shown on the account's Workers & Pages
+  overview.
+
+One-time Cloudflare setup:
+
+1. Create the direct-upload project with production branch `main`:
+   `npx wrangler pages project create icarus-web --production-branch=main`
+   (after `npx wrangler login`). The dashboard path is `Workers & Pages` >
+   `Create` > `Pages` > `Upload assets`, named `icarus-web`.
+2. In the project, open `Custom domains` > `Set up a custom domain`, enter
+   `beta.icarusstrats.com`, and activate it. Cloudflare adds the DNS record when
+   `icarusstrats.com` is on the same account.
+
 ## Desktop Release Checklist
 
 Use this when you want to publish the direct installer channel.
