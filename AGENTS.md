@@ -22,6 +22,10 @@ The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in 
 
 Here's the philosophy we work by:
 
+After audits, investigations, or substantial testing runs, read [answers.md](answers.md) before reporting the outcome.
+
+Before changing view cones, map blockers, or elevation handling, read [docs/vision-model.md](docs/vision-model.md). It defines which data controls wall placement and height.
+
 ## The library is sacred
 Corrupted or dropped library data is unrecoverable. In local mode nothing here changes: a change to the Hive models means source models, generated adapters, and a migration (`lib/migrations/`) so that data written by any past version loads in this one. In cloud mode the op queue holds work the user believes is saved. Every op either lands or the user is told, on screen, before they walk away. When a write path is uncertain, fail loudly without saving rather than save something wrong.
 
@@ -49,4 +53,4 @@ These steer us in the right direction. They are not hard-set, but default to fol
 - Never edit generated files (`*.g.dart`, `convex/_generated/`). Edit the source models or schema, then regenerate (`dart run build_runner build --delete-conflicting-outputs`; Convex regenerates via `npx convex dev`).
 - Convex behavior is defined by the current schema, source, generated types, and tests in this repository. If an API detail is uncertain, check the current official Convex documentation before editing, then prove the change with `npx tsc --noEmit` and `npm run test:convex`.
 - Each thread owns one running instance of the app, and never touches another's. Start yours once, keyed by your worktree or branch name: `flutter run -d macos --pid-file /tmp/icarus-<key>.pid --dart-entrypoint-args "--hive-store-dir=<dir>"`, with `<dir>` = `~/Library/Containers/xyz.icarus-strats/Data/Library/Application Support/icarus-<key>` so its library is yours alone, launched from an unsandboxed shell or it draws but takes no clicks. Instances share a window frame, so move yours aside before you click. After every edit, hot reload it with `kill -USR1 $(cat /tmp/icarus-<key>.pid)`; the tool's stdin is not a terminal, so typing `r` does nothing. Keep it running for the thread, and kill it when the thread ends. The signed-in session is shared across instances: sign out from yours and you sign everyone out.
-- Keep agent instructions in this `AGENTS.md`. Do not add generated agent guidance, bundled skills, or compatibility copies for specific coding agents back to the repository.
+- Do not add generated agent guidance or bundled skills back to the repository.

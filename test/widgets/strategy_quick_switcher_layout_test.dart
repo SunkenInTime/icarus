@@ -29,7 +29,7 @@ void main() {
     await hiveDirectory.delete(recursive: true);
   });
 
-  testWidgets('editor controls share the map card center line', (tester) async {
+  testWidgets('editor controls share the strip center line', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
       await tester.binding.setSurfaceSize(const Size(800, 160));

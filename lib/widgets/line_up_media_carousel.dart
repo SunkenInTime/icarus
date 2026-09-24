@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -17,27 +16,113 @@ import 'package:icarus/widgets/youtube_view.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-class LineUpMediaCarousel extends ConsumerStatefulWidget {
-  const LineUpMediaCarousel({
-    super.key,
-    required this.lineUpGroupId,
-    required this.lineUpItemId,
-    required this.images,
-    required this.youtubeLink,
-  });
-  final List<SimpleImageData> images;
-  final String lineUpGroupId;
-  final String lineUpItemId;
-  final String youtubeLink;
+/// Fullscreen viewer for one lineup's media, with delete and edit actions.
+class LineUpMediaCarousel extends ConsumerWidget {
+  const LineUpMediaCarousel({super.key, required this.linkId});
+
+  final String linkId;
 
   @override
-  ConsumerState<ConsumerStatefulWidget> createState() => _ImageCarouselState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final link = ref.watch(
+      lineUpProvider.select((state) => state.linkById(linkId)),
+    );
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          Navigator.of(context).maybePop();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Material(
+          color: Colors.transparent,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+                  child: Container(color: Colors.black54),
+                ),
+              ),
+              if (link != null)
+                LineUpMediaPages(
+                  images: link.images,
+                  youtubeLink: link.youtubeLink,
+                  padding: const EdgeInsets.all(56.0),
+                ),
+              Positioned(
+                top: 24,
+                right: 24,
+                child: SafeArea(
+                  child: Row(
+                    spacing: 8,
+                    children: [
+                      ShadIconButton.destructive(
+                        icon: const Icon(LucideIcons.trash2),
+                        decoration: ShadDecoration(
+                          border: ShadBorder.all(
+                              color: Settings.tacticalVioletTheme.border),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          ref.read(lineUpProvider.notifier).deleteLink(linkId);
+                        },
+                      ),
+                      ShadButton(
+                        leading: const Icon(LucideIcons.pencil),
+                        child: const Text("Edit"),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          showDialog(
+                            context: context,
+                            builder: (context) =>
+                                CreateLineupDialog(linkId: linkId),
+                          );
+                        },
+                      ),
+                      ShadIconButton.secondary(
+                        icon: const Icon(LucideIcons.x),
+                        decoration: ShadDecoration(
+                          border: ShadBorder.all(
+                              color: Settings.tacticalVioletTheme.border),
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
-    with AutomaticKeepAliveClientMixin {
-  int counter = 0;
+/// Pages through a lineup's YouTube link and images with arrows and dots.
+/// Embeddable: the lineup panel shows it beside the list, the fullscreen
+/// carousel wraps it in a backdrop.
+class LineUpMediaPages extends ConsumerStatefulWidget {
+  const LineUpMediaPages({
+    super.key,
+    required this.images,
+    required this.youtubeLink,
+    this.padding = EdgeInsets.zero,
+  });
 
+  final List<SimpleImageData> images;
+  final String youtubeLink;
+  final EdgeInsets padding;
+
+  @override
+  ConsumerState<LineUpMediaPages> createState() => _LineUpMediaPagesState();
+}
+
+class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
+    with AutomaticKeepAliveClientMixin {
   Directory? imageFolderPath;
 
   @override
@@ -46,6 +131,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
   final PageController _pageController = PageController();
   int _currentIndex = 0;
   late final InAppWebViewKeepAlive keepAlive;
+
   @override
   void initState() {
     super.initState();
@@ -67,9 +153,18 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
   }
 
   @override
+  void didUpdateWidget(covariant LineUpMediaPages oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.images != widget.images ||
+        oldWidget.youtubeLink != widget.youtubeLink) {
+      _currentIndex = 0;
+      if (_pageController.hasClients) _pageController.jumpToPage(0);
+    }
+  }
+
+  @override
   void dispose() {
     _pageController.dispose();
-
     super.dispose();
   }
 
@@ -93,7 +188,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
         alignment: Alignment.center,
         children: [
           Padding(
-            padding: const EdgeInsets.all(56.0),
+            padding: widget.padding,
             child: PageView.builder(
               controller: _pageController,
               itemCount: widget.images.length +
@@ -115,6 +210,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                 final fullPath = path.join(
                     imageFolderPath!.path, image.id + image.fileExtension);
                 final file = File(fullPath);
+                // A cloud lineup image may not be on this device yet.
                 final snapshot =
                     ref.watch(remoteEditorSnapshotProvider).valueOrNull;
                 final remoteUrl = snapshot?.assetsById[image.id]?.url;
@@ -218,85 +314,6 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
       );
     }
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): () {
-          Navigator.of(context).maybePop();
-        },
-      },
-      child: Focus(
-        autofocus: true,
-        child: Material(
-          color: Colors.transparent,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-                  child: Container(color: Colors.black54),
-                ),
-              ),
-              content,
-              Positioned(
-                top: 24,
-                right: 24,
-                child: SafeArea(
-                  child: Row(
-                    spacing: 8,
-                    children: [
-                      ShadIconButton.destructive(
-                        icon: const Icon(LucideIcons.trash2),
-                        decoration: ShadDecoration(
-                          border: ShadBorder.all(
-                              color: Settings.tacticalVioletTheme.border),
-                        ),
-                        // tooltip: 'Close',
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          ref.read(actionProvider.notifier).performTransaction(
-                            groups: const [ActionGroup.lineUp],
-                            mutation: () {
-                              ref.read(lineUpProvider.notifier).deleteItem(
-                                    groupId: widget.lineUpGroupId,
-                                    itemId: widget.lineUpItemId,
-                                  );
-                            },
-                          );
-                        },
-                      ),
-                      ShadButton(
-                        // height: 32,
-                        leading: const Icon(LucideIcons.pencil),
-                        // width: 80,
-                        child: const Text("Edit"),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          showDialog(
-                            context: context,
-                            builder: (context) => CreateLineupDialog(
-                              lineUpGroupId: widget.lineUpGroupId,
-                              lineUpItemId: widget.lineUpItemId,
-                            ),
-                          );
-                        },
-                      ),
-                      ShadIconButton.secondary(
-                        icon: const Icon(LucideIcons.x),
-                        decoration: ShadDecoration(
-                          border: ShadBorder.all(
-                              color: Settings.tacticalVioletTheme.border),
-                        ),
-                        // tooltip: 'Close',
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return content;
   }
 }

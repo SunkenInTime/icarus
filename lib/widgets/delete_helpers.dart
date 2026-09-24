@@ -26,10 +26,11 @@ void deleteHoveredTarget(WidgetRef ref, HoveredDeleteTarget target) {
       ref.read(utilityProvider.notifier).removeUtilityAsAction(target.id);
       return;
     case DeleteTargetType.lineup:
-      final lineUps = ref.read(lineUpProvider);
-      final exists = lineUps.groups.any((group) => group.id == target.id);
-      if (exists) {
-        ref.read(lineUpProvider.notifier).deleteGroupById(target.id);
+      final lineUps = ref.read(lineUpProvider.notifier);
+      if (lineUps.originById(target.id) != null) {
+        lineUps.deleteOrigin(target.id);
+      } else if (lineUps.landingById(target.id) != null) {
+        lineUps.deleteLanding(target.id);
       }
       return;
   }

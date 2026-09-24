@@ -191,7 +191,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).startNewGroup(placedAgent);
+                ref.read(lineUpProvider.notifier).setDraftAgent(placedAgent);
                 return;
               }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
@@ -218,9 +218,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref
-                    .read(lineUpProvider.notifier)
-                    .setCurrentAbility(placedAbility);
+                ref.read(lineUpProvider.notifier).setDraftAbility(placedAbility);
                 return;
               }
 
@@ -245,9 +243,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref
-                    .read(lineUpProvider.notifier)
-                    .setCurrentAbility(placedAbility);
+                ref.read(lineUpProvider.notifier).setDraftAbility(placedAbility);
                 return;
               }
 
@@ -586,6 +582,7 @@ class _AgentListState extends ConsumerState<_AgentList> {
                         isAlly: agent.isAlly,
                         id: "",
                         agent: AgentData.agents[agent.type]!,
+                        weapon: agent.weapon,
                       ),
                     ),
                   ),
@@ -620,6 +617,7 @@ class _AgentListState extends ConsumerState<_AgentList> {
                     isAlly: agent.isAlly,
                     id: agent.id,
                     agent: AgentData.agents[agent.type]!,
+                    weapon: agent.weapon,
                   ),
                 ),
               ),
@@ -1143,7 +1141,7 @@ class _LineUpAgents extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
-    final groups = ref.watch(lineUpProvider).groups;
+    final origins = ref.watch(lineUpProvider.select((state) => state.origins));
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
     final isAttack = ref.watch(mapProvider).isAttack;
@@ -1151,9 +1149,9 @@ class _LineUpAgents extends ConsumerWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final group in groups)
-          LineUpGroupAgentWidget(
-            group: group,
+        for (final origin in origins)
+          LineUpOriginAgentWidget(
+            origin: origin,
             onDragEnd: (details) {
               final renderBox = context.findRenderObject() as RenderBox;
               final localOffset = renderBox.globalToLocal(details.offset);
@@ -1163,10 +1161,16 @@ class _LineUpAgents extends ConsumerWidget {
                 agentSize: agentSize,
                 isAttack: isAttack,
               );
-              ref.read(lineUpProvider.notifier).updateGroupAgentPosition(
-                    groupId: group.id,
-                    position: position,
-                  );
+              // Dropped off the map: the origin stays where it was.
+              if (coordinateSystem.isOutOfBounds(position + storedAgentAnchor)) {
+                return;
+              }
+              ref.read(actionProvider.notifier).performTransaction(
+                groups: const [ActionGroup.lineUp],
+                mutation: () => ref
+                    .read(lineUpProvider.notifier)
+                    .updateOriginAgentPosition(origin.id, position),
+              );
             },
           ),
       ],
@@ -1180,7 +1184,8 @@ class _LineUpAbilities extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
-    final groups = ref.watch(lineUpProvider).groups;
+    final landings =
+        ref.watch(lineUpProvider.select((state) => state.landings));
     final coordinateSystem = CoordinateSystem.instance;
     final mapState = ref.watch(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
@@ -1189,29 +1194,37 @@ class _LineUpAbilities extends ConsumerWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final group in groups)
-          for (final item in group.items)
-            LineUpItemAbilityWidget(
-              groupId: group.id,
-              item: item,
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final position = storedAbilityPositionForRenderedScreenPosition(
-                  ability: item.ability.data.abilityData!,
-                  coordinateSystem: coordinateSystem,
-                  renderedScreenPosition: localOffset,
-                  mapScale: mapScale,
-                  abilitySize: abilitySize,
-                  isAttack: mapState.isAttack,
-                );
-                ref.read(lineUpProvider.notifier).updateItemAbilityPosition(
-                      groupId: group.id,
-                      itemId: item.id,
-                      position: position,
-                    );
-              },
-            ),
+        for (final landing in landings)
+          LineUpLandingAbilityWidget(
+            landing: landing,
+            onDragEnd: (details) {
+              final renderBox = context.findRenderObject() as RenderBox;
+              final localOffset = renderBox.globalToLocal(details.offset);
+              final abilityData = landing.ability.data.abilityData!;
+              final position = storedAbilityPositionForRenderedScreenPosition(
+                ability: abilityData,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+                isAttack: mapState.isAttack,
+              );
+              // Dropped off the map: the landing stays where it was.
+              final anchor = storedAbilityAnchor(
+                ability: abilityData,
+                mapScale: mapScale,
+              );
+              if (coordinateSystem.isOutOfBounds(position + anchor)) return;
+              ref.read(actionProvider.notifier).performTransaction(
+                groups: const [ActionGroup.lineUp],
+                mutation: () =>
+                    ref.read(lineUpProvider.notifier).updateLandingAbility(
+                          landing.id,
+                          landing.ability.copyWith(position: position),
+                        ),
+              );
+            },
+          ),
       ],
     );
   }

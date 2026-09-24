@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -43,6 +44,9 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<LineUp>(),
   AdapterSpec<LineUpGroup>(),
   AdapterSpec<LineUpItem>(),
+  AdapterSpec<LineUpOrigin>(),
+  AdapterSpec<LineUpLanding>(),
+  AdapterSpec<LineUpLink>(),
   AdapterSpec<SimpleImageData>(),
   AdapterSpec<CloudMediaJobState>(),
   AdapterSpec<AgentState>(),
@@ -52,6 +56,7 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<AppPreferences>(),
   AdapterSpec<PlacedViewConeAgent>(),
   AdapterSpec<PlacedCircleAgent>(),
+  AdapterSpec<WeaponType>(),
 ])
 part 'hive_adapters.g.dart';
 

@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("all", "build", "package", "stage", "publish")]
+    [string]$Phase = "all",
     [ValidateSet("none", "patch", "minor", "major")]
     [string]$VersionBump = "none",
     [ValidateSet("stable", "prerelease")]
@@ -36,7 +38,15 @@ if ([string]::IsNullOrWhiteSpace($AppArchiveBaseUrl)) {
     $AppArchiveBaseUrl = "https://sunkenintime.github.io/icarus/updates/windows/$Channel"
 }
 
-if ($VersionBump -ne "none") {
+if ($PublishPages -and (@("all", "stage", "publish") -notcontains $Phase)) {
+    throw "Pages can only be published during the 'all', 'stage', or 'publish' release phase."
+}
+
+if ($VersionBump -ne "none" -and (@("all", "build") -notcontains $Phase)) {
+    throw "Version bumps can only be applied during the 'all' or 'build' release phase."
+}
+
+if ($VersionBump -ne "none" -and (@("all", "build") -contains $Phase)) {
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
         "-ExecutionPolicy",
         "Bypass",
@@ -52,6 +62,8 @@ $buildArgs = @(
     "Bypass",
     "-File",
     "scripts/build_desktop_release.ps1",
+    "-Phase",
+    $Phase,
     "-Channel",
     $Channel,
     "-PagesStageRoot",
@@ -80,7 +92,9 @@ if ($SkipPubGet) {
     $buildArgs += "-SkipPubGet"
 }
 
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments $buildArgs
+if ($Phase -ne "publish") {
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments $buildArgs
+}
 
 if (-not $PublishPages) {
     return
@@ -91,34 +105,16 @@ switch ($PagesPublishMode) {
         Write-Host "Pages publish requested, but PagesPublishMode is 'none'. Files remain staged locally." -ForegroundColor Yellow
     }
     "git-branch" {
-        Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            "scripts/publish_pages_branch.ps1",
-            "-SourceDir",
-            $PagesStageRoot,
-            "-Branch",
-            $PagesBranch,
-            "-Remote",
-            $PagesRemote,
-            "-SyncPaths",
-            "updates/windows/$Channel"
-        )
-
-        Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            "scripts/publish_pages_branch.ps1",
-            "-SourceDir",
-            $PagesStageRoot,
-            "-Branch",
-            $PagesBranch,
-            "-Remote",
-            $PagesRemote,
-            "-SyncPaths",
-            "downloads/windows/$Channel"
+        $versionInfo = Get-VersionInfo -RepoRoot $repoRoot
+        $channelPath = "updates/windows/$Channel"
+        Assert-PagesFileSizes -Path (Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "$PagesStageRoot/$channelPath")
+        # The installer must be available before clients see the new update.
+        & (Join-Path $PSScriptRoot "publish_installer_release.ps1") -Channel $Channel -MetadataDir $MetadataDir
+        # Keep prior version folders available for downloads already in progress.
+        & (Join-Path $PSScriptRoot "publish_pages_branch.ps1") `
+            -SourceDir $PagesStageRoot -Branch $PagesBranch -Remote $PagesRemote -SyncPaths @(
+                "$channelPath/$($versionInfo.WindowsArchiveFolderName)",
+                "$channelPath/app-archive.json"
         )
     }
 }

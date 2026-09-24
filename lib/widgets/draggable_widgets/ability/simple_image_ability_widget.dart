@@ -14,8 +14,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
     required this.size,
     this.index,
     required this.id,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
     this.visualState,
     this.inactiveTraceColor,
     this.watchMouse = true,
@@ -26,8 +25,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
   final String imagePath;
   final int? index;
   final String? id;
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
   final AbilityVisualState? visualState;
   final Color? inactiveTraceColor;
   final bool watchMouse;
@@ -36,8 +34,8 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final deleteTarget = lineUpId != null
-        ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
+    final deleteTarget = landingId != null
+        ? HoveredDeleteTarget.lineup(id: landingId!, ownerToken: Object())
         : (id?.isNotEmpty ?? false)
             ? HoveredDeleteTarget.ability(id: id!, ownerToken: Object())
             : null;
@@ -74,8 +72,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
     }
 
     return MouseWatch(
-      lineUpId: lineUpId,
-      lineUpItemId: lineUpItemId,
+      lineUpLandingId: landingId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       contextMenuItems: contextMenuItems,

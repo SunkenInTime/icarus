@@ -234,10 +234,8 @@ void main() {
         matching: find.byIcon(LucideIcons.rotateCw),
       ),
     );
-    expect(
-      activeBadgeIcon.color,
-      Settings.tacticalVioletTheme.primary,
-    );
+    // Thin violet glyphs carry the ink token, not the fill primary.
+    expect(activeBadgeIcon.color, Settings.accentInk);
 
     await mouse.up();
     await tester.pump();

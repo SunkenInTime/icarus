@@ -82,7 +82,8 @@ void main() {
   testWidgets('regular lineup placement dims non-active agents',
       (tester) async {
     final container = _createContainer();
-    container.read(lineUpProvider.notifier).startNewGroup(
+    container.read(lineUpProvider.notifier).startFresh();
+    container.read(lineUpProvider.notifier).setDraftAgent(
           PlacedAgent(
             id: 'breach-agent',
             type: AgentType.breach,
@@ -109,7 +110,8 @@ void main() {
   testWidgets('regular lineup placement does not disable non-active agents',
       (tester) async {
     final container = _createContainer();
-    container.read(lineUpProvider.notifier).startNewGroup(
+    container.read(lineUpProvider.notifier).startFresh();
+    container.read(lineUpProvider.notifier).setDraftAgent(
           PlacedAgent(
             id: 'breach-agent',
             type: AgentType.breach,
@@ -139,7 +141,7 @@ void main() {
     expect(container.read(abilityBarProvider)?.type, AgentType.sova);
   });
 
-  testWidgets('locked add-item mode dims non-active agents', (tester) async {
+  testWidgets('pinned origin dims non-active agents', (tester) async {
     final container = _createContainer();
     final group = LineUpGroup(
       id: 'breach-group',
@@ -161,8 +163,10 @@ void main() {
         ),
       ],
     );
-    container.read(lineUpProvider.notifier).addGroup(group);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
     container
         .read(interactionStateProvider.notifier)
         .update(InteractionState.lineUpPlacing);
@@ -179,7 +183,7 @@ void main() {
     );
   });
 
-  testWidgets('locked add-item mode blocks non-active tap', (tester) async {
+  testWidgets('pinned origin blocks non-active tap', (tester) async {
     final container = _createContainer();
     final group = LineUpGroup(
       id: 'breach-group',
@@ -201,11 +205,13 @@ void main() {
         ),
       ],
     );
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
     container
         .read(abilityBarProvider.notifier)
         .updateData(AgentData.agents[AgentType.breach]!);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
     container
         .read(interactionStateProvider.notifier)
         .update(InteractionState.lineUpPlacing);
@@ -225,7 +231,7 @@ void main() {
     expect(container.read(abilityBarProvider)?.type, AgentType.breach);
   });
 
-  testWidgets('locked add-item mode blocks non-active drag start',
+  testWidgets('pinned origin blocks non-active drag start',
       (tester) async {
     final container = _createContainer();
     final group = LineUpGroup(
@@ -248,8 +254,10 @@ void main() {
         ),
       ],
     );
-    container.read(lineUpProvider.notifier).addGroup(group);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
     container
         .read(interactionStateProvider.notifier)
         .update(InteractionState.lineUpPlacing);
@@ -290,9 +298,11 @@ void main() {
         ),
       ],
     );
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
     container.read(abilityBarProvider.notifier).updateData(breachAgent);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
     container
         .read(interactionStateProvider.notifier)
         .update(InteractionState.lineUpPlacing);

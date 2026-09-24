@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Height of the strip the app draws in place of the native title bar. Every
@@ -40,7 +41,7 @@ class WindowDragArea extends StatelessWidget {
   }
 }
 
-/// The compact Icarus lockup at the start of the library strip. On macOS it
+/// The compact Icarus lockup at the start of every window strip. On macOS it
 /// follows the traffic-light inset; on Windows and Linux it leads the strip.
 class IcarusWordmark extends StatelessWidget {
   const IcarusWordmark({super.key});
@@ -205,6 +206,7 @@ class AppWindowStrip extends StatelessWidget {
         children: [
           const MacTrafficLightInset(),
           Expanded(child: child),
+          const Center(child: UpdateAvailableIcon()),
           const WindowCaptionButtons(),
         ],
       ),

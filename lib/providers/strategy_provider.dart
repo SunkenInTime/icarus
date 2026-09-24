@@ -104,7 +104,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     _listenForPageBackedState(utilityProvider);
     _listenForPageBackedState(
-      lineUpProvider.select((lineups) => lineups.groups),
+      lineUpProvider.select(
+        (lineups) => (lineups.origins, lineups.landings, lineups.links),
+      ),
     );
     _listenForPageBackedState(strategySettingsProvider);
     _listenForPageBackedState(mapProvider.select((map) => map.isAttack));
@@ -1108,10 +1110,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       List<String> allImageIds = [];
       for (final page in newStrat.pages) {
         allImageIds.addAll(page.imageData.map((image) => image.id));
-        for (final group in page.lineUpGroups) {
-          for (final item in group.items) {
-            allImageIds.addAll(item.images.map((image) => image.id));
-          }
+        for (final link in page.lineUpLinks) {
+          allImageIds.addAll(link.images.map((image) => image.id));
         }
       }
       await ref
@@ -1145,7 +1145,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
 
-  Future<String> createNewStrategy(String name) async {
+  /// Creates an empty strategy on [map] and returns it. Without [name] it
+  /// is auto-named after the map ("Haven", then "Haven 2", ...).
+  Future<StrategyData> createNewStrategy({
+    required MapValue map,
+    String? name,
+  }) async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strategyName = name ??
+        autoStrategyName(map, box.values.map((strategy) => strategy.name));
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
@@ -1211,10 +1219,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     final newStrategy = StrategyData(
-      mapData: MapValue.ascent,
+      mapData: map,
       versionNumber: Settings.versionNumber,
       id: newID,
-      name: name,
+      name: strategyName,
       pages: [
         StrategyPage(
           id: pageID,
@@ -1226,7 +1234,6 @@ class StrategyProvider extends Notifier<StrategyState> {
           textData: [],
           imageData: [],
           utilityData: [],
-          lineUpGroups: [],
           sortIndex: 0,
           isAttack: true,
           settings: defaultSettings,
@@ -1240,12 +1247,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeProfileId: defaultThemeProfileId,
     );
 
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(newStrategy.id, newStrategy);
+    await box.put(newStrategy.id, newStrategy);
 
     unawaited(AnalyticsService.instance.capture('strategy_created'));
 
-    return newStrategy.id;
+    return newStrategy;
   }
 
   void setThemeProfileForCurrentStrategy(String profileId) {
@@ -1577,11 +1583,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUpGroups: ref
-          .read(lineUpProvider)
-          .groups
-          .map((group) => group.deepCopy())
-          .toList(),
+      lineUpGraph: ref.read(lineUpProvider).graph,
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);
@@ -1610,6 +1612,75 @@ class StrategyProvider extends Notifier<StrategyState> {
         abilitySize: target.abilitySize,
       ),
     );
+  }
+
+  /// Flips the side the map is drawn from. Placements are stored
+  /// attack-canonical, so the only thing that changes is each page's side.
+  /// With [allPages] every page takes the active page's new side; otherwise
+  /// only the active page changes and the strategy may become mixed.
+  /// Flips the side of the active page, or of every page when [allPages].
+  ///
+  /// The active page's side lives in [mapProvider] and reaches Hive through
+  /// the normal save, so "Don't save" still reverts it and none of its other
+  /// pending edits are flushed here. The other pages are held in Hive
+  /// between visits (a page switch writes there the same way), so they are
+  /// flipped in place.
+  Future<void> switchSide({required bool allPages}) async {
+    final isAttack = !ref.read(mapProvider).isAttack;
+    ref.read(mapProvider.notifier).setAttack(isAttack);
+    setUnsaved();
+    final strategyId = state.strategyId;
+    if (!allPages || strategyId == null) return;
+    if (!_currentStrategyCanEditPages()) return;
+    final activeId = ref.read(strategyPageSessionProvider).activePageId;
+
+    if (_currentStrategyIsCloud()) {
+      // The active page's side reaches the server through live page sync.
+      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+      if (snapshot == null) return;
+      final ops = [
+        for (final page in snapshot.pages)
+          if (page.publicId != activeId && page.isAttack != isAttack)
+            PagePatchOp(
+              opId: const Uuid().v4(),
+              pagePublicId: page.publicId,
+              payload: {'isAttack': isAttack},
+              expectedPageRevision: page.revision,
+            ),
+      ];
+      if (ops.isEmpty) return;
+      try {
+        await ref
+            .read(strategyOpQueueProvider.notifier)
+            .enqueueAll(ops, flushImmediately: true);
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:switch_side_all_pages',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+      return;
+    }
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(strategyId);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    final resolvedActiveId = activeId ?? strat.pages.first.id;
+    final updated = strat.copyWith(
+      pages: [
+        for (final page in strat.pages)
+          page.id == resolvedActiveId
+              ? page
+              : page.copyWith(isAttack: isAttack),
+      ],
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
   }
 
   Future<void> applyNeutralTeamColorsToAllPages(bool value) async {
@@ -1752,5 +1823,18 @@ class StrategyProvider extends Notifier<StrategyState> {
         "Couldn't move this strategy. Try again.",
       );
     }
+  }
+}
+
+/// The name a new strategy gets when the user doesn't type one: the map's
+/// name, with the first free number appended if that name is already taken.
+@visibleForTesting
+String autoStrategyName(MapValue map, Iterable<String> existingNames) {
+  final base = Maps.displayName(map);
+  final taken = existingNames.map((name) => name.trim().toLowerCase()).toSet();
+  if (!taken.contains(base.toLowerCase())) return base;
+  for (var n = 2;; n++) {
+    final candidate = '$base $n';
+    if (!taken.contains(candidate.toLowerCase())) return candidate;
   }
 }

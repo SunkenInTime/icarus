@@ -20,6 +20,7 @@ enum _FolderIconFilter {
   all,
   symbols,
   roles,
+  modes,
 }
 
 class FolderEditDialog extends ConsumerStatefulWidget {
@@ -47,6 +48,9 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   bool _isSubmitting = false;
   String? _failureMessage;
 
+  /// Saves the folder and closes the dialog; Enter in the name field and the
+  /// Done button both land here, and a second submit while one is in flight
+  /// is ignored. A failed cloud write keeps the dialog open with the reason.
   Future<void> _submit() async {
     if (_isSubmitting) return;
     setState(() {
@@ -312,6 +316,10 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       value: _FolderIconFilter.roles,
                       child: Text("Roles"),
                     ),
+                    SegmentedTabItem<_FolderIconFilter>(
+                      value: _FolderIconFilter.modes,
+                      child: Text("Modes"),
+                    ),
                   ],
                   onChanged: (value) {
                     setState(() {
@@ -362,7 +370,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       selectedIcon: FolderIconView(
                         iconId: iconId,
                         size: iconSize,
-                        color: Settings.tacticalVioletTheme.primary,
+                        color: Settings.accentInk,
                       ));
                 },
               ),
@@ -380,6 +388,8 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
         FolderIconRegistry.pickerEntriesFor(FolderIconCategory.symbol),
       _FolderIconFilter.roles =>
         FolderIconRegistry.pickerEntriesFor(FolderIconCategory.role),
+      _FolderIconFilter.modes =>
+        FolderIconRegistry.pickerEntriesFor(FolderIconCategory.gamemode),
     };
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class ColorButtons extends ConsumerStatefulWidget {
@@ -22,7 +23,7 @@ class ColorButtons extends ConsumerStatefulWidget {
 class _ColorButtonsState extends ConsumerState<ColorButtons> {
   final _hoverColor = Colors.white;
   // final _selectColor = const Color(0xFF2282FF);
-  final _selectColor = Colors.deepPurpleAccent;
+  final _selectColor = Settings.accentInk;
 
   Color _currentColor = Colors.transparent;
 
@@ -88,7 +89,7 @@ class _ColorButtonsState extends ConsumerState<ColorButtons> {
 //     required this.color,
 //     required this.isSelected,
 //     required this.onTap,
-    
+
 //   });
 //   final bool isSelected;
 //   final Color color;
@@ -111,7 +112,7 @@ class _ColorButtonsState extends ConsumerState<ColorButtons> {
 //       child: InkWell(
 //         onTap: onTap,
 //         onHover: (value) {
-          
+
 //         },
 //         child: Center(
 //           child: Container(

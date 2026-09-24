@@ -27,21 +27,23 @@ class SelectableIconButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hasShortcutLabel = shortcutLabel != null && shortcutLabel!.isNotEmpty;
 
-    // A checked tool is a raised command surface. A caller-supplied color
-    // (the delete tools' red) stays a flat fill.
-    final raised = isSelected && hoverBackgroundColor == null;
-    final flatColor =
-        isSelected ? hoverBackgroundColor ?? Colors.transparent : null;
+    // A checked tool is a raised command surface: violet by default, or the
+    // caller's color (the favorites amber, the delete tools' red). A
+    // transparent color means the caller wants no fill at all.
+    final raisedColor = isSelected
+        ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
+        : null;
+    final raised = raisedColor != null && raisedColor.a > 0;
     Widget button = ShadIconButton.secondary(
       padding: EdgeInsets.zero,
       icon: icon,
-      backgroundColor: flatColor,
-      hoverBackgroundColor: flatColor,
+      backgroundColor: isSelected ? Colors.transparent : null,
+      hoverBackgroundColor: isSelected ? Colors.transparent : null,
       onPressed: onPressed,
     );
     if (raised) {
       button = DecoratedBox(
-        decoration: Settings.raisedPrimary(_radius),
+        decoration: Settings.raised(raisedColor, _radius),
         child: button,
       );
     }

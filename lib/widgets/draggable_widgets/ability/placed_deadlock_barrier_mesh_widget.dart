@@ -160,7 +160,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
           Opacity(
             opacity: _isDragging ? 0 : 1,
             child: DeadlockBarrierMeshWidget(
-              lineUpId: abilityRef.lineUpID,
+              landingId: abilityRef.lineUpID,
               iconPath: abilityRef.data.iconPath,
               id: widget.id,
               isAlly: abilityRef.isAlly,
@@ -199,7 +199,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
                   origin: feedbackRotationOrigin,
                   child: ZoomTransform(
                     child: DeadlockBarrierMeshWidget(
-                      lineUpId: abilityRef.lineUpID,
+                      landingId: abilityRef.lineUpID,
                       iconPath: abilityRef.data.iconPath,
                       id: widget.id,
                       isAlly: abilityRef.isAlly,
@@ -236,7 +236,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
                 });
               },
               child: AbilityWidget(
-                lineUpId: abilityRef.lineUpID,
+                landingId: abilityRef.lineUpID,
                 iconPath: abilityRef.data.iconPath,
                 id: widget.id,
                 isAlly: abilityRef.isAlly,
@@ -273,7 +273,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
 
   PlacedAbility? _resolveAbilityRef() {
     if (widget.isLineUp) {
-      return ref.watch(lineUpProvider).currentAbility;
+      return ref.watch(lineUpProvider).placement?.draftAbility;
     }
 
     final abilities = ref.watch(abilityProvider);
@@ -286,7 +286,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
 
   PlacedAbility? _readAbilityRef() {
     if (widget.isLineUp) {
-      return ref.read(lineUpProvider).currentAbility;
+      return ref.read(lineUpProvider).placement?.draftAbility;
     }
 
     final abilities = ref.read(abilityProvider);
@@ -508,7 +508,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
     if (widget.isLineUp) {
       ref
           .read(lineUpProvider.notifier)
-          .updateGeometry(rotation: _localRotation);
+          .updateDraftAbilityGeometry(rotation: _localRotation);
     } else {
       final abilities = ref.read(abilityProvider);
       final index = PlacedWidget.getIndexByID(widget.id, abilities);
@@ -634,7 +634,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
     );
 
     if (widget.isLineUp) {
-      ref.read(lineUpProvider.notifier).updateArmLengths(armLengths);
+      ref
+          .read(lineUpProvider.notifier)
+          .updateDraftAbilityGeometry(armLengthsMeters: armLengths);
     } else {
       final abilities = ref.read(abilityProvider);
       final index = PlacedWidget.getIndexByID(widget.id, abilities);

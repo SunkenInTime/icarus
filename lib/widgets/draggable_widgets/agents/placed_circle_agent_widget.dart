@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -52,11 +53,15 @@ class CircleAgentComposite extends ConsumerWidget {
     super.key,
     required this.agent,
     this.forcedAgentSize,
+    this.previousWeapon,
+    this.weaponTransitionProgress = 1,
     this.isInteractive = true,
   });
 
   final PlacedCircleAgent agent;
   final double? forcedAgentSize;
+  final WeaponType? previousWeapon;
+  final double weaponTransitionProgress;
   final bool isInteractive;
 
   @override
@@ -103,6 +108,9 @@ class CircleAgentComposite extends ConsumerWidget {
               isAlly: agent.isAlly,
               id: agent.id,
               agent: AgentData.agents[agent.type]!,
+              weapon: agent.weapon,
+              previousWeapon: previousWeapon,
+              weaponTransitionProgress: weaponTransitionProgress,
               forcedAgentSize: agentSize,
               isInteractive: isInteractive,
             ),

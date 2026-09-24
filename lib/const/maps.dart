@@ -30,8 +30,8 @@ class VisionGeometryAlignment {
 
 class Maps {
   static List<MapValue> availableMaps = [
+    MapValue.abyss,
     MapValue.ascent,
-    MapValue.breeze,
     MapValue.haven,
     MapValue.lotus,
     MapValue.split,
@@ -40,13 +40,19 @@ class Maps {
   ];
 
   static List<MapValue> outofplayMaps = [
-    MapValue.abyss,
     MapValue.bind,
+    MapValue.breeze,
     MapValue.corrode,
     MapValue.fracture,
     MapValue.icebox,
     MapValue.pearl,
   ];
+
+  /// The map's name as users read it: "Ascent", "Icebox".
+  static String displayName(MapValue map) {
+    final raw = mapNames[map]!;
+    return raw[0].toUpperCase() + raw.substring(1);
+  }
 
   static Map<MapValue, String> mapNames = {
     MapValue.ascent: 'ascent',
@@ -70,7 +76,7 @@ class Maps {
     MapValue.breeze: 1.01, //modified
     MapValue.lotus: 1.24, //modified
     MapValue.icebox: 1.03, //modiefied
-    MapValue.sunset: 0.9502102049421427,
+    MapValue.sunset: 1.06,
     MapValue.split: 1.1920129279062075, //modified
     MapValue.haven: 1.06, //modified
     MapValue.fracture: 1.21, //modified
@@ -97,91 +103,55 @@ class Maps {
     MapValue.summit: Size(435, 473),
   };
 
-  /// Transparent padding removed when the Valorant display icons were
-  /// converted into Icarus's cropped SVG map assets.
+  /// Native 1024px display-icon frame registered to the unchanged SVG fill.
+  /// Negative insets preserve the SVG's blank margins. Fits use held-out wall
+  /// corners, independently of the navigation and visibility geometry.
   static const Map<MapValue, EdgeInsets> visionGeometryPadding = {
-    MapValue.abyss: EdgeInsets.fromLTRB(6.82243, 13.64486, 5.457944, 14.099688),
+    MapValue.abyss: EdgeInsets.fromLTRB(
+        6.328675204, -3.858243345, 5.060135526, -3.752945925),
     MapValue.ascent: EdgeInsets.fromLTRB(
-      40.111579,
-      18.903158,
-      21.669474,
-      15.214737,
-    ),
-    MapValue.bind: EdgeInsets.fromLTRB(40.92824, 5.653072, 6.33144, 19.446567),
+        39.459896632, 0.576584029, 20.526169337, -3.590518060),
+    MapValue.bind: EdgeInsets.fromLTRB(
+        40.987741089, -12.824899665, 5.514732340, 1.327373095),
     MapValue.breeze: EdgeInsets.fromLTRB(
-      14.878981,
-      14.878981,
-      14.878981,
-      23.248408,
-    ),
+        14.430969120, -2.990245020, 14.038489819, 5.459703959),
     MapValue.corrode: EdgeInsets.fromLTRB(
-      36.248848,
-      14.320533,
-      36.248848,
-      6.936508,
-    ),
+        36.004978818, -3.605634982, 35.279108942, -11.110277258),
     MapValue.fracture: EdgeInsets.fromLTRB(
-      10.912599,
-      34.22588,
-      38.194098,
-      36.706016,
-    ),
+        10.666706978, 16.990962355, 37.599454022, 18.275198645),
     MapValue.haven: EdgeInsets.fromLTRB(
-      36.63356,
-      16.027182,
-      39.152117,
-      14.882384,
-    ),
+        36.158961943, -2.220452283, 38.612779353, -3.007806421),
     MapValue.icebox: EdgeInsets.fromLTRB(
-      44.838021,
-      28.678125,
-      35.733854,
-      0.455208,
-    ),
+        34.705323332, -17.412137864, 44.416631700, 10.534092896),
     MapValue.lotus: EdgeInsets.fromLTRB(
-      30.685893,
-      66.303448,
-      38.631348,
-      57.810031,
-    ),
-    MapValue.pearl: EdgeInsets.fromLTRB(1.38, 16.56, 2.3, 17.48),
+        30.239788609, 48.210572803, 37.247980400, 39.277196206),
+    MapValue.pearl: EdgeInsets.fromLTRB(
+        1.041834592, -0.954569116, 1.609264747, -0.394331545),
     MapValue.split: EdgeInsets.fromLTRB(
-      13.442394,
-      25.907159,
-      22.485459,
-      37.638702,
-    ),
+        13.039474558, 8.325890212, 21.193894170, 19.907478516),
     MapValue.sunset: EdgeInsets.fromLTRB(
-      20.041874,
-      3.921236,
-      12.852941,
-      5.228315,
-    ),
-    // Summit was released after the available FModel export. Its Icarus SVG
-    // is already tightly cropped, so the generated fallback needs no padding.
-    MapValue.summit: EdgeInsets.zero,
+        18.426333102, -14.029381227, 11.371333345, -13.172952326),
+    MapValue.summit: EdgeInsets.fromLTRB(
+        16.856280276, -10.367397066, 1.093173289, -9.683149369),
   };
 
-  /// Small residual corrections between Riot's minimap UV frame and the
-  /// cropped SVG artwork rendered by Icarus. Values are normalized world
-  /// units and were calibrated against the SVG base-fill contours.
+  /// Registration is encoded completely in the icon frame above. Identity
+  /// values retain the existing projection contract without double correction.
   static const Map<MapValue, VisionGeometryAlignment> visionGeometryAlignment =
       {
-    MapValue.ascent: VisionGeometryAlignment(offset: Offset(0, 6)),
-    MapValue.breeze: VisionGeometryAlignment(offset: Offset(0, 2)),
-    MapValue.lotus: VisionGeometryAlignment(offset: Offset(0, 2)),
-    MapValue.icebox: VisionGeometryAlignment(
-      scaleY: 1.03,
-      offset: Offset(12, 0),
-    ),
-    MapValue.sunset: VisionGeometryAlignment(offset: Offset(0, 4)),
-    MapValue.split: VisionGeometryAlignment(offset: Offset(0, -4)),
-    MapValue.haven: VisionGeometryAlignment(offset: Offset(0, -6)),
-    MapValue.fracture: VisionGeometryAlignment(offset: Offset(0, -2)),
-    MapValue.abyss: VisionGeometryAlignment(offset: Offset(0, 10)),
-    MapValue.pearl: VisionGeometryAlignment(offset: Offset(0, 12)),
-    MapValue.bind: VisionGeometryAlignment(offset: Offset(0, -14)),
-    MapValue.corrode: VisionGeometryAlignment(offset: Offset(-2, 8)),
+    MapValue.ascent: VisionGeometryAlignment(),
+    MapValue.breeze: VisionGeometryAlignment(),
+    MapValue.lotus: VisionGeometryAlignment(),
+    MapValue.icebox: VisionGeometryAlignment(),
+    MapValue.sunset: VisionGeometryAlignment(),
+    MapValue.split: VisionGeometryAlignment(),
+    MapValue.haven: VisionGeometryAlignment(),
+    MapValue.fracture: VisionGeometryAlignment(),
+    MapValue.abyss: VisionGeometryAlignment(),
+    MapValue.pearl: VisionGeometryAlignment(),
+    MapValue.bind: VisionGeometryAlignment(),
+    MapValue.corrode: VisionGeometryAlignment(),
+    MapValue.summit: VisionGeometryAlignment(),
   };
 
   /// Quarter turns required to align Riot's VisionGeometry tables with the

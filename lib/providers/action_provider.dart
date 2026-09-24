@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -165,12 +166,15 @@ class BulkActionSnapshot {
       lineUpSnapshot: lineUpSnapshot == null
           ? null
           : LineUpProviderSnapshot(
-              groups: lineUpSnapshot!.groups
-                  .map((group) => group.deepCopy())
-                  .toList(),
-              poppedGroups: lineUpSnapshot!.poppedGroups
-                  .map((group) => group.deepCopy())
-                  .toList(),
+              graph: lineUpSnapshot!.graph.deepCopy(),
+              popped: {
+                for (final entry in lineUpSnapshot!.popped.entries)
+                  entry.key: entry.value.deepCopy(),
+              },
+              actionLinkIds: {
+                for (final entry in lineUpSnapshot!.actionLinkIds.entries)
+                  entry.key: [...entry.value],
+              },
             ),
       strategySettingsSnapshot: strategySettingsSnapshot?.copyWith(),
       imageSizeSnapshot: Map<String, Offset>.from(imageSizeSnapshot),
@@ -219,6 +223,32 @@ class UserAction {
 
 final actionProvider =
     NotifierProvider<ActionProvider, List<UserAction>>(ActionProvider.new);
+
+/// Records only the firearm, so undoing it never restores an older copy of an
+/// agent's movement history or a lineup's graph. Shared by both agent groups.
+class WeaponSelectionAction extends UserAction {
+  WeaponSelectionAction({
+    required super.id,
+    required super.group,
+    required this.before,
+    required this.after,
+  }) : super(type: ActionType.edit);
+
+  final WeaponType before;
+  final WeaponType after;
+
+  // History stores copies, so the copy must stay a weapon action; a plain
+  // edit would undo through the agent's movement history instead.
+  @override
+  WeaponSelectionAction copy() {
+    return WeaponSelectionAction(
+      id: id,
+      group: group,
+      before: before,
+      after: after,
+    );
+  }
+}
 
 class ActionProvider extends Notifier<List<UserAction>> {
   static const List<ActionGroup> _clearableGroups = [
@@ -464,7 +494,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
         case ActionGroup.utility:
           if (ref.read(utilityProvider).isNotEmpty) return true;
         case ActionGroup.lineUp:
-          if (ref.read(lineUpProvider).groups.isNotEmpty) return true;
+          if (ref.read(lineUpProvider).links.isNotEmpty) return true;
         case ActionGroup.strategySettings:
           break;
         case ActionGroup.bulk:
@@ -721,10 +751,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
         if (index < 0) return null;
         return ActionObjectState.utility(ref.read(utilityProvider)[index]);
       case ActionObjectKind.lineUp:
-        final lineUps = ref.read(lineUpProvider).lineUps;
-        final index = lineUps.indexWhere((lineUp) => lineUp.id == id);
-        if (index < 0) return null;
-        return ActionObjectState.lineUp(lineUps[index]);
+        // Lineup history is graph snapshots keyed by action id; the lineup
+        // graph never records per-object deltas, so there is nothing to keep.
+        return null;
     }
   }
 }

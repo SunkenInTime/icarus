@@ -19,12 +19,13 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 
 class ScreenshotView extends ConsumerWidget {
-  ScreenshotView({
+  const ScreenshotView({
     super.key,
     required this.mapValue,
     required this.showSpawnBarrier,
@@ -40,15 +41,12 @@ class ScreenshotView extends ConsumerWidget {
     required this.isAttack,
     required this.strategyState,
     this.pageName,
-    List<LineUpGroup> lineUpGroups = const [],
-    @Deprecated('Use lineUpGroups instead') List<LineUp> lineUps = const [],
+    this.lineUpGraph = LineUpGraph.empty,
     required this.themeProfileId,
     required this.themeOverridePalette,
     this.placedWidgetsOverride,
     this.drawingsOpacity = 1.0,
-  }) : lineUpGroups = lineUpGroups.isNotEmpty
-            ? lineUpGroups
-            : lineUps.map(LineUpGroup.fromLegacyLineUp).toList();
+  });
   final StrategyState strategyState;
   final MapValue mapValue;
   final bool showSpawnBarrier;
@@ -63,7 +61,7 @@ class ScreenshotView extends ConsumerWidget {
   final StrategySettings strategySettings;
   final bool isAttack;
   final String? pageName;
-  final List<LineUpGroup> lineUpGroups;
+  final LineUpGraph lineUpGraph;
   final String? themeProfileId;
   final MapThemePalette? themeOverridePalette;
 
@@ -96,7 +94,7 @@ class ScreenshotView extends ConsumerWidget {
           overridePalette: themeOverridePalette,
         );
     container.read(utilityProvider.notifier).fromHive(utilities);
-    container.read(lineUpProvider.notifier).fromHive(lineUpGroups);
+    container.read(lineUpProvider.notifier).fromHive(lineUpGraph);
     container
         .read(drawingProvider.notifier)
         .rebuildAllPaths(CoordinateSystem.instance);
@@ -146,11 +144,15 @@ class ScreenshotView extends ConsumerWidget {
             top: 0,
             width: mapWidth,
             height: CoordinateSystem.screenShotSize.height,
-            child: SvgPicture.asset(
-              assetName,
-              colorMapper: mapColorMapper,
-              semanticsLabel: 'Map',
-              fit: BoxFit.contain,
+            child: CanonicalMapArtwork(
+              map: mapValue,
+              isAttack: isAttack,
+              child: SvgPicture.asset(
+                assetName,
+                colorMapper: mapColorMapper,
+                semanticsLabel: 'Map',
+                fit: BoxFit.contain,
+              ),
             ),
           ),
           if (showSpawnBarrier)

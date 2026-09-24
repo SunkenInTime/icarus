@@ -234,7 +234,7 @@ void main() {
           .fromHive([_buildUtility('utility-all')]);
       container
           .read(lineUpProvider.notifier)
-          .fromHive([_buildLineUp('lineup-all')]);
+          .fromHive(LineUpGraph.fromLegacyLineUps([_buildLineUp('lineup-all')]));
 
       container.read(actionProvider.notifier).clearAllAsAction();
 
@@ -244,7 +244,7 @@ void main() {
       expect(container.read(textProvider), isEmpty);
       expect(container.read(placedImageProvider).images, isEmpty);
       expect(container.read(utilityProvider), isEmpty);
-      expect(container.read(lineUpProvider).lineUps, isEmpty);
+      expect(container.read(lineUpProvider).links, isEmpty);
       expect(container.read(actionProvider), hasLength(1));
       expect(
           container.read(actionProvider).single.type, ActionType.bulkDeletion);
@@ -257,7 +257,7 @@ void main() {
       expect(container.read(textProvider), hasLength(1));
       expect(container.read(placedImageProvider).images, hasLength(1));
       expect(container.read(utilityProvider), hasLength(1));
-      expect(container.read(lineUpProvider).lineUps, hasLength(1));
+      expect(container.read(lineUpProvider).links, hasLength(1));
       expect(container.read(actionProvider), isEmpty);
     });
 

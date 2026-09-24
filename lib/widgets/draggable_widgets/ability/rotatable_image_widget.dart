@@ -11,27 +11,24 @@ class RotatableImageWidget extends ConsumerWidget {
     required this.height,
     required this.width,
     required this.id,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.landingId,
   });
   final String imagePath;
   final double height;
   final double width;
   final String? id;
-  final String? lineUpId;
-  final String? lineUpItemId;
+  final String? landingId;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final deleteTarget = lineUpId != null
-        ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
+    final deleteTarget = landingId != null
+        ? HoveredDeleteTarget.lineup(id: landingId!, ownerToken: Object())
         : (id?.isNotEmpty ?? false)
             ? HoveredDeleteTarget.ability(id: id!, ownerToken: Object())
             : null;
 
     return MouseWatch(
-      lineUpId: lineUpId,
-      lineUpItemId: lineUpItemId,
+      lineUpLandingId: landingId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       child: Column(

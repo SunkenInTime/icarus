@@ -73,19 +73,18 @@ class _MapTileState extends ConsumerState<MapTile> {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: widget.isActive
-                          ? Settings.tacticalVioletTheme.primary
-                          : Colors.white,
+                      color:
+                          widget.isActive ? Settings.accentInk : Colors.white,
                       shadows: const [
                         Shadow(
                           color: Colors.black,
                           blurRadius: 2,
                           offset: Offset(0, 2),
-                        )
+                        ),
                       ],
                     ),
                   ),
-                )
+                ),
               ],
             ),
           ),

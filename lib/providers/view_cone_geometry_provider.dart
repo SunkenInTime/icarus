@@ -4,14 +4,20 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/providers/vision_boundary_editor_provider.dart';
+import 'package:icarus/providers/navigation_geometry_provider.dart';
+import 'package:icarus/providers/world_geometry_source_provider.dart';
 import 'package:icarus/view_cone/authored_vision_boundary.dart';
 import 'package:icarus/view_cone/svg_vision_boundary.dart';
 import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
+import 'package:icarus/view_cone/navigation_catalog.dart';
+
+export 'package:icarus/providers/world_geometry_source_provider.dart';
 
 final viewConeGeometryProvider =
-    FutureProvider.family<VisionGeometryMap?, MapValue>(
+    FutureProvider.autoDispose.family<VisionGeometryMap?, MapValue>(
   _loadViewConeGeometry,
 );
 
@@ -20,6 +26,35 @@ Future<VisionGeometryMap?> _loadViewConeGeometry(
   MapValue map,
 ) async {
   if (!Maps.hasVisionGeometry(map)) return null;
+  // A read-only path request must finish loading even without a widget watcher.
+  // Afterwards active consumers retain the map; inactive maps release its data.
+  final keepAlive = ref.keepAlive();
+  try {
+    return await _loadViewConeGeometrySource(ref, map);
+  } finally {
+    keepAlive.close();
+  }
+}
+
+Future<VisionGeometryMap?> _loadViewConeGeometrySource(
+  Ref ref,
+  MapValue map,
+) async {
+  if (ref.watch(worldGeometryEnabledProvider(map))) {
+    final navigation =
+        (await ref.watch(navigationGeometryProvider(map).future))!;
+    final entry = (await loadNavigationCatalog())[map]!;
+    // The chart carries the standing heights it was sealed with; the catalog
+    // only adds the elevations the menu offers.
+    return VisionGeometryMap.forStandingHeight(
+      map: map,
+      navigationGeometry: navigation.geometry,
+      observerHeight: navigation.observerHeightCm,
+      defaultElevation:
+          navigation.defaultFloorElevationCm + navigation.observerHeightCm,
+      elevations: entry.menuElevationsCm,
+    );
+  }
 
   final editorDraft = ref.watch(
     visionBoundaryEditorProvider.select(
@@ -76,6 +111,7 @@ Future<VisionGeometryMap?> _loadViewConeGeometry(
     svgDefenseBoundary = SvgVisionBoundary.parse(
       map: map,
       source: sources[2],
+      sourceTranslationSvg: -mapDefenseArtworkOffsetSvg[map]!,
       additions: additions,
       isAttack: false,
     );

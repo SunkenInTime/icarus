@@ -14,6 +14,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/migrations/page_name_provenance_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -171,7 +172,7 @@ void main() {
         sortIndex: 2,
         isAutoNamed: false,
       ),
-    ]).copyWith(versionNumber: Settings.versionNumber - 1);
+    ]).copyWith(versionNumber: PageNameProvenanceMigration.version - 1);
 
     final migrated = StrategyProvider.migrateToCurrentVersion(oldStrategy);
 
@@ -382,7 +383,7 @@ void _activatePage(
   container.read(textProvider.notifier).fromHive(page.textData);
   container.read(placedImageProvider.notifier).fromHive(page.imageData);
   container.read(utilityProvider.notifier).fromHive(page.utilityData);
-  container.read(lineUpProvider.notifier).fromHive(page.lineUpGroups);
+  container.read(lineUpProvider.notifier).fromHive(page.lineUpGraph);
   container
       .read(mapProvider.notifier)
       .fromHive(strategy.mapData, page.isAttack);

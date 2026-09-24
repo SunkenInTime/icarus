@@ -39,6 +39,7 @@ class LibraryBreadcrumb extends ConsumerWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
+        key: const ValueKey('library-breadcrumb'),
         height: 36,
         padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
         decoration: BoxDecoration(

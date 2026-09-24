@@ -128,11 +128,15 @@ void main() {
       notes: 'test',
     );
 
-    final encoded = LineUpProvider.objectToJson([lineUp]);
-    final decoded = jsonDecode(encoded) as List<dynamic>;
-    final restored = LineUpProvider.fromJson(encoded).single;
+    final encoded =
+        LineUpProvider.objectToJson(LineUpGraph.fromLegacyLineUps([lineUp]));
+    final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+    final restored = LineUpProvider.fromJson(encoded).origins.single;
 
-    expect(decoded.single['agent']['kind'], PlacedAgentNode.plainKind);
+    expect(
+      (decoded['lineUpOrigins'] as List<dynamic>).single['agent']['kind'],
+      PlacedAgentNode.plainKind,
+    );
     expect(restored.agent, isA<PlacedAgent>());
     expect(restored.agent.lineUpID, 'lineup-1');
   });

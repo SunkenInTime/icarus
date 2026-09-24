@@ -4,6 +4,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 
@@ -481,20 +482,24 @@ class PageTransitionEntry {
     return null;
   }
 
-  /// Every property a [PageTransitionEntry.move] can tween, as one comparable
+  static WeaponType? weaponOf(PlacedWidget w) =>
+      w is PlacedAgentNode ? w.weapon : null;
+
+  /// Every property a [PageTransitionEntry.move] can animate, as one comparable
   /// list. Kept next to the `*Of` helpers so adding a tweened property means
   /// updating both in the same place.
   static List<Object?> _tweenedPropsOf(PlacedWidget w) => [
-        w.position,
-        rotationOf(w),
-        lengthOf(w),
-        scaleOf(w),
-        textSizeOf(w),
-        agentStateOf(w),
-        customDiameterOf(w),
-        customWidthOf(w),
-        customLengthOf(w),
-      ];
+    w.position,
+    rotationOf(w),
+    lengthOf(w),
+    scaleOf(w),
+    textSizeOf(w),
+    agentStateOf(w),
+    weaponOf(w),
+    customDiameterOf(w),
+    customWidthOf(w),
+    customLengthOf(w),
+  ];
 
   /// True when [from] and [to] differ in any tweened property, i.e. the
   /// widget needs a move transition rather than a plain hold.

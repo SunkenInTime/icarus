@@ -147,7 +147,7 @@ class _LineUpAbilityStackSelectorDialogState
                   for (final (index, candidate) in widget.candidates.indexed)
                     _LineUpStackSelectorOption(
                       key: ValueKey(
-                        'lineup-stack-option-${candidate.groupId}-${candidate.itemId}',
+                        'lineup-stack-option-${candidate.landingId}',
                       ),
                       index: index,
                       candidate: candidate,
@@ -158,9 +158,8 @@ class _LineUpAbilityStackSelectorDialogState
                       onHoverLineUpEnter: () {
                         ref
                             .read(hoveredLineUpTargetProvider.notifier)
-                            .setHoveredItem(
-                              groupId: candidate.groupId,
-                              itemId: candidate.itemId,
+                            .setHoveredLanding(
+                              landingId: candidate.landingId,
                               ownerToken: _hoverOwnerToken,
                             );
                       },
@@ -326,13 +325,10 @@ class _LineUpAbilityContextMenuDialogState
       enabled: item.enabled,
       leading: item.leading,
       trailing: item.trailing,
-      leadingPadding:
-          item.leadingPadding ?? const EdgeInsetsDirectional.only(end: 6),
-      trailingPadding:
-          item.trailingPadding ?? const EdgeInsetsDirectional.only(start: 6),
-      padding: item.padding ?? EdgeInsets.zero,
-      insetPadding:
-          item.insetPadding ?? const EdgeInsets.symmetric(horizontal: 4),
+      leadingPadding: item.leadingPadding,
+      trailingPadding: item.trailingPadding,
+      padding: item.padding,
+      insetPadding: item.insetPadding,
       onPressed: () {
         _closeRouteIfNeeded();
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -346,7 +342,7 @@ class _LineUpAbilityContextMenuDialogState
       decoration: item.decoration,
       textStyle: item.textStyle,
       trailingTextStyle: item.trailingTextStyle,
-      constraints: item.constraints ?? const BoxConstraints(minWidth: 0),
+      constraints: item.constraints,
       subMenuPadding: item.subMenuPadding,
       backgroundColor: item.backgroundColor,
       selectedBackgroundColor: item.selectedBackgroundColor,
@@ -362,8 +358,6 @@ class _LineUpAbilityContextMenuDialogState
       child: ShadContextMenu(
         controller: _controller,
         anchor: ShadGlobalAnchor(widget.globalPosition),
-        constraints: const BoxConstraints(minWidth: 0),
-        padding: const EdgeInsets.symmetric(vertical: 4),
         items: [
           for (final item in widget.items) _wrapItem(item),
         ],

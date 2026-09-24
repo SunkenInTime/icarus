@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
@@ -21,13 +23,22 @@ abstract final class PlacedMediaGeometry {
 
   static Size legacyTextFootprintInWorld(PlacedText text) {
     final width = textWidthInWorld(text);
-    final screenSize = PlacedTextDimensions.sizeForPixelsPerWorldUnit(
-      pixelsPerWorldUnit: _referencePixelsPerWorldUnit,
-      widthWorld: width,
-      fontSizeWorld: textFontSizeInWorld(text),
-      text: text.text,
-    );
-    return screenSize / _referencePixelsPerWorldUnit;
+    final widthInPixels = width * _referencePixelsPerWorldUnit;
+    final fontSizeInPixels =
+        textFontSizeInWorld(text) * _referencePixelsPerWorldUnit;
+
+    // This describes the pre-Markdown TextField card shipped before canonical
+    // coordinates, including its intrinsic vertical chrome and 48 px minimum.
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text.text.isEmpty ? 'Write here...' : text.text,
+        style: TextStyle(fontSize: fontSizeInPixels),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: math.max(0, widthInPixels - 18));
+    final heightInPixels = math.max(48, painter.height + 43);
+
+    return Size(width, heightInPixels / _referencePixelsPerWorldUnit);
   }
 
   static Size legacyImageFootprintInWorld(PlacedImage image) {

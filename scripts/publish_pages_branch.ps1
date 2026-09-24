@@ -21,6 +21,19 @@ if (-not (Test-Path $resolvedSourceDir)) {
     throw "Pages source directory not found at $resolvedSourceDir"
 }
 
+# Check the whole staged release before either channel path reaches GitHub.
+Assert-PagesFileSizes -Path $resolvedSourceDir
+
+# Check the staged bytes even when this publisher is invoked directly.
+# Both channels are checked before either half of a desktop release is pushed.
+$windowsPayloadRoots = @('updates/windows', 'downloads/windows')
+foreach ($payloadRoot in $windowsPayloadRoots) {
+    $payloadPath = Join-Path $resolvedSourceDir $payloadRoot
+    if (Test-Path -LiteralPath $payloadPath) {
+        Assert-AuthenticodeSignatures -Path $payloadPath
+    }
+}
+
 $remoteUrl = (& git -C $repoRoot remote get-url $Remote).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($remoteUrl)) {
     throw "Could not resolve git remote URL for '$Remote'."

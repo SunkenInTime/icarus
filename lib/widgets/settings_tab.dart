@@ -213,7 +213,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                 min: Settings.agentSizeMin,
                 max: Settings.agentSizeMax,
                 divisions: 15,
-                accentColor: Settings.tacticalVioletTheme.primary,
+                accentColor: Settings.accentInk,
                 onChanged: (value) {
                   ref
                       .read(strategySettingsProvider.notifier)
@@ -241,7 +241,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                 min: Settings.abilitySizeMin,
                 max: Settings.abilitySizeMax,
                 divisions: 15,
-                accentColor: Settings.tacticalVioletTheme.primary,
+                accentColor: Settings.accentInk,
                 onChanged: (value) {
                   ref
                       .read(strategySettingsProvider.notifier)
@@ -331,7 +331,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 min: Settings.agentSizeMin,
                 max: Settings.agentSizeMax,
                 divisions: 15,
-                accentColor: Settings.tacticalVioletTheme.primary,
+                accentColor: Settings.accentInk,
                 onChanged: (value) {
                   ref
                       .read(appPreferencesProvider.notifier)
@@ -348,7 +348,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 min: Settings.abilitySizeMin,
                 max: Settings.abilitySizeMax,
                 divisions: 15,
-                accentColor: Settings.tacticalVioletTheme.primary,
+                accentColor: Settings.accentInk,
                 onChanged: (value) {
                   ref
                       .read(appPreferencesProvider.notifier)
@@ -640,7 +640,7 @@ class _ShortcutSearchField extends StatelessWidget {
             color: Settings.tacticalVioletTheme.foreground,
             fontSize: 13,
           ),
-          cursorColor: Settings.tacticalVioletTheme.primary,
+          cursorColor: Settings.accentInk,
           decoration: InputDecoration(
             isDense: true,
             hintText: "Search actions or keys...",
@@ -665,8 +665,8 @@ class _ShortcutSearchField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: Settings.tacticalVioletTheme.primary,
+              borderSide: const BorderSide(
+                color: Settings.accentInk,
                 width: 1.4,
               ),
             ),
@@ -950,8 +950,7 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
                 border: Border.all(
                   color: hasDuplicate
                       ? Settings.tacticalVioletTheme.destructive
-                      : Settings.tacticalVioletTheme.primary
-                          .withValues(alpha: 0.65),
+                      : Settings.accentInk.withValues(alpha: 0.65),
                   width: hasDuplicate ? 1.4 : 1,
                 ),
               ),
@@ -962,7 +961,7 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
                     size: 17,
                     color: hasDuplicate
                         ? Settings.tacticalVioletTheme.destructive
-                        : Settings.tacticalVioletTheme.primary,
+                        : Settings.accentInk,
                   ),
                   const SizedBox(width: 9),
                   Expanded(
@@ -1290,7 +1289,41 @@ class _SettingsNavigationRail extends StatelessWidget {
             isSelected: selectedSection == _SettingsSection.shortcuts,
             onTap: () => onSectionSelected(_SettingsSection.shortcuts),
           ),
+          const Spacer(),
+          const _VersionFooter(),
         ],
+      ),
+    );
+  }
+}
+
+/// The build number, tucked under the navigation. Click copies it for bug
+/// reports.
+class _VersionFooter extends StatelessWidget {
+  const _VersionFooter();
+
+  static const String _label =
+      'Icarus ${Settings.versionName} (${Settings.versionNumber})';
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    return ShadTooltip(
+      builder: (context) => const Text('Copy version'),
+      child: ShadButton.ghost(
+        key: const ValueKey('settings-version'),
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        foregroundColor: theme.mutedForeground,
+        hoverForegroundColor: theme.foreground,
+        onPressed: () {
+          Clipboard.setData(const ClipboardData(text: _label));
+          Settings.showToast(
+            message: 'Version copied',
+            backgroundColor: theme.primary,
+          );
+        },
+        child: const Text(_label, style: TextStyle(fontSize: 11)),
       ),
     );
   }

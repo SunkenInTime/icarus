@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -233,7 +234,7 @@ class _NumericDragInputState extends State<NumericDragInput> {
     final isFocused = _focusNode.hasFocus;
     final labelStyle =
         (widget.labelTextStyle ?? shadTheme.textTheme.lead).copyWith(
-      color: _isDragging ? colorScheme.primary : colorScheme.mutedForeground,
+      color: _isDragging ? Settings.accentInk : colorScheme.mutedForeground,
     );
     final valueStyle = (widget.valueTextStyle ?? shadTheme.textTheme.lead)
         .copyWith(color: colorScheme.foreground);
@@ -324,7 +325,7 @@ class _NumericDragInputState extends State<NumericDragInput> {
                         LucideIcons.gripVertical,
                         size: widget.dragIconSize,
                         color: _isDragging
-                            ? colorScheme.primary
+                            ? Settings.accentInk
                             : colorScheme.mutedForeground,
                       ),
                     ),
