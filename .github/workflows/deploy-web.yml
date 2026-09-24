@@ -105,21 +105,24 @@ jobs:
       # to the git branch; the source is always icarus-cloud.
       - name: Deploy to Cloudflare Pages
         id: deploy
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # wrangler-action v4 installs Wrangler 4 by default.
           command: pages deploy build/web --project-name=icarus-web --branch=main --commit-hash=${{ github.sha }}
 
       - name: Summarize Deployment
         shell: bash
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          PAGES_ENVIRONMENT: ${{ steps.deploy.outputs.pages-environment }}
         run: |
           {
             echo "### Web beta deployed"
             echo ""
             echo "- Live: https://beta.icarusstrats.com"
             echo "- This deployment: ${DEPLOYMENT_URL:-see the Deploy to Cloudflare Pages log}"
+            echo "- Pages environment: ${PAGES_ENVIRONMENT:-unknown} (production means the custom domain now serves it)"
             echo "- Commit: \`$GITHUB_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"

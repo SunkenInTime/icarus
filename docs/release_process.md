@@ -116,8 +116,9 @@ It uses the development Convex deployment, like every non-stable build.
 The workflow builds with the same command as CI's `Build Web Client` step and
 uploads `build/web` with `wrangler pages deploy --branch=main`. `main` is the
 Pages project's production branch, and the custom domain follows production.
-`web/_redirects` sends unknown paths (share links, the auth callback) to
-`index.html`. `web/_headers` makes browsers revalidate Flutter's unhashed entry
+Share links and the auth callback load because Pages serves `index.html` for
+unknown paths whenever `build/web` has no top-level `404.html`, so never add
+one. `web/_headers` makes browsers revalidate Flutter's unhashed entry
 files, so testers get a new deploy on refresh.
 
 GitHub repository secrets:
