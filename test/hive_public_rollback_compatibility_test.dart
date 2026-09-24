@@ -213,8 +213,13 @@ void main() {
     expect((fields[4] as List).map((agent) => agent.id), ['agent-plain']);
     expect(fields[12], isNull);
     expect(fields[13], isA<String>());
-    expect(fields[15], isA<String>());
-    expect(fields[16], isA<String>());
+    // 15-17 hold the lineup graph for desktop 4.x readers; 3.2.3 cannot
+    // decode those types, so the mirrors live above them.
+    expect(fields[15], isNull);
+    expect(fields[16], isNull);
+    expect(fields[17], isNull);
+    expect(fields[18], isA<String>());
+    expect(fields[19], isA<String>());
 
     final restored = adapter.read(BinaryReaderImpl(bytes, Hive));
     expect(restored.drawingData.map((drawing) => drawing.id),

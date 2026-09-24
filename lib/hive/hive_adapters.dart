@@ -141,8 +141,18 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   }
 }
 
-/// Writes a 3.2.3-readable page projection plus a lossless current JSON mirror.
-/// Older builds ignore the primitive mirror fields; current builds prefer them.
+/// StrategyPage slots. The legacy slots hold only types 3.2.3 can decode, so
+/// the public build can still open the library after an emergency rollback;
+/// everything newer rides in primitive JSON mirrors that older builds ignore.
+///
+/// Slots 12 and 15-17 are read but never written: 12 holds lineup groups and
+/// 15-17 the lineup graph as written by desktop 4.x, whose typeIds 3.2.3 cannot
+/// decode. Cloud builds before the main merge wrote JSON mirrors at 15
+/// (drawings) and 16 (lineup groups); a String at 15 identifies that layout.
+const int _pageAgentsJsonField = 13;
+const int _pageDrawingsJsonField = 18;
+const int _pageLineUpGraphJsonField = 19;
+
 class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   @override
   final typeId = strategyPageAdapterTypeId;
@@ -153,20 +163,22 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
     final fields = <int, dynamic>{
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
-    final currentDrawingsJson = fields[15] as String?;
-    final currentAgentsJson = fields[13] as String?;
-    final currentLineUpsJson = fields[16] as String?;
+    final isCloudLegacyLayout = fields[15] is String;
+    final drawingsJson = (fields[_pageDrawingsJsonField] ??
+        (isCloudLegacyLayout ? fields[15] : null)) as String?;
+    final agentsJson = fields[_pageAgentsJsonField] as String?;
+    final lineUpGraph = _readLineUpGraph(fields, isCloudLegacyLayout);
 
     return StrategyPage(
       id: fields[0] as String,
       name: fields[2] as String,
       isAutoNamed: fields[14] as bool?,
-      drawingData: currentDrawingsJson == null
+      drawingData: drawingsJson == null
           ? (fields[3] as List).cast<DrawingElement>()
-          : DrawingProvider.fromJson(currentDrawingsJson),
-      agentData: currentAgentsJson == null
+          : DrawingProvider.fromJson(drawingsJson),
+      agentData: agentsJson == null
           ? (fields[4] as List).cast<PlacedAgentNode>()
-          : AgentProvider.fromJson(currentAgentsJson),
+          : AgentProvider.fromJson(agentsJson),
       abilityData: (fields[5] as List).cast<PlacedAbility>(),
       textData: (fields[6] as List).cast<PlacedText>(),
       imageData: (fields[7] as List).cast<PlacedImage>(),
@@ -174,13 +186,35 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       sortIndex: (fields[1] as num).toInt(),
       isAttack: fields[9] as bool,
       settings: fields[10] as StrategySettings,
-      lineUpGroups: currentLineUpsJson != null
-          ? LineUpProvider.fromJson(currentLineUpsJson)
-          : fields[12] == null
-              ? const []
-              : (fields[12] as List).cast<LineUpGroup>(),
+      lineUpOrigins: lineUpGraph.origins,
+      lineUpLandings: lineUpGraph.landings,
+      lineUpLinks: lineUpGraph.links,
+      lineUpGroups: fields[12] == null
+          ? const []
+          : (fields[12] as List).cast<LineUpGroup>(),
       lineUps:
           fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
+    );
+  }
+
+  static LineUpGraph _readLineUpGraph(
+    Map<int, dynamic> fields,
+    bool isCloudLegacyLayout,
+  ) {
+    final graphJson = fields[_pageLineUpGraphJsonField] as String?;
+    if (graphJson != null) return LineUpProvider.fromJson(graphJson);
+    if (isCloudLegacyLayout) {
+      final groupsJson = fields[16] as String?;
+      return groupsJson == null
+          ? LineUpGraph.empty
+          : LineUpGraph.fromLegacyGroups(
+              LineUpProvider.legacyGroupsFromJson(groupsJson),
+            );
+    }
+    return LineUpGraph(
+      origins: (fields[15] as List?)?.cast<LineUpOrigin>() ?? const [],
+      landings: (fields[16] as List?)?.cast<LineUpLanding>() ?? const [],
+      links: (fields[17] as List?)?.cast<LineUpLink>() ?? const [],
     );
   }
 
@@ -223,14 +257,14 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..write(obj.settings)
       ..writeByte(11)
       ..write(obj.lineUps)
-      ..writeByte(13)
+      ..writeByte(_pageAgentsJsonField)
       ..write(AgentProvider.objectToJson(obj.agentData))
       ..writeByte(14)
       ..write(obj.isAutoNamed)
-      ..writeByte(15)
+      ..writeByte(_pageDrawingsJsonField)
       ..write(DrawingProvider.objectToJson(obj.drawingData))
-      ..writeByte(16)
-      ..write(LineUpProvider.objectToJson(obj.lineUpGroups));
+      ..writeByte(_pageLineUpGraphJsonField)
+      ..write(LineUpProvider.objectToJson(obj.lineUpGraph));
   }
 }
 
