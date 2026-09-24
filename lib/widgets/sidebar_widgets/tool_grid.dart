@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -24,6 +23,8 @@ import 'package:icarus/widgets/sidebar_widgets/custom_shape_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/text_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
@@ -193,6 +194,12 @@ class ToolGrid extends ConsumerWidget {
                 builder: (context) => const Text("Add Image"),
                 child: ShadIconButton.secondary(
                   onPressed: () async {
+                    if (!ensureFeatureAvailable(
+                      ref,
+                      PlatformFeature.addImages,
+                    )) {
+                      return;
+                    }
                     ref
                         .read(interactionStateProvider.notifier)
                         .update(InteractionState.navigation);
@@ -209,16 +216,6 @@ class ToolGrid extends ConsumerWidget {
                     if (fileExtension == null) {
                       Settings.showToast(
                         message: 'Upload failed',
-                        backgroundColor:
-                            Settings.tacticalVioletTheme.destructive,
-                      );
-                      return;
-                    }
-
-                    if (kIsWeb) {
-                      Settings.showToast(
-                        message:
-                            'This feature is only supported in the Windows version.',
                         backgroundColor:
                             Settings.tacticalVioletTheme.destructive,
                       );
@@ -255,12 +252,10 @@ class ToolGrid extends ConsumerWidget {
                 tooltip: "Add Lineup",
                 shortcutLabel: shortcutLabel(IcarusShortcutAction.addLineup),
                 onPressed: () async {
-                  if (kIsWeb) {
-                    Settings.showToast(
-                      message:
-                          'This feature is only supported in the Windows version.',
-                      backgroundColor: Settings.tacticalVioletTheme.destructive,
-                    );
+                  if (!ensureFeatureAvailable(
+                    ref,
+                    PlatformFeature.addLineups,
+                  )) {
                     return;
                   }
 

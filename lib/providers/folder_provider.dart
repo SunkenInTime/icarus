@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -77,6 +78,10 @@ class FolderProvider extends Notifier<String?> {
       }
     }
 
+    if (!ref.read(platformPolicyProvider).allowsLocalLibrary) {
+      // Refuse rather than save into a library this platform keeps hidden.
+      throw StateError('Folders here are created in the cloud only.');
+    }
     await Hive.box<Folder>(HiveBoxNames.foldersBox)
         .put(newFolder.id, newFolder);
     return newFolder;

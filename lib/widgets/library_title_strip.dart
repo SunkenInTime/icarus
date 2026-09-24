@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
@@ -9,10 +9,10 @@ import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
-import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/strip_status_icons.dart';
+import 'package:icarus/widgets/web_beta_tag.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -77,6 +77,10 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
   Widget build(BuildContext context) {
     final tab = ref.watch(libraryTabProvider);
     final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+    final isWebBeta = ref.watch(platformPolicyProvider).isWebBeta;
+    // Signed out on the web beta, My Library holds only the sign-in action,
+    // so there is nothing to search, sort, or create.
+    final signInRequired = ref.watch(librarySignInRequiredProvider);
     final navigation = ref.read(libraryNavigationProvider);
 
     return AppWindowStrip(
@@ -115,9 +119,9 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             selected: tab == LibraryTab.community,
             onTap: navigation.showCommunity,
           ),
-          if (kIsWeb) ...[
+          if (isWebBeta) ...[
             const SizedBox(width: 8),
-            const DemoTag(),
+            const WebBetaTag(),
           ],
           const Expanded(
             child: WindowDragArea(
@@ -127,7 +131,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           ),
           const WhatsNewIcon(),
           const SizedBox(width: 4),
-          if (tab != LibraryTab.community) ...[
+          if (tab != LibraryTab.community && !signInRequired) ...[
             const SizedBox(
               height: _controlHeight,
               child: SearchTextField(
@@ -238,7 +242,9 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
       );
 
   Widget _buildNewMenu() {
-    const showLibraryTools = !kIsWeb;
+    final policy = ref.watch(platformPolicyProvider);
+    final canImport = policy.supports(PlatformFeature.importFiles);
+    final canExport = policy.supports(PlatformFeature.exportFiles);
     return ShadPopover(
       controller: _newController,
       padding: const EdgeInsets.all(6),
@@ -260,8 +266,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               label: 'New Folder',
               onPressed: widget.onCreateFolder,
             ),
-            if (showLibraryTools) ...[
-              const _MenuDivider(),
+            if (canImport || canExport) const _MenuDivider(),
+            if (canImport) ...[
               _MenuItem(
                 menu: _newController,
                 icon: LucideIcons.fileDown,
@@ -274,13 +280,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 label: 'Import Backup',
                 onPressed: widget.onImportBackup,
               ),
+            ],
+            if (canExport)
               _MenuItem(
                 menu: _newController,
                 icon: LucideIcons.archive,
                 label: 'Export Library',
                 onPressed: widget.onExportLibrary,
               ),
-            ],
           ],
         ),
       ),

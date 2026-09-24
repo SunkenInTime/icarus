@@ -1,10 +1,10 @@
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
@@ -78,7 +78,6 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   }
 
   Future<void> _handleDrop(List<XFile> files) async {
-    if (kIsWeb) return;
     if (files.isEmpty) return;
 
     XFile? imageFile;
@@ -124,6 +123,8 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final bool hasSelection = _selectedBytes != null;
+    final policy = ref.watch(platformPolicyProvider);
+    final canDropFiles = policy.supports(PlatformFeature.fileDrop);
 
     Widget content = _UploadDropSquare(
       isDragging: _isDragging,
@@ -142,8 +143,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
           : null,
     );
 
-    // Desktop drag/drop wrapper (no-op on web).
-    if (!kIsWeb) {
+    if (canDropFiles) {
       content = DropTarget(
         onDragEntered: (_) => setState(() => _isDragging = true),
         onDragExited: (_) => setState(() => _isDragging = false),
@@ -156,7 +156,11 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
 
     return ShadDialog(
       title: const Text('Upload image'),
-      description: const Text('Drop an image here or click to choose a file.'),
+      description: Text(
+        canDropFiles
+            ? 'Drop an image here or click to choose a file.'
+            : 'Click to choose a file.',
+      ),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop<UploadImageResult?>(null),
@@ -198,9 +202,9 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
               content,
               const SizedBox(height: 12),
               Text(
-                kIsWeb
-                    ? 'Tip: Drag & drop isn’t available on web.'
-                    : 'Tip: You can also drag & drop an image from your desktop.',
+                canDropFiles
+                    ? 'Tip: You can also drag & drop an image from your desktop.'
+                    : policy.unavailableMessage(PlatformFeature.fileDrop)!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),

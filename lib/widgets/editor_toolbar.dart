@@ -25,6 +25,8 @@ import 'package:icarus/widgets/cloud_sync_button.dart';
 import 'package:icarus/widgets/dialogs/export_video_dialog.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Geometry shared by every control in the editor's floating toolbar, so the
@@ -124,18 +126,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     );
   }
 
-  void _showDesktopOnlyToast() {
-    Settings.showToast(
-      message: 'This feature is only supported in the desktop app.',
-      backgroundColor: Settings.tacticalVioletTheme.destructive,
-    );
-  }
-
   Future<void> _exportStrategy() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) return;
 
     final strategy = ref.read(strategyProvider);
     final strategyId = strategy.strategyId;
@@ -153,10 +145,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   }
 
   void _exportVideo() {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.videoExport)) return;
     showShadDialog(
       context: context,
       builder: (context) => const ExportVideoDialog(),
@@ -164,10 +153,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   }
 
   Future<void> _captureScreenshot() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.screenshot)) return;
     if (_isCapturingScreenshot) return;
     setState(() => _isCapturingScreenshot = true);
     ProviderContainer? screenshotContainer;

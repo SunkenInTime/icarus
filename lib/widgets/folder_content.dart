@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -159,6 +161,9 @@ class FolderContent extends ConsumerWidget {
       case LibraryTab.shared:
         return _crossFade(_buildCloudBody(context, ref));
       case LibraryTab.library:
+        if (ref.watch(librarySignInRequiredProvider)) {
+          return _crossFade(_buildSignInState(context, ref));
+        }
         if (folder == null) {
           return _crossFade(_buildLibraryRoot(context, ref));
         }
@@ -191,6 +196,11 @@ class FolderContent extends ConsumerWidget {
       List<LibraryStrategyRow> strategies,
     ) builder,
   }) {
+    // Hidden, not deleted: the on-device library stays in storage for the
+    // day this platform offers it again.
+    if (!ref.watch(platformPolicyProvider).allowsLocalLibrary) {
+      return builder(const [], const []);
+    }
     final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
     final strategiesBoxListenable = ref.watch(strategiesListenable);
     final foldersBoxListenable = ref.watch(foldersListenable);
@@ -258,7 +268,7 @@ class FolderContent extends ConsumerWidget {
         ref,
         folders: _filterFolders(ref, folders),
         strategies: _filterStrategies(ref, strategies),
-        acceptsIcaDrops: true,
+        acceptsIcaDrops: _acceptsIcaDrops(ref),
         emptyStateTitle: 'No strategies in this folder',
         emptyStateSubtitle:
             'Create a new strategy or drop strategies, folders, or .zip archives',
@@ -292,6 +302,13 @@ class FolderContent extends ConsumerWidget {
     }
     final cloudFailed = (foldersAsync?.hasError ?? false) ||
         (strategiesAsync?.hasError ?? false);
+    // With no local half to fall back on, a failed cloud is the whole page.
+    if (cloudFailed && !ref.watch(platformPolicyProvider).allowsLocalLibrary) {
+      return KeyedSubtree(
+        key: const ValueKey('cloud-error'),
+        child: _buildCloudErrorState(context, ref, offerLibrary: false),
+      );
+    }
     final cloudFolders = [
       for (final entry
           in foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[])
@@ -322,7 +339,7 @@ class FolderContent extends ConsumerWidget {
               cloud: cloudStrategies,
             ),
           ),
-          acceptsIcaDrops: true,
+          acceptsIcaDrops: _acceptsIcaDrops(ref),
           banner: cloudFailed
               ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
               : null,
@@ -343,6 +360,13 @@ class FolderContent extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Dropped .ica files and backups import into the local library.
+  bool _acceptsIcaDrops(WidgetRef ref) {
+    final policy = ref.watch(platformPolicyProvider);
+    return policy.allowsLocalLibrary &&
+        policy.supports(PlatformFeature.importFiles);
   }
 
   LibraryFolderRow _cloudFolderRow(WidgetRef ref, CloudFolderEntry entry) {
@@ -709,7 +733,13 @@ class FolderContent extends ConsumerWidget {
     );
   }
 
-  Widget _buildCloudErrorState(BuildContext context, WidgetRef ref) {
+  /// [offerLibrary] is false when this state already fills My Library, so
+  /// "Back to My Library" would go nowhere.
+  Widget _buildCloudErrorState(
+    BuildContext context,
+    WidgetRef ref, {
+    bool offerLibrary = true,
+  }) {
     return _LibraryMessageState(
       icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.destructive,
@@ -721,11 +751,46 @@ class FolderContent extends ConsumerWidget {
           onPressed: () => _retryCloud(ref),
           child: const Text('Retry'),
         ),
-        ShadButton.secondary(
-          onPressed: ref.read(libraryNavigationProvider).showLibrary,
-          child: const Text('Back to My Library'),
-        ),
+        if (offerLibrary)
+          ShadButton.secondary(
+            onPressed: ref.read(libraryNavigationProvider).showLibrary,
+            child: const Text('Back to My Library'),
+          ),
       ],
+    );
+  }
+
+  /// My Library on a platform that needs an account: one way in. While a
+  /// saved session is still being restored, the skeleton holds the page so
+  /// the login prompt never flashes at a returning user.
+  Widget _buildSignInState(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authProvider);
+    final restoring = auth.isLoading ||
+        auth.convexAuthStatus == ConvexAuthStatus.configuring;
+    if (restoring) {
+      return const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
+    }
+    return KeyedSubtree(
+      key: const ValueKey('library-sign-in-state'),
+      child: _LibraryMessageState(
+        icon: LucideIcons.logIn,
+        iconColor: Settings.tacticalVioletTheme.mutedForeground,
+        title: 'Log in to use the web beta',
+        subtitle: 'Strategies you make here are saved to your Icarus '
+            'account.',
+        actions: [
+          ShadButton(
+            key: const ValueKey('library-sign-in-action'),
+            onPressed: () {
+              showDialog<void>(
+                context: context,
+                builder: (_) => const AuthDialog(),
+              );
+            },
+            child: const Text('Log In'),
+          ),
+        ],
+      ),
     );
   }
 

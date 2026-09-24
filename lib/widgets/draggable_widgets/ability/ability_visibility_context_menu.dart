@@ -13,6 +13,8 @@ import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool supportsAbilityVisibilityMenu(Ability? ability) {
@@ -85,6 +87,7 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
       child: const Text('Add lineup here'),
       onPressed: () {
         if (landing == null) return;
+        if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) return;
         ref
             .read(abilityBarProvider.notifier)
             .updateData(AgentData.agents[landing.ability.data.type]!);

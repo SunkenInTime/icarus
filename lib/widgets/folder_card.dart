@@ -19,6 +19,8 @@ import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _cardWidth = 232;
@@ -737,6 +739,9 @@ class _FolderCardState extends ConsumerState<FolderCard>
         child: const Text('Export'),
         onPressed: () async {
           _closeMenus();
+          if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) {
+            return;
+          }
           await StrategyImportExportService(ref).exportFolder(_folder.id);
         },
       ),

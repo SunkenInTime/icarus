@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -1155,6 +1156,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final isCloud = _selectedWorkspaceIsCloud();
+    if (!isCloud && !ref.read(platformPolicyProvider).allowsLocalLibrary) {
+      // Refuse rather than save into a library this platform keeps hidden.
+      throw StateError('Strategies here are created in the cloud only.');
+    }
     final existingNames = isCloud
         ? (ref.read(cloudStrategiesProvider).valueOrNull ?? const [])
             .map((entry) => entry.strategy.name)

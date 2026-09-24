@@ -1,11 +1,11 @@
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ImageDropTarget extends ConsumerStatefulWidget {
@@ -44,13 +44,7 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
         if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
           return;
         }
-        if (kIsWeb) {
-          Settings.showToast(
-            message: 'This feature is only supported in the Windows version.',
-            backgroundColor: Settings.tacticalVioletTheme.destructive,
-          );
-          return;
-        }
+        if (!ensureFeatureAvailable(ref, PlatformFeature.addImages)) return;
         isDragging = false;
         final files = details.files;
 
