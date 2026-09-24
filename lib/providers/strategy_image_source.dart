@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/local_image_file.dart';
@@ -21,6 +23,7 @@ sealed class StrategyImageSource {
             // browser fetch the bytes.
             webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
           ),
+        PendingImageBytes(:final bytes) => MemoryImage(bytes),
         ImageLoading() || ImageFailed() => null,
       };
 }
@@ -35,6 +38,13 @@ final class LocalImageFile extends StrategyImageSource {
 final class RemoteImageUrl extends StrategyImageSource {
   const RemoteImageUrl(this.url);
   final String url;
+}
+
+/// Bytes this device is still uploading, painted until the cloud URL
+/// arrives. Only where images are not files (web).
+final class PendingImageBytes extends StrategyImageSource {
+  const PendingImageBytes(this.bytes);
+  final Uint8List bytes;
 }
 
 /// A cloud image whose URL has not arrived yet.
@@ -67,6 +77,11 @@ StrategyImageSource watchStrategyImageSource(
         .select((snapshot) => snapshot.valueOrNull?.assetsById[image.id]),
   );
   ref.watch(cloudMediaCacheProvider);
+  // Bytes this browser is still uploading. They only paint when neither the
+  // file check above nor the cloud URL has anything.
+  final pendingBytes = ref.watch(
+    pendingMediaBytesProvider.select((pending) => pending[image.id]),
+  );
 
   return resolveStrategyImageSource(
     localFilePath: findLocalImageFile(
@@ -76,19 +91,23 @@ StrategyImageSource watchStrategyImageSource(
     ),
     isCloudStrategy: source == StrategySource.cloud,
     remoteAsset: remoteAsset,
+    pendingBytes: pendingBytes,
   );
 }
 
-/// A file on this device wins, then the cloud URL. Without either, a cloud
-/// image is still on its way unless its upload failed.
+/// A file on this device wins, then the cloud URL, then bytes still
+/// uploading from this device. Without any, a cloud image is still on its
+/// way unless its upload failed.
 StrategyImageSource resolveStrategyImageSource({
   required String? localFilePath,
   required bool isCloudStrategy,
   required RemoteImageAsset? remoteAsset,
+  Uint8List? pendingBytes,
 }) {
   if (localFilePath != null) return LocalImageFile(localFilePath);
   final url = remoteAsset?.url;
   if (url != null && url.isNotEmpty) return RemoteImageUrl(url);
+  if (pendingBytes != null) return PendingImageBytes(pendingBytes);
   if (isCloudStrategy && remoteAsset?.uploadStatus != 'failed') {
     return const ImageLoading();
   }

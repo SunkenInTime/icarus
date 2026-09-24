@@ -40,7 +40,36 @@ Strategy/page/lineup payloads store image IDs and local metadata only. Public re
 - Strategy access revoked: Convex stops returning URLs to unauthorized viewers, but already-copied public custom-domain URLs can remain reachable until the object is deleted or Cloudflare access controls/cache expire.
 - Custom domain disabled or misconfigured: R2-backed reads require `R2_PUBLIC_BASE_URL` to point at an enabled public bucket custom domain.
 - CDN stale copies: object keys are immutable, so replacements use fresh URLs. Deleted old URLs may remain in Cloudflare cache until normal invalidation/expiry unless purged separately.
-- Future Flutter web support: configure R2 bucket CORS for the app origins before browser uploads are enabled.
+- Flutter web: the bucket needs the CORS rule under "Web beta" below, or browser uploads and reads fail.
+
+## Web beta
+
+**Required dashboard step, not yet done.** The web beta adds images and lineups from the browser, so the browser talks to R2 directly: it PUTs bytes to the presigned S3 URL (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/...`) and GETs them from `R2_PUBLIC_BASE_URL` to paint them. Both are cross-origin, so the bucket must allow the web beta origins. Without this rule the upload's preflight fails, the media job retries and stays unsynced, and images the browser cannot fetch fall back to a plain `<img>` element.
+
+In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Add CORS policy, and paste:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://beta.icarusstrats.com",
+      "https://icarus-web-a50.pages.dev"
+    ],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+- `PUT` with `Content-Type` is the presigned upload; `Content-Type` is the only header the client sends and the only one signed besides `host`.
+- `GET`/`HEAD` let the web app fetch images from the public custom domain to paint them.
+- `ETag` is exposed so the client can pass it to `images:completeUpload`. Completion reads the ETag from R2 itself first, so this is informational.
+- Desktop is not a browser and ignores CORS; this rule changes nothing for it.
+- A local `flutter run -d chrome` session runs on a `http://localhost:<port>` origin and is not covered. Add that origin temporarily to test uploads locally, and remove it after.
+
+While an upload is pending, the browser keeps the image bytes in IndexedDB (Hive box `pending_media_bytes_box`) so a refresh does not lose them, and drops them once the upload is attached.
 
 Cloudflare references:
 

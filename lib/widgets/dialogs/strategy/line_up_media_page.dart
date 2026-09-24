@@ -275,7 +275,11 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                     color: Settings.tacticalVioletTheme.secondaryForeground,
                   ),
                 )
-              : Image(image: imageProvider, fit: BoxFit.cover),
+              : Image(
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
         ),
         Positioned(
           top: 4,

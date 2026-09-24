@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +14,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -145,6 +145,13 @@ class CloudMediaUploadQueueNotifier
           .where((job) => !job.referenceDurable)
           .map(durableCloudMediaOutboxStorageKey),
     );
+    // Unreadable records might name bytes, so only a clean load can prove
+    // that restored bytes belong to no job of any account.
+    if (loaded.issues.isEmpty) {
+      unawaited(_pruneRestoredMediaBytes(
+        keep: loaded.jobs.map((job) => job.assetPublicId).toSet(),
+      ));
+    }
     ref.onDispose(() {
       _disposed = true;
       _retryTimer?.cancel();
@@ -239,7 +246,9 @@ class CloudMediaUploadQueueNotifier
     );
   }
 
-  Future<void> enqueueJobForLocalFile({
+  /// Queues an image whose bytes are already on this device: its file, or
+  /// its pending bytes where images are not files.
+  Future<void> enqueueJobForLocalBytes({
     required String strategyPublicId,
     required String assetPublicId,
     required String fileExtension,
@@ -265,7 +274,7 @@ class CloudMediaUploadQueueNotifier
         updatedAt: DateTime.now(),
       ),
     );
-    _logMedia('enqueue.local_file ${_describeJob(_getJob(assetPublicId))}');
+    _logMedia('enqueue.local_bytes ${_describeJob(_getJob(assetPublicId))}');
     retryNow(ignoreBackoff: true);
   }
 
@@ -416,12 +425,12 @@ class CloudMediaUploadQueueNotifier
         continue;
       }
 
-      final file = await PlacedImageProvider.getImageFile(
-        strategyID: strategyPublicId,
-        imageID: image.id,
+      final bytes = await _findMediaBytes(
+        strategyPublicId: strategyPublicId,
+        assetPublicId: image.id,
         fileExtension: image.fileExtension ?? '',
       );
-      if (!await file.exists()) {
+      if (bytes == null) {
         _logMedia(
           'reconcile.local_missing image=${image.id} '
           'strategy=$strategyPublicId status=${asset?.uploadStatus ?? 'none'}',
@@ -429,10 +438,81 @@ class CloudMediaUploadQueueNotifier
         continue;
       }
 
-      await enqueueJobForLocalFile(
+      await enqueueJobForLocalBytes(
         strategyPublicId: strategyPublicId,
         assetPublicId: image.id,
         fileExtension: image.fileExtension ?? '',
+      );
+    }
+
+    // The editor now paints these from the cloud; stop holding their bytes.
+    final pendingBytes = ref.read(pendingMediaBytesProvider);
+    for (final asset in assetsById.values) {
+      final servedFromCloud =
+          asset.uploadStatus == 'active' && (asset.url?.isNotEmpty ?? false);
+      if (servedFromCloud &&
+          pendingBytes.containsKey(asset.publicId) &&
+          _getJob(asset.publicId) == null) {
+        await _releaseMediaBytes(asset.publicId);
+      }
+    }
+  }
+
+  /// Where [assetPublicId]'s bytes are on this device, or null when they are
+  /// gone. Pending bytes (web) come first; otherwise the image file.
+  Future<MediaBytesSource?> _findMediaBytes({
+    required String strategyPublicId,
+    required String assetPublicId,
+    required String fileExtension,
+  }) async {
+    final pending = ref.read(pendingMediaBytesProvider)[assetPublicId];
+    if (pending != null) return MemoryMediaBytes(pending);
+    if (!ref.read(imageFilesOnDeviceProvider)) return null;
+    final file = await PlacedImageProvider.getImageFile(
+      strategyID: strategyPublicId,
+      imageID: assetPublicId,
+      fileExtension: fileExtension,
+    );
+    return await file.exists() ? FileMediaBytes(file.path) : null;
+  }
+
+  /// Drops the bytes held for [assetPublicId], or when [uploaded] only their
+  /// saved copy, so the editor keeps painting them until the cloud URL
+  /// arrives. Image files are the strategy's own copy and stay.
+  Future<void> _releaseMediaBytes(
+    String assetPublicId, {
+    bool uploaded = false,
+  }) async {
+    final pending = ref.read(pendingMediaBytesProvider.notifier);
+    try {
+      if (uploaded) {
+        await pending.markUploaded(assetPublicId);
+      } else {
+        await pending.remove(assetPublicId);
+      }
+    } catch (error, stackTrace) {
+      // Costs browser storage only: the next launch prunes bytes no job
+      // needs.
+      AppErrorReporter.reportError(
+        'Failed to release pending media bytes.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'cloud_media.upload_queue',
+      );
+    }
+  }
+
+  Future<void> _pruneRestoredMediaBytes({required Set<String> keep}) async {
+    try {
+      await ref
+          .read(pendingMediaBytesProvider.notifier)
+          .pruneRestored(keep: keep);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to prune pending media bytes.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'cloud_media.upload_queue',
       );
     }
   }
@@ -537,14 +617,13 @@ class CloudMediaUploadQueueNotifier
     if (!_belongsToActiveAccount(job)) return;
     try {
       _logMedia('upload.local_lookup ${_describeJob(job)}');
-      final file = await PlacedImageProvider.getImageFile(
-        strategyID: job.strategyPublicId,
-        imageID: job.assetPublicId,
+      final bytes = await _findMediaBytes(
+        strategyPublicId: job.strategyPublicId,
+        assetPublicId: job.assetPublicId,
         fileExtension: job.fileExtension,
       );
-      if (!await file.exists()) {
-        _logMedia(
-            'upload.local_missing path=${file.path} ${_describeJob(job)}');
+      if (bytes == null) {
+        _logMedia('upload.local_missing ${_describeJob(job)}');
         if (await _deleteJobWhenReferenceIsGone(job)) {
           return;
         }
@@ -556,7 +635,7 @@ class CloudMediaUploadQueueNotifier
         return;
       }
 
-      final byteSize = await file.length();
+      final byteSize = await bytes.length();
       if (!_belongsToActiveAccount(job)) {
         _logMedia('upload.deferred account_changed ${_describeJob(job)}');
         return;
@@ -599,9 +678,9 @@ class CloudMediaUploadQueueNotifier
       }
 
       _logMedia('upload.put.start bytes=$byteSize ${_describeJob(job)}');
-      final response = await _putFileWithProgress(
+      final response = await _putBytesWithProgress(
         job: job,
-        file: file,
+        bytes: bytes,
         uploadUrl: intent.uploadUrl,
         headers: intent.requiredHeaders,
         byteSize: byteSize,
@@ -698,9 +777,9 @@ class CloudMediaUploadQueueNotifier
     return true;
   }
 
-  Future<http.Response> _putFileWithProgress({
+  Future<http.Response> _putBytesWithProgress({
     required CloudMediaUploadJob job,
-    required File file,
+    required MediaBytesSource bytes,
     required String uploadUrl,
     required Map<String, String> headers,
     required int byteSize,
@@ -715,7 +794,7 @@ class CloudMediaUploadQueueNotifier
     final responseFuture = request.send();
     var sentBytes = 0;
     try {
-      await for (final chunk in file.openRead()) {
+      await for (final chunk in bytes.openRead()) {
         request.sink.add(chunk);
         sentBytes += chunk.length;
         _setUploadByteProgress(
@@ -768,7 +847,7 @@ class CloudMediaUploadQueueNotifier
         width: job.width,
         height: job.height,
       );
-      await _deleteJob(job);
+      await _deleteJob(job, uploaded: true);
       if (_uploadProgressToast != null) {
         _markUploadComplete(job.jobId);
       }
@@ -1181,9 +1260,26 @@ class CloudMediaUploadQueueNotifier
         }
       });
 
+  /// Removes [job] from the outbox, then the bytes it was holding. [uploaded]
+  /// keeps those bytes painting until the cloud URL arrives.
   Future<bool> _deleteJob(
     CloudMediaUploadJob job, {
     bool onlyIfUnreferenced = false,
+    bool uploaded = false,
+  }) async {
+    final deleted = await _removeJobRecord(
+      job,
+      onlyIfUnreferenced: onlyIfUnreferenced,
+    );
+    if (deleted) {
+      await _releaseMediaBytes(job.assetPublicId, uploaded: uploaded);
+    }
+    return deleted;
+  }
+
+  Future<bool> _removeJobRecord(
+    CloudMediaUploadJob job, {
+    required bool onlyIfUnreferenced,
   }) =>
       _serializeWrite(() async {
         final key = durableCloudMediaOutboxStorageKey(job);

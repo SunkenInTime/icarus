@@ -203,12 +203,15 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                 allowMultiple: false,
                 type: FileType.custom,
                 allowedExtensions: ["png", "jpg", "gif", "webp", "bmp"],
+                // The browser hands over bytes, never a path.
+                withData: true,
               );
 
-              if (result == null) return;
-              final imageFile = result.files.first.xFile;
-              final fileExtension = path.extension(imageFile.path);
-              final imageBytes = await imageFile.readAsBytes();
+              if (result == null || result.files.isEmpty) return;
+              final picked = result.files.first;
+              final fileExtension = path.extension(picked.name);
+              final imageBytes =
+                  picked.bytes ?? await picked.xFile.readAsBytes();
               final id = const Uuid().v4();
               final strategyId = ref.read(strategyProvider).strategyId;
 

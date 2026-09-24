@@ -51,10 +51,8 @@ class PlatformPolicy {
       PlatformFeature.videoExport,
       PlatformFeature.fileDrop,
     },
-    comingToWebBeta: {
-      PlatformFeature.addImages,
-      PlatformFeature.addLineups,
-    },
+    // Empty for now; the Beta dialog hides its "Coming" list when it is.
+    comingToWebBeta: {},
   );
 
   static const PlatformPolicy current = kIsWeb ? webBeta : desktop;

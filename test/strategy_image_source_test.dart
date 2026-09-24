@@ -1,14 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -22,6 +25,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 const _imageId = 'image-1';
 const _remoteUrl = 'https://media.example.com/image-1.png';
+// A 1x1 PNG, still uploading from this browser.
+final _pendingPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+);
 
 RemoteImageAsset _asset({String? url = _remoteUrl, String status = 'active'}) {
   return RemoteImageAsset(
@@ -97,12 +104,16 @@ List<Override> _overrides({
   required StrategySource source,
   required String? storageDirectory,
   List<RemoteImageAsset> assets = const [],
+  Map<String, Uint8List> pendingBytes = const {},
 }) {
   return [
     strategyProvider.overrideWith(
       () => _FixedStrategy(source: source, storageDirectory: storageDirectory),
     ),
     remoteEditorSnapshotProvider.overrideWith(() => _FixedSnapshot(assets)),
+    pendingMediaBytesStoreProvider.overrideWithValue(
+      MemoryPendingMediaBytesStore(pendingBytes),
+    ),
   ];
 }
 
@@ -111,6 +122,7 @@ Widget _imageApp({
   required StrategySource source,
   required String? storageDirectory,
   List<RemoteImageAsset> assets = const [],
+  Map<String, Uint8List> pendingBytes = const {},
   ValueNotifier<int>? rebuild,
 }) {
   return ProviderScope(
@@ -118,6 +130,7 @@ Widget _imageApp({
       source: source,
       storageDirectory: storageDirectory,
       assets: assets,
+      pendingBytes: pendingBytes,
     ),
     child: MaterialApp(
       home: Scaffold(
@@ -208,6 +221,59 @@ void main() {
       );
     });
 
+    test('a file on this device and the cloud URL both beat pending bytes', () {
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: '/images/image-1.png',
+          isCloudStrategy: true,
+          remoteAsset: null,
+          pendingBytes: _pendingPng,
+        ),
+        isA<LocalImageFile>(),
+      );
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          remoteAsset: _asset(),
+          pendingBytes: _pendingPng,
+        ),
+        isA<RemoteImageUrl>(),
+      );
+    });
+
+    test('bytes still uploading paint until the cloud URL arrives', () {
+      final uploading = resolveStrategyImageSource(
+        localFilePath: null,
+        isCloudStrategy: true,
+        remoteAsset: _asset(url: null, status: 'pending'),
+        pendingBytes: _pendingPng,
+      );
+      expect((uploading as PendingImageBytes).bytes, _pendingPng);
+      expect(uploading.imageProvider, isA<MemoryImage>());
+
+      // A failed attempt is retried from the same bytes; keep showing them.
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          remoteAsset: _asset(url: null, status: 'failed'),
+          pendingBytes: _pendingPng,
+        ),
+        isA<PendingImageBytes>(),
+      );
+
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          remoteAsset: _asset(),
+          pendingBytes: _pendingPng,
+        ),
+        isA<RemoteImageUrl>(),
+      );
+    });
+
     test('a failed upload or a missing local file has failed', () {
       expect(
         resolveStrategyImageSource(
@@ -288,6 +354,21 @@ void main() {
         tester.takeException(),
         anyOf(isNull, isA<NetworkImageLoadException>()),
       );
+    });
+
+    testWidgets('a placed image still uploading paints from memory on web',
+        (tester) async {
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        pendingBytes: {_imageId: _pendingPng},
+      ));
+      await tester.pump();
+
+      final image = _paintedImage(tester);
+      expect(image, isA<MemoryImage>());
+      expect((image as MemoryImage).bytes, _pendingPng);
+      expect(find.text('Syncing image'), findsNothing);
     });
 
     testWidgets('a cloud image whose URL has not arrived shows syncing',

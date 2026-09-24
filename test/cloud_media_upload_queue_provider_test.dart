@@ -587,7 +587,7 @@ void main() {
 
     await first
         .read(cloudMediaUploadQueueProvider.notifier)
-        .enqueueJobForLocalFile(
+        .enqueueJobForLocalBytes(
           strategyPublicId: 'strategy-a',
           assetPublicId: 'unvisited-page-image',
           fileExtension: '.webp',
@@ -624,7 +624,7 @@ void main() {
 
     await container
         .read(cloudMediaUploadQueueProvider.notifier)
-        .enqueueJobForLocalFile(
+        .enqueueJobForLocalBytes(
           strategyPublicId: 'strategy-a',
           assetPublicId: 'not-admitted-image',
           fileExtension: '.png',
@@ -644,7 +644,7 @@ void main() {
 
     await container
         .read(cloudMediaUploadQueueProvider.notifier)
-        .enqueueJobForLocalFile(
+        .enqueueJobForLocalBytes(
           strategyPublicId: 'strategy-a',
           assetPublicId: 'offline-image',
           fileExtension: '.jpg',
@@ -663,7 +663,7 @@ void main() {
     addTearDown(container.dispose);
     await container
         .read(cloudMediaUploadQueueProvider.notifier)
-        .enqueueJobForLocalFile(
+        .enqueueJobForLocalBytes(
           strategyPublicId: 'strategy-a',
           assetPublicId: 'existing-image',
           fileExtension: '.png',

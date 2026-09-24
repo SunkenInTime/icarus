@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -480,10 +481,20 @@ class PlacedImageProvider extends Notifier<ImageState> {
     state = newState;
   }
 
+  /// Keeps a newly picked image on this device before anything references
+  /// it: as a file in the strategy's image folder, or where there are no
+  /// image files (web), as pending bytes until it has uploaded.
   Future<void> saveSecureImage(
       Uint8List imageBytes, String imageID, String fileExtenstion,
       {required String? strategyId}) async {
     if (strategyId == null) return;
+    if (!ref.read(imageFilesOnDeviceProvider)) {
+      await ref.read(pendingMediaBytesProvider.notifier).put(
+            imageID,
+            imageBytes,
+          );
+      return;
+    }
     await writeImageBytes(
       imageBytes: imageBytes,
       strategyID: strategyId,

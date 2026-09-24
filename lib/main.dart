@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:typed_data';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
@@ -48,6 +49,7 @@ import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/services/local_image_file.dart' show deviceHasImageFiles;
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
@@ -204,6 +206,9 @@ Future<void> main(List<String> args) async {
       await prepareDurableStrategyOutbox();
       await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
       await prepareDurableCloudMediaOutbox();
+      if (!deviceHasImageFiles) {
+        await Hive.openBox<Uint8List>(HiveBoxNames.pendingMediaBytesBox);
+      }
       await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
       await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);
 

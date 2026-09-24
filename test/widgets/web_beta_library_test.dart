@@ -256,7 +256,7 @@ void main() {
       );
     });
 
-    testWidgets('Beta tag explains what is desktop-only and coming',
+    testWidgets('Beta tag explains what is desktop-only',
         (tester) async {
       await _pumpLibrary(
         tester,
@@ -276,8 +276,9 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('Coming to the web beta'), findsOneWidget);
-      expect(find.text('Adding images · Adding lineups'), findsOneWidget);
+      // Nothing is waiting to come, so the list is not drawn.
+      expect(find.text('Coming to the web beta'), findsNothing);
+      expect(find.textContaining('Adding images'), findsNothing);
       expect(find.byKey(const ValueKey('web-beta-download')), findsOneWidget);
     });
   });
@@ -334,19 +335,35 @@ void main() {
         policy.unavailableMessage(PlatformFeature.exportFiles),
         'Export is desktop-only for now.',
       );
-      expect(
-        policy.unavailableMessage(PlatformFeature.addImages),
-        'Adding images is coming to the web beta.',
+      expect(policy.allowsLocalLibrary, isFalse);
+      expect(policy.requiresSignIn, isTrue);
+    });
+
+    test('web beta adds images and lineups', () {
+      const policy = PlatformPolicy.webBeta;
+      for (final feature in [
+        PlatformFeature.addImages,
+        PlatformFeature.addLineups,
+      ]) {
+        expect(policy.supports(feature), isTrue);
+        expect(policy.unavailableMessage(feature), isNull);
+      }
+      expect(policy.comingToWebBeta, isEmpty);
+    });
+
+    test('a feature coming to the web beta says so', () {
+      const policy = PlatformPolicy(
+        isWebBeta: true,
+        allowsLocalLibrary: false,
+        requiresSignIn: true,
+        desktopOnly: {},
+        comingToWebBeta: {PlatformFeature.addLineups},
       );
+      expect(policy.supports(PlatformFeature.addLineups), isFalse);
       expect(
         policy.unavailableMessage(PlatformFeature.addLineups),
         'Adding lineups is coming to the web beta.',
       );
-      // Coming-to-beta features are their own flag, not desktop-only.
-      expect(policy.desktopOnly, isNot(contains(PlatformFeature.addImages)));
-      expect(policy.desktopOnly, isNot(contains(PlatformFeature.addLineups)));
-      expect(policy.allowsLocalLibrary, isFalse);
-      expect(policy.requiresSignIn, isTrue);
     });
   });
 }
