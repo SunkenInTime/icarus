@@ -102,7 +102,7 @@ only for the isolated contract deployment in CI.
 ## Web beta deploy
 
 The web beta lives at `https://beta.icarusstrats.com`, served by the Cloudflare
-Pages project `icarus-web` (also reachable at `https://icarus-web.pages.dev`).
+Pages project `icarus-web` (also reachable at `https://icarus-web-a50.pages.dev`).
 It uses the development Convex deployment, like every non-stable build.
 
 - A push to `icarus-cloud` that changes `lib/`, `web/`, `assets/`,
