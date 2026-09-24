@@ -23,9 +23,10 @@ final currentStrategyCapabilitiesProvider =
 ///
 /// [remoteEditorSnapshotProvider] transiently loses its value during
 /// reloads, refresh errors, and auth incidents, so role-dependent UI (like
-/// the editor's "View only" chip) must not read `valueOrNull` directly or it
-/// flickers off mid-session. This provider remembers the last role seen for
-/// the open strategy and only resets when a different strategy is opened.
+/// the "View only" note on the cloud sync button) must not read
+/// `valueOrNull` directly or it flickers off mid-session. This provider
+/// remembers the last role seen for the open strategy and only resets when a
+/// different strategy is opened.
 /// It is null only before the role has ever been known.
 final lastKnownCloudRoleProvider =
     NotifierProvider<LastKnownCloudRoleNotifier, String?>(

@@ -7,6 +7,7 @@ import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -197,7 +198,12 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
       CloudSyncStatus.attention => _SyncStatus.attention,
     };
 
-    final tooltip = _tooltip(status, saveState.lastPersistedAt);
+    final syncTooltip = _tooltip(status, saveState.lastPersistedAt);
+    // The editor carries no status chips, so a viewer learns here why their
+    // edits do not stick.
+    final tooltip = ref.watch(lastKnownCloudRoleProvider) == 'viewer'
+        ? 'View only · $syncTooltip'
+        : syncTooltip;
     final foreground = status == _SyncStatus.attention
         ? Settings.tacticalVioletTheme.destructive
         : null;
