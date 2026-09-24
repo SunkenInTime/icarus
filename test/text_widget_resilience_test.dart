@@ -189,6 +189,8 @@ void main() {
 
     await tester.pumpWidget(buildTextHarness(container));
 
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
     await tester.tap(find.byType(TextField));
     await tester.pump();
     final placedText = find.semantics.byLabel('Placed text');
@@ -226,6 +228,8 @@ void main() {
     ]);
 
     await tester.pumpWidget(buildTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
 
     final field = tester.widget<TextField>(find.byType(TextField));
     field.controller!.value = const TextEditingValue(
@@ -424,12 +428,15 @@ void main() {
     await tester.pumpWidget(buildTextHarness(container));
     await tester.pump();
 
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
+
     final initialSize = tester.getSize(find.byType(TextWidget));
     expect(initialSize.height, lessThan(64));
 
     await tester.enterText(
       find.byType(TextField),
-      'this text is long enough to wrap across several lines in the editor',
+      'this text wraps onto a few lines',
     );
     await tester.pump();
 

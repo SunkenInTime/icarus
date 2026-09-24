@@ -1710,7 +1710,7 @@ void main() {
           selectFirstPageIfNeeded: true,
         );
 
-    expect(container.read(lineUpProvider).groups.single.id, 'lineup-1');
+    expect(container.read(lineUpProvider).origins.single.id, 'lineup-1');
     container.read(textProvider).single.position = const Offset(50, 60);
 
     final desired =
