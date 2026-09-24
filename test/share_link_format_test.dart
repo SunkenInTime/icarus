@@ -6,7 +6,7 @@ import 'package:icarus/share/share_link_format.dart';
 void main() {
   final production = icarusProductionShareOrigin;
   final beta = Uri.parse('https://beta.icarusstrats.com');
-  final pagesPreview = Uri.parse('https://abc123.icarus-web.pages.dev');
+  final pagesPreview = Uri.parse('https://abc123.icarus-web-a50.pages.dev');
   final localDev = Uri.parse('http://localhost:5000');
 
   group('share link formatting', () {
@@ -24,7 +24,7 @@ void main() {
       );
       expect(
         buildIcarusShareLink('ICR-2345-6789-ABCD-EFGH', origin: pagesPreview),
-        'https://abc123.icarus-web.pages.dev/share/ICR-2345-6789-ABCD-EFGH',
+        'https://abc123.icarus-web-a50.pages.dev/share/ICR-2345-6789-ABCD-EFGH',
       );
       expect(
         buildIcarusShareLink('ICR-2345-6789-ABCD-EFGH', origin: localDev),
@@ -117,7 +117,7 @@ void main() {
       );
       expect(
         extractIcarusShareCode(
-          'https://abc123.icarus-web.pages.dev/share/ICR-2345-6789-ABCD-EFGH',
+          'https://abc123.icarus-web-a50.pages.dev/share/ICR-2345-6789-ABCD-EFGH',
           currentOrigin: pagesPreview,
         ),
         'ICR-2345-6789-ABCD-EFGH',
@@ -139,7 +139,7 @@ void main() {
       expect(
         isIcarusShareUri(
           Uri.parse(
-            'https://other.icarus-web.pages.dev/share/ICR-2345-6789-ABCD-EFGH',
+            'https://other.icarus-web-a50.pages.dev/share/ICR-2345-6789-ABCD-EFGH',
           ),
           currentOrigin: beta,
         ),

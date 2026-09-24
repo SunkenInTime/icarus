@@ -11,9 +11,9 @@ void main() {
         'https://beta.icarusstrats.com/',
       );
       expect(
-        webAuthRedirectUri(Uri.parse('https://icarus-web.pages.dev/'))
+        webAuthRedirectUri(Uri.parse('https://icarus-web-a50.pages.dev/'))
             .toString(),
-        'https://icarus-web.pages.dev/',
+        'https://icarus-web-a50.pages.dev/',
       );
       expect(
         webAuthRedirectUri(Uri.parse('http://localhost:5000/#/')).toString(),
@@ -93,7 +93,7 @@ void main() {
     test('rejects a sign-in result aimed at a different origin', () {
       for (final link in [
         'https://icarusstrats.com/?code=abc',
-        'https://other.icarus-web.pages.dev/?code=abc',
+        'https://other.icarus-web-a50.pages.dev/?code=abc',
         'http://beta.icarusstrats.com/?code=abc',
         'https://beta.icarusstrats.com:8443/?code=abc',
         'icarus://auth/callback?code=abc',

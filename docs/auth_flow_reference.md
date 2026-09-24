@@ -169,7 +169,15 @@ Why this works:
 Every redirect Supabase is asked for must be in the project's redirect
 allowlist (Authentication > URL Configuration). A redirect outside it silently
 falls back to the Site URL, which on web means a different origin and a failed
-code exchange.
+code exchange. The allowlist holds:
+
+- `icarus://auth/callback` (desktop)
+- `https://beta.icarusstrats.com/` (web beta)
+- `https://icarus-web-a50.pages.dev/` (the Cloudflare Pages host of the beta)
+
+Because the web sign-in leaves the page, anything held only in memory is lost.
+A share code opened while signed out waits in the tab's sessionStorage
+(`PendingShareCodeStore`) and is redeemed once the returning session is ready.
 
 ## 5. OAuth callback handling
 
