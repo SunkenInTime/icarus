@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -1146,14 +1146,20 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// Creates an empty strategy on [map] and returns it. Without [name] it
-  /// is auto-named after the map ("Haven", then "Haven 2", ...).
+  /// is auto-named after the map ("Haven", then "Haven 2", ...). In the cloud
+  /// workspace the strategy is created on the server and opened; nothing is
+  /// written to the local library.
   Future<StrategyData> createNewStrategy({
     required MapValue map,
     String? name,
   }) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strategyName = name ??
-        autoStrategyName(map, box.values.map((strategy) => strategy.name));
+    final isCloud = _selectedWorkspaceIsCloud();
+    final existingNames = isCloud
+        ? (ref.read(cloudStrategiesProvider).valueOrNull ?? const [])
+            .map((entry) => entry.strategy.name)
+        : box.values.map((strategy) => strategy.name);
+    final strategyName = name ?? autoStrategyName(map, existingNames);
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
@@ -1165,59 +1171,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       useNeutralTeamColors:
           appPreferences.defaultNeutralTeamColorsForNewStrategies,
     );
-
-    if (_selectedWorkspaceIsCloud()) {
-      try {
-        await ref
-            .read(convexStrategyRepositoryProvider)
-            .createStrategyWithInitialPage(
-              publicId: newID,
-              name: name,
-              mapData: Maps.mapNames[MapValue.ascent] ?? "ascent",
-              initialPagePublicId: pageID,
-              initialPageName: "Page 1",
-              initialPageIsAutoNamed: true,
-              initialPageIsAttack: true,
-              initialPageSettings: defaultSettings.toJson(),
-              folderPublicId: ref.read(folderProvider),
-              themeProfileId: defaultThemeProfileId,
-            );
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:create_new',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        if (handled) {
-          throw StateError('Cloud authentication required to create strategy.');
-        }
-        rethrow;
-      }
-      ref.invalidate(cloudStrategiesProvider);
-      ref.invalidate(cloudFolderTreeProvider);
-      try {
-        await openCloudStrategy(newID);
-      } catch (error, stackTrace) {
-        // The strategy exists on the server but couldn't be opened — don't
-        // rethrow, or the create dialog would falsely report that creation
-        // failed. Creation succeeded; opening is what failed (the editor's
-        // own load path surfaces that and backs out).
-        log(
-          'Created cloud strategy $newID but failed to open it: $error',
-          name: 'strategy',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        Settings.showToast(
-          message: 'Strategy created, but it could not be opened. '
-              'Open it from your cloud library.',
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
-        );
-      }
-      unawaited(AnalyticsService.instance.capture('strategy_created'));
-      return newID;
-    }
-
     final newStrategy = StrategyData(
       mapData: map,
       versionNumber: Settings.versionNumber,
@@ -1246,6 +1199,58 @@ class StrategyProvider extends Notifier<StrategyState> {
       folderID: ref.read(folderProvider),
       themeProfileId: defaultThemeProfileId,
     );
+
+    if (isCloud) {
+      try {
+        await ref
+            .read(convexStrategyRepositoryProvider)
+            .createStrategyWithInitialPage(
+              publicId: newID,
+              name: strategyName,
+              mapData: Maps.mapNames[map] ?? Maps.mapNames[MapValue.ascent]!,
+              initialPagePublicId: pageID,
+              initialPageName: "Page 1",
+              initialPageIsAutoNamed: true,
+              initialPageIsAttack: true,
+              initialPageSettings: defaultSettings.toJson(),
+              folderPublicId: ref.read(folderProvider),
+              themeProfileId: defaultThemeProfileId,
+            );
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:create_new',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (handled) {
+          throw StateError('Cloud authentication required to create strategy.');
+        }
+        rethrow;
+      }
+      ref.invalidate(cloudStrategiesProvider);
+      ref.invalidate(cloudFolderTreeProvider);
+      try {
+        await openCloudStrategy(newID);
+      } catch (error, stackTrace) {
+        // The strategy exists on the server but couldn't be opened — don't
+        // rethrow, or the caller would falsely report that creation failed.
+        // Creation succeeded; opening is what failed (the editor's own load
+        // path surfaces that and backs out).
+        log(
+          'Created cloud strategy $newID but failed to open it: $error',
+          name: 'strategy',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        Settings.showToast(
+          message: 'Strategy created, but it could not be opened. '
+              'Open it from your cloud library.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
+      unawaited(AnalyticsService.instance.capture('strategy_created'));
+      return newStrategy;
+    }
 
     await box.put(newStrategy.id, newStrategy);
 
@@ -1481,15 +1486,13 @@ class StrategyProvider extends Notifier<StrategyState> {
               return true;
             },
             source: sourceName,
-            failureMessage:
-                "Couldn't delete this cloud strategy. Try again.",
-            reportAuthenticationFailure: (error, stackTrace) => ref
-                .read(authProvider.notifier)
-                .reportConvexUnauthenticated(
-                  source: sourceName,
-                  error: error,
-                  stackTrace: stackTrace,
-                ),
+            failureMessage: "Couldn't delete this cloud strategy. Try again.",
+            reportAuthenticationFailure: (error, stackTrace) =>
+                ref.read(authProvider.notifier).reportConvexUnauthenticated(
+                      source: sourceName,
+                      error: error,
+                      stackTrace: stackTrace,
+                    ),
           );
       if (!result.didSucceed) return result;
 
@@ -1797,13 +1800,12 @@ class StrategyProvider extends Notifier<StrategyState> {
             source: sourceName,
             failureMessage: "Couldn't move this cloud strategy. Try again.",
             showFailureMessage: true,
-            reportAuthenticationFailure: (error, stackTrace) => ref
-                .read(authProvider.notifier)
-                .reportConvexUnauthenticated(
-                  source: sourceName,
-                  error: error,
-                  stackTrace: stackTrace,
-                ),
+            reportAuthenticationFailure: (error, stackTrace) =>
+                ref.read(authProvider.notifier).reportConvexUnauthenticated(
+                      source: sourceName,
+                      error: error,
+                      stackTrace: stackTrace,
+                    ),
           );
       if (!result.didSucceed) return result;
 

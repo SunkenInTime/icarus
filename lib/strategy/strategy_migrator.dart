@@ -6,11 +6,14 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/migrations/ability_vision_cone_migration.dart';
+import 'package:icarus/migrations/agent_weapon_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/canonical_coordinates_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
+import 'package:icarus/migrations/lineup_graph_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/migrations/page_name_provenance_migration.dart';
+import 'package:icarus/migrations/sunset_scale_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/const/settings.dart';
@@ -138,8 +141,11 @@ class StrategyMigrator {
     );
   }
 
-  static StrategyData migrateToCurrentVersion(StrategyData strat,
-      {bool forceAbilityScale = false}) {
+  static StrategyData migrateToCurrentVersion(
+    StrategyData strat, {
+    bool forceAbilityScale = false,
+  }) {
+    final originalVersion = strat.versionNumber;
     final needsCanonicalCoordinatesMigration =
         strat.versionNumber < CanonicalCoordinatesMigration.version;
     final needsAbilityVisionMigration =
@@ -147,27 +153,84 @@ class StrategyMigrator {
     final needsPageNameProvenanceMigration =
         strat.versionNumber < PageNameProvenanceMigration.version;
     final worldMigrated = migrateToWorld16x9(strat);
-    final abilityScaleMigrated =
-        migrateAbilityScale(worldMigrated, force: forceAbilityScale);
-    final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-    final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
-    final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
-    final abilityVisionMigrated = migrateAbilityVisionCones(
+    final abilityScaleMigrated = migrateAbilityScale(
+      worldMigrated,
+      force:
+          forceAbilityScale || originalVersion < AbilityScaleMigration.version,
+    );
+    final squareAoeMigrated = migrateSquareAoeCenter(
+      abilityScaleMigrated,
+      force: originalVersion < SquareAoeCenterMigration.version,
+    );
+    final customCircleMigrated = migrateCustomCircleWrapper(
+      squareAoeMigrated,
+      force: originalVersion < CustomCircleWrapperMigration.version,
+    );
+    final lineUpGroupMigrated = migrateLineUpGroups(
+      customCircleMigrated,
+      force: originalVersion < LineUpGroupMigration.version,
+    );
+    final lineUpGraphMigrated = migrateLineUpGraph(
       lineUpGroupMigrated,
+      force: originalVersion < LineUpGraphMigration.version,
+    );
+    final abilityVisionMigrated = migrateAbilityVisionCones(
+      lineUpGraphMigrated,
       force: needsAbilityVisionMigration,
     );
     final pageNameMigrated = migratePageNameProvenance(
       abilityVisionMigrated,
       force: needsPageNameProvenanceMigration,
     );
-    final migrated = migrateCanonicalCoordinates(
+    final canonicalMigrated = migrateCanonicalCoordinates(
       pageNameMigrated,
       force: needsCanonicalCoordinatesMigration,
     );
-    if (migrated.versionNumber >= Settings.versionNumber) {
-      return migrated;
+    final sunsetMigrated = migrateSunsetScale(
+      canonicalMigrated,
+      force: originalVersion < SunsetScaleMigration.version,
+    );
+    final migrated = AgentWeaponMigration.migrate(sunsetMigrated);
+    // Releases without a schema change still finish at the current version.
+    // Never downgrade a strategy written by a newer release.
+    return migrated.versionNumber < Settings.versionNumber
+        ? migrated.copyWith(versionNumber: Settings.versionNumber)
+        : migrated;
+  }
+
+  static StrategyData migrateSunsetScale(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force && strat.versionNumber >= SunsetScaleMigration.version) {
+      return strat;
     }
-    return migrated.copyWith(
+    return strat.copyWith(
+      pages: SunsetScaleMigration.migratePages(
+        pages: strat.pages,
+        map: strat.mapData,
+      ),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateLineUpGraph(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= LineUpGraphMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = LineUpGraphMigration.migratePages(pages: strat.pages);
+    final hasPageChanged = migratedPages.asMap().entries.any(
+          (entry) => !identical(entry.value, strat.pages[entry.key]),
+        );
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: hasPageChanged ? migratedPages : strat.pages,
       versionNumber: Settings.versionNumber,
       lastEdited: DateTime.now(),
     );
@@ -288,18 +351,24 @@ class StrategyMigrator {
       customCircleMigrated,
       force: originalVersion < LineUpGroupMigration.version,
     );
-    final abilityVisionMigrated = migrateAbilityVisionCones(
+    final lineUpGraphMigrated = migrateLineUpGraph(
       lineUpGroupMigrated,
+      force: originalVersion < LineUpGraphMigration.version,
+    );
+    final abilityVisionMigrated = migrateAbilityVisionCones(
+      lineUpGraphMigrated,
       force: originalVersion < AbilityVisionConeMigration.version,
     );
     final pageNameMigrated = migratePageNameProvenance(
       abilityVisionMigrated,
       force: originalVersion < PageNameProvenanceMigration.version,
     );
-    return migrateCanonicalCoordinates(
+    final canonicalMigrated = migrateCanonicalCoordinates(
       pageNameMigrated,
       force: originalVersion < CanonicalCoordinatesMigration.version,
     );
+    return migrateSunsetScale(canonicalMigrated,
+        force: originalVersion < SunsetScaleMigration.version);
   }
 
   static StrategyData migrateToWorld16x9(StrategyData strat,
@@ -376,24 +445,14 @@ class StrategyMigrator {
       ];
     }
 
-    List<LineUpGroup> shiftLineUpGroups(List<LineUpGroup> groups) {
-      return [
-        for (final group in groups)
-          group.copyWith(
-            agent: group.agent.copyWith(
-              position: shift(group.agent.position),
-            )..isDeleted = group.agent.isDeleted,
-            items: [
-              for (final item in group.items)
-                item.copyWith(
-                  ability: item.ability.copyWith(
-                    position: shift(item.ability.position),
-                  )..isDeleted = item.ability.isDeleted,
-                  images: item.images.map((image) => image.copyWith()).toList(),
-                ),
-            ],
-          )
-      ];
+    LineUpGraph shiftLineUpGraph(LineUpGraph graph) {
+      return graph.mapNodes(
+        agent: (agent) => agent.copyWith(position: shift(agent.position))
+          ..isDeleted = agent.isDeleted,
+        ability: (ability) =>
+            ability.copyWith(position: shift(ability.position))
+              ..isDeleted = ability.isDeleted,
+      );
     }
 
     BoundingBox? shiftBoundingBox(BoundingBox? boundingBox) {
@@ -466,7 +525,7 @@ class StrategyMigrator {
               imageData: shiftImages(page.imageData),
               utilityData: shiftUtilities(page.utilityData),
               drawingData: shiftDrawings(page.drawingData),
-              lineUpGroups: shiftLineUpGroups(page.lineUpGroups),
+              lineUpGraph: shiftLineUpGraph(page.lineUpGraph),
             ))
         .toList(growable: false);
 

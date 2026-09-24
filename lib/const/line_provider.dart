@@ -201,7 +201,6 @@ class SimpleImageData extends HiveObject {
   Map<String, dynamic> toJson() => _$SimpleImageDataToJson(this);
 }
 
-
 @JsonSerializable()
 class LineUpOrigin extends HiveObject {
   final String id;
@@ -361,9 +360,7 @@ class LineUpGraph {
     return LineUpGraph(
       origins: [
         for (final origin in origins)
-          agent == null
-              ? origin
-              : origin.copyWith(agent: agent(origin.agent)),
+          agent == null ? origin : origin.copyWith(agent: agent(origin.agent)),
       ],
       landings: [
         for (final landing in landings)
@@ -721,14 +718,16 @@ class LineUpProvider extends Notifier<LineUpState> {
       );
       return;
     }
-    state = state.copyWith(placement: placement.copyWith(draftAbility: ability));
+    state =
+        state.copyWith(placement: placement.copyWith(draftAbility: ability));
   }
 
   void updateDraftAgentPosition(Offset position) {
     final draft = state.placement?.draftAgent;
     if (draft == null) return;
     draft.updatePosition(position);
-    state = state.copyWith(placement: state.placement!.copyWith(draftAgent: draft));
+    state =
+        state.copyWith(placement: state.placement!.copyWith(draftAgent: draft));
   }
 
   void setDraftAgentWeapon(WeaponType weapon) {

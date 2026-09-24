@@ -73,7 +73,9 @@ void appendMigratedPageOps(
   }
 
   var lineupOrder = 0;
-  for (final group in page.lineUpGroups) {
+  // TODO(lineupGraph): upload the graph once Convex has a lineupGraph payload
+  // kind; the group projection cannot express fan-in or link names.
+  for (final group in page.lineUpGraph.toLegacyGroups()) {
     final lineupId = nextUniqueMigrationId(group.id, usedLineupIds);
     final lineupPayload = cloudLineupPayload(group)..['id'] = lineupId;
     ops.add(

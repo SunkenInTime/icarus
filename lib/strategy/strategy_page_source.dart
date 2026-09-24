@@ -95,7 +95,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       texts: page.textData,
       images: page.imageData,
       utilities: page.utilityData,
-      lineUpGroups: page.lineUpGroups,
+      lineUpGraph: page.lineUpGraph,
     );
   }
 
@@ -122,11 +122,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUpGroups: ref
-          .read(lineUpProvider)
-          .groups
-          .map((group) => group.deepCopy())
-          .toList(),
+      lineUpGraph: ref.read(lineUpProvider).graph,
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);
@@ -325,7 +321,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineUpGroups: parsedLineUpGroups,
+      // TODO(lineupGraph): cloud lineups are stored as lineupGroup payloads,
+      // which cannot express fan-in. Hydrate the graph from that projection
+      // until Convex gains a lineupGraph payload kind.
+      lineUpGraph: LineUpGraph.fromLegacyGroups(parsedLineUpGroups),
     );
   }
 
@@ -500,7 +499,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineUpGroups: parsedLineUpGroups,
+      // TODO(lineupGraph): cloud lineups are stored as lineupGroup payloads,
+      // which cannot express fan-in. Hydrate the graph from that projection
+      // until Convex gains a lineupGraph payload kind.
+      lineUpGraph: LineUpGraph.fromLegacyGroups(parsedLineUpGroups),
     );
   }
 

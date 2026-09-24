@@ -39,7 +39,7 @@ Future<void> applyStrategyEditorPageData(
   ref.read(textProvider.notifier).fromHive(data.texts);
   ref.read(placedImageProvider.notifier).fromHive(data.images);
   ref.read(utilityProvider.notifier).fromHive(data.utilities);
-  ref.read(lineUpProvider.notifier).fromHive(data.lineUpGroups);
+  ref.read(lineUpProvider.notifier).fromHive(data.lineUpGraph);
   ref
       .read(mapProvider.notifier)
       .fromHive(mapOverride ?? data.map, data.isAttack);

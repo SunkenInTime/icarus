@@ -3,6 +3,7 @@ import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -764,7 +765,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    final groups = ref.read(lineUpProvider).groups;
+    // TODO(lineupGraph): sync the graph once Convex has a lineupGraph payload
+    // kind. Group ids are origin ids and item ids are link ids, so the
+    // projection keeps stable sync keys, but fan-in and link names are lost.
+    final groups = ref.read(lineUpProvider).graph.toLegacyGroups();
     for (var index = 0; index < groups.length; index++) {
       final group = groups[index];
       final key = EntitySyncKey.lineup(pageId, group.id);
@@ -1042,25 +1046,31 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
   bool _payloadsEquivalent(Object? left, Object? right) {
     return cloudJsonEquivalent(
-      _withAbilityVisionDefaults(left),
-      _withAbilityVisionDefaults(right),
+      _withFieldDefaults(left),
+      _withFieldDefaults(right),
     );
   }
 
-  Object? _withAbilityVisionDefaults(Object? value) {
+  /// Payloads written before a field existed compare equal to the field's
+  /// default, so hydrating old cloud data never authors a rewrite of it.
+  Object? _withFieldDefaults(Object? value) {
     if (value is List) {
-      return [for (final item in value) _withAbilityVisionDefaults(item)];
+      return [for (final item in value) _withFieldDefaults(item)];
     }
     if (value is! Map) {
       return value;
     }
     final normalized = <String, dynamic>{
       for (final entry in value.entries)
-        entry.key.toString(): _withAbilityVisionDefaults(entry.value),
+        entry.key.toString(): _withFieldDefaults(entry.value),
     };
     final visualState = normalized['visualState'];
     if (visualState is Map<String, dynamic>) {
       visualState.putIfAbsent('showVisionCone', () => true);
+    }
+    // Only agents carry an AgentState; firearms default to none.
+    if (normalized.containsKey('state')) {
+      normalized.putIfAbsent('weapon', () => WeaponType.none.name);
     }
     return normalized;
   }

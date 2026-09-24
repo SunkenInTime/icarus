@@ -10,6 +10,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/page_transition/agent_path.dart';
+import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -31,6 +32,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -333,14 +335,24 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             entry.kind == TransitionKind.move &&
             entry.visualWidget is PlacedAgentNode,
       );
+      // Agent routes load the small movement mesh independently of sightlines.
+      // Unchanged agents, abilities and drawings need no route initialization.
       VisionGeometryMap? transitionGeometry;
+      NavigationGeometryMap? transitionNavigation;
+      final map = ref.read(mapProvider).currentMap;
+      final requireNavigation = ref.read(worldGeometryEnabledProvider(map));
       if (needsAgentRouting) {
         try {
-          transitionGeometry = await ref.read(
-            viewConeGeometryProvider(ref.read(mapProvider).currentMap).future,
-          );
+          if (requireNavigation) {
+            transitionNavigation =
+                await ref.read(navigationGeometryProvider(map).future);
+          } else {
+            transitionGeometry =
+                await ref.read(viewConeGeometryProvider(map).future);
+          }
         } on Object {
-          // Route geometry is an enhancement; direct motion remains valid.
+          // The provider reports the failure. Required native routes hold at
+          // their sources, so changing pages cannot invent movement through walls.
         }
       }
 
@@ -364,6 +376,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final agentPaths = AgentTransitionPathPlanner.plan(
         entries: entries,
         geometry: transitionGeometry,
+        navigation: transitionNavigation,
+        requireNavigation: requireNavigation,
         startAgentSize: startSettings.agentSize,
         endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,
