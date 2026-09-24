@@ -1,17 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
-import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Opens the lineup panel for a landing spot or an origin: every lineup that
@@ -76,7 +72,6 @@ class LineUpPanelDialog extends ConsumerStatefulWidget {
 class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
   String? _selectedLinkId;
   final Object _hoverOwnerToken = Object();
-  Directory? _imageFolder;
   ProviderContainer? _container;
 
   @override
@@ -89,10 +84,6 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
   void initState() {
     super.initState();
     _selectedLinkId = widget.initialLinkId;
-    PlacedImageProvider.getImageFolder(ref.read(strategyProvider).id)
-        .then((dir) {
-      if (mounted) setState(() => _imageFolder = dir);
-    });
   }
 
   @override
@@ -232,7 +223,6 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
                                       .type]
                                   ?.name ??
                               '',
-                          imageFolder: _imageFolder,
                           isSelected: link.id == selected.id,
                           onTap: () =>
                               setState(() => _selectedLinkId = link.id),
@@ -293,7 +283,6 @@ class _LineUpRow extends StatefulWidget {
     required this.link,
     required this.label,
     required this.agentName,
-    required this.imageFolder,
     required this.isSelected,
     required this.onTap,
     required this.onHoverEnter,
@@ -306,7 +295,6 @@ class _LineUpRow extends StatefulWidget {
   final LineUpLink link;
   final String label;
   final String agentName;
-  final Directory? imageFolder;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onHoverEnter;
@@ -327,14 +315,6 @@ class _LineUpRowState extends State<_LineUpRow> {
     const theme = Settings.tacticalVioletTheme;
     final firstImage =
         widget.link.images.isEmpty ? null : widget.link.images.first;
-    final file = firstImage == null || widget.imageFolder == null
-        ? null
-        : File(
-            path.join(
-              widget.imageFolder!.path,
-              firstImage.id + firstImage.fileExtension,
-            ),
-          );
 
     return ShadContextMenuRegion(
       items: [
@@ -383,16 +363,7 @@ class _LineUpRowState extends State<_LineUpRow> {
                   child: SizedBox(
                     width: 72,
                     height: 44,
-                    child: file != null && file.existsSync()
-                        ? Image.file(file, fit: BoxFit.cover)
-                        : Container(
-                            color: theme.secondary,
-                            child: Icon(
-                              LucideIcons.image,
-                              size: 18,
-                              color: theme.mutedForeground,
-                            ),
-                          ),
+                    child: _LineUpThumbnail(image: firstImage),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -427,6 +398,37 @@ class _LineUpRowState extends State<_LineUpRow> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The first image of a lineup, or a muted glyph when it has none to show.
+class _LineUpThumbnail extends ConsumerWidget {
+  const _LineUpThumbnail({required this.image});
+
+  final SimpleImageData? image;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final image = this.image;
+    final imageProvider = image == null
+        ? null
+        : ref
+            .watch(strategyImageSourceProvider(
+              (id: image.id, fileExtension: image.fileExtension),
+            ))
+            .imageProvider;
+    if (imageProvider != null) {
+      return Image(image: imageProvider, fit: BoxFit.cover);
+    }
+    const theme = Settings.tacticalVioletTheme;
+    return Container(
+      color: theme.secondary,
+      child: Icon(
+        LucideIcons.image,
+        size: 18,
+        color: theme.mutedForeground,
       ),
     );
   }

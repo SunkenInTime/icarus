@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,13 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 
 import 'package:icarus/widgets/youtube_view.dart';
-import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Fullscreen viewer for one lineup's media, with delete and edit actions.
@@ -123,8 +119,6 @@ class LineUpMediaPages extends ConsumerStatefulWidget {
 
 class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
     with AutomaticKeepAliveClientMixin {
-  Directory? imageFolderPath;
-
   @override
   bool get wantKeepAlive => true;
 
@@ -136,20 +130,6 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
   void initState() {
     super.initState();
     keepAlive = InAppWebViewKeepAlive();
-    _loadDirectory();
-  }
-
-  Future<void> _loadDirectory() async {
-    final strategyID = ref.read(strategyProvider).strategyId;
-    if (strategyID == null) {
-      return;
-    }
-    final dir = await PlacedImageProvider.getImageFolder(strategyID);
-    if (mounted) {
-      setState(() {
-        imageFolderPath = dir;
-      });
-    }
   }
 
   @override
@@ -171,9 +151,6 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    if (imageFolderPath == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
 
     Widget content;
     if (widget.images.isEmpty && widget.youtubeLink.isEmpty) {
@@ -207,34 +184,19 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                 }
 
                 final image = widget.images[imageIndex];
-                final fullPath = path.join(
-                    imageFolderPath!.path, image.id + image.fileExtension);
-                final file = File(fullPath);
-                // A cloud lineup image may not be on this device yet.
-                final snapshot =
-                    ref.watch(remoteEditorSnapshotProvider).valueOrNull;
-                final remoteUrl = snapshot?.assetsById[image.id]?.url;
-
-                if (!file.existsSync() &&
-                    (remoteUrl == null || remoteUrl.isEmpty)) {
-                  return const Center(
-                    child: Icon(LucideIcons.imageOff, color: Colors.white),
-                  );
-                }
-
-                return InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4.0,
-                  child: file.existsSync()
-                      ? Image.file(
-                          file,
-                          fit: BoxFit.contain,
-                        )
-                      : Image.network(
-                          remoteUrl!,
-                          fit: BoxFit.contain,
-                        ),
-                );
+                final source = ref.watch(strategyImageSourceProvider(
+                  (id: image.id, fileExtension: image.fileExtension),
+                ));
+                return switch (source.imageProvider) {
+                  final imageProvider? => InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 4.0,
+                      child: Image(image: imageProvider, fit: BoxFit.contain),
+                    ),
+                  null => const Center(
+                      child: Icon(LucideIcons.imageOff, color: Colors.white),
+                    ),
+                };
               },
             ),
           ),
