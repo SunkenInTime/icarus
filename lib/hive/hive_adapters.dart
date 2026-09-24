@@ -25,10 +25,12 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
+// Hand-written adapters own these typeIds. The generator drops yaml rows for
+// types it does not generate, so reserving them is what keeps a future
+// AdapterSpec from being handed one of them.
 @GenerateAdapters([
   AdapterSpec<StrategyData>(),
   AdapterSpec<PlacedWidget>(),
-  AdapterSpec<PlacedAgent>(),
   AdapterSpec<AbilityVisualState>(),
   AdapterSpec<PlacedText>(),
   AdapterSpec<PlacedImage>(),
@@ -57,15 +59,79 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<PlacedViewConeAgent>(),
   AdapterSpec<PlacedCircleAgent>(),
   AdapterSpec<WeaponType>(),
-])
+], reservedTypeIds: {
+  placedAgentAdapterTypeId,
+  placedAbilityAdapterTypeId,
+  abilityInfoAdapterTypeId,
+  freeDrawingAdapterTypeId,
+  lineAdapterTypeId,
+  folderAdapterTypeId,
+  strategyPageAdapterTypeId,
+  rectangleDrawingAdapterTypeId,
+  ellipseDrawingAdapterTypeId,
+})
 part 'hive_adapters.g.dart';
 
+const int placedAgentAdapterTypeId = 2;
 const int placedAbilityAdapterTypeId = 3;
+const int abilityInfoAdapterTypeId = 9;
+const int folderAdapterTypeId = 17;
 const int freeDrawingAdapterTypeId = 11;
 const int lineAdapterTypeId = 12;
 const int strategyPageAdapterTypeId = 20;
 const int rectangleDrawingAdapterTypeId = 24;
 const int ellipseDrawingAdapterTypeId = 31;
+
+/// Omits the firearm when there is none, so an agent without one is exactly
+/// the record 3.2.3 wrote; WeaponType (typeId 38) is unknown to that build.
+/// Desktop 4.6 always wrote field 7, so reading accepts it when present.
+class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
+  @override
+  final typeId = placedAgentAdapterTypeId;
+
+  @override
+  PlacedAgent read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedAgent(
+      type: fields[0] as AgentType,
+      position: fields[4] as Offset,
+      id: fields[2] as String,
+      isAlly: fields[1] == null ? true : fields[1] as bool,
+      lineUpID: fields[5] as String?,
+      state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
+      weapon: fields[7] == null ? WeaponType.none : fields[7] as WeaponType,
+    )..isDeleted = fields[3] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedAgent obj) {
+    final hasWeapon = obj.weapon != WeaponType.none;
+    writer
+      ..writeByte(hasWeapon ? 8 : 7)
+      ..writeByte(0)
+      ..write(obj.type)
+      ..writeByte(1)
+      ..write(obj.isAlly)
+      ..writeByte(2)
+      ..write(obj.id)
+      ..writeByte(3)
+      ..write(obj.isDeleted)
+      ..writeByte(4)
+      ..write(obj.position)
+      ..writeByte(5)
+      ..write(obj.lineUpID)
+      ..writeByte(6)
+      ..write(obj.state);
+    if (hasWeapon) {
+      writer
+        ..writeByte(7)
+        ..write(obj.weapon);
+    }
+  }
+}
 
 /// Keeps values added after 3.2.3 primitive on disk so the public build can
 /// still decode and ignore them during an emergency rollback.
@@ -228,8 +294,16 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
               drawing is RectangleDrawing,
         )
         .toList(growable: false);
-    final compatibilityAgents =
-        obj.agentData.whereType<PlacedAgent>().toList(growable: false);
+    // Weapons ride in the agents mirror (13); 3.2.3 cannot decode them.
+    final compatibilityAgents = obj.agentData
+        .whereType<PlacedAgent>()
+        .map(_withoutWeapon)
+        .toList(growable: false);
+    final compatibilityLineUps = [
+      // ignore: deprecated_member_use_from_same_package
+      for (final lineUp in obj.lineUps)
+        lineUp.copyWith(agent: _withoutWeapon(lineUp.agent)),
+    ];
 
     writer
       ..writeByte(16)
@@ -256,7 +330,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(10)
       ..write(obj.settings)
       ..writeByte(11)
-      ..write(obj.lineUps)
+      ..write(compatibilityLineUps)
       ..writeByte(_pageAgentsJsonField)
       ..write(AgentProvider.objectToJson(obj.agentData))
       ..writeByte(14)
@@ -265,6 +339,11 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..write(DrawingProvider.objectToJson(obj.drawingData))
       ..writeByte(_pageLineUpGraphJsonField)
       ..write(LineUpProvider.objectToJson(obj.lineUpGraph));
+  }
+
+  static PlacedAgent _withoutWeapon(PlacedAgent agent) {
+    if (agent.weapon == WeaponType.none) return agent;
+    return agent.copyWith(weapon: WeaponType.none)..isDeleted = agent.isDeleted;
   }
 }
 
@@ -519,7 +598,7 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
 
 class FolderAdapter extends TypeAdapter<Folder> {
   @override
-  final typeId = 17;
+  final typeId = folderAdapterTypeId;
 
   @override
   Folder read(BinaryReader reader) {

@@ -53,26 +53,6 @@ types:
         index: 1
       position:
         index: 2
-  PlacedAgent:
-    typeId: 2
-    nextIndex: 8
-    fields:
-      type:
-        index: 0
-      isAlly:
-        index: 1
-      id:
-        index: 2
-      isDeleted:
-        index: 3
-      position:
-        index: 4
-      lineUpID:
-        index: 5
-      state:
-        index: 6
-      weapon:
-        index: 7
   PlacedText:
     typeId: 4
     nextIndex: 9

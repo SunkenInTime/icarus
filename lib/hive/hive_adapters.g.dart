@@ -144,60 +144,6 @@ class PlacedWidgetAdapter extends TypeAdapter<PlacedWidget> {
           typeId == other.typeId;
 }
 
-class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
-  @override
-  final typeId = 2;
-
-  @override
-  PlacedAgent read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return PlacedAgent(
-      type: fields[0] as AgentType,
-      position: fields[4] as Offset,
-      id: fields[2] as String,
-      isAlly: fields[1] == null ? true : fields[1] as bool,
-      lineUpID: fields[5] as String?,
-      state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
-      weapon: fields[7] == null ? WeaponType.none : fields[7] as WeaponType,
-    )..isDeleted = fields[3] as bool;
-  }
-
-  @override
-  void write(BinaryWriter writer, PlacedAgent obj) {
-    writer
-      ..writeByte(8)
-      ..writeByte(0)
-      ..write(obj.type)
-      ..writeByte(1)
-      ..write(obj.isAlly)
-      ..writeByte(2)
-      ..write(obj.id)
-      ..writeByte(3)
-      ..write(obj.isDeleted)
-      ..writeByte(4)
-      ..write(obj.position)
-      ..writeByte(5)
-      ..write(obj.lineUpID)
-      ..writeByte(6)
-      ..write(obj.state)
-      ..writeByte(7)
-      ..write(obj.weapon);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is PlacedAgentAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
 class PlacedTextAdapter extends TypeAdapter<PlacedText> {
   @override
   final typeId = 4;

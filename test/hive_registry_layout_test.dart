@@ -231,6 +231,7 @@ void main() {
   test('shipped Hive typeIds are fixed', () {
     expect(PlacedAgentAdapter().typeId, 2);
     expect(PlacedAbilityAdapter().typeId, 3);
+    expect(AbilityInfoAdapter().typeId, 9);
     expect(StrategyPageAdapter().typeId, 20);
     expect(LineUpAdapter().typeId, 21);
     expect(SimpleImageDataAdapter().typeId, 22);
@@ -318,6 +319,31 @@ void main() {
       );
       expect(restored.agentData[1], isA<PlacedViewConeAgent>());
       expect(restored.drawingData.last, isA<EllipseDrawing>());
+    });
+
+    test('weapons survive a round trip through the agents mirror', () {
+      final page = _page();
+      final bytes = _write(StrategyPageAdapter(), page);
+      final fields = _fields(bytes);
+
+      // The legacy slots carry no firearm for 3.2.3; the mirror does.
+      expect(
+        (fields[4] as List).cast<PlacedAgent>().map((agent) => agent.weapon),
+        [WeaponType.none],
+      );
+      for (final lineUp in (fields[11] as List).cast<LineUp>()) {
+        expect(lineUp.agent.weapon, WeaponType.none);
+      }
+
+      final restored = _read(bytes);
+      expect(
+        restored.agentData.map((agent) => agent.weapon),
+        [WeaponType.sheriff, WeaponType.phantom, WeaponType.judge],
+      );
+      expect(
+        restored.lineUpOrigins.map((origin) => origin.agent.weapon),
+        [WeaponType.vandal, WeaponType.operator],
+      );
     });
 
     test('reads pages written by desktop 4.6 (graph at 15-17, no mirrors)', () {

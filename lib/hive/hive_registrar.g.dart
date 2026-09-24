@@ -27,7 +27,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
-    registerAdapter(PlacedAgentAdapter());
     registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
     registerAdapter(PlacedTextAdapter());
@@ -64,7 +63,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
-    registerAdapter(PlacedAgentAdapter());
     registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
     registerAdapter(PlacedTextAdapter());
