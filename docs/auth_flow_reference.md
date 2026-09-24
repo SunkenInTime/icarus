@@ -68,7 +68,7 @@ Why this matters:
   and prerelease builds. Stable and Store release scripts require an explicit
   production URL and client ID.
 - `Supabase.initialize(...)` sets up the auth provider that will issue JWTs.
-- `detectSessionInUri: false` is intentional because the desktop app handles OAuth callback URIs itself instead of relying on automatic URI parsing.
+- `detectSessionInUri: false` is intentional: the app handles OAuth callback URIs itself, on desktop and web alike, instead of relying on automatic URI parsing. Supabase's detector treats any URL with a `code` parameter as a sign-in (a `?code=` share link included), runs outside `authProvider`'s loading and error states, and on desktop would exchange the same `icarus://` link a second time alongside our handler.
 
 ## 2. Convex trusts Supabase JWTs
 
@@ -139,22 +139,37 @@ Those methods authenticate directly with Supabase.
 
 ### Discord OAuth
 
-Discord login uses Supabase OAuth with a custom desktop deep link:
+Discord login uses Supabase OAuth. The redirect depends on the platform
+(`currentAuthRedirectUri()` in `auth_provider.dart`, built from
+`lib/services/auth_callback_uri.dart`):
 
 ```dart
 final launched = await _supabaseApi.signInWithOAuth(
   OAuthProvider.discord,
-  redirectTo: 'icarus://auth/callback',
+  redirectTo: currentAuthRedirectUri().toString(),
   authScreenLaunchMode: LaunchMode.externalApplication,
   scopes: 'identify email',
 );
 ```
 
+- Desktop: `icarus://auth/callback`, a custom deep link. The browser opens
+  externally and the OS hands the link back to the app.
+- Web: the root of the page's own origin, e.g. `https://beta.icarusstrats.com/`.
+  The tab itself navigates to Discord and back. The root (not the current path)
+  means one Supabase allowlist entry per origin.
+
 Why this works:
 
 - Supabase handles the OAuth exchange with Discord.
-- On success, Supabase redirects back to `icarus://auth/callback`.
-- The app listens for that deep link and hands it to Supabase to finalize the session.
+- On success, Supabase redirects back to the redirect URI with a PKCE `?code=`.
+- The app hands that URI to Supabase to finalize the session. The PKCE code
+  verifier is saved in local storage when sign-in starts, so on web the return
+  must land on the same origin that started it.
+
+Every redirect Supabase is asked for must be in the project's redirect
+allowlist (Authentication > URL Configuration). A redirect outside it silently
+falls back to the Site URL, which on web means a different origin and a failed
+code exchange.
 
 ## 5. OAuth callback handling
 
@@ -168,24 +183,19 @@ unawaited(
 );
 ```
 
-The provider decides whether the incoming URI is an auth callback:
+Where the URI comes from:
 
-```dart
-bool isAuthCallbackUri(Uri uri) {
-  final isIcarusScheme = uri.scheme.toLowerCase() == 'icarus';
-  final isAuthCallback =
-      uri.host.toLowerCase() == 'auth' &&
-      uri.path.toLowerCase() == '/callback';
+- Desktop: `app_links` (initial link and stream) and second-instance arguments.
+- Web: the page's own URL (`Uri.base`), published once at startup when it is
+  an auth callback or a share link. `app_links` is not used on web; its web
+  plugin only echoes the page URL.
 
-  final hasAuthPayload =
-      uri.fragment.contains('access_token') ||
-      uri.queryParameters.containsKey('code') ||
-      uri.fragment.contains('error_description') ||
-      uri.queryParameters.containsKey('error_description');
-
-  return isIcarusScheme && isAuthCallback && hasAuthPayload;
-}
-```
+The provider decides whether the incoming URI is an auth callback with
+`isAuthCallbackUri(uri, redirectUri: currentAuthRedirectUri())`: the URI must
+land on this build's redirect URI (same scheme, host, port, and path) and carry
+a sign-in result (`code`, `access_token`, or `error_description`). Requiring
+the redirect's path keeps a `/share?code=…` link from being mistaken for a
+sign-in.
 
 Then it completes the Supabase session:
 
@@ -193,10 +203,14 @@ Then it completes the Supabase session:
 await _supabaseApi.getSessionFromUrl(uri);
 ```
 
+On web, `main.dart` then removes the sign-in parameters from the address bar
+(`withoutAuthCallbackParameters` + `replaceBrowserUrl`), so a refresh does not
+replay a spent code.
+
 Why this matters:
 
-- Desktop OAuth relies on the custom URI handler working correctly.
-- If the deep link never reaches `handleAuthCallbackUri(...)`, the browser may show a successful login while the app stays signed out.
+- OAuth relies on the callback URI reaching the handler.
+- If the callback never reaches `handleAuthCallbackUri(...)`, the browser may show a successful login while the app stays signed out.
 
 ## 6. Supabase auth changes trigger Convex auth setup
 
@@ -683,6 +697,8 @@ First places to inspect:
 Likely causes:
 
 - the `icarus://auth/callback` deep link is not reaching the app
+- web: the page origin is not in the Supabase redirect allowlist, so Supabase
+  returned to the Site URL (another origin, without the PKCE code verifier)
 - the callback URI shape changed
 - `getSessionFromUrl(...)` is failing
 - duplicate-link filtering or platform URI handling is dropping the callback

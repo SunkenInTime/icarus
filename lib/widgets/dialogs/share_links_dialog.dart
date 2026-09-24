@@ -7,6 +7,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_copy.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -102,7 +103,8 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
             token: token,
             role: _selectedRole,
           );
-      await Clipboard.setData(ClipboardData(text: buildIcarusShareLink(token)));
+      await Clipboard.setData(ClipboardData(
+          text: buildIcarusShareLink(token, origin: currentShareOrigin())));
       Settings.showToast(
         message: 'Share link copied to clipboard.',
         backgroundColor: Settings.tacticalVioletTheme.primary,
@@ -417,7 +419,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final link = widget.link;
-    final url = buildIcarusShareLink(link.token);
+    final url = buildIcarusShareLink(link.token, origin: currentShareOrigin());
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -753,7 +755,10 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
     if (_isSubmitting) {
       return;
     }
-    final token = extractIcarusShareCode(_controller.text);
+    final token = extractIcarusShareCode(
+      _controller.text,
+      currentOrigin: currentShareOrigin(),
+    );
     if (token == null || token.isEmpty) {
       setState(() {
         _errorText = _controller.text.trim().isEmpty
@@ -819,8 +824,8 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
             child: ShadInput(
               controller: _controller,
               autofocus: true,
-              placeholder: const Text(
-                'https://$icarusShareHost/share/… or ICR-XXXX-XXXX-XXXX-XXXX',
+              placeholder: Text(
+                '${currentShareOrigin()}/share/… or ICR-XXXX-XXXX-XXXX-XXXX',
               ),
               onSubmitted: (_) => _submit(),
               onChanged: (_) {

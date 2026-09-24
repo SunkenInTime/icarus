@@ -4,6 +4,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
 
 final shareLinkControllerProvider =
@@ -11,11 +12,15 @@ final shareLinkControllerProvider =
 
 class ShareLinkController extends Notifier<String?> {
   Future<bool> handleIncomingUri(Uri uri, {required String source}) async {
-    if (!isIcarusShareUri(uri)) {
+    final currentOrigin = currentShareOrigin();
+    if (!isIcarusShareUri(uri, currentOrigin: currentOrigin)) {
       return false;
     }
 
-    final token = extractIcarusShareCode(uri.toString());
+    final token = extractIcarusShareCode(
+      uri.toString(),
+      currentOrigin: currentOrigin,
+    );
     if (token == null || token.isEmpty) {
       Settings.showToast(
         message: 'That share link is missing a share code.',

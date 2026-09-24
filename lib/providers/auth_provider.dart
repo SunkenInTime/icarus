@@ -3,11 +3,13 @@ import 'dart:developer';
 
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -361,13 +363,13 @@ class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
   Future<AuthResponse> refreshSession() => _client.auth.refreshSession();
 }
 
-class AuthProvider extends Notifier<AppAuthState> {
-  static final Uri _discordRedirectUri = Uri(
-    scheme: 'icarus',
-    host: 'auth',
-    path: '/callback',
-  );
+/// The redirect this build asks Supabase to return to after Discord sign-in:
+/// the `icarus://` deep link on desktop, the page's own origin on web.
+Uri currentAuthRedirectUri() {
+  return kIsWeb ? webAuthRedirectUri(Uri.base) : nativeAuthRedirectUri;
+}
 
+class AuthProvider extends Notifier<AppAuthState> {
   StreamSubscription<AuthState>? _supabaseAuthSub;
   AuthProviderAuthHandle? _convexAuthHandle;
   Future<void>? _inFlightConvexSetup;
@@ -492,21 +494,6 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
   }
 
-  bool isAuthCallbackUri(Uri uri) {
-    final isIcarusScheme = uri.scheme.toLowerCase() == 'icarus';
-    final isAuthCallback = uri.host.toLowerCase() == 'auth' &&
-        uri.path.toLowerCase() == '/callback';
-    if (!isIcarusScheme || !isAuthCallback) {
-      return false;
-    }
-
-    final hasAuthPayload = uri.fragment.contains('access_token') ||
-        uri.queryParameters.containsKey('code') ||
-        uri.fragment.contains('error_description') ||
-        uri.queryParameters.containsKey('error_description');
-    return hasAuthPayload;
-  }
-
   Future<void> signInWithDiscord() async {
     state = state.copyWith(
       isLoading: true,
@@ -518,7 +505,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     try {
       final launched = await _supabaseApi.signInWithOAuth(
         OAuthProvider.discord,
-        redirectTo: _discordRedirectUri.toString(),
+        redirectTo: currentAuthRedirectUri().toString(),
         authScreenLaunchMode: LaunchMode.externalApplication,
         scopes: 'identify email',
       );
@@ -742,7 +729,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<bool> handleAuthCallbackUri(Uri uri, {required String source}) async {
-    if (!isAuthCallbackUri(uri)) {
+    if (!isAuthCallbackUri(uri, redirectUri: currentAuthRedirectUri())) {
       AppErrorReporter.reportInfo(
         'Deep link was not an auth callback [$source]: ${redactAuthUri(uri)}',
         source: 'auth',

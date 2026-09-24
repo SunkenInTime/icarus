@@ -38,7 +38,10 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
+import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_sign_out_coordinator.dart';
@@ -70,6 +73,18 @@ final List<Uri> _bufferedDeepLinks = <Uri>[];
 bool _hasDeepLinkListener = false;
 
 Future<void> _initializeDeepLinkHandling() async {
+  if (kIsWeb) {
+    // A browser has no OS deep links: the page's own URL is the only link
+    // (app_links' web plugin just echoes it). It matters when it is Supabase
+    // returning from Discord sign-in, or a /share/<code> link.
+    final pageUri = Uri.base;
+    if (isAuthCallbackUri(pageUri, redirectUri: currentAuthRedirectUri()) ||
+        isIcarusShareUri(pageUri, currentOrigin: currentShareOrigin())) {
+      _publishDeepLink(pageUri, source: 'web_location');
+    }
+    return;
+  }
+
   try {
     final initialLink = await _appLinks.getInitialLink();
     if (initialLink != null) {
@@ -141,9 +156,6 @@ Future<void> main(List<String> args) async {
 
       await registerDeepLinkProtocol('icarus');
       await _initializeDeepLinkHandling();
-      if (kIsWeb && isIcarusShareUri(Uri.base)) {
-        _publishDeepLink(Uri.base, source: 'web_location');
-      }
 
       await ensureIcarusSingleInstance(
         launch.fileOpenArgs,
@@ -379,7 +391,8 @@ class _MyAppState extends ConsumerState<MyApp> {
   }) async {
     final uri = Uri.tryParse(argument);
     if (uri != null &&
-        (uri.scheme.toLowerCase() == 'icarus' || isIcarusShareUri(uri))) {
+        (uri.scheme.toLowerCase() == 'icarus' ||
+            isIcarusShareUri(uri, currentOrigin: currentShareOrigin()))) {
       _handleIncomingUri(uri, source: source);
       return;
     }
@@ -410,6 +423,9 @@ class _MyAppState extends ConsumerState<MyApp> {
           .read(authProvider.notifier)
           .handleAuthCallbackUri(uri, source: source);
       if (handledAuth) {
+        if (kIsWeb) {
+          replaceBrowserUrl(withoutAuthCallbackParameters(Uri.base));
+        }
         return;
       }
       await ref
