@@ -168,9 +168,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
         return;
 
       case ActionType.edit:
-        final before = delta.before?.text;
-        if (before == null) return;
-        _upsertText(clonePlacedText(before));
+        _writeEdit(action.id, delta.undoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -211,9 +209,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
         removeText(action.id);
         return;
       case ActionType.edit:
-        final after = delta.after?.text;
-        if (after == null) return;
-        _upsertText(clonePlacedText(after));
+        _writeEdit(action.id, delta.redoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -307,6 +303,17 @@ class TextProvider extends Notifier<List<PlacedText>> {
     poppedText =
         snapshot.poppedText.map((text) => clonePlacedText(text)).toList();
     state = snapshot.texts.map((text) => clonePlacedText(text)).toList();
+  }
+
+  /// Writes an edit onto the text as it is now. A text that is gone
+  /// (a teammate deleted it) stays gone.
+  void _writeEdit(
+    String id,
+    ActionObjectState Function(ActionObjectState current) write,
+  ) {
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
+    _upsertText(write(ActionObjectState.text(state[index])).text!);
   }
 
   void _upsertText(PlacedText text) {

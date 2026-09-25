@@ -110,10 +110,18 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
       return;
     }
 
-    utility.updateRotationHistory();
+    final before = ActionObjectState.utility(utility);
     utility.updateVisionElevation(elevation);
     ref.read(actionProvider.notifier).addAction(
-          UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility),
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.utility,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.utility(utility),
+            ),
+          ),
         );
     state = newState;
   }
@@ -192,9 +200,18 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
       return;
     }
 
+    final before = ActionObjectState.utility(utility);
     utility.updateCustomShapeColor(colorValue);
     ref.read(actionProvider.notifier).addAction(
-          UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility),
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.utility,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.utility(utility),
+            ),
+          ),
         );
     state = newState;
   }
@@ -240,9 +257,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         _upsertUtility(clonePlacedUtility(before));
         return;
       case ActionType.edit:
-        final before = delta.before?.utility;
-        if (before == null) return;
-        _upsertUtility(clonePlacedUtility(before));
+        _writeEdit(action.id, delta.undoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -283,9 +298,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         removeUtility(action.id);
         return;
       case ActionType.edit:
-        final after = delta.after?.utility;
-        if (after == null) return;
-        _upsertUtility(clonePlacedUtility(after));
+        _writeEdit(action.id, delta.redoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -362,6 +375,17 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = snapshot.utilities
         .map((utility) => utility.snapshotCopy<PlacedUtility>())
         .toList();
+  }
+
+  /// Writes an edit onto the utility as it is now. A utility that is gone
+  /// (a teammate deleted it) stays gone.
+  void _writeEdit(
+    String id,
+    ActionObjectState Function(ActionObjectState current) write,
+  ) {
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
+    _upsertUtility(write(ActionObjectState.utility(state[index])).utility!);
   }
 
   void _upsertUtility(PlacedUtility utility) {

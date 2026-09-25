@@ -410,7 +410,7 @@ bool _convertFreeUtilityToComposite({
     ref.read(actionProvider.notifier).performTransaction(
       groups: const [ActionGroup.agent, ActionGroup.utility],
       mutation: () {
-        ref.read(utilityProvider.notifier).removeUtility(utility.id);
+        ref.read(utilityProvider.notifier).removeUtilityAsAction(utility.id);
         ref.read(agentProvider.notifier).convertPlainAgentToViewCone(
               id: targetAgent.id,
               presetType: utility.type,
@@ -430,7 +430,7 @@ bool _convertFreeUtilityToComposite({
     ref.read(actionProvider.notifier).performTransaction(
       groups: const [ActionGroup.agent, ActionGroup.utility],
       mutation: () {
-        ref.read(utilityProvider.notifier).removeUtility(utility.id);
+        ref.read(utilityProvider.notifier).removeUtilityAsAction(utility.id);
         ref.read(agentProvider.notifier).convertPlainAgentToCircle(
               id: targetAgent.id,
               diameterMeters: utility.customDiameter!,

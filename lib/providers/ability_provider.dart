@@ -269,9 +269,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         _upsertAbility(clonePlacedAbility(before));
         return;
       case ActionType.edit:
-        final before = delta.before?.ability;
-        if (before == null) return;
-        _upsertAbility(clonePlacedAbility(before));
+        _writeEdit(action.id, delta.undoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -316,9 +314,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         removeAbility(action.id);
         return;
       case ActionType.edit:
-        final after = delta.after?.ability;
-        if (after == null) return;
-        _upsertAbility(clonePlacedAbility(after));
+        _writeEdit(action.id, delta.redoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -367,6 +363,17 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     state = snapshot.abilities
         .map((ability) => clonePlacedAbility(ability))
         .toList();
+  }
+
+  /// Writes an edit onto the ability as it is now. An ability that is gone
+  /// (a teammate deleted it) stays gone.
+  void _writeEdit(
+    String id,
+    ActionObjectState Function(ActionObjectState current) write,
+  ) {
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
+    _upsertAbility(write(ActionObjectState.ability(state[index])).ability!);
   }
 
   void _upsertAbility(PlacedAbility ability) {
