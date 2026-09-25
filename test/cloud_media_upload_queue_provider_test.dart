@@ -244,6 +244,26 @@ RemoteFullStrategySnapshot _fullSnapshot({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('processing while signed out finds no job and does not throw',
+      () async {
+    // Signed out, the queue's job list is the shared `const []`; sorting it
+    // in place threw on every web page load.
+    final container = _container(
+      MemoryDurableCloudMediaOutboxStore(),
+      accountId: null,
+      strategyOpen: false,
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(container.read(cloudMediaUploadQueueProvider).isProcessing, isFalse);
+  });
+
   test('media durability recovers after a successful retry', () async {
     final store = _FailingBatchStore()..failBatch = true;
     final container = _container(store);

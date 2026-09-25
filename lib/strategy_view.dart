@@ -12,7 +12,9 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -78,6 +80,25 @@ class StrategyView extends ConsumerStatefulWidget {
     );
   }
 
+  /// The editor for the named route [Routes.strategyView], which is what a
+  /// web page reload inside the editor restarts on. The route name carries no
+  /// strategy, so this reopens the cloud strategy the tab last had open
+  /// ([openCloudStrategyId]). With nothing to reopen it returns an empty
+  /// editor only where a local library exists; elsewhere (the web beta) it
+  /// returns null, and the navigator falls back to the library.
+  static PageRoute<void>? restoredRoute({
+    required String? openCloudStrategyId,
+    required bool allowsLocalLibrary,
+  }) {
+    if (openCloudStrategyId != null) {
+      return route(
+        initialStrategyId: openCloudStrategyId,
+        initialStrategySource: StrategySource.cloud,
+      );
+    }
+    return allowsLocalLibrary ? route() : null;
+  }
+
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _StrategyViewState();
 }
@@ -131,6 +152,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         case StrategySource.local:
           await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
         case StrategySource.cloud:
+          if (!await _waitForCloudWorkspace()) {
+            // Signed out, or the cloud is unreachable: nothing failed to
+            // load, and the library says which, so go back without an error.
+            if (mounted) Navigator.maybePop(context);
+            return;
+          }
           await ref.read(strategyProvider.notifier).openCloudStrategy(
                 strategyId,
               );
@@ -162,6 +189,21 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     }
   }
 
+  /// Resolves [cloudWorkspaceOutcomeProvider] once it settles. After a page
+  /// reload the editor can open before sign-in is restored, so a cloud
+  /// strategy waits here rather than failing on an unready backend.
+  Future<bool> _waitForCloudWorkspace() {
+    final settled = Completer<bool>();
+    final subscription = ref.listenManual<bool?>(
+      cloudWorkspaceOutcomeProvider,
+      (_, outcome) {
+        if (outcome != null && !settled.isCompleted) settled.complete(outcome);
+      },
+      fireImmediately: true,
+    );
+    return settled.future.whenComplete(subscription.close);
+  }
+
   Future<void> _leaveToLibrary() async {
     await guardUnsavedStrategyExit(
       context: context,
@@ -185,6 +227,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(openCloudStrategyRecorderProvider);
     final strategyState = ref.watch(strategyProvider);
     final initialStrategyId = widget.initialStrategyId;
     final showSkeleton = _isInitialLoadPending ||
