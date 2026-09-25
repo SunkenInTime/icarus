@@ -31,9 +31,14 @@ CloudPayload cloudElementPayload({
   };
 }
 
-CloudPayload cloudLineupGroupPayload(Map<String, dynamic> data) {
+/// One lineup row's payload; [kind] is a [CloudLineupKind] (see
+/// cloud_lineup_rows.dart).
+CloudPayload cloudLineupPayload({
+  required String kind,
+  required Map<String, dynamic> data,
+}) {
   return <String, dynamic>{
-    'kind': 'lineupGroup',
+    'kind': kind,
     'payloadVersion': currentCloudPayloadVersion,
     'data': _normalizeCloudPayloadData(data),
   };

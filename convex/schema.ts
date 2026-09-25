@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import {
   elementPayloadKindValidator,
   elementPayloadValidator,
-  lineupGroupPayloadValidator,
+  lineupPayloadKindValidator,
+  lineupPayloadValidator,
   mapThemePaletteValidator,
   strategySettingsValidator,
 } from "./lib/payloadValidators";
@@ -91,9 +92,10 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    payloadKind: v.literal("lineupGroup"),
+    // Graph rows are keyed `<payloadKind>:<entity id>`; see ops.ts.
+    payloadKind: lineupPayloadKindValidator,
     payloadVersion: v.number(),
-    payload: lineupGroupPayloadValidator,
+    payload: lineupPayloadValidator,
     sortIndex: v.number(),
     revision: v.number(),
     deleted: v.boolean(),

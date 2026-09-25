@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -278,24 +279,11 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final parsedLineUpGroups = <LineUpGroup>[];
-    for (final lineup in lineups) {
-      if (lineup.deleted) {
-        continue;
-      }
-      try {
-        parsedLineUpGroups.add(LineUpGroup.fromJson(
-          cloudPayloadData(lineup.payload),
-        ));
-      } catch (error, stackTrace) {
-        Error.throwWithStackTrace(
-          FormatException(
-            'Cloud lineup ${lineup.publicId} could not be hydrated: $error',
-          ),
-          stackTrace,
-        );
-      }
-    }
+    final lineUpGraph = lineUpGraphFromCloudRows([
+      for (final lineup in lineups)
+        if (!lineup.deleted)
+          CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
+    ]).graph;
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,
@@ -324,10 +312,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      // TODO(lineupGraph): cloud lineups are stored as lineupGroup payloads,
-      // which cannot express fan-in. Hydrate the graph from that projection
-      // until Convex gains a lineupGraph payload kind.
-      lineUpGraph: LineUpGraph.fromLegacyGroups(parsedLineUpGroups),
+      lineUpGraph: lineUpGraph,
     );
   }
 
@@ -467,21 +452,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final parsedLineUpGroups = <LineUpGroup>[];
-    for (final lineup in projected.lineups) {
-      try {
-        parsedLineUpGroups.add(LineUpGroup.fromJson(
-          cloudPayloadData(lineup.payload),
-        ));
-      } catch (error, stackTrace) {
-        Error.throwWithStackTrace(
-          FormatException(
-            'Cloud lineup ${lineup.publicId} could not be hydrated: $error',
-          ),
-          stackTrace,
-        );
-      }
-    }
+    final lineUpGraph = lineUpGraphFromCloudRows([
+      for (final lineup in projected.lineups)
+        CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
+    ]).graph;
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,
@@ -502,10 +476,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      // TODO(lineupGraph): cloud lineups are stored as lineupGroup payloads,
-      // which cannot express fan-in. Hydrate the graph from that projection
-      // until Convex gains a lineupGraph payload kind.
-      lineUpGraph: LineUpGraph.fromLegacyGroups(parsedLineUpGroups),
+      lineUpGraph: lineUpGraph,
     );
   }
 

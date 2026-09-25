@@ -166,12 +166,6 @@ Map<String, dynamic> cloudImagePayloadFromPlacedImage(PlacedImage image) {
   return Map<String, dynamic>.from(image.toJson())..remove('link');
 }
 
-// TODO(lineupGraph): the Convex lineups table only accepts lineupGroup
-// payloads, so the graph is sent as its legacy group projection.
-Map<String, dynamic> cloudLineupPayload(LineUpGroup group) {
-  return group.toJson();
-}
-
 Set<String> collectStrategyImageAssetIds(StrategyDataLike strategy) {
   final assetIds = <String>{};
   for (final page in strategy.pages) {

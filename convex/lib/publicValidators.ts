@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import {
   elementPayloadKindValidator,
   elementPayloadValidator,
-  lineupGroupPayloadValidator,
+  lineupPayloadValidator,
   mapThemePaletteValidator,
   strategySettingsValidator,
 } from "./payloadValidators";
@@ -138,7 +138,7 @@ export const lineupValidator = v.object({
   publicId: v.string(),
   strategyPublicId: v.string(),
   pagePublicId: v.string(),
-  payload: lineupGroupPayloadValidator,
+  payload: lineupPayloadValidator,
   sortIndex: v.number(),
   revision: v.number(),
   deleted: v.boolean(),

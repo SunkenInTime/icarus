@@ -326,11 +326,28 @@ function assertElementPayload(payload: unknown): ElementPayload {
   return payload as ElementPayload;
 }
 
-function assertLineupPayload(payload: unknown): LineupPayload {
+const lineupGraphKinds = new Set<unknown>([
+  "lineupOrigin",
+  "lineupLanding",
+  "lineupLink",
+]);
+
+function invalidLineupData(message: string) {
+  return errorWithCode("INVALID_LINEUP_PAYLOAD_DATA", message);
+}
+
+/// Checks one lineup row before it is stored. A graph row (origin, landing
+/// or link) is keyed `<payloadKind>:<entity id>`: entity ids repeat across
+/// kinds (a landing made with a link shares the link's id), so the kind is
+/// part of the key, and the key must name the entity the payload holds.
+function assertLineupPayload(
+  payload: unknown,
+  lineupPublicId: string,
+): LineupPayload {
   if (!isRecord(payload)) {
     throw errorWithCode("MISSING_LINEUP_PAYLOAD", "Missing lineup payload");
   }
-  if (payload.kind !== "lineupGroup") {
+  if (payload.kind !== "lineupGroup" && !lineupGraphKinds.has(payload.kind)) {
     throw errorWithCode(
       "INVALID_LINEUP_PAYLOAD_KIND",
       "Invalid lineup payload kind",
@@ -348,13 +365,34 @@ function assertLineupPayload(payload: unknown): LineupPayload {
       "Invalid lineup payload data",
     );
   }
-  // A lineup group with no items reads back as no lineup at all, so storing
-  // one would turn into a deletion nobody made on the next load.
-  if (!Array.isArray(payload.data.items) || payload.data.items.length === 0) {
-    throw errorWithCode(
-      "INVALID_LINEUP_PAYLOAD_DATA",
-      "Lineup payload has no items",
-    );
+  const data = payload.data;
+  if (payload.kind === "lineupGroup") {
+    // A lineup group with no items reads back as no lineup at all, so storing
+    // one would turn into a deletion nobody made on the next load.
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      throw invalidLineupData("Lineup payload has no items");
+    }
+    return payload as LineupPayload;
+  }
+  if (typeof data.id !== "string" || data.id.length === 0) {
+    throw invalidLineupData("Lineup payload has no id");
+  }
+  if (lineupPublicId !== `${payload.kind}:${data.id}`) {
+    throw invalidLineupData("Lineup key does not match its payload");
+  }
+  // Each entity must carry what hydration draws; a row without it would load
+  // as nothing and read as a deletion nobody made.
+  if (payload.kind === "lineupOrigin" && !isRecord(data.agent)) {
+    throw invalidLineupData("Lineup origin has no agent");
+  }
+  if (payload.kind === "lineupLanding" && !isRecord(data.ability)) {
+    throw invalidLineupData("Lineup landing has no ability");
+  }
+  if (
+    payload.kind === "lineupLink" &&
+    (typeof data.originId !== "string" || typeof data.landingId !== "string")
+  ) {
+    throw invalidLineupData("Lineup link does not name its origin and landing");
   }
   return payload as LineupPayload;
 }
@@ -1182,7 +1220,7 @@ async function applyLineupOp(
     if (page === null || page.strategyId !== strategy._id) {
       throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
-    const payload = assertLineupPayload(op.payload);
+    const payload = assertLineupPayload(op.payload, publicId);
     if (existing !== null) {
       if (existing.strategyId !== strategy._id) {
         return rejected("lineup_strategy_mismatch");
@@ -1199,7 +1237,7 @@ async function applyLineupOp(
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
-          payloadKind: "lineupGroup",
+          payloadKind: payload.kind,
           payloadVersion: payload.payloadVersion,
           payload,
           sortIndex: op.sortIndex ?? 0,
@@ -1230,7 +1268,7 @@ async function applyLineupOp(
       publicId,
       strategyId: strategy._id,
       pageId: page._id,
-      payloadKind: "lineupGroup",
+      payloadKind: payload.kind,
       payloadVersion: payload.payloadVersion,
       payload,
       sortIndex: op.sortIndex ?? 0,
@@ -1274,7 +1312,7 @@ async function applyLineupOp(
   let eventPageId = existing.pageId;
   if (op.kind === "patch") {
     if (op.payload !== undefined) {
-      const payload = assertLineupPayload(op.payload);
+      const payload = assertLineupPayload(op.payload, publicId);
       setIfChanged(patch, "payload", existing.payload, payload);
       setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
       setIfChanged(

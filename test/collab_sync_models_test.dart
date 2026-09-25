@@ -506,7 +506,7 @@ void main() {
         isA<FormatException>().having(
           (error) => error.message,
           'message',
-          contains('Cloud lineup lineup-1 could not be exported'),
+          contains('Cloud lineup lineup-1 could not be read'),
         ),
       ),
     );

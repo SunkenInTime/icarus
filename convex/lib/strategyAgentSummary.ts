@@ -1,9 +1,10 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
-/// Reads the agent type of one agent element or lineup group payload. The
-/// client stores the agent enum name under `type` (an element) or under
-/// `agent.type` (a lineup group); anything else is not an agent.
+/// Reads the agent type of one agent element or lineup payload. The client
+/// stores the agent enum name under `type` (an element) or under
+/// `agent.type` (a lineup origin or legacy lineup group); anything else,
+/// landings and links included, is not an agent.
 function agentTypeOf(data: unknown): string | null {
   if (typeof data !== "object" || data === null) return null;
   const record = data as Record<string, unknown>;
@@ -18,7 +19,7 @@ function agentTypeOf(data: unknown): string | null {
 }
 
 /// Recomputes which agents a strategy uses, from its live agent elements and
-/// lineup groups, and stores the answer in its own row. Content ops never
+/// lineup origins, and stores the answer in its own row. Content ops never
 /// touch the strategy row itself; the summary is derived data that the
 /// folder tree reads without scanning elements.
 export async function refreshStrategyAgentSummary(

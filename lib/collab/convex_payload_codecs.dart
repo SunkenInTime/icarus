@@ -123,3 +123,42 @@ final class LineupGroupConvexCodec implements ConvexPayloadCodec<CloudPayload> {
   ConvexValue encode(CloudPayload value) =>
       _encodePayload(value, 'lineupGroup');
 }
+
+@ConvexPayload('lineupOrigin')
+final class LineupOriginConvexCodec
+    implements ConvexPayloadCodec<CloudPayload> {
+  const LineupOriginConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) =>
+      _decodePayload(value, 'lineupOrigin');
+
+  @override
+  ConvexValue encode(CloudPayload value) =>
+      _encodePayload(value, 'lineupOrigin');
+}
+
+@ConvexPayload('lineupLanding')
+final class LineupLandingConvexCodec
+    implements ConvexPayloadCodec<CloudPayload> {
+  const LineupLandingConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) =>
+      _decodePayload(value, 'lineupLanding');
+
+  @override
+  ConvexValue encode(CloudPayload value) =>
+      _encodePayload(value, 'lineupLanding');
+}
+
+@ConvexPayload('lineupLink')
+final class LineupLinkConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const LineupLinkConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'lineupLink');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineupLink');
+}

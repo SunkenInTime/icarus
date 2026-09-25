@@ -448,9 +448,11 @@ class LineUpGraph {
     return fromLegacyGroups(lineUps.map(LineUpGroup.fromLegacyLineUp).toList());
   }
 
-  /// Projection for readers that predate the graph: one group per origin,
-  /// each link becomes an item carrying a copy of its landing's ability. A
-  /// shared landing is copied once per origin.
+  /// Projection for local readers that predate the graph (the Hive fields an
+  /// older build reads after a rollback): one group per origin, each link
+  /// becomes an item carrying a copy of its landing's ability. A shared
+  /// landing is copied once per origin. Cloud sync stores the graph itself
+  /// (lib/collab/cloud_lineup_rows.dart) and never uses this.
   List<LineUpGroup> toLegacyGroups() {
     final landingsById = {for (final landing in landings) landing.id: landing};
     return [
@@ -1003,11 +1005,7 @@ class LineUpProvider extends Notifier<LineUpState> {
 
     final linkId = _uuid.v4();
     final originId = placement.pinnedOriginId ?? _uuid.v4();
-    // A landing made for this link takes the link's id. The cloud projection
-    // stores each link as an item keyed by the link id and hydration makes
-    // that the landing id, so sharing it keeps the landing's identity across
-    // a round trip and every action that names it stays valid.
-    final landingId = placement.pinnedLandingId ?? linkId;
+    final landingId = placement.pinnedLandingId ?? _uuid.v4();
     final origins = [...state.origins];
     final landings = [...state.landings];
     if (placement.pinnedOriginId == null) {
@@ -1036,7 +1034,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       images: images.map((image) => image.copyWith()).toList(),
     );
     // Both endpoints are recorded even when pinned, so redo can recreate
-    // one that a cloud rehydrate renamed in between.
+    // one that was removed in between (by a teammate, or an undo).
     final added = LineUpGraph(
       origins: [origins.firstWhere((origin) => origin.id == originId)],
       landings: [landings.firstWhere((landing) => landing.id == landingId)],
@@ -1217,8 +1215,8 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   /// Removes [linkIds] (origins and landings left without a link go with
   /// them) and records the links plus every endpoint they joined, shared ones
-  /// included. Undo can then rebuild a lineup whose shared landing a cloud
-  /// rehydrate renamed in between, instead of restoring a link to nothing.
+  /// included. Undo can then rebuild a lineup whose shared landing was
+  /// removed in between, instead of restoring a link to nothing.
   void _recordDeletion(String actionId, Set<String> linkIds) {
     final removedLinks =
         state.links.where((link) => linkIds.contains(link.id)).toList();
