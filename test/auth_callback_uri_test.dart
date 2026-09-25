@@ -71,6 +71,21 @@ void main() {
       );
     });
 
+    test('token names are matched in any case', () {
+      for (final link in [
+        'https://beta.icarusstrats.com/?code=c&ACCESS_TOKEN=secret',
+        'https://beta.icarusstrats.com/?Refresh_Token=secret',
+        'https://beta.icarusstrats.com/#Access_Token=secret&token_type=bearer',
+        'https://beta.icarusstrats.com/?code=c#PROVIDER_TOKEN=secret',
+      ]) {
+        expect(web(link), AuthCallback.injectedTokens, reason: link);
+      }
+      expect(
+        native('icarus://auth/callback?code=c#Refresh_Token=secret'),
+        AuthCallback.injectedTokens,
+      );
+    });
+
     test('undecodable escapes fail closed', () {
       expect(
         web('https://beta.icarusstrats.com/#access_token=%E0%A4%A'),
@@ -163,6 +178,18 @@ void main() {
           ),
         ).toString(),
         'https://beta.icarusstrats.com/',
+      );
+    });
+
+    test('scrubs sign-in parameters whatever their case', () {
+      expect(
+        withoutAuthCallbackParameters(
+          Uri.parse(
+            'https://beta.icarusstrats.com/?code=c&ACCESS_TOKEN=secret'
+            '&utm=discord#Refresh_Token=secret&Token_Type=bearer',
+          ),
+        ).toString(),
+        'https://beta.icarusstrats.com/?utm=discord',
       );
     });
 

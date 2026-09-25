@@ -20,8 +20,13 @@ String buildIcarusShareLink(String code, {required Uri origin}) {
 /// path on the production host or on [currentOrigin] (the web page's own
 /// origin, so links made in the beta open in the beta).
 bool isIcarusShareUri(Uri uri, {required Uri currentOrigin}) {
-  final hasSharePath =
-      uri.pathSegments.any((segment) => segment.toLowerCase() == 'share');
+  final bool hasSharePath;
+  try {
+    hasSharePath =
+        uri.pathSegments.any((segment) => segment.toLowerCase() == 'share');
+  } on FormatException {
+    return false; // A path that does not decode is not a link we made.
+  }
 
   if (uri.scheme.toLowerCase() == 'icarus') {
     return uri.host.toLowerCase() == 'share' || hasSharePath;
@@ -72,16 +77,21 @@ String? extractIcarusShareCode(String value, {required Uri currentOrigin}) {
   final uri = Uri.tryParse(trimmed);
   if (uri != null) {
     if (isIcarusShareUri(uri, currentOrigin: currentOrigin)) {
-      final token = uri.queryParameters['token'] ?? uri.queryParameters['code'];
-      if (token != null && token.isNotEmpty) {
-        return _normalizeCodeOrLegacyToken(token);
-      }
+      try {
+        final token =
+            uri.queryParameters['token'] ?? uri.queryParameters['code'];
+        if (token != null && token.isNotEmpty) {
+          return _normalizeCodeOrLegacyToken(token);
+        }
 
-      final shareIndex = uri.pathSegments.indexWhere(
-        (segment) => segment.toLowerCase() == 'share',
-      );
-      if (shareIndex >= 0 && shareIndex + 1 < uri.pathSegments.length) {
-        return _normalizeCodeOrLegacyToken(uri.pathSegments[shareIndex + 1]);
+        final shareIndex = uri.pathSegments.indexWhere(
+          (segment) => segment.toLowerCase() == 'share',
+        );
+        if (shareIndex >= 0 && shareIndex + 1 < uri.pathSegments.length) {
+          return _normalizeCodeOrLegacyToken(uri.pathSegments[shareIndex + 1]);
+        }
+      } on FormatException {
+        return null; // A query that does not decode holds no usable code.
       }
     }
 

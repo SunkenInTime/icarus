@@ -40,21 +40,22 @@ AuthCallback classifyAuthCallbackUri(Uri uri, {required Uri redirectUri}) {
     return AuthCallback.none;
   }
 
-  final Map<String, String> query;
-  final Map<String, String> fragment;
+  // Parameter names compared in lowercase, so `ACCESS_TOKEN=` is rejected too.
+  final Set<String> query;
+  final Set<String> fragment;
   try {
-    query = uri.queryParameters;
-    fragment = Uri.splitQueryString(uri.fragment);
+    query = _lowercaseKeys(uri.queryParameters.keys);
+    fragment = _lowercaseKeys(Uri.splitQueryString(uri.fragment).keys);
   } on FormatException {
     // Undecodable escapes: nothing Supabase sends. Fail closed.
     return AuthCallback.injectedTokens;
   }
-  bool has(String key) => query.containsKey(key) || fragment.containsKey(key);
+  bool has(String key) => query.contains(key) || fragment.contains(key);
 
   if (_sessionTokenParameters.any(has)) {
     return AuthCallback.injectedTokens;
   }
-  if (query.containsKey('code') ||
+  if (query.contains('code') ||
       has('error') ||
       has('error_code') ||
       has('error_description')) {
@@ -69,6 +70,12 @@ const _sessionTokenParameters = {
   'provider_token',
   'provider_refresh_token',
 };
+
+Set<String> _lowercaseKeys(Iterable<String> keys) =>
+    {for (final key in keys) key.toLowerCase()};
+
+bool _isAuthCallbackParameter(String key) =>
+    _authCallbackParameters.contains(key.toLowerCase());
 
 String _rootedPath(Uri uri) {
   final path = uri.path.toLowerCase();
@@ -99,7 +106,7 @@ Uri withoutAuthCallbackParameters(Uri uri) {
   Map<String, List<String>> query;
   try {
     query = Map.of(uri.queryParametersAll)
-      ..removeWhere((key, _) => _authCallbackParameters.contains(key));
+      ..removeWhere((key, _) => _isAuthCallbackParameter(key));
   } on FormatException {
     query = const {}; // Undecodable, so drop it rather than keep a payload.
   }
@@ -128,7 +135,7 @@ String? _withoutAuthFragmentParameters(String fragment) {
   }
   final kept = {
     for (final entry in parameters.entries)
-      if (!_authCallbackParameters.contains(entry.key)) entry.key: entry.value,
+      if (!_isAuthCallbackParameter(entry.key)) entry.key: entry.value,
   };
   if (kept.length == parameters.length) {
     return fragment;

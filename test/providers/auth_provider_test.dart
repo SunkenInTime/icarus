@@ -232,6 +232,42 @@ void main() {
       );
     });
 
+    test('a path that does not decode is fully redacted, not thrown', () {
+      const input = 'icarus://share/%FF?token=secret';
+      expect(
+        () => redactDeepLinkUri(Uri.parse(input)),
+        returnsNormally,
+      );
+      expect(
+        redactDeepLinkUri(Uri.parse(input)),
+        unparseableLinkPlaceholder,
+      );
+      expect(redactLaunchArgument(input), unparseableLinkPlaceholder);
+      expect(
+        redactDeepLinkUri(Uri.parse('https://beta.icarusstrats.com/share/%FF')),
+        unparseableLinkPlaceholder,
+      );
+    });
+
+    test('an unparseable link-shaped argument is not logged raw', () {
+      for (final argument in [
+        'https://[beta.icarusstrats.com/share/$code',
+        'icarus://[share?code=$code',
+      ]) {
+        expect(Uri.tryParse(argument), isNull, reason: argument);
+        expect(
+          redactLaunchArgument(argument),
+          unparseableLinkPlaceholder,
+          reason: argument,
+        );
+      }
+      expect(
+        redactLaunchArgument('icarus:share?code=$code'),
+        isNot(contains(code)),
+        reason: 'a parseable icarus: link without // is still redacted',
+      );
+    });
+
     test('launch arguments: links are redacted, file paths are not', () {
       expect(
         redactLaunchArgument('icarus://share?code=$code'),

@@ -86,33 +86,45 @@ String redactDeepLinkUri(Uri uri) {
 
   // Everything after a `share` segment (or in an `icarus://share/…` path)
   // is the code.
+  final List<String> segments;
+  try {
+    segments = uri.pathSegments;
+  } on FormatException {
+    // A path that does not decode (e.g. `/share/%FF`) cannot be redacted
+    // piece by piece, so none of it is logged.
+    return unparseableLinkPlaceholder;
+  }
   var afterShare =
       uri.scheme.toLowerCase() == 'icarus' && uri.host.toLowerCase() == 'share';
   final pathSegments = <String>[];
-  for (final segment in uri.pathSegments) {
+  for (final segment in segments) {
     pathSegments.add(afterShare ? '<redacted>' : segment);
     afterShare = afterShare || segment.toLowerCase() == 'share';
   }
 
   return uri
       .replace(
-        pathSegments: uri.pathSegments.isEmpty ? null : pathSegments,
+        pathSegments: segments.isEmpty ? null : pathSegments,
         queryParameters: redactQuery(),
         fragment: redactFragment(uri.fragment),
       )
       .toString();
 }
 
-/// A launch argument safe to log: links go through [redactDeepLinkUri],
-/// anything else (a file path) is logged as is.
+/// Logged in place of a link that cannot be parsed or decoded.
+const unparseableLinkPlaceholder = '<unparseable link>';
+
+/// A launch argument safe to log. Anything shaped like a link goes through
+/// [redactDeepLinkUri] (or becomes [unparseableLinkPlaceholder] if it does not
+/// parse); anything else, such as a file path, is logged as is.
 String redactLaunchArgument(String argument) {
-  final uri = Uri.tryParse(argument);
-  final scheme = uri?.scheme.toLowerCase();
-  if (uri != null &&
-      (scheme == 'icarus' || scheme == 'http' || scheme == 'https')) {
-    return redactDeepLinkUri(uri);
+  final looksLikeLink = argument.contains('://') ||
+      argument.trimLeft().toLowerCase().startsWith('icarus:');
+  if (!looksLikeLink) {
+    return argument;
   }
-  return argument;
+  final uri = Uri.tryParse(argument.trim());
+  return uri == null ? unparseableLinkPlaceholder : redactDeepLinkUri(uri);
 }
 
 String redactAuthDiagnosticText(Object value) {

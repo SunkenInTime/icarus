@@ -247,6 +247,30 @@ void main() {
       );
     });
 
+    test('links that do not decode are rejected, not thrown', () {
+      expect(
+        isIcarusShareUri(
+          Uri.parse('https://beta.icarusstrats.com/share/%FF'),
+          currentOrigin: beta,
+        ),
+        isFalse,
+      );
+      expect(
+        extractIcarusShareCode(
+          'https://beta.icarusstrats.com/share/%FF',
+          currentOrigin: beta,
+        ),
+        isNull,
+      );
+      expect(
+        extractIcarusShareCode(
+          'https://beta.icarusstrats.com/share?code=%E0%A4%A',
+          currentOrigin: beta,
+        ),
+        isNull,
+      );
+    });
+
     test('rejects garbage input', () {
       expect(extractIcarusShareCode('', currentOrigin: beta), isNull);
       expect(extractIcarusShareCode('   ', currentOrigin: beta), isNull);
