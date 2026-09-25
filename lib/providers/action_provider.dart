@@ -256,6 +256,12 @@ class ActionProvider extends Notifier<List<UserAction>> {
       );
     }
 
+    if (action is LineUpGraphAction) {
+      return ref
+          .read(lineUpProvider.notifier)
+          .replayGraphAction(action, undo: undo);
+    }
+
     final delta = action.objectDelta;
     if (delta != null) {
       final current = _currentObjectState(

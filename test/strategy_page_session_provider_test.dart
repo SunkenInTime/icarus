@@ -3699,6 +3699,85 @@ void main() {
       expect(container.read(textProvider), isEmpty);
     });
 
+    /// [lineup] as a teammate left it with [notes] on its link.
+    RemoteLineup withNotes(RemoteLineup lineup, String notes) {
+      final payload = jsonDecode(jsonEncode(lineup.payload)) as CloudPayload;
+      ((payload['data'] as Map)['items'] as List).first['notes'] = notes;
+      return RemoteLineup(
+        publicId: lineup.publicId,
+        strategyPublicId: lineup.strategyPublicId,
+        pagePublicId: lineup.pagePublicId,
+        payload: payload,
+        sortIndex: lineup.sortIndex,
+        revision: lineup.revision + 1,
+        deleted: false,
+      );
+    }
+
+    test(
+        'redoing a lineup clear a teammate already undid by deleting '
+        'does not resurrect it on the next undo', () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      history(container).clearGroupAsAction(ActionGroup.lineUp);
+      history(container).undoAction();
+      expect(container.read(lineUpProvider).origins, hasLength(1));
+      await land(container, remote, page); // the teammate deleted it
+
+      history(container).redoAction();
+      history(container).undoAction();
+
+      expect(container.read(lineUpProvider).links, isEmpty);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.lineup(page.publicId, 'mine')],
+        isNull,
+      );
+    });
+
+    test('a lineup clear redone and undone keeps a teammate notes edit',
+        () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      history(container).clearGroupAsAction(ActionGroup.lineUp);
+      history(container).undoAction();
+      await land(container, remote, page,
+          lineups: [withNotes(mine, 'teammate notes')]);
+      expect(
+          container.read(lineUpProvider).links.single.notes, 'teammate notes');
+
+      history(container).redoAction();
+      expect(container.read(lineUpProvider).links, isEmpty);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+      expect(
+          container.read(lineUpProvider).links.single.notes, 'teammate notes');
+    });
+
+    test(
+        'undoing a lineup clear leaves a lineup a teammate restored, '
+        'and redo does not remove it', () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      history(container).clearGroupAsAction(ActionGroup.lineUp);
+      await land(container, remote, page,
+          lineups: [withNotes(mine, 'restored')]);
+      expect(container.read(lineUpProvider).links.single.notes, 'restored');
+
+      history(container).undoAction();
+      history(container).redoAction();
+
+      expect(container.read(lineUpProvider).links.single.notes, 'restored');
+      expect(
+        desiredOps(container, page).values.whereType<LineupDeleteOp>(),
+        isEmpty,
+      );
+    });
+
     test('undoing a lineup clear keeps a lineup a teammate added', () async {
       final (container, remote, page) =
           await open(const [], lineups: [_lineup('page-1', 'mine')]);
