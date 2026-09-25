@@ -1801,6 +1801,47 @@ void main() {
     });
   });
 
+  test('a lineup uploaded with stale nested ids hydrates without an edit',
+      () async {
+    final page = _page('page-1', 0);
+    // Migrated before nested references followed a reassigned group id.
+    final lineup = _lineup(
+      page.publicId,
+      'lineup-2',
+      nestedLineUpId: 'lineup-1',
+    );
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'remote', lineups: [lineup]),
+    ));
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(textProvider).single.position = const Offset(50, 60);
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    expect(desired, isNotNull);
+    expect(desired![EntitySyncKey.lineup(page.publicId, 'lineup-2')], isNull);
+    expect(
+      desired[EntitySyncKey.element(page.publicId, 'text-page-1')]?.kind,
+      StrategyOpKind.patch,
+    );
+    await _settle();
+  });
+
   test('unhydrated canvas cannot author a remote lineup deletion', () async {
     final page = _page('page-1', 0);
     final lineup = _lineup(page.publicId, 'lineup-1');

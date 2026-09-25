@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:uuid/uuid.dart';
@@ -77,7 +78,9 @@ void appendMigratedPageOps(
   // kind; the group projection cannot express fan-in or link names.
   for (final group in page.lineUpGraph.toLegacyGroups()) {
     final lineupId = nextUniqueMigrationId(group.id, usedLineupIds);
-    final lineupPayload = cloudLineupPayload(group)..['id'] = lineupId;
+    final lineupPayload = cloudLineupPayload(
+      lineupId == group.id ? group : _withLineupId(group, lineupId),
+    );
     ops.add(
       LineupAddOp(
         opId: const Uuid().v4(),
@@ -88,6 +91,25 @@ void appendMigratedPageOps(
       ),
     );
   }
+}
+
+/// A group under a new id, with the agent's and every ability's `lineUpID`
+/// pointing at it as well, exactly as the graph's projection derives them.
+/// Leaving the old id nested would make every later projection of the page
+/// differ from the uploaded payload.
+LineUpGroup _withLineupId(LineUpGroup group, String lineupId) {
+  return group.copyWith(
+    id: lineupId,
+    agent: group.agent.copyWith(lineUpID: lineupId)
+      ..isDeleted = group.agent.isDeleted,
+    items: [
+      for (final item in group.items)
+        item.copyWith(
+          ability: item.ability.copyWith(lineUpID: lineupId)
+            ..isDeleted = item.ability.isDeleted,
+        ),
+    ],
+  );
 }
 
 String nextUniqueMigrationId(String preferredId, Set<String> usedIds) {

@@ -1072,6 +1072,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     if (normalized.containsKey('state')) {
       normalized.putIfAbsent('weapon', () => WeaponType.none.name);
     }
+    // A lineup group's agent and abilities point back at the group. The
+    // graph derives those references from the group id on every projection,
+    // so a payload uploaded with stale ones must still compare equal.
+    if (normalized['kind'] == 'lineupGroup') {
+      final data = normalized['data'];
+      final groupId = data is Map ? data['id'] : null;
+      if (groupId is String) {
+        final agent = data['agent'];
+        if (agent is Map) agent['lineUpID'] = groupId;
+        for (final item in (data['items'] as List?) ?? const []) {
+          final ability = item is Map ? item['ability'] : null;
+          if (ability is Map) ability['lineUpID'] = groupId;
+        }
+      }
+    }
     return normalized;
   }
 
