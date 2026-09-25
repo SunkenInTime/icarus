@@ -544,6 +544,89 @@ function lineupGroupDataWithId(data: LineupData, id: string): LineupData {
   } as LineupData;
 }
 
+type LineupPayload = Doc<"lineups">["payload"];
+
+/// New entity ids for a copied strategy's lineups, one map per kind (ids
+/// repeat across kinds), shared by every row so a link follows its origin
+/// and landing to their new ids whatever order the rows are copied in.
+function lineupIdMap() {
+  const byKind = new Map<string, Map<string, string>>();
+  return (kind: string, id: string): string => {
+    let ids = byKind.get(kind);
+    if (ids === undefined) byKind.set(kind, (ids = new Map()));
+    let next = ids.get(id);
+    if (next === undefined) ids.set(id, (next = createPublicId()));
+    return next;
+  };
+}
+
+/// A lineup row as the copy stores it: its key and payload under new ids.
+/// Graph rows keep the `<kind>:<entity id>` key; a legacy group gets a new
+/// group id, which its agent and abilities follow.
+function copiedLineupRow(
+  payload: LineupPayload,
+  newId: (kind: string, id: string) => string,
+): { publicId: string; payload: LineupPayload } {
+  const data = payload.data;
+  const idOf = (value: unknown) => (typeof value === "string" ? value : "");
+  switch (payload.kind) {
+    case "lineupGroup": {
+      const id = createPublicId();
+      return {
+        publicId: id,
+        payload: { ...payload, data: lineupGroupDataWithId(data, id) },
+      };
+    }
+    case "lineupOrigin": {
+      const id = newId("lineupOrigin", idOf(data.id));
+      const agent = data.agent;
+      return {
+        publicId: `lineupOrigin:${id}`,
+        payload: {
+          ...payload,
+          data: {
+            ...data,
+            id,
+            ...(isJsonObject(agent) ? { agent: { ...agent, lineUpID: id } } : {}),
+          } as LineupData,
+        },
+      };
+    }
+    case "lineupLanding": {
+      const id = newId("lineupLanding", idOf(data.id));
+      const ability = data.ability;
+      return {
+        publicId: `lineupLanding:${id}`,
+        payload: {
+          ...payload,
+          data: {
+            ...data,
+            id,
+            ...(isJsonObject(ability)
+              ? { ability: { ...ability, lineUpID: id } }
+              : {}),
+          } as LineupData,
+        },
+      };
+    }
+    case "lineupLink": {
+      const id = newId("lineupLink", idOf(data.id));
+      return {
+        publicId: `lineupLink:${id}`,
+        payload: {
+          ...payload,
+          data: {
+            ...data,
+            id,
+            originId: newId("lineupOrigin", idOf(data.originId)),
+            landingId: newId("lineupLanding", idOf(data.landingId)),
+          } as LineupData,
+        },
+      };
+    }
+  }
+}
+
 /// Copies a strategy into the caller's library in one transaction: pages,
 /// page settings, live elements and lineups under fresh publicIds, and an
 /// image asset row per image the copy shows. The rows share the source's
@@ -681,23 +764,21 @@ export const duplicate = mutation({
       .query("lineups")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
       .collect();
+    const newLineupId = lineupIdMap();
     for (const lineup of sourceLineups) {
       const pageId = pageIdMap.get(lineup.pageId);
       if (lineup.deleted || pageId === undefined) continue;
-      const publicId = createPublicId();
       for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
         sourceAssetIdByCopyId.set(assetId, assetId);
       }
+      const copy = copiedLineupRow(lineup.payload, newLineupId);
       await ctx.db.insert("lineups", {
-        publicId,
+        publicId: copy.publicId,
         strategyId,
         pageId,
         payloadKind: lineup.payloadKind,
         payloadVersion: lineup.payloadVersion,
-        payload: {
-          ...lineup.payload,
-          data: lineupGroupDataWithId(lineup.payload.data, publicId),
-        },
+        payload: copy.payload,
         sortIndex: lineup.sortIndex,
         revision: 1,
         deleted: false,

@@ -1383,7 +1383,7 @@ async function contentRowForOp(
     op.entityType === "element"
       ? await getElementByPublicIdOrNull(ctx, publicId)
       : op.entityType === "lineup"
-        ? await getLineupByPublicIdOrNull(ctx, publicId)
+        ? await getLineupByPublicIdOrNull(ctx, strategy._id, publicId)
         : null;
   return row !== null && row.strategyId === strategy._id ? row : null;
 }
