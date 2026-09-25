@@ -1,0 +1,513 @@
+# Visibility model
+
+> The offline pipeline this document describes (`scripts/`, the review data
+> under `scripts/data/`, the audit and bench harnesses under `tool/`, and the
+> per-map acceptance reports) was moved out of the repository on 2026-09-19.
+> It lives in the `icarus-vision-pipeline` archive, copied from commit
+> `f46a4a4` of `fix/all-map-vision`, where every file keeps its history. The
+> repository keeps only what the app and CI need: the bundled
+> `assets/maps/*_svg_height_*.json.gz` models, `tool/check_bundled_wall_heights.dart`
+> and this document.
+
+Before declaring a visibility change complete, apply the acceptance contract
+(`docs/vision-acceptance-contract.md` in the archive). It defines source
+accounting, independent expectations, and the evidence required for completion.
+
+## Authority
+
+The SVG artwork defines wall positions, endpoints, and thickness in the map plane.
+Extract those from the actual paths, transforms, stroke widths, caps, and joins.
+Some strokes are already expanded into filled paths; use their painted footprint.
+Cones meet the observer-facing edge of that footprint, with no arbitrary gap or
+global thickness adjustment. Preserve the artwork, map size, and saved positions.
+
+The extracted 3D map supplies support elevations and vertical information for
+those SVG walls: solid height intervals, low cover, and openings. Associate that
+information with SVG geometry offline. Ambiguous associations stay explicit and
+reviewable. Exported mesh edges are not additional runtime walls.
+
+An opening must provide a usable gameplay sightline before it makes an SVG wall
+see-through. A gap in an extracted asset alone is insufficient. Ignore cosmetic,
+inaccessible, or otherwise nonfunctional gaps and retain the drawn wall as a
+tactical blocker. Record gameplay review separately from measured source heights;
+an explicit gameplay decision takes precedence over an asset-only inference.
+
+Some openings connect different floor heights. A horizontal slice through the
+observer's eye cannot establish visibility through such an opening. Version 3
+data may name `sightlineFloorSupportIds` for reviewed, horizontal destination
+floors. Inside those exact support footprints, cast visibility to a standing
+target on the destination floor. Project the existing SVG wall volumes onto
+that target-eye plane, retaining their solid bases, frames, and overhead caps.
+The destination floor does not create additional runtime walls.
+
+Fracture's September 14 corridor follow-up restores the opening in
+`p13-stroke-3`, reflected as `p13-stroke-4`. The user identified the free cone
+beside the corridor. Complete source rays from its 8.91172 m floor to the
+5.5 m A-side floor clear the lower wall and overhead structure. Subtract only
+the measured opening from each existing wall band, preserving the varying
+upper heights and conservative end frames. The nearby A tunnel perimeter
+remains solid. The decision is recorded in
+`scripts/data/fracture-reported-walls-2026-09-14.json`.
+
+The September 15 follow-up separates Fracture's bare A-platform endpoint from
+its taller barrier. Use the complete platform's conservative 9.0677929 m cap
+only at the reviewed endpoint, including the defense artwork's duplicate ink.
+Keep the column base and adjoining platform barriers solid. The exact review
+is `scripts/data/fracture-platform-end-review-2026-09-15.json`.
+
+The same follow-up corrects Bind's balcony frontage, Haven's low shrine and
+separate framed window, Summit's tower frontage, and Pearl's Mid-to-B step.
+Use the complete local assembly and both sides' actual artwork boundaries.
+The decisions are recorded in `scripts/data/remaining-bind-source-ownership-review-2026-09-15.json`,
+`scripts/data/remaining-haven-source-ownership-review-2026-09-15.json`,
+`scripts/data/remaining-summit-source-ownership-review-2026-09-15.json`, and
+`scripts/data/pearl-mid-step-review-2026-09-15.json`.
+
+Lotus's small crate and stepped crate require separate local tier heights.
+Keep the shared higher-crate edge; cap only the complete lower tier and small
+crate outline. The stepped crate has no authored internal tier wall. Rendered
+standing-target expectations therefore use the measured lower courtyard and
+upper tier destination floors, preserving downward obstruction by the base.
+Do not treat a horizontal target buried inside the upper crate body as a
+standing player. The exact reviews are
+`scripts/data/lotus-small-crate-outline-review-2026-09-15.json`,
+`scripts/data/lotus-stepped-crate-review-2026-09-15.json`, and
+`scripts/data/lotus-lower-courtyard-projection-review-2026-09-15.json`.
+
+Haven's September 13 gameplay review supersedes its Mid Window floor projection.
+The window is now a single tactical opening below its header, with its solid
+end jamb retained. The sill remains a standing surface but does not block the
+cone. No bundled Haven destination requests floor projection. This deliberately
+omits sill detail to keep the view continuous as the observer moves. The user
+explicitly requested this simplification after the projected floor produced a
+detached patch. See `scripts/data/haven-tactical-sightlines-2026-09-13.json`.
+
+The SVG floor fill limits where visibility is displayed. Its perimeter is not
+automatically an opaque wall. Height and opening information decides which
+authored boundaries block a sightline. Ignore decorative foliage absent from
+the SVG; retain represented structural obstacles such as fences and grates.
+
+Classify each painted element before assigning a height. Zipline symbols and
+ramp/floor markings remain visible artwork with no blocking interval. For
+example, Icebox's A Site dashed zipline and the cross-hall Tube ramp marks are
+annotations. Stroke color, opacity, or a nearby mesh alone cannot identify a wall.
+
+Verify the source object's role and local extent before assigning a wall height.
+A nearby monitor, decal, or snow cap does not describe a complete ramp or building.
+For stacked structures, test a named gameplay opening from its upper floor and
+test the solid base separately from below. Compare against gameplay images or
+Riot's documented map changes; agreement between two implementations of the same
+height assignment cannot establish that assignment is correct.
+
+## Elevation
+
+Keep source standing-plane precision through capsule clearance. The clearance
+contact tolerance is 1 mm; rounding plane coefficients to four decimals can
+move a slope inside its own collider even when the height error is below the
+runtime comparison tolerance. Pearl's September 18 Mid slope lost its whole
+standing surface this way. The measured restoration is recorded in
+`scripts/data/pearl-mid-slope-standing-2026-09-18.json` and compiled by
+`scripts/apply_pearl_mid_slope_standing.py`. It adds the recovered floor without
+changing wall footprints or bands.
+
+Standing eye height is the selected support surface plus standing camera height.
+On a box, use the box top as support; its sides are below that viewpoint and do
+not block sight as though the agent were standing beside it. By default choose
+the highest locally applicable surface on which a player can stand. Abilities
+can provide access: ordinary walking reachability, navigation connectivity, a
+named callout, and a recorded jump route are not eligibility requirements.
+Include isolated platforms, props, ledges and roofs when their local physical
+surface supports the standing player and clears the player capsule. Apply actual
+unwalkable, player-blocking and kill-volume rules. Interiors retain their usable
+floors, and explicit lower-floor selections remain available at stacked passages.
+
+The September 14 covered-interior review gives the represented corridor or room
+priority at the reviewed exterior roof and ceiling projections. This is a
+recorded default-placement decision, not a finding that the roof lacks physical
+collision. Keep those supports and their heights, set only
+`automaticStandingAllowed: false`, and retain explicit saved roof selections.
+The exact domains and assembly evidence are in
+`scripts/data/covered-interior-gameplay-review-2026-09-14.json`. Offline source
+records move from `domains` to `manualDomains` without changing their measured
+geometry. This exception does not exclude unrelated ability-accessible props,
+ledges or platforms.
+
+The collision-body addendum applies the same default rule to the reviewed
+covered interiors in Abyss, Corrode, and Summit. A collision volume can describe
+an exterior ceiling just as a mesh can. Its physical upper level remains
+selectable; only automatic placement prefers the represented room below.
+The exact domains are recorded separately in
+`scripts/data/collision-covered-interior-review-2026-09-14.json`.
+
+Split's September 15 source completion replaces its legacy standing data with
+measured version 3 floors. All 8,335 scene objects have a resolved collision
+disposition, including 24 analytic capsules. Keep the 849 physical standing
+domains, with 206 exact exterior roof, roof-fixture and overhead-boundary
+domains reserved for explicit selection under the represented-interior rule.
+The independent crane and construction-panel standing surfaces remain automatic.
+The exact default review is `scripts/data/split-covered-interior-review-2026-09-15.json`.
+The source manifest and release certificate now require an independent source
+for Split as they do for every other map. No legacy source exemption remains.
+
+Floor projection subtracts each projected wall face separately. This has the
+same result as subtracting their union, while avoiding overlapping thin path
+contours that can make Skia fail beside a wall endpoint. Keep the sill, header,
+and hole checks when changing this calculation.
+
+Interpolated ground can pass through a raised wall at a stacked passage. If its
+standing eye is inside an active SVG wall, it cannot take priority over a verified
+physical floor below it. Choose the highest eligible surface whose standing eye
+clears the local walls. Preserve explicit saved elevations, including ground.
+
+Reference interpolation also cannot outrank a verified physical floor when both
+eyes clear the SVG walls. Version 3 height data records measured ground through
+`ground.standingTriangles`, an explicit list of triangle indices. Only the first
+covering ground triangle supplies the local ground height; a physical triangle
+hidden behind an earlier reference triangle cannot certify that reference.
+Unmarked triangles still supply reference heights and saved-ground matching.
+Version 2 data keeps its existing selection behavior until its ground has been
+measured and the version 3 data passes the acceptance checks.
+
+For version 3 data, resolve a saved eye to the closest local level, including
+ground, within the 2 cm source-height tolerance. This accommodates corrected
+collision heights and rounded source planes without jumping from a saved lower
+passage to the roof. Exact nearby levels remain separate choices. Equally close
+different levels remain unavailable; the UI reports the automatic fallback.
+The saved numeric value is not rewritten. Earlier data keeps its existing
+matching behavior.
+
+Geometric height confidence does not establish gameplay eligibility. A bundled
+support must have `automaticStandingAllowed: true` before the default can select
+it. Record the local physical collision surface and standing clearance in the
+offline source decisions; navigation and gameplay references can corroborate
+those measurements. Evaluate physical standing tops independently of navigation.
+Previously unnamed or disconnected surfaces must receive this same physical
+test, rather than remain excluded for lacking a gameplay role. A rendered
+horizontal mesh face alone does not establish a physical standing floor.
+
+A collision body wholly enclosed by resolved player collision adds no standing
+surface. For curved shapes, prove containment of the complete boundary using
+the actual scaled shape. Distance to the enclosing body's triangles alone does
+not establish clearance inside its solid interior. Excluding distant collision
+requires its complete bounds, including the player radius, to miss the declared
+region.
+
+Dara's gameplay review can establish eligibility when extracted collision
+metadata is incomplete or its clearance prediction disagrees with the observed
+position. Keep that review separate from the measured floor height and the
+original collision evidence. The September 8 review is recorded in
+`scripts/data/gameplay-standing-review-2026-09-08.json`, with exact sample
+identities and source fingerprints. It covers 454 positions across seven maps.
+On Bind's fountain, exclude only the narrow inner ring; retain the center and
+the outer basin. Bake the measured ring footprint, not a filled center exclusion.
+Use a matched player-collision floor where available; otherwise retain the
+reviewed local source face as the geometric height reference. This review does
+not authorize unrelated faces elsewhere on the same source object.
+
+Ascent's later review excludes sixty exact standing domains on boundary-volume
+caps, bell-tower ledges and the Tree-room upper trim. The canonical decision is
+`scripts/data/ascent-playable-space-review.json`. Preserve the collision bodies
+and all other standing domains. The diagnostic 13 m threshold is not a gameplay
+height limit; apply only the recorded domain footprints and source faces.
+
+Breeze's ceiling review excludes exactly `volume-21-0`, the upper face at 51 m
+shown in the review viewer. Dara confirmed it is outside playable space even
+allowing agent abilities. The canonical decision is
+`scripts/data/breeze-playable-space-review.json`. Retain the player-blocking
+body from 19 m to 51 m and every other measured or reviewed standing domain.
+
+Fracture's ceiling review excludes exactly `volume-507-0`, the upper face at
+74.5399 m shown in the review viewer. Dara confirmed it is outside playable
+space even allowing agent abilities. The canonical decision is
+`scripts/data/fracture-playable-space-review.json`. Retain its player-blocking
+body from about 20.43 m to 74.54 m and every other standing domain.
+
+Pearl's review excludes four exact upper faces recorded in
+`scripts/data/pearl-playable-space-review.json`. Its map-wide collision body
+spans 28.4976–48.6261 m, matching Dara's approximate 29–49 m approval condition.
+Retain all four collision bodies and all other measured standing domains.
+
+Abyss's review excludes 284 exact standing domains: 15 collision-volume tops
+and 269 scenery/cliff domains across ten scene meshes. Dara approved both
+groups. Apply `scripts/data/abyss-playable-space-review.json` without removing
+their collision bodies or other surfaces on those objects.
+
+The September 12 screenshot review additionally excludes Abyss's exact upper
+faces `volume-132-0`, `volume-141-0`, and `volume-142-0`, and Haven's
+`volume-34-0` and `volume-35-0`. These collision-volume tops were selecting eyes above the reported
+Mid, ramp, and tower interiors. The agent matched the user's gameplay reports
+to these source faces; this is separate from the earlier viewer approvals.
+The canonical record is `scripts/data/reported-sightlines-2026-09-12.json`.
+Retain the collision bodies and the usable floors beneath them. Corrected
+openings must also restore any measured ledge or sill standing area previously
+clipped away by an incorrect opaque SVG wall.
+
+Corrode's review excludes only `volume-1026-0`, the upper face at 43.3816 m
+on `BP_BlockingVolume692`. Dara confirmed it is outside play. Apply
+`scripts/data/corrode-playable-space-review.json` and retain the collision body.
+These reviews define no global height cutoff.
+
+Summit's review excludes exactly `volume-0-0` at 65 m and `volume-328-0`
+at 42.75 m. Dara confirmed both upper faces are outside play even with
+abilities. Apply `scripts/data/summit-playable-space-review.json`; retain
+both collision bodies and every other measured standing domain.
+
+Sunset's review excludes 190 exact standing domains on fourteen defender-spawn
+scenery objects, including sinkhole pillars, cliffs and pipe sections. Dara
+confirmed all highlighted domains are outside play even with abilities. Apply
+`scripts/data/sunset-playable-space-review.json`; retain all collision bodies
+and every other measured domain. The review records the exact match between
+the completed scenery measurements shown to Dara and the final whole-map source.
+
+At stacked passages, verify a continuous walk on each level against its named
+source floor. A ground interpolation that switches between an upper hallway and
+the floor beneath it needs separate surfaces. Confirm a usable standing domain
+after clipping each support against the SVG and higher walls; a tiny residual
+polygon or a horizontal face on a wall is insufficient evidence of a platform.
+When one source object contains several levels, record the selected floor faces
+and audit those faces; an overhead beam is not the height of the floor beneath it.
+
+Only emitted, first-covering physical ground can replace an explicit source
+level. Planned polygons and triangles hidden behind earlier ground cannot
+supply that level at runtime. Keep source choices along the two overlay-grid
+steps affected by projection and partitioning rounding; this reduces coverage
+credit without expanding the measured standing domain.
+
+A lower box's exposed mesh rim is not automatically a standing position. Check
+whether a box resting on it leaves clearance for the extracted player capsule.
+Record the covering object and capsule source when rejecting a covered level.
+Do not remove a platform solely because its area is small. Do not make the SVG
+perimeter transparent to recover sightlines that exist only outside the drawn map.
+
+Treat connected ramps and slopes as continuous tactical ground. Changes in floor
+height do not create extra wall edges or hide the connected downhill floor by
+themselves. Retain real intervening obstacles and meaningful separate levels.
+Crouching and changing door states are outside the current pass.
+
+## Implementation and acceptance
+
+Bake compact SVG wall geometry, vertical intervals, and support information
+offline. Runtime visibility uses those records, rather than the extracted or
+warped 3D triangle scene. Earlier mesh-normalization candidates are reference
+experiments, not the implementation to extend.
+
+First deliver Split for Dara's feedback before extending this model to other maps.
+Personally inspect the actual SVG and cone renders at normal size and enlarged
+wall edges. Check solid wall contact, corners with different stroke widths,
+preserved openings, low cover, standing on a box, and a connected ramp. Report
+unknown source associations, data size, and measured query cost. A passing
+synthetic test is not evidence that an unreviewed game sightline is accurate.
+
+Validate the segments between cone vertices, not only the sampled ray endpoints.
+Two overlapping painted wall strokes can create a visibility corner at their
+intersection. A wall can also cross the cone's range circle while both endpoints
+lie outside it. Preserve these events or the polygon can cut diagonally short of
+correctly placed SVG ink. Neither event adds a new wall or changes its height.
+
+Use `scripts/audit_svg_cone_boundaries.py` with the production polygon export in
+`tool/export_svg_boundary_sweep_test.dart` to check these contacts independently.
+The audit separates range-arc chords and radial corner shadows from wall contacts.
+Also inspect production painter crops; matching geometry does not alone verify
+pixel coverage, the selected elevation, or the gameplay meaning of an opening.
+
+The four saved Icebox poses in review `1788823493671-212d5f8` are regression
+fixtures in `test/svg_automatic_standing_test.dart`. Their source measurements
+come from `scripts/review_icebox_user_sightlines.py`. Test the windows from above
+and their bases from below, the connector doorway and its solid jamb, and the
+local lower pipe step separately from the higher pipe on the same assembly.
+Resolve missing-floor findings before calling a gameplay-height review complete.
+An infinite structural-outline fallback is an assumption, not a reviewed height.
+
+Haven's same follow-up excludes the six connected tower ceiling-volume tops,
+`volume-32-0` through `volume-37-0`. The earlier review excluded only two and
+missed a narrow 45 m strip above the 9 m upper room. Retain all six collision
+bodies and the real upper and lower floors. The source classification must
+separate an overhead collision box from a usable standing platform before the
+highest-floor selection runs. A clear top face alone can still be an invisible
+level boundary rather than a playable surface.
+
+The September 13 Breeze review excludes the exact upper standing face
+`volume-583-0` on `SuperGrid_Box343`. The collision box spans 8 to 16 m above the
+4 m passage floor; its clear top is not that passage's gameplay standing surface.
+The nearby box at the second reported position retains its real 9 m top.
+`scripts/data/breeze-gameplay-sightlines-2026-09-13.json` also records three
+continuous facade regions. Their complete structural assemblies supply heights;
+isolated trim and cistern tops do not create openings in those SVG outlines.
+Source hashes are pinned so changed geometry requires renewed review.
+
+Run the gameplay regressions before packaging. The desktop and Store release
+scripts run the reported sightline, Haven movement, and Breeze gameplay tests
+against the actual bundled assets. Their release flag ignores diagnostic model
+folder overrides. Source-height agreement alone cannot replace these behavioral
+checks. Preserve a before-fix failure and test deliberate bad standing and wall
+assignments on isolated data copies when adding another regression.
+
+Breeze's covered-opening follow-up excludes both connected Courtyard ceiling
+tops, volumes 387 and 388, while retaining the 4 m room floor. Its Mid Nest
+room retains the 9 m floor. Measure complete window sill/header assemblies;
+nearest-source height cells must not turn a roof above an opening into a solid
+wall. A single SVG parent can contain both a window and exterior box outlines,
+so classify those portions separately. The canonical decisions are in
+`scripts/data/breeze-covered-openings-2026-09-13.json`.
+
+Check both end frames and the entire usable opening from moving origins on both
+sides. Numerical fragments can block runtime rays despite negligible polygon
+area. Classification clips use the 1e-8 source-overlay grid and cannot leave
+old-height fragments at reflected boundaries. The roof diagnostic in
+`scripts/audit_breeze_overhead_candidates.py` flags suspended collision tops
+above lower floors for review; it does not make roofs or isolated ledges
+ineligible automatically.
+
+Run the cross-map detectors after fixing a recurring source-association problem.
+`scripts/audit_all_map_overhead_candidates.py` inventories suspended tops;
+`scripts/audit_all_map_opening_assignments.py` checks measured gaps against both
+wall assets and nearby retained standing floors. Their candidates require role
+review. Missing navigation, collision channels, and source gaps alone do not
+establish gameplay behavior. Keep weak source overlaps separate from positions
+inside the receiver with a wall-clear standing eye.
+
+`scripts/audit_all_map_wall_residue.py` checks every wall footprint and samples
+mirrored vertical profiles. The compiler removes whole wall records that
+collapse on the 1e-8 source-overlay grid. It preserves every remaining record.
+Before packaging modified map assets, run `svg_wall_footprint_integrity.py`
+from the archive to certify all 26 sides, then update the checksums in
+`test/bundled_map_models_test.dart`; the certificate lives with the archive.
+
+The focused September 13 review excludes Abyss standing domains
+`volume-145-0`, `volume-146-0`, and `volume-1603-0`, and Haven
+`volume-215-0`. Complete neighboring assemblies identify these as overhead
+collision or invisible boundary tops. Retain their collision bodies and every
+other measured floor. Both physical and measured support aliases must receive
+the same exclusion. The canonical record is
+`scripts/data/systematic-roof-review-2026-09-13.json`. Breeze bridge parapets
+334/335 and Icebox connector railing 496 remain eligible.
+
+Pearl's lower B Hall tunnel retains its 2.5 m floor beneath a continuous
+6.175 m ceiling. Use the complete tunnel shell, including its end frame,
+from `scripts/data/pearl-lower-tunnel-review-2026-09-13.json`. Classify each
+side's actual painted mouth separately: the authored reflection differs by
+0.0003 SVG units and otherwise leaves a thin old-height blocker. Restore
+only source standing area released by the corrected wall intervals.
+
+The twenty focused opening families have no supported opening changes.
+Their decisions are recorded in
+`scripts/data/systematic-opening-review-2026-09-13.json`. In particular,
+Icebox ramp parents p7-stroke-10 and p7-stroke-18 have front railings above
+their facade tops. A cap measured from the ramp skin alone removes real
+represented structure. Preserve the railings as tactical blockers rather
+than treating spaces between their bars as windows.
+
+`test/systematic_map_gameplay_test.dart` checks these reviewed roof decisions,
+retained physical parapets and railings, and Pearl's moving lower tunnel
+sightline with overhead and end-frame controls on both sides. Both packaging
+scripts include these checks against the exact bundled assets.
+
+## Wall bands re-derived by ray probing (2026-09-17)
+
+The bundled wall bands were re-derived from the extracted 3D scene by
+measuring the quantity a band encodes: the eye heights at which a horizontal
+sightline crossing the painted stroke is blocked. `scripts/derive_wall_bands_by_rays.py`
+probes each stroke at stations along its centreline with a 1 m horizontal
+segment across the ink at every 0.1 m up to 40 m, against opaque and masked
+render geometry with decor excluded. A height blocks when 60% of stations are
+stopped; runs form bands relative to the wall's floor. Runs set back more than
+0.3 m behind the wall's own face are dropped as neighbouring structure. A
+stroke with fewer than six faces in its corridor keeps its previous bands.
+
+Three passes then decide what may replace the reviewed data:
+`scripts/protect_reviewed_walls.py` keeps every wall named in a recorded
+review, fixture or partition (both sides, mirrored through the alignment);
+`scripts/smooth_wall_band_neighbours.py` rejects a lowered piece whose
+touching neighbours on the same stroke stayed high, so no notch is cut into a
+solid wall; `scripts/cap_unsupported_raises.py` rejects a raised top that the
+narrow-footprint reading from `scripts/audit_svg_wall_heights_vs_world.py`
+cannot support. Split joined this pipeline on 2026-09-19; see below.
+
+Acceptance was the per-map gameplay suite (`ICARUS_VERIFY_BUNDLED_GAMEPLAY`),
+now in the archive with the pipeline. The repository pins the resulting models
+by checksum in `test/bundled_map_models_test.dart`.
+
+A wall that blocks every probed eye height up to the 40 m ceiling is recorded
+with an open top (`null`) on its last band. That is a measurement, not the old
+reviewed-label fallback, so `tool/check_bundled_wall_heights.dart` accepts an
+open top there and nowhere else; unknown walls, non-finite floors and
+unbounded lower edges still block the release.
+
+## Split brought onto the piece model (2026-09-19)
+
+Split was the prototype. Its wall layer stayed at 69 records, one per
+painted run with a single hand-assigned band, while the other twelve maps
+were compiled from reviewed decisions into pieces about a metre long with
+bands measured from the 3D scene. Every rule on this branch works piece by
+piece, so Split was skipped by all of them.
+
+Rather than author the decisions review Split never had,
+`scripts/partition_split_walls.py` cuts each record into pieces about two SVG
+units long along its medial line (`<parent>-local-<n>`), keeping the parent's
+floor and bands so the cut alone changes nothing (the ink union is asserted
+unchanged). Records whose names carry a reviewed prop cut (`-low-`,
+`-counter-`, `-planter-`, `vent…-opening`, …) stay whole and are protected.
+The pieces then go through the same passes as the other maps: ray derivation,
+reviewed-wall protection, the perimeter seal (its Split exemption removed),
+the narrow-footprint audit and raise cap, the anomaly rules, box outlines and
+notch closing. The neighbour-smoothing pass is skipped for Split on purpose:
+its baseline bands are upper bounds rather than reviews, and smoothing would
+restore three quarters of the measured lowerings.
+
+## Stacked areas and tunnels (2026-09-19)
+
+Dara's rule for stacked areas: the top layer is the default, and an agent
+placed on a lower layer sees that layer's view. The data already carries
+this: the painted ground is the lower floor, the upper floor is a standing
+surface that automatic standing prefers, and explicit elevation selection
+reaches the lower one. Rays never consult the ground; the layers separate
+by height bands alone.
+
+`scripts/apply_reviewed_openings.py` with
+`scripts/data/reviewed-openings-2026-09-19.json` records spots Dara ruled
+see-through where a protected record kept the ray derivation out: Pearl's
+B Hall tunnel west mouth is a passage under a 7 m header. Walls at least
+half inside the region take the derived bands; the sealed map edge beside
+a mouth stays sealed.
+
+Two further passes were built and withdrawn the same day, and stay in the
+archive's `scripts/` unapplied. `remeasure_above_openings.py` replaced the tunnel
+review's blanket above the ceiling with what the horizontal probe found,
+which was nothing until 11 m; Dara confirmed the ramp into that tunnel is
+walled on both sides, so the probe was missing a set-back wall and the
+blanket was right. `seal_void_walls.py` only existed to stop the leak that
+change caused. A reading of "nothing above the ceiling" on a covered
+passage is not evidence without Dara.
+
+## Drag performance on Windows (2026-09-19)
+
+Dara's bar: dragging an agent with a cone must feel instant on Windows.
+Measured before the change, with the native query at the app's usual range
+(about 140 SVG units): 1.44 ms in the native query, about 0.3 ms of Dart
+around it, and a profile-build frame build time of 1.9 ms at the 90th
+percentile. Windows frame timings report raster time as zero, so raster
+was reasoned about rather than measured.
+
+Changes, all exact (the polygon is bitwise the same):
+
+* `native/height/icarus_svg_height.cpp` owns a small persistent thread pool.
+  The arc rays, event generation and the event rays run in chunks across
+  it; the polygon is assembled serially afterwards in the original order.
+  Workers spin briefly between the runs of one query and sleep between
+  frames. `ICARUS_HEIGHT_THREADS` overrides the worker count for diagnosis.
+* Event generation culls vertices outside the aperture before any trig.
+* `SvgHeightVisibility` caches the wall activity mask per eye height.
+* A native result keeps its packed doubles; the cone outline path is built
+  from them directly, and the `polygon` list is only materialised on demand
+  (reports, tests).
+* The drag preview no longer sits in an `Opacity` widget. The cone paints at
+  the preview alpha and only the small agent icon takes an opacity layer, so
+  the engine does not composite the whole preview offscreen every frame.
+* The receiver clip path is rotated and scaled once per drag and translated
+  on the canvas, so the clip path object is stable across frames.
+
+Instruments: `tool/svg_height_drag_bench_test.dart` and
+`tool/svg_height_native_phase_bench_test.dart` (set
+`ICARUS_SVG_NATIVE_LIBRARY` to the built `icarus_height.dll`),
+`integration_test/view_cone_drag_performance_test.dart` and
+`view_cone_drag_timeline_test.dart` under `flutter drive --profile -d windows`.

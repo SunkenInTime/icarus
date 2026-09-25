@@ -103,6 +103,25 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
                 return null;
               },
             ),
+            SwitchSideIntent: CallbackAction<SwitchSideIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                await ref
+                    .read(strategyProvider.notifier)
+                    .switchSide(allPages: true);
+                return null;
+              },
+            ),
+            SwitchSideThisPageIntent:
+                CallbackAction<SwitchSideThisPageIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                await ref
+                    .read(strategyProvider.notifier)
+                    .switchSide(allPages: false);
+                return null;
+              },
+            ),
             AddPageIntent: CallbackAction<AddPageIntent>(
               onInvoke: (intent) async {
                 if (!capabilities.canAddPage) return null;

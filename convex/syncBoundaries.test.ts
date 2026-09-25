@@ -1316,6 +1316,44 @@ describe("record-scoped write contract", () => {
     expect(replayed).toMatchObject({ revision: 2, reused: true });
   });
 
+  test("a lineup group without items is refused", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+
+    const response = await applyOps(owner, "empty-lineup", [
+      {
+        opId: "add-empty-lineup",
+        kind: "add",
+        entityType: "lineup",
+        entityPublicId: "lineup-empty",
+        pagePublicId: pageA,
+        payload: {
+          kind: "lineupGroup" as const,
+          payloadVersion: 1,
+          data: { id: "lineup-empty", items: [] },
+        },
+      },
+      {
+        opId: "add-lineup",
+        kind: "add",
+        entityType: "lineup",
+        entityPublicId: "lineup-full",
+        pagePublicId: pageA,
+        payload: lineupPayload("asset-full"),
+      },
+    ]);
+
+    expect(response.results[0]).toMatchObject({
+      opId: "add-empty-lineup",
+      status: "failed",
+      rawCode: "INVALID_LINEUP_PAYLOAD_DATA",
+    });
+    expect(response.results[1]).toMatchObject({
+      opId: "add-lineup",
+      status: "applied",
+    });
+  });
+
   test("direct page reorder rejects duplicate page ids", async () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);

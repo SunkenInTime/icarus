@@ -1,0 +1,36 @@
+{
+  "version": "4.6.3+103",
+  "shortVersion": 103,
+  "title": "4.6.3 Update",
+  "description": "Format your strategy notes, organize folders by game mode, and keep view cones aligned at every agent size.",
+  "date": "2026-09-22",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Add bold, italic, headings, bullet lists, and numbered lists to text on your strategies. Use the floating format bar while editing, or type Markdown shortcuts.",
+      "type": "feat"
+    },
+    {
+      "message": "Choose game-mode logos for your folders from the new Modes tab: Competitive, Premier, Unrated, Deathmatch, Team Deathmatch, Spike Rush, and Escalation.",
+      "type": "feat"
+    },
+    {
+      "message": "Read release notes anytime from What's new next to search in the library.",
+      "type": "feat"
+    },
+    {
+      "message": "An Update available icon now stays at the top of the window while an update is waiting, so you can reopen the update dialog after dismissing it.",
+      "type": "feat"
+    },
+    {
+      "message": "Find your installed Icarus version at the bottom of Settings. Click it to copy the version for a bug report.",
+      "type": "feat"
+    },
+    {
+      "message": "Fixed view cones shifting away from agents and clipping incorrectly against walls when agent size changes. Cones now stay aligned while dragging and during page transitions, including in video exports.",
+      "type": "fix"
+    }
+  ]
+}

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -18,21 +17,19 @@ import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
+/// Media for a lineup. Without [linkId] it commits the current placement.
+/// With [linkId] it edits that lineup.
 class CreateLineupDialog extends ConsumerStatefulWidget {
-  const CreateLineupDialog({
-    super.key,
-    this.lineUpGroupId,
-    this.lineUpItemId,
-  });
+  const CreateLineupDialog({super.key, this.linkId});
 
-  final String? lineUpGroupId;
-  final String? lineUpItemId;
+  final String? linkId;
 
   @override
   ConsumerState<CreateLineupDialog> createState() => _CreateLineupDialogState();
 }
 
 class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
+  final TextEditingController _nameController = TextEditingController();
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
@@ -72,53 +69,43 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         );
   }
 
-  bool get _isEditing =>
-      widget.lineUpGroupId != null && widget.lineUpItemId != null;
+  bool get _isEditing => widget.linkId != null;
 
   @override
   void initState() {
     super.initState();
     if (_isEditing) {
-      final item = ref.read(lineUpProvider.notifier).getItemById(
-            groupId: widget.lineUpGroupId!,
-            itemId: widget.lineUpItemId!,
-          );
-      if (item != null) {
-        _youtubeLinkController.text = item.youtubeLink;
-        _notesController.text = item.notes;
-        _imagePaths.addAll(item.images);
-        _initialImageIds.addAll(item.images.map((image) => image.id));
+      final link = ref.read(lineUpProvider.notifier).linkById(widget.linkId!);
+      if (link != null) {
+        _nameController.text = link.name;
+        _youtubeLinkController.text = link.youtubeLink;
+        _notesController.text = link.notes;
+        _imagePaths.addAll(link.images);
+        _initialImageIds.addAll(link.images.map((image) => image.id));
       }
     }
   }
 
   @override
   void dispose() {
+    _nameController.dispose();
     _youtubeLinkController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    final lineUpState = ref.read(lineUpProvider);
     final notifier = ref.read(lineUpProvider.notifier);
-    final existingItem = _isEditing
-        ? notifier.getItemById(
-            groupId: widget.lineUpGroupId!,
-            itemId: widget.lineUpItemId!,
-          )
-        : null;
-    if (_isEditing && existingItem == null) {
-      return;
-    }
-    if (!_isEditing && lineUpState.currentAbility == null) {
-      return;
-    }
+    final name = _nameController.text.trim();
+    final existing = _isEditing ? notifier.linkById(widget.linkId!) : null;
+    if (_isEditing && existing == null) return;
     if (!_isEditing &&
-        lineUpState.currentGroupId == null &&
-        lineUpState.currentAgent == null) {
+        !(ref.read(lineUpProvider).placement?.isComplete ?? false)) {
       return;
     }
+
+    // Cloud images are queued before the lineup references them, so a
+    // lineup never points at an image the server will not receive.
     final imagesNeedingUpload = _imagePaths
         .where((image) => !_initialImageIds.contains(image.id))
         .toList(growable: false);
@@ -133,61 +120,23 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       return;
     }
 
-    if (_isEditing) {
-      ref.read(actionProvider.notifier).performTransaction(
-        groups: const [ActionGroup.lineUp],
-        mutation: () {
-          notifier.updateItem(
-            groupId: widget.lineUpGroupId!,
-            item: existingItem!.copyWith(
-              youtubeLink: _youtubeLinkController.text,
-              notes: _notesController.text,
-              images: _imagePaths,
-            ),
-          );
-        },
+    if (existing != null) {
+      notifier.updateLink(
+        existing.copyWith(
+          name: name,
+          youtubeLink: _youtubeLinkController.text,
+          notes: _notesController.text,
+          images: _imagePaths,
+        ),
       );
     } else {
-      final currentAbility = lineUpState.currentAbility!;
-
-      final item = LineUpItem(
-        id: const Uuid().v4(),
-        ability: currentAbility,
+      final link = notifier.commitPlacement(
+        name: name,
         youtubeLink: _youtubeLinkController.text,
-        images: _imagePaths,
         notes: _notesController.text,
+        images: _imagePaths,
       );
-
-      if (lineUpState.currentGroupId != null) {
-        ref.read(actionProvider.notifier).performTransaction(
-          groups: const [ActionGroup.lineUp],
-          mutation: () {
-            notifier.addItemToGroup(
-              groupId: lineUpState.currentGroupId!,
-              item: item.copyWith(
-                ability: item.ability.copyWith(
-                  lineUpID: lineUpState.currentGroupId,
-                ),
-              ),
-            );
-          },
-        );
-      } else {
-        final currentAgent = lineUpState.currentAgent!;
-
-        final groupId = const Uuid().v4();
-        notifier.addGroup(
-          LineUpGroup(
-            id: groupId,
-            agent: currentAgent.copyWith(lineUpID: groupId),
-            items: [
-              item.copyWith(
-                ability: item.ability.copyWith(lineUpID: groupId),
-              ),
-            ],
-          ),
-        );
-      }
+      if (link == null) return;
 
       unawaited(
         AnalyticsService.instance.capture(
@@ -196,6 +145,10 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             'has_video': _youtubeLinkController.text.trim().isNotEmpty,
             'has_notes': _notesController.text.trim().isNotEmpty,
             'has_images': _imagePaths.isNotEmpty,
+            'has_name': name.isNotEmpty,
+            'shares_origin': notifier.linksFromOrigin(link.originId).length > 1,
+            'shares_landing':
+                notifier.linksToLanding(link.landingId).length > 1,
           },
         ),
       );
@@ -230,7 +183,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         }
       },
       child: ShadDialog(
-        title: Text(_isEditing ? "Edit Line Up" : "Create Line Up"),
+        title: Text(_isEditing ? "Edit Lineup" : "Create Lineup"),
         actions: [
           ShadButton(
             onPressed: _save,
@@ -239,8 +192,9 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         ],
         child: SizedBox(
           width: 600,
-          height: 504,
+          height: 576,
           child: LineupMediaPage(
+            nameController: _nameController,
             notesController: _notesController,
             youtubeLinkController: _youtubeLinkController,
             images: _imagePaths,

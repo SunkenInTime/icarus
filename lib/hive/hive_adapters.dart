@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -17,6 +18,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -24,10 +26,12 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
+// Hand-written adapters own these typeIds. The generator drops yaml rows for
+// types it does not generate, so reserving them is what keeps a future
+// AdapterSpec from being handed one of them.
 @GenerateAdapters([
   AdapterSpec<StrategyData>(),
   AdapterSpec<PlacedWidget>(),
-  AdapterSpec<PlacedAgent>(),
   AdapterSpec<AbilityVisualState>(),
   AdapterSpec<PlacedText>(),
   AdapterSpec<PlacedImage>(),
@@ -43,6 +47,9 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<LineUp>(),
   AdapterSpec<LineUpGroup>(),
   AdapterSpec<LineUpItem>(),
+  AdapterSpec<LineUpOrigin>(),
+  AdapterSpec<LineUpLanding>(),
+  AdapterSpec<LineUpLink>(),
   AdapterSpec<SimpleImageData>(),
   AdapterSpec<CloudMediaJobState>(),
   AdapterSpec<AgentState>(),
@@ -52,15 +59,80 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<AppPreferences>(),
   AdapterSpec<PlacedViewConeAgent>(),
   AdapterSpec<PlacedCircleAgent>(),
-])
+  AdapterSpec<WeaponType>(),
+], reservedTypeIds: {
+  placedAgentAdapterTypeId,
+  placedAbilityAdapterTypeId,
+  abilityInfoAdapterTypeId,
+  freeDrawingAdapterTypeId,
+  lineAdapterTypeId,
+  folderAdapterTypeId,
+  strategyPageAdapterTypeId,
+  rectangleDrawingAdapterTypeId,
+  ellipseDrawingAdapterTypeId,
+})
 part 'hive_adapters.g.dart';
 
+const int placedAgentAdapterTypeId = 2;
 const int placedAbilityAdapterTypeId = 3;
+const int abilityInfoAdapterTypeId = 9;
+const int folderAdapterTypeId = 17;
 const int freeDrawingAdapterTypeId = 11;
 const int lineAdapterTypeId = 12;
 const int strategyPageAdapterTypeId = 20;
 const int rectangleDrawingAdapterTypeId = 24;
 const int ellipseDrawingAdapterTypeId = 31;
+
+/// Omits the firearm when there is none, so an agent without one is exactly
+/// the record 3.2.3 wrote; WeaponType (typeId 38) is unknown to that build.
+/// Desktop 4.6 always wrote field 7, so reading accepts it when present.
+class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
+  @override
+  final typeId = placedAgentAdapterTypeId;
+
+  @override
+  PlacedAgent read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedAgent(
+      type: fields[0] as AgentType,
+      position: fields[4] as Offset,
+      id: fields[2] as String,
+      isAlly: fields[1] == null ? true : fields[1] as bool,
+      lineUpID: fields[5] as String?,
+      state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
+      weapon: fields[7] == null ? WeaponType.none : fields[7] as WeaponType,
+    )..isDeleted = fields[3] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedAgent obj) {
+    final hasWeapon = obj.weapon != WeaponType.none;
+    writer
+      ..writeByte(hasWeapon ? 8 : 7)
+      ..writeByte(0)
+      ..write(obj.type)
+      ..writeByte(1)
+      ..write(obj.isAlly)
+      ..writeByte(2)
+      ..write(obj.id)
+      ..writeByte(3)
+      ..write(obj.isDeleted)
+      ..writeByte(4)
+      ..write(obj.position)
+      ..writeByte(5)
+      ..write(obj.lineUpID)
+      ..writeByte(6)
+      ..write(obj.state);
+    if (hasWeapon) {
+      writer
+        ..writeByte(7)
+        ..write(obj.weapon);
+    }
+  }
+}
 
 /// Keeps values added after 3.2.3 primitive on disk so the public build can
 /// still decode and ignore them during an emergency rollback.
@@ -136,8 +208,63 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   }
 }
 
-/// Writes a 3.2.3-readable page projection plus a lossless current JSON mirror.
-/// Older builds ignore the primitive mirror fields; current builds prefer them.
+/// StrategyPage slots. The legacy slots hold only types 3.2.3 can decode, so
+/// the public build can still open the library after an emergency rollback;
+/// everything newer rides in primitive JSON mirrors that older builds ignore.
+///
+/// Slots 12 and 15-17 are read but never written: 12 holds lineup groups and
+/// 15-17 the lineup graph as written by desktop 4.x, whose typeIds 3.2.3 cannot
+/// decode. Cloud builds before the main merge wrote JSON mirrors at 15
+/// (drawings) and 16 (lineup groups); a String at 15 identifies that layout.
+const int _pageAgentsJsonField = 13;
+const int _pageDrawingsJsonField = 18;
+const int _pageLineUpGraphJsonField = 19;
+const int _pageAbilitiesJsonField = 20;
+
+/// Every agent the public 3.2.3 build knows, with its ability count. That
+/// build decodes an unknown AgentType as Jett and resolves an ability by
+/// `agents[type].abilities[index]`, so a newer agent would load as the wrong
+/// agent, or crash the whole strategy when the index is out of range. Frozen
+/// at 3.2.3: never add to it.
+const Map<AgentType, int> _publicBuildAbilityCounts = {
+  AgentType.jett: 4,
+  AgentType.raze: 4,
+  AgentType.pheonix: 4,
+  AgentType.astra: 5,
+  AgentType.clove: 4,
+  AgentType.breach: 4,
+  AgentType.iso: 4,
+  AgentType.viper: 4,
+  AgentType.deadlock: 4,
+  AgentType.yoru: 4,
+  AgentType.sova: 4,
+  AgentType.skye: 4,
+  AgentType.kayo: 4,
+  AgentType.killjoy: 4,
+  AgentType.brimstone: 4,
+  AgentType.cypher: 4,
+  AgentType.chamber: 4,
+  AgentType.fade: 4,
+  AgentType.gekko: 4,
+  AgentType.harbor: 4,
+  AgentType.neon: 4,
+  AgentType.omen: 4,
+  AgentType.reyna: 4,
+  AgentType.sage: 4,
+  AgentType.vyse: 4,
+  AgentType.tejo: 4,
+  AgentType.waylay: 4,
+  AgentType.veto: 4,
+};
+
+bool _publicBuildResolvesAgent(AgentType type) =>
+    _publicBuildAbilityCounts.containsKey(type);
+
+bool _publicBuildResolvesAbility(AbilityInfo ability) {
+  final count = _publicBuildAbilityCounts[ability.type];
+  return count != null && ability.index < count;
+}
+
 class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   @override
   final typeId = strategyPageAdapterTypeId;
@@ -148,34 +275,61 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
     final fields = <int, dynamic>{
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
-    final currentDrawingsJson = fields[15] as String?;
-    final currentAgentsJson = fields[13] as String?;
-    final currentLineUpsJson = fields[16] as String?;
+    final isCloudLegacyLayout = fields[15] is String;
+    final drawingsJson = (fields[_pageDrawingsJsonField] ??
+        (isCloudLegacyLayout ? fields[15] : null)) as String?;
+    final agentsJson = fields[_pageAgentsJsonField] as String?;
+    final abilitiesJson = fields[_pageAbilitiesJsonField] as String?;
+    final lineUpGraph = _readLineUpGraph(fields, isCloudLegacyLayout);
 
     return StrategyPage(
       id: fields[0] as String,
       name: fields[2] as String,
       isAutoNamed: fields[14] as bool?,
-      drawingData: currentDrawingsJson == null
+      drawingData: drawingsJson == null
           ? (fields[3] as List).cast<DrawingElement>()
-          : DrawingProvider.fromJson(currentDrawingsJson),
-      agentData: currentAgentsJson == null
+          : DrawingProvider.fromJson(drawingsJson),
+      agentData: agentsJson == null
           ? (fields[4] as List).cast<PlacedAgentNode>()
-          : AgentProvider.fromJson(currentAgentsJson),
-      abilityData: (fields[5] as List).cast<PlacedAbility>(),
+          : AgentProvider.fromJson(agentsJson),
+      abilityData: abilitiesJson == null
+          ? (fields[5] as List).cast<PlacedAbility>()
+          : AbilityProvider.fromJson(abilitiesJson),
       textData: (fields[6] as List).cast<PlacedText>(),
       imageData: (fields[7] as List).cast<PlacedImage>(),
       utilityData: (fields[8] as List).cast<PlacedUtility>(),
       sortIndex: (fields[1] as num).toInt(),
       isAttack: fields[9] as bool,
       settings: fields[10] as StrategySettings,
-      lineUpGroups: currentLineUpsJson != null
-          ? LineUpProvider.fromJson(currentLineUpsJson)
-          : fields[12] == null
-              ? const []
-              : (fields[12] as List).cast<LineUpGroup>(),
+      lineUpOrigins: lineUpGraph.origins,
+      lineUpLandings: lineUpGraph.landings,
+      lineUpLinks: lineUpGraph.links,
+      lineUpGroups: fields[12] == null
+          ? const []
+          : (fields[12] as List).cast<LineUpGroup>(),
       lineUps:
           fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
+    );
+  }
+
+  static LineUpGraph _readLineUpGraph(
+    Map<int, dynamic> fields,
+    bool isCloudLegacyLayout,
+  ) {
+    final graphJson = fields[_pageLineUpGraphJsonField] as String?;
+    if (graphJson != null) return LineUpProvider.fromJson(graphJson);
+    if (isCloudLegacyLayout) {
+      final groupsJson = fields[16] as String?;
+      return groupsJson == null
+          ? LineUpGraph.empty
+          : LineUpGraph.fromLegacyGroups(
+              LineUpProvider.legacyGroupsFromJson(groupsJson),
+            );
+    }
+    return LineUpGraph(
+      origins: (fields[15] as List?)?.cast<LineUpOrigin>() ?? const [],
+      landings: (fields[16] as List?)?.cast<LineUpLanding>() ?? const [],
+      links: (fields[17] as List?)?.cast<LineUpLink>() ?? const [],
     );
   }
 
@@ -189,11 +343,27 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
               drawing is RectangleDrawing,
         )
         .toList(growable: false);
-    final compatibilityAgents =
-        obj.agentData.whereType<PlacedAgent>().toList(growable: false);
+    // Legacy slots hold only what 3.2.3 resolves faithfully. Weapons ride in
+    // the agents mirror (13); agents and abilities newer than 3.2.3 ride in
+    // the agents (13), abilities (20) and lineup graph (19) mirrors.
+    final compatibilityAgents = obj.agentData
+        .whereType<PlacedAgent>()
+        .where((agent) => _publicBuildResolvesAgent(agent.type))
+        .map(_withoutWeapon)
+        .toList(growable: false);
+    final compatibilityAbilities = obj.abilityData
+        .where((ability) => _publicBuildResolvesAbility(ability.data))
+        .toList(growable: false);
+    final compatibilityLineUps = [
+      // ignore: deprecated_member_use_from_same_package
+      for (final lineUp in obj.lineUps)
+        if (_publicBuildResolvesAgent(lineUp.agent.type) &&
+            _publicBuildResolvesAbility(lineUp.ability.data))
+          lineUp.copyWith(agent: _withoutWeapon(lineUp.agent)),
+    ];
 
     writer
-      ..writeByte(16)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -205,7 +375,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(4)
       ..write(compatibilityAgents)
       ..writeByte(5)
-      ..write(obj.abilityData)
+      ..write(compatibilityAbilities)
       ..writeByte(6)
       ..write(obj.textData)
       ..writeByte(7)
@@ -217,15 +387,22 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(10)
       ..write(obj.settings)
       ..writeByte(11)
-      ..write(obj.lineUps)
-      ..writeByte(13)
+      ..write(compatibilityLineUps)
+      ..writeByte(_pageAgentsJsonField)
       ..write(AgentProvider.objectToJson(obj.agentData))
       ..writeByte(14)
       ..write(obj.isAutoNamed)
-      ..writeByte(15)
+      ..writeByte(_pageDrawingsJsonField)
       ..write(DrawingProvider.objectToJson(obj.drawingData))
-      ..writeByte(16)
-      ..write(LineUpProvider.objectToJson(obj.lineUpGroups));
+      ..writeByte(_pageLineUpGraphJsonField)
+      ..write(LineUpProvider.objectToJson(obj.lineUpGraph))
+      ..writeByte(_pageAbilitiesJsonField)
+      ..write(AbilityProvider.objectToJson(obj.abilityData));
+  }
+
+  static PlacedAgent _withoutWeapon(PlacedAgent agent) {
+    if (agent.weapon == WeaponType.none) return agent;
+    return agent.copyWith(weapon: WeaponType.none)..isDeleted = agent.isDeleted;
   }
 }
 
@@ -480,7 +657,7 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
 
 class FolderAdapter extends TypeAdapter<Folder> {
   @override
-  final typeId = 17;
+  final typeId = folderAdapterTypeId;
 
   @override
   Folder read(BinaryReader reader) {

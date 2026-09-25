@@ -24,8 +24,6 @@ import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
-import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -188,15 +186,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(lineUpProvider, (previous, next) {
-      if (previous?.isSelectingPosition == true &&
-          next.isSelectingPosition == false) {
-        showDialog(
-          context: context,
-          builder: (context) => const CreateLineupDialog(),
-        );
-      }
-    });
     final strategyState = ref.watch(strategyProvider);
     final initialStrategyId = widget.initialStrategyId;
     final showSkeleton = _isInitialLoadPending ||
@@ -219,8 +208,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       body: Column(
         children: [
           // The same 40px strip as the library, so the traffic lights never
-          // move: Library on the left, the strategy in the middle, Discord on
-          // the right. The map card lives on the canvas with the toolbar.
+          // move: Library and the wordmark on the left, the strategy in the
+          // middle, Discord on the right. The map card lives on the canvas
+          // with the toolbar.
           AppWindowStrip(
             child: Stack(
               children: [
@@ -240,6 +230,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                         icon: const Icon(LucideIcons.house300, size: 18),
                       ),
                     ),
+                    const IcarusWordmark(),
                     if (kIsWeb)
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8.0),
@@ -315,7 +306,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       return;
     }
     if (_isClosingWindow) {
-      await windowManager.close();
       return;
     }
 

@@ -21,7 +21,9 @@ Keep them separate. Run the workflow for the channel you actually want to publis
 
 1. Check the branch. Stable desktop and every Store build must run from
    `main`. The release scripts stop before a version bump or build on any other
-   branch. Desktop prerelease builds may run from a feature branch.
+   branch. The scripts still build an unsigned desktop prerelease from a
+   feature branch for local testing, but the signed `Release Desktop` workflow
+   runs only from `main`.
 2. Run the focused validation locally:
    - `fvm flutter test test/update_checker_test.dart`
    - `fvm flutter test test/cloud_build_config_test.dart`
@@ -60,7 +62,7 @@ and [system environment URL definitions](https://docs.convex.dev/production/envi
 
 Stable desktop, Store, and production backend workflows all enter the protected
 GitHub `Production` environment before they can build or publish. Desktop
-prerelease skips that environment and remains available on feature branches.
+prerelease skips that environment.
 
 For a local stable build, set the same two environment variables in the shell
 before running `scripts/release_desktop.ps1`. Never put a Convex deploy key in a
@@ -111,9 +113,9 @@ Use this when you want to publish the direct installer channel.
    - `publish_pages`: `true`
 5. Wait for the workflow to finish.
 6. Verify the desktop installer artifact was uploaded.
-7. Verify GitHub Pages published:
+7. Verify the updater manifest and GitHub Release installer are published:
    - `https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json`
-   - `https://sunkenintime.github.io/icarus/downloads/windows/stable/icarus-setup-latest.exe`
+   - `https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe`
 8. Open the published `app-archive.json` and confirm it contains the expected version and notes.
 9. Open the stable installer URL and confirm it downloads the current desktop installer.
 10. Install the direct desktop build on a test machine.
@@ -121,10 +123,11 @@ Use this when you want to publish the direct installer channel.
 
 ## Desktop Prerelease Checklist
 
-Use this when you want to validate updater behavior before shipping to `main`.
+Use this to validate updater behavior before publishing to the stable channel.
+Signed releases run from `main`, matching the Azure federated credential.
 
-1. Checkout branch `update/prerelease`.
-2. Push the updater changes you want to validate.
+1. Merge the reviewed changes into `main`.
+2. Select `main` as the workflow branch.
 3. Go to `Actions` in GitHub.
 4. Open `Release Desktop`.
 5. Click `Run workflow`.
@@ -134,16 +137,16 @@ Use this when you want to validate updater behavior before shipping to `main`.
    - `mandatory`: `false` unless you want to force the update
    - `publish_pages`: `true`
 7. Wait for the workflow to finish.
-8. Verify GitHub Pages published:
+8. Verify GitHub Pages published the updater and a GitHub prerelease contains the installer:
    - `https://sunkenintime.github.io/icarus/updates/windows/prerelease/app-archive.json`
-   - `https://sunkenintime.github.io/icarus/downloads/windows/prerelease/icarus-setup-latest.exe`
+   - `https://github.com/SunkenInTime/icarus/releases/download/desktop-prerelease-v<VERSION+BUILD>/icarus-setup.exe`
 9. Install an older prerelease desktop build on a test machine and confirm:
    - update prompt appears
    - update downloads fully
    - app exits for restart
    - relaunched app is the new version
    - second cold launch still shows the new version
-10. After validation, merge/fix as needed and publish stable from `main`.
+10. After validation, publish stable from `main`.
 
 ## Store Release Checklist
 
@@ -166,7 +169,7 @@ Use this when you want to publish the Microsoft Store channel.
 - Desktop-only update:
   - Run `Release Desktop` only.
 - Desktop prerelease validation:
-  - Use branch `update/prerelease`.
+  - Use branch `main`.
   - Run `Release Desktop` with `channel=prerelease`.
   - After validation, rerun desktop release on `main` with `channel=stable`.
 - Store-only update:
@@ -176,8 +179,14 @@ Use this when you want to publish the Microsoft Store channel.
 
 ## Notes
 
+- Installers are GitHub Release assets because they exceed Git's 100 MiB blob limit. The stable download link follows the latest stable GitHub Release; prereleases use their exact tag.
+- Existing desktop users still update through the same Pages manifest and per-file payload. Moving the installer does not require reinstalling Icarus.
+- The signed installer is published before the updater manifest. The new payload and manifest are pushed together, preserving earlier payload folders for downloads already in progress.
+- Never reuse a publicly published build number. If publication fails after an updater went live, increment the build number before rebuilding.
+- The `publish_pages` workflow input controls both GitHub Release and Pages publication. With it disabled, all output stays in workflow artifacts.
 - Local prerelease publish:
-  - `scripts/publish_prerelease_local.ps1` pushes the staged site content to `gh-pages`.
+  - `scripts/publish_prerelease_local.ps1` cannot publish an unsigned build. Use `Release Desktop` on `main` with `channel=prerelease` for signing and publication.
+  - The shared scripts verify EXE and DLL signatures before packaging, staging, and pushing Pages content. Manual phased releases require signing between build and package, then signing the installer before stage.
   - GitHub Pages should be configured to serve `gh-pages` from `/ (root)`.
   - No extra Pages deploy workflow is needed for prerelease testing.
 - `release/metadata/4.6.1+97.json` is prerelease-only while the online beta
@@ -186,3 +195,35 @@ Use this when you want to publish the Microsoft Store channel.
 - Direct desktop installs now use a per-user install path and per-user registry registration.
 - Store installs should continue to use the Microsoft Store update path only.
 - The metadata file should not be a generic `template.json` in the live metadata folder, because the manifest generator treats every JSON file there as a real release entry.
+
+## Azure signing setup and first verification
+
+GitHub repository secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+`AZURE_SUBSCRIPTION_ID`. Repository variables:
+`AZURE_ARTIFACT_SIGNING_ENDPOINT`, `AZURE_ARTIFACT_SIGNING_ACCOUNT`, and
+`AZURE_ARTIFACT_SIGNING_PROFILE`.
+
+The Azure application needs a federated credential with issuer
+`https://token.actions.githubusercontent.com`, audience
+`api://AzureADTokenExchange`, and subject
+`repo:SunkenInTime@76637177/icarus@890026480:ref:refs/heads/main`.
+This repository uses GitHub's immutable OIDC subject format. Check it with
+`gh api repos/SunkenInTime/icarus/actions/oidc/customization/sub`:
+`use_immutable_subject` must be `true`, and `sub_claim_prefix` must match the
+repository portion of the Azure subject. A legacy subject without the numeric
+IDs does not match this credential and causes Azure login error `AADSTS700213`.
+See [GitHub's OIDC reference](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims).
+
+Assign its service principal the
+Artifact Signing Certificate Profile Signer role on the signing profile.
+The public trust identity validation and certificate profile must be active.
+
+After merging the signing workflow, first run it on `main` with
+`version_bump=none`, `channel=prerelease`, and `publish_pages=false`.
+This signs and verifies artifacts without publishing Pages or committing
+version/metadata changes. Download the installer artifact, check its expected
+publisher in Windows, and test installation and launch. Then publish a
+prerelease and test updating an older prerelease installation before stable.
+
+A green PR check validates code and the signature rejection gates. It does not
+prove Azure login, signing permissions, or an end-to-end signed release works.

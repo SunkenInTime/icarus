@@ -6,12 +6,13 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
-import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
+import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -30,8 +31,8 @@ const double _menuItemGap = 8;
 const double _menuLabelLeftInset =
     _menuItemHorizontalPadding + _menuIconWidth + _menuItemGap;
 
-/// The library's only chrome: tabs on the left, search / sort / New / account
-/// on the right, all inside the window's title strip.
+/// The library's only chrome: tabs on the left, What's new / search / sort /
+/// New / account on the right, all inside the window's title strip.
 class LibraryTitleStrip extends ConsumerStatefulWidget {
   const LibraryTitleStrip({
     super.key,
@@ -124,12 +125,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               child: SizedBox.expand(),
             ),
           ),
+          const WhatsNewIcon(),
+          const SizedBox(width: 4),
           if (tab != LibraryTab.community) ...[
             const SizedBox(
               height: _controlHeight,
               child: SearchTextField(
                 key: ValueKey('library-search'),
-                collapsedWidth: 34,
+                collapsedWidth: _controlHeight,
                 expandedWidth: 220,
                 compact: true,
                 hintText: 'Search',
@@ -138,6 +141,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             const SizedBox(width: 4),
             _buildSortMenu(),
             const SizedBox(width: 8),
+            // Nothing is created in Shared; its New is adding what someone
+            // shared with you.
             if (tab == LibraryTab.shared)
               ShadButton.secondary(
                 key: const ValueKey('cloud-add-shared-item'),
@@ -220,6 +225,18 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     );
   }
 
+  /// The primary button's raised look with one side's corners squared off.
+  /// Spelled out in full because merging a partial decoration drops the
+  /// theme's gradient and shadow.
+  static ShadDecoration _halfDecoration(BorderRadius radius) => ShadDecoration(
+        gradient: Settings.raisedPrimaryFill,
+        shadows: const [Settings.raisedDropShadow],
+        border: ShadBorder(
+          radius: radius,
+          top: const ShadBorderSide(color: Settings.raisedTopLight, width: 1),
+        ),
+      );
+
   Widget _buildNewMenu() {
     const showLibraryTools = !kIsWeb;
     return ShadPopover(
@@ -236,13 +253,6 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _MenuItem(
-              menu: _newController,
-              key: const ValueKey('library-new-strategy'),
-              icon: LucideIcons.filePlus,
-              label: 'New Strategy',
-              onPressed: widget.onCreateStrategy,
-            ),
             _MenuItem(
               menu: _newController,
               key: const ValueKey('library-new-folder'),
@@ -274,14 +284,40 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           ],
         ),
       ),
-      child: ShadButton(
-        key: const ValueKey('library-new-menu'),
-        height: _controlHeight,
-        padding: const EdgeInsets.only(left: 8, right: 6),
-        onPressed: _newController.toggle,
-        leading: const Icon(LucideIcons.plus, size: 16),
-        trailing: const Icon(LucideIcons.chevronDown, size: 14),
-        child: const Text('New'),
+      // A split button: the body goes straight to the map picker, the
+      // chevron opens everything else. Each half keeps only its outer corners.
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShadButton(
+            key: const ValueKey('library-new-strategy'),
+            height: _controlHeight,
+            padding: const EdgeInsets.only(left: 8, right: 10),
+            decoration: _halfDecoration(
+              const BorderRadius.horizontal(left: Radius.circular(6)),
+            ),
+            onPressed: widget.onCreateStrategy,
+            leading: const Icon(LucideIcons.plus, size: 16),
+            child: const Text('New Strategy'),
+          ),
+          // A rounded border must be one colour, so the seam is its own strip.
+          const SizedBox(
+            width: 1,
+            height: _controlHeight,
+            child: ColoredBox(color: Settings.raisedBottomShade),
+          ),
+          ShadIconButton(
+            key: const ValueKey('library-new-menu'),
+            width: 24,
+            height: _controlHeight,
+            padding: EdgeInsets.zero,
+            decoration: _halfDecoration(
+              const BorderRadius.horizontal(right: Radius.circular(6)),
+            ),
+            onPressed: _newController.toggle,
+            icon: const Icon(LucideIcons.chevronDown, size: 14),
+          ),
+        ],
       ),
     );
   }
@@ -403,7 +439,11 @@ class _TabButton extends StatelessWidget {
   final String label;
   final String semanticsLabel;
   final bool selected;
+
+  /// Signed out, Shared still answers a tap (with the sign-in dialog) but
+  /// reads as unavailable.
   final bool dimmed;
+
   final VoidCallback onTap;
 
   @override
@@ -478,7 +518,7 @@ class _MenuItem extends StatelessWidget {
                 icon,
                 size: 16,
                 color: icon == LucideIcons.check
-                    ? Settings.tacticalVioletTheme.primary
+                    ? Settings.accentInk
                     : Settings.tacticalVioletTheme.mutedForeground,
               ),
       ),

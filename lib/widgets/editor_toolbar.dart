@@ -8,32 +8,30 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/screenshot/capture_geometry.dart';
+import 'package:icarus/screenshot/offscreen_capture.dart';
+import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
+import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:icarus/screenshot/offscreen_capture.dart';
-import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
 import 'package:icarus/widgets/dialogs/export_video_dialog.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
-import 'package:screenshot/screenshot.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Geometry shared by every control in the editor's floating toolbar, so the
 /// save button (which swaps between local and cloud variants) matches its
 /// neighbours exactly.
 class EditorToolbarButtonStyle {
-  const EditorToolbarButtonStyle({
-    this.size = 32,
-    this.iconSize = 18,
-  });
+  const EditorToolbarButtonStyle({this.size = 32, this.iconSize = 18});
 
   final double size;
   final double iconSize;
@@ -42,8 +40,8 @@ class EditorToolbarButtonStyle {
 const EditorToolbarButtonStyle kEditorToolbarButtonStyle =
     EditorToolbarButtonStyle();
 
-/// The document actions of the open strategy, one card under the map card at
-/// the top-left of the canvas: save, export, video, screenshot, then settings.
+/// The document actions of the open strategy, docked at the top-left of the
+/// canvas as one card: save, export, video, screenshot, then settings.
 class EditorToolbar extends ConsumerStatefulWidget {
   const EditorToolbar({super.key});
 
@@ -60,6 +58,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     final source = ref.watch(strategyProvider.select((value) => value.source));
     final isCloud = source == StrategySource.cloud;
 
+    // The strategy view owns the spacing around this card, so it aligns
+    // with the map card above it.
     return Row(
       children: [
         Container(
@@ -120,10 +120,6 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
             ],
           ),
         ),
-        if (_isViewOnly()) ...[
-          const SizedBox(width: 8),
-          const _ViewOnlyChip(),
-        ],
       ],
     );
   }
@@ -174,39 +170,31 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     }
     if (_isCapturingScreenshot) return;
     setState(() => _isCapturingScreenshot = true);
-    CoordinateSystem.instance.setIsScreenshot(true);
-
-    final String id = ref.read(strategyProvider).strategyId!;
-
-    await ref.read(strategyProvider.notifier).forceSaveNow(id);
-
-    final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
-        .where((StrategyData strategy) => strategy.id == id)
-        .firstOrNull;
-
-    if (newStrat == null) {
-      if (mounted) setState(() => _isCapturingScreenshot = false);
-      CoordinateSystem.instance.setIsScreenshot(false);
-      return;
-    }
-    final newController = ScreenshotController();
-    final mapState = ref.read(mapProvider);
-    final currentPageID = ref.read(strategyPageSessionProvider).activePageId;
-
-    if (currentPageID == null) {
-      if (mounted) setState(() => _isCapturingScreenshot = false);
-      CoordinateSystem.instance.setIsScreenshot(false);
-      return;
-    }
-
-    final activePage = newStrat.pages.firstWhere(
-      (p) => p.id == currentPageID,
-      orElse: () => newStrat.pages.first,
-    );
-    final screenshotContainer = ProviderContainer();
-
+    ProviderContainer? screenshotContainer;
+    CaptureGeometryLease? captureGeometry;
     try {
+      final id = ref.read(strategyProvider).strategyId;
+      if (id == null) return;
+
+      await ref.read(strategyProvider.notifier).forceSaveNow(id);
+      if (!mounted) return;
+
+      final newStrat = Hive.box<StrategyData>(
+        HiveBoxNames.strategiesBox,
+      ).values.where((StrategyData strategy) => strategy.id == id).firstOrNull;
+      if (newStrat == null) return;
+
+      final currentPageID = ref.read(strategyPageSessionProvider).activePageId;
+      final mapState = ref.read(mapProvider);
+      if (currentPageID == null) return;
+
+      final activePage = newStrat.pages.firstWhere(
+        (p) => p.id == currentPageID,
+        orElse: () => newStrat.pages.first,
+      );
+      final captureContainer = ProviderContainer();
+      screenshotContainer = captureContainer;
+
       final screenshotView = ScreenshotView(
         isAttack: activePage.isAttack,
         mapValue: newStrat.mapData,
@@ -222,19 +210,44 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         strategySettings: activePage.settings,
         strategyState: ref.read(strategyProvider),
         pageName: activePage.name,
-        lineUpGroups: activePage.lineUpGroups,
+        lineUpGraph: activePage.lineUpGraph,
         themeProfileId: newStrat.themeProfileId,
         themeOverridePalette: newStrat.themeOverridePalette,
       );
-      screenshotView.hydrateProviders(screenshotContainer);
-      final image = await newController.captureFromWidget(
-        targetSize: CoordinateSystem.screenShotSize,
-        wrapForOffscreenCapture(
-          screenshotView,
-          container: screenshotContainer,
-        ),
+      // The sightline models load asynchronously; the capture waits for the
+      // page's geometry before the first frame is taken.
+      captureGeometry = await prepareCaptureGeometry(
+        captureContainer,
+        newStrat.mapData,
+        [activePage],
       );
-      if (mounted) setState(() => _isCapturingScreenshot = false);
+      late Uint8List image;
+      try {
+        image = await withScreenshotCoordinates(() async {
+          screenshotView.hydrateProviders(captureContainer);
+          final renderer = PersistentOffscreenRenderer(
+              targetSize: CoordinateSystem.screenShotSize,
+              waitForFrameData: captureGeometry?.waitForFrame,
+              wrapWidget: (child) =>
+                  wrapForOffscreenCapture(child, container: captureContainer));
+          try {
+            await renderer.prepare(screenshotView,
+                settleDuration: const Duration(milliseconds: 800));
+            return await renderer.capture(screenshotView);
+          } finally {
+            await renderer.dispose();
+          }
+        });
+      } finally {
+        if (mounted) {
+          ref.read(screenshotProvider.notifier).setIsScreenShot(false);
+          ref
+              .read(drawingProvider.notifier)
+              .rebuildAllPaths(CoordinateSystem.instance);
+        }
+      }
+      if (!mounted) return;
+      setState(() => _isCapturingScreenshot = false);
       String? outputFile = await FilePicker.platform.saveFile(
         type: FileType.custom,
         dialogTitle: 'Please select an output file:',
@@ -246,30 +259,20 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         final file = File(outputFile);
         await file.writeAsBytes(image);
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not export the screenshot. Please try again.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'EditorToolbar.screenshot',
+      );
     } finally {
-      screenshotContainer.dispose();
+      captureGeometry?.close();
+      screenshotContainer?.dispose();
       if (mounted && _isCapturingScreenshot) {
         setState(() => _isCapturingScreenshot = false);
       }
-      ref.read(screenshotProvider.notifier).setIsScreenShot(false);
-      CoordinateSystem.instance.setIsScreenshot(false);
-      ref
-          .read(drawingProvider.notifier)
-          .rebuildAllPaths(CoordinateSystem.instance);
     }
-  }
-
-  bool _isViewOnly() {
-    final source = ref.watch(strategyProvider.select((value) => value.source));
-    if (source != StrategySource.cloud) {
-      return false;
-    }
-    // Read the cached role rather than the raw snapshot so the chip does not
-    // flicker off while the snapshot is reloading or transiently errored; it
-    // is absent only before the role has ever been known.
-    final role = ref.watch(lastKnownCloudRoleProvider);
-    return role == 'viewer';
   }
 }
 
@@ -279,6 +282,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
 /// grey share the quietness. Hover brings the glyph up to foreground. [icon]
 /// is any 18px glyph, so buttons can swap in a spinner without changing size.
 class EditorToolbarButton extends StatelessWidget {
+  // The ghost icon button's own corner radius (the theme default).
+  static const double _buttonRadius = 6;
+
   const EditorToolbarButton({
     super.key,
     required this.style,
@@ -286,6 +292,8 @@ class EditorToolbarButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.enabled = true,
+    this.active = false,
+    this.showTooltip = true,
     this.foregroundColor,
     this.semanticsLabel,
   });
@@ -295,6 +303,11 @@ class EditorToolbarButton extends StatelessWidget {
   final Widget icon;
   final VoidCallback? onPressed;
   final bool enabled;
+  final bool active;
+
+  /// False where a bubble would cover the work, like the text format bar.
+  /// [tooltip] still labels the button for screen readers.
+  final bool showTooltip;
 
   /// Overrides the resting color, e.g. destructive for a sync problem.
   final Color? foregroundColor;
@@ -303,29 +316,41 @@ class EditorToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    final resting = foregroundColor ?? Settings.toolbarGlyph;
+    // An active toggle is a checked tool: a raised violet surface under a
+    // white glyph. Violet on the glyph itself is unreadable at this stroke.
+    final resting = active
+        ? theme.primaryForeground
+        : foregroundColor ?? Settings.toolbarGlyph;
+    Widget button = ShadIconButton.ghost(
+      width: style.size,
+      height: style.size,
+      enabled: enabled,
+      foregroundColor: resting,
+      hoverForegroundColor:
+          active ? resting : foregroundColor ?? theme.foreground,
+      hoverBackgroundColor: active ? Colors.transparent : theme.accent,
+      onPressed: onPressed,
+      icon: icon,
+    );
+    if (active) {
+      button = DecoratedBox(
+        decoration: Settings.raisedPrimary(_buttonRadius),
+        child: button,
+      );
+    }
+    button = IconTheme(
+      data: IconThemeData(size: style.iconSize, color: resting),
+      child: button,
+    );
     return Semantics(
       label: semanticsLabel ?? tooltip,
       button: true,
       enabled: enabled,
       onTap: enabled ? onPressed : null,
       excludeSemantics: true,
-      child: ShadTooltip(
-        builder: (context) => Text(tooltip),
-        child: IconTheme(
-          data: IconThemeData(size: style.iconSize, color: resting),
-          child: ShadIconButton.ghost(
-            width: style.size,
-            height: style.size,
-            enabled: enabled,
-            foregroundColor: resting,
-            hoverForegroundColor: foregroundColor ?? theme.foreground,
-            hoverBackgroundColor: theme.accent,
-            onPressed: onPressed,
-            icon: icon,
-          ),
-        ),
-      ),
+      child: showTooltip
+          ? ShadTooltip(builder: (context) => Text(tooltip), child: button)
+          : button,
     );
   }
 }
@@ -341,49 +366,6 @@ class EditorToolbarDivider extends StatelessWidget {
       height: 18,
       margin: const EdgeInsets.symmetric(horizontal: 4),
       color: Settings.tacticalVioletTheme.border,
-    );
-  }
-}
-
-/// Non-interactive chip shown beside the toolbar when the open cloud strategy
-/// is shared with view-only access.
-class _ViewOnlyChip extends StatelessWidget {
-  const _ViewOnlyChip();
-
-  @override
-  Widget build(BuildContext context) {
-    const theme = Settings.tacticalVioletTheme;
-
-    return ShadTooltip(
-      builder: (context) => const Text(
-        'You have view access. Ask the owner for edit access to make changes.',
-      ),
-      child: Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: theme.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.eye200, size: 14, color: theme.mutedForeground),
-            const SizedBox(width: 6),
-            Text(
-              'View only',
-              style: TextStyle(
-                color: theme.mutedForeground,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-                height: 1.2,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

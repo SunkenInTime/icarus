@@ -2401,6 +2401,7 @@ class StrategyImportExportService {
           continue;
         }
         try {
+          // TODO(lineupGraph): cloud lineups are lineupGroup payloads.
           final parsed = LineUpGroup.fromJson(cloudPayloadData(lineup.payload));
           for (final item in parsed.items) {
             for (final image in item.images) {
@@ -2548,6 +2549,10 @@ class StrategyImportExportService {
         }
       }
 
+      // TODO(lineupGraph): cloud lineups are lineupGroup payloads; build the
+      // graph from that projection until Convex stores the graph.
+      final lineUpGraph = LineUpGraph.fromLegacyGroups(parsedLineUpGroups);
+
       StrategySettings settings = StrategySettings();
       final settingsPayload = fullPage.content.settings;
       if (settingsPayload != null && settingsPayload.isNotEmpty) {
@@ -2578,7 +2583,9 @@ class StrategyImportExportService {
           sortIndex: remotePage.sortIndex,
           isAttack: remotePage.isAttack,
           settings: settings,
-          lineUpGroups: parsedLineUpGroups,
+          lineUpOrigins: lineUpGraph.origins,
+          lineUpLandings: lineUpGraph.landings,
+          lineUpLinks: lineUpGraph.links,
         ),
       );
     }

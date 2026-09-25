@@ -44,6 +44,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   production-approval:
@@ -71,20 +72,34 @@ jobs:
     needs: production-approval
     if: ${{ always() && (inputs.channel == 'prerelease' || needs.production-approval.result == 'success') }}
     runs-on: windows-latest
+    env:
+      # Every release_desktop.ps1 phase resolves the cloud build configuration,
+      # so stable builds need the production Convex settings in each step.
+      ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+      ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Require Main Branch
+        if: ${{ github.ref != 'refs/heads/main' }}
+        shell: pwsh
+        run: throw "Signed desktop releases must be dispatched from main."
+
       - name: Run Release Preflight
         shell: pwsh
-        env:
-          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
-          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
         run: >-
           powershell -ExecutionPolicy Bypass -File scripts/assert_release_preflight.ps1
           -ReleaseTarget "${{ inputs.channel == 'stable' && 'stable-desktop' || 'prerelease-desktop' }}"
+
+      - name: Sign In To Azure With OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - uses: dart-lang/setup-dart@v1
 
@@ -101,27 +116,100 @@ jobs:
         shell: pwsh
         run: fvm install
 
-      - name: Run Desktop Release Script
+      - name: Build Windows Release Binaries
+        shell: pwsh
+        env:
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase build -VersionBump "${{ inputs.version_bump }}" -Channel "${{ inputs.channel }}"
+
+      # The early login checks configuration. Refresh after compilation because
+      # GitHub's OIDC assertion can expire before signing requests its own scope.
+      - name: Refresh Azure Login Before Binary Signing
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows Release Binaries
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\build\windows\x64\runner\Release
+          files-folder-filter: exe,dll
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Build Signed Updater Archive And Installer
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase package -Channel "${{ inputs.channel }}"
+
+      - name: Refresh Azure Login Before Installer Signing
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows Installer
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\build\installer
+          files-folder-filter: exe
+          files-folder-recurse: false
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Verify Authenticode Signatures
+        shell: pwsh
+        run: |
+          . ./scripts/common_release.ps1
+          Assert-AuthenticodeSignatures -Path "build/windows/x64/runner/Release"
+          Assert-AuthenticodeSignatures -Path "build/installer"
+
+      - name: Stage Desktop Release
         shell: pwsh
         env:
           CHANGE_MESSAGE: ${{ inputs.change_message }}
           RELEASE_TITLE: ${{ inputs.release_title }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
-          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
-          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
         run: |
           $args = @(
             "-ExecutionPolicy", "Bypass",
             "-File", "scripts/release_desktop.ps1",
-            "-VersionBump", "${{ inputs.version_bump }}",
+            "-Phase", "stage",
             "-Channel", "${{ inputs.channel }}",
             "-ChangeMessage", $env:CHANGE_MESSAGE
           )
-
-          if ("${{ inputs.publish_pages }}" -eq "true") {
-            $args += @("-PublishPages", "-PagesPublishMode", "git-branch")
-          }
 
           if ("${{ inputs.mandatory }}" -eq "true") {
             $args += "-Mandatory"
@@ -133,36 +221,8 @@ jobs:
 
           & powershell @args
 
-      - name: Upload Desktop Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-release-${{ inputs.channel }}
-          path: |
-            release/out/desktop/**
-            dist/**
-          if-no-files-found: error
-
-      - name: Print Published Download URLs
-        if: ${{ inputs.publish_pages }}
-        shell: pwsh
-        run: |
-          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+\b'
-          if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
-            throw "Could not parse version name from pubspec.yaml"
-          }
-          $versionName = $versionLine.Matches[0].Groups[1].Value.Trim()
-          $channel = "${{ inputs.channel }}"
-          Write-Host "Published channel: $channel"
-
-          Write-Host "Latest installer:"
-          Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-latest.exe"
-          Write-Host "Versioned installer:"
-          Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-$versionName.exe"
-          Write-Host "Updater manifest:"
-          Write-Host "https://sunkenintime.github.io/icarus/updates/windows/$channel/app-archive.json"
-
       - name: Commit Version And Metadata Changes
-        if: ${{ github.ref_type == 'branch' }}
+        if: ${{ inputs.publish_pages && github.ref_type == 'branch' }}
         shell: pwsh
         run: |
           $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart release/metadata
@@ -182,3 +242,44 @@ jobs:
           git add pubspec.yaml lib/const/settings.dart release/metadata
           git commit -m "chore(release): desktop $version"
           git push origin HEAD:${{ github.ref_name }}
+
+      - name: Publish Signed Desktop Release
+        if: ${{ inputs.publish_pages }}
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase publish -Channel "${{ inputs.channel }}" -PublishPages -PagesPublishMode git-branch
+
+      - name: Upload Desktop Artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release-${{ inputs.channel }}
+          path: |
+            release/out/desktop/**
+            build/installer/**
+            dist/**
+          if-no-files-found: warn
+
+      - name: Print Published Download URLs
+        if: ${{ inputs.publish_pages }}
+        shell: pwsh
+        run: |
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+\b'
+          if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
+            throw "Could not parse version name from pubspec.yaml"
+          }
+          $versionName = $versionLine.Matches[0].Groups[1].Value.Trim()
+          $channel = "${{ inputs.channel }}"
+          Write-Host "Published channel: $channel"
+
+          Write-Host "Latest installer:"
+          if ($channel -eq 'stable') {
+            Write-Host "https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe"
+          }
+          Write-Host "Versioned installer:"
+          $fullVersion = (Get-Content pubspec.yaml -Raw | Select-String 'version:\s*(\d+\.\d+\.\d+\+\d+)').Matches[0].Groups[1].Value
+          Write-Host "https://github.com/SunkenInTime/icarus/releases/download/desktop-$channel-v$fullVersion/icarus-setup.exe"
+          Write-Host "Updater manifest:"
+          Write-Host "https://sunkenintime.github.io/icarus/updates/windows/$channel/app-archive.json"

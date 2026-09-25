@@ -560,9 +560,27 @@ class _MyAppState extends ConsumerState<MyApp> {
           brightness: Brightness.dark,
           colorScheme: Settings.tacticalVioletTheme,
           breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+          // Dialogs are panels: one surface step above the canvas, so they
+          // read as a sheet rather than a black box on a black screen.
+          // Fields keep the panel's surface and take the lighter input
+          // edge, so they read on a card without becoming a dark well.
+          inputTheme: ShadInputTheme(
+            decoration: ShadDecoration(
+              border: ShadBorder.all(
+                width: 1,
+                color: Settings.tacticalVioletTheme.input,
+                radius: const BorderRadius.all(Radius.circular(6)),
+              ),
+            ),
+          ),
+          primaryDialogTheme: Settings.dialogTheme,
+          alertDialogTheme: Settings.dialogTheme,
           // Ghost buttons are quiet controls (menu items, icon buttons),
           // not primary commands, so they don't get the command color.
           ghostButtonTheme: ShadButtonTheme(
+            foregroundColor: Settings.tacticalVioletTheme.foreground,
+          ),
+          outlineButtonTheme: ShadButtonTheme(
             foregroundColor: Settings.tacticalVioletTheme.foreground,
           ),
           // Primary commands are raised like the selected tab: a lighter top
@@ -572,6 +590,17 @@ class _MyAppState extends ConsumerState<MyApp> {
           primaryButtonTheme: ShadButtonTheme(
             decoration: ShadDecoration(
               gradient: Settings.raisedPrimaryFill,
+              shadows: const [Settings.raisedDropShadow],
+              border: const ShadBorder(
+                radius: BorderRadius.all(Radius.circular(6)),
+                top: ShadBorderSide(color: Settings.raisedTopLight, width: 1),
+              ),
+            ),
+          ),
+          // Destructive commands are raised the same way, in red.
+          destructiveButtonTheme: ShadButtonTheme(
+            decoration: ShadDecoration(
+              gradient: Settings.raisedDestructiveFill,
               shadows: const [Settings.raisedDropShadow],
               border: const ShadBorder(
                 radius: BorderRadius.all(Radius.circular(6)),

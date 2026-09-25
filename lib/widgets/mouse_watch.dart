@@ -8,7 +8,7 @@ import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/lineup_ability_stack_selector.dart';
-import 'package:icarus/widgets/line_up_media_carousel.dart';
+import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MouseWatch extends ConsumerStatefulWidget {
@@ -17,14 +17,17 @@ class MouseWatch extends ConsumerStatefulWidget {
     super.key,
     this.cursor = SystemMouseCursors.basic,
     this.deleteTarget,
-    this.lineUpId,
-    this.lineUpItemId,
+    this.lineUpOriginId,
+    this.lineUpLandingId,
     this.contextMenuItems,
     this.onTap,
-  });
+  }) : assert(lineUpOriginId == null || lineUpLandingId == null);
 
-  final String? lineUpId;
-  final String? lineUpItemId;
+  /// Set when the child is a lineup origin (a placed agent).
+  final String? lineUpOriginId;
+
+  /// Set when the child is a lineup landing spot (a placed ability).
+  final String? lineUpLandingId;
   final Widget child;
   final HoveredDeleteTarget? deleteTarget;
   final SystemMouseCursor cursor;
@@ -44,8 +47,10 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   bool _hitboxCleanupScheduled = false;
   bool _allowCleanupAfterUnmount = false;
   Rect? _lastRegisteredHitbox;
-  String? _registeredGroupId;
-  String? _registeredItemId;
+  String? _registeredLandingId;
+
+  bool get _isLineUpEnd =>
+      widget.lineUpOriginId != null || widget.lineUpLandingId != null;
 
   @override
   void didChangeDependencies() {
@@ -56,14 +61,8 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   @override
   void didUpdateWidget(covariant MouseWatch oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final didChangeLineUpTarget = oldWidget.lineUpId != widget.lineUpId ||
-        oldWidget.lineUpItemId != widget.lineUpItemId;
-
-    if (didChangeLineUpTarget) {
-      _scheduleHitboxUnregister(
-        groupId: oldWidget.lineUpId,
-        itemId: oldWidget.lineUpItemId,
-      );
+    if (oldWidget.lineUpLandingId != widget.lineUpLandingId) {
+      _scheduleHitboxUnregister(landingId: oldWidget.lineUpLandingId);
       _lastRegisteredHitbox = null;
     }
   }
@@ -77,8 +76,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     if (!isOffscreenCapture) {
       _allowCleanupAfterUnmount = true;
       _scheduleHitboxUnregister(
-        groupId: _registeredGroupId,
-        itemId: _registeredItemId,
+        landingId: _registeredLandingId,
         container: _container,
       );
       _scheduleHoverCleanup(container: _container);
@@ -105,7 +103,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   void _clearHoveredLineUpIfOwned({ProviderContainer? container}) {
     final activeContainer = container ?? _container;
-    if (activeContainer == null || widget.lineUpId == null) return;
+    if (activeContainer == null || !_isLineUpEnd) return;
     activeContainer
         .read(hoveredLineUpTargetProvider.notifier)
         .clearIfOwned(_ownerToken);
@@ -124,53 +122,37 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     });
   }
 
-  bool get _isStackAwareLineUpItem =>
-      widget.lineUpId != null && widget.lineUpItemId != null;
+  bool get _isLanding => widget.lineUpLandingId != null;
 
-  bool get _hasResolvedLineUpItem =>
-      widget.lineUpId != null &&
-      widget.lineUpItemId != null &&
-      ref.read(lineUpProvider.notifier).getItemById(
-                groupId: widget.lineUpId!,
-                itemId: widget.lineUpItemId!,
-              ) !=
+  bool get _hasResolvedLanding =>
+      _isLanding &&
+      ref.read(lineUpProvider.notifier).landingById(widget.lineUpLandingId!) !=
           null;
 
   void _performHitboxUnregister({
-    String? groupId,
-    String? itemId,
+    String? landingId,
     ProviderContainer? container,
   }) {
-    final activeGroupId = groupId;
-    final activeItemId = itemId;
-    if (activeGroupId == null || activeItemId == null) {
+    if (landingId == null) {
       return;
     }
 
     final activeContainer = container ?? _container;
     activeContainer
         ?.read(lineUpAbilityHitboxRegistryProvider.notifier)
-        .unregister(groupId: activeGroupId, itemId: activeItemId);
+        .unregister(landingId: landingId, owner: _ownerToken);
 
-    if (_registeredGroupId == activeGroupId &&
-        _registeredItemId == activeItemId) {
-      _registeredGroupId = null;
-      _registeredItemId = null;
+    if (_registeredLandingId == landingId) {
+      _registeredLandingId = null;
     }
   }
 
   void _scheduleHitboxUnregister({
-    String? groupId,
-    String? itemId,
+    String? landingId,
     ProviderContainer? container,
   }) {
-    final activeGroupId = groupId;
-    final activeItemId = itemId;
     final activeContainer = container ?? _container;
-    if (activeGroupId == null ||
-        activeItemId == null ||
-        activeContainer == null ||
-        _hitboxCleanupScheduled) {
+    if (landingId == null || activeContainer == null || _hitboxCleanupScheduled) {
       return;
     }
 
@@ -179,19 +161,15 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       _hitboxCleanupScheduled = false;
       if (!mounted && !_allowCleanupAfterUnmount) return;
       _performHitboxUnregister(
-        groupId: activeGroupId,
-        itemId: activeItemId,
+        landingId: landingId,
         container: activeContainer,
       );
     });
   }
 
   void _scheduleHitboxMeasurement() {
-    if (!_isStackAwareLineUpItem || !_hasResolvedLineUpItem) {
-      _scheduleHitboxUnregister(
-        groupId: widget.lineUpId,
-        itemId: widget.lineUpItemId,
-      );
+    if (!_hasResolvedLanding) {
+      _scheduleHitboxUnregister(landingId: widget.lineUpLandingId);
       _lastRegisteredHitbox = null;
       return;
     }
@@ -221,12 +199,11 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       }
 
       _lastRegisteredHitbox = rect;
-      _registeredGroupId = widget.lineUpId;
-      _registeredItemId = widget.lineUpItemId;
+      _registeredLandingId = widget.lineUpLandingId;
       ref.read(lineUpAbilityHitboxRegistryProvider.notifier).register(
-            groupId: widget.lineUpId!,
-            itemId: widget.lineUpItemId!,
+            landingId: widget.lineUpLandingId!,
             globalRect: rect,
+            owner: _ownerToken,
           );
     });
   }
@@ -255,52 +232,14 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     );
   }
 
-  Future<void> _openLineUpMediaFor({
-    required String groupId,
-    required String itemId,
-  }) async {
-    final item = ref.read(lineUpProvider.notifier).getItemById(
-          groupId: groupId,
-          itemId: itemId,
-        );
-    if (item == null || !mounted) {
-      return;
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => LineUpMediaCarousel(
-        lineUpGroupId: groupId,
-        lineUpItemId: itemId,
-        images: item.images,
-        youtubeLink: item.youtubeLink,
-      ),
-    );
-  }
-
-  List<ShadContextMenuItem>? _buildLineUpItemMenuItems(
-    LineUpAbilityStackCandidate candidate,
-  ) {
-    return buildAbilityContextMenuItems(
-      ref,
-      candidate.ability,
-      lineUpGroupId: candidate.groupId,
-      lineUpItemId: candidate.itemId,
-      includeDelete: true,
-    );
-  }
-
   Future<void> _handleStackAwarePrimaryTap(TapUpDetails details) async {
     final candidate =
         await _selectLineUpAbilityCandidate(details.globalPosition);
-    if (candidate == null) {
+    if (candidate == null || !mounted) {
       return;
     }
 
-    await _openLineUpMediaFor(
-      groupId: candidate.groupId,
-      itemId: candidate.itemId,
-    );
+    await openLandingLineUps(context, ref, candidate.landingId);
   }
 
   Future<void> _handleStackAwareSecondaryTap(TapUpDetails details) async {
@@ -310,7 +249,12 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       return;
     }
 
-    final menuItems = _buildLineUpItemMenuItems(candidate);
+    final menuItems = buildAbilityContextMenuItems(
+      ref,
+      candidate.ability,
+      landingId: candidate.landingId,
+      context: context,
+    );
     if (menuItems == null || menuItems.isEmpty) {
       return;
     }
@@ -326,7 +270,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     // Only lineup widgets use this local state to control their notes portal.
     // Regular map widgets still publish their hovered delete target, but do
     // not need to rebuild just because a drag crossed their hitbox.
-    if (widget.lineUpId == null || isMouseInRegion == isHovered) return;
+    if (!_isLineUpEnd || isMouseInRegion == isHovered) return;
     setState(() => isMouseInRegion = isHovered);
   }
 
@@ -336,32 +280,19 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       return RepaintBoundary(child: widget.child);
     }
 
-    final LineUpItem? lineUpItem = ref.watch(
+    final landingLinks = ref.watch(
       lineUpProvider.select((state) {
-        final groupId = widget.lineUpId;
-        final itemId = widget.lineUpItemId;
-        if (groupId == null || itemId == null) {
-          return null;
-        }
-        for (final group in state.groups) {
-          if (group.id != groupId) {
-            continue;
-          }
-          for (final item in group.items) {
-            if (item.id == itemId) {
-              return item;
-            }
-          }
-          return null;
-        }
-        return null;
+        final landingId = widget.lineUpLandingId;
+        if (landingId == null) return const <LineUpLink>[];
+        return state.linksToLanding(landingId);
       }),
     );
-    final lineUpNotes = lineUpItem?.notes;
+    final lineUpNotes =
+        landingLinks.length == 1 ? landingLinks.single.notes : null;
     final hasLineUpNote = (lineUpNotes?.trim().isNotEmpty ?? false);
     _scheduleHitboxMeasurement();
     final menuItems = widget.contextMenuItems ??
-        (widget.lineUpId == null
+        (widget.lineUpOriginId == null
             ? null
             : [
                 ShadContextMenuItem(
@@ -369,11 +300,11 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                     Icons.delete,
                     color: Settings.tacticalVioletTheme.destructive,
                   ),
-                  child: const Text('Delete'),
+                  child: const Text('Delete origin'),
                   onPressed: () {
-                    ref.read(lineUpProvider.notifier).deleteGroupById(
-                          widget.lineUpId!,
-                        );
+                    ref
+                        .read(lineUpProvider.notifier)
+                        .deleteOrigin(widget.lineUpOriginId!);
                   },
                 ),
               ]);
@@ -381,20 +312,17 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     final content = MouseRegion(
       cursor: widget.cursor,
       onEnter: (_) {
-        if (widget.lineUpId != null) {
-          final hoverNotifier = ref.read(hoveredLineUpTargetProvider.notifier);
-          if (widget.lineUpItemId != null) {
-            hoverNotifier.setHoveredItem(
-              groupId: widget.lineUpId!,
-              itemId: widget.lineUpItemId!,
-              ownerToken: _ownerToken,
-            );
-          } else {
-            hoverNotifier.setHoveredGroup(
-              groupId: widget.lineUpId!,
-              ownerToken: _ownerToken,
-            );
-          }
+        final hoverNotifier = ref.read(hoveredLineUpTargetProvider.notifier);
+        if (widget.lineUpLandingId != null) {
+          hoverNotifier.setHoveredLanding(
+            landingId: widget.lineUpLandingId!,
+            ownerToken: _ownerToken,
+          );
+        } else if (widget.lineUpOriginId != null) {
+          hoverNotifier.setHoveredOrigin(
+            originId: widget.lineUpOriginId!,
+            ownerToken: _ownerToken,
+          );
         }
         _publishHoveredDeleteTarget();
         _updateLineUpHoverState(true);
@@ -410,22 +338,12 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     );
 
     final effectiveOnTap = widget.onTap ??
-        (widget.lineUpId == null || lineUpItem == null
+        (widget.lineUpOriginId == null
             ? null
-            : () {
-                showDialog(
-                  context: context,
-                  builder: (context) => LineUpMediaCarousel(
-                    lineUpGroupId: widget.lineUpId!,
-                    lineUpItemId: widget.lineUpItemId!,
-                    images: lineUpItem.images,
-                    youtubeLink: lineUpItem.youtubeLink,
-                  ),
-                );
-              });
+            : () => showLineUpPanel(context, originId: widget.lineUpOriginId));
 
     Widget interactiveChild = content;
-    if (_isStackAwareLineUpItem) {
+    if (_isLanding) {
       interactiveChild = GestureDetector(
         behavior: HitTestBehavior.deferToChild,
         onTapUp: _handleStackAwarePrimaryTap,
@@ -438,7 +356,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
         child: interactiveChild,
       );
     }
-    if (!_isStackAwareLineUpItem && menuItems != null && menuItems.isNotEmpty) {
+    if (!_isLanding && menuItems != null && menuItems.isNotEmpty) {
       interactiveChild = ShadContextMenuRegion(
         items: menuItems,
         child: interactiveChild,
@@ -446,7 +364,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     }
 
     return RepaintBoundary(
-      child: widget.lineUpId == null
+      child: !_isLineUpEnd
           ? interactiveChild
           : ShadPortal(
               visible: isMouseInRegion && hasLineUpNote,

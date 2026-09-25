@@ -144,57 +144,6 @@ class PlacedWidgetAdapter extends TypeAdapter<PlacedWidget> {
           typeId == other.typeId;
 }
 
-class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
-  @override
-  final typeId = 2;
-
-  @override
-  PlacedAgent read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return PlacedAgent(
-      type: fields[0] as AgentType,
-      position: fields[4] as Offset,
-      id: fields[2] as String,
-      isAlly: fields[1] == null ? true : fields[1] as bool,
-      lineUpID: fields[5] as String?,
-      state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
-    )..isDeleted = fields[3] as bool;
-  }
-
-  @override
-  void write(BinaryWriter writer, PlacedAgent obj) {
-    writer
-      ..writeByte(7)
-      ..writeByte(0)
-      ..write(obj.type)
-      ..writeByte(1)
-      ..write(obj.isAlly)
-      ..writeByte(2)
-      ..write(obj.id)
-      ..writeByte(3)
-      ..write(obj.isDeleted)
-      ..writeByte(4)
-      ..write(obj.position)
-      ..writeByte(5)
-      ..write(obj.lineUpID)
-      ..writeByte(6)
-      ..write(obj.state);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is PlacedAgentAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
 class PlacedTextAdapter extends TypeAdapter<PlacedText> {
   @override
   final typeId = 4;
@@ -1267,13 +1216,14 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       visionElevation: (fields[9] as num?)?.toDouble(),
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+      weapon: fields[10] == null ? WeaponType.none : fields[10] as WeaponType,
     )..isDeleted = fields[7] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedViewConeAgent obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.presetType)
       ..writeByte(1)
@@ -1293,7 +1243,9 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       ..writeByte(8)
       ..write(obj.position)
       ..writeByte(9)
-      ..write(obj.visionElevation);
+      ..write(obj.visionElevation)
+      ..writeByte(10)
+      ..write(obj.weapon);
   }
 
   @override
@@ -1326,13 +1278,14 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
       opacityPercent: fields[2] == null ? 100 : (fields[2] as num).toInt(),
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+      weapon: fields[9] == null ? WeaponType.none : fields[9] as WeaponType,
     )..isDeleted = fields[7] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedCircleAgent obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.diameterMeters)
       ..writeByte(1)
@@ -1350,7 +1303,9 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
       ..writeByte(7)
       ..write(obj.isDeleted)
       ..writeByte(8)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(9)
+      ..write(obj.weapon);
   }
 
   @override
@@ -1498,9 +1453,246 @@ class LineUpItemAdapter extends TypeAdapter<LineUpItem> {
           typeId == other.typeId;
 }
 
-class CloudMediaJobStateAdapter extends TypeAdapter<CloudMediaJobState> {
+class LineUpOriginAdapter extends TypeAdapter<LineUpOrigin> {
   @override
   final typeId = 35;
+
+  @override
+  LineUpOrigin read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return LineUpOrigin(
+      id: fields[0] as String,
+      agent: fields[1] as PlacedAgent,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LineUpOrigin obj) {
+    writer
+      ..writeByte(2)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.agent);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LineUpOriginAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class LineUpLandingAdapter extends TypeAdapter<LineUpLanding> {
+  @override
+  final typeId = 36;
+
+  @override
+  LineUpLanding read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return LineUpLanding(
+      id: fields[0] as String,
+      ability: fields[1] as PlacedAbility,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LineUpLanding obj) {
+    writer
+      ..writeByte(2)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.ability);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LineUpLandingAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class LineUpLinkAdapter extends TypeAdapter<LineUpLink> {
+  @override
+  final typeId = 37;
+
+  @override
+  LineUpLink read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return LineUpLink(
+      id: fields[0] as String,
+      originId: fields[1] as String,
+      landingId: fields[2] as String,
+      name: fields[3] == null ? '' : fields[3] as String,
+      youtubeLink: fields[4] == null ? '' : fields[4] as String,
+      notes: fields[5] == null ? '' : fields[5] as String,
+      images: fields[6] == null
+          ? const []
+          : (fields[6] as List).cast<SimpleImageData>(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LineUpLink obj) {
+    writer
+      ..writeByte(7)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.originId)
+      ..writeByte(2)
+      ..write(obj.landingId)
+      ..writeByte(3)
+      ..write(obj.name)
+      ..writeByte(4)
+      ..write(obj.youtubeLink)
+      ..writeByte(5)
+      ..write(obj.notes)
+      ..writeByte(6)
+      ..write(obj.images);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LineUpLinkAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class WeaponTypeAdapter extends TypeAdapter<WeaponType> {
+  @override
+  final typeId = 38;
+
+  @override
+  WeaponType read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return WeaponType.none;
+      case 1:
+        return WeaponType.classic;
+      case 2:
+        return WeaponType.shorty;
+      case 3:
+        return WeaponType.frenzy;
+      case 4:
+        return WeaponType.ghost;
+      case 5:
+        return WeaponType.bandit;
+      case 6:
+        return WeaponType.sheriff;
+      case 7:
+        return WeaponType.bulldog;
+      case 8:
+        return WeaponType.guardian;
+      case 9:
+        return WeaponType.phantom;
+      case 10:
+        return WeaponType.vandal;
+      case 11:
+        return WeaponType.bucky;
+      case 12:
+        return WeaponType.judge;
+      case 13:
+        return WeaponType.stinger;
+      case 14:
+        return WeaponType.spectre;
+      case 15:
+        return WeaponType.marshal;
+      case 16:
+        return WeaponType.outlaw;
+      case 17:
+        return WeaponType.operator;
+      case 18:
+        return WeaponType.ares;
+      case 19:
+        return WeaponType.odin;
+      default:
+        return WeaponType.none;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, WeaponType obj) {
+    switch (obj) {
+      case WeaponType.none:
+        writer.writeByte(0);
+      case WeaponType.classic:
+        writer.writeByte(1);
+      case WeaponType.shorty:
+        writer.writeByte(2);
+      case WeaponType.frenzy:
+        writer.writeByte(3);
+      case WeaponType.ghost:
+        writer.writeByte(4);
+      case WeaponType.bandit:
+        writer.writeByte(5);
+      case WeaponType.sheriff:
+        writer.writeByte(6);
+      case WeaponType.bulldog:
+        writer.writeByte(7);
+      case WeaponType.guardian:
+        writer.writeByte(8);
+      case WeaponType.phantom:
+        writer.writeByte(9);
+      case WeaponType.vandal:
+        writer.writeByte(10);
+      case WeaponType.bucky:
+        writer.writeByte(11);
+      case WeaponType.judge:
+        writer.writeByte(12);
+      case WeaponType.stinger:
+        writer.writeByte(13);
+      case WeaponType.spectre:
+        writer.writeByte(14);
+      case WeaponType.marshal:
+        writer.writeByte(15);
+      case WeaponType.outlaw:
+        writer.writeByte(16);
+      case WeaponType.operator:
+        writer.writeByte(17);
+      case WeaponType.ares:
+        writer.writeByte(18);
+      case WeaponType.odin:
+        writer.writeByte(19);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WeaponTypeAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class CloudMediaJobStateAdapter extends TypeAdapter<CloudMediaJobState> {
+  @override
+  final typeId = 39;
 
   @override
   CloudMediaJobState read(BinaryReader reader) {

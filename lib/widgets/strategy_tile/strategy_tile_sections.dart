@@ -114,10 +114,10 @@ class StrategyTileViewData {
       for (final agent in page.agentData) {
         result.add(agent.type);
       }
-      // Lineup agents live in lineUpGroups, not agentData, so collect them
-      // too or agents added via the lineup tool never show in previews.
-      for (final group in page.lineUpGroups) {
-        result.add(group.agent.type);
+      // Lineup origins live in lineUpOrigins, not agentData, so collect
+      // them too or agents added via the lineup tool never show in previews.
+      for (final origin in page.lineUpOrigins) {
+        result.add(origin.agent.type);
       }
     }
 
@@ -319,7 +319,7 @@ class StrategyTileDragPreview extends StatelessWidget {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Settings.tacticalVioletTheme.ring, width: 2),
+        border: Border.all(color: Settings.accentInk, width: 2),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(

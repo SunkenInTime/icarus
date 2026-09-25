@@ -818,9 +818,7 @@ class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
   @override
   Widget build(BuildContext context) {
     final isHighlighted = widget.isActive || _isHovered;
-    final handleColor = isHighlighted
-        ? Settings.tacticalVioletTheme.primary
-        : Colors.transparent;
+    final handleColor = isHighlighted ? Settings.accentInk : Colors.transparent;
     final isHorizontalResize = widget.axis == Axis.horizontal;
 
     return MouseRegion(
@@ -1096,6 +1094,7 @@ class _SquareIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final button = ShadTooltip(
       builder: (context) => Text(tooltip),
+      // The primary button theme already raises this; the color is the base.
       child: ShadIconButton(
         backgroundColor: color,
         hoverBackgroundColor: color,

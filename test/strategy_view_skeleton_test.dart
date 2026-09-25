@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/window_chrome.dart';
@@ -9,25 +11,29 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 void main() {
   testWidgets('loading skeleton fits the minimum desktop window',
       (tester) async {
+    // DotGrid reads the play area at paint time.
+    CoordinateSystem(playAreaSize: const Size(1120, 630));
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
       await tester.binding.setSurfaceSize(const Size(800, 630));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       await tester.pumpWidget(
-        ShadApp(
-          themeMode: ThemeMode.dark,
-          darkTheme: ShadThemeData(
-            brightness: Brightness.dark,
-            colorScheme: Settings.tacticalVioletTheme,
-          ),
-          home: const MediaQuery(
-            data: MediaQueryData(
-              size: Size(800, 630),
-              disableAnimations: true,
+        ProviderScope(
+          child: ShadApp(
+            themeMode: ThemeMode.dark,
+            darkTheme: ShadThemeData(
+              brightness: Brightness.dark,
+              colorScheme: Settings.tacticalVioletTheme,
             ),
-            child: StrategyViewSkeleton(
-              strategyName: 'SYNC BOUNDARY PROBE',
+            home: const MediaQuery(
+              data: MediaQueryData(
+                size: Size(800, 630),
+                disableAnimations: true,
+              ),
+              child: StrategyViewSkeleton(
+                strategyName: 'SYNC BOUNDARY PROBE',
+              ),
             ),
           ),
         ),

@@ -146,17 +146,20 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
       decoration: InputDecoration(
         isDense: compact,
         contentPadding: contentPadding,
+        // Collapsed, it is a bare icon like the ghost buttons beside it; the
+        // box only appears once there is a field to type in.
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
-          borderSide:
-              BorderSide(color: Settings.tacticalVioletTheme.border, width: 1),
+          borderSide: _expanded
+              ? BorderSide(color: Settings.tacticalVioletTheme.border, width: 1)
+              : BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
           borderSide:
               BorderSide(color: Settings.tacticalVioletTheme.ring, width: 2),
         ),
-        filled: true,
+        filled: _expanded,
         fillColor: Settings.tacticalVioletTheme.card,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
@@ -173,13 +176,15 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
               : const EdgeInsets.only(left: 12, right: 8),
           child: Icon(
             LucideIcons.search,
-            color: Colors.white,
-            size: compact ? 18 : 20,
+            color: _expanded
+                ? Colors.white
+                : Settings.tacticalVioletTheme.mutedForeground,
+            size: compact ? 16 : 20,
           ),
         ),
         prefixIconConstraints: BoxConstraints(
-          minWidth: compact ? 40 : 40,
-          minHeight: compact ? 40 : 40,
+          minWidth: compact ? 28 : 40,
+          minHeight: compact ? 28 : 40,
         ),
         suffixIcon: _hasText
             ? IconButton(

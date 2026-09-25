@@ -35,8 +35,15 @@ class InteractionStateProvider extends Notifier<InteractionState> {
           .read(drawingProvider.notifier)
           .finishFreeDrawing(null, coordinateSystem);
     } else if (state == InteractionState.lineUpPlacing) {
-      ref.read(lineUpProvider.notifier).clearCurrentPlacing();
+      ref.read(lineUpProvider.notifier).clearPlacement();
       ref.read(abilityBarProvider.notifier).updateData(null);
+    }
+
+    // Pinned-end placements start themselves before switching state; a bare
+    // switch is the fresh flow.
+    if (newState == InteractionState.lineUpPlacing &&
+        ref.read(lineUpProvider).placement == null) {
+      ref.read(lineUpProvider.notifier).startFresh();
     }
 
     state = newState;
@@ -44,7 +51,7 @@ class InteractionStateProvider extends Notifier<InteractionState> {
 
   void forceUpdateToNavigation() {
     if (state == InteractionState.lineUpPlacing) {
-      ref.read(lineUpProvider.notifier).clearCurrentPlacing();
+      ref.read(lineUpProvider.notifier).clearPlacement();
       ref.read(abilityBarProvider.notifier).updateData(null);
     }
     state = InteractionState.navigation;

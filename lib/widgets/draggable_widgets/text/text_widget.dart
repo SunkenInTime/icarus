@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
+import 'package:icarus/widgets/draggable_widgets/text/markup_text_editing_controller.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_format_bar.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_markup.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 
 class TextWidget extends ConsumerWidget {
@@ -47,15 +51,6 @@ class TextWidget extends ConsumerWidget {
   }
 }
 
-const _textFieldDecoration = InputDecoration(
-  hintText: PlacedTextDimensions.emptyTextPlaceholder,
-  hintStyle: TextStyle(color: Colors.grey),
-  hintMaxLines: 1,
-  border: InputBorder.none,
-  isCollapsed: true,
-  contentPadding: EdgeInsets.zero,
-);
-
 class _EditableTextWidget extends ConsumerStatefulWidget {
   const _EditableTextWidget({
     required this.id,
@@ -77,24 +72,26 @@ class _EditableTextWidget extends ConsumerStatefulWidget {
 }
 
 class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
-  late final TextEditingController _controller;
+  late final MarkupTextEditingController _controller;
   late final FocusNode _focusNode;
   late final TextDraftProvider _draftNotifier;
   late final ProviderSubscription<Map<String, String>> _draftSubscription;
+  final _tapGroup = Object();
+  final _portalController = OverlayPortalController();
+  bool _editing = false;
   bool _syncingController = false;
 
   @override
   void initState() {
     super.initState();
     _draftNotifier = ref.read(textDraftProvider.notifier);
-    _controller = TextEditingController(text: _effectiveText());
-    _controller.addListener(_onControllerChanged);
+    _controller = MarkupTextEditingController(text: _effectiveText())
+      ..addListener(_onControllerChanged);
     _focusNode = FocusNode()..addListener(_onFocusChange);
     _draftSubscription = ref.listenManual<Map<String, String>>(
       textDraftProvider,
       (_, __) => _syncControllerWithExternalState(),
     );
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateMeasuredSize();
     });
@@ -132,32 +129,30 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
   void _onFocusChange() {
     if (_focusNode.hasFocus) return;
     _draftNotifier.commitDraft(widget.id);
+    if (!mounted) return;
+    setState(() => _editing = false);
+    _portalController.hide();
   }
 
+  /// Every text change reaches the draft, whether it came from typing, the
+  /// format bar, or accessibility, so sync and save never miss an edit.
   void _onControllerChanged() {
     if (_syncingController) return;
-
     final nextText = _controller.text;
-    final currentText = _draftNotifier.draftFor(widget.id) ?? widget.text;
-    if (nextText == currentText) return;
-
+    if (nextText == _effectiveText()) return;
     _draftNotifier.setDraft(widget.id, nextText);
-    if (mounted) setState(() {});
   }
 
   void _syncControllerWithExternalState() {
     if (!_controller.value.isComposingRangeValid) {
       _controller.clearComposing();
     }
-
     final nextText = _effectiveText();
     if (_controller.text == nextText) return;
-
     final selection = _controller.selection;
     final baseOffset = selection.baseOffset.clamp(0, nextText.length).toInt();
     final extentOffset =
         selection.extentOffset.clamp(0, nextText.length).toInt();
-
     _syncingController = true;
     try {
       _controller.value = TextEditingValue(
@@ -171,52 +166,177 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     }
   }
 
+  TextStyle _bodyStyle(BuildContext context) {
+    return Theme.of(context).textTheme.bodyLarge!.copyWith(
+          fontSize: CoordinateSystem.instance.worldHeightToScreen(
+            widget.fontSize,
+          ),
+        );
+  }
+
+  void _applyValue(TextEditingValue value) {
+    _controller.value = value;
+  }
+
+  void _enterEditing() {
+    if (_editing) return;
+    setState(() => _editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNode.requestFocus();
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+      _portalController.show();
+    });
+  }
+
   void _updateMeasuredSize() {
     if (!mounted) return;
-
     final renderObject = context.findRenderObject();
     if (renderObject is! RenderBox) return;
-
-    final offset = Offset(renderObject.size.width, renderObject.size.height);
-    ref.read(textWidgetHeightProvider.notifier).updateHeight(widget.id, offset);
+    ref.read(textWidgetHeightProvider.notifier).updateHeight(
+          widget.id,
+          Offset(renderObject.size.width, renderObject.size.height),
+        );
   }
 
   @override
   Widget build(BuildContext context) {
-    final metrics = PlacedTextDimensions.screenSize(
-      coordinateSystem: CoordinateSystem.instance,
-      widthWorld: widget.size,
-      fontSizeWorld: widget.fontSize,
-      text: _controller.text,
-    );
-    return TextEditingShortcutScope(
-      child: NotificationListener<SizeChangedLayoutNotification>(
-        onNotification: (notification) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _updateMeasuredSize();
-          });
-          return true;
-        },
-        child: SizeChangedLayoutNotifier(
-          child: _TextBoxFrame(
-            metrics: metrics,
-            tagColorValue: widget.tagColorValue,
-            child: _SharedTextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              fontSize: widget.fontSize,
-              onTapOutside: (_) {
-                _focusNode.unfocus();
-              },
+    final bodyStyle = _bodyStyle(context);
+    final field = _editing
+        ? ListenableBuilder(
+            listenable: _controller,
+            builder: (context, _) => Stack(
+              children: [
+                if (_controller.text.isEmpty)
+                  Text(
+                    'Write here...',
+                    style: bodyStyle.copyWith(color: Colors.grey),
+                  ),
+                MergeSemantics(
+                  child: Semantics(
+                    label: 'Placed text',
+                    child: TextField(
+                      focusNode: _focusNode,
+                      controller: _controller,
+                      inputFormatters: [ListContinuationFormatter()],
+                      groupId: _tapGroup,
+                      style: bodyStyle,
+                      decoration: null,
+                      maxLines: null,
+                      minLines: null,
+                      expands: false,
+                      onTapOutside: (_) => _focusNode.unfocus(),
+                    ),
+                  ),
+                ),
+              ],
             ),
+          )
+        : GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _enterEditing,
+            child: ListenableBuilder(
+              listenable: _controller,
+              builder: (context, _) => FormattedTextView(
+                text: _controller.text,
+                style: bodyStyle,
+                hintText: 'Write here...',
+              ),
+            ),
+          );
+
+    final measuredFrame = NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (notification) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _updateMeasuredSize();
+        });
+        return true;
+      },
+      child: SizeChangedLayoutNotifier(
+        child: _TextBoxFrame(
+          size: widget.size,
+          tagColorValue: widget.tagColorValue,
+          child: field,
+        ),
+      ),
+    );
+
+    return TextEditingShortcutScope(
+      extraShortcuts: const {
+        SingleActivator(LogicalKeyboardKey.keyB, control: true):
+            ToggleBoldIntent(),
+        SingleActivator(LogicalKeyboardKey.keyB, meta: true):
+            ToggleBoldIntent(),
+        SingleActivator(LogicalKeyboardKey.keyI, control: true):
+            ToggleItalicIntent(),
+        SingleActivator(LogicalKeyboardKey.keyI, meta: true):
+            ToggleItalicIntent(),
+      },
+      child: Actions(
+        actions: {
+          ToggleBoldIntent: CallbackAction<ToggleBoldIntent>(
+            onInvoke: (_) {
+              _applyValue(MarkupEditing.toggleInline(_controller.value, '**'));
+              return null;
+            },
           ),
+          ToggleItalicIntent: CallbackAction<ToggleItalicIntent>(
+            onInvoke: (_) {
+              _applyValue(MarkupEditing.toggleInline(_controller.value, '*'));
+              return null;
+            },
+          ),
+        },
+        child: OverlayPortal.overlayChildLayoutBuilder(
+          controller: _portalController,
+          overlayChildBuilder: (context, layoutInfo) {
+            final childRect = MatrixUtils.transformRect(
+              layoutInfo.childPaintTransform,
+              Offset.zero & layoutInfo.childSize,
+            );
+            final overlaySize = layoutInfo.overlaySize;
+            final left = (childRect.center.dx - TextFormatBar.width / 2)
+                .clamp(8.0, overlaySize.width - TextFormatBar.width - 8)
+                .toDouble();
+            final below = childRect.bottom + 6;
+            final top = below + TextFormatBar.height + 6 <= overlaySize.height
+                ? below
+                : childRect.top - TextFormatBar.height - 6;
+            final boundedTop = top
+                .clamp(8.0, overlaySize.height - TextFormatBar.height - 8)
+                .toDouble();
+            return Positioned(
+              left: left,
+              top: boundedTop,
+              width: TextFormatBar.width,
+              height: TextFormatBar.height,
+              child: Material(
+                color: Colors.transparent,
+                child: TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 150),
+                  tween: Tween(begin: 0, end: 1),
+                  builder: (context, progress, child) => Opacity(
+                    opacity: progress,
+                    child: child,
+                  ),
+                  child: TextFormatBar(
+                    controller: _controller,
+                    tapRegionGroupId: _tapGroup,
+                    onApply: _applyValue,
+                  ),
+                ),
+              ),
+            );
+          },
+          child: measuredFrame,
         ),
       ),
     );
   }
 }
 
-class _FeedbackTextWidget extends StatefulWidget {
+class _FeedbackTextWidget extends StatelessWidget {
   const _FeedbackTextWidget({
     super.key,
     required this.text,
@@ -231,108 +351,17 @@ class _FeedbackTextWidget extends StatefulWidget {
   final int? tagColorValue;
 
   @override
-  State<_FeedbackTextWidget> createState() => _FeedbackTextWidgetState();
-}
-
-class _FeedbackTextWidgetState extends State<_FeedbackTextWidget> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.text);
-  }
-
-  @override
-  void didUpdateWidget(covariant _FeedbackTextWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.text == widget.text) return;
-    _controller.value = TextEditingValue(
-      text: widget.text,
-      selection: TextSelection.collapsed(offset: widget.text.length),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final metrics = PlacedTextDimensions.screenSize(
-      coordinateSystem: CoordinateSystem.instance,
-      widthWorld: widget.size,
-      fontSizeWorld: widget.fontSize,
-      text: _controller.text,
-    );
+    final style = Theme.of(context).textTheme.bodyLarge!.copyWith(
+          fontSize: CoordinateSystem.instance.worldHeightToScreen(fontSize),
+        );
     return _TextBoxFrame(
-      metrics: metrics,
-      tagColorValue: widget.tagColorValue,
-      child: IgnorePointer(
-        child: _SharedTextField(
-          controller: _controller,
-          fontSize: widget.fontSize,
-          readOnly: true,
-          enableInteractiveSelection: false,
-          showCursor: false,
-        ),
-      ),
-    );
-  }
-}
-
-class _SharedTextField extends StatelessWidget {
-  const _SharedTextField({
-    required this.controller,
-    required this.fontSize,
-    this.focusNode,
-    this.readOnly = false,
-    this.enableInteractiveSelection = true,
-    this.showCursor = true,
-    this.onTapOutside,
-  });
-
-  final TextEditingController controller;
-  final double fontSize;
-  final FocusNode? focusNode;
-  final bool readOnly;
-  final bool enableInteractiveSelection;
-  final bool showCursor;
-  final TapRegionCallback? onTapOutside;
-
-  @override
-  Widget build(BuildContext context) {
-    final coordinateSystem = CoordinateSystem.instance;
-    final textField = MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
-      child: TextField(
-        focusNode: focusNode,
-        controller: controller,
-        readOnly: readOnly,
-        enableInteractiveSelection: enableInteractiveSelection,
-        showCursor: showCursor,
-        style: PlacedTextDimensions.textStyle(
-          coordinateSystem: coordinateSystem,
-          fontSizeWorld: fontSize,
-        ),
-        decoration: _textFieldDecoration,
-        maxLines: null,
-        minLines: 1,
-        expands: false,
-        scrollPhysics: const NeverScrollableScrollPhysics(),
-        scrollPadding: EdgeInsets.zero,
-        textAlignVertical: TextAlignVertical.top,
-        keyboardType: TextInputType.multiline,
-        onTapOutside: onTapOutside,
-      ),
-    );
-
-    return MergeSemantics(
-      child: Semantics(
-        label: 'Placed text',
-        child: textField,
+      size: size,
+      tagColorValue: tagColorValue,
+      child: FormattedTextView(
+        text: text,
+        style: style,
+        hintText: 'Write here...',
       ),
     );
   }
@@ -340,48 +369,49 @@ class _SharedTextField extends StatelessWidget {
 
 class _TextBoxFrame extends StatelessWidget {
   const _TextBoxFrame({
-    required this.metrics,
+    required this.size,
     required this.child,
     this.tagColorValue,
   });
 
-  final Size metrics;
+  final double size;
   final Widget child;
   final int? tagColorValue;
 
   @override
   Widget build(BuildContext context) {
+    final coordinateSystem = CoordinateSystem.instance;
     return SizedBox(
-      width: metrics.width,
-      height: metrics.height,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(2)),
-            child: Container(
-              width: 6,
-              color: Color(tagColorValue ?? 0xFFC5C5C5),
-            ),
-          ),
-          const SizedBox(width: 2),
-          Expanded(
-            child: Card(
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(3)),
+      width: coordinateSystem.worldWidthToScreen(size),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.all(Radius.circular(2)),
+              child: Container(
+                width: 6,
+                color: Color(tagColorValue ?? 0xFFC5C5C5),
               ),
-              margin: const EdgeInsets.all(0),
-              color: Colors.black,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: PlacedTextDimensions.cardHorizontalPadding,
-                  vertical: PlacedTextDimensions.cardVerticalPadding,
+            ),
+            const SizedBox(width: 2),
+            Expanded(
+              child: Card(
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(3)),
                 ),
-                child: child,
+                margin: const EdgeInsets.all(0),
+                color: Colors.black,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 4,
+                  ),
+                  child: child,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

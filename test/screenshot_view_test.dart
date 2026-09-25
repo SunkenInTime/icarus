@@ -158,10 +158,10 @@ class _NoopScreenshotProvider extends ScreenshotProvider {
 
 class _NoopLineUpProvider extends LineUpProvider {
   @override
-  LineUpState build() => LineUpState(groups: const []);
+  LineUpState build() => const LineUpState();
 
   @override
-  void fromHive(covariant List groups) {}
+  void fromHive(LineUpGraph graph) {}
 }
 
 void main() {
@@ -228,7 +228,7 @@ void main() {
             isAttack: isAttack,
             strategyState: strategyState,
             pageName: pageName,
-            lineUps: const <LineUp>[],
+            lineUpGraph: LineUpGraph.empty,
             themeProfileId: null,
             themeOverridePalette: null,
           ),
@@ -290,7 +290,7 @@ void main() {
       isAttack: true,
       strategyState: strategyState,
       pageName: 'Page 1',
-      lineUpGroups: const [],
+      lineUpGraph: LineUpGraph.empty,
       themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
       themeOverridePalette: null,
       placedWidgetsOverride: const SizedBox.shrink(),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -52,6 +53,7 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
                     isAlly: agent.isAlly,
                     id: '',
                     agent: AgentData.agents[agent.type]!,
+                    weapon: agent.weapon,
                   ),
                 ),
               ),
@@ -62,6 +64,9 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
                   isAlly: agent.isAlly,
                   id: agent.id,
                   agent: AgentData.agents[agent.type]!,
+                  weapon: agent.weapon,
+                  onWeaponSelected:
+                      ref.read(lineUpProvider.notifier).setDraftAgentWeapon,
                 ),
               ),
             )
@@ -71,6 +76,7 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
                 isAlly: agent.isAlly,
                 id: agent.id,
                 agent: AgentData.agents[agent.type]!,
+                weapon: agent.weapon,
               ),
             ),
     );

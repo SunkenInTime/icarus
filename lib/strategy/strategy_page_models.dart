@@ -19,7 +19,7 @@ class StrategyEditorPageData {
     required this.texts,
     required this.images,
     required this.utilities,
-    required this.lineUpGroups,
+    required this.lineUpGraph,
   });
 
   final String pageId;
@@ -33,5 +33,5 @@ class StrategyEditorPageData {
   final List<PlacedText> texts;
   final List<PlacedImage> images;
   final List<PlacedUtility> utilities;
-  final List<LineUpGroup> lineUpGroups;
+  final LineUpGraph lineUpGraph;
 }

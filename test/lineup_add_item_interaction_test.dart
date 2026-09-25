@@ -17,6 +17,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
@@ -163,11 +164,13 @@ void main() {
   });
 
   testWidgets(
-      'right-click Add Lineup Item populates ability bar and enters lineup mode',
+      'right-click Add lineup populates ability bar and enters lineup mode',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
 
     await _pumpHarness(
       tester,
@@ -189,24 +192,24 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Add Lineup Item'));
+    await tester.tap(find.text('Add lineup'));
     await tester.pumpAndSettle();
 
     expect(container.read(interactionStateProvider),
         InteractionState.lineUpPlacing);
     expect(container.read(abilityBarProvider)?.type, AgentType.breach);
-    expect(container.read(lineUpProvider).currentGroupId, group.id);
-    expect(
-      container.read(lineUpProvider).placementMode,
-      LineUpPlacementMode.addItemToGroup,
-    );
+    final placement = container.read(lineUpProvider).placement;
+    expect(placement?.pinnedOriginId, group.id);
+    expect(placement?.mode, LineUpPlacementMode.fromPinnedOrigin);
   });
 
   testWidgets('agent quick actions span the width of longer menu rows',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
 
     await _pumpHarness(
       tester,
@@ -258,12 +261,17 @@ void main() {
     }
   });
 
-  testWidgets('locked add-item mode renders a non-draggable preview agent',
+  testWidgets('pinned origin renders as a non-draggable ringed agent',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
+    container
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.lineUpPlacing);
 
     await _pumpHarness(
       tester,
@@ -271,19 +279,34 @@ void main() {
       child: const SizedBox(
         width: 900,
         height: 600,
-        child: LineupPositionWidget(),
+        child: Stack(
+          children: [
+            LineUpOverlay(),
+            LineupPositionWidget(),
+          ],
+        ),
       ),
     );
 
-    expect(container.read(lineUpProvider).currentAgent, isNull);
-    expect(find.byType(AgentWidget), findsOneWidget);
-    expect(find.byType(Draggable), findsNothing);
+    expect(container.read(lineUpProvider).placement?.draftAgent, isNull);
+    // The overlay's own origin plus the placer's full-opacity copy.
+    expect(find.byType(AgentWidget), findsNWidgets(2));
+    // The placer's copy is display only. The committed origin underneath is
+    // draggable, but the canvas ignores pointers while a lineup is placed.
+    expect(
+      find.descendant(
+        of: find.byType(LineupPositionWidget),
+        matching: find.byType(Draggable),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('new-lineup current agent and ability reposition on resize',
       (tester) async {
     final container = _createContainer();
-    container.read(lineUpProvider.notifier).setAgent(
+    container.read(lineUpProvider.notifier).startFresh();
+    container.read(lineUpProvider.notifier).setDraftAgent(
           PlacedAgent(
             id: 'current-agent',
             type: AgentType.breach,
@@ -291,7 +314,7 @@ void main() {
             isAlly: true,
           ),
         );
-    container.read(lineUpProvider.notifier).setAbility(
+    container.read(lineUpProvider.notifier).setDraftAbility(
           PlacedAbility(
             id: 'current-ability',
             data: AgentData.agents[AgentType.breach]!.abilities.first,
@@ -342,49 +365,13 @@ void main() {
     expect(resizedAbilityTopLeft.dy, closeTo(expectedAbilityTopLeft.dy, 0.001));
   });
 
-  testWidgets('locked add-item preview agent repositions on resize',
-      (tester) async {
-    final container = _createContainer();
-    final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
-
-    await _pumpLineupCanvas(
-      tester,
-      container: container,
-      width: 760,
-      height: 600,
-    );
-
-    final initialAgentTopLeft = tester.getTopLeft(find.byType(AgentWidget));
-
-    CoordinateSystem(playAreaSize: const Size(980, 720));
-    container.read(canvasResizeProvider.notifier).increment();
-    await _pumpHarness(
-      tester,
-      container: container,
-      child: const SizedBox(
-        width: 980,
-        height: 720,
-        child: LineupPositionWidget(),
-      ),
-    );
-
-    final resizedAgentTopLeft = tester.getTopLeft(find.byType(AgentWidget));
-
-    expect(resizedAgentTopLeft, isNot(initialAgentTopLeft));
-
-    final expectedAgentTopLeft =
-        CoordinateSystem.instance.coordinateToScreen(group.agent.position);
-    expect(resizedAgentTopLeft.dx, closeTo(expectedAgentTopLeft.dx, 0.001));
-    expect(resizedAgentTopLeft.dy, closeTo(expectedAgentTopLeft.dy, 0.001));
-  });
-
   testWidgets('persistent lineup overlay repositions and rescales on resize',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
 
     CoordinateSystem(playAreaSize: const Size(900, 600));
     await _pumpHarness(
@@ -437,7 +424,9 @@ void main() {
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
 
     CoordinateSystem(playAreaSize: const Size(900, 600));
     await _pumpHarness(
@@ -457,17 +446,19 @@ void main() {
     await tester.drag(abilityFinder, abilityDelta);
     await tester.pump();
 
-    var updated = container.read(lineUpProvider).groups.single;
+    var landing = container.read(lineUpProvider).landingById('breach-item')!;
     final expectedAbilityPosition = CoordinateSystem.instance
         .screenToCoordinate(initialAbilityTopLeft + abilityDelta);
     expect(
-      updated.items.single.ability.position.dx,
+      landing.ability.position.dx,
       closeTo(expectedAbilityPosition.dx, 0.001),
     );
     expect(
-      updated.items.single.ability.position.dy,
+      landing.ability.position.dy,
       closeTo(expectedAbilityPosition.dy, 0.001),
     );
+    // One undoable step per move, which is also what marks the strategy dirty.
+    expect(container.read(actionProvider), hasLength(1));
 
     final agentFinder =
         find.byKey(const ValueKey('lineup-agent-drag-breach-group'));
@@ -476,18 +467,67 @@ void main() {
     await tester.drag(agentFinder, agentDelta);
     await tester.pump();
 
-    updated = container.read(lineUpProvider).groups.single;
+    final origin = container.read(lineUpProvider).originById('breach-group')!;
     final expectedAgentPosition = CoordinateSystem.instance
         .screenToCoordinate(initialAgentTopLeft + agentDelta);
-    expect(updated.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
-    expect(updated.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
+    expect(origin.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
+    expect(origin.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
+    expect(container.read(actionProvider), hasLength(2));
+
+    // Moving an end keeps the lineup itself: same link between the same ends.
+    final links = container.read(lineUpProvider).links;
+    expect(links, hasLength(1));
+    expect(links.single.originId, 'breach-group');
+    expect(links.single.landingId, 'breach-item');
+    landing = container.read(lineUpProvider).landingById('breach-item')!;
+    expect(landing.ability.lineUpID, 'breach-item');
+  });
+
+  testWidgets('draggable lineup origin still opens its menu on right-click',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: LineUpOverlay(),
+      ),
+    );
+
+    await tester.tapAt(
+      tester.getCenter(find.byType(AgentWidget)),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add lineup'));
+    await tester.pumpAndSettle();
+
+    final placement = container.read(lineUpProvider).placement;
+    expect(placement?.pinnedOriginId, group.id);
+    expect(placement?.mode, LineUpPlacementMode.fromPinnedOrigin);
+    expect(
+      container.read(lineUpProvider).originById('breach-group')!.agent.position,
+      group.agent.position,
+    );
   });
 
   testWidgets('defense lineup drags persist canonical marker positions',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
     container.read(mapProvider.notifier).switchSide();
 
     CoordinateSystem(playAreaSize: const Size(900, 600));
@@ -511,7 +551,7 @@ void main() {
     await tester.drag(abilityFinder, abilityDelta);
     await tester.pump();
 
-    var updated = container.read(lineUpProvider).groups.single;
+    final landing = container.read(lineUpProvider).landingById('breach-item')!;
     final expectedAbilityPosition =
         storedAbilityPositionForRenderedScreenPosition(
       ability: group.items.single.ability.data.abilityData!,
@@ -522,11 +562,11 @@ void main() {
       isAttack: false,
     );
     expect(
-      updated.items.single.ability.position.dx,
+      landing.ability.position.dx,
       closeTo(expectedAbilityPosition.dx, 0.001),
     );
     expect(
-      updated.items.single.ability.position.dy,
+      landing.ability.position.dy,
       closeTo(expectedAbilityPosition.dy, 0.001),
     );
 
@@ -537,27 +577,27 @@ void main() {
     await tester.drag(agentFinder, agentDelta);
     await tester.pump();
 
-    updated = container.read(lineUpProvider).groups.single;
+    final origin = container.read(lineUpProvider).originById('breach-group')!;
     final expectedAgentPosition = storedAgentPositionForRenderedScreenPosition(
       coordinateSystem: coordinateSystem,
       renderedScreenPosition: initialAgentTopLeft + agentDelta,
       agentSize: settings.agentSize,
       isAttack: false,
     );
-    expect(updated.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
-    expect(updated.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
+    expect(origin.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
+    expect(origin.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
 
     container.read(mapProvider.notifier).switchSide();
     await tester.pump();
 
     final attackAgentTopLeft = screenPositionForWidget(
-      widget: updated.agent,
+      widget: origin.agent,
       coordinateSystem: coordinateSystem,
       agentSize: settings.agentSize,
       isAttack: true,
     );
     final attackAbilityTopLeft = screenPositionForWidget(
-      widget: updated.items.single.ability,
+      widget: landing.ability,
       coordinateSystem: coordinateSystem,
       mapScale: mapScale,
       abilitySize: settings.abilitySize,
@@ -581,12 +621,14 @@ void main() {
     );
   });
 
-  testWidgets('locked add-item mode rejects dragging a different agent',
+  testWidgets('pinned origin rejects dragging any agent',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
     container
         .read(interactionStateProvider.notifier)
         .update(InteractionState.lineUpPlacing);
@@ -617,24 +659,25 @@ void main() {
     await tester.dragFrom(source, target - source);
     await tester.pumpAndSettle();
 
-    expect(container.read(lineUpProvider).currentGroupId, group.id);
-    expect(container.read(lineUpProvider).currentAgent, isNull);
+    final placement = container.read(lineUpProvider).placement;
+    expect(placement?.pinnedOriginId, group.id);
+    expect(placement?.draftAgent, isNull);
     expect(
-      find.text(
-        'You can only add abilities for the selected lineup agent right now.',
-      ),
+      find.text('The origin is pinned. Drag an ability instead.'),
       findsOneWidget,
     );
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
   });
 
-  testWidgets('locked add-item mode accepts matching ability drops',
+  testWidgets('pinned origin accepts matching ability drops',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
     container
         .read(abilityBarProvider.notifier)
         .updateData(AgentData.agents[AgentType.breach]!);
@@ -668,20 +711,75 @@ void main() {
     await tester.dragFrom(source, target - source);
     await tester.pumpAndSettle();
 
-    final currentAbility = container.read(lineUpProvider).currentAbility;
-    expect(currentAbility, isNotNull);
-    expect(currentAbility!.data.type, AgentType.breach);
-    expect(currentAbility.lineUpID, group.id);
+    final draftAbility = container.read(lineUpProvider).placement?.draftAbility;
+    expect(draftAbility, isNotNull);
+    expect(draftAbility!.data.type, AgentType.breach);
+    expect(container.read(lineUpProvider).placement?.isComplete, isTrue);
+  });
+
+  testWidgets('repositioning a draft end publishes its hover while dragging',
+      (tester) async {
+    final container = _createContainer();
+    container.read(lineUpProvider.notifier).startFresh();
+    container.read(lineUpProvider.notifier).setDraftAgent(
+          PlacedAgent(
+            id: 'current-agent',
+            type: AgentType.breach,
+            position: const Offset(180, 220),
+            isAlly: true,
+          ),
+        );
+    container.read(lineUpProvider.notifier).setDraftAbility(
+          PlacedAbility(
+            id: 'current-ability',
+            data: AgentData.agents[AgentType.breach]!.abilities.first,
+            position: const Offset(320, 360),
+            isAlly: true,
+          ),
+        );
+    container
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.lineUpPlacing);
+
+    await _pumpLineupCanvas(
+      tester,
+      container: container,
+      width: 900,
+      height: 600,
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(AgentWidget)),
+    );
+    await tester.pump();
+    for (var step = 0; step < 4; step++) {
+      await gesture.moveBy(const Offset(30, -15));
+      await tester.pump();
+    }
+
+    final hover = container.read(lineUpDragHoverProvider);
+    expect(hover, isNotNull);
+    expect(hover!.end, LineUpEnd.origin);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(container.read(lineUpDragHoverProvider), isNull);
+    expect(
+      container.read(lineUpProvider).placement?.draftAgent?.position,
+      isNot(const Offset(180, 220)),
+    );
   });
 
   test('leaving lineup mode clears the ability bar', () {
     final container = _createContainer();
     final group = _breachGroup();
-    container.read(lineUpProvider.notifier).addGroup(group);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
     container
         .read(abilityBarProvider.notifier)
         .updateData(AgentData.agents[AgentType.breach]!);
-    container.read(lineUpProvider.notifier).startNewItemForGroup(group.id);
+    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
     container
         .read(interactionStateProvider.notifier)
         .update(InteractionState.lineUpPlacing);
@@ -691,7 +789,6 @@ void main() {
         .update(InteractionState.navigation);
 
     expect(container.read(abilityBarProvider), isNull);
-    expect(container.read(lineUpProvider).currentGroupId, isNull);
-    expect(container.read(lineUpProvider).placementMode, isNull);
+    expect(container.read(lineUpProvider).placement, isNull);
   });
 }

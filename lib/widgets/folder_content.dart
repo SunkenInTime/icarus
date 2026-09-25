@@ -262,6 +262,12 @@ class FolderContent extends ConsumerWidget {
         emptyStateTitle: 'No strategies in this folder',
         emptyStateSubtitle:
             'Create a new strategy or drop strategies, folders, or .zip archives',
+        emptyStateAction: ShadButton(
+          key: const ValueKey('folder-empty-create-strategy'),
+          onPressed: onCreateStrategy,
+          leading: const Icon(LucideIcons.plus),
+          child: const Text('Create Strategy'),
+        ),
       ),
     );
   }
@@ -490,6 +496,13 @@ class FolderContent extends ConsumerWidget {
     Widget? emptyStateAction,
   }) {
     final hasStrategies = strategies.isNotEmpty;
+    // A search that filtered everything out is not an empty library: say so,
+    // and offer nothing to create.
+    final searching = ref.watch(strategySearchQueryProvider).trim().isNotEmpty;
+    final icon = searching ? null : emptyStateIcon;
+    final title = searching ? 'No matches' : emptyStateTitle;
+    final subtitle = searching ? 'Try a different search' : emptyStateSubtitle;
+    final action = searching ? null : emptyStateAction;
     final Widget emptyState = Center(
       key: emptyStateKey,
       child: ConstrainedBox(
@@ -497,30 +510,30 @@ class FolderContent extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (emptyStateIcon != null) ...[
+            if (icon != null) ...[
               Icon(
-                emptyStateIcon,
+                icon,
                 size: 38,
                 color: Settings.tacticalVioletTheme.mutedForeground,
               ),
               const SizedBox(height: 16),
             ],
             Text(
-              emptyStateTitle,
+              title,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
-              emptyStateSubtitle,
+              subtitle,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Settings.tacticalVioletTheme.mutedForeground,
               ),
             ),
-            if (emptyStateAction != null) ...[
+            if (action != null) ...[
               const SizedBox(height: 18),
-              emptyStateAction,
+              action,
             ],
           ],
         ),

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -33,6 +34,9 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   }
   if (opQueueState.needsAttention ||
       opQueueState.accountOutbox.needsAttention ||
+      ref.watch(activePageLiveSyncProvider.select(
+        (liveSync) => liveSync.unsyncableLineupKeys.isNotEmpty,
+      )) ||
       saveState.mediaSyncErrorCount > 0 ||
       accountMediaErrorCount > 0) {
     return CloudSyncStatus.attention;

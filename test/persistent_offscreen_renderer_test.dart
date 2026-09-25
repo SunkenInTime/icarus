@@ -173,6 +173,47 @@ void main() {
     }
   });
 
+  testWidgets(
+      'capture waits for exact frame data and paints the resolved result',
+      (tester) async {
+    final color = ValueNotifier<Color>(Colors.red);
+    final renderer = PersistentOffscreenRenderer(
+      targetSize: const Size(8, 8),
+      waitForFrameData: () async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        color.value = Colors.blue;
+      },
+    );
+    try {
+      final result = await tester.runAsync(() async {
+        final bytes = await renderer.capture(ValueListenableBuilder<Color>(
+          valueListenable: color,
+          builder: (context, value, child) =>
+              SizedBox(width: 8, height: 8, child: ColoredBox(color: value)),
+        ));
+        return _topLeftPixel(bytes);
+      });
+      expect(result!.toARGB32(), Colors.blue.toARGB32());
+    } finally {
+      await _disposeRenderer(tester, renderer);
+      color.dispose();
+    }
+  });
+
+  testWidgets('capture aborts when exact frame data fails', (tester) async {
+    final renderer = PersistentOffscreenRenderer(
+      targetSize: const Size(8, 8),
+      waitForFrameData: () async => throw StateError('missing sightlines'),
+    );
+    try {
+      await tester.runAsync(() => expectLater(
+          renderer.capture(const ColoredBox(color: Colors.red)),
+          throwsStateError));
+    } finally {
+      await _disposeRenderer(tester, renderer);
+    }
+  });
+
   testWidgets('teardown drains focus and provider callbacks before disposal',
       (tester) async {
     CoordinateSystem.instance.setIsScreenshot(true);

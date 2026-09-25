@@ -1,8 +1,5 @@
-import 'dart:async';
-
-import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, debugPrint, defaultTargetPlatform, kDebugMode, kIsWeb;
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
@@ -11,15 +8,15 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
-import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
@@ -42,7 +39,6 @@ class FolderNavigator extends ConsumerStatefulWidget {
 class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
-  WindowsDesktopUpdateController? _desktopUpdaterController;
   final ShadContextMenuController _backgroundMenuController =
       ShadContextMenuController();
 
@@ -52,36 +48,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   @override
   void dispose() {
     _backgroundMenuController.dispose();
-    _desktopUpdaterController?.dispose();
     super.dispose();
   }
-
-  static const _desktopUpdateLocalization = DesktopUpdateLocalization(
-    updateAvailableText: 'Update Available',
-    newVersionAvailableText: '{} {} is available',
-    newVersionLongText:
-        'A desktop update is ready. Downloading will fetch {} MB of files.',
-    downloadText: 'Download Update',
-    restartText: 'Restart to update',
-    skipThisVersionText: 'Later',
-    warningTitleText: 'Restart Required',
-    restartWarningText:
-        'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
-    warningCancelText: 'Not now',
-    warningConfirmText: 'Restart',
-  );
 
   @override
   void initState() {
     super.initState();
 
-    if (kDebugMode && kDebugForceDesktopUpdateDialog) {
-      _desktopUpdaterController = WindowsDesktopUpdateController.debugPreview(
-        localization: _desktopUpdateLocalization,
-      );
-    }
-
-    // Show the demo warning only once after the first frame on web.
+    // Warn about a missing WebView only once, after the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _followCloudAvailability(ref.read(isCloudWorkspaceAvailableProvider));
@@ -216,19 +190,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           return;
         }
 
-        final bool isDirectWindowsInstall =
-            _isWindowsDesktop && !result.isSupported;
-        if (isDirectWindowsInstall && _desktopUpdaterController == null) {
-          debugPrint(
-            'Desktop updater channel: $kResolvedUpdateChannel | Manifest: ${Settings.desktopUpdaterArchiveUrl}',
-          );
-          _desktopUpdaterController = WindowsDesktopUpdateController(
-            appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
-            localization: _desktopUpdateLocalization,
-          );
-          setState(() {});
-        }
-
         if (_hasPromptedUpdateDialog || !result.isUpdateAvailable) {
           return;
         }
@@ -240,6 +201,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         });
       });
     });
+
+    final desktopUpdateController = ref.watch(desktopUpdateControllerProvider);
 
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
@@ -260,24 +223,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         : null;
     final canCreate = tab == LibraryTab.library;
 
-    Future<void> navigateToLocalStrategy(
-      BuildContext context,
-      String strategyId, {
-      String? strategyName,
-    }) async {
-      if (!context.mounted) return;
-      await Navigator.push(
-        context,
-        StrategyView.route(
-          initialStrategyId: strategyId,
-          initialStrategyName: strategyName,
-          initialStrategySource: StrategySource.local,
-          initialMapValue: MapValue.ascent,
-          initialIsAttack: true,
-        ),
-      );
-    }
-
     Future<void> showCreateFolderDialog() async {
       await showDialog<String>(
         context: context,
@@ -287,25 +232,45 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       );
     }
 
+    /// Pick a map, then go straight to the editor. A local strategy paints
+    /// on the chosen map at once and loads inside the view; a cloud strategy
+    /// is already open once the server has created it.
     void showCreateDialog() async {
-      final String? strategyId = await showDialog<String>(
+      final map = await showDialog<MapValue>(
         context: context,
-        builder: (context) {
-          return const CreateStrategyDialog();
-        },
+        builder: (context) => const CreateStrategyDialog(),
       );
+      if (map == null || !context.mounted) return;
 
-      if (strategyId != null) {
-        if (!context.mounted) return;
-        if (ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud) {
-          await Navigator.push(
-            context,
-            StrategyView.route(),
-          );
-        } else {
-          await navigateToLocalStrategy(context, strategyId);
-        }
+      final isCloud =
+          ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
+      final StrategyData strategy;
+      try {
+        strategy = await ref
+            .read(strategyProvider.notifier)
+            .createNewStrategy(map: map);
+      } catch (_) {
+        Settings.showToast(
+          message: isCloud
+              ? "Couldn't create cloud strategy right now. Please try logging in again."
+              : "Couldn't create strategy right now.",
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
       }
+      if (!context.mounted) return;
+
+      Navigator.push(
+        context,
+        isCloud
+            ? StrategyView.route()
+            : StrategyView.route(
+                initialStrategyId: strategy.id,
+                initialStrategyName: strategy.name,
+                initialStrategySource: StrategySource.local,
+                initialMapValue: strategy.mapData,
+              ),
+      );
     }
 
     return Stack(
@@ -358,10 +323,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             bottom: 16,
             child: CloudOutboxSummaryBanner(),
           ),
-        if (_desktopUpdaterController != null)
-          DesktopUpdateDialogListener(
-            controller: _desktopUpdaterController!,
-          ),
+        if (desktopUpdateController != null)
+          DesktopUpdateDialogListener(controller: desktopUpdateController),
       ],
     );
   }

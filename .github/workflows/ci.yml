@@ -160,6 +160,34 @@ jobs:
       - name: Analyze
         shell: pwsh
         run: fvm flutter analyze --no-fatal-infos
+
+      - name: Validate PowerShell Scripts
+        shell: pwsh
+        run: |
+          $parseErrors = @(
+            Get-ChildItem -Path scripts, installer -Filter "*.ps1" -File | ForEach-Object {
+              $tokens = $null
+              $parseFileErrors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile(
+                $_.FullName,
+                [ref]$tokens,
+                [ref]$parseFileErrors
+              )
+              $parseFileErrors
+            }
+          )
+
+          if ($parseErrors.Count -gt 0) {
+            throw "PowerShell parse errors: $($parseErrors.Message -join ', ')"
+          }
+
+      - name: Check Bundled Wall Heights
+        shell: pwsh
+        run: fvm dart run tool/check_bundled_wall_heights.dart
+      - name: Test Release Signing Gates
+        shell: powershell
+        run: ./scripts/test_release_signing.ps1
+
       - name: Build Web Client
         shell: pwsh
         run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development

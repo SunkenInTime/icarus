@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -54,6 +53,8 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
         );
         final mapScale = Maps.mapScale[currentMap] ?? 1.0;
 
+        final lineUpState = ref.watch(lineUpProvider);
+
         return IgnorePointer(
           ignoring: true,
           child: RepaintBoundary(
@@ -61,7 +62,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
               painter: LinePainter(
                 resizeCounter: resizeCounter,
                 hoveredLineUpTarget: ref.watch(hoveredLineUpTargetProvider),
-                groups: ref.watch(lineUpProvider).groups,
+                lineUpState: lineUpState,
                 coordinateSystem: CoordinateSystem.instance,
                 abilitySize: ref.watch(strategySettingsProvider).abilitySize,
                 agentSize: coordinateSystem.scale(
@@ -69,8 +70,6 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
                 ),
                 mapScale: mapScale,
                 isAttack: ref.watch(mapProvider).isAttack,
-                currentAgent: ref.watch(lineUpProvider).currentAgent,
-                currentAbility: ref.watch(lineUpProvider).currentAbility,
               ),
               // Ensure it expands to the available area so constraints.biggest is meaningful.
               size: Size.infinite,
@@ -82,31 +81,30 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
   }
 }
 
+/// One line per distinct (origin, landing spot) pair. Hovering an origin
+/// lights every line out of it, hovering a landing spot every line into it.
 class LinePainter extends CustomPainter {
   final HoveredLineUpTarget? hoveredLineUpTarget;
-  final List<LineUpGroup> groups;
+  final LineUpState lineUpState;
   final CoordinateSystem coordinateSystem;
   final double abilitySize;
   final double agentSize;
   final double mapScale;
   final bool isAttack;
-  final PlacedAgent? currentAgent;
-  final PlacedAbility? currentAbility;
   final int resizeCounter;
 
   LinePainter({
     super.repaint,
     required this.resizeCounter,
     required this.hoveredLineUpTarget,
-    required this.groups,
+    required this.lineUpState,
     required this.coordinateSystem,
     required this.abilitySize,
     required this.agentSize,
     required this.mapScale,
     required this.isAttack,
-    this.currentAgent,
-    this.currentAbility,
   });
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -121,30 +119,39 @@ class LinePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..isAntiAlias = true;
 
-    // Current lineup highlight moved to CurrentLineUpPainter.
-    for (final group in groups) {
-      final startPosition = screenAnchorForAgent(
-        agent: group.agent,
-        coordinateSystem: coordinateSystem,
-        isAttack: isAttack,
-      );
+    final originAnchors = <String, Offset>{};
+    final landingAnchors = <String, Offset>{};
 
-      for (final item in group.items) {
-        final endPosition = screenAnchorForAbility(
-          ability: item.ability,
+    for (final (originId, landingId) in lineUpState.connectorPairs) {
+      final origin = lineUpState.originById(originId);
+      final landing = lineUpState.landingById(landingId);
+      if (origin == null || landing == null) continue;
+
+      final startPosition = originAnchors.putIfAbsent(
+        originId,
+        () => screenAnchorForAgent(
+          agent: origin.agent,
+          coordinateSystem: coordinateSystem,
+          isAttack: isAttack,
+        ),
+      );
+      final endPosition = landingAnchors.putIfAbsent(
+        landingId,
+        () => screenAnchorForAbility(
+          ability: landing.ability,
           coordinateSystem: coordinateSystem,
           mapScale: mapScale,
           isAttack: isAttack,
-        );
+        ),
+      );
 
-        canvas.drawLine(
-          startPosition,
-          endPosition,
-          (hoveredLineUpTarget?.matchesConnector(group.id, item.id) ?? false)
-              ? highlightPaint
-              : paint,
-        );
-      }
+      canvas.drawLine(
+        startPosition,
+        endPosition,
+        (hoveredLineUpTarget?.matchesConnector(originId, landingId) ?? false)
+            ? highlightPaint
+            : paint,
+      );
     }
   }
 
@@ -152,7 +159,7 @@ class LinePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     if (oldDelegate is LinePainter) {
       return oldDelegate.hoveredLineUpTarget != hoveredLineUpTarget ||
-          oldDelegate.groups != groups ||
+          oldDelegate.lineUpState != lineUpState ||
           oldDelegate.coordinateSystem.effectiveSize !=
               coordinateSystem.effectiveSize ||
           oldDelegate.abilitySize != abilitySize ||

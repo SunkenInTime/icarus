@@ -3,12 +3,12 @@ import 'dart:ui';
 
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/ability_vision.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/placed_media_geometry.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/map_scale_history.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 abstract final class CanonicalCoordinatesMigration {
@@ -19,7 +19,7 @@ abstract final class CanonicalCoordinatesMigration {
     required List<StrategyPage> pages,
     required MapValue map,
   }) {
-    final mapScale = Maps.mapScale[map] ?? 1;
+    final mapScale = mapScaleBeforeVersion98(map);
     return [
       for (final page in pages)
         page.isAttack ? page : _migrateDefensePage(page, mapScale),
@@ -48,20 +48,10 @@ abstract final class CanonicalCoordinatesMigration {
       imageData: [
         for (final image in page.imageData) _migrateImage(image),
       ],
-      lineUpGroups: [
-        for (final group in page.lineUpGroups)
-          LineUpGroup(
-            id: group.id,
-            agent: _migrateAgent(group.agent) as PlacedAgent,
-            items: [
-              for (final item in group.items)
-                item.copyWith(
-                  ability: _migrateAbility(item.ability, mapScale),
-                  images: item.images.map((image) => image.copyWith()).toList(),
-                ),
-            ],
-          ),
-      ],
+      lineUpGraph: page.lineUpGraph.mapNodes(
+        agent: (agent) => _migrateAgent(agent) as PlacedAgent,
+        ability: (ability) => _migrateAbility(ability, mapScale),
+      ),
     );
   }
 
