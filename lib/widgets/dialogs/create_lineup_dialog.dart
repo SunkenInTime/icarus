@@ -39,10 +39,13 @@ class LineupImageDrafts {
   final PlacedImageProvider _images;
   final String? strategyId;
   final Set<String> _ids = {};
+  bool _closed = false;
 
-  /// Keeps [bytes] as a new draft. Throws [MediaTooLargeException], keeping
-  /// nothing, when the image can never upload.
-  Future<SimpleImageData> add(Uint8List bytes, String fileExtension) async {
+  /// Keeps [bytes] as a new draft. Returns null, keeping nothing, when the
+  /// dialog closed while they were being kept. Throws
+  /// [MediaTooLargeException], keeping nothing, when the image can never
+  /// upload.
+  Future<SimpleImageData?> add(Uint8List bytes, String fileExtension) async {
     final id = const Uuid().v4();
     await _images.saveSecureImage(
       bytes,
@@ -50,27 +53,52 @@ class LineupImageDrafts {
       fileExtension,
       strategyId: strategyId,
     );
+    if (_closed) {
+      await _discard(id);
+      return null;
+    }
     _ids.add(id);
     return SimpleImageData(id: id, fileExtension: fileExtension);
   }
 
   /// Lets go of [imageId] if it is a draft; saved images are left alone.
   Future<void> remove(String imageId) async {
-    if (!_ids.remove(imageId)) return;
-    await _images.discardDraftImage(imageId: imageId, strategyId: strategyId);
+    if (_ids.remove(imageId)) await _discard(imageId);
   }
 
-  /// The drafts are queued for upload and belong to the lineup now.
-  void saved() => _ids.clear();
+  /// Hands every draft to the upload queue before their jobs are written, so
+  /// nothing can let their bytes go meanwhile. Pass the result to [takeBack]
+  /// if queuing fails.
+  Set<String> handOver() {
+    final ids = {..._ids};
+    _ids.clear();
+    return ids;
+  }
 
-  /// The dialog closed without saving.
+  /// Queuing [ids] failed: they are drafts again.
+  Future<void> takeBack(Set<String> ids) async {
+    if (!_closed) {
+      _ids.addAll(ids);
+      return;
+    }
+    for (final id in ids) {
+      await _discard(id);
+    }
+  }
+
+  /// The dialog closed. Drafts it still owns go, and so does any pick that
+  /// finishes after this.
   Future<void> dismissed() async {
+    _closed = true;
     final ids = _ids.toList();
     _ids.clear();
     for (final id in ids) {
-      await _images.discardDraftImage(imageId: id, strategyId: strategyId);
+      await _discard(id);
     }
   }
+
+  Future<void> _discard(String id) =>
+      _images.discardDraftImage(imageId: id, strategyId: strategyId);
 }
 
 class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
@@ -84,8 +112,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     strategyId: ref.read(strategyProvider).strategyId,
   );
 
+  // While Save queues the images, the dialog cannot be closed.
+  bool _saving = false;
+
   Future<void> _addDraftImage(Uint8List bytes, String fileExtension) async {
-    final SimpleImageData image;
+    final SimpleImageData? image;
     try {
       image = await _drafts.add(bytes, fileExtension);
     } on MediaTooLargeException catch (error) {
@@ -95,8 +126,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       );
       return;
     }
-    if (!mounted) return;
-    setState(() => _imagePaths.add(image));
+    if (image == null) return;
+    if (!mounted) {
+      await _drafts.remove(image.id);
+      return;
+    }
+    setState(() => _imagePaths.add(image!));
   }
 
   Future<void> _enqueueLineupMediaJobs({
@@ -173,10 +208,14 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     final imagesNeedingUpload = _imagePaths
         .where((image) => !_initialImageIds.contains(image.id))
         .toList(growable: false);
+    // The queue owns these images from here, before their jobs are written.
+    setState(() => _saving = true);
+    final handedOver = _drafts.handOver();
     try {
       await _enqueueLineupMediaJobs(images: imagesNeedingUpload);
-      _drafts.saved();
     } catch (_) {
+      await _drafts.takeBack(handedOver);
+      if (mounted) setState(() => _saving = false);
       Settings.showToast(
         message: 'Could not queue these images for cloud sync. '
             'They remain on this device. Try again before closing.',
@@ -240,9 +279,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
+      // Barrier taps and Escape wait for Save to finish queuing.
+      canPop: !_saving,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
-          // After a save there are no drafts left to let go.
+          // Images handed to the queue by Save are not drafts any more.
           unawaited(_drafts.dismissed());
           ref
               .read(interactionStateProvider.notifier)
@@ -251,9 +292,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       },
       child: ShadDialog(
         title: Text(_isEditing ? "Edit Lineup" : "Create Lineup"),
+        // The close button pops directly, past PopScope, so it steps aside
+        // while Save is queuing.
+        closeIcon: _saving ? const SizedBox.shrink() : null,
         actions: [
           ShadButton(
-            onPressed: _save,
+            onPressed: _saving ? null : _save,
             child: const Text("Done"),
           ),
         ],

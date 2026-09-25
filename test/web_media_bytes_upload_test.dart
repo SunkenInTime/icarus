@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -14,7 +16,9 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/collab/pending_media_bytes_store.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -27,6 +31,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
 // The web beta: no image files, so picked images wait as pending bytes.
@@ -171,6 +176,73 @@ class _R2Repository implements ConvexStrategyRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+LineUpGroup _breachGroup() => LineUpGroup(
+      id: 'breach-group',
+      agent: PlacedAgent(
+        id: 'breach-agent',
+        type: AgentType.breach,
+        position: const Offset(180, 220),
+        isAlly: true,
+      ),
+      items: [
+        LineUpItem(
+          id: 'breach-item',
+          ability: PlacedAbility(
+            id: 'breach-ability',
+            data: AgentData.agents[AgentType.breach]!.abilities.first,
+            position: const Offset(320, 360),
+            isAlly: true,
+          ),
+        ),
+      ],
+    );
+
+/// Holds each write open until [putGate] completes, like a slow IndexedDB.
+class _GatedBytesStore extends MemoryPendingMediaBytesStore {
+  Completer<void>? putGate;
+
+  @override
+  Future<void> put(PendingMediaRecord record) async {
+    await putGate?.future;
+    await super.put(record);
+  }
+}
+
+/// Holds each outbox batch write open until [batchGate] completes.
+class _GatedOutboxStore extends MemoryDurableCloudMediaOutboxStore {
+  Completer<void>? batchGate;
+
+  @override
+  Future<void> putAll(Iterable<CloudMediaUploadJob> jobs) async {
+    await batchGate?.future;
+    await super.putAll(jobs);
+  }
+}
+
+class _OnePngPicker extends FilePicker {
+  _OnePngPicker(this.bytes);
+  final Uint8List bytes;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 30,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async =>
+      FilePickerResult([
+        PlatformFile(name: 'smoke.png', size: bytes.length, bytes: bytes),
+      ]);
 }
 
 /// One browser tab. Sharing the stores between two of these is a second tab
@@ -535,7 +607,7 @@ void main() {
         tabA.read(placedImageProvider.notifier),
         strategyId: 'strategy-a',
       );
-      final draft = await drafts.add(_imageBytes, '.png');
+      final draft = (await drafts.add(_imageBytes, '.png'))!;
 
       // Tab B opens while the lineup dialog in tab A is still open.
       final tabB = _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
@@ -545,12 +617,12 @@ void main() {
       expect(bytesStore.values, hasLength(1));
 
       // Tab A saves the lineup, then the browser refreshes.
+      drafts.handOver();
       await tabA
           .read(cloudMediaUploadQueueProvider.notifier)
           .enqueueLineupMediaJobs(strategyPublicId: 'strategy-a', images: [
         draft,
       ]);
-      drafts.saved();
       final refreshed =
           _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
       addTearDown(refreshed.dispose);
@@ -610,12 +682,12 @@ void main() {
   });
 
   group('lineup drafts', () {
-    late MemoryPendingMediaBytesStore bytesStore;
+    late _GatedBytesStore bytesStore;
     late ProviderContainer container;
     late LineupImageDrafts drafts;
 
     setUp(() {
-      bytesStore = MemoryPendingMediaBytesStore();
+      bytesStore = _GatedBytesStore();
       container = _webSession(
         mediaStore: MemoryDurableCloudMediaOutboxStore(),
         bytesStore: bytesStore,
@@ -628,8 +700,8 @@ void main() {
     tearDown(() => container.dispose());
 
     test('removing a draft lets its bytes go', () async {
-      final kept = await drafts.add(_imageBytes, '.png');
-      final removed = await drafts.add(_imageBytes, '.png');
+      final kept = (await drafts.add(_imageBytes, '.png'))!;
+      final removed = (await drafts.add(_imageBytes, '.png'))!;
 
       await drafts.remove(removed.id);
 
@@ -648,15 +720,38 @@ void main() {
       expect(container.read(pendingMediaBytesProvider), isEmpty);
     });
 
-    test('saved drafts belong to the lineup and survive the dialog closing',
-        () async {
-      final saved = await drafts.add(_imageBytes, '.png');
-      drafts.saved();
+    test('drafts handed to the queue survive the dialog closing', () async {
+      final saved = (await drafts.add(_imageBytes, '.png'))!;
+      drafts.handOver();
 
       await drafts.dismissed();
       await drafts.remove(saved.id);
 
       expect(bytesStore.values, hasLength(1));
+    });
+
+    test('drafts whose queuing failed go when the dialog has closed',
+        () async {
+      await drafts.add(_imageBytes, '.png');
+      final handedOver = drafts.handOver();
+      await drafts.dismissed();
+
+      await drafts.takeBack(handedOver);
+
+      expect(bytesStore.values, isEmpty);
+    });
+
+    test('a pick that finishes after the dialog closed keeps nothing',
+        () async {
+      bytesStore.putGate = Completer<void>();
+      final pick = drafts.add(_imageBytes, '.png');
+
+      await drafts.dismissed();
+      bytesStore.putGate!.complete();
+
+      expect(await pick, isNull);
+      expect(bytesStore.values, isEmpty);
+      expect(container.read(pendingMediaBytesProvider), isEmpty);
     });
 
     test('an image over 15 MB is refused before anything is kept', () async {
@@ -670,6 +765,82 @@ void main() {
       expect(bytesStore.values, isEmpty);
       expect(container.read(pendingMediaBytesProvider), isEmpty);
     });
+  });
+
+  testWidgets(
+      'dismissing while Save queues an edited lineup keeps the queued '
+      'image\'s bytes', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final mediaStore = _GatedOutboxStore()..batchGate = Completer<void>();
+    final bytesStore = MemoryPendingMediaBytesStore();
+    // Disposed at the end of the body, before flutter_test checks timers.
+    final container =
+        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([_breachGroup()]));
+    final linkId = container.read(lineUpProvider).links.single.id;
+    // A real 1x1 PNG: the dialog paints the pick as soon as it is kept.
+    final png = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    );
+    FilePicker.platform = _OnePngPicker(png);
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: ToastificationWrapper(
+        child: ShadApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ShadButton(
+                onPressed: () => showShadDialog<void>(
+                  context: context,
+                  builder: (_) => CreateLineupDialog(linkId: linkId),
+                ),
+                child: const Text('Edit lineup'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    // Edit the lineup and pick an image.
+    await tester.tap(find.text('Edit lineup'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Click here to add images'));
+    await tester.pumpAndSettle();
+    expect(bytesStore.values, hasLength(1));
+
+    // Done, then every way to dismiss while the outbox write is pending.
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pump();
+    expect(find.byType(CreateLineupDialog), findsOneWidget);
+
+    mediaStore.batchGate!.complete();
+    await tester.pumpAndSettle();
+
+    final job = mediaStore.load().jobs.single;
+    expect(
+      bytesStore.values.keys,
+      [pendingMediaStorageKey(_key(job.assetPublicId))],
+    );
+    expect(
+      container.read(lineUpProvider).linkById(linkId)!.images.single.id,
+      job.assetPublicId,
+    );
+    expect(find.byType(CreateLineupDialog), findsNothing);
+    // Let any toast from the save time out, then stop the queue's retry
+    // timer before the test ends.
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpWidget(const SizedBox());
+    container.dispose();
   });
 
   test('desktop never opens the pending-bytes box', () async {
