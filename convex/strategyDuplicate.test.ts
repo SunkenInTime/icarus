@@ -728,6 +728,127 @@ describe("images placed before their upload", () => {
     expect(await rowsFor(t, "removed-image")).toEqual([]);
   });
 
+  async function deleteImage(owner: Harness, elementPublicId: string) {
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: `delete-${elementPublicId}`,
+          type: "element.delete",
+          elementPublicId,
+          pagePublicId: firstPage,
+          expectedElementRevision: 1,
+        },
+      ],
+    });
+  }
+
+  async function restoreImage(owner: Harness, elementPublicId: string) {
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: `restore-${elementPublicId}`,
+          type: "element.add",
+          elementPublicId,
+          pagePublicId: firstPage,
+          payload: {
+            kind: "image",
+            payloadVersion: 1,
+            data: { id: elementPublicId, elementType: "image" },
+          },
+          sortIndex: 9,
+          expectedElementRevision: 2,
+        },
+      ],
+    });
+  }
+
+  test("undoing a fresh delete expects the image again", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "undone-image");
+    await deleteImage(owner, "undone-image");
+    expect(await rowsFor(t, "undone-image")).toEqual([]);
+
+    // Its upload may still be coming from the device that placed it.
+    await restoreImage(owner, "undone-image");
+
+    expect(await statusFor(owner, "undone-image")).toMatchObject({
+      uploadStatus: "pending",
+    });
+  });
+
+  test("undoing the delete of an image placed over a day ago adds no placeholder", async () => {
+    vi.useFakeTimers();
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "old-image");
+    await deleteImage(owner, "old-image");
+
+    vi.setSystemTime(Date.now() + 25 * 60 * 60 * 1000);
+    await restoreImage(owner, "old-image");
+
+    // Any upload would have landed or been swept by now; it reads as
+    // unavailable at once instead of spinning for another day.
+    expect(await rowsFor(t, "old-image")).toEqual([]);
+  });
+
+  test("undoing a delete keeps using an image that was uploaded", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+
+    // placed-image is uploaded (seeded active); deleting leaves its row.
+    await deleteImage(owner, "placed-image");
+    await restoreImage(owner, "placed-image");
+
+    const rows = await rowsFor(t, "placed-image");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ uploadStatus: "active" });
+  });
+
+  test("deleting an image keeps the placeholder while a lineup still shows it", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "shared-late-image");
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: "lineup-shows-shared",
+          type: "lineup.add",
+          lineupPublicId: "lineup-shows-shared",
+          pagePublicId: firstPage,
+          payload: {
+            kind: "lineupGroup",
+            payloadVersion: 1,
+            data: {
+              id: "lineup-shows-shared",
+              items: [
+                { id: "shared-item", images: [{ id: "shared-late-image" }] },
+              ],
+            },
+          },
+          sortIndex: 2,
+        },
+      ],
+    });
+    expect(await rowsFor(t, "shared-late-image")).toHaveLength(1);
+
+    await deleteImage(owner, "shared-late-image");
+
+    expect(await statusFor(owner, "shared-late-image")).toMatchObject({
+      uploadStatus: "pending",
+    });
+    await expect(duplicate(owner)).rejects.toThrow("still uploading");
+  });
+
   test("a lineup image referenced before its upload is expected too", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);

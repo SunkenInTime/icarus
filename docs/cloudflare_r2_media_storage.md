@@ -31,7 +31,7 @@ Strategy/page/lineup payloads store image IDs and local metadata only. Public re
 - MIME mismatch: `Content-Type` is signed for PUT and completion verifies R2 metadata against the file extension.
 - Oversized image: completion rejects and deletes the uploaded R2 object if it exceeds `R2_MAX_IMAGE_BYTES`.
 - PUT succeeds but completion fails: the pending row and object key remain available for retry. The hourly `mark-stale-image-uploads-deleted` job reclaims old pending and failed uploads without user authentication.
-- Content lands before its upload: a placed image or lineup image and its upload reach Convex independently. When `ops:applyBatch` accepts content that newly shows an image with no asset row, it inserts a pending placeholder row (no object key). Readers then see the image as on its way rather than missing, and a duplicate waits for it. `images:generateUploadUrl` adopts the placeholder instead of adding a second row. Deleting the image element drops its placeholder. A placeholder whose upload never comes is swept with other stale pending rows, after which the image shows as unavailable. Moving the image later does not bring the placeholder back.
+- Content lands before its upload: a placed image or lineup image and its upload reach Convex independently. When `ops:applyBatch` accepts content that newly shows an image with no asset row, it inserts a pending placeholder row (no object key). Readers then see the image as on its way rather than missing, and a duplicate waits for it. `images:generateUploadUrl` adopts the placeholder instead of adding a second row. Deleting the image element drops its placeholder unless other content (a lineup) still shows that image. Restoring a deleted element (undo) expects its image again only if the element was first placed within the stale-upload window (24h); an older one would have uploaded or been swept by then. A placeholder whose upload never comes is swept with other stale pending rows, after which the image shows as unavailable. Moving the image later does not bring the placeholder back.
 - Pending upload never completed: pending/failed rows are indexed by `uploadStatus` and `updatedAt`. The cron job marks them for cleanup after 24 hours.
 - Replacing an asset: the new immutable R2 object is activated before older active rows for the same strategy asset ID are marked deleted.
 - Page and Strategy deletion: page cleanup only marks strategy-owned assets that no remaining Page or Lineup references. Strategy cleanup marks every asset with that Strategy's exact Convex ID and leaves legacy rows without a `strategyId` alone.
@@ -77,7 +77,9 @@ While an upload is pending, the browser keeps the image bytes in IndexedDB (Hive
 
 Known limits:
 - Records written by the unreleased first version of this box (raw bytes keyed by asset ID, commit `d191ffe`) are unreadable by the current decoder and are left in place, never pruned. That version never shipped, so only development browsers can hold them; clear the site's IndexedDB to remove them.
-- Desktop writes the picked file with no size check, as it always has; an oversized image in a cloud strategy fails at upload instead of at pick.
+- Desktop refuses an image over 15 MB at pick in a cloud strategy, as web does. A local strategy takes any size, since it never uploads.
+- A duplicate made after a placeholder was swept copies no image. If the source's upload lands later, the copy never gets it.
+- Completion retry window: if `images:completeUpload` keeps failing after the PUT succeeded, the image stays pending (a spinner everywhere) until a retry completes it. After 24h the stale sweep can reclaim the row and its object even while the client is still retrying; the retry then fails, and the image reads as unavailable.
 
 Cloudflare references:
 
