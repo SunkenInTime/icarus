@@ -18,6 +18,20 @@ final isCloudWorkspaceAvailableProvider = Provider<bool>((ref) {
   return auth.isAuthenticated && auth.isConvexUserReady;
 });
 
+/// Whether cloud mode will be usable: true once the user and Convex are
+/// ready, false if the session ends signed out or in an auth incident, null
+/// while sign-in or cloud setup is still settling (as it is right after a web
+/// page reload).
+final cloudWorkspaceOutcomeProvider = Provider<bool?>((ref) {
+  if (ref.watch(isCloudWorkspaceAvailableProvider)) return true;
+  final auth = ref.watch(authProvider);
+  if (auth.isLoading) return null;
+  return switch (auth.convexAuthStatus) {
+    ConvexAuthStatus.signedOut || ConvexAuthStatus.incident => false,
+    ConvexAuthStatus.configuring || ConvexAuthStatus.ready => null,
+  };
+});
+
 /// True while My Library stays closed because this platform needs the cloud
 /// library and it is not reachable yet (signed out, or still signing in).
 final librarySignInRequiredProvider = Provider<bool>((ref) {

@@ -578,7 +578,8 @@ class CloudMediaUploadQueueNotifier
   }
 
   CloudMediaUploadJob? _nextRunnableJob({required bool ignoreBackoff}) {
-    final jobs = _readJobs()
+    // A copy: _readJobs() may be the shared `const []` (signed out).
+    final jobs = [..._readJobs()]
       ..sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
     final now = DateTime.now();
     for (final job in jobs) {

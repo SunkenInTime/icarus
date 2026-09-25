@@ -68,7 +68,12 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
 
     return Focus(
       autofocus: true,
-      // canRequestFocus: true,
+      // This node only catches shortcuts for the whole app; it is never a Tab
+      // stop. It also keeps it out of Flutter's reading-order sort: on web
+      // that sort runs when the page first takes focus, before the first
+      // layout, and measuring this node beside the navigator threw "RenderBox
+      // was not laid out" on every load (flutter/flutter#191508).
+      skipTraversal: true,
       child: Shortcuts(
         shortcuts: ShortcutInfo.globalShortcutsFor(
           ref.watch(appPreferencesProvider).customShortcutBindings,

@@ -59,6 +59,10 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     const style = kEditorToolbarButtonStyle;
     final source = ref.watch(strategyProvider.select((value) => value.source));
     final isCloud = source == StrategySource.cloud;
+    // Local saving exists only where the local library does; the web beta
+    // never offers it, even if an editor somehow opens with no cloud strategy.
+    final allowsLocalSave =
+        ref.watch(platformPolicyProvider).allowsLocalLibrary;
 
     // The strategy view owns the spacing around this card, so it aligns
     // with the map card above it.
@@ -76,7 +80,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
             children: [
               if (isCloud)
                 const CloudSyncButton(style: style)
-              else
+              else if (allowsLocalSave)
                 const AutoSaveButton(style: style),
               EditorToolbarButton(
                 style: style,

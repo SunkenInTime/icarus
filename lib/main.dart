@@ -48,6 +48,7 @@ import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/local_image_file.dart' show deviceHasImageFiles;
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
@@ -637,9 +638,16 @@ class _MyAppState extends ConsumerState<MyApp> {
         home: const MyHomePage(),
         routes: {
           Routes.folderNavigator: (context) => const FolderNavigator(),
-          Routes.strategyView: (context) => const StrategyView(),
           Routes.settings: (context) => const SettingsTab(),
         },
+        onGenerateRoute: (settings) => settings.name == Routes.strategyView
+            ? StrategyView.restoredRoute(
+                openCloudStrategyId:
+                    ref.read(openCloudStrategyStoreProvider).read(),
+                allowsLocalLibrary:
+                    ref.read(platformPolicyProvider).allowsLocalLibrary,
+              )
+            : null,
         builder: (context, child) {
           return GlobalShortcuts(
             child: MouseNavigation(child: child ?? const SizedBox.shrink()),
