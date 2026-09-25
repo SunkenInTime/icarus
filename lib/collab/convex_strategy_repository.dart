@@ -364,6 +364,24 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// Copies [sourceStrategyPublicId] into the signed-in user's library as
+  /// [publicId]: pages, content, and images, in one server transaction.
+  /// Retrying with the same [publicId] reuses the copy already made.
+  Future<void> duplicateStrategy({
+    required String sourceStrategyPublicId,
+    required String publicId,
+    required String name,
+    String? folderPublicId,
+  }) async {
+    await _api.strategies.duplicate(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      sourceStrategyPublicId: sourceStrategyPublicId,
+      publicId: publicId,
+      name: name,
+      folderPublicId: _optional(folderPublicId),
+    );
+  }
+
   Future<void> updateStrategyName({
     required String strategyPublicId,
     required String name,

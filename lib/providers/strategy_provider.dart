@@ -1346,114 +1346,49 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
-      try {
-        final snapshot = await ref
-            .read(convexStrategyRepositoryProvider)
-            .fetchFullSnapshot(strategyID);
-        final newStrategyID = const Uuid().v4();
-        final pages = [...snapshot.pages]
-          ..sort((a, b) => a.page.sortIndex.compareTo(b.page.sortIndex));
-        final firstPage = pages.isNotEmpty ? pages.first : null;
-        final firstPageId = const Uuid().v4();
-        await ref
-            .read(convexStrategyRepositoryProvider)
-            .createStrategyWithInitialPage(
-              publicId: newStrategyID,
-              name: "${snapshot.header.name} (Copy)",
-              mapData: snapshot.header.mapData,
-              initialPagePublicId: firstPageId,
-              initialPageName: firstPage?.page.name ?? "Page 1",
-              initialPageIsAutoNamed:
-                  firstPage == null ? true : firstPage.page.isAutoNamed,
-              initialPageIsAttack: firstPage?.page.isAttack ?? true,
-              initialPageSettings: firstPage?.content.settings,
-              folderPublicId: ref.read(folderProvider),
-              themeProfileId: snapshot.header.themeProfileId,
-              themeOverridePalette: snapshot.header.themeOverridePalette,
-            );
-
-        final pageIdMap = <String, String>{};
-        if (firstPage != null) {
-          pageIdMap[firstPage.page.publicId] = firstPageId;
-        }
-        var expectedStrategyRevision = 0;
-        for (var i = firstPage == null ? 0 : 1; i < pages.length; i++) {
-          final fullPage = pages[i];
-          final page = fullPage.page;
-          final newPageId = const Uuid().v4();
-          pageIdMap[page.publicId] = newPageId;
-          await ref.read(convexStrategyRepositoryProvider).addPage(
-                strategyPublicId: newStrategyID,
-                pagePublicId: newPageId,
-                name: page.name,
-                isAutoNamed: page.isAutoNamed,
-                sortIndex: page.sortIndex,
-                isAttack: page.isAttack,
-                settings: fullPage.content.settings,
-                expectedRevision: expectedStrategyRevision,
-              );
-          expectedStrategyRevision += 1;
-        }
-
-        final ops = <StrategyOp>[];
-        for (final fullPage in pages) {
-          final page = fullPage.page;
-          final newPageId = pageIdMap[page.publicId];
-          if (newPageId == null) continue;
-
-          final elements = snapshot.elementsByPage[page.publicId] ?? const [];
-          for (final element in elements) {
-            if (element.deleted) continue;
-            final payloadMap = element.decodedPayload();
-            payloadMap.putIfAbsent("elementType", () => element.elementType);
-            final newElementId = const Uuid().v4();
-            payloadMap["id"] = newElementId;
-            ops.add(ElementAddOp(
-              opId: const Uuid().v4(),
-              elementPublicId: newElementId,
-              pagePublicId: newPageId,
-              payload: cloudElementPayload(
-                kind:
-                    payloadMap['elementType'] as String? ?? element.elementType,
-                data: payloadMap,
-              ),
-              sortIndex: element.sortIndex,
-            ));
-          }
-
-          final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
-          for (final lineup in lineups) {
-            if (lineup.deleted) continue;
-            final newLineupId = const Uuid().v4();
-            final lineupPayload = cloudPayloadData(lineup.payload)
-              ..["id"] = newLineupId;
-            ops.add(LineupAddOp(
-              opId: const Uuid().v4(),
-              lineupPublicId: newLineupId,
-              pagePublicId: newPageId,
-              payload: cloudLineupGroupPayload(lineupPayload),
-              sortIndex: lineup.sortIndex,
-            ));
-          }
-        }
-
-        if (ops.isNotEmpty) {
-          await ref.read(convexStrategyRepositoryProvider).applyBatch(
-                strategyPublicId: newStrategyID,
-                clientId: const Uuid().v4(),
-                ops: ops,
-              );
-        }
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:duplicate',
-          error: error,
-          stackTrace: stackTrace,
+      // The server copies everything, images included, in one transaction:
+      // a copy's images need asset rows of their own, which only the server
+      // can create for bytes that are already uploaded.
+      const sourceName = 'strategy:duplicate';
+      final reporter = ref.read(cloudLibraryActionReporterProvider);
+      // An image this device has not uploaded yet has nothing to copy, so
+      // the copy would lack it for good. The server refuses the same case
+      // for uploads started on other devices.
+      final unsentImages = ref
+          .read(cloudMediaUploadQueueProvider)
+          .pendingCountForStrategy(strategyID);
+      if (unsentImages > 0) {
+        reporter.showMessage(
+          "This strategy has images that haven't finished uploading. "
+          "Duplicate it once it's synced.",
         );
-        if (!handled) rethrow;
         return;
       }
-      ref.invalidate(cloudStrategiesProvider);
+      final repository = ref.read(convexStrategyRepositoryProvider);
+      final result = await reporter.run(
+        action: () async {
+          final shell = await repository.fetchShell(strategyID);
+          await repository.duplicateStrategy(
+            sourceStrategyPublicId: strategyID,
+            publicId: const Uuid().v4(),
+            name: "${shell.header.name} (Copy)",
+            folderPublicId: ref.read(folderProvider),
+          );
+          return true;
+        },
+        source: sourceName,
+        failureMessage: "Couldn't duplicate this strategy. Try again.",
+        showFailureMessage: true,
+        reportAuthenticationFailure: (error, stackTrace) =>
+            ref.read(authProvider.notifier).reportConvexUnauthenticated(
+                  source: sourceName,
+                  error: error,
+                  stackTrace: stackTrace,
+                ),
+      );
+      if (result.didSucceed) {
+        ref.invalidate(cloudStrategiesProvider);
+      }
       return;
     }
 

@@ -1,6 +1,14 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { deleteStrategyAgentSummary } from "./lib/strategyAgentSummary";
+import {
+  deleteStrategyAgentSummary,
+  refreshStrategyAgentSummary,
+} from "./lib/strategyAgentSummary";
+import {
+  collectAssetIdFromElementPayload,
+  collectAssetIdsFromLineupPayload,
+  copyActiveAssetToStrategy,
+} from "./lib/imageAssets";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -507,6 +515,184 @@ export const createWithInitialPage = mutation({
       isAttack: args.initialPageIsAttack,
       settings: args.initialPageSettings,
     });
+  },
+});
+
+/// Copies a strategy into the caller's library in one transaction: pages,
+/// page settings, live elements and lineups under fresh publicIds, and an
+/// image asset row per image the copy shows. The rows share the source's
+/// stored bytes, so deleting either strategy leaves the other's images alone.
+export const duplicate = mutation({
+  args: {
+    ...cloudProtocolArgs,
+    sourceStrategyPublicId: v.string(),
+    publicId: v.string(),
+    name: v.string(),
+    folderPublicId: v.optional(v.string()),
+  },
+  returns: createResultValidator,
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    const source = await getStrategyByPublicId(
+      ctx,
+      args.sourceStrategyPublicId,
+    );
+    const { user } = await assertStrategyRole(ctx, source, "editor");
+
+    const existing = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.publicId))
+      .first();
+    if (existing !== null) {
+      if (existing.ownerId === user._id) {
+        // A retry of a duplicate that already committed.
+        return { ok: true, reused: true } as const;
+      }
+      throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
+    }
+
+    const folderId = await resolveOwnedFolderId(
+      ctx,
+      args.folderPublicId,
+      user._id,
+    );
+    const now = Date.now();
+    const strategyId = await ctx.db.insert("strategies", {
+      publicId: args.publicId,
+      ownerId: user._id,
+      folderId,
+      name: args.name,
+      mapData: source.mapData,
+      revision: 0,
+      themeProfileId: source.themeProfileId,
+      themeOverridePalette: source.themeOverridePalette,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const pageIdMap = new Map<Id<"pages">, Id<"pages">>();
+    const sourcePages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
+      .collect();
+    for (const page of sourcePages) {
+      const pageId = await ctx.db.insert("pages", {
+        publicId: createPublicId(),
+        strategyId,
+        name: page.name,
+        ...(page.isAutoNamed === undefined
+          ? {}
+          : { isAutoNamed: page.isAutoNamed }),
+        sortIndex: page.sortIndex,
+        isAttack: page.isAttack,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+      pageIdMap.set(page._id, pageId);
+      const content = await ctx.db
+        .query("pageContents")
+        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+        .first();
+      await ctx.db.insert("pageContents", {
+        pageId,
+        settings: content?.settings,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Each image the copy shows, keyed by its asset id in the copy, mapped to
+    // its asset id in the source. A placed image's asset id is its element id,
+    // which the copy renames; lineup images keep their ids, since asset ids
+    // are scoped to a strategy.
+    const sourceAssetIdByCopyId = new Map<string, string>();
+
+    const sourceElements = await ctx.db
+      .query("elements")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
+      .collect();
+    for (const element of sourceElements) {
+      const pageId = pageIdMap.get(element.pageId);
+      if (element.deleted || pageId === undefined) continue;
+      const publicId = createPublicId();
+      const sourceAssetId =
+        element.elementType === "image"
+          ? collectAssetIdFromElementPayload(element.payload)
+          : null;
+      if (sourceAssetId !== null) {
+        sourceAssetIdByCopyId.set(publicId, sourceAssetId);
+      }
+      await ctx.db.insert("elements", {
+        publicId,
+        strategyId,
+        pageId,
+        elementType: element.elementType,
+        payloadKind: element.payloadKind,
+        payloadVersion: element.payloadVersion,
+        payload: {
+          ...element.payload,
+          data: { ...element.payload.data, id: publicId },
+        },
+        sortIndex: element.sortIndex,
+        revision: 1,
+        deleted: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const sourceLineups = await ctx.db
+      .query("lineups")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
+      .collect();
+    for (const lineup of sourceLineups) {
+      const pageId = pageIdMap.get(lineup.pageId);
+      if (lineup.deleted || pageId === undefined) continue;
+      const publicId = createPublicId();
+      for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
+        sourceAssetIdByCopyId.set(assetId, assetId);
+      }
+      await ctx.db.insert("lineups", {
+        publicId,
+        strategyId,
+        pageId,
+        payloadKind: lineup.payloadKind,
+        payloadVersion: lineup.payloadVersion,
+        payload: {
+          ...lineup.payload,
+          data: { ...lineup.payload.data, id: publicId },
+        },
+        sortIndex: lineup.sortIndex,
+        revision: 1,
+        deleted: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    for (const [targetAssetPublicId, sourceAssetPublicId] of
+      sourceAssetIdByCopyId) {
+      const copied = await copyActiveAssetToStrategy(ctx, {
+        sourceStrategyId: source._id,
+        sourceAssetPublicId,
+        targetStrategyId: strategyId,
+        targetAssetPublicId,
+        userId: user._id,
+        now,
+      });
+      if (copied === "uploading") {
+        // Throwing discards the whole copy. A retry once the upload lands
+        // copies the image instead of leaving the copy without it for good.
+        throw conflictError(
+          "An image in this strategy is still uploading. Try again once it finishes.",
+        );
+      }
+    }
+
+    await refreshStrategyAgentSummary(ctx, strategyId);
+    return { ok: true } as const;
   },
 });
 

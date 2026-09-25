@@ -1022,6 +1022,13 @@ abstract interface class StrategiesModule {
     required double expectedRevision,
     required String strategyPublicId,
   });
+  Future<ConvexValue> duplicate({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String name,
+    required String publicId,
+    required String sourceStrategyPublicId,
+  });
   ConvexQuery<StrategiesGetHeaderResult> getHeader({
     required String strategyPublicId,
   });
@@ -1142,6 +1149,27 @@ final class _StrategiesModule implements StrategiesModule {
     return _invoke(
       () => _transport.mutation('strategies:delete', args),
       decodeStrategiesDeleteResult,
+    );
+  }
+
+  @override
+  Future<ConvexValue> duplicate({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String name,
+    required String publicId,
+    required String sourceStrategyPublicId,
+  }) {
+    final args = encodeStrategiesDuplicateArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      folderPublicId: folderPublicId,
+      name: name,
+      publicId: publicId,
+      sourceStrategyPublicId: sourceStrategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('strategies:duplicate', args),
+      decodeStrategiesDuplicateResult,
     );
   }
 

@@ -142094,6 +142094,84 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "folderPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "name": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "publicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "sourceStrategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "strategies.js:duplicate",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "ok": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "ok": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              },
+              "reused": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "strategyPublicId": {
             "fieldType": {
               "type": "string"

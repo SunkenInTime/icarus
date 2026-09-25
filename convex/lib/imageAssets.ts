@@ -163,6 +163,64 @@ export async function getActiveAssetForStrategy(
   );
 }
 
+/// Gives `targetStrategyId` its own active row for the image the source
+/// strategy shows under `sourceAssetPublicId`, stored as `targetAssetPublicId`.
+/// The row points at the same R2 object or Convex storage file: physical
+/// cleanup only deletes bytes once no row points at them
+/// (`hasSharedDeletionTarget` in images.ts), so each row is one reference.
+/// Only an active source row is copied; a deleted one may already be mid-sweep.
+/// "uploading" means the source's image has not finished uploading, so there
+/// is nothing to copy yet; "unavailable" means the source cannot show it either.
+export async function copyActiveAssetToStrategy(
+  ctx: MutationCtx,
+  args: {
+    sourceStrategyId: Id<"strategies">;
+    sourceAssetPublicId: string;
+    targetStrategyId: Id<"strategies">;
+    targetAssetPublicId: string;
+    userId: Id<"users">;
+    now: number;
+  },
+): Promise<"copied" | "uploading" | "unavailable"> {
+  const source = await getActiveAssetForStrategy(
+    ctx,
+    args.sourceStrategyId,
+    args.sourceAssetPublicId,
+  );
+  if (source === null) {
+    const pending = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+        q
+          .eq("strategyId", args.sourceStrategyId)
+          .eq("publicId", args.sourceAssetPublicId)
+          .eq("uploadStatus", "pending"),
+      )
+      .first();
+    return pending === null ? "unavailable" : "uploading";
+  }
+  await ctx.db.insert("imageAssets", {
+    publicId: args.targetAssetPublicId,
+    provider: inferProvider(source),
+    strategyId: args.targetStrategyId,
+    createdByUserId: args.userId,
+    storageId: source.storageId,
+    objectKey: source.objectKey,
+    uploadStatus: "active",
+    fileExtension: source.fileExtension,
+    mimeType: source.mimeType,
+    width: source.width,
+    height: source.height,
+    byteSize: source.byteSize,
+    etag: source.etag,
+    uploadedAt: source.uploadedAt,
+    storagePath: source.storagePath,
+    createdAt: args.now,
+    updatedAt: args.now,
+  });
+  return "copied";
+}
+
 export async function getViewerAssetForStrategy(
   ctx: AnyCtx,
   strategyId: Id<"strategies">,
