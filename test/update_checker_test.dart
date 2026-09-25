@@ -132,13 +132,34 @@ void main() {
     };
 
     final result = await UpdateChecker.checkForUpdateSignal(
-      isWebOverride: true,
+      isWebOverride: false,
       isWindowsOverride: false,
     );
 
     expect(result.source, 'remote_version_file');
     expect(result.isSupported, isFalse);
     expect(result.isUpdateAvailable, isFalse);
+  });
+
+  test('web never fetches the desktop version file', () async {
+    var fetches = 0;
+    UpdateChecker.fetchVersionInfoOverride = () async {
+      fetches += 1;
+      return <String, dynamic>{'current_version_number': '999'};
+    };
+
+    final update = await UpdateChecker.checkForUpdateSignal(
+      isWebOverride: true,
+    );
+    final storeUpdate = await UpdateChecker.checkForWindowsStoreUpdateSignal(
+      isWebOverride: true,
+    );
+
+    expect(fetches, 0);
+    for (final result in [update, storeUpdate]) {
+      expect(result.isSupported, isFalse);
+      expect(result.isUpdateAvailable, isFalse);
+    }
   });
 
   test('provider exposes update result from checker service', () async {

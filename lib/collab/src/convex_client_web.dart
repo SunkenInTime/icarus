@@ -20,10 +20,18 @@ extension type _JsConvexClient._(JSObject _) implements JSObject {
     JSFunction? onError,
   ]);
   external void setAuth(JSFunction fetchToken, [JSFunction? onChange]);
-  external void clearAuth();
+
+  /// The underlying sync client. The browser `ConvexClient` has `setAuth` but
+  /// no `clearAuth`; clearing auth is only offered here.
+  external _JsBaseConvexClient get client;
   external _JsConnectionState connectionState();
   external JSFunction subscribeToConnectionState(JSFunction callback);
   external void close();
+}
+
+@JS()
+extension type _JsBaseConvexClient._(JSObject _) implements JSObject {
+  external void clearAuth();
 }
 
 @JS()
@@ -235,7 +243,7 @@ class ConvexClient implements ConvexClientValueSource {
           return;
         }
         _authGeneration += 1;
-        _client.clearAuth();
+        _client.client.clearAuth();
         _setAuthenticated(false);
       },
       tokenCallback: tokenCallback,
@@ -245,7 +253,7 @@ class ConvexClient implements ConvexClientValueSource {
 
   Future<void> clearAuth() async {
     _authGeneration += 1;
-    _client.clearAuth();
+    _client.client.clearAuth();
     _setAuthenticated(false);
   }
 

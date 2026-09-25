@@ -434,6 +434,9 @@ class AuthProvider extends Notifier<AppAuthState> {
   int _incidentCounter = 0;
   int _authGeneration = 0;
 
+  /// The session [build] started Convex setup for.
+  String? _buildSessionFingerprint;
+
   @visibleForTesting
   static AuthProviderSupabaseApi? debugSupabaseApi;
 
@@ -480,6 +483,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     _convexApi = debugConvexApi ?? const _DefaultAuthProviderConvexApi();
     final session = _supabaseApi.currentSession;
     final initialGeneration = _advanceAuthGeneration();
+    _buildSessionFingerprint = _sessionFingerprint(session);
 
     _supabaseAuthSub ??= _supabaseApi.onAuthStateChange.listen(
       _handleSupabaseAuthStateChange,
@@ -495,7 +499,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       await _configureConvexAuth(
         trigger: 'build',
         generation: initialGeneration,
-        sessionFingerprint: _sessionFingerprint(session),
+        sessionFingerprint: _buildSessionFingerprint,
       );
     });
 
@@ -510,6 +514,15 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   void _handleSupabaseAuthStateChange(AuthState event) {
     final currentSession = event.session;
+    // Supabase replays the session it restored at startup to every new
+    // listener as `initialSession`. [build] already started Convex setup for
+    // that session; a second setup would tear down the first one's auth under
+    // the library's live queries.
+    if (event.event == AuthChangeEvent.initialSession &&
+        _sessionFingerprint(currentSession) == _buildSessionFingerprint) {
+      return;
+    }
+
     final generation = _advanceAuthGeneration();
     state = AppAuthState.fromSession(
       currentSession,
@@ -1195,11 +1208,13 @@ class AuthProvider extends Notifier<AppAuthState> {
         return;
       }
 
-      log(
-        'Failed configuring Convex auth [$trigger]: $error',
-        name: 'auth',
-        error: error,
-        stackTrace: stackTrace,
+      AppErrorReporter.reportWarning(
+        error is TimeoutException
+            ? 'Convex auth readiness timed out [$trigger]'
+            : 'Convex auth setup failed [$trigger]',
+        source: 'auth',
+        error: redactAuthDiagnosticText(error),
+        stackTrace: StackTrace.fromString(redactAuthDiagnosticText(stackTrace)),
       );
 
       if (isConvexUnauthenticatedError(error)) {
@@ -1209,22 +1224,6 @@ class AuthProvider extends Notifier<AppAuthState> {
           stackTrace: stackTrace,
         );
         return;
-      }
-
-      if (error is TimeoutException) {
-        log(
-          'Convex auth readiness timed out [$trigger]: $error',
-          name: 'auth',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      } else {
-        log(
-          'Convex auth setup failed after readiness or mutation [$trigger]: $error',
-          name: 'auth',
-          error: error,
-          stackTrace: stackTrace,
-        );
       }
 
       state = state.copyWith(

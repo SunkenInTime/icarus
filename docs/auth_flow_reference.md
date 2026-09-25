@@ -271,6 +271,13 @@ Why this is important:
 - Supabase is the source of identity.
 - Convex auth must be re-bound whenever the session changes, refreshes, or disappears.
 
+One event is not a change: Supabase replays the session it restored at
+startup to every new listener as `initialSession`. `build()` has already
+started setup for that session, so an `initialSession` carrying the same
+session fingerprint is ignored. A second setup would dispose the first one's
+Convex auth under the library's live queries. (A different session, say one
+Supabase refreshed while restoring, still gets its own setup.)
+
 ## 7. The client forwards the Supabase token to Convex
 
 This is the most important bridge in the whole system.
@@ -761,6 +768,12 @@ If auth breaks, verify these in order:
 8. If the request is strategy-scoped, does `assertStrategyRole(...)` return the expected role?
 
 If one of these steps fails, the break is usually in that layer or the layer immediately before it.
+
+A failed Convex setup is reported through `AppErrorReporter` as
+`Convex auth setup failed [<trigger>]: <redacted error>` (or `readiness timed
+out`). It lands in the in-app debug log, and on web it is also printed to the
+browser console: `developer.log` does not reach the console in a release web
+build, so the console is the first place to look on the web beta.
 
 ## 20. Mental model to keep in mind
 
