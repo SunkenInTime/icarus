@@ -6,8 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/image_scale_policy.dart';
+import 'package:icarus/const/utilities.dart';
+import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -2953,5 +2962,846 @@ void main() {
     await session.setActivePage('page-2');
     expect(container.read(textProvider).single.text, 'two');
     expect(box.get('local-strategy')!.pages, hasLength(2));
+  });
+
+  group('undo on a shared page keeps teammates\' work', () {
+    /// Page settings that round-trip exactly, so live sync authors nothing
+    /// for them unless undo changes them.
+    CloudPayload settingsWith({
+      double agentSize = 30,
+      double abilitySize = 20,
+    }) =>
+        StrategySettings(agentSize: agentSize, abilitySize: abilitySize)
+            .toJson();
+
+    Map<String, dynamic> payloadOf(Object value) {
+      return switch (value) {
+        PlacedAgentNode() => {...value.toJson(), 'elementType': 'agent'},
+        PlacedAbility() => {...value.toJson(), 'elementType': 'ability'},
+        DrawingElement() => {
+            ...(jsonDecode(DrawingProvider.objectToJson([value])) as List)
+                .single as Map<String, dynamic>,
+            'elementType': 'drawing',
+          },
+        PlacedText() => {...value.toJson(), 'elementType': 'text'},
+        PlacedImage() => {
+            ...cloudImagePayloadFromPlacedImage(value),
+            'elementType': 'image',
+          },
+        PlacedUtility() => {...value.toJson(), 'elementType': 'utility'},
+        _ => throw ArgumentError(value.runtimeType),
+      };
+    }
+
+    String idOf(Object value) => switch (value) {
+          PlacedWidget() => value.id,
+          DrawingElement() => value.id,
+          _ => throw ArgumentError(value.runtimeType),
+        };
+
+    RemoteElement element(
+      RemotePage page,
+      Object value, {
+      int revision = 1,
+      int sortIndex = 0,
+    }) {
+      final payload = payloadOf(value);
+      final kind = payload['elementType'] as String;
+      return RemoteElement(
+        publicId: idOf(value),
+        strategyPublicId: 'cloud-strategy',
+        pagePublicId: page.publicId,
+        elementType: kind,
+        payload: cloudElementPayload(kind: kind, data: payload),
+        sortIndex: sortIndex,
+        revision: revision,
+        deleted: false,
+      );
+    }
+
+    /// Everything on the local canvas outside lineups.
+    List<Object> canvasOf(ProviderContainer container) => [
+          ...container.read(agentProvider),
+          ...container.read(abilityProvider),
+          ...container.read(drawingProvider).elements,
+          ...container.read(textProvider),
+          ...container.read(placedImageProvider).images,
+          ...container.read(utilityProvider),
+        ];
+
+    Future<(ProviderContainer, _FakeRemoteEditorNotifier, RemotePage)> open(
+      List<Object> objects, {
+      List<RemoteLineup> lineups = const [],
+    }) async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(
+          page,
+          settings: settingsWith(),
+          elements: [
+            for (var i = 0; i < objects.length; i++)
+              element(page, objects[i], sortIndex: i),
+          ],
+          lineups: lineups,
+        ),
+      ));
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      // Let queued sync work finish before the container is disposed.
+      addTearDown(_settle);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return (container, remote, page);
+    }
+
+    /// This client's edits land and the page rehydrates with the server's
+    /// copy: the local canvas as sent, with [teammate] applied on top (a
+    /// teammate's change arriving in the same round).
+    Future<void> land(
+      ProviderContainer container,
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page, {
+      List<Object> Function(List<Object> canvas)? teammate,
+      CloudPayload? settings,
+      List<RemoteLineup> lineups = const [],
+    }) async {
+      final canvas = canvasOf(container);
+      final stored = teammate == null ? canvas : teammate(canvas);
+      container.read(strategySaveStateProvider.notifier).markPersisted();
+      remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(
+          page,
+          contentRevision: 2,
+          settings:
+              settings ?? container.read(strategySettingsProvider).toJson(),
+          elements: [
+            for (var i = 0; i < stored.length; i++)
+              element(page, stored[i], revision: 2, sortIndex: i),
+          ],
+          lineups: lineups,
+        ),
+      ));
+      await _settle();
+    }
+
+    Map<EntitySyncKey, StrategyOp> desiredOps(
+      ProviderContainer container,
+      RemotePage page,
+    ) {
+      return container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+                strategyPublicId: 'cloud-strategy',
+                pageId: page.publicId,
+              ) ??
+          const {};
+    }
+
+    /// [id] is on the canvas and live sync authors no deletion for it.
+    void expectKept(ProviderContainer container, RemotePage page, String id) {
+      expect(canvasOf(container).map(idOf), contains(id));
+      expect(
+        desiredOps(container, page)[EntitySyncKey.element(page.publicId, id)],
+        isNot(isA<ElementDeleteOp>()),
+      );
+    }
+
+    PlacedAgent jett(String id) => PlacedAgent(
+          id: id,
+          type: AgentType.jett,
+          position: const Offset(10, 20),
+        );
+
+    PlacedUtility cone(String id) => PlacedUtility(
+          id: id,
+          type: UtilityType.viewCone90,
+          position: const Offset(40, 40),
+        );
+
+    ActionProvider history(ProviderContainer container) =>
+        container.read(actionProvider.notifier);
+
+    test('undoing an agent move keeps an agent a teammate added', () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'jett');
+      await land(container, remote, page,
+          teammate: (canvas) => [...canvas, jett('sova')]);
+
+      history(container).undoAction();
+
+      expect(
+        container
+            .read(agentProvider)
+            .firstWhere((a) => a.id == 'jett')
+            .position,
+        const Offset(10, 20),
+      );
+      expectKept(container, page, 'sova');
+    });
+
+    test('undoing an agent move keeps a teammate marking it dead', () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'jett');
+      await land(container, remote, page,
+          teammate: (canvas) => [
+                for (final object in canvas)
+                  if (object is PlacedAgent)
+                    (object.copyWith()..state = AgentState.dead)
+                  else
+                    object,
+              ]);
+
+      history(container).undoAction();
+
+      final agent = container.read(agentProvider).single;
+      expect(agent.position, const Offset(10, 20));
+      expect(agent.state, AgentState.dead);
+
+      history(container).redoAction();
+      final redone = container.read(agentProvider).single;
+      expect(redone.position, const Offset(200, 200));
+      expect(redone.state, AgentState.dead);
+    });
+
+    // A move, undone and redone, against a teammate's change to another
+    // field of the same object: [field] set to [value] in its payload.
+    final moveCases = <(String, Object, String, Object)>[
+      (
+        'ability',
+        PlacedAbility(
+          id: 'mine',
+          data: AgentData.agents[AgentType.jett]!.abilities.first,
+          position: const Offset(10, 20),
+        ),
+        'isAlly',
+        false,
+      ),
+      (
+        'text',
+        PlacedText(id: 'mine', position: const Offset(10, 20))..text = 'mine',
+        'text',
+        'theirs',
+      ),
+      (
+        'image',
+        PlacedImage(
+          id: 'mine',
+          position: const Offset(10, 20),
+          aspectRatio: 1,
+          scale: ImageScalePolicy.defaultWidth,
+          fileExtension: '.png',
+        ),
+        'scale',
+        ImageScalePolicy.defaultWidth + 40,
+      ),
+      (
+        'utility',
+        PlacedUtility(
+          id: 'mine',
+          type: UtilityType.viewCone90,
+          position: const Offset(10, 20),
+        ),
+        'isAlly',
+        false,
+      ),
+    ];
+    for (final (kind, object, field, value) in moveCases) {
+      test('undoing a $kind move keeps a teammate change to its $field',
+          () async {
+        final (container, remote, page) = await open([object]);
+        void move(Offset to) => switch (kind) {
+              'ability' => container
+                  .read(abilityProvider.notifier)
+                  .updatePosition(to, 'mine'),
+              'text' => container
+                  .read(textProvider.notifier)
+                  .updatePosition(to, 'mine'),
+              'image' => container
+                  .read(placedImageProvider.notifier)
+                  .updatePosition(to, 'mine'),
+              _ => container
+                  .read(utilityProvider.notifier)
+                  .updatePosition(to, 'mine'),
+            };
+        Map<String, dynamic> mine() => payloadOf(
+            canvasOf(container).singleWhere((o) => idOf(o) == 'mine'));
+        Object withField(Object source) {
+          final json = {...payloadOf(source), field: value};
+          return switch (kind) {
+            'ability' => PlacedAbility.fromJson(json),
+            'text' => PlacedText.fromJson(json),
+            'image' => PlacedImage.fromJson(json),
+            _ => PlacedUtility.fromJson(json),
+          };
+        }
+
+        move(const Offset(200, 200));
+        await land(container, remote, page,
+            teammate: (canvas) => [for (final o in canvas) withField(o)]);
+        expect(mine()[field], value);
+
+        history(container).undoAction();
+        expect(mine()['position'], {'dx': 10.0, 'dy': 20.0});
+        expect(mine()[field], value);
+
+        history(container).redoAction();
+        expect(mine()['position'], {'dx': 200.0, 'dy': 200.0});
+        expect(mine()[field], value);
+      });
+    }
+
+    test('undoing a view cone conversion keeps an agent a teammate added',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      history(container).performTransaction(
+        groups: const [ActionGroup.agent],
+        mutation: () =>
+            container.read(agentProvider.notifier).convertPlainAgentToViewCone(
+                  id: 'jett',
+                  presetType: UtilityType.viewCone90,
+                  rotation: 0,
+                  length: 50,
+                ),
+      );
+      await land(container, remote, page,
+          teammate: (canvas) => [...canvas, jett('sova')]);
+
+      history(container).undoAction();
+
+      expect(
+        container.read(agentProvider).firstWhere((a) => a.id == 'jett'),
+        isNot(isA<PlacedViewConeAgent>()),
+      );
+      expectKept(container, page, 'sova');
+
+      history(container).redoAction();
+      expect(
+        container.read(agentProvider).firstWhere((a) => a.id == 'jett'),
+        isA<PlacedViewConeAgent>(),
+      );
+      expectKept(container, page, 'sova');
+    });
+
+    test('undoing a cone dropped on an agent keeps a teammate utility',
+        () async {
+      final (container, remote, page) =
+          await open([jett('jett'), cone('cone')]);
+
+      history(container).performTransaction(
+        groups: const [ActionGroup.agent, ActionGroup.utility],
+        mutation: () {
+          container
+              .read(utilityProvider.notifier)
+              .removeUtilityAsAction('cone');
+          container.read(agentProvider.notifier).convertPlainAgentToViewCone(
+                id: 'jett',
+                presetType: UtilityType.viewCone90,
+                rotation: 0,
+                length: 50,
+              );
+        },
+      );
+      await land(container, remote, page,
+          teammate: (canvas) => [...canvas, cone('teammate-cone')]);
+
+      history(container).undoAction();
+
+      expect(
+        container.read(utilityProvider).map((u) => u.id),
+        containsAll(['cone', 'teammate-cone']),
+      );
+      expect(
+        container.read(agentProvider).single,
+        isNot(isA<PlacedViewConeAgent>()),
+      );
+      expectKept(container, page, 'teammate-cone');
+
+      history(container).redoAction();
+      expect(
+        container.read(utilityProvider).map((u) => u.id),
+        ['teammate-cone'],
+      );
+      expectKept(container, page, 'teammate-cone');
+    });
+
+    test('undoing a size change keeps a teammate size change', () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      final settings = container.read(strategySettingsProvider.notifier);
+      history(container).performTransaction(
+        groups: const [ActionGroup.strategySettings],
+        mutation: () => settings.updateAgentSize(40),
+      );
+      await land(container, remote, page,
+          settings: settingsWith(agentSize: 40, abilitySize: 28));
+      expect(container.read(strategySettingsProvider).abilitySize, 28);
+
+      history(container).undoAction();
+
+      expect(container.read(strategySettingsProvider).agentSize, 30);
+      expect(container.read(strategySettingsProvider).abilitySize, 28);
+
+      history(container).redoAction();
+      expect(container.read(strategySettingsProvider).agentSize, 40);
+      expect(container.read(strategySettingsProvider).abilitySize, 28);
+    });
+
+    test('undoing a utility elevation change still works after it lands',
+        () async {
+      final (container, remote, page) = await open([cone('cone')]);
+
+      container
+          .read(utilityProvider.notifier)
+          .updateViewConeElevation('cone', 150);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+      expect(container.read(utilityProvider).single.visionElevation, isNull);
+
+      history(container).redoAction();
+      expect(container.read(utilityProvider).single.visionElevation, 150);
+    });
+
+    test('an edit before a deletion stays undoable after the deletion lands',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'jett');
+      container.read(agentProvider.notifier).removeAgentAsAction('jett');
+      await land(container, remote, page);
+      expect(container.read(agentProvider), isEmpty);
+
+      history(container).undoAction();
+      expect(
+        container.read(agentProvider).single.position,
+        const Offset(200, 200),
+      );
+
+      history(container).undoAction();
+      expect(
+        container.read(agentProvider).single.position,
+        const Offset(10, 20),
+      );
+    });
+
+    test('undo and redo skip an edit whose object a teammate deleted',
+        () async {
+      final (container, remote, page) =
+          await open([jett('jett'), jett('sova')]);
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'jett');
+      await land(container, remote, page,
+          teammate: (canvas) => [
+                for (final object in canvas)
+                  if (idOf(object) != 'jett') object,
+              ]);
+
+      history(container).undoAction();
+      history(container).redoAction();
+
+      expect(container.read(agentProvider).map((a) => a.id), ['sova']);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'jett')],
+        isNull,
+      );
+    });
+
+    // Bulk clear, per group: a teammate's object of the cleared kind arrives
+    // after the clear lands.
+    final clearCases = <(ActionGroup, Object Function(String id))>[
+      (ActionGroup.agent, jett),
+      (
+        ActionGroup.ability,
+        (id) => PlacedAbility(
+              id: id,
+              data: AgentData.agents[AgentType.jett]!.abilities.first,
+              position: const Offset(60, 60),
+            ),
+      ),
+      (
+        ActionGroup.drawing,
+        (id) => FreeDrawing(
+              id: id,
+              color: Colors.red,
+              isDotted: false,
+              hasArrow: false,
+              listOfPoints: const [Offset.zero, Offset(10, 10)],
+            ),
+      ),
+      (
+        ActionGroup.text,
+        (id) => PlacedText(id: id, position: const Offset(70, 70))..text = id,
+      ),
+      (
+        ActionGroup.image,
+        (id) => PlacedImage(
+              id: id,
+              position: const Offset(80, 80),
+              aspectRatio: 1,
+              scale: ImageScalePolicy.defaultWidth,
+              fileExtension: '.png',
+            ),
+      ),
+      (ActionGroup.utility, cone),
+    ];
+    for (final (group, build) in clearCases) {
+      test('undoing a ${group.name} clear keeps one a teammate added',
+          () async {
+        final (container, remote, page) = await open([
+          build('mine'),
+          if (group != ActionGroup.agent) jett('jett'),
+        ]);
+
+        history(container).clearGroupAsAction(group);
+        expect(canvasOf(container).map(idOf), isNot(contains('mine')));
+        await land(container, remote, page,
+            teammate: (canvas) => [...canvas, build('theirs')]);
+
+        history(container).undoAction();
+        expect(
+          canvasOf(container).map(idOf),
+          containsAll(['mine', 'theirs']),
+        );
+        expectKept(container, page, 'theirs');
+
+        history(container).redoAction();
+        expect(canvasOf(container).map(idOf), isNot(contains('mine')));
+        expectKept(container, page, 'theirs');
+      });
+    }
+
+    /// [canvas] with the object [id] replaced by [edit] of it.
+    List<Object> editing(
+      List<Object> canvas,
+      String id,
+      Object Function(Object object) edit,
+    ) =>
+        [for (final o in canvas) idOf(o) == id ? edit(o) : o];
+
+    /// [canvas] without the object [id].
+    List<Object> without(List<Object> canvas, String id) => [
+          for (final o in canvas)
+            if (idOf(o) != id) o
+        ];
+
+    Object dead(Object agent) =>
+        (agent as PlacedAgent).copyWith()..state = AgentState.dead;
+
+    PlacedAgent agentOn(ProviderContainer container, String id) =>
+        container.read(agentProvider).singleWhere((a) => a.id == id)
+            as PlacedAgent;
+
+    test('undoing an ability visibility toggle keeps teammate toggles',
+        () async {
+      final ability = PlacedAbility(
+        id: 'mine',
+        data: AgentData.agents[AgentType.jett]!.abilities.first,
+        position: const Offset(10, 20),
+      );
+      final (container, remote, page) = await open([ability]);
+      AbilityVisualState visual() =>
+          container.read(abilityProvider).single.visualState;
+      Object toggled(Object object, String toggle) => PlacedAbility.fromJson({
+            ...payloadOf(object),
+            'visualState': {
+              ...(object as PlacedAbility).visualState.toJson(),
+              toggle: false,
+            },
+          });
+
+      container.read(abilityProvider.notifier).updateVisualState(
+            0,
+            visual().copyWith(showRangeOutline: false),
+          );
+      await land(container, remote, page,
+          teammate: (canvas) =>
+              editing(canvas, 'mine', (o) => toggled(o, 'showRangeFill')));
+
+      history(container).undoAction();
+      expect(visual().showRangeOutline, isTrue);
+      expect(visual().showRangeFill, isFalse);
+
+      // Another teammate toggle lands between undo and redo.
+      await land(container, remote, page,
+          teammate: (canvas) =>
+              editing(canvas, 'mine', (o) => toggled(o, 'showInnerFill')));
+      history(container).redoAction();
+      expect(visual().showRangeOutline, isFalse);
+      expect(visual().showRangeFill, isFalse);
+      expect(visual().showInnerFill, isFalse);
+
+      history(container).undoAction();
+      expect(visual().showRangeOutline, isTrue);
+      expect(visual().showRangeFill, isFalse);
+      expect(visual().showInnerFill, isFalse);
+    });
+
+    test('undoing a deletion leaves a teammate copy that is still there',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container.read(agentProvider.notifier).removeAgentAsAction('jett');
+      // The teammate's edited copy wins on the server.
+      final teammateCopy = dead(jett('jett'));
+      await land(container, remote, page,
+          teammate: (canvas) => [...canvas, teammateCopy]);
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+
+      history(container).undoAction();
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+
+      // The undo restored nothing, so there is nothing for redo to remove.
+      history(container).redoAction();
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'jett')],
+        isNot(isA<ElementDeleteOp>()),
+      );
+    });
+
+    test('redoing an addition brings back the copy the undo took away',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container.read(agentProvider.notifier).addAgent(jett('sova'));
+      await land(container, remote, page,
+          teammate: (canvas) => editing(canvas, 'sova', dead));
+
+      history(container).undoAction();
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      await land(container, remote, page);
+
+      history(container).redoAction();
+      expect(agentOn(container, 'sova').state, AgentState.dead);
+
+      history(container).undoAction();
+      history(container).redoAction();
+      expect(agentOn(container, 'sova').state, AgentState.dead);
+    });
+
+    test('a clear undone and redone around a teammate edit keeps the edit',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      history(container).clearGroupAsAction(ActionGroup.agent);
+      history(container).undoAction();
+      await land(container, remote, page,
+          teammate: (canvas) => editing(canvas, 'jett', dead));
+
+      history(container).redoAction();
+      expect(container.read(agentProvider), isEmpty);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+    });
+
+    test('undoing an addition a teammate deleted gives redo nothing to add',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container.read(agentProvider.notifier).addAgent(jett('sova'));
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'sova'));
+
+      history(container).undoAction();
+      history(container).redoAction();
+
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'sova')],
+        isNull,
+      );
+    });
+
+    test(
+        'redoing a clear after a teammate deleted a restored object '
+        'does not bring it back on the next undo', () async {
+      final (container, remote, page) =
+          await open([jett('jett'), jett('sova')]);
+
+      history(container).clearGroupAsAction(ActionGroup.agent);
+      history(container).undoAction();
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'sova'));
+
+      history(container).redoAction();
+      expect(container.read(agentProvider), isEmpty);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'sova')],
+        isNull,
+      );
+    });
+
+    test('a transaction whose object a teammate deleted leaves history',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      history(container).performTransaction(
+        groups: const [ActionGroup.agent],
+        mutation: () =>
+            container.read(agentProvider.notifier).convertPlainAgentToViewCone(
+                  id: 'jett',
+                  presetType: UtilityType.viewCone90,
+                  rotation: 0,
+                  length: 50,
+                ),
+      );
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'jett'));
+
+      expect(container.read(actionProvider), isEmpty);
+    });
+
+    test('undoing a clear leaves out history hydration dropped since',
+        () async {
+      final (container, remote, page) = await open([
+        jett('jett'),
+        PlacedText(id: 'note', position: const Offset(70, 70))..text = 'note',
+      ]);
+
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'note');
+      history(container).clearGroupAsAction(ActionGroup.agent);
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'note'));
+
+      history(container).undoAction();
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      expect(container.read(actionProvider), isEmpty);
+      expect(container.read(textProvider), isEmpty);
+    });
+
+    /// [lineup] as a teammate left it with [notes] on its link.
+    RemoteLineup withNotes(RemoteLineup lineup, String notes) {
+      final payload = jsonDecode(jsonEncode(lineup.payload)) as CloudPayload;
+      ((payload['data'] as Map)['items'] as List).first['notes'] = notes;
+      return RemoteLineup(
+        publicId: lineup.publicId,
+        strategyPublicId: lineup.strategyPublicId,
+        pagePublicId: lineup.pagePublicId,
+        payload: payload,
+        sortIndex: lineup.sortIndex,
+        revision: lineup.revision + 1,
+        deleted: false,
+      );
+    }
+
+    test(
+        'redoing a lineup clear a teammate already undid by deleting '
+        'does not resurrect it on the next undo', () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      history(container).clearGroupAsAction(ActionGroup.lineUp);
+      history(container).undoAction();
+      expect(container.read(lineUpProvider).origins, hasLength(1));
+      await land(container, remote, page); // the teammate deleted it
+
+      history(container).redoAction();
+      history(container).undoAction();
+
+      expect(container.read(lineUpProvider).links, isEmpty);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.lineup(page.publicId, 'mine')],
+        isNull,
+      );
+    });
+
+    test('a lineup clear redone and undone keeps a teammate notes edit',
+        () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      history(container).clearGroupAsAction(ActionGroup.lineUp);
+      history(container).undoAction();
+      await land(container, remote, page,
+          lineups: [withNotes(mine, 'teammate notes')]);
+      expect(
+          container.read(lineUpProvider).links.single.notes, 'teammate notes');
+
+      history(container).redoAction();
+      expect(container.read(lineUpProvider).links, isEmpty);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+      expect(
+          container.read(lineUpProvider).links.single.notes, 'teammate notes');
+    });
+
+    test(
+        'undoing a lineup clear leaves a lineup a teammate restored, '
+        'and redo does not remove it', () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      history(container).clearGroupAsAction(ActionGroup.lineUp);
+      await land(container, remote, page,
+          lineups: [withNotes(mine, 'restored')]);
+      expect(container.read(lineUpProvider).links.single.notes, 'restored');
+
+      history(container).undoAction();
+      history(container).redoAction();
+
+      expect(container.read(lineUpProvider).links.single.notes, 'restored');
+      expect(
+        desiredOps(container, page).values.whereType<LineupDeleteOp>(),
+        isEmpty,
+      );
+    });
+
+    test('undoing a lineup clear keeps a lineup a teammate added', () async {
+      final (container, remote, page) =
+          await open(const [], lineups: [_lineup('page-1', 'mine')]);
+
+      history(container).clearGroupAsAction(ActionGroup.lineUp);
+      expect(container.read(lineUpProvider).origins, isEmpty);
+      await land(container, remote, page,
+          lineups: [_lineup(page.publicId, 'theirs')]);
+
+      history(container).undoAction();
+      expect(
+        container.read(lineUpProvider).origins.map((o) => o.id),
+        containsAll(['mine', 'theirs']),
+      );
+      expect(
+        desiredOps(container, page).values.whereType<LineupDeleteOp>(),
+        isEmpty,
+      );
+
+      history(container).redoAction();
+      expect(
+        container.read(lineUpProvider).origins.map((o) => o.id),
+        ['theirs'],
+      );
+    });
   });
 }

@@ -1,6 +1,5 @@
-import 'dart:ui';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -11,11 +10,9 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -39,55 +36,15 @@ enum ActionType {
   transaction,
 }
 
-class TransactionSnapshot {
-  final List<ActionGroup> targetGroups;
-  final BulkActionSnapshot before;
-  final BulkActionSnapshot after;
-
-  const TransactionSnapshot({
-    required this.targetGroups,
-    required this.before,
-    required this.after,
-  });
-
-  TransactionSnapshot copy() {
-    return TransactionSnapshot(
-      targetGroups: [...targetGroups],
-      before: before.copy(),
-      after: after.copy(),
-    );
-  }
-}
-
+/// The history entries a bulk clear took out along with the objects: the
+/// ones for the cleared groups. Undoing the clear puts them back.
 class BulkActionSnapshot {
   final List<ActionGroup> targetGroups;
   final List<UserAction> actionStateBefore;
-  final List<UserAction> redoStateBefore;
-  final AgentProviderSnapshot? agentSnapshot;
-  final AbilityProviderSnapshot? abilitySnapshot;
-  final DrawingProviderSnapshot? drawingSnapshot;
-  final TextProviderSnapshot? textSnapshot;
-  final PlacedImageProviderSnapshot? imageSnapshot;
-  final UtilityProviderSnapshot? utilitySnapshot;
-  final LineUpProviderSnapshot? lineUpSnapshot;
-  final StrategySettings? strategySettingsSnapshot;
-  final Map<String, Offset> imageSizeSnapshot;
-  final Map<String, Offset> textHeightSnapshot;
 
   const BulkActionSnapshot({
     required this.targetGroups,
     required this.actionStateBefore,
-    required this.redoStateBefore,
-    this.agentSnapshot,
-    this.abilitySnapshot,
-    this.drawingSnapshot,
-    this.textSnapshot,
-    this.imageSnapshot,
-    this.utilitySnapshot,
-    this.lineUpSnapshot,
-    this.strategySettingsSnapshot,
-    this.imageSizeSnapshot = const {},
-    this.textHeightSnapshot = const {},
   });
 
   BulkActionSnapshot copy() {
@@ -95,82 +52,6 @@ class BulkActionSnapshot {
       targetGroups: [...targetGroups],
       actionStateBefore:
           actionStateBefore.map((action) => action.copy()).toList(),
-      redoStateBefore: redoStateBefore.map((action) => action.copy()).toList(),
-      agentSnapshot: agentSnapshot == null
-          ? null
-          : AgentProviderSnapshot(
-              agents: agentSnapshot!.agents
-                  .map((agent) => clonePlacedAgentNode(agent))
-                  .toList(),
-              poppedAgents: agentSnapshot!.poppedAgents
-                  .map((agent) => clonePlacedAgentNode(agent))
-                  .toList(),
-            ),
-      abilitySnapshot: abilitySnapshot == null
-          ? null
-          : AbilityProviderSnapshot(
-              abilities: abilitySnapshot!.abilities
-                  .map((ability) => clonePlacedAbility(ability))
-                  .toList(),
-              poppedAbilities: abilitySnapshot!.poppedAbilities
-                  .map((ability) => clonePlacedAbility(ability))
-                  .toList(),
-            ),
-      drawingSnapshot: drawingSnapshot == null
-          ? null
-          : DrawingProviderSnapshot(
-              state: DrawingState(
-                elements: drawingSnapshot!.state.elements
-                    .map((element) => cloneDrawingElement(element))
-                    .toList(),
-                updateCounter: drawingSnapshot!.state.updateCounter,
-                currentElement: drawingSnapshot!.state.currentElement == null
-                    ? null
-                    : cloneDrawingElement(
-                        drawingSnapshot!.state.currentElement!),
-              ),
-              poppedElements: drawingSnapshot!.poppedElements
-                  .map((element) => cloneDrawingElement(element))
-                  .toList(),
-            ),
-      textSnapshot: textSnapshot == null
-          ? null
-          : TextProviderSnapshot(
-              texts: textSnapshot!.texts
-                  .map((text) => clonePlacedText(text))
-                  .toList(),
-              poppedText: textSnapshot!.poppedText
-                  .map((text) => clonePlacedText(text))
-                  .toList(),
-            ),
-      imageSnapshot: imageSnapshot == null
-          ? null
-          : PlacedImageProviderSnapshot(
-              images: imageSnapshot!.images
-                  .map((image) => clonePlacedImage(image))
-                  .toList(),
-              poppedImages: imageSnapshot!.poppedImages
-                  .map((image) => clonePlacedImage(image))
-                  .toList(),
-            ),
-      utilitySnapshot: utilitySnapshot == null
-          ? null
-          : UtilityProviderSnapshot(
-              utilities: utilitySnapshot!.utilities
-                  .map((utility) => clonePlacedUtility(utility))
-                  .toList(),
-              poppedUtilities: utilitySnapshot!.poppedUtilities
-                  .map((utility) => clonePlacedUtility(utility))
-                  .toList(),
-            ),
-      lineUpSnapshot: lineUpSnapshot == null
-          ? null
-          : LineUpProviderSnapshot(
-              graph: lineUpSnapshot!.graph.deepCopy(),
-            ),
-      strategySettingsSnapshot: strategySettingsSnapshot?.copyWith(),
-      imageSizeSnapshot: Map<String, Offset>.from(imageSizeSnapshot),
-      textHeightSnapshot: Map<String, Offset>.from(textHeightSnapshot),
     );
   }
 }
@@ -181,7 +62,12 @@ class UserAction {
   final ActionType type;
   final ObjectHistoryDelta? objectDelta;
   final BulkActionSnapshot? bulkSnapshot;
-  final TransactionSnapshot? transactionSnapshot;
+
+  /// For a transaction or bulk clear (group [ActionGroup.bulk]): the change
+  /// to each object, in the order they happened. Undo reverses them last to
+  /// first and redo replays them, each against the page as it is now, so
+  /// objects a teammate added or changed since are left alone.
+  final List<UserAction> changes;
 
   UserAction({
     required this.type,
@@ -189,7 +75,7 @@ class UserAction {
     required this.group,
     this.objectDelta,
     this.bulkSnapshot,
-    this.transactionSnapshot,
+    this.changes = const [],
   });
 
   UserAction copy() {
@@ -199,7 +85,7 @@ class UserAction {
       group: group,
       objectDelta: objectDelta?.clone(),
       bulkSnapshot: bulkSnapshot?.copy(),
-      transactionSnapshot: transactionSnapshot?.copy(),
+      changes: changes.map((change) => change.copy()).toList(),
     );
   }
 
@@ -242,6 +128,24 @@ class WeaponSelectionAction extends UserAction {
   }
 }
 
+/// A change to the strategy settings. Undo and redo write only the settings
+/// it changed, so a teammate's change to another setting is kept.
+class StrategySettingsAction extends UserAction {
+  StrategySettingsAction({
+    required super.id,
+    required this.before,
+    required this.after,
+  }) : super(type: ActionType.edit, group: ActionGroup.strategySettings);
+
+  final StrategySettings before;
+  final StrategySettings after;
+
+  @override
+  StrategySettingsAction copy() {
+    return StrategySettingsAction(id: id, before: before, after: after);
+  }
+}
+
 class ActionProvider extends Notifier<List<UserAction>> {
   static const List<ActionGroup> _clearableGroups = [
     ActionGroup.agent,
@@ -252,13 +156,11 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ActionGroup.utility,
     ActionGroup.lineUp,
   ];
-  static const List<ActionGroup> _transactionGroups = [
-    ..._clearableGroups,
-    ActionGroup.strategySettings,
-  ];
   static const _uuid = Uuid();
   List<UserAction> poppedItems = [];
-  bool _recordingDisabled = false;
+
+  /// While a transaction's mutation runs, the changes it records.
+  List<UserAction>? _transactionChanges;
 
   @override
   List<UserAction> build() {
@@ -266,7 +168,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void addAction(UserAction action) {
-    if (_recordingDisabled) {
+    final transactionChanges = _transactionChanges;
+    if (transactionChanges != null) {
+      transactionChanges.add(action.copy());
       return;
     }
     ref.read(strategyProvider.notifier).setUnsaved();
@@ -277,94 +181,191 @@ class ActionProvider extends Notifier<List<UserAction>> {
     }
     poppedItems = [];
     state = [...state, action.copy()];
-
-    // log("\n Current state \n ${state.toString()}");
   }
 
   void redoAction() {
-    if (poppedItems.isEmpty) {
-      // log("Popped list is empty");
-      return;
-    }
+    if (poppedItems.isEmpty) return;
 
-    final poppedAction = poppedItems.last;
-    if (poppedAction.type == ActionType.bulkDeletion) {
-      _redoBulkAction(poppedAction);
-      return;
-    }
-    if (poppedAction.type == ActionType.transaction) {
-      _redoTransaction(poppedAction);
-      return;
-    }
+    final action = poppedItems.removeLast();
+    final undo = _redo(action);
+    if (undo == null) return;
 
-    switch (poppedAction.group) {
-      case ActionGroup.agent:
-        ref.read(agentProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.ability:
-        ref.read(abilityProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.drawing:
-        ref.read(drawingProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.text:
-        ref.read(textProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.image:
-        ref.read(placedImageProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.utility:
-        ref.read(utilityProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.lineUp:
-        ref.read(lineUpProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.strategySettings:
-        return;
-      case ActionGroup.bulk:
-        return;
+    final cleared = undo.bulkSnapshot?.targetGroups;
+    if (cleared == null) {
+      state = [...state, undo];
+    } else {
+      // The clear sets aside the history it makes unreplayable, as it did
+      // the first time.
+      final historyBefore = state.map((item) => item.copy()).toList();
+      state = [
+        ..._filterActionsForGroups(historyBefore, cleared),
+        _withChanges(
+          undo,
+          undo.changes,
+          bulkSnapshot: BulkActionSnapshot(
+            targetGroups: cleared,
+            actionStateBefore: historyBefore,
+          ),
+        ),
+      ];
     }
-
-    final newState = [...state];
-    newState.add(poppedItems.removeLast());
-    state = newState;
-    // log("\n Current state \n ${state.toString()}");
+    if (action.group == ActionGroup.bulk) {
+      ref.read(abilityBarProvider.notifier).updateData(null);
+    }
   }
 
   void undoAction() {
-    // log("Undo action was triggered");
-
     if (state.isEmpty) return;
-    final currentAction = state.last;
-    if (currentAction.type == ActionType.bulkDeletion) {
-      _undoBulkAction(currentAction);
+
+    final action = state.last;
+    final redo = _undo(action);
+    if (redo != null) poppedItems.add(redo);
+
+    final bulkSnapshot = action.bulkSnapshot;
+    if (bulkSnapshot == null) {
+      state = state.sublist(0, state.length - 1);
       return;
     }
-    if (currentAction.type == ActionType.transaction) {
-      _undoTransaction(currentAction);
-      return;
+    // The history the clear set aside comes back, less what hydration has
+    // since made unreplayable.
+    state = bulkSnapshot.actionStateBefore.map((item) => item.copy()).toList();
+    reconcileHistory();
+  }
+
+  /// Undoes [action] against the page as it is now. Returns the entry that
+  /// redoes exactly what this undo did, or null when it changed nothing.
+  UserAction? _undo(UserAction action) => _replay(action, undo: true);
+
+  /// Redoes [action] against the page as it is now. Returns the entry that
+  /// undoes exactly what this redo did, or null when it changed nothing.
+  UserAction? _redo(UserAction action) => _replay(action, undo: false);
+
+  UserAction? _replay(UserAction action, {required bool undo}) {
+    if (action.group == ActionGroup.bulk) {
+      // Undo runs the changes last to first, redo first to last; only the
+      // ones that changed something are kept, in their original order.
+      final order = undo ? action.changes.reversed : action.changes;
+      final replayed = [
+        for (final change in order)
+          if (_replay(change, undo: undo) case final done?) done,
+      ];
+      if (replayed.isEmpty) return null;
+      return _withChanges(
+        action,
+        undo ? replayed.reversed.toList() : replayed,
+      );
     }
 
-    switch (currentAction.group) {
+    if (action is LineUpGraphAction) {
+      return ref
+          .read(lineUpProvider.notifier)
+          .replayGraphAction(action, undo: undo);
+    }
+
+    final delta = action.objectDelta;
+    if (delta != null) {
+      final current = _currentObjectState(
+        delta.id,
+        delta.after?.kind ?? delta.before?.kind,
+      );
+      switch (action.type) {
+        case ActionType.addition:
+        case ActionType.deletion:
+          final removes = (action.type == ActionType.addition) == undo;
+          if (removes) {
+            if (current == null) return null;
+            _apply(action, undo: undo);
+            // The opposite step puts back the object as it was when taken
+            // away, a teammate's edits included.
+            return _holding(action, current);
+          }
+          // An object that is already there is left as it is.
+          if (current != null) return null;
+        case ActionType.edit:
+          // An object a teammate deleted stays deleted.
+          if (current == null) return null;
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          break;
+      }
+    }
+    _apply(action, undo: undo);
+    return action;
+  }
+
+  /// [action], an addition or deletion, holding [object] as the copy to put
+  /// back.
+  static UserAction _holding(UserAction action, ActionObjectState object) {
+    return UserAction(
+      type: action.type,
+      id: action.id,
+      group: action.group,
+      objectDelta: action.type == ActionType.addition
+          ? ObjectHistoryDelta(after: object)
+          : ObjectHistoryDelta(before: object),
+    );
+  }
+
+  static UserAction _withChanges(
+    UserAction action,
+    List<UserAction> changes, {
+    BulkActionSnapshot? bulkSnapshot,
+  }) {
+    return UserAction(
+      type: action.type,
+      id: action.id,
+      group: action.group,
+      bulkSnapshot: bulkSnapshot ?? action.bulkSnapshot,
+      changes: changes,
+    );
+  }
+
+  void _apply(UserAction action, {required bool undo}) {
+    switch (action.group) {
       case ActionGroup.agent:
-        ref.read(agentProvider.notifier).undoAction(currentAction);
+        final agents = ref.read(agentProvider.notifier);
+        undo ? agents.undoAction(action) : agents.redoAction(action);
       case ActionGroup.ability:
-        ref.read(abilityProvider.notifier).undoAction(currentAction);
+        final abilities = ref.read(abilityProvider.notifier);
+        undo ? abilities.undoAction(action) : abilities.redoAction(action);
       case ActionGroup.drawing:
-        ref.read(drawingProvider.notifier).undoAction(currentAction);
+        final drawings = ref.read(drawingProvider.notifier);
+        undo ? drawings.undoAction(action) : drawings.redoAction(action);
       case ActionGroup.text:
-        ref.read(textProvider.notifier).undoAction(currentAction);
+        final texts = ref.read(textProvider.notifier);
+        undo ? texts.undoAction(action) : texts.redoAction(action);
       case ActionGroup.image:
-        ref.read(placedImageProvider.notifier).undoAction(currentAction);
+        final images = ref.read(placedImageProvider.notifier);
+        undo ? images.undoAction(action) : images.redoAction(action);
       case ActionGroup.utility:
-        ref.read(utilityProvider.notifier).undoAction(currentAction);
+        final utilities = ref.read(utilityProvider.notifier);
+        undo ? utilities.undoAction(action) : utilities.redoAction(action);
       case ActionGroup.lineUp:
-        ref.read(lineUpProvider.notifier).undoAction(currentAction);
+        final lineUps = ref.read(lineUpProvider.notifier);
+        undo ? lineUps.undoAction(action) : lineUps.redoAction(action);
       case ActionGroup.strategySettings:
-        return;
+        if (action is StrategySettingsAction) {
+          undo
+              ? _writeSettings(to: action.before, from: action.after)
+              : _writeSettings(to: action.after, from: action.before);
+        }
       case ActionGroup.bulk:
-        return;
+        break;
     }
-    // log("Undo action was called");
-    final newState = [...state];
-    poppedItems.add(newState.removeLast());
-    state = newState;
-    // log("\n Current state \n ${state.toString()}");
+  }
 
-    // log("\n Popped State \n ${poppedItems.toString()}");
+  void _writeSettings({
+    required StrategySettings to,
+    required StrategySettings from,
+  }) {
+    final written = writeChangedFields(
+      to: to.toJson(),
+      from: from.toJson(),
+      onto: ref.read(strategySettingsProvider).toJson(),
+    );
+    ref
+        .read(strategySettingsProvider.notifier)
+        .fromHive(StrategySettings.fromJson(written));
   }
 
   // Hard reset used by strategy/page lifecycle flows. This is not undoable.
@@ -387,13 +388,26 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void reconcileHistory() {
-    // A lineup edit stays while its target exists or a retained lineup
-    // addition or deletion, on either stack, can bring it back.
-    final lineUpIds = ref
-        .read(lineUpProvider.notifier)
-        .replayableIds([...state, ...poppedItems]);
-    state = _reconcileActions(state, lineUpIds);
-    poppedItems = _reconcileActions(poppedItems, lineUpIds);
+    // An edit stays while its target exists or a retained addition or
+    // deletion, on either stack, can bring it back.
+    final history = _andChanges([...state, ...poppedItems]).toList();
+    final lineUpIds = ref.read(lineUpProvider.notifier).replayableIds(history);
+    final objectIds = {
+      for (final action in history)
+        if (action.type != ActionType.edit && action.objectDelta != null)
+          action.objectDelta!.id,
+    };
+    state = _reconcileActions(state, lineUpIds, objectIds);
+    poppedItems = _reconcileActions(poppedItems, lineUpIds, objectIds);
+  }
+
+  static Iterable<UserAction> _andChanges(
+    Iterable<UserAction> actions,
+  ) sync* {
+    for (final action in actions) {
+      yield action;
+      yield* _andChanges(action.changes);
+    }
   }
 
   void clearAllAsAction() {
@@ -405,41 +419,44 @@ class ActionProvider extends Notifier<List<UserAction>> {
     _performBulkClear([group]);
   }
 
+  /// Runs [mutation] as one undo step made of the per-object changes it
+  /// records. Changing strategy settings records nothing, so when [groups]
+  /// names them they are compared before and after instead.
   void performTransaction({
     required List<ActionGroup> groups,
     required void Function() mutation,
   }) {
-    final targetGroups = <ActionGroup>[];
-    for (final group in groups) {
-      if (_transactionGroups.contains(group) && !targetGroups.contains(group)) {
-        targetGroups.add(group);
-      }
-    }
-    if (targetGroups.isEmpty) {
-      mutation();
-      return;
-    }
+    final settingsBefore = groups.contains(ActionGroup.strategySettings)
+        ? ref.read(strategySettingsProvider)
+        : null;
 
-    final before = _captureBulkSnapshot(targetGroups);
-    final previousRecordingState = _recordingDisabled;
-    _recordingDisabled = true;
+    final outerChanges = _transactionChanges;
+    final changes = _transactionChanges = <UserAction>[];
     try {
       mutation();
     } finally {
-      _recordingDisabled = previousRecordingState;
+      _transactionChanges = outerChanges;
     }
-    final after = _captureBulkSnapshot(targetGroups);
+
+    if (settingsBefore != null) {
+      final settingsAfter = ref.read(strategySettingsProvider);
+      if (!cloudJsonEquivalent(
+          settingsBefore.toJson(), settingsAfter.toJson())) {
+        changes.add(StrategySettingsAction(
+          id: _uuid.v4(),
+          before: settingsBefore,
+          after: settingsAfter,
+        ));
+      }
+    }
+    if (changes.isEmpty) return;
 
     addAction(
       UserAction(
         type: ActionType.transaction,
         id: _uuid.v4(),
         group: ActionGroup.bulk,
-        transactionSnapshot: TransactionSnapshot(
-          targetGroups: targetGroups,
-          before: before,
-          after: after,
-        ),
+        changes: changes,
       ),
     );
   }
@@ -452,98 +469,70 @@ class ActionProvider extends Notifier<List<UserAction>> {
       }
     }
 
-    if (targetGroups.isEmpty || !_hasAnyItemsForGroups(targetGroups)) {
-      return;
-    }
+    final changes = [
+      for (final group in targetGroups) ..._clearChanges(group),
+    ];
+    if (changes.isEmpty) return;
 
-    final snapshot = _captureBulkSnapshot(targetGroups);
-    final filteredActions = _filterActionsForGroups(
-      snapshot.actionStateBefore,
-      targetGroups,
-    );
-
+    final historyBefore = state.map((action) => action.copy()).toList();
     _clearProvidersForGroups(targetGroups);
 
-    state = filteredActions;
+    state = _filterActionsForGroups(historyBefore, targetGroups);
     addAction(
       UserAction(
         type: ActionType.bulkDeletion,
         id: _uuid.v4(),
         group: ActionGroup.bulk,
-        bulkSnapshot: snapshot,
+        bulkSnapshot: BulkActionSnapshot(
+          targetGroups: targetGroups,
+          actionStateBefore: historyBefore,
+        ),
+        changes: changes,
       ),
     );
   }
 
-  bool _hasAnyItemsForGroups(List<ActionGroup> groups) {
-    for (final group in groups) {
-      switch (group) {
-        case ActionGroup.agent:
-          if (ref.read(agentProvider).isNotEmpty) return true;
-        case ActionGroup.ability:
-          if (ref.read(abilityProvider).isNotEmpty) return true;
-        case ActionGroup.drawing:
-          if (ref.read(drawingProvider).elements.isNotEmpty) return true;
-        case ActionGroup.text:
-          if (ref.read(textProvider).isNotEmpty) return true;
-        case ActionGroup.image:
-          if (ref.read(placedImageProvider).images.isNotEmpty) return true;
-        case ActionGroup.utility:
-          if (ref.read(utilityProvider).isNotEmpty) return true;
-        case ActionGroup.lineUp:
-          if (ref.read(lineUpProvider).links.isNotEmpty) return true;
-        case ActionGroup.strategySettings:
-          break;
-        case ActionGroup.bulk:
-          break;
-      }
+  /// The deletions that clear [group]: one per object, topmost first, so
+  /// undo (last to first) puts them back in their order. Lineups are
+  /// removed as one graph change.
+  List<UserAction> _clearChanges(ActionGroup group) {
+    if (group == ActionGroup.lineUp) {
+      final graph = ref.read(lineUpProvider).graph;
+      return [
+        if (graph.links.isNotEmpty)
+          LineUpGraphAction(
+            type: ActionType.deletion,
+            id: _uuid.v4(),
+            before: graph.deepCopy(),
+          ),
+      ];
     }
-    return false;
-  }
 
-  BulkActionSnapshot _captureBulkSnapshot(List<ActionGroup> groups) {
-    final imageIds = groups.contains(ActionGroup.image)
-        ? ref.read(placedImageProvider).images.map((image) => image.id)
-        : const <String>[];
-    final textIds = groups.contains(ActionGroup.text)
-        ? ref.read(textProvider).map((text) => text.id)
-        : const <String>[];
-
-    return BulkActionSnapshot(
-      targetGroups: [...groups],
-      actionStateBefore: state.map((action) => action.copy()).toList(),
-      redoStateBefore: poppedItems.map((action) => action.copy()).toList(),
-      agentSnapshot: groups.contains(ActionGroup.agent)
-          ? ref.read(agentProvider.notifier).takeSnapshot()
-          : null,
-      abilitySnapshot: groups.contains(ActionGroup.ability)
-          ? ref.read(abilityProvider.notifier).takeSnapshot()
-          : null,
-      drawingSnapshot: groups.contains(ActionGroup.drawing)
-          ? ref.read(drawingProvider.notifier).takeSnapshot()
-          : null,
-      textSnapshot: groups.contains(ActionGroup.text)
-          ? ref.read(textProvider.notifier).takeSnapshot()
-          : null,
-      imageSnapshot: groups.contains(ActionGroup.image)
-          ? ref.read(placedImageProvider.notifier).takeSnapshot()
-          : null,
-      utilitySnapshot: groups.contains(ActionGroup.utility)
-          ? ref.read(utilityProvider.notifier).takeSnapshot()
-          : null,
-      lineUpSnapshot: groups.contains(ActionGroup.lineUp)
-          ? ref.read(lineUpProvider.notifier).takeSnapshot()
-          : null,
-      strategySettingsSnapshot: groups.contains(ActionGroup.strategySettings)
-          ? ref.read(strategySettingsProvider)
-          : null,
-      imageSizeSnapshot: ref
-          .read(imageWidgetSizeProvider.notifier)
-          .takeSnapshotForIds(imageIds),
-      textHeightSnapshot: ref
-          .read(textWidgetHeightProvider.notifier)
-          .takeSnapshotForIds(textIds),
-    );
+    final Iterable<ActionObjectState> objects = switch (group) {
+      ActionGroup.agent => ref.read(agentProvider).map(ActionObjectState.agent),
+      ActionGroup.ability =>
+        ref.read(abilityProvider).map(ActionObjectState.ability),
+      ActionGroup.drawing =>
+        ref.read(drawingProvider).elements.map(ActionObjectState.drawing),
+      ActionGroup.text => ref.read(textProvider).map(ActionObjectState.text),
+      ActionGroup.image =>
+        ref.read(placedImageProvider).images.map(ActionObjectState.image),
+      ActionGroup.utility =>
+        ref.read(utilityProvider).map(ActionObjectState.utility),
+      ActionGroup.lineUp ||
+      ActionGroup.strategySettings ||
+      ActionGroup.bulk =>
+        const [],
+    };
+    return [
+      for (final object in objects.toList().reversed)
+        UserAction(
+          type: ActionType.deletion,
+          id: object.id,
+          group: group,
+          objectDelta: ObjectHistoryDelta(before: object),
+        ),
+    ];
   }
 
   List<UserAction> _filterActionsForGroups(
@@ -559,18 +548,14 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
   bool _actionIntersectsGroups(
       UserAction action, Set<ActionGroup> targetGroups) {
-    if (action.group == ActionGroup.bulk) {
-      final bulkSnapshot = action.bulkSnapshot;
-      if (bulkSnapshot != null) {
-        return bulkSnapshot.targetGroups.any(targetGroups.contains);
-      }
-      final transactionSnapshot = action.transactionSnapshot;
-      if (transactionSnapshot != null) {
-        return transactionSnapshot.targetGroups.any(targetGroups.contains);
-      }
-      return false;
+    final bulkSnapshot = action.bulkSnapshot;
+    if (bulkSnapshot != null) {
+      return bulkSnapshot.targetGroups.any(targetGroups.contains);
     }
-
+    if (action.group == ActionGroup.bulk) {
+      return action.changes
+          .any((change) => _actionIntersectsGroups(change, targetGroups));
+    }
     return targetGroups.contains(action.group);
   }
 
@@ -599,116 +584,40 @@ class ActionProvider extends Notifier<List<UserAction>> {
     }
   }
 
-  void _restoreBulkSnapshot(BulkActionSnapshot snapshot) {
-    if (snapshot.agentSnapshot != null) {
-      ref.read(agentProvider.notifier).restoreSnapshot(snapshot.agentSnapshot!);
-    }
-    if (snapshot.abilitySnapshot != null) {
-      ref
-          .read(abilityProvider.notifier)
-          .restoreSnapshot(snapshot.abilitySnapshot!);
-    }
-    if (snapshot.drawingSnapshot != null) {
-      ref
-          .read(drawingProvider.notifier)
-          .restoreSnapshot(snapshot.drawingSnapshot!);
-    }
-    if (snapshot.textSnapshot != null) {
-      ref.read(textProvider.notifier).restoreSnapshot(snapshot.textSnapshot!);
-    }
-    if (snapshot.imageSnapshot != null) {
-      ref
-          .read(placedImageProvider.notifier)
-          .restoreSnapshot(snapshot.imageSnapshot!);
-    }
-    if (snapshot.utilitySnapshot != null) {
-      ref
-          .read(utilityProvider.notifier)
-          .restoreSnapshot(snapshot.utilitySnapshot!);
-    }
-    if (snapshot.lineUpSnapshot != null) {
-      ref
-          .read(lineUpProvider.notifier)
-          .restoreSnapshot(snapshot.lineUpSnapshot!);
-    }
-    if (snapshot.strategySettingsSnapshot != null) {
-      ref
-          .read(strategySettingsProvider.notifier)
-          .fromHive(snapshot.strategySettingsSnapshot!);
-    }
-
-    if (snapshot.imageSizeSnapshot.isNotEmpty) {
-      ref
-          .read(imageWidgetSizeProvider.notifier)
-          .restoreSnapshot(snapshot.imageSizeSnapshot);
-    }
-    if (snapshot.textHeightSnapshot.isNotEmpty) {
-      ref
-          .read(textWidgetHeightProvider.notifier)
-          .restoreSnapshot(snapshot.textHeightSnapshot);
-    }
-  }
-
-  void _undoBulkAction(UserAction action) {
-    final snapshot = action.bulkSnapshot;
-    if (snapshot == null) return;
-
-    _restoreBulkSnapshot(snapshot);
-    poppedItems.add(action);
-    state = snapshot.actionStateBefore.map((item) => item.copy()).toList();
-  }
-
-  void _redoBulkAction(UserAction action) {
-    final snapshot = action.bulkSnapshot;
-    if (snapshot == null) return;
-
-    _clearProvidersForGroups(snapshot.targetGroups);
-
-    final newState = _filterActionsForGroups(state, snapshot.targetGroups)
-      ..add(poppedItems.removeLast());
-
-    ref.read(abilityBarProvider.notifier).updateData(null);
-    state = newState;
-  }
-
-  void _undoTransaction(UserAction action) {
-    final snapshot = action.transactionSnapshot;
-    if (snapshot == null) return;
-
-    _restoreBulkSnapshot(snapshot.before);
-    final newState = [...state];
-    poppedItems.add(newState.removeLast());
-    state = newState;
-  }
-
-  void _redoTransaction(UserAction action) {
-    final snapshot = action.transactionSnapshot;
-    if (snapshot == null) return;
-
-    _restoreBulkSnapshot(snapshot.after);
-    final newState = [...state];
-    newState.add(poppedItems.removeLast());
-    ref.read(abilityBarProvider.notifier).updateData(null);
-    state = newState;
-  }
-
   List<UserAction> _reconcileActions(
     List<UserAction> actions,
     Set<String> lineUpIds,
+    Set<String> objectIds,
   ) {
-    final reconciled = <UserAction>[];
-    for (final action in actions) {
-      if (action.type == ActionType.edit && action.objectDelta != null) {
-        if (!_canKeepEditAction(action.objectDelta!)) {
-          continue;
-        }
-      }
-      if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
-        continue;
-      }
-      reconciled.add(action.copy());
+    return [
+      for (final action in actions)
+        if (_reconciled(action, lineUpIds, objectIds) case final kept?) kept,
+    ];
+  }
+
+  /// [action] as far as it can still be replayed, or null when it cannot.
+  /// A transaction or clear keeps the changes that stay and goes with the
+  /// last of them.
+  UserAction? _reconciled(
+    UserAction action,
+    Set<String> lineUpIds,
+    Set<String> objectIds,
+  ) {
+    if (action.group == ActionGroup.bulk) {
+      final changes = _reconcileActions(action.changes, lineUpIds, objectIds);
+      return changes.isEmpty ? null : _withChanges(action, changes);
     }
-    return reconciled;
+    final delta = action.objectDelta;
+    if (action.type == ActionType.edit &&
+        delta != null &&
+        !objectIds.contains(delta.id) &&
+        !_canKeepEditAction(delta)) {
+      return null;
+    }
+    if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
+      return null;
+    }
+    return action.copy();
   }
 
   bool _canKeepEditAction(ObjectHistoryDelta delta) {

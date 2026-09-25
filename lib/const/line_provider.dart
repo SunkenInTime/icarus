@@ -1308,12 +1308,73 @@ class LineUpProvider extends Notifier<LineUpState> {
     };
   }
 
+  /// Undoes or redoes [action] on the graph as it is now and returns the
+  /// action that reverses exactly what this did: the links it took out, as
+  /// they were, and the links it put back, as they now are, each with its
+  /// endpoints. Links already gone are not taken out and links already there
+  /// are left as they are; when that leaves nothing to do, returns null.
+  LineUpGraphAction? replayGraphAction(
+    LineUpGraphAction action, {
+    required bool undo,
+  }) {
+    final from = undo ? action.after : action.before;
+    final to = undo ? action.before : action.after;
+    final kept = to.links.map((link) => link.id).toSet();
+    final removing = {
+      for (final link in from.links)
+        if (!kept.contains(link.id) && state.linkById(link.id) != null) link.id,
+    };
+    final inserting = {
+      for (final link in to.links)
+        if (state.linkById(link.id) == null) link.id,
+    };
+    if (removing.isEmpty && inserting.isEmpty) return null;
+
+    final removed = _currentEntries(removing);
+    _apply(
+      from: removed,
+      to: LineUpGraph(
+        origins: to.origins,
+        landings: to.landings,
+        links: [
+          for (final link in to.links)
+            if (inserting.contains(link.id)) link,
+        ],
+      ),
+    );
+    final inserted = _currentEntries(inserting);
+    return LineUpGraphAction(
+      type: action.type,
+      id: action.id,
+      before: undo ? inserted : removed,
+      after: undo ? removed : inserted,
+    );
+  }
+
+  /// A copy of the links [linkIds] and the origins and landings they join,
+  /// as they are now.
+  LineUpGraph _currentEntries(Set<String> linkIds) {
+    final links =
+        state.links.where((link) => linkIds.contains(link.id)).toList();
+    final originIds = links.map((link) => link.originId).toSet();
+    final landingIds = links.map((link) => link.landingId).toSet();
+    return LineUpGraph(
+      origins: state.origins
+          .where((origin) => originIds.contains(origin.id))
+          .toList(),
+      landings: state.landings
+          .where((landing) => landingIds.contains(landing.id))
+          .toList(),
+      links: links,
+    ).deepCopy();
+  }
+
   void undoAction(UserAction action) {
     switch (action) {
       case WeaponSelectionAction():
         _applyOriginWeapon(action.id, action.before);
       case LineUpGraphAction():
-        _apply(from: action.after, to: action.before);
+        replayGraphAction(action, undo: true);
       case LineUpEditAction():
         _writeField(action.field, action.targetId, action.before);
       default:
@@ -1326,7 +1387,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       case WeaponSelectionAction():
         _applyOriginWeapon(action.id, action.after);
       case LineUpGraphAction():
-        _apply(from: action.before, to: action.after);
+        replayGraphAction(action, undo: false);
       case LineUpEditAction():
         _writeField(action.field, action.targetId, action.after);
       default:

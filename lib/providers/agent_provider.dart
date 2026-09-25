@@ -426,9 +426,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
         _upsertAgent(clonePlacedAgentNode(before));
         return;
       case ActionType.edit:
-        final before = delta.before?.agent;
-        if (before == null) return;
-        _upsertAgent(clonePlacedAgentNode(before));
+        _writeEdit(action.id, delta.undoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -473,14 +471,23 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
         removeAgent(action.id);
         return;
       case ActionType.edit:
-        final after = delta.after?.agent;
-        if (after == null) return;
-        _upsertAgent(clonePlacedAgentNode(after));
+        _writeEdit(action.id, delta.redoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
         return;
     }
+  }
+
+  /// Writes an edit onto the agent as it is now. An agent that is gone (a
+  /// teammate deleted it) stays gone.
+  void _writeEdit(
+    String id,
+    ActionObjectState Function(ActionObjectState current) write,
+  ) {
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
+    _upsertAgent(write(ActionObjectState.agent(state[index])).agent!);
   }
 
   String toJson() {

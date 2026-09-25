@@ -322,9 +322,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
         _upsertImage(clonePlacedImage(before));
         return;
       case ActionType.edit:
-        final before = delta.before?.image;
-        if (before == null) return;
-        _upsertImage(clonePlacedImage(before));
+        _writeEdit(action.id, delta.undoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -365,9 +363,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
         removeImage(action.id);
         return;
       case ActionType.edit:
-        final after = delta.after?.image;
-        if (after == null) return;
-        _upsertImage(clonePlacedImage(after));
+        _writeEdit(action.id, delta.redoOnto);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -574,6 +570,17 @@ class PlacedImageProvider extends Notifier<ImageState> {
     state = state.copyWith(
       images: snapshot.images.map((image) => clonePlacedImage(image)).toList(),
     );
+  }
+
+  /// Writes an edit onto the image as it is now. An image that is gone
+  /// (a teammate deleted it) stays gone.
+  void _writeEdit(
+    String id,
+    ActionObjectState Function(ActionObjectState current) write,
+  ) {
+    final index = PlacedWidget.getIndexByID(id, state.images);
+    if (index < 0) return;
+    _upsertImage(write(ActionObjectState.image(state.images[index])).image!);
   }
 
   void _upsertImage(PlacedImage image) {
