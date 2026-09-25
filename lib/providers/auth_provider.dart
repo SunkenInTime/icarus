@@ -3,11 +3,13 @@ import 'dart:developer';
 
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -35,40 +37,94 @@ bool isConvexUnauthenticatedError(Object error) {
   return isTypedConvexUnauthenticatedError(error);
 }
 
-String redactAuthUri(Uri uri) {
-  String redactFragment(String fragment) {
-    if (fragment.isEmpty) {
-      return fragment;
-    }
+/// Credentials a deep link can carry besides [_sensitiveAuthKeys]: a legacy
+/// share link's `?token=`. (A share `?code=` is already covered.)
+const _sensitiveLinkKeys = {..._sensitiveAuthKeys, 'token'};
 
-    final params = Uri.splitQueryString(fragment);
-    if (params.isEmpty) {
+/// [uri] safe to log: sign-in secrets and share codes (query, fragment, and
+/// the `/share/<code>` path) replaced with `<redacted>`. A share code is a
+/// credential: anyone holding it can redeem the shared strategy or folder.
+String redactDeepLinkUri(Uri uri) {
+  Map<String, String> redactParameters(Map<String, String> params) => {
+        for (final entry in params.entries)
+          entry.key: _sensitiveLinkKeys.contains(entry.key.toLowerCase())
+              ? '<redacted>'
+              : entry.value,
+      };
+
+  String? redactFragment(String fragment) {
+    if (fragment.isEmpty) {
+      return null;
+    }
+    try {
+      final params = Uri.splitQueryString(fragment);
+      if (params.isEmpty) {
+        return '<redacted>';
+      }
+      final hasSecret = params.keys
+          .any((key) => _sensitiveLinkKeys.contains(key.toLowerCase()));
+      // Leave a harmless fragment (a Flutter `#/route`) exactly as it was.
+      return hasSecret
+          ? Uri(queryParameters: redactParameters(params)).query
+          : fragment;
+    } on FormatException {
       return '<redacted>';
     }
-
-    return params.entries.map((entry) {
-      final value = _sensitiveAuthKeys.contains(entry.key.toLowerCase())
-          ? '<redacted>'
-          : entry.value;
-      return '${Uri.encodeQueryComponent(entry.key)}='
-          '${Uri.encodeQueryComponent(value)}';
-    }).join('&');
   }
 
-  final queryParameters = <String, String>{};
-  for (final entry in uri.queryParameters.entries) {
-    queryParameters[entry.key] =
-        _sensitiveAuthKeys.contains(entry.key.toLowerCase())
-            ? '<redacted>'
-            : entry.value;
+  Map<String, String>? redactQuery() {
+    if (!uri.hasQuery) {
+      return null;
+    }
+    try {
+      final params = uri.queryParameters;
+      return params.isEmpty ? null : redactParameters(params);
+    } on FormatException {
+      return const {'<redacted>': ''};
+    }
+  }
+
+  // Everything after a `share` segment (or in an `icarus://share/…` path)
+  // is the code.
+  final List<String> segments;
+  try {
+    segments = uri.pathSegments;
+  } on FormatException {
+    // A path that does not decode (e.g. `/share/%FF`) cannot be redacted
+    // piece by piece, so none of it is logged.
+    return unparseableLinkPlaceholder;
+  }
+  var afterShare =
+      uri.scheme.toLowerCase() == 'icarus' && uri.host.toLowerCase() == 'share';
+  final pathSegments = <String>[];
+  for (final segment in segments) {
+    pathSegments.add(afterShare ? '<redacted>' : segment);
+    afterShare = afterShare || segment.toLowerCase() == 'share';
   }
 
   return uri
       .replace(
-        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+        pathSegments: segments.isEmpty ? null : pathSegments,
+        queryParameters: redactQuery(),
         fragment: redactFragment(uri.fragment),
       )
       .toString();
+}
+
+/// Logged in place of a link that cannot be parsed or decoded.
+const unparseableLinkPlaceholder = '<unparseable link>';
+
+/// A launch argument safe to log. Anything shaped like a link goes through
+/// [redactDeepLinkUri] (or becomes [unparseableLinkPlaceholder] if it does not
+/// parse); anything else, such as a file path, is logged as is.
+String redactLaunchArgument(String argument) {
+  final looksLikeLink = argument.contains('://') ||
+      argument.trimLeft().toLowerCase().startsWith('icarus:');
+  if (!looksLikeLink) {
+    return argument;
+  }
+  final uri = Uri.tryParse(argument.trim());
+  return uri == null ? unparseableLinkPlaceholder : redactDeepLinkUri(uri);
 }
 
 String redactAuthDiagnosticText(Object value) {
@@ -361,13 +417,13 @@ class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
   Future<AuthResponse> refreshSession() => _client.auth.refreshSession();
 }
 
-class AuthProvider extends Notifier<AppAuthState> {
-  static final Uri _discordRedirectUri = Uri(
-    scheme: 'icarus',
-    host: 'auth',
-    path: '/callback',
-  );
+/// The redirect this build asks Supabase to return to after Discord sign-in:
+/// the `icarus://` deep link on desktop, the page's own origin on web.
+Uri currentAuthRedirectUri() {
+  return kIsWeb ? webAuthRedirectUri(Uri.base) : nativeAuthRedirectUri;
+}
 
+class AuthProvider extends Notifier<AppAuthState> {
   StreamSubscription<AuthState>? _supabaseAuthSub;
   AuthProviderAuthHandle? _convexAuthHandle;
   Future<void>? _inFlightConvexSetup;
@@ -492,21 +548,6 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
   }
 
-  bool isAuthCallbackUri(Uri uri) {
-    final isIcarusScheme = uri.scheme.toLowerCase() == 'icarus';
-    final isAuthCallback = uri.host.toLowerCase() == 'auth' &&
-        uri.path.toLowerCase() == '/callback';
-    if (!isIcarusScheme || !isAuthCallback) {
-      return false;
-    }
-
-    final hasAuthPayload = uri.fragment.contains('access_token') ||
-        uri.queryParameters.containsKey('code') ||
-        uri.fragment.contains('error_description') ||
-        uri.queryParameters.containsKey('error_description');
-    return hasAuthPayload;
-  }
-
   Future<void> signInWithDiscord() async {
     state = state.copyWith(
       isLoading: true,
@@ -518,7 +559,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     try {
       final launched = await _supabaseApi.signInWithOAuth(
         OAuthProvider.discord,
-        redirectTo: _discordRedirectUri.toString(),
+        redirectTo: currentAuthRedirectUri().toString(),
         authScreenLaunchMode: LaunchMode.externalApplication,
         scopes: 'identify email',
       );
@@ -741,17 +782,30 @@ class AuthProvider extends Notifier<AppAuthState> {
     }
   }
 
+  /// Returns true when [uri] was an auth callback, including one rejected for
+  /// carrying session tokens, so the caller can scrub it from the address bar.
   Future<bool> handleAuthCallbackUri(Uri uri, {required String source}) async {
-    if (!isAuthCallbackUri(uri)) {
-      AppErrorReporter.reportInfo(
-        'Deep link was not an auth callback [$source]: ${redactAuthUri(uri)}',
-        source: 'auth',
-      );
-      return false;
+    switch (
+        classifyAuthCallbackUri(uri, redirectUri: currentAuthRedirectUri())) {
+      case AuthCallback.none:
+        AppErrorReporter.reportInfo(
+          'Deep link was not an auth callback [$source]: ${redactDeepLinkUri(uri)}',
+          source: 'auth',
+        );
+        return false;
+      case AuthCallback.injectedTokens:
+        AppErrorReporter.reportInfo(
+          'Rejected auth callback carrying session tokens [$source]: '
+          '${redactDeepLinkUri(uri)}',
+          source: 'auth',
+        );
+        return true;
+      case AuthCallback.signInResult:
+        break;
     }
 
     AppErrorReporter.reportInfo(
-      'Handling auth callback [$source]: ${redactAuthUri(uri)}',
+      'Handling auth callback [$source]: ${redactDeepLinkUri(uri)}',
       source: 'auth',
     );
 
@@ -766,7 +820,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       await _supabaseApi.getSessionFromUrl(uri);
       state = state.copyWith(isLoading: false);
       log(
-        'Handled auth callback [$source]: ${redactAuthUri(uri)}',
+        'Handled auth callback [$source]: ${redactDeepLinkUri(uri)}',
         name: 'auth',
       );
       AppErrorReporter.reportInfo(
@@ -786,7 +840,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         stackTrace: safeStackTrace,
       );
       AppErrorReporter.reportError(
-        'Failed auth callback [$source]: ${redactAuthUri(uri)}',
+        'Failed auth callback [$source]: ${redactDeepLinkUri(uri)}',
         source: 'auth',
         error: safeError,
         stackTrace: safeStackTrace,

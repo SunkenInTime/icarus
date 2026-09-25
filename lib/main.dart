@@ -38,7 +38,10 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
+import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_sign_out_coordinator.dart';
@@ -70,6 +73,22 @@ final List<Uri> _bufferedDeepLinks = <Uri>[];
 bool _hasDeepLinkListener = false;
 
 Future<void> _initializeDeepLinkHandling() async {
+  if (kIsWeb) {
+    // A browser has no OS deep links: the page's own URL is the only link
+    // (app_links' web plugin just echoes it). It matters when it is Supabase
+    // returning from Discord sign-in, or a /share/<code> link.
+    final pageUri = Uri.base;
+    final authCallback = classifyAuthCallbackUri(
+      pageUri,
+      redirectUri: currentAuthRedirectUri(),
+    );
+    if (authCallback != AuthCallback.none ||
+        isIcarusShareUri(pageUri, currentOrigin: currentShareOrigin())) {
+      _publishDeepLink(pageUri, source: 'web_location');
+    }
+    return;
+  }
+
   try {
     final initialLink = await _appLinks.getInitialLink();
     if (initialLink != null) {
@@ -98,7 +117,7 @@ Future<void> _initializeDeepLinkHandling() async {
 }
 
 void _publishDeepLink(Uri uri, {required String source}) {
-  final redactedUri = redactAuthUri(uri);
+  final redactedUri = redactDeepLinkUri(uri);
   developer.log('Deep link received [$source]: $redactedUri',
       name: 'deep_link');
   AppErrorReporter.reportInfo(
@@ -141,9 +160,6 @@ Future<void> main(List<String> args) async {
 
       await registerDeepLinkProtocol('icarus');
       await _initializeDeepLinkHandling();
-      if (kIsWeb && isIcarusShareUri(Uri.base)) {
-        _publishDeepLink(Uri.base, source: 'web_location');
-      }
 
       await ensureIcarusSingleInstance(
         launch.fileOpenArgs,
@@ -379,7 +395,8 @@ class _MyAppState extends ConsumerState<MyApp> {
   }) async {
     final uri = Uri.tryParse(argument);
     if (uri != null &&
-        (uri.scheme.toLowerCase() == 'icarus' || isIcarusShareUri(uri))) {
+        (uri.scheme.toLowerCase() == 'icarus' ||
+            isIcarusShareUri(uri, currentOrigin: currentShareOrigin()))) {
       _handleIncomingUri(uri, source: source);
       return;
     }
@@ -391,13 +408,13 @@ class _MyAppState extends ConsumerState<MyApp> {
     final uriText = uri.toString();
     if (!_processedDeepLinks.add(uriText)) {
       developer.log(
-        'Ignoring duplicate deep link [$source]: ${redactAuthUri(uri)}',
+        'Ignoring duplicate deep link [$source]: ${redactDeepLinkUri(uri)}',
         name: 'deep_link',
       );
       return;
     }
 
-    final redactedUri = redactAuthUri(uri);
+    final redactedUri = redactDeepLinkUri(uri);
     developer.log('Handling deep link [$source]: $redactedUri',
         name: 'deep_link');
     AppErrorReporter.reportInfo(
@@ -410,6 +427,9 @@ class _MyAppState extends ConsumerState<MyApp> {
           .read(authProvider.notifier)
           .handleAuthCallbackUri(uri, source: source);
       if (handledAuth) {
+        if (kIsWeb) {
+          replaceBrowserUrl(withoutAuthCallbackParameters(Uri.base));
+        }
         return;
       }
       await ref
@@ -457,7 +477,7 @@ class _MyAppState extends ConsumerState<MyApp> {
 
       for (final argument in widget.data) {
         AppErrorReporter.reportInfo(
-          'Startup argument: $argument',
+          'Startup argument: ${redactLaunchArgument(argument)}',
           source: 'main.startupArgs',
         );
         unawaited(_handleIncomingArgument(argument, source: 'startup_args'));
@@ -469,7 +489,7 @@ class _MyAppState extends ConsumerState<MyApp> {
 
       for (final argument in args) {
         AppErrorReporter.reportInfo(
-          'Second-instance argument: $argument',
+          'Second-instance argument: ${redactLaunchArgument(argument)}',
           source: 'main.secondInstanceArgs',
         );
         unawaited(_handleIncomingArgument(argument, source: 'second_instance'));
