@@ -110,14 +110,79 @@ class _PublicEnumAdapter extends TypeAdapter<int> {
       throw UnsupportedError('read only');
 }
 
+/// 3.2.3's AgentType adapter, from the tag: bytes 0-27 in this order, and
+/// every other byte decodes as Jett.
+const _publicAgentOrder = [
+  'jett', 'raze', 'pheonix', 'astra', 'clove', 'breach', 'iso', 'viper', //
+  'deadlock', 'yoru', 'sova', 'skye', 'kayo', 'killjoy', 'brimstone',
+  'cypher', 'chamber', 'fade', 'gekko', 'harbor', 'neon', 'omen', 'reyna',
+  'sage', 'vyse', 'tejo', 'waylay', 'veto',
+];
+
+/// Ability list lengths in 3.2.3's AgentData table: four per agent, plus
+/// Astra's Astral Form star at index 4.
+int _publicAbilityCount(String agent) => agent == 'astra' ? 5 : 4;
+
+class _PublicAgentTypeAdapter extends TypeAdapter<String> {
+  const _PublicAgentTypeAdapter();
+
+  @override
+  final int typeId = 7;
+
+  @override
+  String read(BinaryReader reader) {
+    final byte = reader.readByte();
+    return byte < _publicAgentOrder.length ? _publicAgentOrder[byte] : 'jett';
+  }
+
+  @override
+  void write(BinaryWriter writer, String obj) =>
+      throw UnsupportedError('read only');
+}
+
+/// An ability as 3.2.3 resolved it.
+class _PublicAbility {
+  const _PublicAbility(this.agent, this.index);
+
+  final String agent;
+  final int index;
+}
+
+/// 3.2.3's AbilityInfoAdapter: `AgentData.agents[agentType]?.abilities[index]`
+/// followed by `ability!`. An index past the agent's list throws RangeError
+/// and fails the whole strategy record.
+class _PublicAbilityInfoAdapter extends TypeAdapter<_PublicAbility> {
+  const _PublicAbilityInfoAdapter();
+
+  @override
+  final int typeId = 9;
+
+  @override
+  _PublicAbility read(BinaryReader reader) {
+    final count = reader.readByte();
+    final fields = <int, dynamic>{
+      for (var i = 0; i < count; i++) reader.readByte(): reader.read(),
+    };
+    final agent = fields[0] as String;
+    final index = fields[1] as int;
+    final abilities = List.generate(_publicAbilityCount(agent), (i) => i);
+    return _PublicAbility(agent, abilities[index]);
+  }
+
+  @override
+  void write(BinaryWriter writer, _PublicAbility obj) =>
+      throw UnsupportedError('read only');
+}
+
 /// A registry holding exactly the adapters the public 3.2.3 build registers:
-/// its generated types (0-8, 11-28), AbilityInfo (9), and the Color (200)
+/// its generated types (0-8, 11-28), AbilityInfo (9) with its real lookup,
+/// the real AgentType decode, and the Color (200)
 /// and TimeOfDay (201) adapters hive_ce_flutter 2.3.4 adds in initFlutter.
 /// Decoding with it throws on any typeId that build cannot read.
 HiveImpl _publicBuildRegistry() {
-  const enumTypeIds = {6, 7, 16, 19, 23, 25};
+  const enumTypeIds = {6, 16, 19, 23, 25};
   const recordTypeIds = {
-    0, 1, 2, 3, 4, 5, 8, 9, 11, 12, 13, 14, 15, 17, 18, 20, 21, 22, //
+    0, 1, 2, 3, 4, 5, 8, 11, 12, 13, 14, 15, 17, 18, 20, 21, 22, //
     24, 26, 27, 28,
   };
   final registry = HiveImpl();
@@ -133,6 +198,8 @@ HiveImpl _publicBuildRegistry() {
       registry.registerAdapter(_PublicRecordAdapter(typeId));
     }
     registry
+      ..registerAdapter(const _PublicAgentTypeAdapter())
+      ..registerAdapter(const _PublicAbilityInfoAdapter())
       ..registerAdapter(ColorAdapter(typeId: 200))
       ..registerAdapter(const TimeOfDayAdapter(typeId: 201));
   } finally {
@@ -316,6 +383,7 @@ void main() {
     expect(fields[17], isNull);
     expect(fields[18], isA<String>());
     expect(fields[19], isA<String>());
+    expect(fields[20], isA<String>());
 
     final restored = adapter.read(BinaryReaderImpl(bytes, Hive));
     expect(restored.drawingData.map((drawing) => drawing.id),
@@ -377,7 +445,7 @@ void main() {
     );
 
     expect(fields.keys.toSet(), {
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 18, 19, //
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 18, 19, 20, //
     });
     final legacyAgents = (fields[4] as List).cast<_PublicRecord>();
     expect(legacyAgents.map((agent) => agent.fields[2]), ['agent-plain']);
@@ -423,5 +491,123 @@ void main() {
       restored.lineUpOrigins.single.agent.weapon,
       WeaponType.sheriff,
     );
+  });
+
+  group('agents and abilities newer than 3.2.3', () {
+    PlacedAbility abilityOf(AgentType type, int index) => PlacedAbility(
+          id: 'ability-${type.name}-$index',
+          data: AgentData.agents[type]!.abilities[index],
+          position: const Offset(5, 5),
+        );
+
+    test('the 3.2.3 lookup crashes on a Miks ultimate written raw', () {
+      final ult = abilityOf(AgentType.miks, 4);
+      expect(
+        () => _readAsPublicBuild(_writeAdapter(PlacedAbilityAdapter(), ult)),
+        throwsA(isA<RangeError>()),
+      );
+    });
+
+    test('every legacy slot resolves to the right agent or is left out', () {
+      final abilities = [
+        for (final agent in AgentData.agents.values)
+          for (var i = 0; i < agent.abilities.length; i++)
+            abilityOf(agent.type, i),
+      ];
+      final agents = [
+        for (final type in AgentType.values)
+          PlacedAgent(
+            id: 'agent-${type.name}',
+            type: type,
+            position: const Offset(1, 1),
+          ),
+      ];
+      final graph = LineUpGraph(
+        origins: [
+          for (final agent in agents)
+            LineUpOrigin(id: 'origin-${agent.type.name}', agent: agent),
+        ],
+        landings: [
+          for (final ability in abilities)
+            LineUpLanding(id: 'landing-${ability.id}', ability: ability),
+        ],
+        links: [
+          for (final ability in abilities)
+            LineUpLink(
+              id: 'link-${ability.id}',
+              originId: 'origin-${ability.data.type.name}',
+              landingId: 'landing-${ability.id}',
+            ),
+        ],
+      );
+      final page = StrategyPage(
+        id: 'page-roster',
+        name: 'Roster',
+        drawingData: const [],
+        agentData: agents,
+        abilityData: abilities,
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        sortIndex: 0,
+        isAttack: true,
+        settings: StrategySettings(),
+        lineUpOrigins: graph.origins,
+        lineUpLandings: graph.landings,
+        lineUpLinks: graph.links,
+      );
+      final bytes = _writeAdapter(StrategyPageAdapter(), page);
+
+      final fields = _readAsPublicBuild(bytes);
+
+      String sourceAgentOf(String id) => id.split('-')[1];
+      final legacyAgents = (fields[4] as List).cast<_PublicRecord>();
+      for (final agent in legacyAgents) {
+        final id = agent.fields[2] as String;
+        expect(agent.fields[0], sourceAgentOf(id), reason: id);
+      }
+      expect(
+        legacyAgents.map((agent) => agent.fields[0]).toSet(),
+        _publicAgentOrder.toSet(),
+      );
+      final legacyAbilities = (fields[5] as List).cast<_PublicRecord>();
+      for (final ability in legacyAbilities) {
+        final id = ability.fields[3] as String;
+        final resolved = ability.fields[0] as _PublicAbility;
+        expect(resolved.agent, sourceAgentOf(id), reason: id);
+      }
+      expect(
+        legacyAbilities.length,
+        _publicAgentOrder.map(_publicAbilityCount).reduce((a, b) => a + b),
+      );
+      final legacyLineUps = (fields[11] as List).cast<_PublicRecord>();
+      expect(legacyLineUps, hasLength(legacyAbilities.length));
+      for (final lineUp in legacyLineUps) {
+        final agent = lineUp.fields[1] as _PublicRecord;
+        final ability = lineUp.fields[2] as _PublicRecord;
+        final resolved = ability.fields[0] as _PublicAbility;
+        expect(agent.fields[0], resolved.agent);
+      }
+
+      // This build keeps every agent, ability and lineup through the mirrors.
+      final restored =
+          StrategyPageAdapter().read(BinaryReaderImpl(bytes, Hive));
+      expect(
+        restored.agentData.map((agent) => agent.id),
+        agents.map((agent) => agent.id),
+      );
+      expect(
+        restored.abilityData.map((ability) => ability.id),
+        abilities.map((ability) => ability.id),
+      );
+      expect(
+        restored.abilityData
+            .firstWhere((ability) => ability.id == 'ability-miks-4')
+            .data
+            .index,
+        4,
+      );
+      expect(restored.lineUpLinks, hasLength(abilities.length));
+    });
   });
 }

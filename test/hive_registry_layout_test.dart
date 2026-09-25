@@ -297,11 +297,12 @@ void main() {
 
       // Slots older readers decode must only hold types they know.
       expect(fields.keys.toSet(), {
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 18, 19, //
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 18, 19, 20, //
       });
       expect(fields[13], isA<String>());
       expect(fields[18], isA<String>());
       expect(fields[19], isA<String>());
+      expect(fields[20], isA<String>());
       expect(
         _json(jsonDecode(fields[19] as String)),
         _json(page.lineUpGraph.toJson()),

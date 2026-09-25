@@ -18,6 +18,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -218,6 +219,51 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
 const int _pageAgentsJsonField = 13;
 const int _pageDrawingsJsonField = 18;
 const int _pageLineUpGraphJsonField = 19;
+const int _pageAbilitiesJsonField = 20;
+
+/// Every agent the public 3.2.3 build knows, with its ability count. That
+/// build decodes an unknown AgentType as Jett and resolves an ability by
+/// `agents[type].abilities[index]`, so a newer agent would load as the wrong
+/// agent, or crash the whole strategy when the index is out of range. Frozen
+/// at 3.2.3: never add to it.
+const Map<AgentType, int> _publicBuildAbilityCounts = {
+  AgentType.jett: 4,
+  AgentType.raze: 4,
+  AgentType.pheonix: 4,
+  AgentType.astra: 5,
+  AgentType.clove: 4,
+  AgentType.breach: 4,
+  AgentType.iso: 4,
+  AgentType.viper: 4,
+  AgentType.deadlock: 4,
+  AgentType.yoru: 4,
+  AgentType.sova: 4,
+  AgentType.skye: 4,
+  AgentType.kayo: 4,
+  AgentType.killjoy: 4,
+  AgentType.brimstone: 4,
+  AgentType.cypher: 4,
+  AgentType.chamber: 4,
+  AgentType.fade: 4,
+  AgentType.gekko: 4,
+  AgentType.harbor: 4,
+  AgentType.neon: 4,
+  AgentType.omen: 4,
+  AgentType.reyna: 4,
+  AgentType.sage: 4,
+  AgentType.vyse: 4,
+  AgentType.tejo: 4,
+  AgentType.waylay: 4,
+  AgentType.veto: 4,
+};
+
+bool _publicBuildResolvesAgent(AgentType type) =>
+    _publicBuildAbilityCounts.containsKey(type);
+
+bool _publicBuildResolvesAbility(AbilityInfo ability) {
+  final count = _publicBuildAbilityCounts[ability.type];
+  return count != null && ability.index < count;
+}
 
 class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   @override
@@ -233,6 +279,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
     final drawingsJson = (fields[_pageDrawingsJsonField] ??
         (isCloudLegacyLayout ? fields[15] : null)) as String?;
     final agentsJson = fields[_pageAgentsJsonField] as String?;
+    final abilitiesJson = fields[_pageAbilitiesJsonField] as String?;
     final lineUpGraph = _readLineUpGraph(fields, isCloudLegacyLayout);
 
     return StrategyPage(
@@ -245,7 +292,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       agentData: agentsJson == null
           ? (fields[4] as List).cast<PlacedAgentNode>()
           : AgentProvider.fromJson(agentsJson),
-      abilityData: (fields[5] as List).cast<PlacedAbility>(),
+      abilityData: abilitiesJson == null
+          ? (fields[5] as List).cast<PlacedAbility>()
+          : AbilityProvider.fromJson(abilitiesJson),
       textData: (fields[6] as List).cast<PlacedText>(),
       imageData: (fields[7] as List).cast<PlacedImage>(),
       utilityData: (fields[8] as List).cast<PlacedUtility>(),
@@ -294,19 +343,27 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
               drawing is RectangleDrawing,
         )
         .toList(growable: false);
-    // Weapons ride in the agents mirror (13); 3.2.3 cannot decode them.
+    // Legacy slots hold only what 3.2.3 resolves faithfully. Weapons ride in
+    // the agents mirror (13); agents and abilities newer than 3.2.3 ride in
+    // the agents (13), abilities (20) and lineup graph (19) mirrors.
     final compatibilityAgents = obj.agentData
         .whereType<PlacedAgent>()
+        .where((agent) => _publicBuildResolvesAgent(agent.type))
         .map(_withoutWeapon)
+        .toList(growable: false);
+    final compatibilityAbilities = obj.abilityData
+        .where((ability) => _publicBuildResolvesAbility(ability.data))
         .toList(growable: false);
     final compatibilityLineUps = [
       // ignore: deprecated_member_use_from_same_package
       for (final lineUp in obj.lineUps)
-        lineUp.copyWith(agent: _withoutWeapon(lineUp.agent)),
+        if (_publicBuildResolvesAgent(lineUp.agent.type) &&
+            _publicBuildResolvesAbility(lineUp.ability.data))
+          lineUp.copyWith(agent: _withoutWeapon(lineUp.agent)),
     ];
 
     writer
-      ..writeByte(16)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -318,7 +375,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(4)
       ..write(compatibilityAgents)
       ..writeByte(5)
-      ..write(obj.abilityData)
+      ..write(compatibilityAbilities)
       ..writeByte(6)
       ..write(obj.textData)
       ..writeByte(7)
@@ -338,7 +395,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(_pageDrawingsJsonField)
       ..write(DrawingProvider.objectToJson(obj.drawingData))
       ..writeByte(_pageLineUpGraphJsonField)
-      ..write(LineUpProvider.objectToJson(obj.lineUpGraph));
+      ..write(LineUpProvider.objectToJson(obj.lineUpGraph))
+      ..writeByte(_pageAbilitiesJsonField)
+      ..write(AbilityProvider.objectToJson(obj.abilityData));
   }
 
   static PlacedAgent _withoutWeapon(PlacedAgent agent) {
