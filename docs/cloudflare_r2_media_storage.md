@@ -44,7 +44,7 @@ Strategy/page/lineup payloads store image IDs and local metadata only. Public re
 
 ## Web beta
 
-**Required dashboard step, not yet done.** The web beta adds images and lineups from the browser, so the browser talks to R2 directly: it PUTs bytes to the presigned S3 URL (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/...`) and GETs them from `R2_PUBLIC_BASE_URL` to paint them. Both are cross-origin, so the bucket must allow the web beta origins. Without this rule the upload's preflight fails, the media job retries and stays unsynced, and images the browser cannot fetch fall back to a plain `<img>` element.
+**Required dashboard step. Applied on the `icarus-media` bucket; any new bucket needs it too.** The web beta adds images and lineups from the browser, so the browser talks to R2 directly: it PUTs bytes to the presigned S3 URL (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/...`) and GETs them from `R2_PUBLIC_BASE_URL` to paint them. Both are cross-origin, so the bucket must allow the web beta origins. Without this rule the upload's preflight fails, the media job retries and stays unsynced, and images the browser cannot fetch fall back to a plain `<img>` element.
 
 In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Add CORS policy, and paste:
 
