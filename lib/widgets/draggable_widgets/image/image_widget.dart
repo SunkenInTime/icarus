@@ -166,8 +166,15 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
     final image = source.imageProvider;
 
     Widget buildThumb() => switch (source) {
-          LocalImageFile() || RemoteImageUrl() =>
-            Image(image: image!, fit: BoxFit.contain),
+          // Gapless, keyed by asset: this image's pending bytes keep painting
+          // while its cloud URL loads, and no other image's frame carries
+          // over.
+          LocalImageFile() || RemoteImageUrl() || PendingImageBytes() => Image(
+              key: ValueKey(widget.id),
+              image: image!,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+            ),
           ImageLoading() => const _ImageStatePlaceholder(
               icon: LucideIcons.loaderCircle,
               label: 'Syncing image',

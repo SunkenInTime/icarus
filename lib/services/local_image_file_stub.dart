@@ -14,3 +14,9 @@ String? findLocalImageFile({
 
 ImageProvider localImageProvider(String filePath) =>
     throw UnsupportedError('No image files on this platform: $filePath');
+
+Future<int> localImageFileLength(String filePath) =>
+    throw UnsupportedError('No image files on this platform: $filePath');
+
+Stream<List<int>> readLocalImageFile(String filePath) =>
+    throw UnsupportedError('No image files on this platform: $filePath');

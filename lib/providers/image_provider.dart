@@ -6,7 +6,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
+import 'package:icarus/collab/pending_media_bytes_store.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -145,12 +148,20 @@ class PlacedImageProvider extends Notifier<ImageState> {
       source: 'cloud_media.image_provider',
     );
 
-    await saveSecureImage(
-      imageBytes,
-      imageID,
-      fileExtension,
-      strategyId: strategyId,
-    );
+    try {
+      await saveSecureImage(
+        imageBytes,
+        imageID,
+        fileExtension,
+        strategyId: strategyId,
+      );
+    } on MediaTooLargeException catch (error) {
+      Settings.showToast(
+        message: error.userMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
     AppErrorReporter.reportInfo(
       'Image saved locally: image=$imageID strategy=$strategyId '
       'extension=$fileExtension bytes=${imageBytes.length}',
@@ -480,15 +491,56 @@ class PlacedImageProvider extends Notifier<ImageState> {
     state = newState;
   }
 
+  /// Keeps a newly picked image on this device before anything references
+  /// it: as a file in the strategy's image folder, or where there are no
+  /// image files (web), as pending bytes until it has uploaded.
+  /// Throws [MediaTooLargeException], keeping nothing, when the image can
+  /// never upload.
   Future<void> saveSecureImage(
       Uint8List imageBytes, String imageID, String fileExtenstion,
       {required String? strategyId}) async {
     if (strategyId == null) return;
+    if (!ref.read(imageFilesOnDeviceProvider)) {
+      await ref.read(pendingMediaBytesProvider.notifier).put(
+            _pendingKey(strategyId: strategyId, imageId: imageID),
+            imageBytes,
+          );
+      return;
+    }
     await writeImageBytes(
       imageBytes: imageBytes,
       strategyID: strategyId,
       imageID: imageID,
       fileExtension: fileExtenstion,
+    );
+  }
+
+  /// Lets go of an image picked for a lineup that will not reference it: the
+  /// lineup dialog was dismissed, or the image removed before saving. Where
+  /// images are files, the unused file is left for [deleteUnusedImages].
+  Future<void> discardDraftImage({
+    required String imageId,
+    required String? strategyId,
+  }) async {
+    if (strategyId == null || ref.read(imageFilesOnDeviceProvider)) return;
+    await ref
+        .read(pendingMediaBytesProvider.notifier)
+        .remove(_pendingKey(strategyId: strategyId, imageId: imageId));
+  }
+
+  /// Pending bytes belong to the signed-in account, like the upload job.
+  PendingMediaKey _pendingKey({
+    required String strategyId,
+    required String imageId,
+  }) {
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    if (accountId == null || accountId.isEmpty) {
+      throw StateError('Cloud images cannot be kept without an account.');
+    }
+    return (
+      accountId: accountId,
+      strategyPublicId: strategyId,
+      assetPublicId: imageId,
     );
   }
 

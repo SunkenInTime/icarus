@@ -419,7 +419,12 @@ class _LineUpThumbnail extends ConsumerWidget {
             (id: image.id, fileExtension: image.fileExtension),
           ).imageProvider;
     if (imageProvider != null) {
-      return Image(image: imageProvider, fit: BoxFit.cover);
+      return Image(
+        key: ValueKey(image!.id),
+        image: imageProvider,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      );
     }
     const theme = Settings.tacticalVioletTheme;
     return Container(

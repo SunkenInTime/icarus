@@ -192,7 +192,12 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                   final imageProvider? => InteractiveViewer(
                       minScale: 0.5,
                       maxScale: 4.0,
-                      child: Image(image: imageProvider, fit: BoxFit.contain),
+                      child: Image(
+                        key: ValueKey(image.id),
+                        image: imageProvider,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
                     ),
                   null => const Center(
                       child: Icon(LucideIcons.imageOff, color: Colors.white),

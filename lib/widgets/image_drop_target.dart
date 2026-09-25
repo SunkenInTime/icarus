@@ -26,16 +26,19 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
         (capabilities) => capabilities.canEditPages,
       ),
     );
+    // Only invite a drop that can land.
+    final canDrop = canEditPages &&
+        ref.watch(platformPolicyProvider).supports(PlatformFeature.fileDrop);
 
     return DropTarget(
       onDragEntered: (details) {
-        if (!canEditPages) return;
+        if (!canDrop) return;
         setState(() {
           isDragging = true;
         });
       },
       onDragExited: (details) {
-        if (!canEditPages) return;
+        if (!canDrop) return;
         setState(() {
           isDragging = false;
         });
@@ -44,6 +47,7 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
         if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
           return;
         }
+        if (!ensureFeatureAvailable(ref, PlatformFeature.fileDrop)) return;
         if (!ensureFeatureAvailable(ref, PlatformFeature.addImages)) return;
         isDragging = false;
         final files = details.files;

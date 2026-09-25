@@ -1,14 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -22,6 +26,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 const _imageId = 'image-1';
 const _remoteUrl = 'https://media.example.com/image-1.png';
+// A 1x1 PNG, still uploading from this browser.
+final _pendingPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+);
 
 RemoteImageAsset _asset({String? url = _remoteUrl, String status = 'active'}) {
   return RemoteImageAsset(
@@ -97,12 +105,32 @@ List<Override> _overrides({
   required StrategySource source,
   required String? storageDirectory,
   List<RemoteImageAsset> assets = const [],
+  Map<String, Uint8List> pendingBytes = const {},
 }) {
   return [
     strategyProvider.overrideWith(
       () => _FixedStrategy(source: source, storageDirectory: storageDirectory),
     ),
     remoteEditorSnapshotProvider.overrideWith(() => _FixedSnapshot(assets)),
+    // Pending bytes only exist on web: no image files, signed in.
+    if (pendingBytes.isNotEmpty) ...[
+      imageFilesOnDeviceProvider.overrideWithValue(false),
+      cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+      pendingMediaBytesStoreProvider.overrideWithValue(
+        MemoryPendingMediaBytesStore([
+          for (final MapEntry(key: id, value: bytes) in pendingBytes.entries)
+            PendingMediaRecord(
+              key: (
+                accountId: 'account-a',
+                strategyPublicId: 'strategy-1',
+                assetPublicId: id,
+              ),
+              bytes: bytes,
+              savedAt: DateTime.now(),
+            ),
+        ]),
+      ),
+    ],
   ];
 }
 
@@ -111,6 +139,7 @@ Widget _imageApp({
   required StrategySource source,
   required String? storageDirectory,
   List<RemoteImageAsset> assets = const [],
+  Map<String, Uint8List> pendingBytes = const {},
   ValueNotifier<int>? rebuild,
 }) {
   return ProviderScope(
@@ -118,6 +147,7 @@ Widget _imageApp({
       source: source,
       storageDirectory: storageDirectory,
       assets: assets,
+      pendingBytes: pendingBytes,
     ),
     child: MaterialApp(
       home: Scaffold(
@@ -208,6 +238,59 @@ void main() {
       );
     });
 
+    test('a file on this device and the cloud URL both beat pending bytes', () {
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: '/images/image-1.png',
+          isCloudStrategy: true,
+          remoteAsset: null,
+          pendingBytes: _pendingPng,
+        ),
+        isA<LocalImageFile>(),
+      );
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          remoteAsset: _asset(),
+          pendingBytes: _pendingPng,
+        ),
+        isA<RemoteImageUrl>(),
+      );
+    });
+
+    test('bytes still uploading paint until the cloud URL arrives', () {
+      final uploading = resolveStrategyImageSource(
+        localFilePath: null,
+        isCloudStrategy: true,
+        remoteAsset: _asset(url: null, status: 'pending'),
+        pendingBytes: _pendingPng,
+      );
+      expect((uploading as PendingImageBytes).bytes, _pendingPng);
+      expect(uploading.imageProvider, isA<MemoryImage>());
+
+      // A failed attempt is retried from the same bytes; keep showing them.
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          remoteAsset: _asset(url: null, status: 'failed'),
+          pendingBytes: _pendingPng,
+        ),
+        isA<PendingImageBytes>(),
+      );
+
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          remoteAsset: _asset(),
+          pendingBytes: _pendingPng,
+        ),
+        isA<RemoteImageUrl>(),
+      );
+    });
+
     test('a failed upload or a missing local file has failed', () {
       expect(
         resolveStrategyImageSource(
@@ -288,6 +371,21 @@ void main() {
         tester.takeException(),
         anyOf(isNull, isA<NetworkImageLoadException>()),
       );
+    });
+
+    testWidgets('a placed image still uploading paints from memory on web',
+        (tester) async {
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        pendingBytes: {_imageId: _pendingPng},
+      ));
+      await tester.pump();
+
+      final image = _paintedImage(tester);
+      expect(image, isA<MemoryImage>());
+      expect((image as MemoryImage).bytes, _pendingPng);
+      expect(find.text('Syncing image'), findsNothing);
     });
 
     testWidgets('a cloud image whose URL has not arrived shows syncing',
@@ -449,6 +547,78 @@ void main() {
         .whereType<BoxDecoration>()
         .where((decoration) => decoration.image != null);
     expect(decorationImages, isEmpty);
+    expect(
+      tester.takeException(),
+      anyOf(isNull, isA<NetworkImageLoadException>()),
+    );
+  });
+
+  testWidgets(
+      'removing a lineup image never leaves its frame on the image that '
+      'moves into its tile', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final youtube = TextEditingController();
+    final notes = TextEditingController();
+    addTearDown(youtube.dispose);
+    addTearDown(notes.dispose);
+    const removedId = 'removed-image';
+    // The removed image paints from memory; the next is still loading its
+    // cloud URL, the moment a reused gapless Image would show a stale frame.
+    final images = [
+      SimpleImageData(id: removedId, fileExtension: '.png'),
+      SimpleImageData(id: _imageId, fileExtension: '.png'),
+    ];
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: _overrides(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        assets: [_asset()],
+        pendingBytes: {removedId: _pendingPng},
+      ),
+      child: ShadApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 800,
+            child: StatefulBuilder(
+              builder: (context, setState) => LineupMediaPage(
+                youtubeLinkController: youtube,
+                notesController: notes,
+                images: images,
+                onAddImage: () {},
+                onPasteImage: () {},
+                onRemoveImage: (index) =>
+                    setState(() => images.removeAt(index)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final firstTile = find.byType(Image).first;
+    expect(tester.widget<Image>(firstTile).key, const ValueKey(removedId));
+    expect(tester.widget<Image>(firstTile).image, isA<MemoryImage>());
+    final removedState = tester.state(firstTile);
+    // flutter_test answers the next image's URL with a 400.
+    await tester.pump();
+    expect(
+      tester.takeException(),
+      anyOf(isNull, isA<NetworkImageLoadException>()),
+    );
+
+    await tester.tap(find.byIcon(LucideIcons.x).first);
+    await tester.pump();
+
+    final moved = find.byType(Image).first;
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.widget<Image>(moved).key, const ValueKey(_imageId));
+    expect(tester.widget<Image>(moved).image, isA<NetworkImage>());
+    expect(identical(tester.state(moved), removedState), isFalse);
     expect(
       tester.takeException(),
       anyOf(isNull, isA<NetworkImageLoadException>()),

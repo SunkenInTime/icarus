@@ -6,6 +6,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -769,7 +770,9 @@ class AuthProvider extends Notifier<AppAuthState> {
 
     try {
       Settings.showToast(
-        message: 'Signed out. Your local strategies stay on this device.',
+        message: ref.read(platformPolicyProvider).allowsLocalLibrary
+            ? 'Signed out. Your local strategies stay on this device.'
+            : 'Signed out.',
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     } catch (error, stackTrace) {
@@ -1257,6 +1260,10 @@ class AuthProvider extends Notifier<AppAuthState> {
 
     _showingIncidentPrompt = true;
     state = state.copyWith(isAuthIncidentPromptOpen: true);
+    final localStrategiesNote =
+        ref.read(platformPolicyProvider).allowsLocalLibrary
+            ? ' Local strategies are unaffected.'
+            : '';
 
     try {
       final action = await showShadDialog<_AuthIncidentAction>(
@@ -1265,12 +1272,12 @@ class AuthProvider extends Notifier<AppAuthState> {
         builder: (context) {
           return ShadDialog.alert(
             title: const Text('Cloud connection lost'),
-            description: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+            description: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 'Your cloud session is no longer valid, so syncing is '
                 'paused. Reconnect to keep your cloud strategies up to '
-                'date, or sign out. Local strategies are unaffected.',
+                'date, or sign out.$localStrategiesNote',
               ),
             ),
             actions: [

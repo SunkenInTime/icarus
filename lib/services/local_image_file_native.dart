@@ -20,3 +20,10 @@ String? findLocalImageFile({
 }
 
 ImageProvider localImageProvider(String filePath) => FileImage(File(filePath));
+
+/// The size of the image file at [filePath], for uploading it.
+Future<int> localImageFileLength(String filePath) => File(filePath).length();
+
+/// The bytes of the image file at [filePath], for uploading it.
+Stream<List<int>> readLocalImageFile(String filePath) =>
+    File(filePath).openRead();

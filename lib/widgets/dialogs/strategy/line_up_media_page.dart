@@ -257,7 +257,11 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
       (id: image.id, fileExtension: image.fileExtension),
     ).imageProvider;
 
+    // Keyed by asset: when a removal shifts another image into this slot, it
+    // must not inherit this one's frame. Gapless playback is only for the
+    // same asset moving from its pending bytes to its cloud URL.
     return Stack(
+      key: ValueKey(image.id),
       fit: StackFit.expand,
       children: [
         // An Image, not a DecorationImage: on web a cloud image may paint
@@ -275,7 +279,12 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                     color: Settings.tacticalVioletTheme.secondaryForeground,
                   ),
                 )
-              : Image(image: imageProvider, fit: BoxFit.cover),
+              : Image(
+                  key: ValueKey(image.id),
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
         ),
         Positioned(
           top: 4,
