@@ -1510,6 +1510,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           );
       if (!result.didSucceed) return result;
 
+      // Unsent edits to a strategy the user just deleted can never land.
+      await ref
+          .read(strategyOpQueueProvider.notifier)
+          .discardDeletedStrategy(strategyID);
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .clearJobsForStrategy(strategyID);
       await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
       ref.invalidate(cloudStrategiesProvider);
       return result;

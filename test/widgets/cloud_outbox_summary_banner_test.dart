@@ -56,6 +56,43 @@ void main() {
     expect(openedStrategy, 'strategy-needs-review');
   });
 
+  testWidgets('a deleted strategy offers Discard instead of review',
+      (tester) async {
+    final queue = _Queue(const StrategyOpQueueState(
+      accountId: 'account-a',
+      durableLoaded: true,
+      accountOutbox: AccountStrategyOutboxSummary(
+        accountId: 'account-a',
+        deletedStrategies: {'gone': 2},
+      ),
+    ));
+    final media = _MediaQueue();
+    final container = ProviderContainer(overrides: [
+      authProvider.overrideWith(() => _ReadyAuth(true)),
+      libraryWorkspaceProvider
+          .overrideWith(() => _Workspace(LibraryWorkspace.cloud)),
+      cloudLibrarySectionProvider
+          .overrideWith(() => _CloudSection(CloudLibrarySection.home)),
+      strategyOpQueueProvider.overrideWith(() => queue),
+      cloudMediaUploadQueueProvider.overrideWith(() => media),
+      convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+      cloudStrategyNamesProvider.overrideWithValue(const {}),
+    ]);
+    addTearDown(container.dispose);
+    await _pump(tester, container, const CloudOutboxSummaryBanner());
+
+    expect(find.text('Cloud work needs attention'), findsOneWidget);
+    expect(
+      find.textContaining('2 unsent changes to a strategy that was deleted'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Discard changes to the deleted strategy'));
+    await tester.pump();
+
+    expect(queue.discarded, ['gone']);
+    expect(media.cleared, ['gone']);
+  });
+
   testWidgets('queued closed-strategy work is visible while offline',
       (tester) async {
     final container = _container(
@@ -274,15 +311,28 @@ class _Queue extends StrategyOpQueueNotifier {
   _Queue(this.initialState);
 
   final StrategyOpQueueState initialState;
+  final List<String> discarded = [];
 
   @override
   StrategyOpQueueState build() => initialState;
+
+  @override
+  Future<void> discardDeletedStrategy(String strategyPublicId) async {
+    discarded.add(strategyPublicId);
+  }
 }
 
 class _MediaQueue extends CloudMediaUploadQueueNotifier {
+  final List<String> cleared = [];
+
   @override
   CloudMediaUploadQueueState build() => const CloudMediaUploadQueueState(
         jobs: [],
         isProcessing: false,
       );
+
+  @override
+  Future<void> clearJobsForStrategy(String strategyPublicId) async {
+    cleared.add(strategyPublicId);
+  }
 }

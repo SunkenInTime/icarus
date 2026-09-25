@@ -133,6 +133,50 @@ class _GoneUploadRepository implements ConvexStrategyRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// completeImageUpload fails with NOT_FOUND; the shell check says whether
+/// the strategy itself is gone.
+class _NotFoundRepository implements ConvexStrategyRepository {
+  _NotFoundRepository({required this.strategyDeleted});
+
+  final bool strategyDeleted;
+  int completeCalls = 0;
+  final List<String> shellChecks = [];
+
+  @override
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
+    String? mimeType,
+    String? fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    completeCalls += 1;
+    throw ConvexFunctionException(
+      code: ConvexErrorCode.notFound,
+      rawCode: 'NOT_FOUND',
+      message: strategyDeleted
+          ? 'Strategy not found: $strategyPublicId'
+          : 'Uploaded image not found: $objectKey',
+    );
+  }
+
+  @override
+  Future<bool> strategyIsDeleted(String strategyPublicId) async {
+    shellChecks.add(strategyPublicId);
+    return strategyDeleted;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FailingBatchStore extends MemoryDurableCloudMediaOutboxStore {
   bool failBatch = false;
   bool failRemove = false;
@@ -325,6 +369,58 @@ void main() {
         isFalse,
         reason:
             'A permanently deleted server intent must not be retried as if the object still exists.');
+  });
+
+  group('NOT_FOUND while attaching an image', () {
+    CloudMediaUploadJob pendingAttach(String id) => CloudMediaUploadJob(
+          jobId: id,
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-a',
+          assetPublicId: id,
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          provider: 'r2',
+          uploadId: 'upload-$id',
+          objectKey: 'strategies/strategy-a/$id.png',
+          state: CloudMediaJobState.pendingAttach,
+          attempts: 1,
+          updatedAt: DateTime.now().subtract(const Duration(days: 2)),
+        );
+
+    test('drops the jobs of a strategy the server no longer has', () async {
+      final store = MemoryDurableCloudMediaOutboxStore();
+      await store.put(pendingAttach('image-a'));
+      await store.put(pendingAttach('image-b'));
+      final repository = _NotFoundRepository(strategyDeleted: true);
+      final container = _container(store,
+          cloudReady: true, cloudEnabled: true, repository: repository);
+      addTearDown(container.dispose);
+
+      container.read(cloudMediaUploadQueueProvider.notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(repository.shellChecks, ['strategy-a']);
+      expect(repository.completeCalls, 1, reason: 'never retried');
+      expect(store.load().jobs, isEmpty);
+      expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    });
+
+    test('keeps retrying when the strategy still exists', () async {
+      // e.g. the uploaded image went missing from storage.
+      final store = MemoryDurableCloudMediaOutboxStore();
+      await store.put(pendingAttach('image-a'));
+      final repository = _NotFoundRepository(strategyDeleted: false);
+      final container = _container(store,
+          cloudReady: true, cloudEnabled: true, repository: repository);
+      addTearDown(container.dispose);
+
+      container.read(cloudMediaUploadQueueProvider.notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(repository.shellChecks, ['strategy-a']);
+      final kept = store.load().jobs.single;
+      expect(kept.state, CloudMediaJobState.failed);
+    });
   });
 
   test('a successful write cannot clear another media key failure', () async {

@@ -734,6 +734,7 @@ class CloudMediaUploadQueueNotifier
         'upload.pending_attach ${_describeJob(_getJob(job.jobId))}',
       );
     } catch (error) {
+      if (await _dropIfStrategyDeleted(job, error)) return;
       _reportMediaFailure('upload', error, job);
       await _markJobFailed(
         job,
@@ -873,6 +874,7 @@ class CloudMediaUploadQueueNotifier
       _logMedia('attach.success image=${job.assetPublicId} '
           'strategy=${job.strategyPublicId}');
     } catch (error) {
+      if (await _dropIfStrategyDeleted(job, error)) return;
       _reportMediaFailure('attach', error, job);
       final missingIntent = isMissingImageUploadIntentError(error);
       await _markJobFailed(
@@ -890,6 +892,36 @@ class CloudMediaUploadQueueNotifier
         showToast: job.attempts == 0,
       );
     }
+  }
+
+  /// Drops every job of [job]'s strategy when [error] is NOT_FOUND and the
+  /// server confirms the strategy is gone; retrying could never succeed.
+  /// Nothing is lost that the user cannot recreate: the image came from
+  /// their own file, and the change that placed it waits in the strategy
+  /// outbox, which the library surfaces for them to discard. Other NOT_FOUND
+  /// errors (an uploaded image the store lost) keep the ordinary retry.
+  Future<bool> _dropIfStrategyDeleted(
+    CloudMediaUploadJob job,
+    Object error,
+  ) async {
+    if (!isTypedConvexNotFoundError(error)) return false;
+    final bool deleted;
+    try {
+      deleted = await _repo.strategyIsDeleted(job.strategyPublicId);
+    } catch (_) {
+      return false;
+    }
+    if (!deleted) return false;
+    final count = _readJobs()
+        .where((pending) => pending.strategyPublicId == job.strategyPublicId)
+        .length;
+    AppErrorReporter.reportWarning(
+      'Strategy ${job.strategyPublicId} was deleted on the server; dropped '
+      '$count pending image upload(s) for it.',
+      source: 'cloud_media.upload_queue',
+    );
+    await clearJobsForStrategy(job.strategyPublicId);
+    return true;
   }
 
   Future<void> _markJobFailed(

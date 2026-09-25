@@ -417,6 +417,107 @@ void main() {
     expect(store.values, isNotEmpty);
   });
 
+  group('a strategy deleted on the server', () {
+    test('stops retrying and keeps authored changes for discard', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      await store.put(_record(strategyId: 'deleted', opId: 'edit'));
+      await store.put(_record(strategyId: 'healthy', opId: 'healthy-edit'));
+      final repository = _DeletedStrategyRepository({'deleted'});
+      final container = _container(store: store, repository: repository);
+      addTearDown(container.dispose);
+
+      container
+          .read(strategyOpQueueProvider.notifier)
+          .setCurrentAccount('account-a');
+      await _waitUntil(
+        () => container
+            .read(strategyOpQueueProvider)
+            .accountOutbox
+            .deletedStrategies
+            .isNotEmpty,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final outbox = container.read(strategyOpQueueProvider).accountOutbox;
+      expect(outbox.deletedStrategies, {'deleted': 1});
+      // It holds no attention or work for the strategies that still exist.
+      expect(outbox.strategies.keys, isNot(contains('deleted')));
+      expect(outbox.needsAttention, isFalse);
+      expect(outbox.hasWork, isFalse);
+      expect(repository.shellChecks, ['deleted']);
+      // One send, confirmed deleted: never retried.
+      expect(
+        repository.calls.where((call) => call.strategyId == 'deleted'),
+        hasLength(1),
+      );
+      final kept = store.load().records.single;
+      expect(kept.status, DurableOutboxStatus.attention);
+      expect(kept.lastError, cloudStrategyDeletedMessage);
+
+      await container
+          .read(strategyOpQueueProvider.notifier)
+          .discardDeletedStrategy('deleted');
+      expect(store.values, isEmpty);
+      expect(
+        container.read(strategyOpQueueProvider).accountOutbox.deletedStrategies,
+        isEmpty,
+      );
+    });
+
+    test('drops changes that only remove things from it', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      await store.put(_record(
+        strategyId: 'deleted',
+        opId: 'remove',
+        op: const ElementDeleteOp(
+          opId: 'remove',
+          elementPublicId: 'element-one',
+          pagePublicId: 'page-one',
+          expectedElementRevision: 1,
+        ),
+      ));
+      final repository = _DeletedStrategyRepository({'deleted'});
+      final container = _container(store: store, repository: repository);
+      addTearDown(container.dispose);
+
+      container
+          .read(strategyOpQueueProvider.notifier)
+          .setCurrentAccount('account-a');
+      await _waitUntil(() => repository.shellChecks.isNotEmpty);
+      await _waitUntil(() => store.values.isEmpty);
+
+      final outbox = container.read(strategyOpQueueProvider).accountOutbox;
+      expect(outbox.deletedStrategies, isEmpty);
+      expect(outbox.hasWork, isFalse);
+    });
+
+    test('NOT_FOUND the server does not confirm is retried as usual', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      await store.put(_record(strategyId: 'present', opId: 'edit'));
+      // applyBatch says NOT_FOUND, but the strategy's shell still loads.
+      final repository = _DeletedStrategyRepository(
+        const <String>{},
+        notFoundOnSend: {'present'},
+      );
+      final container = _container(store: store, repository: repository);
+      addTearDown(container.dispose);
+
+      container
+          .read(strategyOpQueueProvider.notifier)
+          .setCurrentAccount('account-a');
+      await _waitUntil(() => repository.shellChecks.isNotEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final record = store.load().records.single;
+      expect(record.lastError, isNot(cloudStrategyDeletedMessage));
+      expect(record.status, isNot(DurableOutboxStatus.attention));
+      expect(
+        container.read(strategyOpQueueProvider).accountOutbox.deletedStrategies,
+        isEmpty,
+      );
+    });
+  });
+
   test('auth readiness recovery resumes eligible closed-strategy work',
       () async {
     final store = MemoryDurableStrategyOutboxStore();
@@ -469,9 +570,10 @@ DurableOutboxRecord _record({
   String elementId = 'element-one',
   DurableOutboxStatus status = DurableOutboxStatus.queued,
   String? lastError,
+  StrategyOp? op,
 }) {
   final now = DateTime(2026);
-  final op = _op(opId: opId, elementId: elementId);
+  op ??= _op(opId: opId, elementId: elementId);
   return DurableOutboxRecord(
     accountId: accountId,
     strategyPublicId: strategyId,
@@ -613,6 +715,46 @@ class _ThrowingRepository extends _RecordingRepository {
   }) async {
     calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
     throw error;
+  }
+}
+
+/// applyBatch fails with NOT_FOUND for [deleted] (and [notFoundOnSend]);
+/// the shell check confirms only [deleted].
+class _DeletedStrategyRepository extends _RecordingRepository {
+  _DeletedStrategyRepository(
+    this.deleted, {
+    Set<String>? notFoundOnSend,
+  }) : notFoundOnSend = notFoundOnSend ?? deleted;
+
+  final Set<String> deleted;
+  final Set<String> notFoundOnSend;
+  final List<String> shellChecks = [];
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  }) async {
+    if (!notFoundOnSend.contains(strategyPublicId)) {
+      return super.applyBatch(
+        strategyPublicId: strategyPublicId,
+        clientId: clientId,
+        ops: ops,
+      );
+    }
+    calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
+    throw ConvexFunctionException(
+      code: ConvexErrorCode.notFound,
+      rawCode: 'NOT_FOUND',
+      message: 'Strategy not found: $strategyPublicId',
+    );
+  }
+
+  @override
+  Future<bool> strategyIsDeleted(String strategyPublicId) async {
+    shellChecks.add(strategyPublicId);
+    return deleted.contains(strategyPublicId);
   }
 }
 

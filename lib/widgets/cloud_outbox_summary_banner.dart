@@ -44,18 +44,25 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         if (summary.needsAttention) summary.strategyPublicId,
       ...failedMediaByStrategy.keys,
     };
+    // Unsent changes to strategies the server no longer has: never sent,
+    // only discarded (each is a separate action below).
+    final deletedStrategies = opQueue.accountOutbox.deletedStrategies;
+    final deletedChangeCount =
+        deletedStrategies.values.fold<int>(0, (total, count) => total + count);
     final hasDurabilityProblem = !opQueue.outboxIsReliable ||
         !mediaQueue.outboxIsReliable ||
         opQueue.loadIssues.isNotEmpty ||
         mediaQueue.loadIssues.isNotEmpty;
     final authBlocked = workCount > 0 &&
         (auth.hasActiveAuthIncident || !auth.isConvexUserReady);
-    if (workCount == 0 && !hasDurabilityProblem) {
+    if (workCount == 0 && !hasDurabilityProblem && deletedStrategies.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final needsAttention =
-        hasDurabilityProblem || authBlocked || attentionIds.isNotEmpty;
+    final needsAttention = hasDurabilityProblem ||
+        authBlocked ||
+        attentionIds.isNotEmpty ||
+        deletedStrategies.isNotEmpty;
     final title = needsAttention
         ? 'Cloud work needs attention'
         : connected
@@ -66,17 +73,22 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
             'signed in and review it.'
         : authBlocked
             ? 'Reconnect this account before Icarus can send its saved work.'
-            : needsAttention
-                ? '$workCount saved ${workCount == 1 ? 'change needs' : 'changes need'} '
-                    'review across ${strategyIds.length} '
-                    '${strategyIds.length == 1 ? 'strategy' : 'strategies'}.'
-                : connected
-                    ? '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
-                        'being sent from ${strategyIds.length} '
+            : workCount == 0 && deletedStrategies.isNotEmpty
+                ? '$deletedChangeCount unsent '
+                    '${deletedChangeCount == 1 ? 'change' : 'changes'} to a '
+                    'strategy that was deleted cannot be saved. Discard '
+                    '${deletedChangeCount == 1 ? 'it' : 'them'} to clear this.'
+                : needsAttention
+                    ? '$workCount saved ${workCount == 1 ? 'change needs' : 'changes need'} '
+                        'review across ${strategyIds.length} '
                         '${strategyIds.length == 1 ? 'strategy' : 'strategies'}.'
-                    : '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
-                        'waiting on this device and will resume when the '
-                        'connection returns.';
+                    : connected
+                        ? '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
+                            'being sent from ${strategyIds.length} '
+                            '${strategyIds.length == 1 ? 'strategy' : 'strategies'}.'
+                        : '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
+                            'waiting on this device and will resume when the '
+                            'connection returns.';
     final theme = ShadTheme.of(context);
     // A floating status card, not a banner: it sits over the library's
     // corner like a floating menu and never moves the grid. The parent
@@ -131,7 +143,8 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                     color: theme.colorScheme.mutedForeground,
                   ),
                 ),
-                if (attentionIds.isNotEmpty) ...[
+                if (attentionIds.isNotEmpty ||
+                    deletedStrategies.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -155,6 +168,19 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                             ),
                           ),
                         ),
+                      for (final strategyId in deletedStrategies.keys)
+                        ShadButton.outline(
+                          size: ShadButtonSize.sm,
+                          onPressed: () => _discardDeleted(ref, strategyId),
+                          child: Flexible(
+                            child: Text(
+                              'Discard changes to '
+                              '${strategyNames[strategyId]?.trim().isNotEmpty == true ? strategyNames[strategyId]!.trim() : 'the deleted strategy'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -164,6 +190,15 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _discardDeleted(WidgetRef ref, String strategyId) async {
+    await ref
+        .read(strategyOpQueueProvider.notifier)
+        .discardDeletedStrategy(strategyId);
+    await ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .clearJobsForStrategy(strategyId);
   }
 
   void _openStrategy(BuildContext context, String strategyId) {
