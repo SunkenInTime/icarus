@@ -709,22 +709,37 @@ class FolderContent extends ConsumerWidget {
   }
 
   Widget _buildCloudUnavailableState(BuildContext context, WidgetRef ref) {
+    // A live session that cannot reach the cloud retries; only a signed-out
+    // user is asked to log in.
+    final signedIn = ref.watch(authProvider).isAuthenticated;
     return _LibraryMessageState(
       icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.mutedForeground,
       title: 'Cloud unavailable',
-      subtitle: 'Sign in again to reach your online strategies, or go back '
-          'to your library to keep working.',
+      subtitle: signedIn
+          ? 'Retry to reach your online strategies, or go back to your '
+              'library to keep working.'
+          : 'Sign in again to reach your online strategies, or go back '
+              'to your library to keep working.',
       actions: [
-        ShadButton(
-          onPressed: () {
-            showDialog<void>(
-              context: context,
-              builder: (_) => const AuthDialog(),
-            );
-          },
-          child: const Text('Log In'),
-        ),
+        if (signedIn)
+          ShadButton(
+            leading: const Icon(LucideIcons.refreshCw, size: 14),
+            onPressed: () => ref
+                .read(authProvider.notifier)
+                .reinitializeConvexAuth(source: 'cloud_unavailable_retry'),
+            child: const Text('Retry'),
+          )
+        else
+          ShadButton(
+            onPressed: () {
+              showDialog<void>(
+                context: context,
+                builder: (_) => const AuthDialog(),
+              );
+            },
+            child: const Text('Log In'),
+          ),
         ShadButton.secondary(
           onPressed: ref.read(libraryNavigationProvider).showLibrary,
           child: const Text('Back to My Library'),
@@ -760,15 +775,37 @@ class FolderContent extends ConsumerWidget {
     );
   }
 
-  /// My Library on a platform that needs an account: one way in. While a
-  /// saved session is still being restored, the skeleton holds the page so
-  /// the login prompt never flashes at a returning user.
+  /// My Library on a platform that needs the cloud, before the cloud is
+  /// reachable. Restoring a session holds the skeleton so the login prompt
+  /// never flashes at a returning user; a session that cannot reach the
+  /// cloud gets a retry, never a second login over the one it has.
   Widget _buildSignInState(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authProvider);
     final restoring = auth.isLoading ||
         auth.convexAuthStatus == ConvexAuthStatus.configuring;
     if (restoring) {
       return const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
+    }
+    if (auth.isAuthenticated) {
+      return KeyedSubtree(
+        key: const ValueKey('library-cloud-unreachable'),
+        child: _LibraryMessageState(
+          icon: LucideIcons.cloudOff,
+          iconColor: Settings.tacticalVioletTheme.destructive,
+          title: "Couldn't reach your cloud library",
+          subtitle: auth.errorMessage ?? 'Check your connection and try again.',
+          actions: [
+            ShadButton(
+              key: const ValueKey('library-cloud-retry'),
+              leading: const Icon(LucideIcons.refreshCw, size: 14),
+              onPressed: () => ref
+                  .read(authProvider.notifier)
+                  .reinitializeConvexAuth(source: 'library_retry'),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
     }
     return KeyedSubtree(
       key: const ValueKey('library-sign-in-state'),

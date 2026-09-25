@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/routes.dart';
@@ -11,8 +12,10 @@ import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -76,16 +79,22 @@ class _FolderLocation extends _NavLocation {
 }
 
 class _StrategyLocation extends _NavLocation {
-  const _StrategyLocation(this.strategyId);
+  const _StrategyLocation(this.strategyId, this.source);
 
   final String strategyId;
 
-  @override
-  bool operator ==(Object other) =>
-      other is _StrategyLocation && other.strategyId == strategyId;
+  /// Where the strategy was opened from. A local and a cloud strategy can
+  /// share an id, so history reopens it through the same store.
+  final StrategySource source;
 
   @override
-  int get hashCode => Object.hash(_StrategyLocation, strategyId);
+  bool operator ==(Object other) =>
+      other is _StrategyLocation &&
+      other.strategyId == strategyId &&
+      other.source == source;
+
+  @override
+  int get hashCode => Object.hash(_StrategyLocation, strategyId, source);
 }
 
 /// Makes the mouse side buttons (back/forward) walk the user's browsing
@@ -135,7 +144,10 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   _NavLocation _deriveLocation() {
     final strategy = ref.read(strategyProvider);
     if (strategy.stratName != null) {
-      return _StrategyLocation(strategy.id);
+      return _StrategyLocation(
+        strategy.id,
+        strategy.source ?? StrategySource.local,
+      );
     }
     return _FolderLocation(ref.read(folderProvider));
   }
@@ -246,10 +258,13 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       case _FolderLocation(:final folderId):
         return folderId == null ||
             ref.read(folderProvider.notifier).findFolderByID(folderId) != null;
-      case _StrategyLocation(:final strategyId):
-        return Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-                .get(strategyId) !=
-            null;
+      case _StrategyLocation(:final strategyId, source: StrategySource.local):
+        return ref.read(platformPolicyProvider).allowsLocalLibrary &&
+            Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+                    .get(strategyId) !=
+                null;
+      case _StrategyLocation(source: StrategySource.cloud):
+        return ref.read(isCloudWorkspaceAvailableProvider);
     }
   }
 
@@ -282,7 +297,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         ref.read(folderProvider.notifier).updateID(folderId);
         return true;
 
-      case _StrategyLocation(:final strategyId):
+      case _StrategyLocation(:final strategyId, :final source):
         if (strategyOpen) {
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
@@ -292,14 +307,29 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             source: 'MouseNavigation.navigateToStrategy',
             onContinue: () async {
               _resetStrategyUiState();
-              await ref
-                  .read(strategyProvider.notifier)
-                  .loadFromHive(strategyId);
+              final strategies = ref.read(strategyProvider.notifier);
+              switch (source) {
+                case StrategySource.local:
+                  await strategies.loadFromHive(strategyId);
+                case StrategySource.cloud:
+                  await strategies.openCloudStrategy(strategyId);
+              }
             },
           );
           return switched && mounted;
         }
 
+        if (source == StrategySource.cloud) {
+          unawaited(
+            navigator.push(
+              StrategyView.route(
+                initialStrategyId: strategyId,
+                initialStrategySource: StrategySource.cloud,
+              ),
+            ),
+          );
+          return true;
+        }
         final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
             .get(strategyId);
         if (strategy == null) return false;
@@ -308,6 +338,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             StrategyView.route(
               initialStrategyId: strategy.id,
               initialStrategyName: strategy.name,
+              initialStrategySource: StrategySource.local,
               initialMapValue: strategy.mapData,
               initialIsAttack:
                   strategy.pages.isEmpty || strategy.pages.first.isAttack,

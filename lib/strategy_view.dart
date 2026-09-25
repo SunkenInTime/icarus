@@ -4,7 +4,6 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/routes.dart';
@@ -21,7 +20,6 @@ import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
-import 'package:icarus/widgets/web_beta_tag.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
@@ -232,11 +230,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       ),
                     ),
                     const IcarusWordmark(),
-                    if (ref.watch(platformPolicyProvider).isWebBeta)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0),
-                        child: WebBetaTag(),
-                      ),
                     const Expanded(
                       child: WindowDragArea(child: SizedBox.expand()),
                     ),

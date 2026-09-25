@@ -105,7 +105,12 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             selected: tab == LibraryTab.shared,
             dimmed: !cloudAvailable,
             onTap: () {
-              if (!navigation.showShared()) {
+              if (navigation.showShared()) return;
+              // Signed in but the cloud is unreachable: My Library carries
+              // the retry. Never ask for a login over an existing session.
+              if (ref.read(authProvider).isAuthenticated) {
+                navigation.showLibrary();
+              } else {
                 _showAuthDialog();
               }
             },

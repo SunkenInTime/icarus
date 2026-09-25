@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -208,7 +209,7 @@ Future<void> main(List<String> args) async {
 
       await MapThemeProfilesProvider.bootstrap();
 
-      await StrategyMigrator.migrateAllStrategies();
+      await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
 
       await ConvexClient.initialize(
         ConvexConfig(

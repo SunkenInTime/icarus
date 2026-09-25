@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -21,6 +22,14 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:uuid/uuid.dart';
 
 class StrategyMigrator {
+  /// The startup pass over the on-device library. Where [policy] hides that
+  /// library, its records stay exactly as their version wrote them; they
+  /// migrate when local access returns.
+  static Future<void> migrateLocalLibrary(PlatformPolicy policy) async {
+    if (!policy.allowsLocalLibrary) return;
+    await migrateAllStrategies();
+  }
+
   static Future<void> migrateAllStrategies() async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     for (final strat in box.values) {

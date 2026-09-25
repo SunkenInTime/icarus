@@ -5,6 +5,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Marks the web build as the beta. Tapping it explains what that means.
 /// Callers show it only when the platform policy says this is the web beta.
+///
+/// It lives in the library strip only, beside the tabs where the demo tag
+/// was: the one deliberate exception to DESIGN.md's strip contents. The
+/// editor carries no labels, so it never appears there.
 class WebBetaTag extends StatelessWidget {
   const WebBetaTag({super.key});
 
