@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
@@ -156,12 +155,7 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     );
     controller.dispose();
     if (name == null || name == link.name) return;
-    ref.read(actionProvider.notifier).performTransaction(
-      groups: const [ActionGroup.lineUp],
-      mutation: () {
-        ref.read(lineUpProvider.notifier).updateLink(link.copyWith(name: name));
-      },
-    );
+    ref.read(lineUpProvider.notifier).updateLink(link.copyWith(name: name));
   }
 
   @override

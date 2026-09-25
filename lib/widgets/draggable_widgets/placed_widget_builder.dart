@@ -218,7 +218,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).setDraftAbility(placedAbility);
+                ref
+                    .read(lineUpProvider.notifier)
+                    .setDraftAbility(placedAbility);
                 return;
               }
 
@@ -243,7 +245,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).setDraftAbility(placedAbility);
+                ref
+                    .read(lineUpProvider.notifier)
+                    .setDraftAbility(placedAbility);
                 return;
               }
 
@@ -1162,15 +1166,15 @@ class _LineUpAgents extends ConsumerWidget {
                 isAttack: isAttack,
               );
               // Dropped off the map: the origin stays where it was.
-              if (coordinateSystem.isOutOfBounds(position + storedAgentAnchor)) {
+              if (coordinateSystem
+                  .isOutOfBounds(position + storedAgentAnchor)) {
                 return;
               }
-              ref.read(actionProvider.notifier).performTransaction(
-                groups: const [ActionGroup.lineUp],
-                mutation: () => ref
-                    .read(lineUpProvider.notifier)
-                    .updateOriginAgentPosition(origin.id, position),
-              );
+              // Records a move of this origin only, so undo never rolls
+              // back lineups that arrived since.
+              ref
+                  .read(lineUpProvider.notifier)
+                  .updateOriginAgentPosition(origin.id, position);
             },
           ),
       ],
@@ -1215,14 +1219,10 @@ class _LineUpAbilities extends ConsumerWidget {
                 mapScale: mapScale,
               );
               if (coordinateSystem.isOutOfBounds(position + anchor)) return;
-              ref.read(actionProvider.notifier).performTransaction(
-                groups: const [ActionGroup.lineUp],
-                mutation: () =>
-                    ref.read(lineUpProvider.notifier).updateLandingAbility(
-                          landing.id,
-                          landing.ability.copyWith(position: position),
-                        ),
-              );
+              ref.read(lineUpProvider.notifier).updateLandingAbility(
+                    landing.id,
+                    landing.ability.copyWith(position: position),
+                  );
             },
           ),
       ],

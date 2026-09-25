@@ -8,7 +8,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
@@ -293,15 +292,10 @@ void _updateVisualState(
   String? landingId,
 }) {
   if (landingId != null) {
-    ref.read(actionProvider.notifier).performTransaction(
-      groups: const [ActionGroup.lineUp],
-      mutation: () {
-        ref.read(lineUpProvider.notifier).updateLandingAbilityVisualState(
-              landingId: landingId,
-              visualState: visualState,
-            );
-      },
-    );
+    ref.read(lineUpProvider.notifier).updateLandingAbilityVisualState(
+          landingId: landingId,
+          visualState: visualState,
+        );
     return;
   }
 

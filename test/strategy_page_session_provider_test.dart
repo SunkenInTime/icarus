@@ -24,6 +24,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -1797,6 +1798,113 @@ void main() {
       await notifier.switchSide(allPages: true);
 
       expect(queuedSideOf(queue, 'page-b'), isTrue);
+      await _settle();
+    });
+  });
+
+  group('lineup history across rehydration', () {
+    Future<(ProviderContainer, _FakeRemoteEditorNotifier, RemotePage)>
+        openWithLineup() async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(
+          page,
+          lineups: [_lineup(page.publicId, 'lineup-a')],
+        ),
+      ));
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      expect(container.read(lineUpProvider).origins.single.id, 'lineup-a');
+      return (container, remote, page);
+    }
+
+    /// The server accepted the local edit and the page rehydrates from the
+    /// new snapshot, keeping history (a cloud ack).
+    Future<void> ackAndRehydrate(
+      ProviderContainer container,
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page,
+      List<RemoteLineup> lineups,
+    ) async {
+      container.read(strategySaveStateProvider.notifier).markPersisted();
+      remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, contentRevision: 2, lineups: lineups),
+      ));
+      await _settle();
+    }
+
+    test('undoing a lineup delete still restores it after an ack', () async {
+      final (container, remote, page) = await openWithLineup();
+
+      container.read(lineUpProvider.notifier).deleteOrigin('lineup-a');
+      expect(container.read(lineUpProvider).origins, isEmpty);
+      await ackAndRehydrate(container, remote, page, const []);
+      expect(container.read(lineUpProvider).origins, isEmpty);
+
+      container.read(actionProvider.notifier).undoAction();
+
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.origins.single.id, 'lineup-a');
+      expect(lineUps.links.single.id, 'item-lineup-a');
+      expect(lineUps.landings, hasLength(1));
+
+      container.read(actionProvider.notifier).redoAction();
+      expect(container.read(lineUpProvider).links, isEmpty);
+      await _settle();
+    });
+
+    test('undoing a marker move keeps a teammate lineup that arrived since',
+        () async {
+      final (container, remote, page) = await openWithLineup();
+      const moved = Offset(200, 220);
+
+      container
+          .read(lineUpProvider.notifier)
+          .updateOriginAgentPosition('lineup-a', moved);
+      // The move lands and a teammate's lineup B arrives with it.
+      await ackAndRehydrate(container, remote, page, [
+        _lineup(page.publicId, 'lineup-a', agentPosition: moved, revision: 2),
+        _lineup(page.publicId, 'lineup-b', sortIndex: 1),
+      ]);
+      expect(
+        container.read(lineUpProvider).origins.map((origin) => origin.id),
+        ['lineup-a', 'lineup-b'],
+      );
+
+      container.read(actionProvider.notifier).undoAction();
+
+      final lineUps = container.read(lineUpProvider);
+      expect(
+        lineUps.origins.map((origin) => origin.id),
+        ['lineup-a', 'lineup-b'],
+      );
+      expect(
+        lineUps.originById('lineup-a')!.agent.position,
+        const Offset(10, 20),
+      );
+      final desired =
+          container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+                strategyPublicId: 'cloud-strategy',
+                pageId: page.publicId,
+              );
+      expect(desired, isNotNull);
+      expect(desired!.values.whereType<LineupDeleteOp>(), isEmpty);
+      expect(
+        desired[EntitySyncKey.lineup(page.publicId, 'lineup-a')],
+        isA<LineupPatchOp>(),
+      );
+      expect(desired[EntitySyncKey.lineup(page.publicId, 'lineup-b')], isNull);
       await _settle();
     });
   });

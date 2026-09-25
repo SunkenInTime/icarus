@@ -600,25 +600,40 @@ class LineUpState {
 
 class LineUpProviderSnapshot {
   final LineUpGraph graph;
-  final Map<String, LineUpGraph> popped;
-  final Map<String, List<String>> actionLinkIds;
 
-  const LineUpProviderSnapshot({
-    required this.graph,
-    required this.popped,
-    required this.actionLinkIds,
-  });
+  const LineUpProviderSnapshot({required this.graph});
+}
+
+/// One lineup-graph change that carries its own inverse: the origins,
+/// landings and links it touched, as they were ([before]) and as they became
+/// ([after]). Undo and redo apply it to whatever graph is current, so a page
+/// rehydrated in between (a cloud ack, a teammate's edit) neither separates
+/// the action from its data nor rolls back anyone else's lineups.
+class LineUpGraphAction extends UserAction {
+  LineUpGraphAction({
+    required super.type,
+    required super.id,
+    this.before = LineUpGraph.empty,
+    this.after = LineUpGraph.empty,
+  }) : super(group: ActionGroup.lineUp);
+
+  final LineUpGraph before;
+  final LineUpGraph after;
+
+  // History stores copies, so the copy must keep the change.
+  @override
+  LineUpGraphAction copy() {
+    return LineUpGraphAction(
+      type: type,
+      id: id,
+      before: before.deepCopy(),
+      after: after.deepCopy(),
+    );
+  }
 }
 
 class LineUpProvider extends Notifier<LineUpState> {
   static const _uuid = Uuid();
-
-  /// Subgraphs removed by an undoable action, keyed by action id, waiting to
-  /// be restored.
-  final Map<String, LineUpGraph> _popped = {};
-
-  /// Which links each deletion action removes, so redo removes the same set.
-  final Map<String, List<String>> _actionLinkIds = {};
 
   @override
   LineUpState build() {
@@ -817,12 +832,25 @@ class LineUpProvider extends Notifier<LineUpState> {
       notes: notes,
       images: images.map((image) => image.copyWith()).toList(),
     );
-    _recordAddition(link.id);
+    final added = LineUpGraph(
+      origins: [
+        if (placement.pinnedOriginId == null)
+          origins.firstWhere((origin) => origin.id == originId),
+      ],
+      landings: [
+        if (placement.pinnedLandingId == null)
+          landings.firstWhere((landing) => landing.id == landingId),
+      ],
+      links: [link],
+    );
     state = state.copyWith(
       origins: origins,
       landings: landings,
       links: [...state.links, link],
       placement: null,
+    );
+    _record(
+      LineUpGraphAction(type: ActionType.addition, id: link.id, after: added),
     );
     return link;
   }
@@ -851,36 +879,44 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(origins: origins);
   }
 
-  // --- Edits (no action recorded; callers wrap in performTransaction) -------
+  // --- Edits (each records one undoable change to the entry it touches) ----
 
   void updateLink(LineUpLink link) {
-    final index = state.links.indexWhere((entry) => entry.id == link.id);
-    if (index < 0) return;
-    final links = [...state.links];
-    links[index] = link;
-    state = state.copyWith(links: links);
+    final current = state.linkById(link.id);
+    if (current == null) return;
+    _recordEdit(
+      before: LineUpGraph(links: [current]),
+      after: LineUpGraph(links: [link]),
+    );
   }
 
   void updateOriginAgentPosition(String originId, Offset position) {
-    final index = state.origins.indexWhere((origin) => origin.id == originId);
-    if (index < 0) return;
-    final origins = [...state.origins];
-    final origin = origins[index];
-    origins[index] = origin.copyWith(
-      agent: origin.agent.copyWith(position: position),
+    final current = state.originById(originId);
+    if (current == null) return;
+    _recordEdit(
+      before: LineUpGraph(origins: [current]),
+      after: LineUpGraph(
+        origins: [
+          current.copyWith(
+            agent: current.agent.copyWith(position: position)
+              ..isDeleted = current.agent.isDeleted,
+          ),
+        ],
+      ),
     );
-    state = state.copyWith(origins: origins);
   }
 
   void updateLandingAbility(String landingId, PlacedAbility ability) {
-    final index =
-        state.landings.indexWhere((landing) => landing.id == landingId);
-    if (index < 0) return;
-    final landings = [...state.landings];
-    landings[index] = landings[index].copyWith(
-      ability: ability.copyWith(lineUpID: landingId),
+    final current = state.landingById(landingId);
+    if (current == null) return;
+    _recordEdit(
+      before: LineUpGraph(landings: [current]),
+      after: LineUpGraph(
+        landings: [
+          current.copyWith(ability: ability.copyWith(lineUpID: landingId)),
+        ],
+      ),
     );
-    state = state.copyWith(landings: landings);
   }
 
   void updateLandingAbilityVisualState({
@@ -895,18 +931,30 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  void _recordEdit({required LineUpGraph before, required LineUpGraph after}) {
+    _apply(from: before, to: after, addMissing: false);
+    _record(
+      LineUpGraphAction(
+        type: ActionType.edit,
+        id: _uuid.v4(),
+        before: before,
+        after: after,
+      ),
+    );
+  }
+
   // --- Deletions -----------------------------------------------------------
 
   void deleteLink(String linkId) {
     if (state.linkById(linkId) == null) return;
-    _recordDeletion(linkId, [linkId]);
+    _recordDeletion(linkId, {linkId});
   }
 
   void deleteOrigin(String originId) {
     if (state.originById(originId) == null) return;
     _recordDeletion(
       originId,
-      state.linksFromOrigin(originId).map((link) => link.id).toList(),
+      state.linksFromOrigin(originId).map((link) => link.id).toSet(),
     );
   }
 
@@ -914,89 +962,109 @@ class LineUpProvider extends Notifier<LineUpState> {
     if (state.landingById(landingId) == null) return;
     _recordDeletion(
       landingId,
-      state.linksToLanding(landingId).map((link) => link.id).toList(),
+      state.linksToLanding(landingId).map((link) => link.id).toSet(),
     );
   }
 
-  void _recordAddition(String linkId) {
-    _actionLinkIds[linkId] = [linkId];
-    ref.read(actionProvider.notifier).addAction(
-          UserAction(
-            type: ActionType.addition,
-            id: linkId,
-            group: ActionGroup.lineUp,
-          ),
-        );
-  }
-
-  void _recordDeletion(String actionId, List<String> linkIds) {
-    _actionLinkIds[actionId] = linkIds;
-    ref.read(actionProvider.notifier).addAction(
-          UserAction(
-            type: ActionType.deletion,
-            id: actionId,
-            group: ActionGroup.lineUp,
-          ),
-        );
-    _removeForAction(actionId);
-  }
-
-  /// Removes the links an action owns plus any origin or landing left with
-  /// no links, and parks the removed subgraph under the action id.
-  void _removeForAction(String actionId) {
-    final linkIds = (_actionLinkIds[actionId] ?? [actionId]).toSet();
+  /// Removes [linkIds] plus any origin or landing they leave without links,
+  /// and records exactly that subgraph as the deletion.
+  void _recordDeletion(String actionId, Set<String> linkIds) {
     final removedLinks =
         state.links.where((link) => linkIds.contains(link.id)).toList();
     if (removedLinks.isEmpty) return;
-    final remainingLinks =
+    final remaining =
         state.links.where((link) => !linkIds.contains(link.id)).toList();
-    final liveOriginIds = remainingLinks.map((link) => link.originId).toSet();
-    final liveLandingIds = remainingLinks.map((link) => link.landingId).toSet();
-
-    final removedOrigins = state.origins
-        .where((origin) => !liveOriginIds.contains(origin.id))
-        .toList();
-    final removedLandings = state.landings
-        .where((landing) => !liveLandingIds.contains(landing.id))
-        .toList();
-
-    _popped[actionId] = LineUpGraph(
-      origins: removedOrigins,
-      landings: removedLandings,
-      links: removedLinks,
-    );
-    state = state.copyWith(
+    final liveOriginIds = remaining.map((link) => link.originId).toSet();
+    final liveLandingIds = remaining.map((link) => link.landingId).toSet();
+    final removed = LineUpGraph(
       origins: state.origins
-          .where((origin) => liveOriginIds.contains(origin.id))
+          .where((origin) => !liveOriginIds.contains(origin.id))
           .toList(),
       landings: state.landings
-          .where((landing) => liveLandingIds.contains(landing.id))
+          .where((landing) => !liveLandingIds.contains(landing.id))
           .toList(),
-      links: remainingLinks,
+      links: removedLinks,
+    );
+    _apply(from: removed, to: LineUpGraph.empty, addMissing: false);
+    _record(
+      LineUpGraphAction(
+        type: ActionType.deletion,
+        id: actionId,
+        before: removed,
+      ),
     );
   }
 
-  void _restoreForAction(String actionId) {
-    final subgraph = _popped.remove(actionId);
-    if (subgraph == null) return;
-    final originIds = state.origins.map((origin) => origin.id).toSet();
-    final landingIds = state.landings.map((landing) => landing.id).toSet();
-    final linkIds = state.links.map((link) => link.id).toSet();
-    state = state.copyWith(
-      origins: [
-        ...state.origins,
-        ...subgraph.origins.where((origin) => !originIds.contains(origin.id)),
-      ],
-      landings: [
-        ...state.landings,
-        ...subgraph.landings
-            .where((landing) => !landingIds.contains(landing.id)),
-      ],
-      links: [
-        ...state.links,
-        ...subgraph.links.where((link) => !linkIds.contains(link.id)),
-      ],
+  void _record(UserAction action) {
+    ref.read(actionProvider.notifier).addAction(action);
+  }
+
+  /// Moves the entries [from] names to their state in [to], leaving every
+  /// other origin, landing and link as it currently is. Entries only in
+  /// [from] are removed; an origin or landing some remaining link still uses
+  /// stays. Entries in [to] replace the current ones by id, and are added
+  /// when missing only if [addMissing] (restoring an addition or deletion,
+  /// never resurrecting something an edit touched that is now gone).
+  void _apply({
+    required LineUpGraph from,
+    required LineUpGraph to,
+    required bool addMissing,
+  }) {
+    List<T> upsert<T>(
+      List<T> current,
+      List<T> incoming,
+      String Function(T) idOf,
+    ) {
+      final byId = {for (final entry in incoming) idOf(entry): entry};
+      final result = [
+        for (final entry in current) byId.remove(idOf(entry)) ?? entry,
+      ];
+      if (addMissing) result.addAll(byId.values);
+      return result;
+    }
+
+    Set<String> dropped<T>(List<T> a, List<T> b, String Function(T) idOf) =>
+        a.map(idOf).toSet()..removeAll(b.map(idOf));
+
+    final droppedLinks = dropped(from.links, to.links, (l) => l.id);
+    final links = upsert(
+      state.links.where((link) => !droppedLinks.contains(link.id)).toList(),
+      to.links,
+      (link) => link.id,
     );
+    final usedOrigins = links.map((link) => link.originId).toSet();
+    final usedLandings = links.map((link) => link.landingId).toSet();
+    final droppedOrigins = dropped(from.origins, to.origins, (o) => o.id)
+      ..removeAll(usedOrigins);
+    final droppedLandings = dropped(from.landings, to.landings, (l) => l.id)
+      ..removeAll(usedLandings);
+
+    state = state.copyWith(
+      origins: upsert(
+        state.origins
+            .where((origin) => !droppedOrigins.contains(origin.id))
+            .toList(),
+        to.origins,
+        (origin) => origin.id,
+      ),
+      landings: upsert(
+        state.landings
+            .where((landing) => !droppedLandings.contains(landing.id))
+            .toList(),
+        to.landings,
+        (landing) => landing.id,
+      ),
+      links: links,
+    );
+  }
+
+  /// Whether an edit still has something to act on. History drops edits
+  /// whose entries are gone rather than replaying them as silent no-ops.
+  bool canReplay(LineUpGraphAction action) {
+    if (action.type != ActionType.edit) return true;
+    return action.after.origins.every((o) => state.originById(o.id) != null) &&
+        action.after.landings.every((l) => state.landingById(l.id) != null) &&
+        action.after.links.every((l) => state.linkById(l.id) != null);
   }
 
   void undoAction(UserAction action) {
@@ -1004,17 +1072,12 @@ class LineUpProvider extends Notifier<LineUpState> {
       _applyOriginWeapon(action.id, action.before);
       return;
     }
-    switch (action.type) {
-      case ActionType.addition:
-        _removeForAction(action.id);
-        return;
-      case ActionType.deletion:
-        _restoreForAction(action.id);
-        return;
-      case ActionType.edit:
-      case ActionType.bulkDeletion:
-      case ActionType.transaction:
-        return;
+    if (action is LineUpGraphAction) {
+      _apply(
+        from: action.after,
+        to: action.before,
+        addMissing: action.type != ActionType.edit,
+      );
     }
   }
 
@@ -1023,17 +1086,12 @@ class LineUpProvider extends Notifier<LineUpState> {
       _applyOriginWeapon(action.id, action.after);
       return;
     }
-    switch (action.type) {
-      case ActionType.addition:
-        _restoreForAction(action.id);
-        return;
-      case ActionType.deletion:
-        _removeForAction(action.id);
-        return;
-      case ActionType.edit:
-      case ActionType.bulkDeletion:
-      case ActionType.transaction:
-        return;
+    if (action is LineUpGraphAction) {
+      _apply(
+        from: action.before,
+        to: action.after,
+        addMissing: action.type != ActionType.edit,
+      );
     }
   }
 
@@ -1070,37 +1128,14 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void clearAll() {
-    _popped.clear();
-    _actionLinkIds.clear();
     state = state.copyWith(origins: [], landings: [], links: []);
   }
 
   LineUpProviderSnapshot takeSnapshot() {
-    return LineUpProviderSnapshot(
-      graph: state.graph.deepCopy(),
-      popped: {
-        for (final entry in _popped.entries) entry.key: entry.value.deepCopy(),
-      },
-      actionLinkIds: {
-        for (final entry in _actionLinkIds.entries)
-          entry.key: List<String>.from(entry.value),
-      },
-    );
+    return LineUpProviderSnapshot(graph: state.graph.deepCopy());
   }
 
   void restoreSnapshot(LineUpProviderSnapshot snapshot) {
-    _popped
-      ..clear()
-      ..addAll({
-        for (final entry in snapshot.popped.entries)
-          entry.key: entry.value.deepCopy(),
-      });
-    _actionLinkIds
-      ..clear()
-      ..addAll({
-        for (final entry in snapshot.actionLinkIds.entries)
-          entry.key: List<String>.from(entry.value),
-      });
     final graph = snapshot.graph.deepCopy();
     state = state.copyWith(
       origins: graph.origins,

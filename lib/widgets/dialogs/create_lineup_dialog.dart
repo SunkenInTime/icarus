@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -122,18 +121,13 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     }
 
     if (existing != null) {
-      ref.read(actionProvider.notifier).performTransaction(
-        groups: const [ActionGroup.lineUp],
-        mutation: () {
-          notifier.updateLink(
-            existing.copyWith(
-              name: name,
-              youtubeLink: _youtubeLinkController.text,
-              notes: _notesController.text,
-              images: _imagePaths,
-            ),
-          );
-        },
+      notifier.updateLink(
+        existing.copyWith(
+          name: name,
+          youtubeLink: _youtubeLinkController.text,
+          notes: _notesController.text,
+          images: _imagePaths,
+        ),
       );
     } else {
       final link = notifier.commitPlacement(

@@ -167,14 +167,6 @@ class BulkActionSnapshot {
           ? null
           : LineUpProviderSnapshot(
               graph: lineUpSnapshot!.graph.deepCopy(),
-              popped: {
-                for (final entry in lineUpSnapshot!.popped.entries)
-                  entry.key: entry.value.deepCopy(),
-              },
-              actionLinkIds: {
-                for (final entry in lineUpSnapshot!.actionLinkIds.entries)
-                  entry.key: [...entry.value],
-              },
             ),
       strategySettingsSnapshot: strategySettingsSnapshot?.copyWith(),
       imageSizeSnapshot: Map<String, Offset>.from(imageSizeSnapshot),
@@ -702,6 +694,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
         if (!_canKeepEditAction(action.objectDelta!)) {
           continue;
         }
+      }
+      if (action is LineUpGraphAction &&
+          !ref.read(lineUpProvider.notifier).canReplay(action)) {
+        continue;
       }
       reconciled.add(action.copy());
     }
