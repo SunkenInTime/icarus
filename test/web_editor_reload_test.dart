@@ -171,12 +171,8 @@ void main() {
       ),
     ));
 
-    final shortcutsNode = Focus.of(tester.element(find
-        .descendant(
-          of: find.byType(GlobalShortcuts),
-          matching: find.byType(Shortcuts),
-        )
-        .first));
+    final shortcutsNode = FocusManager.instance.rootScope.descendants
+        .singleWhere((node) => node.debugLabel == 'global-shortcuts');
     final viewScope = FocusManager.instance.rootScope.descendants
         .whereType<FocusScopeNode>()
         .firstWhere((node) => node.debugLabel == 'View Scope');

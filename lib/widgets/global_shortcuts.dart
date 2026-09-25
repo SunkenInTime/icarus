@@ -37,6 +37,16 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     return false;
   }
 
+  // Catches shortcuts for the whole app; it is never a Tab stop. Skipping
+  // traversal also keeps it out of Flutter's reading-order sort: on web that
+  // sort runs when the page first takes focus, before the first layout, and
+  // measuring this node beside the navigator threw "RenderBox was not laid
+  // out" on every load (flutter/flutter#191508).
+  final FocusNode _focusNode = FocusNode(
+    debugLabel: 'global-shortcuts',
+    skipTraversal: true,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +58,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleModifierKeyEvent);
     WidgetsBinding.instance.removeObserver(this);
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -66,227 +77,224 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
   Widget build(BuildContext context) {
     final capabilities = ref.watch(currentStrategyCapabilitiesProvider);
 
-    return Focus(
-      autofocus: true,
-      // This node only catches shortcuts for the whole app; it is never a Tab
-      // stop. It also keeps it out of Flutter's reading-order sort: on web
-      // that sort runs when the page first takes focus, before the first
-      // layout, and measuring this node beside the navigator threw "RenderBox
-      // was not laid out" on every load (flutter/flutter#191508).
-      skipTraversal: true,
-      child: Shortcuts(
-        shortcuts: ShortcutInfo.globalShortcutsFor(
-          ref.watch(appPreferencesProvider).customShortcutBindings,
-        ),
-        child: Actions(
-          actions: {
-            NavigationActionIntent: CallbackAction<NavigationActionIntent>(
-              onInvoke: (intent) {
-                _dismissDeleteMenu();
+    // The focus node sits inside Shortcuts, so shortcuts still fire when
+    // the node itself holds focus. With the web semantics tree on, a click
+    // on an empty part of the page focuses it.
+    return Shortcuts(
+      shortcuts: ShortcutInfo.globalShortcutsFor(
+        ref.watch(appPreferencesProvider).customShortcutBindings,
+      ),
+      child: Actions(
+        actions: {
+          NavigationActionIntent: CallbackAction<NavigationActionIntent>(
+            onInvoke: (intent) {
+              _dismissDeleteMenu();
+              ref
+                  .read(interactionStateProvider.notifier)
+                  .update(InteractionState.navigation);
+              return null;
+            },
+          ),
+          ToggleAgentFilterIntent: CallbackAction<ToggleAgentFilterIntent>(
+            onInvoke: (intent) {
+              _dismissDeleteMenu();
+              ref.read(agentFilterProvider.notifier).toggleAllOnMap();
+              return null;
+            },
+          ),
+          ForwardPageIntent: CallbackAction<ForwardPageIntent>(
+            onInvoke: (intent) async {
+              _dismissDeleteMenu();
+              await ref.read(strategyProvider.notifier).forwardPage();
+              return null;
+            },
+          ),
+          BackwardPageIntent: CallbackAction<BackwardPageIntent>(
+            onInvoke: (intent) async {
+              _dismissDeleteMenu();
+              await ref.read(strategyProvider.notifier).backwardPage();
+              return null;
+            },
+          ),
+          SwitchSideIntent: CallbackAction<SwitchSideIntent>(
+            onInvoke: (intent) async {
+              _dismissDeleteMenu();
+              await ref
+                  .read(strategyProvider.notifier)
+                  .switchSide(allPages: true);
+              return null;
+            },
+          ),
+          SwitchSideThisPageIntent: CallbackAction<SwitchSideThisPageIntent>(
+            onInvoke: (intent) async {
+              _dismissDeleteMenu();
+              await ref
+                  .read(strategyProvider.notifier)
+                  .switchSide(allPages: false);
+              return null;
+            },
+          ),
+          AddPageIntent: CallbackAction<AddPageIntent>(
+            onInvoke: (intent) async {
+              if (!capabilities.canAddPage) return null;
+              _dismissDeleteMenu();
+              await ref.read(strategyProvider.notifier).addPage();
+              return null;
+            },
+          ),
+          ToggleLineupIntent: CallbackAction<ToggleLineupIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages) return null;
+              if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) {
+                return null;
+              }
+              _dismissDeleteMenu();
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.lineUpPlacing) {
                 ref
                     .read(interactionStateProvider.notifier)
                     .update(InteractionState.navigation);
-                return null;
-              },
-            ),
-            ToggleAgentFilterIntent: CallbackAction<ToggleAgentFilterIntent>(
-              onInvoke: (intent) {
+              } else {
+                ref
+                    .read(interactionStateProvider.notifier)
+                    .update(InteractionState.lineUpPlacing);
+              }
+              return null;
+            },
+          ),
+          OpenInAppDebugIntent: CallbackAction<OpenInAppDebugIntent>(
+            onInvoke: (intent) async {
+              _dismissDeleteMenu();
+              await AppErrorReporter.openDebugLog();
+              return null;
+            },
+          ),
+          ContextualDeleteIntent: CallbackAction<ContextualDeleteIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages) return null;
+              final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+              if (hoveredTarget != null) {
                 _dismissDeleteMenu();
-                ref.read(agentFilterProvider.notifier).toggleAllOnMap();
+                ref.read(hoveredDeleteTargetProvider.notifier).state = null;
+                deleteHoveredTarget(ref, hoveredTarget);
                 return null;
-              },
-            ),
-            ForwardPageIntent: CallbackAction<ForwardPageIntent>(
-              onInvoke: (intent) async {
-                _dismissDeleteMenu();
-                await ref.read(strategyProvider.notifier).forwardPage();
-                return null;
-              },
-            ),
-            BackwardPageIntent: CallbackAction<BackwardPageIntent>(
-              onInvoke: (intent) async {
-                _dismissDeleteMenu();
-                await ref.read(strategyProvider.notifier).backwardPage();
-                return null;
-              },
-            ),
-            SwitchSideIntent: CallbackAction<SwitchSideIntent>(
-              onInvoke: (intent) async {
-                _dismissDeleteMenu();
-                await ref
-                    .read(strategyProvider.notifier)
-                    .switchSide(allPages: true);
-                return null;
-              },
-            ),
-            SwitchSideThisPageIntent:
-                CallbackAction<SwitchSideThisPageIntent>(
-              onInvoke: (intent) async {
-                _dismissDeleteMenu();
-                await ref
-                    .read(strategyProvider.notifier)
-                    .switchSide(allPages: false);
-                return null;
-              },
-            ),
-            AddPageIntent: CallbackAction<AddPageIntent>(
-              onInvoke: (intent) async {
-                if (!capabilities.canAddPage) return null;
-                _dismissDeleteMenu();
-                await ref.read(strategyProvider.notifier).addPage();
-                return null;
-              },
-            ),
-            ToggleLineupIntent: CallbackAction<ToggleLineupIntent>(
-              onInvoke: (intent) {
-                if (!capabilities.canEditPages) return null;
-                if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) {
-                  return null;
-                }
-                _dismissDeleteMenu();
-                if (ref.read(interactionStateProvider) ==
-                    InteractionState.lineUpPlacing) {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.navigation);
-                } else {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.lineUpPlacing);
-                }
-                return null;
-              },
-            ),
-            OpenInAppDebugIntent: CallbackAction<OpenInAppDebugIntent>(
-              onInvoke: (intent) async {
-                _dismissDeleteMenu();
-                await AppErrorReporter.openDebugLog();
-                return null;
-              },
-            ),
-            ContextualDeleteIntent: CallbackAction<ContextualDeleteIntent>(
-              onInvoke: (intent) {
-                if (!capabilities.canEditPages) return null;
-                final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
-                if (hoveredTarget != null) {
-                  _dismissDeleteMenu();
-                  ref.read(hoveredDeleteTargetProvider.notifier).state = null;
-                  deleteHoveredTarget(ref, hoveredTarget);
-                  return null;
-                }
+              }
 
-                final deleteMenuState = ref.read(deleteMenuProvider);
-                if (deleteMenuState.isOpenRequested) {
-                  _dismissDeleteMenu();
-                  return null;
-                }
+              final deleteMenuState = ref.read(deleteMenuProvider);
+              if (deleteMenuState.isOpenRequested) {
+                _dismissDeleteMenu();
+                return null;
+              }
 
-                ref.read(deleteMenuProvider.notifier).requestOpen(
-                      reason: DeleteMenuOpenReason.keyboard,
-                    );
-                return null;
-              },
-            ),
-            UndoActionIntent: CallbackAction<UndoActionIntent>(
-              onInvoke: (intent) {
-                if (!capabilities.canEditPages) return null;
-                _dismissDeleteMenu();
-                ref.read(actionProvider.notifier).undoAction();
-                return null;
-              },
-            ),
-            AddedTextIntent: CallbackAction<AddedTextIntent>(
-              onInvoke: (intent) {
-                if (!capabilities.canEditPages) return null;
-                _dismissDeleteMenu();
-                const uuid = Uuid();
-                final placementCenter = ref.read(placementCenterProvider);
-                const defaultTextWidth = 185.0;
-                const defaultTextHeight = 40.0;
-                final centeredTopLeft = placementCenter -
-                    const Offset(defaultTextWidth / 2, defaultTextHeight / 2);
-
-                ref.read(textProvider.notifier).addText(
-                      PlacedText(
-                        position: centeredTopLeft,
-                        id: uuid.v4(),
-                        size: defaultTextWidth,
-                        fontSize: 16,
-                        sizeVersion: worldSizedMediaVersion,
-                      ),
-                    );
-                return null;
-              },
-            ),
-            ToggleDrawingIntent: CallbackAction<ToggleDrawingIntent>(
-              onInvoke: (intent) {
-                if (!capabilities.canEditPages) return null;
-                _dismissDeleteMenu();
-                if (ref.read(interactionStateProvider) ==
-                    InteractionState.drawing) {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.navigation);
-                } else {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.drawing);
-                }
-                return null;
-              },
-            ),
-            ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
-              onInvoke: (intent) async {
-                if (!capabilities.canEditPages) return null;
-                _dismissDeleteMenu();
-                if (ref.read(interactionStateProvider) ==
-                    InteractionState.erasing) {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.navigation);
-                } else {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.erasing);
-                  await ref.read(penProvider.notifier).buildCursors();
-                }
-                return null;
-              },
-            ),
-            RedoActionIntent: CallbackAction<RedoActionIntent>(
-              onInvoke: (intent) {
-                if (!capabilities.canEditPages) return null;
-                _dismissDeleteMenu();
-                ref.read(actionProvider.notifier).redoAction();
-                return null;
-              },
-            ),
-            SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
-              onInvoke: (intent) async {
-                if (!capabilities.canEditPages) return null;
-                _dismissDeleteMenu();
-                final strategyId = ref.read(strategyProvider).strategyId;
-                if (strategyId == null) return null;
-                try {
-                  await ref.read(strategyProvider.notifier).forceSaveNow(
-                        strategyId,
-                      );
-                  if (!mounted) return null;
-                  Settings.showToast(
-                    message: 'File saved',
-                    backgroundColor: Colors.green,
+              ref.read(deleteMenuProvider.notifier).requestOpen(
+                    reason: DeleteMenuOpenReason.keyboard,
                   );
-                } catch (_) {
-                  if (!mounted) return null;
-                  Settings.showToast(
-                    message: 'Save failed',
-                    backgroundColor: Colors.red,
+              return null;
+            },
+          ),
+          UndoActionIntent: CallbackAction<UndoActionIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages) return null;
+              _dismissDeleteMenu();
+              ref.read(actionProvider.notifier).undoAction();
+              return null;
+            },
+          ),
+          AddedTextIntent: CallbackAction<AddedTextIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages) return null;
+              _dismissDeleteMenu();
+              const uuid = Uuid();
+              final placementCenter = ref.read(placementCenterProvider);
+              const defaultTextWidth = 185.0;
+              const defaultTextHeight = 40.0;
+              final centeredTopLeft = placementCenter -
+                  const Offset(defaultTextWidth / 2, defaultTextHeight / 2);
+
+              ref.read(textProvider.notifier).addText(
+                    PlacedText(
+                      position: centeredTopLeft,
+                      id: uuid.v4(),
+                      size: defaultTextWidth,
+                      fontSize: 16,
+                      sizeVersion: worldSizedMediaVersion,
+                    ),
                   );
-                }
-                return null;
-              },
-            ),
-          },
+              return null;
+            },
+          ),
+          ToggleDrawingIntent: CallbackAction<ToggleDrawingIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages) return null;
+              _dismissDeleteMenu();
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.drawing) {
+                ref
+                    .read(interactionStateProvider.notifier)
+                    .update(InteractionState.navigation);
+              } else {
+                ref
+                    .read(interactionStateProvider.notifier)
+                    .update(InteractionState.drawing);
+              }
+              return null;
+            },
+          ),
+          ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
+            onInvoke: (intent) async {
+              if (!capabilities.canEditPages) return null;
+              _dismissDeleteMenu();
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.erasing) {
+                ref
+                    .read(interactionStateProvider.notifier)
+                    .update(InteractionState.navigation);
+              } else {
+                ref
+                    .read(interactionStateProvider.notifier)
+                    .update(InteractionState.erasing);
+                await ref.read(penProvider.notifier).buildCursors();
+              }
+              return null;
+            },
+          ),
+          RedoActionIntent: CallbackAction<RedoActionIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages) return null;
+              _dismissDeleteMenu();
+              ref.read(actionProvider.notifier).redoAction();
+              return null;
+            },
+          ),
+          SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
+            onInvoke: (intent) async {
+              if (!capabilities.canEditPages) return null;
+              _dismissDeleteMenu();
+              final strategyId = ref.read(strategyProvider).strategyId;
+              if (strategyId == null) return null;
+              try {
+                await ref.read(strategyProvider.notifier).forceSaveNow(
+                      strategyId,
+                    );
+                if (!mounted) return null;
+                Settings.showToast(
+                  message: 'File saved',
+                  backgroundColor: Colors.green,
+                );
+              } catch (_) {
+                if (!mounted) return null;
+                Settings.showToast(
+                  message: 'Save failed',
+                  backgroundColor: Colors.red,
+                );
+              }
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          focusNode: _focusNode,
+          autofocus: true,
           child: widget.child,
         ),
       ),

@@ -24,16 +24,6 @@ import 'package:uuid/uuid.dart';
 final placedImageProvider =
     NotifierProvider<PlacedImageProvider, ImageState>(PlacedImageProvider.new);
 
-class PlacedImageProviderSnapshot {
-  final List<PlacedImage> images;
-  final List<PlacedImage> poppedImages;
-
-  const PlacedImageProviderSnapshot({
-    required this.images,
-    required this.poppedImages,
-  });
-}
-
 class ImageState {
   ImageState({
     required this.images,
@@ -554,22 +544,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
   void clearAll() {
     poppedImages = [];
     state = state.copyWith(images: []);
-  }
-
-  PlacedImageProviderSnapshot takeSnapshot() {
-    return PlacedImageProviderSnapshot(
-      images: state.images.map((image) => clonePlacedImage(image)).toList(),
-      poppedImages:
-          poppedImages.map((image) => clonePlacedImage(image)).toList(),
-    );
-  }
-
-  void restoreSnapshot(PlacedImageProviderSnapshot snapshot) {
-    poppedImages =
-        snapshot.poppedImages.map((image) => clonePlacedImage(image)).toList();
-    state = state.copyWith(
-      images: snapshot.images.map((image) => clonePlacedImage(image)).toList(),
-    );
   }
 
   /// Writes an edit onto the image as it is now. An image that is gone

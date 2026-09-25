@@ -3778,6 +3778,83 @@ void main() {
       );
     });
 
+    test(
+        'redoing a lineup deletion a teammate already made removes nothing '
+        'and the next undo does not resurrect it', () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      container.read(lineUpProvider.notifier).deleteOrigin('mine');
+      history(container).undoAction();
+      expect(container.read(lineUpProvider).links, hasLength(1));
+      await land(container, remote, page); // the teammate deleted it
+
+      history(container).redoAction();
+      expect(container.read(lineUpProvider).links, isEmpty);
+      history(container).undoAction();
+
+      expect(container.read(lineUpProvider).links, isEmpty);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.lineup(page.publicId, 'mine')],
+        isNull,
+      );
+    });
+
+    test('undoing a weapon change on an agent a teammate deleted does nothing',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container
+          .read(agentProvider.notifier)
+          .setWeapon('jett', WeaponType.classic);
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'jett'));
+
+      history(container).undoAction();
+
+      expect(container.read(agentProvider), isEmpty);
+      expect(history(container).poppedItems, isEmpty);
+    });
+
+    test('undoing a lineup weapon change a teammate deleted does nothing',
+        () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      container
+          .read(lineUpProvider.notifier)
+          .setOriginWeapon('mine', WeaponType.classic);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+
+      expect(container.read(lineUpProvider).origins, isEmpty);
+      expect(history(container).poppedItems, isEmpty);
+    });
+
+    test(
+        'undoing a lineup notes edit whose link a teammate deleted does '
+        'nothing', () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+      final lineUps = container.read(lineUpProvider.notifier);
+
+      lineUps.updateLink(
+        container.read(lineUpProvider).links.single.copyWith(notes: 'mine'),
+      );
+      lineUps.deleteOrigin('mine');
+      history(container).undoAction(); // the deletion
+      await land(container, remote, page); // the teammate deleted it
+
+      // The edit stays in history (a retained deletion can bring its link
+      // back), but with the link gone undoing it changes nothing.
+      history(container).undoAction();
+
+      expect(container.read(lineUpProvider).links, isEmpty);
+      expect(history(container).poppedItems, hasLength(1));
+    });
+
     test('undoing a lineup clear keeps a lineup a teammate added', () async {
       final (container, remote, page) =
           await open(const [], lineups: [_lineup('page-1', 'mine')]);

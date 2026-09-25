@@ -16,16 +16,6 @@ import 'package:icarus/const/placed_classes.dart';
 final agentProvider =
     NotifierProvider<AgentProvider, List<PlacedAgentNode>>(AgentProvider.new);
 
-class AgentProviderSnapshot {
-  final List<PlacedAgentNode> agents;
-  final List<PlacedAgentNode> poppedAgents;
-
-  const AgentProviderSnapshot({
-    required this.agents,
-    required this.poppedAgents,
-  });
-}
-
 class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   List<PlacedAgentNode> poppedAgents = [];
   final Map<String, ActionObjectState> _pendingEditBefore = {};
@@ -532,26 +522,6 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     poppedAgents = [];
     _pendingEditBefore.clear();
     state = [];
-  }
-
-  AgentProviderSnapshot takeSnapshot() {
-    return AgentProviderSnapshot(
-      agents:
-          state.map((agent) => agent.snapshotCopy<PlacedAgentNode>()).toList(),
-      poppedAgents: poppedAgents
-          .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
-          .toList(),
-    );
-  }
-
-  void restoreSnapshot(AgentProviderSnapshot snapshot) {
-    poppedAgents = snapshot.poppedAgents
-        .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
-        .toList();
-    _pendingEditBefore.clear();
-    state = snapshot.agents
-        .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
-        .toList();
   }
 
   void _upsertAgent(PlacedAgentNode agent) {

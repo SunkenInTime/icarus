@@ -598,12 +598,6 @@ class LineUpState {
   }
 }
 
-class LineUpProviderSnapshot {
-  final LineUpGraph graph;
-
-  const LineUpProviderSnapshot({required this.graph});
-}
-
 /// Adding or removing lineups: the origins, landings and links the change
 /// put in ([after]) or took out ([before]). Undo and redo apply it to
 /// whatever graph is current, so a page rehydrated in between (a cloud ack,
@@ -1369,12 +1363,12 @@ class LineUpProvider extends Notifier<LineUpState> {
     ).deepCopy();
   }
 
+  /// Undoes a weapon or field edit. Graph changes (additions, deletions,
+  /// clears) replay through [replayGraphAction].
   void undoAction(UserAction action) {
     switch (action) {
       case WeaponSelectionAction():
         _applyOriginWeapon(action.id, action.before);
-      case LineUpGraphAction():
-        replayGraphAction(action, undo: true);
       case LineUpEditAction():
         _writeField(action.field, action.targetId, action.before);
       default:
@@ -1382,12 +1376,12 @@ class LineUpProvider extends Notifier<LineUpState> {
     }
   }
 
+  /// Redoes a weapon or field edit. Graph changes replay through
+  /// [replayGraphAction].
   void redoAction(UserAction action) {
     switch (action) {
       case WeaponSelectionAction():
         _applyOriginWeapon(action.id, action.after);
-      case LineUpGraphAction():
-        replayGraphAction(action, undo: false);
       case LineUpEditAction():
         _writeField(action.field, action.targetId, action.after);
       default:
@@ -1429,19 +1423,6 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void clearAll() {
     state = state.copyWith(origins: [], landings: [], links: []);
-  }
-
-  LineUpProviderSnapshot takeSnapshot() {
-    return LineUpProviderSnapshot(graph: state.graph.deepCopy());
-  }
-
-  void restoreSnapshot(LineUpProviderSnapshot snapshot) {
-    final graph = snapshot.graph.deepCopy();
-    state = state.copyWith(
-      origins: graph.origins,
-      landings: graph.landings,
-      links: graph.links,
-    );
   }
 }
 

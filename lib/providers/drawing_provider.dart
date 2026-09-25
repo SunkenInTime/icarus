@@ -64,16 +64,6 @@ class DrawingState {
 final drawingProvider =
     NotifierProvider<DrawingProvider, DrawingState>(DrawingProvider.new);
 
-class DrawingProviderSnapshot {
-  final DrawingState state;
-  final List<DrawingElement> poppedElements;
-
-  const DrawingProviderSnapshot({
-    required this.state,
-    required this.poppedElements,
-  });
-}
-
 class DrawingProvider extends Notifier<DrawingState> {
   List<DrawingElement> poppedElements = [];
 
@@ -932,39 +922,6 @@ class DrawingProvider extends Notifier<DrawingState> {
   void clearAll() {
     poppedElements = [];
     state = DrawingState(elements: []);
-    _triggerRepaint();
-  }
-
-  DrawingProviderSnapshot takeSnapshot() {
-    return DrawingProviderSnapshot(
-      state: DrawingState(
-        elements: state.elements
-            .map((element) => cloneDrawingElement(element))
-            .toList(),
-        updateCounter: state.updateCounter,
-        currentElement: state.currentElement == null
-            ? null
-            : cloneDrawingElement(state.currentElement!),
-      ),
-      poppedElements: poppedElements
-          .map((element) => cloneDrawingElement(element))
-          .toList(),
-    );
-  }
-
-  void restoreSnapshot(DrawingProviderSnapshot snapshot) {
-    poppedElements = snapshot.poppedElements
-        .map((element) => cloneDrawingElement(element))
-        .toList();
-    state = DrawingState(
-      elements: snapshot.state.elements
-          .map((element) => cloneDrawingElement(element))
-          .toList(),
-      updateCounter: snapshot.state.updateCounter,
-      currentElement: snapshot.state.currentElement == null
-          ? null
-          : cloneDrawingElement(snapshot.state.currentElement!),
-    );
     _triggerRepaint();
   }
 
