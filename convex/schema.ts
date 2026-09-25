@@ -92,7 +92,9 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    // Graph rows are keyed `<payloadKind>:<entity id>`; see ops.ts.
+    // Graph rows are keyed `<payloadKind>:<entity id>`; see ops.ts. A key is
+    // unique within its strategy, not across strategies: a copied strategy
+    // may reuse its original's entity ids.
     payloadKind: lineupPayloadKindValidator,
     payloadVersion: v.number(),
     payload: lineupPayloadValidator,
@@ -102,7 +104,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_publicId", ["publicId"])
+    .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_pageId", ["pageId"])
     .index("by_strategyId", ["strategyId"])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),

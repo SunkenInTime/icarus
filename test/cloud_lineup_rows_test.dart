@@ -116,6 +116,14 @@ void main() {
     final mixed = lineUpGraphFromCloudRows([groupRow, linkRow]);
     expect(mixed.graph.links.single.notes, 'from the graph');
     expect(mixed.drawnRowIds, {'g', 'lineupLink:item'});
+
+    // Fully converted: the group still counts as drawn, so the client that
+    // shows it is the one that deletes it.
+    final converted = cloudLineupRows(legacyOnly.graph);
+    final both = lineUpGraphFromCloudRows([groupRow, ...converted]);
+    expect(both.drawnRowIds, {'g', ...converted.map((row) => row.publicId)});
+    expect(legacyGroupRowIds(groupRow.payload),
+        converted.map((row) => row.publicId).toSet());
   });
 
   test('an unknown row kind fails loudly, naming the row', () {

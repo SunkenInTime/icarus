@@ -68,22 +68,6 @@ export async function getElementByPublicId(
   return element;
 }
 
-export async function getLineupByPublicId(
-  ctx: AnyCtx,
-  lineupPublicId: string,
-): Promise<Doc<"lineups">> {
-  const lineup = await ctx.db
-    .query("lineups")
-    .withIndex("by_publicId", (q) => q.eq("publicId", lineupPublicId))
-    .first();
-
-  if (lineup === null) {
-    throw notFoundError("Lineup", lineupPublicId);
-  }
-
-  return lineup;
-}
-
 export function sortByNumberField<T extends Record<string, unknown>>(
   input: T[],
   field: keyof T,

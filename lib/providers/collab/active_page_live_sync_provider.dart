@@ -519,6 +519,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           );
           continue;
         }
+        if (_legacyGroupConversionPending(
+          pageId: pageId,
+          base: hydratedBase ?? remote,
+          localEntities: localEntities,
+          remoteEntities: remoteEntities,
+        )) {
+          nextOverlay.remove(key);
+          _debugLog('overlay.skip $key reason=conversion_not_landed');
+          continue;
+        }
         final entityType = existingOverlay?.entityType ??
             hydratedBase?.overlayEntityType ??
             remote?.overlayEntityType ??
@@ -843,11 +853,24 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // first sent with and new rows go after the page's highest: order is
     // never re-sent, so removing one lineup does not rewrite every row after
     // it and collide with a teammate editing one of them.
+    // A row that another client already wrote (both converted the same
+    // legacy group) takes the server's sortIndex, so the same content reads
+    // as the same row instead of an add the server refuses.
     bool isPageLineup(EntitySyncKey key) =>
         key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup;
+    final remoteSortIndex = {
+      for (final lineup in ref
+              .read(remoteEditorSnapshotProvider)
+              .valueOrNull
+              ?.lineupsByPage[pageId] ??
+          const <RemoteLineup>[])
+        if (!lineup.deleted)
+          EntitySyncKey.lineup(pageId, lineup.publicId): lineup.sortIndex,
+    };
     int? knownSortIndex(EntitySyncKey key) =>
         state.overlayByEntityKey[key]?.desiredSortIndex ??
-        _hydratedBaseByEntityKey[key]?.sortIndex;
+        _hydratedBaseByEntityKey[key]?.sortIndex ??
+        remoteSortIndex[key];
     var nextSortIndex = 1 +
         [
           for (final key in _hydratedBaseByEntityKey.keys)
@@ -892,6 +915,32 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           key(cloudLineupRowId(CloudLineupKind.landing, link.landingId)),
       ],
     };
+  }
+
+  /// Whether [base] is a legacy group row whose conversion has not landed.
+  ///
+  /// A group converts by adding its graph rows and deleting the group. The
+  /// delete waits until every row the canvas still shows from it is live on
+  /// the server, so an add that fails (and keeps failing) never leaves the
+  /// lineup with neither form: the group stays, and a reload still shows it.
+  /// Rows the canvas no longer shows (the user deleted that lineup) do not
+  /// hold the delete back.
+  bool _legacyGroupConversionPending({
+    required String pageId,
+    required _NormalizedEntity? base,
+    required Map<EntitySyncKey, _NormalizedEntity> localEntities,
+    required Map<EntitySyncKey, _NormalizedEntity> remoteEntities,
+  }) {
+    final payload = base?.payload;
+    if (payload is! Map<String, dynamic>) return false;
+    final rowIds = legacyGroupRowIds(payload);
+    if (rowIds == null) return false;
+    return rowIds.any((rowId) {
+      final key = EntitySyncKey.lineup(pageId, rowId);
+      final remote = remoteEntities[key];
+      return localEntities.containsKey(key) &&
+          (remote == null || remote.deleted);
+    });
   }
 
   /// The page's live lineup rows that hydration skipped.

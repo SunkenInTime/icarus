@@ -138,12 +138,12 @@ function link(
 
 type Row = ReturnType<typeof origin | typeof landing | typeof link>;
 
-function addOp(row: Row, sortIndex: number) {
+function addOp(row: Row, sortIndex: number, page = pagePublicId) {
   return {
     opId: `add-${row.key}`,
     type: "lineup.add",
     lineupPublicId: row.key,
-    pagePublicId,
+    pagePublicId: page,
     payload: row.payload,
     sortIndex,
   };
@@ -164,9 +164,10 @@ async function apply(
   user: Harness,
   clientId: string,
   ops: Array<Record<string, unknown>>,
+  strategy = strategyPublicId,
 ): Promise<Result[]> {
   const response = (await user.mutation(applyBatch, {
-    strategyPublicId,
+    strategyPublicId: strategy,
     clientId,
     clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     ops,
@@ -174,12 +175,29 @@ async function apply(
   return response.results;
 }
 
-async function pageLineups(user: Harness): Promise<LineupRow[]> {
+async function pageLineups(
+  user: Harness,
+  strategy = strategyPublicId,
+  page = pagePublicId,
+): Promise<LineupRow[]> {
   const snapshot = (await user.query(getPageSnapshot, {
-    strategyPublicId,
-    pagePublicId,
+    strategyPublicId: strategy,
+    pagePublicId: page,
   })) as { lineups: LineupRow[] };
   return snapshot.lineups;
+}
+
+/** A second strategy owned by [owner], with one page. */
+async function createCopy(owner: Harness, publicId: string, page: string) {
+  await owner.mutation(createStrategy, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+    publicId,
+    name: "Copy",
+    mapData: "ascent",
+    initialPagePublicId: page,
+    initialPageName: "Page 1",
+    initialPageIsAttack: true,
+  });
 }
 
 function byKey(rows: LineupRow[]): Map<string, LineupRow> {
@@ -504,5 +522,177 @@ describe("lineup graph rows", () => {
     expect(snapshot.assets.map((asset) => asset.publicId)).toEqual([
       "link-image",
     ]);
+  });
+});
+
+describe("lineup row keys belong to their strategy", () => {
+  /** A legacy group as a client wrote it before the graph synced. */
+  function legacyGroup(groupId: string, itemId: string) {
+    return {
+      kind: "lineupGroup" as const,
+      payloadVersion: 1,
+      data: {
+        id: groupId,
+        agent: { id: `agent-${groupId}`, type: "sova", lineUpID: groupId },
+        items: [
+          {
+            id: itemId,
+            ability: { id: `ability-${itemId}`, lineUpID: groupId },
+            youtubeLink: "",
+            notes: `notes ${groupId}`,
+            images: [],
+          },
+        ],
+      },
+    };
+  }
+
+  /** The ops a new client sends to convert [groupId] (see cloud_lineup_rows). */
+  function conversion(groupId: string, itemId: string, page: string) {
+    return [
+      addOp(origin(groupId), 10, page),
+      addOp(landing(itemId), 11, page),
+      addOp(
+        link(itemId, groupId, itemId, { notes: `notes ${groupId}` }),
+        12,
+        page,
+      ),
+    ];
+  }
+
+  test("a strategy copied before the graph and its original both convert", async () => {
+    const { owner } = await createHarness();
+    const copyId = "copied-strategy";
+    const copyPage = "copied-page";
+    await createCopy(owner, copyId, copyPage);
+    // The old client-side copy gave the group a fresh id and kept item ids.
+    for (const [strategy, page, groupId] of [
+      [strategyPublicId, pagePublicId, "group-original"],
+      [copyId, copyPage, "group-copy"],
+    ] as const) {
+      const added = await apply(
+        owner,
+        "old-client",
+        [
+          {
+            opId: `old-add-${groupId}`,
+            type: "lineup.add",
+            lineupPublicId: groupId,
+            pagePublicId: page,
+            payload: legacyGroup(groupId, "shared-item"),
+            sortIndex: 0,
+          },
+        ],
+        strategy,
+      );
+      expect(added[0]).toMatchObject({ status: "applied" });
+    }
+
+    // Each strategy converts: graph rows first, then the group delete.
+    for (const [strategy, page, groupId] of [
+      [strategyPublicId, pagePublicId, "group-original"],
+      [copyId, copyPage, "group-copy"],
+    ] as const) {
+      const results = await apply(
+        owner,
+        `new-client-${groupId}`,
+        [
+          ...conversion(groupId, "shared-item", page),
+          {
+            opId: `delete-${groupId}`,
+            type: "lineup.delete",
+            lineupPublicId: groupId,
+            pagePublicId: page,
+            expectedLineupRevision: 1,
+          },
+        ],
+        strategy,
+      );
+      expect(results.map((result) => result.status)).toEqual([
+        "applied",
+        "applied",
+        "applied",
+        "applied",
+      ]);
+    }
+
+    for (const [strategy, page, groupId] of [
+      [strategyPublicId, pagePublicId, "group-original"],
+      [copyId, copyPage, "group-copy"],
+    ] as const) {
+      const live = (await pageLineups(owner, strategy, page)).filter(
+        (row) => !row.deleted,
+      );
+      expect(live.map((row) => row.publicId)).toEqual([
+        `lineupOrigin:${groupId}`,
+        "lineupLanding:shared-item",
+        "lineupLink:shared-item",
+      ]);
+      expect(live[2]!.payload.data).toMatchObject({
+        originId: groupId,
+        landingId: "shared-item",
+        notes: `notes ${groupId}`,
+      });
+    }
+  });
+
+  test("strategies uploaded from a local duplicate keep the same row keys", async () => {
+    const { owner } = await createHarness();
+    const copyId = "local-duplicate";
+    const copyPage = "local-duplicate-page";
+    await createCopy(owner, copyId, copyPage);
+    // A strategy duplicated on the device keeps every lineup id; each upload
+    // keeps them too (ids only need to be unique within a strategy).
+    for (const [strategy, page] of [
+      [strategyPublicId, pagePublicId],
+      [copyId, copyPage],
+    ] as const) {
+      const results = await apply(
+        owner,
+        `upload-${strategy}`,
+        fanIn.map((row, index) => addOp(row, index, page)),
+        strategy,
+      );
+      expect(results.map((result) => result.status)).toEqual(
+        fanIn.map(() => "applied"),
+      );
+    }
+    // Editing one copy leaves the other untouched.
+    await apply(
+      owner,
+      "edit-copy",
+      [
+        {
+          ...patchOp(
+            "rename-in-copy",
+            link("link-a", "origin-a", "shared", { name: "Copy name" }),
+            1,
+          ),
+          pagePublicId: copyPage,
+        },
+      ],
+      copyId,
+    );
+    const original = byKey(await pageLineups(owner));
+    const copy = byKey(await pageLineups(owner, copyId, copyPage));
+    expect(original.get("lineupLink:link-a")?.payload.data.name).toBe(
+      "From heaven",
+    );
+    expect(copy.get("lineupLink:link-a")?.payload.data.name).toBe("Copy name");
+  });
+
+  test("the same row added twice with a different order is one add", async () => {
+    const { owner, editor } = await createHarness();
+    const first = await apply(owner, "owner-client", [addOp(origin("o"), 3)]);
+    const second = await apply(editor, "editor-client", [addOp(origin("o"), 7)]);
+    expect(first[0]).toMatchObject({ status: "applied" });
+    expect(second[0]).toMatchObject({ status: "noop" });
+    const conflicting = await apply(editor, "editor-client", [
+      { ...addOp(origin("o", "jett"), 7), opId: "different-content" },
+    ]);
+    expect(conflicting[0]).toMatchObject({
+      status: "rejected",
+      reason: "already_exists",
+    });
   });
 });

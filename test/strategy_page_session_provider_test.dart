@@ -1816,6 +1816,8 @@ void main() {
     expect(op.expectedPageRevision, 11);
   });
 
+  late _FakeRemoteEditorNotifier openedRemote;
+
   Future<ProviderContainer> openCloudPage(
     RemotePage page,
     List<RemoteLineup> lineups,
@@ -1824,6 +1826,7 @@ void main() {
       pages: [page],
       activePage: _pageSnapshot(page, text: 'remote', lineups: lineups),
     ));
+    openedRemote = remote;
     final container = await _cloudContainer(
       remote: remote,
       queue: _FakeStrategyOpQueueNotifier(),
@@ -1836,6 +1839,64 @@ void main() {
           selectFirstPageIfNeeded: true,
         );
     return container;
+  }
+
+  Map<EntitySyncKey, StrategyOp> lineupOps(
+    ProviderContainer container,
+    RemotePage page,
+  ) {
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+    expect(desired, isNotNull);
+    return {
+      for (final entry in desired!.entries)
+        if (entry.key.kind == EntitySyncKeyKind.lineup) entry.key: entry.value,
+    };
+  }
+
+  /// The rows a legacy [group] converts into, as another client stored them
+  /// from [sortIndex] on.
+  List<RemoteLineup> convertedRows(
+    RemotePage page,
+    RemoteLineup group, {
+    int sortIndex = 0,
+  }) {
+    final graph = LineUpGraph.fromLegacyGroups(
+      [LineUpGroup.fromJson(cloudPayloadData(group.payload))],
+    );
+    return [
+      for (final (index, row) in cloudLineupRows(graph).indexed)
+        RemoteLineup(
+          publicId: row.publicId,
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: page.publicId,
+          payload: jsonDecode(jsonEncode(row.payload)) as Map<String, dynamic>,
+          sortIndex: sortIndex + index,
+          revision: 1,
+          deleted: false,
+        ),
+    ];
+  }
+
+  Future<void> rehydrate(
+    ProviderContainer container,
+    RemotePage page,
+    List<RemoteLineup> lineups,
+  ) async {
+    container.read(strategySaveStateProvider.notifier).markPersisted();
+    openedRemote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        text: 'remote',
+        contentRevision: 2,
+        lineups: lineups,
+      ),
+    ));
+    await _settle();
   }
 
   Map<EntitySyncKey, StrategyOp> lineupOpsAfterTextEdit(
@@ -1890,9 +1951,8 @@ void main() {
     expect(lineUps.landings.single.id, 'item-lineup-2');
     expect(lineUps.links.single.id, 'item-lineup-2');
 
+    // First the graph rows; the group delete waits for them to land.
     final ops = lineupOpsAfterTextEdit(container, page);
-    expect(ops[EntitySyncKey.lineup(page.publicId, 'lineup-2')],
-        isA<LineupDeleteOp>());
     final adds = {
       for (final op in ops.values.whereType<LineupAddOp>())
         op.lineupPublicId: cloudPayloadData(op.payload),
@@ -1906,7 +1966,92 @@ void main() {
         'lineup-2');
     expect(adds['lineupLink:item-lineup-2'],
         containsPair('notes', 'remote lineup'));
-    expect(ops, hasLength(4));
+    expect(ops, hasLength(3));
+
+    // Once they have landed, the group goes.
+    await rehydrate(container, page, [
+      group,
+      ...convertedRows(page, group, sortIndex: 1),
+    ]);
+    expect(container.read(lineUpProvider).links.single.id, 'item-lineup-2');
+    final after = lineupOps(container, page);
+    expect(after.keys, [EntitySyncKey.lineup(page.publicId, 'lineup-2')]);
+    expect(after.values.single, isA<LineupDeleteOp>());
+    await _settle();
+  });
+
+  test('a legacy group whose conversion failed is never deleted', () async {
+    final page = _page('page-1', 0);
+    final group = _legacyGroup(page.publicId, 'lineup-1');
+    final container = await openCloudPage(page, [group]);
+    expect(lineupOpsAfterTextEdit(container, page).values,
+        everyElement(isA<LineupAddOp>()));
+
+    // The adds never land (say the server refused them) and the page is
+    // reloaded from the server, as "Use cloud version" does.
+    await rehydrate(container, page, [group]);
+
+    final lineUps = container.read(lineUpProvider);
+    expect(lineUps.links.single.id, 'item-lineup-1');
+    expect(lineUps.links.single.notes, 'remote lineup');
+    final ops = lineupOps(container, page);
+    expect(ops.values.whereType<LineupDeleteOp>(), isEmpty);
+    expect(ops, hasLength(3));
+    await _settle();
+  });
+
+  test('a second client converting the same group sends no duplicate adds',
+      () async {
+    final page = _page('page-1', 0);
+    final group = _legacyGroup(page.publicId, 'lineup-1');
+    final container = await openCloudPage(page, [group]);
+    // This client has unsent work of its own: a new lineup.
+    container.read(strategySaveStateProvider.notifier).markDirty();
+    final lineUps = container.read(lineUpProvider.notifier)..startFresh();
+    lineUps.setDraftAgent(PlacedAgent(
+      id: 'agent-new',
+      type: AgentType.sova,
+      position: const Offset(400, 400),
+    ));
+    lineUps.setDraftAbility(PlacedAbility(
+      id: 'ability-new',
+      data: AgentData.agents[AgentType.sova]!.abilities[2],
+      position: const Offset(420, 300),
+    ));
+    final fresh = lineUps.commitPlacement()!;
+    // Meanwhile another client converted the group, placing its rows after
+    // the highest sort index it knew.
+    openedRemote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        text: 'remote',
+        lineups: [group, ...convertedRows(page, group, sortIndex: 40)],
+      ),
+    ));
+    await _settle();
+
+    final ops = lineupOps(container, page);
+
+    final converted = {
+      for (final row in convertedRows(page, group))
+        EntitySyncKey.lineup(page.publicId, row.publicId),
+    };
+    expect(ops.keys.where(converted.contains), isEmpty);
+    expect(ops[EntitySyncKey.lineup(page.publicId, 'lineup-1')],
+        isA<LineupDeleteOp>());
+    expect(
+      ops.keys.toSet(),
+      {
+        EntitySyncKey.lineup(page.publicId, 'lineup-1'),
+        EntitySyncKey.lineup(page.publicId,
+            cloudLineupRowId(CloudLineupKind.origin, fresh.originId)),
+        EntitySyncKey.lineup(page.publicId,
+            cloudLineupRowId(CloudLineupKind.landing, fresh.landingId)),
+        EntitySyncKey.lineup(
+            page.publicId, cloudLineupRowId(CloudLineupKind.link, fresh.id)),
+      },
+    );
     await _settle();
   });
 

@@ -456,14 +456,20 @@ async function getElementByPublicIdOrNull(
     .first();
 }
 
+/// A lineup row key is unique within its strategy only: a strategy copied
+/// before the graph synced natively shares its original's item ids, so both
+/// convert to the same `lineupLanding:<id>` and `lineupLink:<id>` keys.
 async function getLineupByPublicIdOrNull(
   ctx: MutationCtx,
+  strategyId: Id<"strategies">,
   publicId: string,
 ): Promise<Doc<"lineups"> | null> {
   return await ctx.db
     .query("lineups")
-    .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
-    .first();
+    .withIndex("by_strategyId_and_publicId", (q) =>
+      q.eq("strategyId", strategyId).eq("publicId", publicId),
+    )
+    .unique();
 }
 
 async function getPageContent(
@@ -515,8 +521,8 @@ async function getTargetSnapshot(
     if (element === null || element.strategyId !== strategy._id) return null;
     return { revision: element.revision, payload: element.payload };
   }
-  const lineup = await getLineupByPublicIdOrNull(ctx, publicId);
-  if (lineup === null || lineup.strategyId !== strategy._id) return null;
+  const lineup = await getLineupByPublicIdOrNull(ctx, strategy._id, publicId);
+  if (lineup === null) return null;
   return { revision: lineup.revision, payload: lineup.payload };
 }
 
@@ -1210,7 +1216,11 @@ async function applyLineupOp(
   if (publicId === undefined) {
     throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
   }
-  const existing = await getLineupByPublicIdOrNull(ctx, publicId);
+  const existing = await getLineupByPublicIdOrNull(
+    ctx,
+    strategy._id,
+    publicId,
+  );
 
   if (op.kind === "add") {
     if (op.pagePublicId === undefined) {
@@ -1222,9 +1232,6 @@ async function applyLineupOp(
     }
     const payload = assertLineupPayload(op.payload, publicId);
     if (existing !== null) {
-      if (existing.strategyId !== strategy._id) {
-        return rejected("lineup_strategy_mismatch");
-      }
       if (existing.deleted) {
         const mismatch = requireExpectedRevision(op, existing.revision);
         if (mismatch !== null) {
@@ -1251,11 +1258,12 @@ async function applyLineupOp(
           eventPageId: page._id,
         };
       }
+      // The row already holds exactly this entity: two clients converted the
+      // same legacy group, or a retry landed twice. Order is not part of a
+      // lineup's content (each client places new rows after the highest it
+      // knows), so a different sortIndex alone is still the same add.
       const identical =
-        existing.pageId === page._id &&
-        valuesEqual(existing.payload, payload) &&
-        existing.sortIndex === (op.sortIndex ?? 0) &&
-        existing.deleted === false;
+        existing.pageId === page._id && valuesEqual(existing.payload, payload);
       if (identical) return noop(existing.revision, existing.pageId);
       return rejected(
         "already_exists",

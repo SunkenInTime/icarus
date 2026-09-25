@@ -102,8 +102,13 @@ CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
     }
   }
 
+  // Each legacy group row, with the graph row ids its projection stands for.
+  final legacyRowIds = <String, Set<String>>{};
   for (final (group, rowId) in legacyGroups) {
     final legacy = LineUpGraph.fromLegacyGroups([group]);
+    legacyRowIds[rowId] = {
+      for (final row in cloudLineupRows(legacy)) row.publicId,
+    };
     for (final origin in legacy.origins) {
       origins.putIfAbsent(origin.id, () => (origin, rowId));
     }
@@ -132,6 +137,14 @@ CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
       if (usedLandings.contains(entry.$1.id)) entry,
   ];
 
+  final drawnEntities = {
+    for (final (origin, _) in drawnOrigins)
+      cloudLineupRowId(CloudLineupKind.origin, origin.id),
+    for (final (landing, _) in drawnLandings)
+      cloudLineupRowId(CloudLineupKind.landing, landing.id),
+    for (final (link, _) in drawnLinks)
+      cloudLineupRowId(CloudLineupKind.link, link.id),
+  };
   return CloudLineupGraph(
     graph: LineUpGraph(
       origins: [for (final (origin, _) in drawnOrigins) origin],
@@ -142,8 +155,27 @@ CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
       for (final (_, rowId) in drawnOrigins) rowId,
       for (final (_, rowId) in drawnLandings) rowId,
       for (final (_, rowId) in drawnLinks) rowId,
+      // A legacy group is on the canvas while any lineup it stands for is,
+      // even once graph rows supply them: it is still the user's to convert.
+      for (final MapEntry(key: rowId, value: entities) in legacyRowIds.entries)
+        if (entities.any(drawnEntities.contains)) rowId,
     },
   );
+}
+
+/// The graph row ids a legacy group row converts into, or null when
+/// [payload] is not a readable legacy group.
+Set<String>? legacyGroupRowIds(CloudPayload payload) {
+  if (payload['kind'] != CloudLineupKind.legacyGroup) return null;
+  try {
+    final group = LineUpGroup.fromJson(cloudPayloadData(payload));
+    return {
+      for (final row in cloudLineupRows(LineUpGraph.fromLegacyGroups([group])))
+        row.publicId,
+    };
+  } on Object {
+    return null;
+  }
 }
 
 /// [graph] with every origin, landing and link id passed through [newId],
