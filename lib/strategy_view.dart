@@ -17,7 +17,6 @@ import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/delete_capture.dart';
-import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
@@ -231,11 +230,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       ),
                     ),
                     const IcarusWordmark(),
-                    if (kIsWeb)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0),
-                        child: DemoTag(),
-                      ),
                     const Expanded(
                       child: WindowDragArea(child: SizedBox.expand()),
                     ),

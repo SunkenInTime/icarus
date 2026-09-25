@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/providers/auth_provider.dart';
 
 enum LibraryWorkspace {
@@ -15,6 +16,13 @@ enum CloudLibrarySection {
 final isCloudWorkspaceAvailableProvider = Provider<bool>((ref) {
   final auth = ref.watch(authProvider);
   return auth.isAuthenticated && auth.isConvexUserReady;
+});
+
+/// True while My Library stays closed because this platform needs the cloud
+/// library and it is not reachable yet (signed out, or still signing in).
+final librarySignInRequiredProvider = Provider<bool>((ref) {
+  return ref.watch(platformPolicyProvider).requiresSignIn &&
+      !ref.watch(isCloudWorkspaceAvailableProvider);
 });
 
 final libraryWorkspaceProvider =

@@ -28,6 +28,8 @@ import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Grayscale color matrix for dead agents
@@ -285,6 +287,9 @@ class AgentWidget extends ConsumerWidget {
           leading: const Icon(LucideIcons.plus, size: 16),
           child: const Text('Add lineup'),
           onPressed: () {
+            if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) {
+              return;
+            }
             final origin =
                 ref.read(lineUpProvider.notifier).originById(lineUpId!);
             if (origin == null) return;

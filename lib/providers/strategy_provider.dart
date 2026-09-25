@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -248,6 +249,17 @@ class StrategyProvider extends Notifier<StrategyState> {
         ? snapshot?.header.role
         : null;
     return StrategyCapabilities.fromCloudRole(role).canEditPages;
+  }
+
+  /// Fails loudly instead of reading or writing the on-device library where
+  /// the platform policy keeps it hidden. Its records stay untouched until
+  /// local access returns.
+  void _requireLocalLibrary(String action) {
+    if (ref.read(platformPolicyProvider).allowsLocalLibrary) return;
+    throw StateError(
+      'Cannot $action a local strategy: the local library is not available '
+      'on this platform.',
+    );
   }
 
   bool _selectedWorkspaceIsCloud() {
@@ -1088,6 +1100,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> loadFromHive(String id) async {
+    _requireLocalLibrary('open');
     cancelPendingSave();
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
@@ -1155,6 +1168,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final isCloud = _selectedWorkspaceIsCloud();
+    if (!isCloud) _requireLocalLibrary('create');
     final existingNames = isCloud
         ? (ref.read(cloudStrategiesProvider).valueOrNull ?? const [])
             .map((entry) => entry.strategy.name)
@@ -1520,6 +1534,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (_currentStrategyIsCloud()) {
       return;
     }
+    _requireLocalLibrary('save');
     // final drawingData = ref.read(drawingProvider).elements;
     // final agentData = ref.read(agentProvider);
     // final abilityData = ref.read(abilityProvider);

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -261,6 +262,8 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     }
     final strategyName = currentStrategy.strategyName ?? 'Untitled Strategy';
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final allowsLocalLibrary =
+        ref.watch(platformPolicyProvider).allowsLocalLibrary;
 
     return Padding(
       padding: _displayMargin,
@@ -269,10 +272,14 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
         child: ValueListenableBuilder<Box<StrategyData>>(
           valueListenable: strategiesBox.listenable(),
           builder: (context, box, _) {
-            final recents = _recentStrategies(
-              box: box,
-              currentStrategyId: currentStrategyId,
-            );
+            // Recents come from the on-device library, which this platform
+            // may keep hidden.
+            final recents = allowsLocalLibrary
+                ? _recentStrategies(
+                    box: box,
+                    currentStrategyId: currentStrategyId,
+                  )
+                : const <StrategyData>[];
 
             return OverlayPortal.overlayChildLayoutBuilder(
               controller: _controller,

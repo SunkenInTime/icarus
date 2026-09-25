@@ -18,6 +18,8 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:uuid/uuid.dart';
 
 class GlobalShortcuts extends ConsumerStatefulWidget {
@@ -133,6 +135,9 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ToggleLineupIntent: CallbackAction<ToggleLineupIntent>(
               onInvoke: (intent) {
                 if (!capabilities.canEditPages) return null;
+                if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) {
+                  return null;
+                }
                 _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.lineUpPlacing) {

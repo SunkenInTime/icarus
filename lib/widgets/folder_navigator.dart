@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
@@ -26,6 +27,7 @@ import 'package:icarus/widgets/cloud_outbox_summary_banner.dart';
 import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderNavigator extends ConsumerStatefulWidget {
@@ -81,18 +83,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     );
   }
 
-  void _showDesktopOnlyToast() {
-    Settings.showToast(
-      message: 'This feature is only supported in the Windows version.',
-      backgroundColor: Settings.tacticalVioletTheme.destructive,
-    );
-  }
-
   Future<void> handleImportIca() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
     try {
       await StrategyImportExportService(ref).loadFromFilePicker();
     } on NewerVersionImportException catch (error, stackTrace) {
@@ -113,10 +105,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 
   Future<void> handleImportBackup() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
     try {
       final result =
           await StrategyImportExportService(ref).importBackupFromFilePicker();
@@ -151,10 +140,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 
   Future<void> handleExportLibrary() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) return;
     try {
       await StrategyImportExportService(ref).exportLibrary();
     } catch (error, stackTrace) {
@@ -221,7 +207,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 .read(folderProvider.notifier)
                 .findLocalFolderByID(currentFolderId)
         : null;
-    final canCreate = tab == LibraryTab.library;
+    final canCreate =
+        tab == LibraryTab.library && !ref.watch(librarySignInRequiredProvider);
 
     Future<void> showCreateFolderDialog() async {
       await showDialog<String>(

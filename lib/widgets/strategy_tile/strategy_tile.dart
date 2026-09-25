@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
@@ -19,6 +18,8 @@ import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/role_badge.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double strategyTileGridSpacing = 20;
@@ -509,13 +510,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _exportStrategy() async {
-    if (kIsWeb) {
-      Settings.showToast(
-        message: 'This feature is only supported in the Windows version.',
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) return;
 
     if (_isCloud) {
       await runCloudStrategyExport(ref, _strategyId);
