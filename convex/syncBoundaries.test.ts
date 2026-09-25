@@ -82,6 +82,12 @@ function lineupPayload(assetPublicId: string) {
   };
 }
 
+/** A ConvexError's code (convex-test passes its data as JSON text). */
+function errorCode(error: unknown): unknown {
+  const data = (error as { data?: unknown }).data;
+  return (typeof data === "string" ? JSON.parse(data) : data)?.code;
+}
+
 async function createHarness(): Promise<{
   t: RootHarness;
   owner: Harness;
@@ -720,6 +726,42 @@ describe("record-scoped write contract", () => {
         payload: { data: { text: "first" } },
       },
     ]);
+  });
+
+  test("applyBatch throws NOT_FOUND only for a missing strategy", async () => {
+    // Clients rely on this: a thrown NOT_FOUND means the strategy is gone
+    // (never retried), while a missing page or element inside the batch is
+    // a per-op result.
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+
+    const missingElement = await applyOps(owner, "missing-entity", [
+      {
+        opId: "patch-missing",
+        kind: "patch",
+        entityType: "element",
+        entityPublicId: "element-that-never-existed",
+        payload: textPayload("orphan"),
+        expectedRevision: 1,
+      },
+    ]);
+    expect(missingElement.results).toHaveLength(1);
+    expect(missingElement.results[0]).not.toMatchObject({ status: "applied" });
+
+    const missingStrategy = await owner
+      .mutation(applyBatch, {
+        strategyPublicId: "strategy-that-was-deleted",
+        clientId: "missing-strategy",
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        ops: [],
+      })
+      .catch((error: unknown) => error);
+    expect(errorCode(missingStrategy)).toBe("NOT_FOUND");
+
+    const missingShell = await owner
+      .query(getShell, { strategyPublicId: "strategy-that-was-deleted" })
+      .catch((error: unknown) => error);
+    expect(errorCode(missingShell)).toBe("NOT_FOUND");
   });
 
   test("page membership changes use the strategy revision", async () => {

@@ -16,6 +16,10 @@ String redactSyncDiagnosticText(Object? error) {
 
 String friendlyCloudSyncError(String raw) {
   final lower = raw.toLowerCase();
+  if (lower.contains('strategy was deleted')) {
+    return 'This strategy was deleted, so its unsent changes cannot be '
+        'saved. Discard them from the library.';
+  }
   if (lower.contains('unreadable saved work')) {
     return 'A saved cloud change could not be read. It remains on this '
         'device; keep this strategy open and recover the outbox before '

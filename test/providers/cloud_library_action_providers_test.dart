@@ -6,10 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/durable_cloud_media_outbox.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -225,14 +231,38 @@ void main() {
     expect(harness.messages, isEmpty);
   });
 
-  test('cloud strategy delete removes pin and refreshes only after success',
-      () async {
+  test(
+      'cloud strategy delete removes pin, unsent edits, and refreshes only '
+      'after success', () async {
     final repository = _ActionRepository();
     final harness = _Harness(repository);
     addTearDown(harness.dispose);
     await harness.container
         .read(pinnedItemsProvider.notifier)
         .togglePin('strategy-1');
+    // An unsent edit to the strategy about to be deleted: it can never land.
+    final now = DateTime(2026);
+    await harness.outbox.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: const EntitySyncKey.element('page-1', 'element-1'),
+      pending: const PendingOp(
+        op: ElementPatchOp(
+          opId: 'edit',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {'value': 'unsent'},
+          expectedElementRevision: 1,
+        ),
+        clientId: 'client-1',
+      ),
+      status: DurableOutboxStatus.queued,
+      createdAt: now,
+      updatedAt: now,
+    ));
+    harness.container
+        .read(strategyOpQueueProvider.notifier)
+        .setCurrentAccount('account-a');
 
     final result = await harness.container
         .read(strategyProvider.notifier)
@@ -245,6 +275,7 @@ void main() {
       harness.container.read(pinnedItemsProvider),
       isNot(contains('strategy-1')),
     );
+    expect(harness.outbox.load().records, isEmpty);
     expect(harness.cloudStrategyBuilds, 2);
   });
 
@@ -302,10 +333,17 @@ void main() {
 }
 
 class _Harness {
+  final outbox = MemoryDurableStrategyOutboxStore();
+
   _Harness(this.repository) {
     container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(() => auth),
+        durableStrategyOutboxStoreProvider.overrideWithValue(outbox),
+        durableCloudMediaOutboxStoreProvider
+            .overrideWithValue(MemoryDurableCloudMediaOutboxStore()),
+        pendingMediaBytesStoreProvider
+            .overrideWithValue(MemoryPendingMediaBytesStore()),
         libraryWorkspaceProvider.overrideWith(_CloudWorkspaceNotifier.new),
         convexStrategyRepositoryProvider.overrideWithValue(repository),
         cloudLibraryActionReporterProvider.overrideWithValue(

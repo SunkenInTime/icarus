@@ -69,10 +69,18 @@ class AccountStrategyOutboxSummary {
   const AccountStrategyOutboxSummary({
     this.accountId,
     this.strategies = const <String, StrategyOutboxSummary>{},
+    this.deletedStrategies = const <String, int>{},
   });
 
   final String? accountId;
+
+  /// Work that can still reach the server, by strategy.
   final Map<String, StrategyOutboxSummary> strategies;
+
+  /// Unsent changes to strategies the server no longer has, counted by
+  /// strategy. They wait for the user to discard them and never count as
+  /// work, syncing, or attention for the strategies that still exist.
+  final Map<String, int> deletedStrategies;
 
   int get workCount => strategies.values.fold<int>(
         0,
@@ -1218,22 +1226,34 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       await _applyAcksForRecords(batch, acks);
       batchSucceeded = true;
     } catch (error, stackTrace) {
-      if (isConvexUnauthenticatedError(error)) {
-        unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
-              source: 'strategy_op_queue:flush',
-              error: error,
-              stackTrace: stackTrace,
-            ));
-      } else {
-        AppErrorReporter.reportWarning(
-          'Cloud sync could not send ${batch.length} change(s) for strategy '
-          '$strategyPublicId',
-          source: 'cloud_sync.op_queue',
-          error: redactSyncDiagnosticText(error),
-          stackTrace: stackTrace,
+      // applyBatch raises NOT_FOUND only for the strategy itself (a missing
+      // page or element is a per-op result); the shell query confirms it is
+      // gone. Retrying could never succeed.
+      final strategyDeleted = isTypedConvexNotFoundError(error) &&
+          await _strategyIsConfirmedDeleted(strategyPublicId);
+      if (strategyDeleted) {
+        await _resolveDeletedStrategy(
+          accountId: accountId,
+          strategyPublicId: strategyPublicId,
         );
+      } else {
+        if (isConvexUnauthenticatedError(error)) {
+          unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
+                source: 'strategy_op_queue:flush',
+                error: error,
+                stackTrace: stackTrace,
+              ));
+        } else {
+          AppErrorReporter.reportWarning(
+            'Cloud sync could not send ${batch.length} change(s) for strategy '
+            '$strategyPublicId',
+            source: 'cloud_sync.op_queue',
+            error: redactSyncDiagnosticText(error),
+            stackTrace: stackTrace,
+          );
+        }
+        await _restoreRecordsAfterFailure(batch, lastError: '$error');
       }
-      await _restoreRecordsAfterFailure(batch, lastError: '$error');
     } finally {
       _finishNetworkLane();
     }
@@ -1399,6 +1419,115 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _refreshActiveQueueView();
     }
   }
+
+  /// Whether the server confirms [strategyPublicId] is gone. Anything short
+  /// of a confirmation (offline, auth) is false, and the send is retried as
+  /// an ordinary failure.
+  Future<bool> _strategyIsConfirmedDeleted(String strategyPublicId) async {
+    try {
+      return await _repo.strategyIsDeleted(strategyPublicId);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Settles every outbox record of a strategy the server no longer has.
+  /// If none of its changes carries anything the user authored (only
+  /// removals and reorders of a strategy that is gone), they are dropped
+  /// with a warning. Otherwise they stay on this device marked
+  /// [cloudStrategyDeletedMessage], never retried, until the user discards
+  /// them from the library.
+  Future<void> _resolveDeletedStrategy({
+    required String accountId,
+    required String strategyPublicId,
+  }) {
+    return _serializeWrite(() async {
+      final records = _recordsByStorageKey.values
+          .where((record) =>
+              record.accountId == accountId &&
+              record.strategyPublicId == strategyPublicId)
+          .toList(growable: false);
+      final keepsAuthoredWork = records.any(
+        (record) =>
+            _carriesAuthoredContent(record.pending.op) ||
+            (record.successorPending != null &&
+                _carriesAuthoredContent(record.successorPending!.op)),
+      );
+      try {
+        for (final record in records) {
+          if (keepsAuthoredWork) {
+            await _putRecord(record.copyWith(
+              status: DurableOutboxStatus.attention,
+              updatedAt: DateTime.now(),
+              lastError: cloudStrategyDeletedMessage,
+            ));
+          } else {
+            await _removeRecordByStorageKey(record.storageKey);
+          }
+        }
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+        return;
+      }
+      AppErrorReporter.reportWarning(
+        keepsAuthoredWork
+            ? 'Strategy $strategyPublicId was deleted on the server; '
+                '${records.length} unsent change(s) are kept on this device '
+                'until discarded.'
+            : 'Strategy $strategyPublicId was deleted on the server; dropped '
+                '${records.length} unsent removal(s) that had nothing left to '
+                'remove.',
+        source: 'cloud_sync.op_queue',
+      );
+      _refreshActiveQueueView(isFlushing: false);
+    });
+  }
+
+  /// Drops every outbox record of [strategyPublicId] for the current
+  /// account: a strategy the server no longer has, discarded by the user or
+  /// deleted by them on this device.
+  Future<void> discardDeletedStrategy(String strategyPublicId) {
+    return _serializeWrite(() async {
+      final accountId = state.accountId;
+      if (accountId == null) return;
+      final storageKeys = _recordsByStorageKey.values
+          .where((record) =>
+              record.accountId == accountId &&
+              record.strategyPublicId == strategyPublicId)
+          .map((record) => record.storageKey)
+          .toList(growable: false);
+      try {
+        for (final storageKey in storageKeys) {
+          await _removeRecordByStorageKey(storageKey);
+        }
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+        return;
+      }
+      _refreshActiveQueueView();
+    });
+  }
+
+  /// Whether [op] carries something the user authored, as opposed to only
+  /// removing or reordering. Exhaustive, so a new op type must be placed.
+  static bool _carriesAuthoredContent(StrategyOp op) => switch (op) {
+        StrategyPatchOp() ||
+        PageAddOp() ||
+        PagePatchOp() ||
+        PageContentPatchOp() ||
+        ElementAddOp() ||
+        ElementPatchOp() ||
+        LineupAddOp() ||
+        LineupPatchOp() =>
+          true,
+        PageDeleteOp() ||
+        PageReorderOp() ||
+        ElementDeleteOp() ||
+        ElementReorderOp() ||
+        LineupDeleteOp() ||
+        LineupReorderOp() =>
+          false,
+      };
 
   Future<void> _restoreRecordsAfterFailure(
     List<DurableOutboxRecord> batch, {
@@ -1694,7 +1823,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
 
     final summaries = <String, StrategyOutboxSummary>{};
+    final deletedStrategies = <String, int>{};
     for (final entry in storageKeysByStrategy.entries) {
+      final isDeleted = entry.value.any(
+        (storageKey) =>
+            recordsByStorageKey[storageKey]?.lastError ==
+            cloudStrategyDeletedMessage,
+      );
+      if (isDeleted) {
+        deletedStrategies[entry.key] = entry.value.length;
+        continue;
+      }
       var queuedCount = 0;
       var inFlightCount = 0;
       var pausedCount = 0;
@@ -1744,6 +1883,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return AccountStrategyOutboxSummary(
       accountId: accountId,
       strategies: summaries,
+      deletedStrategies: deletedStrategies,
     );
   }
 

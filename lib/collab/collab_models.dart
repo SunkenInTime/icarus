@@ -9,6 +9,12 @@ const cloudOperationTooLargeMessage =
     'This saved change is too large for cloud sync. It remains saved on this '
     'device.';
 
+/// Marks outbox records whose strategy the server no longer has (it was
+/// deleted, here or on another device). They are never retried; the user
+/// discards them from the library.
+const cloudStrategyDeletedMessage =
+    'This strategy was deleted, so its unsent changes cannot be saved.';
+
 typedef CloudPayload = Map<String, dynamic>;
 
 int serializedConvexValueUtf8Bytes(Object? value) =>

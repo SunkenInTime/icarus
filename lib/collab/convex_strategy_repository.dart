@@ -73,6 +73,20 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// Whether the server no longer has [strategyPublicId]: its shell query
+  /// fails with NOT_FOUND, which getShell raises only for a missing strategy
+  /// (deletion removes the row). Any other failure (offline, auth) is
+  /// rethrown, so "could not tell" is never read as "deleted".
+  Future<bool> strategyIsDeleted(String strategyPublicId) async {
+    try {
+      await fetchShell(strategyPublicId);
+      return false;
+    } catch (error) {
+      if (isTypedConvexNotFoundError(error)) return true;
+      rethrow;
+    }
+  }
+
   Stream<RemoteStrategyShell> watchShell(String strategyPublicId) {
     return _api.strategy
         .getShell(strategyPublicId: strategyPublicId)
@@ -493,6 +507,13 @@ bool isTypedConvexUnauthenticatedError(Object error) {
           error.code == ConvexErrorCode.unauthenticated) ||
       (error is ConvexClientFunctionError &&
           error.rawCode == ConvexErrorCode.unauthenticated.wireName);
+}
+
+bool isTypedConvexNotFoundError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.notFound) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.notFound.wireName);
 }
 
 bool isMissingImageUploadIntentError(Object error) =>
