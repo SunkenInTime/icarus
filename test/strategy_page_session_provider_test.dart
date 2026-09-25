@@ -3489,6 +3489,216 @@ void main() {
       });
     }
 
+    /// [canvas] with the object [id] replaced by [edit] of it.
+    List<Object> editing(
+      List<Object> canvas,
+      String id,
+      Object Function(Object object) edit,
+    ) =>
+        [for (final o in canvas) idOf(o) == id ? edit(o) : o];
+
+    /// [canvas] without the object [id].
+    List<Object> without(List<Object> canvas, String id) => [
+          for (final o in canvas)
+            if (idOf(o) != id) o
+        ];
+
+    Object dead(Object agent) =>
+        (agent as PlacedAgent).copyWith()..state = AgentState.dead;
+
+    PlacedAgent agentOn(ProviderContainer container, String id) =>
+        container.read(agentProvider).singleWhere((a) => a.id == id)
+            as PlacedAgent;
+
+    test('undoing an ability visibility toggle keeps teammate toggles',
+        () async {
+      final ability = PlacedAbility(
+        id: 'mine',
+        data: AgentData.agents[AgentType.jett]!.abilities.first,
+        position: const Offset(10, 20),
+      );
+      final (container, remote, page) = await open([ability]);
+      AbilityVisualState visual() =>
+          container.read(abilityProvider).single.visualState;
+      Object toggled(Object object, String toggle) => PlacedAbility.fromJson({
+            ...payloadOf(object),
+            'visualState': {
+              ...(object as PlacedAbility).visualState.toJson(),
+              toggle: false,
+            },
+          });
+
+      container.read(abilityProvider.notifier).updateVisualState(
+            0,
+            visual().copyWith(showRangeOutline: false),
+          );
+      await land(container, remote, page,
+          teammate: (canvas) =>
+              editing(canvas, 'mine', (o) => toggled(o, 'showRangeFill')));
+
+      history(container).undoAction();
+      expect(visual().showRangeOutline, isTrue);
+      expect(visual().showRangeFill, isFalse);
+
+      // Another teammate toggle lands between undo and redo.
+      await land(container, remote, page,
+          teammate: (canvas) =>
+              editing(canvas, 'mine', (o) => toggled(o, 'showInnerFill')));
+      history(container).redoAction();
+      expect(visual().showRangeOutline, isFalse);
+      expect(visual().showRangeFill, isFalse);
+      expect(visual().showInnerFill, isFalse);
+
+      history(container).undoAction();
+      expect(visual().showRangeOutline, isTrue);
+      expect(visual().showRangeFill, isFalse);
+      expect(visual().showInnerFill, isFalse);
+    });
+
+    test('undoing a deletion leaves a teammate copy that is still there',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container.read(agentProvider.notifier).removeAgentAsAction('jett');
+      // The teammate's edited copy wins on the server.
+      final teammateCopy = dead(jett('jett'));
+      await land(container, remote, page,
+          teammate: (canvas) => [...canvas, teammateCopy]);
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+
+      history(container).undoAction();
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+
+      // The undo restored nothing, so there is nothing for redo to remove.
+      history(container).redoAction();
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'jett')],
+        isNot(isA<ElementDeleteOp>()),
+      );
+    });
+
+    test('redoing an addition brings back the copy the undo took away',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container.read(agentProvider.notifier).addAgent(jett('sova'));
+      await land(container, remote, page,
+          teammate: (canvas) => editing(canvas, 'sova', dead));
+
+      history(container).undoAction();
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      await land(container, remote, page);
+
+      history(container).redoAction();
+      expect(agentOn(container, 'sova').state, AgentState.dead);
+
+      history(container).undoAction();
+      history(container).redoAction();
+      expect(agentOn(container, 'sova').state, AgentState.dead);
+    });
+
+    test('a clear undone and redone around a teammate edit keeps the edit',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      history(container).clearGroupAsAction(ActionGroup.agent);
+      history(container).undoAction();
+      await land(container, remote, page,
+          teammate: (canvas) => editing(canvas, 'jett', dead));
+
+      history(container).redoAction();
+      expect(container.read(agentProvider), isEmpty);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+      expect(agentOn(container, 'jett').state, AgentState.dead);
+    });
+
+    test('undoing an addition a teammate deleted gives redo nothing to add',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container.read(agentProvider.notifier).addAgent(jett('sova'));
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'sova'));
+
+      history(container).undoAction();
+      history(container).redoAction();
+
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'sova')],
+        isNull,
+      );
+    });
+
+    test(
+        'redoing a clear after a teammate deleted a restored object '
+        'does not bring it back on the next undo', () async {
+      final (container, remote, page) =
+          await open([jett('jett'), jett('sova')]);
+
+      history(container).clearGroupAsAction(ActionGroup.agent);
+      history(container).undoAction();
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'sova'));
+
+      history(container).redoAction();
+      expect(container.read(agentProvider), isEmpty);
+      await land(container, remote, page);
+
+      history(container).undoAction();
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'sova')],
+        isNull,
+      );
+    });
+
+    test('a transaction whose object a teammate deleted leaves history',
+        () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      history(container).performTransaction(
+        groups: const [ActionGroup.agent],
+        mutation: () =>
+            container.read(agentProvider.notifier).convertPlainAgentToViewCone(
+                  id: 'jett',
+                  presetType: UtilityType.viewCone90,
+                  rotation: 0,
+                  length: 50,
+                ),
+      );
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'jett'));
+
+      expect(container.read(actionProvider), isEmpty);
+    });
+
+    test('undoing a clear leaves out history hydration dropped since',
+        () async {
+      final (container, remote, page) = await open([
+        jett('jett'),
+        PlacedText(id: 'note', position: const Offset(70, 70))..text = 'note',
+      ]);
+
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'note');
+      history(container).clearGroupAsAction(ActionGroup.agent);
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'note'));
+
+      history(container).undoAction();
+      expect(container.read(agentProvider).map((a) => a.id), ['jett']);
+      expect(container.read(actionProvider), isEmpty);
+      expect(container.read(textProvider), isEmpty);
+    });
+
     test('undoing a lineup clear keeps a lineup a teammate added', () async {
       final (container, remote, page) =
           await open(const [], lineups: [_lineup('page-1', 'mine')]);

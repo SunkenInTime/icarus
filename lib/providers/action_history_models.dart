@@ -123,6 +123,10 @@ class ActionObjectState {
   }
 }
 
+/// Fields made of independent settings (an ability's visibility toggles),
+/// written setting by setting rather than as one value.
+const _fieldsOfIndependentSettings = {'visualState'};
+
 /// [onto] with each top-level field that differs between [from] and [to] set
 /// to its value in [to] (removed where [to] has none). Fields [from] and [to]
 /// agree on keep their value in [onto], so writing one edit leaves everything
@@ -135,7 +139,15 @@ Map<String, dynamic> writeChangedFields({
   final written = Map<String, dynamic>.from(onto);
   for (final field in {...to.keys, ...from.keys}) {
     if (cloudJsonEquivalent(to[field], from[field])) continue;
-    if (to.containsKey(field)) {
+    final (toValue, fromValue, ontoValue) =
+        (to[field], from[field], onto[field]);
+    if (_fieldsOfIndependentSettings.contains(field) &&
+        toValue is Map<String, dynamic> &&
+        fromValue is Map<String, dynamic> &&
+        ontoValue is Map<String, dynamic>) {
+      written[field] =
+          writeChangedFields(to: toValue, from: fromValue, onto: ontoValue);
+    } else if (to.containsKey(field)) {
       written[field] = to[field];
     } else {
       written.remove(field);

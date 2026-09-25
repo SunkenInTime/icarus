@@ -186,85 +186,165 @@ class ActionProvider extends Notifier<List<UserAction>> {
   void redoAction() {
     if (poppedItems.isEmpty) return;
 
-    final action = poppedItems.last;
-    _redo(action);
+    final action = poppedItems.removeLast();
+    final undo = _redo(action);
+    if (undo == null) return;
 
-    final cleared = action.bulkSnapshot?.targetGroups;
-    final newState =
-        cleared == null ? [...state] : _filterActionsForGroups(state, cleared);
-    newState.add(poppedItems.removeLast());
+    final cleared = undo.bulkSnapshot?.targetGroups;
+    if (cleared == null) {
+      state = [...state, undo];
+    } else {
+      // The clear sets aside the history it makes unreplayable, as it did
+      // the first time.
+      final historyBefore = state.map((item) => item.copy()).toList();
+      state = [
+        ..._filterActionsForGroups(historyBefore, cleared),
+        _withChanges(
+          undo,
+          undo.changes,
+          bulkSnapshot: BulkActionSnapshot(
+            targetGroups: cleared,
+            actionStateBefore: historyBefore,
+          ),
+        ),
+      ];
+    }
     if (action.group == ActionGroup.bulk) {
       ref.read(abilityBarProvider.notifier).updateData(null);
     }
-    state = newState;
   }
 
   void undoAction() {
     if (state.isEmpty) return;
 
     final action = state.last;
-    _undo(action);
+    final redo = _undo(action);
+    if (redo != null) poppedItems.add(redo);
 
-    poppedItems.add(action);
     final bulkSnapshot = action.bulkSnapshot;
-    state = bulkSnapshot == null
-        ? state.sublist(0, state.length - 1)
-        : bulkSnapshot.actionStateBefore.map((item) => item.copy()).toList();
-  }
-
-  /// Undoes [action] against the page as it is now.
-  void _undo(UserAction action) {
-    switch (action.group) {
-      case ActionGroup.agent:
-        ref.read(agentProvider.notifier).undoAction(action);
-      case ActionGroup.ability:
-        ref.read(abilityProvider.notifier).undoAction(action);
-      case ActionGroup.drawing:
-        ref.read(drawingProvider.notifier).undoAction(action);
-      case ActionGroup.text:
-        ref.read(textProvider.notifier).undoAction(action);
-      case ActionGroup.image:
-        ref.read(placedImageProvider.notifier).undoAction(action);
-      case ActionGroup.utility:
-        ref.read(utilityProvider.notifier).undoAction(action);
-      case ActionGroup.lineUp:
-        ref.read(lineUpProvider.notifier).undoAction(action);
-      case ActionGroup.strategySettings:
-        if (action is StrategySettingsAction) {
-          _writeSettings(to: action.before, from: action.after);
-        }
-      case ActionGroup.bulk:
-        for (final change in action.changes.reversed) {
-          _undo(change);
-        }
+    if (bulkSnapshot == null) {
+      state = state.sublist(0, state.length - 1);
+      return;
     }
+    // The history the clear set aside comes back, less what hydration has
+    // since made unreplayable.
+    state = bulkSnapshot.actionStateBefore.map((item) => item.copy()).toList();
+    reconcileHistory();
   }
 
-  /// Redoes [action] against the page as it is now.
-  void _redo(UserAction action) {
+  /// Undoes [action] against the page as it is now. Returns the entry that
+  /// redoes exactly what this undo did, or null when it changed nothing.
+  UserAction? _undo(UserAction action) => _replay(action, undo: true);
+
+  /// Redoes [action] against the page as it is now. Returns the entry that
+  /// undoes exactly what this redo did, or null when it changed nothing.
+  UserAction? _redo(UserAction action) => _replay(action, undo: false);
+
+  UserAction? _replay(UserAction action, {required bool undo}) {
+    if (action.group == ActionGroup.bulk) {
+      // Undo runs the changes last to first, redo first to last; only the
+      // ones that changed something are kept, in their original order.
+      final order = undo ? action.changes.reversed : action.changes;
+      final replayed = [
+        for (final change in order)
+          if (_replay(change, undo: undo) case final done?) done,
+      ];
+      if (replayed.isEmpty) return null;
+      return _withChanges(
+        action,
+        undo ? replayed.reversed.toList() : replayed,
+      );
+    }
+
+    final delta = action.objectDelta;
+    if (delta != null) {
+      final current = _currentObjectState(
+        delta.id,
+        delta.after?.kind ?? delta.before?.kind,
+      );
+      switch (action.type) {
+        case ActionType.addition:
+        case ActionType.deletion:
+          final removes = (action.type == ActionType.addition) == undo;
+          if (removes) {
+            if (current == null) return null;
+            _apply(action, undo: undo);
+            // The opposite step puts back the object as it was when taken
+            // away, a teammate's edits included.
+            return _holding(action, current);
+          }
+          // An object that is already there is left as it is.
+          if (current != null) return null;
+        case ActionType.edit:
+          // An object a teammate deleted stays deleted.
+          if (current == null) return null;
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          break;
+      }
+    }
+    _apply(action, undo: undo);
+    return action;
+  }
+
+  /// [action], an addition or deletion, holding [object] as the copy to put
+  /// back.
+  static UserAction _holding(UserAction action, ActionObjectState object) {
+    return UserAction(
+      type: action.type,
+      id: action.id,
+      group: action.group,
+      objectDelta: action.type == ActionType.addition
+          ? ObjectHistoryDelta(after: object)
+          : ObjectHistoryDelta(before: object),
+    );
+  }
+
+  static UserAction _withChanges(
+    UserAction action,
+    List<UserAction> changes, {
+    BulkActionSnapshot? bulkSnapshot,
+  }) {
+    return UserAction(
+      type: action.type,
+      id: action.id,
+      group: action.group,
+      bulkSnapshot: bulkSnapshot ?? action.bulkSnapshot,
+      changes: changes,
+    );
+  }
+
+  void _apply(UserAction action, {required bool undo}) {
     switch (action.group) {
       case ActionGroup.agent:
-        ref.read(agentProvider.notifier).redoAction(action);
+        final agents = ref.read(agentProvider.notifier);
+        undo ? agents.undoAction(action) : agents.redoAction(action);
       case ActionGroup.ability:
-        ref.read(abilityProvider.notifier).redoAction(action);
+        final abilities = ref.read(abilityProvider.notifier);
+        undo ? abilities.undoAction(action) : abilities.redoAction(action);
       case ActionGroup.drawing:
-        ref.read(drawingProvider.notifier).redoAction(action);
+        final drawings = ref.read(drawingProvider.notifier);
+        undo ? drawings.undoAction(action) : drawings.redoAction(action);
       case ActionGroup.text:
-        ref.read(textProvider.notifier).redoAction(action);
+        final texts = ref.read(textProvider.notifier);
+        undo ? texts.undoAction(action) : texts.redoAction(action);
       case ActionGroup.image:
-        ref.read(placedImageProvider.notifier).redoAction(action);
+        final images = ref.read(placedImageProvider.notifier);
+        undo ? images.undoAction(action) : images.redoAction(action);
       case ActionGroup.utility:
-        ref.read(utilityProvider.notifier).redoAction(action);
+        final utilities = ref.read(utilityProvider.notifier);
+        undo ? utilities.undoAction(action) : utilities.redoAction(action);
       case ActionGroup.lineUp:
-        ref.read(lineUpProvider.notifier).redoAction(action);
+        final lineUps = ref.read(lineUpProvider.notifier);
+        undo ? lineUps.undoAction(action) : lineUps.redoAction(action);
       case ActionGroup.strategySettings:
         if (action is StrategySettingsAction) {
-          _writeSettings(to: action.after, from: action.before);
+          undo
+              ? _writeSettings(to: action.before, from: action.after)
+              : _writeSettings(to: action.after, from: action.before);
         }
       case ActionGroup.bulk:
-        for (final change in action.changes) {
-          _redo(change);
-        }
+        break;
     }
   }
 
@@ -304,7 +384,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
   void reconcileHistory() {
     // An edit stays while its target exists or a retained addition or
     // deletion, on either stack, can bring it back.
-    final history = _withChanges([...state, ...poppedItems]).toList();
+    final history = _andChanges([...state, ...poppedItems]).toList();
     final lineUpIds = ref.read(lineUpProvider.notifier).replayableIds(history);
     final objectIds = {
       for (final action in history)
@@ -315,12 +395,12 @@ class ActionProvider extends Notifier<List<UserAction>> {
     poppedItems = _reconcileActions(poppedItems, lineUpIds, objectIds);
   }
 
-  static Iterable<UserAction> _withChanges(
+  static Iterable<UserAction> _andChanges(
     Iterable<UserAction> actions,
   ) sync* {
     for (final action in actions) {
       yield action;
-      yield* _withChanges(action.changes);
+      yield* _andChanges(action.changes);
     }
   }
 
@@ -503,21 +583,35 @@ class ActionProvider extends Notifier<List<UserAction>> {
     Set<String> lineUpIds,
     Set<String> objectIds,
   ) {
-    final reconciled = <UserAction>[];
-    for (final action in actions) {
-      final delta = action.objectDelta;
-      if (action.type == ActionType.edit &&
-          delta != null &&
-          !objectIds.contains(delta.id) &&
-          !_canKeepEditAction(delta)) {
-        continue;
-      }
-      if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
-        continue;
-      }
-      reconciled.add(action.copy());
+    return [
+      for (final action in actions)
+        if (_reconciled(action, lineUpIds, objectIds) case final kept?) kept,
+    ];
+  }
+
+  /// [action] as far as it can still be replayed, or null when it cannot.
+  /// A transaction or clear keeps the changes that stay and goes with the
+  /// last of them.
+  UserAction? _reconciled(
+    UserAction action,
+    Set<String> lineUpIds,
+    Set<String> objectIds,
+  ) {
+    if (action.group == ActionGroup.bulk) {
+      final changes = _reconcileActions(action.changes, lineUpIds, objectIds);
+      return changes.isEmpty ? null : _withChanges(action, changes);
     }
-    return reconciled;
+    final delta = action.objectDelta;
+    if (action.type == ActionType.edit &&
+        delta != null &&
+        !objectIds.contains(delta.id) &&
+        !_canKeepEditAction(delta)) {
+      return null;
+    }
+    if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
+      return null;
+    }
+    return action.copy();
   }
 
   bool _canKeepEditAction(ObjectHistoryDelta delta) {
