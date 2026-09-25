@@ -1,3 +1,19 @@
+final _urlQuery = RegExp(r'''(https?://[^\s?#"'<>]+)\?[^\s"'<>]*''');
+final _secretKeyValue = RegExp(
+  r'''((?:access_token|refresh_token|provider_token|provider_refresh_token|code_verifier|token|X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token)["']?\s*[=:]\s*["']?)[^&#,;\s}\]"']+''',
+  caseSensitive: false,
+);
+
+/// [error] as text safe to log for a sync or upload failure. URLs lose their
+/// query (a presigned upload URL carries its signature and credential there),
+/// and anything shaped like a token assignment is replaced with `<redacted>`.
+String redactSyncDiagnosticText(Object? error) {
+  return '$error'
+      .replaceAllMapped(_urlQuery, (match) => '${match.group(1)}?<redacted>')
+      .replaceAllMapped(
+          _secretKeyValue, (match) => '${match.group(1)}<redacted>');
+}
+
 String friendlyCloudSyncError(String raw) {
   final lower = raw.toLowerCase();
   if (lower.contains('unreadable saved work')) {

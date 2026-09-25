@@ -8,13 +8,23 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
+  setUpAll(() {
+    appProviderContainer = ProviderContainer();
+  });
+
+  tearDownAll(() {
+    appProviderContainer.dispose();
+  });
+
   test('restart drains current-account work across closed strategies',
       () async {
     final store = MemoryDurableStrategyOutboxStore();
@@ -331,36 +341,80 @@ void main() {
     expect(repository.calls, isEmpty);
   });
 
-  test('reconnection resumes eligible closed-strategy work', () async {
+  test(
+      'reconnection resumes eligible closed-strategy work, following the '
+      'real connection snapshot', () async {
+    // The snapshot is not overridden: the queue reads the real one, which
+    // must follow the connection. It once cached its first read, so work
+    // queued while the socket was opening was never sent.
     final connectionChanges = StreamController<bool>();
     addTearDown(connectionChanges.close);
-    var connected = false;
     final store = MemoryDurableStrategyOutboxStore();
     await store.put(_record(strategyId: 'offline-strategy', opId: 'offline'));
     final repository = _RecordingRepository();
-    final container = _container(
-      store: store,
-      repository: repository,
-      connected: () => connected,
-      connectionChanges: connectionChanges.stream,
-    );
+    final container = ProviderContainer(overrides: [
+      durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(() => _ReadyAuthProvider('account-a')),
+      convexConnectionProvider.overrideWith((ref) => connectionChanges.stream),
+    ]);
     addTearDown(container.dispose);
+    container.listen(convexConnectionProvider, (_, __) {});
+    connectionChanges.add(false);
+    await Future<void>.delayed(Duration.zero);
 
     container
         .read(strategyOpQueueProvider.notifier)
         .setCurrentAccount('account-a');
     await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(container.read(convexConnectionSnapshotProvider), isFalse);
     expect(repository.calls, isEmpty);
     expect(
       container.read(strategyOpQueueProvider).accountOutbox.hasWork,
       isTrue,
     );
 
-    connected = true;
-    container.invalidate(convexConnectionSnapshotProvider);
     connectionChanges.add(true);
     await _waitUntil(() => repository.calls.length == 1);
+    expect(container.read(convexConnectionSnapshotProvider), isTrue);
     expect(store.values, isEmpty);
+  });
+
+  test('a batch that fails to send is reported, redacted, to the debug log',
+      () async {
+    appProviderContainer.read(inAppDebugProvider.notifier).clearLogs();
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(_record(strategyId: 'failing-strategy', opId: 'failing'));
+    final repository = _ThrowingRepository(StateError(
+      'upload to https://bucket.example.com/a.png'
+      '?X-Amz-Signature=secret-signature failed',
+    ));
+    final container = _container(store: store, repository: repository);
+    addTearDown(container.dispose);
+
+    container
+        .read(strategyOpQueueProvider.notifier)
+        .setCurrentAccount('account-a');
+    await _waitUntil(
+      () => appProviderContainer
+          .read(inAppDebugProvider)
+          .any((entry) => entry.source == 'cloud_sync.op_queue'),
+    );
+
+    final entry = appProviderContainer
+        .read(inAppDebugProvider)
+        .firstWhere((entry) => entry.source == 'cloud_sync.op_queue');
+    expect(entry.level, DebugLogLevel.warning);
+    expect(
+      entry.message,
+      'Cloud sync could not send 1 change(s) for strategy failing-strategy',
+    );
+    expect(
+      entry.errorText,
+      'Bad state: upload to https://bucket.example.com/a.png?<redacted> '
+      'failed',
+    );
+    expect(store.values, isNotEmpty);
   });
 
   test('auth readiness recovery resumes eligible closed-strategy work',
@@ -543,6 +597,22 @@ class _RecordingRepository extends ConvexStrategyRepository {
     return [
       for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2),
     ];
+  }
+}
+
+class _ThrowingRepository extends _RecordingRepository {
+  _ThrowingRepository(this.error);
+
+  final Object error;
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  }) async {
+    calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
+    throw error;
   }
 }
 

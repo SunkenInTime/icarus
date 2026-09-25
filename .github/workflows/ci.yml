@@ -245,6 +245,13 @@ jobs:
 
       - uses: dart-lang/setup-dart@v1
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check Convex Web Binding Against The Browser Bundle
+        run: node tool/check_convex_web_binding.mjs
+
       - name: Install Linux build dependencies
         shell: bash
         run: |
