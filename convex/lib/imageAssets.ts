@@ -149,6 +149,25 @@ export async function collectReferencedAssetIdsForStrategy(
     }
   }
 
+  for (const assetId of await collectAssetIdsShownByLineups(
+    ctx,
+    strategyId,
+    excludedPageId,
+  )) {
+    assetIds.add(assetId);
+  }
+
+  return assetIds;
+}
+
+/// Every image id the strategy's live lineups show, optionally leaving out
+/// one page's lineups.
+export async function collectAssetIdsShownByLineups(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  excludedPageId?: Id<"pages">,
+): Promise<Set<string>> {
+  const assetIds = new Set<string>();
   const lineupQuery = ctx.db
     .query("lineups")
     .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
@@ -160,7 +179,6 @@ export async function collectReferencedAssetIdsForStrategy(
       assetIds.add(assetId);
     }
   }
-
   return assetIds;
 }
 
@@ -258,16 +276,21 @@ export async function expectAssets(
   }
 }
 
-/// Drops the placeholders for images that no live element or lineup in the
-/// strategy shows any more. Rows holding bytes are left to the normal asset
-/// lifecycle.
+/// Drops the placeholders for images a deleted element showed, unless a
+/// lineup still shows the same image. No other element can: a placed
+/// image's id is its own element's publicId. Rows holding bytes are left to
+/// the normal asset lifecycle.
+///
+/// [shownByLineups] is called only when a placeholder is at stake. The
+/// caller shares one lineup read across a whole batch, so it may predate a
+/// later op in that batch; that can only keep a placeholder a lineup no
+/// longer shows, which the stale sweep removes.
 export async function removeUploadPlaceholders(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
   assetPublicIds: Iterable<string>,
+  shownByLineups: () => Promise<Set<string>>,
 ): Promise<void> {
-  // Read the strategy's references only when a placeholder is at stake.
-  let stillShown: Set<string> | null = null;
   for (const publicId of assetPublicIds) {
     const placeholders = (
       await ctx.db
@@ -281,8 +304,7 @@ export async function removeUploadPlaceholders(
         .take(20)
     ).filter(isUploadPlaceholder);
     if (placeholders.length === 0) continue;
-    stillShown ??= await collectReferencedAssetIdsForStrategy(ctx, strategyId);
-    if (stillShown.has(publicId)) continue;
+    if ((await shownByLineups()).has(publicId)) continue;
     for (const row of placeholders) await ctx.db.delete(row._id);
   }
 }

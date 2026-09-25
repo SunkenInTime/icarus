@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
+  collectAssetIdsShownByLineups,
   expectAssets,
   referencedAssetIds,
   removeUploadPlaceholders,
@@ -1344,8 +1345,9 @@ async function contentRowForOp(
 /// Keeps asset rows in step with an accepted content op. An image the row
 /// newly shows gets a placeholder if nothing has been uploaded for it yet, so
 /// a slow upload reads as on its way rather than missing, and a duplicate
-/// waits for it. A deleted image element drops its placeholder unless other
-/// content still shows the image.
+/// waits for it. A deleted image element drops its placeholder unless a
+/// lineup still shows the image; [shownByLineups] reads that at most once
+/// per batch.
 ///
 /// Restoring a deleted element (undo) usually finds its asset row still
 /// there, since deleting an element leaves its asset alone. With no row, an
@@ -1359,6 +1361,7 @@ async function reconcileExpectedAssets(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   rowBefore: Doc<"elements"> | Doc<"lineups"> | null,
+  shownByLineups: () => Promise<Set<string>>,
 ): Promise<void> {
   const row = await contentRowForOp(ctx, strategy, op);
   if (row === null) return;
@@ -1366,6 +1369,7 @@ async function reconcileExpectedAssets(
   const assetsBefore = referencedAssetIds(rowBefore);
   const assetsAfter = referencedAssetIds(row);
   const restoredAfterUploadWindow =
+    op.entityType === "element" &&
     rowBefore?.deleted === true &&
     !row.deleted &&
     now - row.createdAt >= staleUploadAgeMs;
@@ -1382,6 +1386,7 @@ async function reconcileExpectedAssets(
       ctx,
       strategy._id,
       [...assetsBefore].filter((id) => !assetsAfter.has(id)),
+      shownByLineups,
     );
   }
 }
@@ -1401,6 +1406,11 @@ export const applyBatch = mutation({
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
     let contentChanged = false;
+    // The images the strategy's lineups show, read once per batch and only
+    // when deleting an image leaves a placeholder at stake.
+    let lineupAssetIds: Promise<Set<string>> | null = null;
+    const shownByLineups = () =>
+      (lineupAssetIds ??= collectAssetIdsShownByLineups(ctx, strategy._id));
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
@@ -1485,7 +1495,13 @@ export const applyBatch = mutation({
             contentChanged = true;
           }
           if (result.status === "ack") {
-            await reconcileExpectedAssets(ctx, strategy, op, rowBefore);
+            await reconcileExpectedAssets(
+              ctx,
+              strategy,
+              op,
+              rowBefore,
+              shownByLineups,
+            );
           }
         } catch (error) {
           if (!(error instanceof ConvexError)) throw error;

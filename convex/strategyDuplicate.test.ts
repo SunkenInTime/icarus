@@ -849,6 +849,51 @@ describe("images placed before their upload", () => {
     await expect(duplicate(owner)).rejects.toThrow("still uploading");
   });
 
+  test("deleting several images in one batch checks lineups for each", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "batch-shown");
+    await placeImage(owner, "batch-alone");
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: "lineup-shows-batch",
+          type: "lineup.add",
+          lineupPublicId: "lineup-shows-batch",
+          pagePublicId: firstPage,
+          payload: {
+            kind: "lineupGroup",
+            payloadVersion: 1,
+            data: {
+              id: "lineup-shows-batch",
+              items: [{ id: "batch-item", images: [{ id: "batch-shown" }] }],
+            },
+          },
+          sortIndex: 3,
+        },
+      ],
+    });
+
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: ["batch-shown", "batch-alone"].map((elementPublicId) => ({
+        opId: `batch-delete-${elementPublicId}`,
+        type: "element.delete",
+        elementPublicId,
+        pagePublicId: firstPage,
+        expectedElementRevision: 1,
+      })),
+    });
+
+    expect(await rowsFor(t, "batch-shown")).toHaveLength(1);
+    expect(await rowsFor(t, "batch-alone")).toEqual([]);
+  });
+
   test("a lineup image referenced before its upload is expected too", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);
