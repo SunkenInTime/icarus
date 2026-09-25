@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/services/local_image_file.dart';
 
 class CloudMediaCacheState {
   const CloudMediaCacheState({
@@ -96,11 +97,14 @@ class CloudMediaCacheNotifier extends Notifier<CloudMediaCacheState> {
     }
   }
 
+  /// Downloads [asset] into the strategy's image folder. A platform without
+  /// image files (web) has nothing to cache; it paints from the URL.
   Future<File?> ensureAssetCached({
     required String strategyId,
     required String strategyPublicId,
     required RemoteImageAsset asset,
   }) async {
+    if (!deviceHasImageFiles) return null;
     final existing = await localFileForAsset(strategyId: strategyId, asset: asset);
     if (existing != null) {
       return existing;

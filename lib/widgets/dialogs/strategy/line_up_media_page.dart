@@ -1,14 +1,9 @@
-import 'dart:io' show File, Directory;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
-import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
@@ -37,13 +32,6 @@ class LineupMediaPage extends ConsumerStatefulWidget {
 }
 
 class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
-  Directory? imageFolderPath;
-
-  Future<void> _setImageDirectory(String strategyID) async {
-    if (imageFolderPath != null) return;
-    imageFolderPath = await PlacedImageProvider.getImageFolder(strategyID);
-  }
-
   @override
   void initState() {
     super.initState();
@@ -154,40 +142,25 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageGrid() {
-    final strategyId = ref.read(strategyProvider).strategyId;
-    if (strategyId == null) {
-      return const SizedBox.shrink();
-    }
-    return FutureBuilder(
-        future: _setImageDirectory(strategyId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemCount: widget.images.length + 2, // +1 for Add, +1 for Paste
+      itemBuilder: (context, index) {
+        if (index == widget.images.length + 1) {
+          return _buildAddButton();
+        }
+        if (index == widget.images.length) {
+          return _buildPasteButton();
+        }
 
-          return GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 1,
-            ),
-            itemCount: widget.images.length + 2, // +1 for Add, +1 for Paste
-            itemBuilder: (context, index) {
-              if (index == widget.images.length + 1) {
-                return _buildAddButton();
-              }
-              if (index == widget.images.length) {
-                return _buildPasteButton();
-              }
-
-              return _buildImageTile(index);
-            },
-          );
-        });
+        return _buildImageTile(index);
+      },
+    );
   }
 
   Widget _buildAddButton() {
@@ -279,30 +252,21 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
 
   Widget _buildImageTile(int index) {
     final image = widget.images[index];
-    final String fullImagePath =
-        path.join(imageFolderPath!.path, image.id + image.fileExtension);
-    final file = File(fullImagePath);
-    final snapshot = ref.watch(remoteEditorSnapshotProvider).valueOrNull;
-    final fallbackUrl = snapshot?.assetsById[image.id]?.url;
-
-    final ImageProvider<Object>? imageProvider = file.existsSync()
-        ? FileImage(file)
-        : (fallbackUrl != null && fallbackUrl.isNotEmpty
-            ? NetworkImage(fallbackUrl)
-            : null);
+    final imageProvider = watchStrategyImageSource(
+      ref,
+      (id: image.id, fileExtension: image.fileExtension),
+    ).imageProvider;
 
     return Stack(
+      fit: StackFit.expand,
       children: [
+        // An Image, not a DecorationImage: on web a cloud image may paint
+        // through an <img> element, which a decoration cannot draw.
         Container(
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             color: Settings.tacticalVioletTheme.secondary,
-            image: imageProvider == null
-                ? null
-                : DecorationImage(
-                    image: imageProvider,
-                    fit: BoxFit.cover,
-                  ),
           ),
           child: imageProvider == null
               ? Center(
@@ -311,7 +275,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                     color: Settings.tacticalVioletTheme.secondaryForeground,
                   ),
                 )
-              : null,
+              : Image(image: imageProvider, fit: BoxFit.cover),
         ),
         Positioned(
           top: 4,

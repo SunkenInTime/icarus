@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -7,10 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:path/path.dart' as path;
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Full-screen overlay launcher
@@ -18,8 +14,7 @@ void _showImageFullScreenOverlay({
   required BuildContext context,
   required String heroTag,
   required double aspectRatio,
-  File? file,
-  String? networkLink,
+  required ImageProvider image,
 }) {
   Navigator.of(context).push(
     PageRouteBuilder(
@@ -30,8 +25,7 @@ void _showImageFullScreenOverlay({
         child: _ImageFullScreenOverlay(
           heroTag: heroTag,
           aspectRatio: aspectRatio,
-          file: file,
-          networkLink: networkLink,
+          image: image,
         ),
       ),
     ),
@@ -42,25 +36,15 @@ class _ImageFullScreenOverlay extends StatelessWidget {
   const _ImageFullScreenOverlay({
     required this.heroTag,
     required this.aspectRatio,
-    this.file,
-    this.networkLink,
+    required this.image,
   });
 
   final String heroTag;
   final double aspectRatio;
-  final File? file;
-  final String? networkLink;
+  final ImageProvider image;
 
   @override
   Widget build(BuildContext context) {
-    final image = file != null
-        ? Image.file(
-            file!,
-            fit: BoxFit.contain,
-          )
-        : (networkLink != null && networkLink!.isNotEmpty
-            ? Image.network(networkLink!, fit: BoxFit.contain)
-            : const Placeholder());
 
     return CallbackShortcuts(
       bindings: {
@@ -105,7 +89,7 @@ class _ImageFullScreenOverlay extends StatelessWidget {
                               height: height,
                               child: Hero(
                                 tag: heroTag,
-                                child: image,
+                                child: Image(image: image, fit: BoxFit.contain),
                               ),
                             ),
                           ),
@@ -175,61 +159,35 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
         .clamp(1.0, double.infinity);
     final contentWidth = (cardWidth - (PlacedImageDimensions.imagePadding * 2))
         .clamp(1.0, double.infinity);
-    final file = File(path.join(
-      ref.watch(strategyProvider).storageDirectory!,
-      'images',
-      '${widget.id}${widget.fileExtension}',
-    ));
-    final strategyState = ref.watch(strategyProvider);
-    final remoteAsset = ref
-        .watch(remoteEditorSnapshotProvider)
-        .valueOrNull
-        ?.assetsById[widget.id];
-    final remoteUrl = remoteAsset?.url;
-    final hasLocalFile = file.existsSync() && widget.fileExtension != null;
-    final isCloudStrategy = strategyState.source == StrategySource.cloud;
-    final remoteUploadStatus = remoteAsset?.uploadStatus;
-    final showFailedPlaceholder =
-        isCloudStrategy && remoteUploadStatus == 'failed' && !hasLocalFile;
-    final showLoadingPlaceholder = isCloudStrategy &&
-        !showFailedPlaceholder &&
-        !hasLocalFile &&
-        (remoteUrl == null || remoteUrl.isEmpty);
+    final source = watchStrategyImageSource(
+      ref,
+      (id: widget.id, fileExtension: widget.fileExtension),
+    );
+    final image = source.imageProvider;
 
-    // Build the small image widget used both here and in the hero
-    Widget buildThumb() {
-      if (hasLocalFile) {
-        return Image.file(file, fit: BoxFit.contain);
-      }
-      if (remoteUrl != null && remoteUrl.isNotEmpty) {
-        return Image.network(remoteUrl, fit: BoxFit.contain);
-      }
-      if (showFailedPlaceholder) {
-        return const _ImageStatePlaceholder(
-          icon: LucideIcons.imageOff,
-          label: 'Image unavailable',
-        );
-      }
-      if (showLoadingPlaceholder) {
-        return const _ImageStatePlaceholder(
-          icon: LucideIcons.loaderCircle,
-          label: 'Syncing image',
-          showSpinner: true,
-        );
-      }
-      return const Placeholder();
-    }
+    Widget buildThumb() => switch (source) {
+          LocalImageFile() || RemoteImageUrl() =>
+            Image(image: image!, fit: BoxFit.contain),
+          ImageLoading() => const _ImageStatePlaceholder(
+              icon: LucideIcons.loaderCircle,
+              label: 'Syncing image',
+              showSpinner: true,
+            ),
+          ImageFailed() => const _ImageStatePlaceholder(
+              icon: LucideIcons.imageOff,
+              label: 'Image unavailable',
+            ),
+        };
 
     return GestureDetector(
-      onTap: () {
-        _showImageFullScreenOverlay(
-          context: context,
-          heroTag: 'image_${widget.id}',
-          file: hasLocalFile ? file : null,
-          networkLink: hasLocalFile ? null : remoteUrl,
-          aspectRatio: widget.aspectRatio,
-        );
-      },
+      onTap: image == null
+          ? null
+          : () => _showImageFullScreenOverlay(
+                context: context,
+                heroTag: 'image_${widget.id}',
+                image: image,
+                aspectRatio: widget.aspectRatio,
+              ),
       child: SizedBox(
         width: metrics.width,
         height: metrics.height,
