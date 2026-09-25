@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/pending_share_code_store.dart';
 import 'package:icarus/share/share_link_format.dart';
@@ -12,6 +14,14 @@ import 'package:icarus/share/share_link_format.dart';
 final pendingShareCodeStoreProvider = Provider<PendingShareCodeStore>(
   (ref) => createPendingShareCodeStore(),
 );
+
+/// The page's own URL on web (where a share link arrives), null on native.
+/// Overridden in tests.
+final sharePageUrlProvider = Provider<Uri?>((ref) => kIsWeb ? Uri.base : null);
+
+/// Replaces the address bar URL without navigating. Overridden in tests.
+final replaceBrowserUrlProvider =
+    Provider<void Function(Uri url)>((ref) => replaceBrowserUrl);
 
 /// A cloud strategy a redeemed share link asks to open. The navigation layer
 /// (MouseNavigation, which owns the unsaved-changes guard) opens it and
@@ -154,6 +164,26 @@ class ShareLinkController extends Notifier<String?> {
     }
     state = null;
     ref.read(pendingShareCodeStoreProvider).clear();
+    _dropSharePathFromPageUrl();
+  }
+
+  /// Once a code is done with, the page must not keep its /share/<code> URL,
+  /// or every reload would redeem it again (and, after the link is disabled,
+  /// report a failure to someone who still has access). The fragment stays:
+  /// Flutter's router keeps the open route there.
+  void _dropSharePathFromPageUrl() {
+    final page = ref.read(sharePageUrlProvider);
+    if (page == null ||
+        !isIcarusShareUri(page, currentOrigin: currentShareOrigin())) {
+      return;
+    }
+    ref.read(replaceBrowserUrlProvider)(Uri(
+      scheme: page.scheme,
+      host: page.host,
+      port: page.hasPort ? page.port : null,
+      path: '/',
+      fragment: page.fragment.isEmpty ? null : page.fragment,
+    ));
   }
 
   /// Starts with any code a previous page load left waiting: on web, the one

@@ -529,6 +529,13 @@ bool isTypedConvexNotFoundError(Object error) {
           error.rawCode == ConvexErrorCode.notFound.wireName);
 }
 
+bool isTypedConvexForbiddenError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.forbidden) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.forbidden.wireName);
+}
+
 bool isMissingImageUploadIntentError(Object error) =>
     error is ConvexFunctionException &&
     error.code == ConvexErrorCode.uploadIntentNotFound;

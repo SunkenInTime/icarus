@@ -124,6 +124,12 @@ void main() {
 
   group('opening a share link', () {
     final link = icarusProductionShareOrigin.replace(path: '/share/$_code');
+    // The page as a web build sees it after opening the link; the router's
+    // fragment rides along.
+    final pageUrl = link.replace(fragment: '/strategy_view');
+    late List<Uri> replacedUrls;
+
+    setUp(() => replacedUrls = []);
 
     Future<ProviderContainer> pumpApp(
       WidgetTester tester, {
@@ -135,6 +141,8 @@ void main() {
         pendingShareCodeStoreProvider
             .overrideWithValue(store ?? MemoryPendingShareCodeStore()),
         authProvider.overrideWith(() => _SettableAuthProvider(auth)),
+        sharePageUrlProvider.overrideWithValue(pageUrl),
+        replaceBrowserUrlProvider.overrideWithValue(replacedUrls.add),
         if (repository != null)
           convexStrategyRepositoryProvider.overrideWithValue(repository),
       ]);
@@ -184,6 +192,7 @@ void main() {
       await settleToasts(tester);
 
       expect(toast('Sign in to redeem shared links.'), findsNothing);
+      expect(replacedUrls, isEmpty, reason: 'the code is still waiting');
       expect(store.read(), _code, reason: 'held until the cloud is ready');
       expect(repository.redeemed, isEmpty);
 
@@ -194,6 +203,13 @@ void main() {
           .read(shareLinkControllerProvider.notifier)
           .redeemPendingIfPossible();
       expect(repository.redeemed, [_code]);
+      expect(
+          replacedUrls,
+          [
+            icarusProductionShareOrigin.replace(
+                path: '/', fragment: '/strategy_view')
+          ],
+          reason: 'a reload must not redeem it again');
       expect(store.read(), isNull);
       await clearToasts(tester);
     });
@@ -214,6 +230,7 @@ void main() {
 
       expect(toast('Sign in to redeem shared links.'), findsOneWidget);
       expect(store.read(), _code);
+      expect(replacedUrls, isEmpty, reason: 'kept for after sign-in');
       await clearToasts(tester);
     });
 
@@ -243,6 +260,10 @@ void main() {
         CloudLibrarySection.home,
       );
       expect(container.read(sharedStrategyToOpenProvider), 'strategy-1');
+      expect(replacedUrls, [
+        icarusProductionShareOrigin.replace(
+            path: '/', fragment: '/strategy_view')
+      ]);
       await clearToasts(tester);
     });
 
