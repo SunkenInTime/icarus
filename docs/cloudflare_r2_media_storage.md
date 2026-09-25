@@ -53,7 +53,9 @@ In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Ad
   {
     "AllowedOrigins": [
       "https://beta.icarusstrats.com",
-      "https://icarus-web-a50.pages.dev"
+      "https://icarus-web-a50.pages.dev",
+      "http://localhost:8765",
+      "http://127.0.0.1:8765"
     ],
     "AllowedMethods": ["PUT", "GET", "HEAD"],
     "AllowedHeaders": ["Content-Type"],
@@ -67,7 +69,7 @@ In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Ad
 - `GET`/`HEAD` let the web app fetch images from the public custom domain to paint them.
 - `ETag` is exposed so the client can pass it to `images:completeUpload`. Completion reads the ETag from R2 itself first, so this is informational.
 - Desktop is not a browser and ignores CORS; this rule changes nothing for it.
-- A local `flutter run -d chrome` session runs on a `http://localhost:<port>` origin and is not covered. Add that origin temporarily to test uploads locally, and remove it after.
+- Local web builds must run on port 8765 to upload images: `flutter run -d chrome --web-port 8765`, or serve `build/web` on 8765. R2 rejects a port wildcard such as `http://localhost:*`, so the rule lists `localhost` and `127.0.0.1` on that one port. Any other local port has no image uploads.
 
 While an upload is pending, the browser keeps the image bytes in IndexedDB (Hive box `pending_media_bytes_box`) so a refresh does not lose them. Records are scoped to account, strategy and asset, like the upload job, and are dropped once the upload is attached. Images over 15 MB (the `R2_MAX_IMAGE_BYTES` default) are refused before anything is stored. Bytes picked for a lineup that was never saved are dropped when the image is removed or the dialog is closed, and the dialog cannot be closed while Save is queuing them. Drafts older than 7 days with no upload job are removed at launch; a lineup dialog left open that long in another tab loses its picked images.
 
