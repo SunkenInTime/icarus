@@ -105,8 +105,9 @@ The web beta lives at `https://beta.icarusstrats.com`, served by the Cloudflare
 Pages project `icarus-web` (also reachable at `https://icarus-web-a50.pages.dev`).
 It uses the development Convex deployment, like every non-stable build.
 
-- A push to `icarus-cloud` that changes `lib/`, `web/`, `assets/`,
-  `pubspec.yaml`, `pubspec.lock`, or `.fvmrc` deploys automatically.
+- A push to `icarus-cloud` that changes `lib/`, `web/`, `assets/`, `shaders/`,
+  a path package (`packages/`, `third_party/convex_flutter/`), `pubspec.yaml`,
+  `pubspec.lock`, or `.fvmrc` deploys automatically.
 - To redeploy by hand: `Actions` > `Deploy Web` > `Run workflow` on
   `icarus-cloud`. GitHub only shows that button once the workflow is on the
   default branch; until then, re-run the latest `Deploy Web` run.

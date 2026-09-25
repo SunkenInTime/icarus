@@ -13,6 +13,10 @@ on:
       - lib/**
       - web/**
       - assets/**
+      - shaders/**
+      # Path dependencies from pubspec.yaml compile into the web build.
+      - packages/**
+      - third_party/convex_flutter/**
       - pubspec.yaml
       - pubspec.lock
       - .fvmrc
