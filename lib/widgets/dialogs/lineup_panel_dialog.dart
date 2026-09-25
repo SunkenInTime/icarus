@@ -420,6 +420,7 @@ class _LineUpThumbnail extends ConsumerWidget {
           ).imageProvider;
     if (imageProvider != null) {
       return Image(
+        key: ValueKey(image!.id),
         image: imageProvider,
         fit: BoxFit.cover,
         gaplessPlayback: true,

@@ -8,6 +8,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -146,11 +147,12 @@ class CloudMediaUploadQueueNotifier
           .map(durableCloudMediaOutboxStorageKey),
     );
     // Unreadable records might name bytes, so only a clean load can prove
-    // that restored bytes belong to no job of any account.
+    // that stored bytes belong to no job of any account.
     if (loaded.issues.isEmpty) {
-      unawaited(_pruneRestoredMediaBytes(
-        keep: loaded.jobs.map((job) => job.assetPublicId).toSet(),
-      ));
+      final jobKeys = {
+        for (final job in loaded.jobs) pendingMediaStorageKey(_bytesKey(job)),
+      };
+      unawaited(_pruneAbandonedMediaBytes(jobKeys));
     }
     ref.onDispose(() {
       _disposed = true;
@@ -417,6 +419,14 @@ class CloudMediaUploadQueueNotifier
     required Iterable<PlacedImage> placedImages,
     required Map<String, RemoteImageAsset> assetsById,
   }) async {
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    if (accountId == null || accountId.isEmpty) return;
+    PendingMediaKey keyFor(String assetPublicId) => (
+          accountId: accountId,
+          strategyPublicId: strategyPublicId,
+          assetPublicId: assetPublicId,
+        );
+
     for (final image in placedImages) {
       final asset = assetsById[image.id];
       final hasActiveRemote =
@@ -426,8 +436,7 @@ class CloudMediaUploadQueueNotifier
       }
 
       final bytes = await _findMediaBytes(
-        strategyPublicId: strategyPublicId,
-        assetPublicId: image.id,
+        keyFor(image.id),
         fileExtension: image.fileExtension ?? '',
       );
       if (bytes == null) {
@@ -445,53 +454,61 @@ class CloudMediaUploadQueueNotifier
       );
     }
 
-    // The editor now paints these from the cloud; stop holding their bytes.
-    final pendingBytes = ref.read(pendingMediaBytesProvider);
+    // The page now paints these from the cloud. Bytes no job needs go now;
+    // bytes whose upload is still attaching go when it lands.
+    final pending = ref.read(pendingMediaBytesProvider.notifier);
     for (final asset in assetsById.values) {
       final servedFromCloud =
           asset.uploadStatus == 'active' && (asset.url?.isNotEmpty ?? false);
-      if (servedFromCloud &&
-          pendingBytes.containsKey(asset.publicId) &&
-          _getJob(asset.publicId) == null) {
-        await _releaseMediaBytes(asset.publicId);
+      final key = keyFor(asset.publicId);
+      if (!servedFromCloud || pending.bytesFor(key) == null) continue;
+      if (_getJob(asset.publicId) == null) {
+        await _releaseMediaBytes(key);
+      } else {
+        pending.markServedFromCloud(key);
       }
     }
   }
 
-  /// Where [assetPublicId]'s bytes are on this device, or null when they are
-  /// gone. Pending bytes (web) come first; otherwise the image file.
-  Future<MediaBytesSource?> _findMediaBytes({
-    required String strategyPublicId,
-    required String assetPublicId,
+  static PendingMediaKey _bytesKey(CloudMediaUploadJob job) => (
+        accountId: job.accountId,
+        strategyPublicId: job.strategyPublicId,
+        assetPublicId: job.assetPublicId,
+      );
+
+  /// Where [key]'s bytes are on this device, or null when they are gone.
+  /// Pending bytes (web) come first; otherwise the image file.
+  Future<MediaBytesSource?> _findMediaBytes(
+    PendingMediaKey key, {
     required String fileExtension,
   }) async {
-    final pending = ref.read(pendingMediaBytesProvider)[assetPublicId];
+    final pending = ref.read(pendingMediaBytesProvider.notifier).bytesFor(key);
     if (pending != null) return MemoryMediaBytes(pending);
     if (!ref.read(imageFilesOnDeviceProvider)) return null;
     final file = await PlacedImageProvider.getImageFile(
-      strategyID: strategyPublicId,
-      imageID: assetPublicId,
+      strategyID: key.strategyPublicId,
+      imageID: key.assetPublicId,
       fileExtension: fileExtension,
     );
     return await file.exists() ? FileMediaBytes(file.path) : null;
   }
 
-  /// Drops the bytes held for [assetPublicId], or when [uploaded] only their
-  /// saved copy, so the editor keeps painting them until the cloud URL
-  /// arrives. Image files are the strategy's own copy and stay.
+  /// Drops the bytes held for [key], or when [attached] only their saved
+  /// copy, so the editor keeps painting them until the cloud URL arrives.
+  /// Image files are the strategy's own copy and stay.
   Future<void> _releaseMediaBytes(
-    String assetPublicId, {
-    bool uploaded = false,
+    PendingMediaKey key, {
+    bool attached = false,
   }) async {
     final pending = ref.read(pendingMediaBytesProvider.notifier);
     try {
-      if (uploaded) {
-        await pending.markUploaded(assetPublicId);
+      if (attached) {
+        await pending.markAttached(key);
       } else {
-        await pending.remove(assetPublicId);
+        await pending.remove(key);
       }
     } catch (error, stackTrace) {
-      // Costs browser storage only: the next launch prunes bytes no job
+      // Costs browser storage only: a later launch prunes bytes no job
       // needs.
       AppErrorReporter.reportError(
         'Failed to release pending media bytes.',
@@ -502,11 +519,11 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
-  Future<void> _pruneRestoredMediaBytes({required Set<String> keep}) async {
+  Future<void> _pruneAbandonedMediaBytes(Set<String> jobKeys) async {
     try {
-      await ref
-          .read(pendingMediaBytesProvider.notifier)
-          .pruneRestored(keep: keep);
+      await ref.read(pendingMediaBytesProvider.notifier).pruneAbandoned(
+            hasJob: (key) => jobKeys.contains(pendingMediaStorageKey(key)),
+          );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Failed to prune pending media bytes.',
@@ -618,8 +635,7 @@ class CloudMediaUploadQueueNotifier
     try {
       _logMedia('upload.local_lookup ${_describeJob(job)}');
       final bytes = await _findMediaBytes(
-        strategyPublicId: job.strategyPublicId,
-        assetPublicId: job.assetPublicId,
+        _bytesKey(job),
         fileExtension: job.fileExtension,
       );
       if (bytes == null) {
@@ -847,7 +863,7 @@ class CloudMediaUploadQueueNotifier
         width: job.width,
         height: job.height,
       );
-      await _deleteJob(job, uploaded: true);
+      await _deleteJob(job, attached: true);
       if (_uploadProgressToast != null) {
         _markUploadComplete(job.jobId);
       }
@@ -1260,19 +1276,20 @@ class CloudMediaUploadQueueNotifier
         }
       });
 
-  /// Removes [job] from the outbox, then the bytes it was holding. [uploaded]
-  /// keeps those bytes painting until the cloud URL arrives.
+  /// Removes [job] from the outbox, then the bytes it was holding, and only
+  /// its own: bytes are scoped like the job. [attached] keeps those bytes
+  /// painting until the cloud URL arrives.
   Future<bool> _deleteJob(
     CloudMediaUploadJob job, {
     bool onlyIfUnreferenced = false,
-    bool uploaded = false,
+    bool attached = false,
   }) async {
     final deleted = await _removeJobRecord(
       job,
       onlyIfUnreferenced: onlyIfUnreferenced,
     );
     if (deleted) {
-      await _releaseMediaBytes(job.assetPublicId, uploaded: uploaded);
+      await _releaseMediaBytes(_bytesKey(job), attached: attached);
     }
     return deleted;
   }

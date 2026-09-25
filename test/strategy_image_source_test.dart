@@ -11,6 +11,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
@@ -111,9 +112,25 @@ List<Override> _overrides({
       () => _FixedStrategy(source: source, storageDirectory: storageDirectory),
     ),
     remoteEditorSnapshotProvider.overrideWith(() => _FixedSnapshot(assets)),
-    pendingMediaBytesStoreProvider.overrideWithValue(
-      MemoryPendingMediaBytesStore(pendingBytes),
-    ),
+    // Pending bytes only exist on web: no image files, signed in.
+    if (pendingBytes.isNotEmpty) ...[
+      imageFilesOnDeviceProvider.overrideWithValue(false),
+      cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+      pendingMediaBytesStoreProvider.overrideWithValue(
+        MemoryPendingMediaBytesStore([
+          for (final MapEntry(key: id, value: bytes) in pendingBytes.entries)
+            PendingMediaRecord(
+              key: (
+                accountId: 'account-a',
+                strategyPublicId: 'strategy-1',
+                assetPublicId: id,
+              ),
+              bytes: bytes,
+              savedAt: DateTime.now(),
+            ),
+        ]),
+      ),
+    ],
   ];
 }
 
@@ -530,6 +547,78 @@ void main() {
         .whereType<BoxDecoration>()
         .where((decoration) => decoration.image != null);
     expect(decorationImages, isEmpty);
+    expect(
+      tester.takeException(),
+      anyOf(isNull, isA<NetworkImageLoadException>()),
+    );
+  });
+
+  testWidgets(
+      'removing a lineup image never leaves its frame on the image that '
+      'moves into its tile', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final youtube = TextEditingController();
+    final notes = TextEditingController();
+    addTearDown(youtube.dispose);
+    addTearDown(notes.dispose);
+    const removedId = 'removed-image';
+    // The removed image paints from memory; the next is still loading its
+    // cloud URL, the moment a reused gapless Image would show a stale frame.
+    final images = [
+      SimpleImageData(id: removedId, fileExtension: '.png'),
+      SimpleImageData(id: _imageId, fileExtension: '.png'),
+    ];
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: _overrides(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        assets: [_asset()],
+        pendingBytes: {removedId: _pendingPng},
+      ),
+      child: ShadApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 800,
+            child: StatefulBuilder(
+              builder: (context, setState) => LineupMediaPage(
+                youtubeLinkController: youtube,
+                notesController: notes,
+                images: images,
+                onAddImage: () {},
+                onPasteImage: () {},
+                onRemoveImage: (index) =>
+                    setState(() => images.removeAt(index)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final firstTile = find.byType(Image).first;
+    expect(tester.widget<Image>(firstTile).key, const ValueKey(removedId));
+    expect(tester.widget<Image>(firstTile).image, isA<MemoryImage>());
+    final removedState = tester.state(firstTile);
+    // flutter_test answers the next image's URL with a 400.
+    await tester.pump();
+    expect(
+      tester.takeException(),
+      anyOf(isNull, isA<NetworkImageLoadException>()),
+    );
+
+    await tester.tap(find.byIcon(LucideIcons.x).first);
+    await tester.pump();
+
+    final moved = find.byType(Image).first;
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.widget<Image>(moved).key, const ValueKey(_imageId));
+    expect(tester.widget<Image>(moved).image, isA<NetworkImage>());
+    expect(identical(tester.state(moved), removedState), isFalse);
     expect(
       tester.takeException(),
       anyOf(isNull, isA<NetworkImageLoadException>()),

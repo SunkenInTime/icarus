@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -25,12 +26,58 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:toastification/toastification.dart';
 
 // The web beta: no image files, so picked images wait as pending bytes.
 
 const _imageId = 'web-image';
 final _imageBytes = Uint8List.fromList([137, 80, 78, 71, 1, 2, 3, 4, 5]);
+
+PendingMediaKey _key(
+  String assetId, {
+  String accountId = 'account-a',
+  String strategyId = 'strategy-a',
+}) =>
+    (
+      accountId: accountId,
+      strategyPublicId: strategyId,
+      assetPublicId: assetId,
+    );
+
+PendingMediaRecord _record(
+  String assetId, {
+  String accountId = 'account-a',
+  Uint8List? bytes,
+  Duration age = Duration.zero,
+}) =>
+    PendingMediaRecord(
+      key: _key(assetId, accountId: accountId),
+      bytes: bytes ?? _imageBytes,
+      savedAt: DateTime.now().subtract(age),
+    );
+
+CloudMediaUploadJob _job(
+  String assetId, {
+  String accountId = 'account-a',
+  CloudMediaJobState state = CloudMediaJobState.pendingUpload,
+}) =>
+    CloudMediaUploadJob(
+      jobId: assetId,
+      accountId: accountId,
+      strategyPublicId: 'strategy-a',
+      assetPublicId: assetId,
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      state: state,
+      referenceDurable: true,
+      provider: state == CloudMediaJobState.pendingAttach ? 'r2' : null,
+      uploadId: state == CloudMediaJobState.pendingAttach ? 'upload-1' : null,
+      objectKey:
+          state == CloudMediaJobState.pendingAttach ? 'object/$assetId' : null,
+      attempts: 0,
+      updatedAt: DateTime.utc(2026, 9, 24),
+    );
 
 class _Auth extends AuthProvider {
   _Auth({required this.ready});
@@ -76,6 +123,10 @@ class _OpQueue extends StrategyOpQueueNotifier {
 }
 
 class _R2Repository implements ConvexStrategyRepository {
+  _R2Repository({this.attachGate});
+
+  /// Holds each attach open until completed, to race it with the URL.
+  final Completer<void>? attachGate;
   final List<String> completedAssetIds = [];
 
   @override
@@ -114,6 +165,7 @@ class _R2Repository implements ConvexStrategyRepository {
     int? width,
     int? height,
   }) async {
+    await attachGate?.future;
     completedAssetIds.add(assetPublicId);
   }
 
@@ -121,11 +173,12 @@ class _R2Repository implements ConvexStrategyRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// One browser session. Sharing the stores between two of these is a
-/// refresh.
+/// One browser tab. Sharing the stores between two of these is a second tab
+/// or a refresh.
 ProviderContainer _webSession({
   required MemoryDurableCloudMediaOutboxStore mediaStore,
   required MemoryPendingMediaBytesStore bytesStore,
+  String accountId = 'account-a',
   MemoryDurableStrategyOutboxStore? strategyStore,
   bool online = false,
   ConvexStrategyRepository? repository,
@@ -141,7 +194,7 @@ ProviderContainer _webSession({
       if (repository != null)
         convexStrategyRepositoryProvider.overrideWithValue(repository),
       authProvider.overrideWith(() => _Auth(ready: online)),
-      cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+      cloudMediaAccountIdProvider.overrideWithValue(accountId),
       cloudCollabModeProvider.overrideWith(_CloudMode.new),
       convexConnectionSnapshotProvider.overrideWithValue(online),
       convexConnectionProvider.overrideWith((ref) => Stream.value(online)),
@@ -190,15 +243,45 @@ RemoteImageAsset _activeAsset(String id) => RemoteImageAsset(
 
 Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 50));
 
+Future<void> _until(bool Function() done) async {
+  for (var i = 0; i < 60 && !done(); i++) {
+    await _settle();
+  }
+  await _settle();
+}
+
+/// Runs [session]'s queue until [repository] has attached [count] images,
+/// answering every PUT with 200 and recording it in [puts].
+Future<void> _uploadAll(
+  ProviderContainer Function() session,
+  _R2Repository repository,
+  List<http.Request> puts, {
+  int count = 1,
+}) {
+  final client = MockClient((request) async {
+    puts.add(request);
+    return http.Response('', 200, headers: {'etag': '"etag"'});
+  });
+  return http.runWithClient(() async {
+    final container = session();
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+    await _until(() => repository.completedAssetIds.length >= count);
+  }, () => client);
+}
+
+Future<void> _pumpToasts(WidgetTester tester) => tester.pumpWidget(
+      const ToastificationWrapper(child: MaterialApp(home: SizedBox())),
+    );
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
       'picked bytes are saved before the job, survive a refresh, and upload',
       (tester) async {
-    await tester.pumpWidget(
-      const ToastificationWrapper(child: MaterialApp(home: SizedBox())),
-    );
+    await _pumpToasts(tester);
     final mediaStore = MemoryDurableCloudMediaOutboxStore();
     final bytesStore = MemoryPendingMediaBytesStore();
 
@@ -219,7 +302,10 @@ void main() {
             imagePublicId: _imageId,
             fileExtension: '.png',
           );
-      expect(bytesStore.values[_imageId], _imageBytes);
+      expect(
+        bytesStore.values[pendingMediaStorageKey(_key(_imageId))]?.bytes,
+        _imageBytes,
+      );
       expect(mediaStore.values, contains('account-a|$_imageId'));
       first.dispose();
     });
@@ -227,40 +313,19 @@ void main() {
     // Refresh, back online: the restored job sends the restored bytes.
     final repository = _R2Repository();
     final puts = <http.Request>[];
-    final client = MockClient((request) async {
-      // Both halves were durable before anything was sent.
-      expect(bytesStore.values[_imageId], _imageBytes);
-      expect(mediaStore.values, contains('account-a|$_imageId'));
-      puts.add(request);
-      return http.Response('', 200, headers: {'etag': '"etag-1"'});
-    });
     final strategyStore = await tester.runAsync(_placedImageOp);
     late ProviderContainer restarted;
-    await tester.runAsync(() async {
-      await http.runWithClient(() async {
-        restarted = _webSession(
-          mediaStore: mediaStore,
-          bytesStore: bytesStore,
-          strategyStore: strategyStore,
-          online: true,
-          repository: repository,
-        );
-        expect(restarted.read(pendingMediaBytesProvider)[_imageId],
-            _imageBytes);
-        final restored = restarted.read(cloudMediaUploadQueueProvider).jobs;
-        expect(restored.single.assetPublicId, _imageId);
-
-        await restarted
-            .read(cloudMediaUploadQueueProvider.notifier)
-            .retryNow(ignoreBackoff: true);
-        for (var i = 0;
-            i < 40 && repository.completedAssetIds.isEmpty;
-            i++) {
-          await _settle();
-        }
-        await _settle();
-      }, () => client);
-    });
+    await tester.runAsync(() => _uploadAll(
+          () => restarted = _webSession(
+            mediaStore: mediaStore,
+            bytesStore: bytesStore,
+            strategyStore: strategyStore,
+            online: true,
+            repository: repository,
+          ),
+          repository,
+          puts,
+        ));
     addTearDown(restarted.dispose);
 
     expect(puts, hasLength(1));
@@ -272,7 +337,106 @@ void main() {
     // but the editor keeps painting the bytes until the cloud URL arrives.
     expect(mediaStore.values, isEmpty);
     expect(bytesStore.values, isEmpty);
-    expect(restarted.read(pendingMediaBytesProvider)[_imageId], _imageBytes);
+    expect(
+      restarted
+          .read(pendingMediaBytesProvider.notifier)
+          .bytesFor(_key(_imageId)),
+      _imageBytes,
+    );
+  });
+
+  testWidgets(
+      'two accounts with the same asset ID each upload their own bytes, '
+      'and one attach leaves the other alone', (tester) async {
+    await _pumpToasts(tester);
+    final bytesA = Uint8List.fromList([1, 1, 1]);
+    final bytesB = Uint8List.fromList([2, 2, 2, 2]);
+    const shared = 'shared-image';
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.putAll([
+      _job(shared, accountId: 'account-a'),
+      _job(shared, accountId: 'account-b'),
+    ]);
+    final bytesStore = MemoryPendingMediaBytesStore([
+      _record(shared, accountId: 'account-a', bytes: bytesA),
+      _record(shared, accountId: 'account-b', bytes: bytesB),
+    ]);
+
+    final repositoryB = _R2Repository();
+    final putsB = <http.Request>[];
+    late ProviderContainer sessionB;
+    await tester.runAsync(() => _uploadAll(
+          () => sessionB = _webSession(
+            mediaStore: mediaStore,
+            bytesStore: bytesStore,
+            accountId: 'account-b',
+            online: true,
+            repository: repositoryB,
+          ),
+          repositoryB,
+          putsB,
+        ));
+    addTearDown(sessionB.dispose);
+
+    expect(putsB.single.bodyBytes, bytesB);
+    expect(mediaStore.values.keys, ['account-a|$shared']);
+    expect(
+      bytesStore.values.keys,
+      [pendingMediaStorageKey(_key(shared, accountId: 'account-a'))],
+    );
+
+    // A signs back in; its own upload still has its own bytes.
+    final repositoryA = _R2Repository();
+    final putsA = <http.Request>[];
+    late ProviderContainer sessionA;
+    await tester.runAsync(() => _uploadAll(
+          () => sessionA = _webSession(
+            mediaStore: mediaStore,
+            bytesStore: bytesStore,
+            online: true,
+            repository: repositoryA,
+          ),
+          repositoryA,
+          putsA,
+        ));
+    addTearDown(sessionA.dispose);
+
+    expect(putsA.single.bodyBytes, bytesA);
+    expect(mediaStore.values, isEmpty);
+    expect(bytesStore.values, isEmpty);
+  });
+
+  test('reconciling as one account never borrows another account\'s bytes',
+      () async {
+    final bytesStore = MemoryPendingMediaBytesStore([
+      _record('a-image', accountId: 'account-a'),
+    ]);
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    final sessionB = _webSession(
+      mediaStore: mediaStore,
+      bytesStore: bytesStore,
+      accountId: 'account-b',
+    );
+    addTearDown(sessionB.dispose);
+
+    await sessionB
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .reconcilePageMedia(
+      strategyPublicId: 'strategy-a',
+      placedImages: [
+        PlacedImage(
+          id: 'a-image',
+          position: Offset.zero,
+          aspectRatio: 1,
+          scale: 1,
+          fileExtension: '.png',
+        ),
+      ],
+      assetsById: const {},
+    );
+
+    expect(mediaStore.values, isEmpty);
+    expect(bytesStore.values, hasLength(1));
   });
 
   test('reconciling a page on web reads no image folder', () async {
@@ -301,7 +465,7 @@ void main() {
     // Bytes still pending from this browser are queued again.
     await container
         .read(pendingMediaBytesProvider.notifier)
-        .put('lost-image', _imageBytes);
+        .put(_key('lost-image'), _imageBytes);
     await queue.reconcilePageMedia(
       strategyPublicId: 'strategy-a',
       placedImages: [image],
@@ -313,72 +477,199 @@ void main() {
     );
   });
 
-  test('once the page serves an image from the cloud, its bytes are dropped',
-      () async {
-    final bytesStore = MemoryPendingMediaBytesStore();
-    final container = _webSession(
-      mediaStore: MemoryDurableCloudMediaOutboxStore(),
-      bytesStore: bytesStore,
-    );
-    addTearDown(container.dispose);
-    await container
-        .read(pendingMediaBytesProvider.notifier)
-        .put(_imageId, _imageBytes);
+  group('the painted copy goes once attached and served from the cloud', () {
+    Future<void> race({required bool urlFirst}) async {
+      final gate = Completer<void>();
+      final repository = _R2Repository(attachGate: gate);
+      final bytesStore = MemoryPendingMediaBytesStore([_record(_imageId)]);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(
+        _job(_imageId, state: CloudMediaJobState.pendingAttach),
+      );
+      final container = _webSession(
+        mediaStore: mediaStore,
+        bytesStore: bytesStore,
+        online: true,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      final pending = container.read(pendingMediaBytesProvider.notifier);
+      Future<void> serveFromCloud() => queue.reconcilePageMedia(
+            strategyPublicId: 'strategy-a',
+            placedImages: const [],
+            assetsById: {_imageId: _activeAsset(_imageId)},
+          );
 
-    await container
-        .read(cloudMediaUploadQueueProvider.notifier)
-        .reconcilePageMedia(
-      strategyPublicId: 'strategy-a',
-      placedImages: const [],
-      assetsById: {_imageId: _activeAsset(_imageId)},
-    );
+      await queue.retryNow(ignoreBackoff: true);
+      if (urlFirst) {
+        // The page serves the URL while the attach is still in flight.
+        await serveFromCloud();
+        expect(pending.bytesFor(_key(_imageId)), _imageBytes);
+      }
+      gate.complete();
+      await _until(() => repository.completedAssetIds.isNotEmpty);
+      expect(bytesStore.values, isEmpty);
+      if (!urlFirst) {
+        expect(pending.bytesFor(_key(_imageId)), _imageBytes);
+        await serveFromCloud();
+      }
 
-    expect(container.read(pendingMediaBytesProvider), isEmpty);
-    expect(bytesStore.values, isEmpty);
+      expect(pending.bytesFor(_key(_imageId)), isNull);
+      expect(container.read(pendingMediaBytesProvider), isEmpty);
+    }
+
+    test('attach lands, then the URL arrives', () => race(urlFirst: false));
+    test('the URL arrives, then attach lands', () => race(urlFirst: true));
   });
 
-  test('a launch drops restored bytes that no job needs', () async {
-    final mediaStore = MemoryDurableCloudMediaOutboxStore();
-    await mediaStore.put(CloudMediaUploadJob(
-      jobId: 'queued-image',
-      accountId: 'account-b',
-      strategyPublicId: 'strategy-b',
-      assetPublicId: 'queued-image',
-      fileExtension: '.png',
-      mimeType: 'image/png',
-      state: CloudMediaJobState.pendingUpload,
-      attempts: 0,
-      updatedAt: DateTime.utc(2026, 9, 24),
-    ));
-    final bytesStore = MemoryPendingMediaBytesStore({
-      'queued-image': _imageBytes,
-      'abandoned-lineup-image': _imageBytes,
+  group('launch prune', () {
+    test('a draft another tab is editing survives, then a refresh recovers it',
+        () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      final bytesStore = MemoryPendingMediaBytesStore();
+      final tabA = _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+      addTearDown(tabA.dispose);
+      tabA.read(cloudMediaUploadQueueProvider);
+      final drafts = LineupImageDrafts(
+        tabA.read(placedImageProvider.notifier),
+        strategyId: 'strategy-a',
+      );
+      final draft = await drafts.add(_imageBytes, '.png');
+
+      // Tab B opens while the lineup dialog in tab A is still open.
+      final tabB = _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+      addTearDown(tabB.dispose);
+      tabB.read(cloudMediaUploadQueueProvider);
+      await _settle();
+      expect(bytesStore.values, hasLength(1));
+
+      // Tab A saves the lineup, then the browser refreshes.
+      await tabA
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueueLineupMediaJobs(strategyPublicId: 'strategy-a', images: [
+        draft,
+      ]);
+      drafts.saved();
+      final refreshed =
+          _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+      addTearDown(refreshed.dispose);
+      final jobs = refreshed.read(cloudMediaUploadQueueProvider).jobs;
+      await _settle();
+
+      expect(jobs.single.assetPublicId, draft.id);
+      expect(
+        refreshed
+            .read(pendingMediaBytesProvider.notifier)
+            .bytesFor(_key(draft.id)),
+        _imageBytes,
+      );
     });
-    final container =
-        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
-    addTearDown(container.dispose);
 
-    container.read(cloudMediaUploadQueueProvider);
-    await _settle();
+    test('only a week-old draft with no job is dropped', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(_job('old-queued', accountId: 'account-b'));
+      final bytesStore = MemoryPendingMediaBytesStore([
+        _record('abandoned', age: const Duration(days: 8)),
+        _record('old-queued',
+            accountId: 'account-b', age: const Duration(days: 8)),
+        _record('recent-draft', age: const Duration(days: 1)),
+      ]);
+      final container =
+          _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+      addTearDown(container.dispose);
 
-    // Another account's queued image keeps its bytes.
-    expect(bytesStore.values.keys, ['queued-image']);
+      container.read(cloudMediaUploadQueueProvider);
+      await _settle();
+
+      expect(
+        bytesStore.values.keys.toSet(),
+        {
+          pendingMediaStorageKey(_key('old-queued', accountId: 'account-b')),
+          pendingMediaStorageKey(_key('recent-draft')),
+        },
+      );
+    });
+
+    test('unreadable saved work drops no bytes', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore({
+        'account-a|unreadable': {'outboxVersion': 99},
+      });
+      final bytesStore = MemoryPendingMediaBytesStore([
+        _record('maybe-needed', age: const Duration(days: 30)),
+      ]);
+      final container =
+          _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+      addTearDown(container.dispose);
+
+      container.read(cloudMediaUploadQueueProvider);
+      await _settle();
+
+      expect(bytesStore.values, hasLength(1));
+    });
   });
 
-  test('a launch with unreadable saved work drops no bytes', () async {
-    final mediaStore = MemoryDurableCloudMediaOutboxStore({
-      'account-a|unreadable': {'outboxVersion': 99},
+  group('lineup drafts', () {
+    late MemoryPendingMediaBytesStore bytesStore;
+    late ProviderContainer container;
+    late LineupImageDrafts drafts;
+
+    setUp(() {
+      bytesStore = MemoryPendingMediaBytesStore();
+      container = _webSession(
+        mediaStore: MemoryDurableCloudMediaOutboxStore(),
+        bytesStore: bytesStore,
+      );
+      drafts = LineupImageDrafts(
+        container.read(placedImageProvider.notifier),
+        strategyId: 'strategy-a',
+      );
     });
-    final bytesStore =
-        MemoryPendingMediaBytesStore({'maybe-needed': _imageBytes});
-    final container =
-        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
-    addTearDown(container.dispose);
+    tearDown(() => container.dispose());
 
-    container.read(cloudMediaUploadQueueProvider);
-    await _settle();
+    test('removing a draft lets its bytes go', () async {
+      final kept = await drafts.add(_imageBytes, '.png');
+      final removed = await drafts.add(_imageBytes, '.png');
 
-    expect(bytesStore.values.keys, ['maybe-needed']);
+      await drafts.remove(removed.id);
+
+      expect(bytesStore.values.keys, [pendingMediaStorageKey(_key(kept.id))]);
+      final painted = container.read(pendingMediaBytesProvider);
+      expect(painted.keys, [pendingMediaStorageKey(_key(kept.id))]);
+    });
+
+    test('dismissing the dialog lets every draft go', () async {
+      await drafts.add(_imageBytes, '.png');
+      await drafts.add(_imageBytes, '.png');
+
+      await drafts.dismissed();
+
+      expect(bytesStore.values, isEmpty);
+      expect(container.read(pendingMediaBytesProvider), isEmpty);
+    });
+
+    test('saved drafts belong to the lineup and survive the dialog closing',
+        () async {
+      final saved = await drafts.add(_imageBytes, '.png');
+      drafts.saved();
+
+      await drafts.dismissed();
+      await drafts.remove(saved.id);
+
+      expect(bytesStore.values, hasLength(1));
+    });
+
+    test('an image over 15 MB is refused before anything is kept', () async {
+      final tooLarge = Uint8List(maxCloudImageBytes + 1);
+
+      await expectLater(
+        drafts.add(tooLarge, '.png'),
+        throwsA(isA<MediaTooLargeException>()),
+      );
+
+      expect(bytesStore.values, isEmpty);
+      expect(container.read(pendingMediaBytesProvider), isEmpty);
+    });
   });
 
   test('desktop never opens the pending-bytes box', () async {
@@ -399,14 +690,22 @@ void main() {
     final directory = await Directory.systemTemp.createTemp('icarus-bytes-');
     try {
       Hive.init(directory.path);
-      await Hive.openBox<Uint8List>(HiveBoxNames.pendingMediaBytesBox);
-      await HivePendingMediaBytesStore().put(_imageId, _imageBytes);
+      await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
+      final savedAt = DateTime.utc(2026, 9, 24, 12);
+      await HivePendingMediaBytesStore().put(PendingMediaRecord(
+        key: _key(_imageId),
+        bytes: _imageBytes,
+        savedAt: savedAt,
+      ));
       await Hive.close();
 
-      await Hive.openBox<Uint8List>(HiveBoxNames.pendingMediaBytesBox);
+      await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
       final store = HivePendingMediaBytesStore();
-      expect(store.load()[_imageId], _imageBytes);
-      await store.remove(_imageId);
+      final record = store.load().single;
+      expect(record.key, _key(_imageId));
+      expect(record.bytes, _imageBytes);
+      expect(record.savedAt.isAtSameMomentAs(savedAt), isTrue);
+      await store.remove(_key(_imageId));
       expect(store.load(), isEmpty);
     } finally {
       await Hive.close();

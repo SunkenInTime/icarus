@@ -69,7 +69,7 @@ In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Ad
 - Desktop is not a browser and ignores CORS; this rule changes nothing for it.
 - A local `flutter run -d chrome` session runs on a `http://localhost:<port>` origin and is not covered. Add that origin temporarily to test uploads locally, and remove it after.
 
-While an upload is pending, the browser keeps the image bytes in IndexedDB (Hive box `pending_media_bytes_box`) so a refresh does not lose them, and drops them once the upload is attached.
+While an upload is pending, the browser keeps the image bytes in IndexedDB (Hive box `pending_media_bytes_box`) so a refresh does not lose them. Records are scoped to account, strategy and asset, like the upload job, and are dropped once the upload is attached. Images over 15 MB (the `R2_MAX_IMAGE_BYTES` default) are refused before anything is stored. Bytes picked for a lineup that was never saved are dropped when the image is removed or the dialog is closed; a record left behind with no job goes at a launch after 7 days, so another open tab's draft is never taken.
 
 Cloudflare references:
 

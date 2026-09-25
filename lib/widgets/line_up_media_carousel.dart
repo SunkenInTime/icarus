@@ -193,6 +193,7 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                       minScale: 0.5,
                       maxScale: 4.0,
                       child: Image(
+                        key: ValueKey(image.id),
                         image: imageProvider,
                         fit: BoxFit.contain,
                         gaplessPlayback: true,

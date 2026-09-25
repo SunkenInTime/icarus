@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:typed_data';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
@@ -207,7 +206,7 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
       await prepareDurableCloudMediaOutbox();
       if (!deviceHasImageFiles) {
-        await Hive.openBox<Uint8List>(HiveBoxNames.pendingMediaBytesBox);
+        await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
       }
       await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
       await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);

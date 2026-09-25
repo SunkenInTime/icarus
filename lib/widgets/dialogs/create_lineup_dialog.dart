@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -28,12 +30,74 @@ class CreateLineupDialog extends ConsumerStatefulWidget {
   ConsumerState<CreateLineupDialog> createState() => _CreateLineupDialogState();
 }
 
+/// Images picked in one lineup dialog that no lineup references yet. Their
+/// bytes are kept as soon as they are picked (on web, for upload); they are
+/// let go when removed, or when the dialog closes without saving.
+class LineupImageDrafts {
+  LineupImageDrafts(this._images, {required this.strategyId});
+
+  final PlacedImageProvider _images;
+  final String? strategyId;
+  final Set<String> _ids = {};
+
+  /// Keeps [bytes] as a new draft. Throws [MediaTooLargeException], keeping
+  /// nothing, when the image can never upload.
+  Future<SimpleImageData> add(Uint8List bytes, String fileExtension) async {
+    final id = const Uuid().v4();
+    await _images.saveSecureImage(
+      bytes,
+      id,
+      fileExtension,
+      strategyId: strategyId,
+    );
+    _ids.add(id);
+    return SimpleImageData(id: id, fileExtension: fileExtension);
+  }
+
+  /// Lets go of [imageId] if it is a draft; saved images are left alone.
+  Future<void> remove(String imageId) async {
+    if (!_ids.remove(imageId)) return;
+    await _images.discardDraftImage(imageId: imageId, strategyId: strategyId);
+  }
+
+  /// The drafts are queued for upload and belong to the lineup now.
+  void saved() => _ids.clear();
+
+  /// The dialog closed without saving.
+  Future<void> dismissed() async {
+    final ids = _ids.toList();
+    _ids.clear();
+    for (final id in ids) {
+      await _images.discardDraftImage(imageId: id, strategyId: strategyId);
+    }
+  }
+}
+
 class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
   final Set<String> _initialImageIds = {};
+  late final LineupImageDrafts _drafts = LineupImageDrafts(
+    ref.read(placedImageProvider.notifier),
+    strategyId: ref.read(strategyProvider).strategyId,
+  );
+
+  Future<void> _addDraftImage(Uint8List bytes, String fileExtension) async {
+    final SimpleImageData image;
+    try {
+      image = await _drafts.add(bytes, fileExtension);
+    } on MediaTooLargeException catch (error) {
+      Settings.showToast(
+        message: error.userMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _imagePaths.add(image));
+  }
 
   Future<void> _enqueueLineupMediaJobs({
     required List<SimpleImageData> images,
@@ -111,6 +175,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         .toList(growable: false);
     try {
       await _enqueueLineupMediaJobs(images: imagesNeedingUpload);
+      _drafts.saved();
     } catch (_) {
       Settings.showToast(
         message: 'Could not queue these images for cloud sync. '
@@ -177,6 +242,8 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
+          // After a save there are no drafts left to let go.
+          unawaited(_drafts.dismissed());
           ref
               .read(interactionStateProvider.notifier)
               .update(InteractionState.navigation);
@@ -212,22 +279,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               final fileExtension = path.extension(picked.name);
               final imageBytes =
                   picked.bytes ?? await picked.xFile.readAsBytes();
-              final id = const Uuid().v4();
-              final strategyId = ref.read(strategyProvider).strategyId;
-
-              final imageData =
-                  SimpleImageData(id: id, fileExtension: fileExtension);
-
-              await ref.read(placedImageProvider.notifier).saveSecureImage(
-                    imageBytes,
-                    id,
-                    fileExtension,
-                    strategyId: strategyId,
-                  );
-
-              setState(() {
-                _imagePaths.add(imageData);
-              });
+              await _addDraftImage(imageBytes, fileExtension);
             },
             onPasteImage: () async {
               final (bytes, _) =
@@ -251,26 +303,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                 return;
               }
 
-              final id = const Uuid().v4();
-              final strategyId = ref.read(strategyProvider).strategyId;
-              final imageData =
-                  SimpleImageData(id: id, fileExtension: fileExtension);
-
-              await ref.read(placedImageProvider.notifier).saveSecureImage(
-                    bytes,
-                    id,
-                    fileExtension,
-                    strategyId: strategyId,
-                  );
-
-              setState(() {
-                _imagePaths.add(imageData);
-              });
+              await _addDraftImage(bytes, fileExtension);
             },
             onRemoveImage: (index) {
-              setState(() {
-                _imagePaths.removeAt(index);
-              });
+              final removed = _imagePaths[index];
+              setState(() => _imagePaths.removeAt(index));
+              unawaited(_drafts.remove(removed.id));
             },
           ),
         ),
