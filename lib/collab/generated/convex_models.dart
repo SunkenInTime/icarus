@@ -3443,7 +3443,9 @@ final class SharesRedeemResultFolder extends SharesRedeemResult {
     required this.folderPublicId,
     required this.ok,
     required this.role,
+    this.alreadyHadAccess = const ConvexOptional.absent(),
   });
+  final ConvexOptional<bool> alreadyHadAccess;
   final String folderPublicId;
   final bool ok;
   final FoldersListTreeResultItemRole role;
@@ -3452,11 +3454,20 @@ final class SharesRedeemResultFolder extends SharesRedeemResult {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
       'targetType',
+      'alreadyHadAccess',
       'folderPublicId',
       'ok',
       'role',
     });
     return SharesRedeemResultFolder(
+      alreadyHadAccess: object.value.containsKey('alreadyHadAccess')
+          ? ConvexOptional.present(
+              _decodeBoolean(
+                object.value['alreadyHadAccess']!,
+                '$path.alreadyHadAccess',
+              ),
+            )
+          : const ConvexOptional.absent(),
       folderPublicId: _decodeString(
         object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'),
         '$path.folderPublicId',
@@ -3480,6 +3491,8 @@ final class SharesRedeemResultFolder extends SharesRedeemResult {
   ConvexObject encode(String path) {
     return ConvexObject({
       'targetType': ConvexString('folder'),
+      if (alreadyHadAccess.isPresent)
+        'alreadyHadAccess': ConvexBoolean(alreadyHadAccess.value),
       'folderPublicId': ConvexString(folderPublicId),
       'ok': ConvexBoolean(_expectLiteral(ok, true, '$path.ok')),
       'role': ConvexString(role.wireName),
@@ -3493,7 +3506,9 @@ final class SharesRedeemResultStrategy extends SharesRedeemResult {
     required this.ok,
     required this.role,
     required this.strategyPublicId,
+    this.alreadyHadAccess = const ConvexOptional.absent(),
   });
+  final ConvexOptional<bool> alreadyHadAccess;
   final String? folderPublicId;
   final bool ok;
   final FoldersListTreeResultItemRole role;
@@ -3503,12 +3518,21 @@ final class SharesRedeemResultStrategy extends SharesRedeemResult {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
       'targetType',
+      'alreadyHadAccess',
       'folderPublicId',
       'ok',
       'role',
       'strategyPublicId',
     });
     return SharesRedeemResultStrategy(
+      alreadyHadAccess: object.value.containsKey('alreadyHadAccess')
+          ? ConvexOptional.present(
+              _decodeBoolean(
+                object.value['alreadyHadAccess']!,
+                '$path.alreadyHadAccess',
+              ),
+            )
+          : const ConvexOptional.absent(),
       folderPublicId:
           (object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'))
               is ConvexNull
@@ -3541,6 +3565,8 @@ final class SharesRedeemResultStrategy extends SharesRedeemResult {
   ConvexObject encode(String path) {
     return ConvexObject({
       'targetType': ConvexString('strategy'),
+      if (alreadyHadAccess.isPresent)
+        'alreadyHadAccess': ConvexBoolean(alreadyHadAccess.value),
       'folderPublicId': folderPublicId == null
           ? const ConvexNull()
           : ConvexString(folderPublicId!),

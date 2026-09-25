@@ -183,12 +183,19 @@ export const redeem = mutation({
       strategyPublicId: v.string(),
       folderPublicId: v.union(v.string(), v.null()),
       role: accessRoleValidator,
+      // True when the caller could already open the target (they own it, or
+      // already held this role or a higher one), so the link granted nothing.
+      // Always sent. Optional only so a client built against this contract
+      // still decodes a deployment that predates the field (web deploys on
+      // merge; the Convex deployment is updated separately).
+      alreadyHadAccess: v.optional(v.boolean()),
     }),
     v.object({
       ok: v.literal(true),
       targetType: v.literal("folder"),
       folderPublicId: v.string(),
       role: accessRoleValidator,
+      alreadyHadAccess: v.optional(v.boolean()),
     }),
   ),
   handler: async (ctx, args) => {
@@ -217,6 +224,7 @@ export const redeem = mutation({
       }
 
       let redeemedRole: CollaboratorRole = link.role;
+      let alreadyHadAccess = strategy.ownerId === user._id;
       if (strategy.ownerId !== user._id) {
         const existingMembership = await ctx.db
           .query("strategyCollaborators")
@@ -239,7 +247,8 @@ export const redeem = mutation({
             existingMembership.role,
             link.role,
           );
-          if (redeemedRole !== existingMembership.role) {
+          alreadyHadAccess = redeemedRole === existingMembership.role;
+          if (!alreadyHadAccess) {
             await ctx.db.patch(existingMembership._id, {
               role: redeemedRole,
               updatedAt: Date.now(),
@@ -257,6 +266,7 @@ export const redeem = mutation({
         strategyPublicId: strategy.publicId,
         folderPublicId: folder?.publicId ?? null,
         role: strategy.ownerId === user._id ? "owner" : redeemedRole,
+        alreadyHadAccess,
       } as const;
     }
 
@@ -266,6 +276,7 @@ export const redeem = mutation({
     }
 
     let redeemedRole: CollaboratorRole = link.role;
+    let alreadyHadAccess = folder.ownerId === user._id;
     if (folder.ownerId !== user._id) {
       const existingMembership = await ctx.db
         .query("folderCollaborators")
@@ -288,7 +299,8 @@ export const redeem = mutation({
           existingMembership.role,
           link.role,
         );
-        if (redeemedRole !== existingMembership.role) {
+        alreadyHadAccess = redeemedRole === existingMembership.role;
+        if (!alreadyHadAccess) {
           await ctx.db.patch(existingMembership._id, {
             role: redeemedRole,
             updatedAt: Date.now(),
@@ -302,6 +314,7 @@ export const redeem = mutation({
       targetType: "folder",
       folderPublicId: folder.publicId,
       role: folder.ownerId === user._id ? "owner" : redeemedRole,
+      alreadyHadAccess,
     } as const;
   },
 });

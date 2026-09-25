@@ -1453,10 +1453,17 @@ class ShareRedemption {
     required this.role,
     this.folderPublicId,
     this.strategyPublicId,
+    this.alreadyHadAccess = false,
   });
 
   final String targetType;
   final String role;
   final String? folderPublicId;
   final String? strategyPublicId;
+
+  /// The caller could already open the target (owner, or already a
+  /// collaborator at this role or higher): the link granted nothing new.
+  final bool alreadyHadAccess;
+
+  bool get isOwner => role == 'owner';
 }
