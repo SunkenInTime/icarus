@@ -2285,6 +2285,97 @@ void main() {
       await _settle();
     });
 
+    List<String> imageIds(ProviderContainer container) => container
+        .read(lineUpProvider)
+        .links
+        .single
+        .images
+        .map((image) => image.id)
+        .toList();
+
+    List<SimpleImageData> images(List<String> ids) => [
+          for (final id in ids) SimpleImageData(id: id, fileExtension: '.png'),
+        ];
+
+    test('undo and redo of image removals keep the image order', () async {
+      final (container, remote, page) = await openEmpty();
+      final placed = place(container);
+      final lineUps = container.read(lineUpProvider.notifier);
+      lineUps.updateLink(placed.copyWith(images: images(['a', 'b', 'c', 'd'])));
+      var lineups = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      // Remove the first image, then two from the middle.
+      lineUps.updateLink(container
+          .read(lineUpProvider)
+          .links
+          .single
+          .copyWith(images: images(['b', 'c', 'd'])));
+      lineUps.updateLink(container
+          .read(lineUpProvider)
+          .links
+          .single
+          .copyWith(images: images(['d'])));
+      lineups = await land(container, remote, page,
+          previous: lineups, revision: 2, contentRevision: 3);
+      final history = container.read(actionProvider.notifier);
+
+      history.undoAction();
+      expect(imageIds(container), ['b', 'c', 'd']);
+      history.undoAction();
+      expect(imageIds(container), ['a', 'b', 'c', 'd']);
+      final patch =
+          desiredOps(container, page).values.whereType<LineupPatchOp>().single;
+      expect(
+        (firstItem(cloudPayloadData(patch.payload))['images'] as List)
+            .map((image) => (image as Map)['id']),
+        ['a', 'b', 'c', 'd'],
+      );
+      history.redoAction();
+      expect(imageIds(container), ['b', 'c', 'd']);
+      history.redoAction();
+      expect(imageIds(container), ['d']);
+      history.undoAction();
+      history.undoAction();
+      expect(imageIds(container), ['a', 'b', 'c', 'd']);
+      await _settle();
+    });
+
+    test('undoing an image removal keeps an image a teammate added between',
+        () async {
+      final (container, remote, page) = await openEmpty();
+      final placed = place(container);
+      final lineUps = container.read(lineUpProvider.notifier);
+      lineUps.updateLink(placed.copyWith(images: images(['a', 'b', 'c'])));
+      var lineups = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      lineUps.updateLink(container
+          .read(lineUpProvider)
+          .links
+          .single
+          .copyWith(images: images(['a', 'c'])));
+      // Our removal of b lands, and a teammate adds x right after a.
+      lineups = await land(
+        container,
+        remote,
+        page,
+        previous: lineups,
+        revision: 2,
+        contentRevision: 3,
+        teammate: (data) => (firstItem(data)['images'] as List)
+            .insert(1, {'id': 'x', 'fileExtension': '.png'}),
+      );
+      expect(imageIds(container), ['a', 'x', 'c']);
+      final history = container.read(actionProvider.notifier);
+
+      history.undoAction();
+      expect(imageIds(container), ['a', 'x', 'b', 'c']);
+      history.redoAction();
+      expect(imageIds(container), ['a', 'x', 'c']);
+      history.undoAction();
+      expect(imageIds(container), ['a', 'x', 'b', 'c']);
+      await _settle();
+    });
+
     test('undoing a visibility toggle keeps a teammate toggle', () async {
       final (container, remote, page) = await openEmpty();
       final link = place(container);

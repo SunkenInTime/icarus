@@ -663,7 +663,12 @@ class LineUpLinkChange {
   final String? name;
   final String? youtubeLink;
   final String? notes;
-  final List<SimpleImageData> addedImages;
+
+  /// Images this change puts in, in order, each with the ids of the images
+  /// that followed it and are not being added themselves. Writing the change
+  /// inserts an image before the first of those still present, so undoing a
+  /// removal restores the order around any images a teammate added since.
+  final List<({SimpleImageData image, List<String> followedBy})> addedImages;
   final Set<String> removedImageIds;
 
   bool get isEmpty =>
@@ -679,42 +684,64 @@ class LineUpLinkChange {
     LineUpLink after,
   ) {
     String? changed(String a, String b) => a == b ? null : b;
-    final beforeIds = before.images.map((image) => image.id).toSet();
-    final afterIds = after.images.map((image) => image.id).toSet();
-    final added =
-        after.images.where((image) => !beforeIds.contains(image.id)).toList();
-    final removed =
-        before.images.where((image) => !afterIds.contains(image.id)).toList();
+
+    /// The images of [target] missing from [source], placed by the images
+    /// of [target] that follow them and do exist in [source].
+    List<({SimpleImageData image, List<String> followedBy})> imagesOnlyIn(
+      List<SimpleImageData> target,
+      List<SimpleImageData> source,
+    ) {
+      final sourceIds = source.map((image) => image.id).toSet();
+      return [
+        for (var i = 0; i < target.length; i++)
+          if (!sourceIds.contains(target[i].id))
+            (
+              image: target[i],
+              followedBy: [
+                for (final next in target.skip(i + 1))
+                  if (sourceIds.contains(next.id)) next.id,
+              ],
+            ),
+      ];
+    }
+
+    final added = imagesOnlyIn(after.images, before.images);
+    final removed = imagesOnlyIn(before.images, after.images);
     return (
       forward: LineUpLinkChange(
         name: changed(before.name, after.name),
         youtubeLink: changed(before.youtubeLink, after.youtubeLink),
         notes: changed(before.notes, after.notes),
         addedImages: added,
-        removedImageIds: removed.map((image) => image.id).toSet(),
+        removedImageIds: {for (final entry in removed) entry.image.id},
       ),
       backward: LineUpLinkChange(
         name: changed(after.name, before.name),
         youtubeLink: changed(after.youtubeLink, before.youtubeLink),
         notes: changed(after.notes, before.notes),
         addedImages: removed,
-        removedImageIds: added.map((image) => image.id).toSet(),
+        removedImageIds: {for (final entry in added) entry.image.id},
       ),
     );
   }
 
   LineUpLink writeTo(LineUpLink link) {
-    final present = link.images.map((image) => image.id).toSet();
+    final images = [
+      for (final image in link.images)
+        if (!removedImageIds.contains(image.id)) image.copyWith(),
+    ];
+    for (final entry in addedImages) {
+      if (images.any((image) => image.id == entry.image.id)) continue;
+      final at = entry.followedBy
+          .map((id) => images.indexWhere((image) => image.id == id))
+          .firstWhere((index) => index >= 0, orElse: () => images.length);
+      images.insert(at, entry.image.copyWith());
+    }
     return link.copyWith(
       name: name ?? link.name,
       youtubeLink: youtubeLink ?? link.youtubeLink,
       notes: notes ?? link.notes,
-      images: [
-        for (final image in link.images)
-          if (!removedImageIds.contains(image.id)) image.copyWith(),
-        for (final image in addedImages)
-          if (!present.contains(image.id)) image.copyWith(),
-      ],
+      images: images,
     );
   }
 }
