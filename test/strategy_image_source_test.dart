@@ -103,13 +103,19 @@ class _FixedSnapshot extends RemoteEditorSnapshotNotifier {
 }
 
 class _FixedUploadQueue extends CloudMediaUploadQueueNotifier {
-  _FixedUploadQueue(this.jobs);
+  _FixedUploadQueue(this.jobs, {this.reliable = true});
 
   final List<CloudMediaUploadJob> jobs;
 
+  /// False stands for an outbox with records it could not read.
+  final bool reliable;
+
   @override
-  CloudMediaUploadQueueState build() =>
-      CloudMediaUploadQueueState(jobs: jobs, isProcessing: false);
+  CloudMediaUploadQueueState build() => CloudMediaUploadQueueState(
+        jobs: jobs,
+        isProcessing: false,
+        durabilityError: reliable ? null : 'unreadable record',
+      );
 }
 
 CloudMediaUploadJob _queuedUpload() => CloudMediaUploadJob(
@@ -130,10 +136,14 @@ List<Override> _overrides({
   List<RemoteImageAsset> assets = const [],
   Map<String, Uint8List> pendingBytes = const {},
   List<CloudMediaUploadJob> uploads = const [],
+  String? accountId = 'account-a',
+  bool outboxReliable = true,
 }) {
   return [
-    cloudMediaUploadQueueProvider
-        .overrideWith(() => _FixedUploadQueue(uploads)),
+    cloudMediaUploadQueueProvider.overrideWith(
+      () => _FixedUploadQueue(uploads, reliable: outboxReliable),
+    ),
+    cloudMediaAccountIdProvider.overrideWithValue(accountId),
     strategyProvider.overrideWith(
       () => _FixedStrategy(source: source, storageDirectory: storageDirectory),
     ),
@@ -141,7 +151,6 @@ List<Override> _overrides({
     // Pending bytes only exist on web: no image files, signed in.
     if (pendingBytes.isNotEmpty) ...[
       imageFilesOnDeviceProvider.overrideWithValue(false),
-      cloudMediaAccountIdProvider.overrideWithValue('account-a'),
       pendingMediaBytesStoreProvider.overrideWithValue(
         MemoryPendingMediaBytesStore([
           for (final MapEntry(key: id, value: bytes) in pendingBytes.entries)
@@ -167,6 +176,8 @@ Widget _imageApp({
   List<RemoteImageAsset> assets = const [],
   Map<String, Uint8List> pendingBytes = const {},
   List<CloudMediaUploadJob> uploads = const [],
+  String? accountId = 'account-a',
+  bool outboxReliable = true,
   ValueNotifier<int>? rebuild,
 }) {
   return ProviderScope(
@@ -176,6 +187,8 @@ Widget _imageApp({
       assets: assets,
       pendingBytes: pendingBytes,
       uploads: uploads,
+      accountId: accountId,
+      outboxReliable: outboxReliable,
     ),
     child: MaterialApp(
       home: Scaffold(
@@ -234,7 +247,7 @@ void main() {
         localFilePath: '/images/image-1.png',
         isCloudStrategy: true,
         assetsLoaded: true,
-        uploadQueuedHere: false,
+        uploadMayBeQueuedHere: false,
         remoteAsset: _asset(),
       );
       expect(source, isA<LocalImageFile>());
@@ -245,7 +258,7 @@ void main() {
         localFilePath: null,
         isCloudStrategy: true,
         assetsLoaded: true,
-        uploadQueuedHere: false,
+        uploadMayBeQueuedHere: false,
         remoteAsset: _asset(),
       );
       expect((source as RemoteImageUrl).url, _remoteUrl);
@@ -258,7 +271,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: false,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: null,
         ),
         isA<ImageLoading>(),
@@ -269,7 +282,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: true,
+          uploadMayBeQueuedHere: true,
           remoteAsset: null,
         ),
         isA<ImageLoading>(),
@@ -280,7 +293,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(url: null, status: 'pending'),
         ),
         isA<ImageLoading>(),
@@ -293,7 +306,7 @@ void main() {
           localFilePath: '/images/image-1.png',
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: null,
           pendingBytes: _pendingPng,
         ),
@@ -304,7 +317,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(),
           pendingBytes: _pendingPng,
         ),
@@ -317,7 +330,7 @@ void main() {
         localFilePath: null,
         isCloudStrategy: true,
         assetsLoaded: true,
-        uploadQueuedHere: false,
+        uploadMayBeQueuedHere: false,
         remoteAsset: _asset(url: null, status: 'pending'),
         pendingBytes: _pendingPng,
       );
@@ -330,7 +343,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(url: null, status: 'failed'),
           pendingBytes: _pendingPng,
         ),
@@ -342,7 +355,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(),
           pendingBytes: _pendingPng,
         ),
@@ -358,7 +371,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: null,
         ),
         isA<ImageFailed>(),
@@ -371,7 +384,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: true,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(url: null, status: 'failed'),
         ),
         isA<ImageFailed>(),
@@ -381,7 +394,7 @@ void main() {
           localFilePath: null,
           isCloudStrategy: false,
           assetsLoaded: true,
-          uploadQueuedHere: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: null,
         ),
         isA<ImageFailed>(),
@@ -505,6 +518,34 @@ void main() {
 
       expect(find.text('Syncing image'), findsOneWidget);
       expect(find.text('Image unavailable'), findsNothing);
+    });
+
+    testWidgets(
+        'before the signed-in account is known, a missing asset shows syncing',
+        (tester) async {
+      // At startup the upload queue cannot yet say whether this device is
+      // uploading the image, so it must not flash unavailable.
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        accountId: null,
+      ));
+      await tester.pump();
+
+      expect(find.text('Syncing image'), findsOneWidget);
+      expect(find.text('Image unavailable'), findsNothing);
+    });
+
+    testWidgets('an outbox it could not read keeps a missing asset syncing',
+        (tester) async {
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        outboxReliable: false,
+      ));
+      await tester.pump();
+
+      expect(find.text('Syncing image'), findsOneWidget);
     });
 
     testWidgets('a local image paints from its file on desktop',

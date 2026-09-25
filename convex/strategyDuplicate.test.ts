@@ -88,6 +88,33 @@ async function seedSource(t: RootHarness, owner: Harness): Promise<void> {
     isAttack: false,
     expectedRevision: 0,
   });
+  // Uploads land before the content that shows them, as on a device that
+  // placed the images online.
+  await t.run(async (ctx) => {
+    const strategy = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", source))
+      .unique();
+    const now = Date.now();
+    for (const publicId of ["placed-image", "lineup-image"]) {
+      await ctx.db.insert("imageAssets", {
+        publicId,
+        provider: "r2",
+        strategyId: strategy!._id,
+        uploadAttemptPublicId: `${publicId}-attempt`,
+        objectKey: `strategies/${source}/${publicId}.png`,
+        uploadStatus: "active",
+        fileExtension: ".png",
+        mimeType: "image/png",
+        width: 64,
+        height: 32,
+        byteSize: 100,
+        uploadedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  });
   await owner.mutation(applyBatch, {
     ...protocol,
     strategyPublicId: source,
@@ -147,37 +174,18 @@ async function seedSource(t: RootHarness, owner: Harness): Promise<void> {
           data: {
             id: "lineup-group",
             agent: { type: "sova", lineUpID: "lineup-group" },
-            items: [{ id: "item-1", images: [{ id: "lineup-image" }] }],
+            items: [
+              {
+                id: "item-1",
+                ability: { type: "shock_dart", lineUpID: "lineup-group" },
+                images: [{ id: "lineup-image" }],
+              },
+            ],
           },
         },
         sortIndex: 0,
       },
     ],
-  });
-  await t.run(async (ctx) => {
-    const strategy = await ctx.db
-      .query("strategies")
-      .withIndex("by_publicId", (q) => q.eq("publicId", source))
-      .unique();
-    const now = Date.now();
-    for (const publicId of ["placed-image", "lineup-image"]) {
-      await ctx.db.insert("imageAssets", {
-        publicId,
-        provider: "r2",
-        strategyId: strategy!._id,
-        uploadAttemptPublicId: `${publicId}-attempt`,
-        objectKey: `strategies/${source}/${publicId}.png`,
-        uploadStatus: "active",
-        fileExtension: ".png",
-        mimeType: "image/png",
-        width: 64,
-        height: 32,
-        byteSize: 100,
-        uploadedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
   });
 }
 
@@ -305,9 +313,18 @@ describe("strategies:duplicate", () => {
     expect(copy.lineups).toHaveLength(1);
     expect(lineup!.pagePublicId).toBe(copySecondPage);
     expect(lineup!.publicId).not.toBe("lineup-group");
-    expect(lineup!.payload.data).toMatchObject({
+    // The group's agent and abilities point at the copy's group, not the
+    // original's.
+    expect(lineup!.payload.data).toEqual({
       id: lineup!.publicId,
-      items: [{ images: [{ id: "lineup-image" }] }],
+      agent: { type: "sova", lineUpID: lineup!.publicId },
+      items: [
+        {
+          id: "item-1",
+          ability: { type: "shock_dart", lineUpID: lineup!.publicId },
+          images: [{ id: "lineup-image" }],
+        },
+      ],
     });
 
     expect(await imageUrls(owner, "duplicate-copy")).toEqual({
@@ -501,7 +518,7 @@ describe("strategies:duplicate", () => {
     expect(counts).toEqual({ strategies: 2, pages: 4, assets: 4 });
   });
 
-  test("lands in a folder the caller owns and nowhere else", async () => {
+  test("lands in the caller's folder, or their library root from someone else's", async () => {
     const { t, owner, other } = await createHarness();
     await seedSource(t, owner);
     await owner.mutation(createFolder, {
@@ -521,9 +538,249 @@ describe("strategies:duplicate", () => {
       publicId: "other-folder",
       name: "Not yours",
     });
+    // Duplicating while browsing a folder someone shared with you.
     await expect(
-      duplicate(owner, "wrong-folder", { folderPublicId: "other-folder" }),
-    ).rejects.toThrow("Forbidden");
+      duplicate(owner, "from-shared-folder", {
+        folderPublicId: "other-folder",
+      }),
+    ).resolves.toEqual({ ok: true });
+    const atRoot = (await owner.query(listStrategies, {})) as Array<{
+      publicId: string;
+    }>;
+    expect(atRoot.map((entry) => entry.publicId)).toContain(
+      "from-shared-folder",
+    );
+    await expect(
+      other.query(listStrategies, { folderPublicId: "other-folder" }),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("images placed before their upload", () => {
+  const createUploadIntent = makeFunctionReference<"mutation">(
+    "images:createR2UploadIntent",
+  );
+  const markUploadActive = makeFunctionReference<"mutation">(
+    "images:markR2UploadActive",
+  );
+  const markStaleUploads = makeFunctionReference<"mutation">(
+    "images:markStaleImageUploadsDeleted",
+  );
+
+  async function placeImage(owner: Harness, elementPublicId: string) {
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: `place-${elementPublicId}`,
+          type: "element.add",
+          elementPublicId,
+          pagePublicId: firstPage,
+          payload: {
+            kind: "image",
+            payloadVersion: 1,
+            data: { id: elementPublicId, elementType: "image" },
+          },
+          sortIndex: 9,
+        },
+      ],
+    });
+  }
+
+  async function rowsFor(t: RootHarness, publicId: string) {
+    return await t.run(
+      async (ctx) =>
+        await ctx.db
+          .query("imageAssets")
+          .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+          .collect(),
+    );
+  }
+
+  async function statusFor(user: Harness, publicId: string) {
+    const images = (await user.query(listImages, {
+      strategyPublicId: source,
+    })) as ImageRow[];
+    return images.find((image) => image.publicId === publicId) ?? null;
+  }
+
+  async function upload(owner: Harness, publicId: string) {
+    const intent = (await owner.mutation(createUploadIntent, {
+      strategyPublicId: source,
+      assetPublicId: publicId,
+      objectKey: `strategies/${source}/${publicId}.png`,
+      uploadAttemptPublicId: `${publicId}-attempt`,
+      mimeType: "image/png",
+      fileExtension: ".png",
+    })) as { uploadId: string };
+    return intent.uploadId;
+  }
+
+  test("a duplicate waits for an image whose upload has not started, then copies it", async () => {
+    const { t, owner, other } = await createHarness();
+    await seedSource(t, owner);
+    await owner.mutation(createShare, {
+      ...protocol,
+      targetType: "strategy",
+      targetPublicId: source,
+      token: "late-editor",
+      role: "editor",
+    });
+    await other.mutation(redeemShare, { ...protocol, token: "late-editor" });
+
+    await placeImage(owner, "late-image");
+
+    // Another device sees an image on its way, not a missing one.
+    expect(await statusFor(other, "late-image")).toMatchObject({
+      uploadStatus: "pending",
+      url: null,
+    });
+    await expect(duplicate(other, "too-early")).rejects.toThrow(
+      "still uploading",
+    );
+
+    const uploadId = await upload(owner, "late-image");
+    const rows = await rowsFor(t, "late-image");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!._id).toBe(uploadId);
+    await owner.mutation(markUploadActive, {
+      strategyPublicId: source,
+      assetPublicId: "late-image",
+      uploadId,
+      byteSize: 100,
+      mimeType: "image/png",
+      fileExtension: ".png",
+    });
+
+    expect((await statusFor(other, "late-image"))?.url).toBe(
+      `https://media.duplicate.test/strategies/${source}/late-image.png`,
+    );
+    await expect(duplicate(other, "after-upload")).resolves.toEqual({
+      ok: true,
+    });
+    const copyUrls = await imageUrls(other, "after-upload");
+    expect(Object.values(copyUrls)).toContain(
+      `https://media.duplicate.test/strategies/${source}/late-image.png`,
+    );
+  });
+
+  test("an upload that never comes is swept, and the image reads as unavailable", async () => {
+    vi.useFakeTimers();
+    mockR2Deletes();
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "never-uploaded");
+    expect(await statusFor(owner, "never-uploaded")).toMatchObject({
+      uploadStatus: "pending",
+    });
+
+    await owner.mutation(markStaleUploads, { staleBefore: Date.now() + 1 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await rowsFor(t, "never-uploaded")).toEqual([]);
+    expect(await statusFor(owner, "never-uploaded")).toBeNull();
+
+    // Moving the image does not bring the spinner back.
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: "move-never-uploaded",
+          type: "element.reorder",
+          elementPublicId: "never-uploaded",
+          pagePublicId: firstPage,
+          sortIndex: 10,
+          expectedElementRevision: 1,
+        },
+      ],
+    });
+    expect(await rowsFor(t, "never-uploaded")).toEqual([]);
+
+    // With nothing on its way, the copy goes ahead without it.
+    await expect(duplicate(owner)).resolves.toEqual({ ok: true });
+  });
+
+  test("deleting the image clears its placeholder", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "removed-image");
+    expect(await rowsFor(t, "removed-image")).toHaveLength(1);
+
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: "remove-removed-image",
+          type: "element.delete",
+          elementPublicId: "removed-image",
+          pagePublicId: firstPage,
+          expectedElementRevision: 1,
+        },
+      ],
+    });
+
+    expect(await rowsFor(t, "removed-image")).toEqual([]);
+  });
+
+  test("a lineup image referenced before its upload is expected too", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: "late-lineup",
+          type: "lineup.add",
+          lineupPublicId: "late-lineup",
+          pagePublicId: firstPage,
+          payload: {
+            kind: "lineupGroup",
+            payloadVersion: 1,
+            data: {
+              id: "late-lineup",
+              items: [{ id: "late-item", images: [{ id: "late-lineup-image" }] }],
+            },
+          },
+          sortIndex: 1,
+        },
+      ],
+    });
+
+    expect(await statusFor(owner, "late-lineup-image")).toMatchObject({
+      uploadStatus: "pending",
+    });
+    await expect(duplicate(owner)).rejects.toThrow("still uploading");
+  });
+
+  test("an image that already has bytes gets no placeholder", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    // Legacy rows carry no strategy id.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("imageAssets", {
+        publicId: "legacy-image",
+        provider: "r2",
+        objectKey: "legacy/legacy-image.png",
+        uploadStatus: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await placeImage(owner, "legacy-image");
+
+    expect(await rowsFor(t, "legacy-image")).toHaveLength(1);
+    expect((await statusFor(owner, "legacy-image"))?.url).toBe(
+      "https://media.duplicate.test/legacy/legacy-image.png",
+    );
   });
 });
 

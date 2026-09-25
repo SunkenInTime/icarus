@@ -163,6 +163,79 @@ export async function getActiveAssetForStrategy(
   );
 }
 
+/// A row recording that a strategy's content shows an image whose upload has
+/// not started: pending, with no bytes anywhere yet. The upload intent adopts
+/// it; the stale-upload sweep removes it if the upload never comes.
+export function isUploadPlaceholder(asset: Doc<"imageAssets">): boolean {
+  return (
+    inferUploadStatus(asset) === "pending" &&
+    asset.objectKey === undefined &&
+    asset.storageId === undefined
+  );
+}
+
+/// The image ids a live element or lineup row shows.
+export function referencedAssetIds(
+  row: Doc<"elements"> | Doc<"lineups"> | null,
+): Set<string> {
+  if (row === null || row.deleted) return new Set();
+  if ("elementType" in row) {
+    if (row.elementType !== "image") return new Set();
+    const assetId = collectAssetIdFromElementPayload(row.payload);
+    return new Set(assetId === null ? [] : [assetId]);
+  }
+  return collectAssetIdsFromLineupPayload(row.payload);
+}
+
+/// Records that the strategy's content now shows these images. Content and
+/// its upload reach the server independently, so an image can be referenced
+/// before its upload intent exists; without a row, readers could not tell an
+/// image that is on its way from one that will never come.
+export async function expectAssets(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  assetPublicIds: Iterable<string>,
+  now: number,
+): Promise<void> {
+  for (const publicId of assetPublicIds) {
+    if (
+      (await getViewerAssetForStrategy(ctx, strategyId, publicId)) !== null
+    ) {
+      continue;
+    }
+    await ctx.db.insert("imageAssets", {
+      publicId,
+      strategyId,
+      uploadStatus: "pending",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+/// Drops the placeholders for images content no longer shows. Rows holding
+/// bytes are left to the normal asset lifecycle.
+export async function removeUploadPlaceholders(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  assetPublicIds: Iterable<string>,
+): Promise<void> {
+  for (const publicId of assetPublicIds) {
+    const rows = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+        q
+          .eq("strategyId", strategyId)
+          .eq("publicId", publicId)
+          .eq("uploadStatus", "pending"),
+      )
+      .take(20);
+    for (const row of rows) {
+      if (isUploadPlaceholder(row)) await ctx.db.delete(row._id);
+    }
+  }
+}
+
 /// Gives `targetStrategyId` its own active row for the image the source
 /// strategy shows under `sourceAssetPublicId`, stored as `targetAssetPublicId`.
 /// The row points at the same R2 object or Convex storage file: physical

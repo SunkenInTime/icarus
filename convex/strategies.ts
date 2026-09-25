@@ -518,6 +518,32 @@ export const createWithInitialPage = mutation({
   },
 });
 
+type LineupData = Doc<"lineups">["payload"]["data"];
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/// A lineup group's data under a new group id. The group's agent and its
+/// items' abilities name the group they belong to, so they move with it.
+function lineupGroupDataWithId(data: LineupData, id: string): LineupData {
+  const { agent, items } = data;
+  return {
+    ...data,
+    id,
+    ...(isJsonObject(agent) ? { agent: { ...agent, lineUpID: id } } : {}),
+    ...(Array.isArray(items)
+      ? {
+          items: items.map((item) =>
+            isJsonObject(item) && isJsonObject(item.ability)
+              ? { ...item, ability: { ...item.ability, lineUpID: id } }
+              : item,
+          ),
+        }
+      : {}),
+  } as LineupData;
+}
+
 /// Copies a strategy into the caller's library in one transaction: pages,
 /// page settings, live elements and lineups under fresh publicIds, and an
 /// image asset row per image the copy shows. The rows share the source's
@@ -551,11 +577,19 @@ export const duplicate = mutation({
       throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
     }
 
-    const folderId = await resolveOwnedFolderId(
-      ctx,
-      args.folderPublicId,
-      user._id,
-    );
+    // The copy lands in the folder the caller is browsing when it is theirs.
+    // Browsing a folder someone shared with them, the copy goes to the root
+    // of their own library: it is theirs, not the folder owner's.
+    const folder =
+      args.folderPublicId === undefined
+        ? null
+        : await ctx.db
+            .query("folders")
+            .withIndex("by_publicId", (q) =>
+              q.eq("publicId", args.folderPublicId!),
+            )
+            .first();
+    const folderId = folder?.ownerId === user._id ? folder._id : undefined;
     const now = Date.now();
     const strategyId = await ctx.db.insert("strategies", {
       publicId: args.publicId,
@@ -662,7 +696,7 @@ export const duplicate = mutation({
         payloadVersion: lineup.payloadVersion,
         payload: {
           ...lineup.payload,
-          data: { ...lineup.payload.data, id: publicId },
+          data: lineupGroupDataWithId(lineup.payload.data, publicId),
         },
         sortIndex: lineup.sortIndex,
         revision: 1,

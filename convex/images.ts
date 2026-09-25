@@ -8,6 +8,7 @@ import {
   getViewerAssetForStrategy,
   inferProvider,
   inferUploadStatus,
+  isUploadPlaceholder,
   serializeAssetForViewer,
   type Provider,
   type UploadStatus,
@@ -309,22 +310,44 @@ export const createR2UploadIntent = internalMutation({
     }
 
     const now = Date.now();
-    const uploadId = await ctx.db.insert("imageAssets", {
+    const upload = {
       publicId: args.assetPublicId,
-      provider: "r2",
+      provider: "r2" as const,
       strategyId: strategy._id,
       createdByUserId: user._id,
       objectKey: args.objectKey,
       uploadAttemptPublicId: args.uploadAttemptPublicId,
-      uploadStatus: "pending",
+      uploadStatus: "pending" as const,
       fileExtension: args.fileExtension,
       mimeType: args.mimeType,
       width: args.width,
       height: args.height,
       byteSize: args.byteSize,
-      createdAt: now,
       updatedAt: now,
-    });
+    };
+    // Content that shows this image may have landed first and left a
+    // placeholder; the upload takes it over rather than adding a second row.
+    const placeholder = (
+      await ctx.db
+        .query("imageAssets")
+        .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+          q
+            .eq("strategyId", strategy._id)
+            .eq("publicId", args.assetPublicId)
+            .eq("uploadStatus", "pending"),
+        )
+        .take(20)
+    ).find(isUploadPlaceholder);
+    let uploadId: Id<"imageAssets">;
+    if (placeholder !== undefined) {
+      await ctx.db.patch(placeholder._id, upload);
+      uploadId = placeholder._id;
+    } else {
+      uploadId = await ctx.db.insert("imageAssets", {
+        ...upload,
+        createdAt: now,
+      });
+    }
 
     return {
       uploadId,

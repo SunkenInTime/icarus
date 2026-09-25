@@ -83,15 +83,20 @@ StrategyImageSource watchStrategyImageSource(
     }),
   );
   final isCloudStrategy = source == StrategySource.cloud;
-  // Only cloud images are ever queued for upload.
-  final uploadQueuedHere = isCloudStrategy &&
-      ref.watch(
-        cloudMediaUploadQueueProvider.select(
-          (queue) => queue.jobsForStrategy(strategyId).any(
-                (job) => job.assetPublicId == image.id && !job.isFailed,
-              ),
-        ),
-      );
+  // Only cloud images are ever queued for upload. Until the signed-in
+  // account is known, or while the outbox holds records it could not read,
+  // the queue cannot rule a queued upload out.
+  final uploadMayBeQueuedHere = isCloudStrategy &&
+      (ref.watch(cloudMediaAccountIdProvider) == null ||
+          ref.watch(
+            cloudMediaUploadQueueProvider.select(
+              (queue) =>
+                  !queue.outboxIsReliable ||
+                  queue.jobsForStrategy(strategyId).any(
+                        (job) => job.assetPublicId == image.id && !job.isFailed,
+                      ),
+            ),
+          ));
   ref.watch(cloudMediaCacheProvider);
   // Bytes this browser is still uploading for the signed-in account. They
   // only paint when neither the file check below nor the cloud URL has
@@ -119,23 +124,25 @@ StrategyImageSource watchStrategyImageSource(
     isCloudStrategy: isCloudStrategy,
     assetsLoaded: assetsLoaded,
     remoteAsset: remoteAsset,
-    uploadQueuedHere: uploadQueuedHere,
+    uploadMayBeQueuedHere: uploadMayBeQueuedHere,
     pendingBytes: pendingBytes,
   );
 }
 
 /// A file on this device wins, then the cloud URL, then bytes still
 /// uploading from this device. Without any, a cloud image is on its way
-/// while its asset is uploading, while this device has its upload queued, or
-/// while the page that lists its asset is still loading. [assetsLoaded] is
-/// that page's live snapshot: an upload started anywhere adds the asset to
-/// it, so an image it still lacks has no bytes on the server.
+/// while its asset is pending, while this device may have its upload queued,
+/// or while the page that lists its asset is still loading. [assetsLoaded]
+/// is that page's live snapshot. The server gives every image its content
+/// shows a pending asset until the upload lands, so an image the loaded page
+/// has no asset for is not coming: it failed, or its upload never came and
+/// was swept.
 StrategyImageSource resolveStrategyImageSource({
   required String? localFilePath,
   required bool isCloudStrategy,
   required bool assetsLoaded,
   required RemoteImageAsset? remoteAsset,
-  required bool uploadQueuedHere,
+  required bool uploadMayBeQueuedHere,
   Uint8List? pendingBytes,
 }) {
   if (localFilePath != null) return LocalImageFile(localFilePath);
@@ -148,7 +155,7 @@ StrategyImageSource resolveStrategyImageSource({
         ? const ImageFailed()
         : const ImageLoading();
   }
-  return !assetsLoaded || uploadQueuedHere
+  return !assetsLoaded || uploadMayBeQueuedHere
       ? const ImageLoading()
       : const ImageFailed();
 }
