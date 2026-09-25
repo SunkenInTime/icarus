@@ -1643,7 +1643,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (snapshot == null) return;
       final ops = [
         for (final page in snapshot.pages)
-          if (page.publicId != activeId && page.isAttack != isAttack)
+          if (page.publicId != activeId && _intendedSide(page) != isAttack)
             PagePatchOp(
               opId: const Uuid().v4(),
               pagePublicId: page.publicId,
@@ -1684,6 +1684,27 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
     await box.put(updated.id, updated);
+  }
+
+  /// The side a cloud page is headed to: the newest side change still
+  /// waiting in the op queue, or the server's side when none is. Comparing
+  /// against the server alone would skip a page whose queued change points
+  /// the other way, and that change would then win.
+  bool _intendedSide(RemotePage page) {
+    final key = EntitySyncKey.pageDescriptor(page.publicId);
+    final queue = ref.read(strategyOpQueueProvider);
+    final pendingOps = [
+      queue.successorByEntityKey[key]?.pending.op,
+      queue.queuedByEntityKey[key]?.pending.op,
+      queue.pausedByEntityKey[key]?.pending.op,
+      queue.inFlightByEntityKey[key]?.pending.op,
+    ];
+    for (final op in pendingOps) {
+      if (op is PagePatchOp && op.payload['isAttack'] is bool) {
+        return op.payload['isAttack'] as bool;
+      }
+    }
+    return page.isAttack;
   }
 
   Future<void> applyNeutralTeamColorsToAllPages(bool value) async {

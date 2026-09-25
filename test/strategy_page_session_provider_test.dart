@@ -315,7 +315,15 @@ RemotePageSnapshot _pageSnapshot(
   );
 }
 
-RemoteLineup _lineup(String pageId, String id) {
+RemoteLineup _lineup(
+  String pageId,
+  String id, {
+  Offset agentPosition = const Offset(10, 20),
+  int revision = 1,
+  int sortIndex = 0,
+  String? nestedLineUpId,
+}) {
+  final lineUpId = nestedLineUpId ?? id;
   return RemoteLineup(
     publicId: id,
     strategyPublicId: 'cloud-strategy',
@@ -328,12 +336,15 @@ RemoteLineup _lineup(String pageId, String id) {
         'agent': <Object?, Object?>{
           'id': 'agent-$id',
           'isDeleted': false,
-          'position': <Object?, Object?>{'dx': 10, 'dy': 20},
+          'position': <Object?, Object?>{
+            'dx': agentPosition.dx,
+            'dy': agentPosition.dy,
+          },
           'type': 'sova',
           'isAlly': true,
           'state': 'none',
           'kind': 'plain',
-          'lineUpID': id,
+          'lineUpID': lineUpId,
         },
         'items': <Object?>[
           <Object?, Object?>{
@@ -346,7 +357,7 @@ RemoteLineup _lineup(String pageId, String id) {
               'isAlly': true,
               'rotation': 0,
               'length': 0,
-              'lineUpID': id,
+              'lineUpID': lineUpId,
               'visualState': <Object?, Object?>{
                 'showRangeOutline': true,
                 'showRangeFill': true,
@@ -362,8 +373,8 @@ RemoteLineup _lineup(String pageId, String id) {
         ],
       },
     },
-    sortIndex: 0,
-    revision: 1,
+    sortIndex: sortIndex,
+    revision: revision,
     deleted: false,
   );
 }
@@ -1725,6 +1736,69 @@ void main() {
       desired[EntitySyncKey.element(page.publicId, 'text-page-1')]?.kind,
       StrategyOpKind.patch,
     );
+  });
+
+  group('switching side on all cloud pages', () {
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier)>
+        openTwoPages() async {
+      final first = _page('page-a', 0, revision: 4);
+      final second = _page('page-b', 1, revision: 7);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [first, second],
+        activePage: _pageSnapshot(first),
+      ));
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return (container, queue);
+    }
+
+    bool? queuedSideOf(_FakeStrategyOpQueueNotifier queue, String pageId) {
+      final op = queue.state
+          .queuedByEntityKey[EntitySyncKey.pageDescriptor(pageId)]?.pending.op;
+      return op is PagePatchOp ? op.payload['isAttack'] as bool? : null;
+    }
+
+    test('a second toggle supersedes the first while it is still queued',
+        () async {
+      final (container, queue) = await openTwoPages();
+      final notifier = container.read(strategyProvider.notifier);
+
+      await notifier.switchSide(allPages: true);
+      expect(queuedSideOf(queue, 'page-b'), isFalse);
+
+      // The server has not taken the first change yet: page B still reads
+      // Attack remotely, the side this toggle asks for.
+      await notifier.switchSide(allPages: true);
+
+      expect(container.read(mapProvider).isAttack, isTrue);
+      expect(queuedSideOf(queue, 'page-b'), isTrue);
+      await _settle();
+    });
+
+    test('a second toggle follows a side change that is in flight', () async {
+      final (container, queue) = await openTwoPages();
+      final notifier = container.read(strategyProvider.notifier);
+      const key = EntitySyncKey.pageDescriptor('page-b');
+
+      await notifier.switchSide(allPages: true);
+      final sent = queue.state.queuedByEntityKey[key]!.pending.op;
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+      );
+      queue.holdInFlight(key, sent);
+
+      await notifier.switchSide(allPages: true);
+
+      expect(queuedSideOf(queue, 'page-b'), isTrue);
+      await _settle();
+    });
   });
 
   test('unhydrated canvas cannot author a remote lineup deletion', () async {
