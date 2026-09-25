@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
@@ -732,7 +733,7 @@ class CloudMediaUploadQueueNotifier
         'upload.pending_attach ${_describeJob(_getJob(job.jobId))}',
       );
     } catch (error) {
-      _logMedia('upload.failed error=$error ${_describeJob(job)}');
+      _reportMediaFailure('upload', error, job);
       await _markJobFailed(
         job,
         '$error',
@@ -871,7 +872,7 @@ class CloudMediaUploadQueueNotifier
       _logMedia('attach.success image=${job.assetPublicId} '
           'strategy=${job.strategyPublicId}');
     } catch (error) {
-      _logMedia('attach.failed error=$error ${_describeJob(job)}');
+      _reportMediaFailure('attach', error, job);
       final missingIntent = isMissingImageUploadIntentError(error);
       await _markJobFailed(
         missingIntent
@@ -1590,8 +1591,20 @@ class CloudMediaUploadQueueNotifier
 
   void _logMedia(String message) {
     AppErrorReporter.reportInfo(
-      message,
+      redactSyncDiagnosticText(message),
       source: 'cloud_media.upload_queue',
+    );
+  }
+
+  void _reportMediaFailure(
+    String stage,
+    Object error,
+    CloudMediaUploadJob job,
+  ) {
+    AppErrorReporter.reportWarning(
+      redactSyncDiagnosticText('$stage.failed ${_describeJob(job)}'),
+      source: 'cloud_media.upload_queue',
+      error: redactSyncDiagnosticText(error),
     );
   }
 

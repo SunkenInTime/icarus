@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -11,6 +12,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
 
 class StrategyOutboxSession {
@@ -1158,6 +1160,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           state.queuedByEntityKey.values.map((item) => item.pending).toList(),
           delay: _offlineRetryDelay(),
         );
+        if (state.lastError != message) {
+          AppErrorReporter.reportWarning(
+            'Cloud sync is holding changes for strategy $strategyPublicId: '
+            '$message',
+            source: 'cloud_sync.op_queue',
+          );
+        }
         state = state.copyWith(lastError: message);
       }
       return;
@@ -1216,8 +1225,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               stackTrace: stackTrace,
             ));
       } else {
-        log('Failed flushing op queue: $error',
-            error: error, stackTrace: stackTrace);
+        AppErrorReporter.reportWarning(
+          'Cloud sync could not send ${batch.length} change(s) for strategy '
+          '$strategyPublicId',
+          source: 'cloud_sync.op_queue',
+          error: redactSyncDiagnosticText(error),
+          stackTrace: stackTrace,
+        );
       }
       await _restoreRecordsAfterFailure(batch, lastError: '$error');
     } finally {
@@ -1355,6 +1369,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       } else if (ack.isAck) {
         await _removeRecordByStorageKeyIfCurrent(sent.storageKey, ack.opId);
       } else {
+        AppErrorReporter.reportWarning(
+          'The server rejected change ${ack.opId} for strategy '
+          '${sent.strategyPublicId}',
+          source: 'cloud_sync.op_queue',
+          error: redactSyncDiagnosticText(
+            ack.reason ?? 'no reason given',
+          ),
+        );
         final rejected = current.copyWith(
           status: DurableOutboxStatus.attention,
           updatedAt: DateTime.now(),
