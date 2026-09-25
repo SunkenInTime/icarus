@@ -1652,6 +1652,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             ),
       ];
       if (ops.isEmpty) return;
+      final request = Object();
+      for (final op in ops) {
+        _requestedSides[op.pagePublicId] =
+            (request: request, isAttack: isAttack);
+      }
       try {
         await ref
             .read(strategyOpQueueProvider.notifier)
@@ -1664,6 +1669,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
         if (!handled) rethrow;
         return;
+      } finally {
+        _requestedSides
+            .removeWhere((_, entry) => identical(entry.request, request));
       }
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       return;
@@ -1686,11 +1694,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
-  /// The side a cloud page is headed to: the newest side change still
-  /// waiting in the op queue, or the server's side when none is. Comparing
+  /// Side changes asked for by a switchSide call whose enqueue has not
+  /// finished. The op queue shows an op only after its durable write, so a
+  /// second toggle starting in between would otherwise read the older side.
+  /// Each entry is cleared by the call that set it, unless a later call has
+  /// replaced it.
+  final Map<String, ({Object request, bool isAttack})> _requestedSides = {};
+
+  /// The side a cloud page is headed to: a side change still being queued,
+  /// the newest one waiting in the op queue, or the server's side. Comparing
   /// against the server alone would skip a page whose queued change points
   /// the other way, and that change would then win.
   bool _intendedSide(RemotePage page) {
+    final requested = _requestedSides[page.publicId];
+    if (requested != null) return requested.isAttack;
     final key = EntitySyncKey.pageDescriptor(page.publicId);
     final queue = ref.read(strategyOpQueueProvider);
     final pendingOps = [

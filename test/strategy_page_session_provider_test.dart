@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,12 +8,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
@@ -90,6 +93,10 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
 
   final bool blockFlush;
   bool failDiscard = false;
+
+  /// While set, page writes wait on it before publishing, like the real
+  /// queue's durable write.
+  Completer<void>? writeGate;
   int flushNowCount = 0;
 
   @override
@@ -145,6 +152,8 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     bool clearMissing = true,
     bool flushImmediately = false,
   }) async {
+    final gate = writeGate;
+    if (gate != null) await gate.future;
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.queuedByEntityKey,
     );
@@ -1798,6 +1807,343 @@ void main() {
       await notifier.switchSide(allPages: true);
 
       expect(queuedSideOf(queue, 'page-b'), isTrue);
+      await _settle();
+    });
+
+    test('overlapping toggles reconcile across unpublished durable writes',
+        () async {
+      final first = _page('page-a', 0, revision: 4);
+      final second = _page('page-b', 1, revision: 7);
+      final third = _page('page-c', 2, revision: 9);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [first, second, third],
+        activePage: _pageSnapshot(first),
+      ));
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      final notifier = container.read(strategyProvider.notifier);
+
+      queue.writeGate = Completer<void>();
+      final toDefense = notifier.switchSide(allPages: true);
+      // Starts before the first toggle's writes have published anything.
+      final backToAttack = notifier.switchSide(allPages: true);
+      queue.writeGate!.complete();
+      await Future.wait([toDefense, backToAttack]);
+
+      expect(container.read(mapProvider).isAttack, isTrue);
+      expect(queuedSideOf(queue, 'page-b'), isTrue);
+      expect(queuedSideOf(queue, 'page-c'), isTrue);
+      await _settle();
+    });
+  });
+
+  group('lineup history through the cloud projection', () {
+    const placedAt = Offset(100, 100);
+    late _FakeStrategyOpQueueNotifier queue;
+
+    /// Page settings that round-trip exactly, so live sync authors nothing
+    /// for them; the agent size marks which server revision is on screen.
+    CloudPayload settingsFor(int contentRevision) =>
+        StrategySettings(agentSize: 30 + contentRevision.toDouble()).toJson();
+
+    Future<(ProviderContainer, _FakeRemoteEditorNotifier, RemotePage)>
+        openEmpty() async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, settings: settingsFor(1)),
+      ));
+      queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return (container, remote, page);
+    }
+
+    /// Places a lineup the way the editor does.
+    LineUpLink place(ProviderContainer container) {
+      final lineUps = container.read(lineUpProvider.notifier)..startFresh();
+      lineUps.setDraftAgent(PlacedAgent(
+        id: 'agent-x',
+        type: AgentType.sova,
+        position: placedAt,
+      ));
+      lineUps.setDraftAbility(PlacedAbility(
+        id: 'ability-x',
+        data: AgentData.agents[AgentType.sova]!.abilities[2],
+        position: const Offset(300, 300),
+      ));
+      return lineUps.commitPlacement()!;
+    }
+
+    Map<EntitySyncKey, StrategyOp> desiredOps(
+      ProviderContainer container,
+      RemotePage page,
+    ) {
+      return container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+                strategyPublicId: 'cloud-strategy',
+                pageId: page.publicId,
+              ) ??
+          const {};
+    }
+
+    /// The lineups the server stores once [ops] apply to [previous]: the
+    /// real projection the client sent, JSON round-tripped.
+    List<RemoteLineup> apply(
+      Iterable<StrategyOp> ops,
+      RemotePage page, {
+      required int revision,
+      required List<RemoteLineup> previous,
+    }) {
+      final byId = {for (final lineup in previous) lineup.publicId: lineup};
+      for (final op in ops) {
+        final (id, payload) = switch (op) {
+          LineupAddOp(:final lineupPublicId, :final payload) => (
+              lineupPublicId,
+              payload
+            ),
+          LineupPatchOp(:final lineupPublicId, :final payload) => (
+              lineupPublicId,
+              payload ?? byId[lineupPublicId]!.payload
+            ),
+          LineupDeleteOp(:final lineupPublicId) => (lineupPublicId, null),
+          _ => (null, null),
+        };
+        if (id == null) continue;
+        if (payload == null) {
+          byId.remove(id);
+          continue;
+        }
+        byId[id] = RemoteLineup(
+          publicId: id,
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: page.publicId,
+          payload: jsonDecode(jsonEncode(payload)) as Map<String, dynamic>,
+          sortIndex: 0,
+          revision: revision,
+          deleted: false,
+        );
+      }
+      return byId.values.toList();
+    }
+
+    RemoteEditorSnapshot serverSnapshot(
+      RemotePage page,
+      List<RemoteLineup> lineups,
+      int contentRevision,
+    ) {
+      return _editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(
+          page,
+          settings: settingsFor(contentRevision),
+          contentRevision: contentRevision,
+          lineups: lineups,
+        ),
+      );
+    }
+
+    Future<void> settleSync(
+        ProviderContainer container, int contentRevision) async {
+      // Ack reconciliation refreshes, re-syncs and rehydrates in turn.
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(
+        container.read(strategySettingsProvider).agentSize,
+        30 + contentRevision,
+        reason: 'the page rehydrated from the server',
+      );
+    }
+
+    /// The edits' scheduled sync queues ops; one queue update then drains
+    /// them and publishes their acks (which also marks the page saved), and
+    /// the session reconciles the acks, refreshes from the server and
+    /// rehydrates, as in production. Returns what the server holds.
+    Future<List<RemoteLineup>> land(
+      ProviderContainer container,
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page, {
+      required List<RemoteLineup> previous,
+      required int revision,
+      required int contentRevision,
+    }) async {
+      await _settle();
+      final pending = {
+        for (final entry in queue.state.queuedByEntityKey.entries)
+          entry.key: entry.value.pending.op,
+      };
+      final lineups =
+          apply(pending.values, page, revision: revision, previous: previous);
+      // The session fetches this on the refresh that follows the acks.
+      remote.initialSnapshot = serverSnapshot(page, lineups, contentRevision);
+      final acks = [
+        for (final entry in pending.entries)
+          AckedEntityIntent(
+            entityKey: entry.key,
+            op: entry.value,
+            ack: AppliedOpAck(opId: entry.value.opId, revision: revision),
+          ),
+      ];
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+        lastAcks: [for (final intent in acks) intent.ack],
+        lastAckBatch: acks,
+      );
+      await settleSync(container, contentRevision);
+      return lineups;
+    }
+
+    void expectNoEmptyGroups(Map<EntitySyncKey, StrategyOp> ops) {
+      for (final op in ops.values) {
+        final payload = switch (op) {
+          LineupAddOp(:final payload) => payload,
+          LineupPatchOp(:final payload) => payload,
+          _ => null,
+        };
+        if (payload == null) continue;
+        final data = cloudPayloadData(payload);
+        expect(data['items'] as List, isNotEmpty, reason: '$op');
+      }
+    }
+
+    test('undoing a details edit made before the first hydration', () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(link.copyWith(notes: 'jump throw'));
+      await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+
+      container.read(actionProvider.notifier).undoAction();
+
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.links.single.notes, '');
+      expect(lineUps.landingById(lineUps.links.single.landingId), isNotNull);
+      expect(lineUps.landings, hasLength(1));
+      final afterUndo = desiredOps(container, page);
+      expectNoEmptyGroups(afterUndo);
+      expect(afterUndo.values.whereType<LineupDeleteOp>(), isEmpty);
+      expect(afterUndo.values.whereType<LineupPatchOp>(), hasLength(1));
+      await _settle();
+    });
+
+    test('a landing keeps its id through the projection', () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      container
+          .read(lineUpProvider.notifier)
+          .updateLandingPosition(link.landingId, const Offset(320, 340));
+      await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+
+      expect(container.read(lineUpProvider).landings.single.id, link.landingId);
+
+      // The pre-hydration landing move still undoes, onto the same landing.
+      container.read(actionProvider.notifier).undoAction();
+      expect(
+        container.read(lineUpProvider).landings.single.ability.position,
+        const Offset(300, 300),
+      );
+      // Undoing the placement removes the whole lineup, leaving no node.
+      container.read(actionProvider.notifier).undoAction();
+      final empty = container.read(lineUpProvider);
+      expect(empty.links, isEmpty);
+      expect(empty.origins, isEmpty);
+      expect(empty.landings, isEmpty);
+      await _settle();
+    });
+
+    test('undoing a move keeps a teammate weapon on the same origin', () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      var lineups = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      container
+          .read(lineUpProvider.notifier)
+          .updateOriginAgentPosition(link.originId, const Offset(500, 500));
+      lineups = await land(container, remote, page,
+          previous: lineups, revision: 2, contentRevision: 3);
+
+      // Then a teammate arms the same origin.
+      final armed = jsonDecode(jsonEncode(lineups.single.payload))
+          as Map<String, dynamic>;
+      ((armed['data'] as Map)['agent'] as Map)['weapon'] = 'vandal';
+      remote.setSnapshot(serverSnapshot(
+          page,
+          [
+            RemoteLineup(
+              publicId: lineups.single.publicId,
+              strategyPublicId: 'cloud-strategy',
+              pagePublicId: page.publicId,
+              payload: armed,
+              sortIndex: 0,
+              revision: 3,
+              deleted: false,
+            ),
+          ],
+          4));
+      await settleSync(container, 4);
+      expect(
+        container.read(lineUpProvider).originById(link.originId)!.agent.weapon,
+        WeaponType.vandal,
+      );
+
+      container.read(actionProvider.notifier).undoAction();
+
+      final origin = container.read(lineUpProvider).originById(link.originId)!;
+      expect(origin.agent.position, placedAt);
+      expect(origin.agent.weapon, WeaponType.vandal);
+      final patch =
+          desiredOps(container, page).values.whereType<LineupPatchOp>().single;
+      final agent = cloudPayloadData(patch.payload)['agent'] as Map;
+      expect(agent['weapon'], 'vandal');
+      await _settle();
+    });
+
+    test('an edit before a deletion stays undoable after the deletion lands',
+        () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      final lineups = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      final lineUps = container.read(lineUpProvider.notifier);
+      const moved = Offset(500, 500);
+
+      lineUps.updateOriginAgentPosition(link.originId, moved);
+      lineUps.deleteOrigin(link.originId);
+      final after = await land(container, remote, page,
+          previous: lineups, revision: 2, contentRevision: 3);
+      expect(after, isEmpty);
+
+      final history = container.read(actionProvider.notifier);
+      Offset? originPosition() => container
+          .read(lineUpProvider)
+          .originById(link.originId)
+          ?.agent
+          .position;
+
+      history.undoAction();
+      expect(originPosition(), moved);
+      history.undoAction();
+      expect(originPosition(), placedAt);
+      history.redoAction();
+      expect(originPosition(), moved);
+      history.redoAction();
+      expect(originPosition(), isNull);
       await _settle();
     });
   });

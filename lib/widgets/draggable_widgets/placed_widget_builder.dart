@@ -1219,10 +1219,9 @@ class _LineUpAbilities extends ConsumerWidget {
                 mapScale: mapScale,
               );
               if (coordinateSystem.isOutOfBounds(position + anchor)) return;
-              ref.read(lineUpProvider.notifier).updateLandingAbility(
-                    landing.id,
-                    landing.ability.copyWith(position: position),
-                  );
+              ref
+                  .read(lineUpProvider.notifier)
+                  .updateLandingPosition(landing.id, position);
             },
           ),
       ],

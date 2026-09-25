@@ -604,11 +604,11 @@ class LineUpProviderSnapshot {
   const LineUpProviderSnapshot({required this.graph});
 }
 
-/// One lineup-graph change that carries its own inverse: the origins,
-/// landings and links it touched, as they were ([before]) and as they became
-/// ([after]). Undo and redo apply it to whatever graph is current, so a page
-/// rehydrated in between (a cloud ack, a teammate's edit) neither separates
-/// the action from its data nor rolls back anyone else's lineups.
+/// Adding or removing lineups: the origins, landings and links the change
+/// put in ([after]) or took out ([before]). Undo and redo apply it to
+/// whatever graph is current, so a page rehydrated in between (a cloud ack,
+/// a teammate's edit) neither separates the action from its data nor rolls
+/// back anyone else's lineups.
 class LineUpGraphAction extends UserAction {
   LineUpGraphAction({
     required super.type,
@@ -620,6 +620,14 @@ class LineUpGraphAction extends UserAction {
   final LineUpGraph before;
   final LineUpGraph after;
 
+  Iterable<String> get entryIds sync* {
+    for (final graph in [before, after]) {
+      yield* graph.origins.map((origin) => origin.id);
+      yield* graph.landings.map((landing) => landing.id);
+      yield* graph.links.map((link) => link.id);
+    }
+  }
+
   // History stores copies, so the copy must keep the change.
   @override
   LineUpGraphAction copy() {
@@ -628,6 +636,75 @@ class LineUpGraphAction extends UserAction {
       id: id,
       before: before.deepCopy(),
       after: after.deepCopy(),
+    );
+  }
+}
+
+/// The one part of a lineup entry an edit changes.
+enum LineUpEditField {
+  originPosition,
+  landingPosition,
+  landingVisibility,
+  linkDetails
+}
+
+/// What a lineup's details dialog edits, apart from which origin and landing
+/// the link joins.
+class LineUpLinkDetails {
+  const LineUpLinkDetails({
+    required this.name,
+    required this.youtubeLink,
+    required this.notes,
+    required this.images,
+  });
+
+  factory LineUpLinkDetails.of(LineUpLink link) => LineUpLinkDetails(
+        name: link.name,
+        youtubeLink: link.youtubeLink,
+        notes: link.notes,
+        images: link.images.map((image) => image.copyWith()).toList(),
+      );
+
+  final String name;
+  final String youtubeLink;
+  final String notes;
+  final List<SimpleImageData> images;
+
+  LineUpLink writeTo(LineUpLink link) => link.copyWith(
+        name: name,
+        youtubeLink: youtubeLink,
+        notes: notes,
+        images: images.map((image) => image.copyWith()).toList(),
+      );
+}
+
+/// An edit to one field of one lineup entry. Undo and redo write only that
+/// field onto the entry as it is now, so anything else changed since (a
+/// teammate's weapon, a moved marker, renamed details) is kept. The values
+/// are an Offset for positions, an AbilityVisualState for visibility and a
+/// LineUpLinkDetails for link details.
+class LineUpEditAction extends UserAction {
+  LineUpEditAction({
+    required super.id,
+    required this.targetId,
+    required this.field,
+    required this.before,
+    required this.after,
+  }) : super(type: ActionType.edit, group: ActionGroup.lineUp);
+
+  final String targetId;
+  final LineUpEditField field;
+  final Object before;
+  final Object after;
+
+  @override
+  LineUpEditAction copy() {
+    return LineUpEditAction(
+      id: id,
+      targetId: targetId,
+      field: field,
+      before: before,
+      after: after,
     );
   }
 }
@@ -803,8 +880,13 @@ class LineUpProvider extends Notifier<LineUpState> {
     final placement = state.placement;
     if (placement == null || !placement.isComplete) return null;
 
+    final linkId = _uuid.v4();
     final originId = placement.pinnedOriginId ?? _uuid.v4();
-    final landingId = placement.pinnedLandingId ?? _uuid.v4();
+    // A landing made for this link takes the link's id. The cloud projection
+    // stores each link as an item keyed by the link id and hydration makes
+    // that the landing id, so sharing it keeps the landing's identity across
+    // a round trip and every action that names it stays valid.
+    final landingId = placement.pinnedLandingId ?? linkId;
     final origins = [...state.origins];
     final landings = [...state.landings];
     if (placement.pinnedOriginId == null) {
@@ -824,7 +906,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       );
     }
     final link = LineUpLink(
-      id: _uuid.v4(),
+      id: linkId,
       originId: originId,
       landingId: landingId,
       name: name,
@@ -879,14 +961,18 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(origins: origins);
   }
 
-  // --- Edits (each records one undoable change to the entry it touches) ----
+  // --- Edits (each records one undoable change to one field) --------------
 
+  /// Records a change to the link's details: name, video link, notes and
+  /// images. Which origin and landing it joins is never edited here.
   void updateLink(LineUpLink link) {
     final current = state.linkById(link.id);
     if (current == null) return;
     _recordEdit(
-      before: LineUpGraph(links: [current]),
-      after: LineUpGraph(links: [link]),
+      targetId: link.id,
+      field: LineUpEditField.linkDetails,
+      before: LineUpLinkDetails.of(current),
+      after: LineUpLinkDetails.of(link),
     );
   }
 
@@ -894,28 +980,21 @@ class LineUpProvider extends Notifier<LineUpState> {
     final current = state.originById(originId);
     if (current == null) return;
     _recordEdit(
-      before: LineUpGraph(origins: [current]),
-      after: LineUpGraph(
-        origins: [
-          current.copyWith(
-            agent: current.agent.copyWith(position: position)
-              ..isDeleted = current.agent.isDeleted,
-          ),
-        ],
-      ),
+      targetId: originId,
+      field: LineUpEditField.originPosition,
+      before: current.agent.position,
+      after: position,
     );
   }
 
-  void updateLandingAbility(String landingId, PlacedAbility ability) {
+  void updateLandingPosition(String landingId, Offset position) {
     final current = state.landingById(landingId);
     if (current == null) return;
     _recordEdit(
-      before: LineUpGraph(landings: [current]),
-      after: LineUpGraph(
-        landings: [
-          current.copyWith(ability: ability.copyWith(lineUpID: landingId)),
-        ],
-      ),
+      targetId: landingId,
+      field: LineUpEditField.landingPosition,
+      before: current.ability.position,
+      after: position,
     );
   }
 
@@ -923,24 +1002,71 @@ class LineUpProvider extends Notifier<LineUpState> {
     required String landingId,
     required AbilityVisualState visualState,
   }) {
-    final landing = state.landingById(landingId);
-    if (landing == null) return;
-    updateLandingAbility(
-      landingId,
-      landing.ability.copyWith(visualState: visualState),
+    final current = state.landingById(landingId);
+    if (current == null) return;
+    _recordEdit(
+      targetId: landingId,
+      field: LineUpEditField.landingVisibility,
+      before: current.ability.visualState,
+      after: visualState,
     );
   }
 
-  void _recordEdit({required LineUpGraph before, required LineUpGraph after}) {
-    _apply(from: before, to: after, addMissing: false);
+  void _recordEdit({
+    required String targetId,
+    required LineUpEditField field,
+    required Object before,
+    required Object after,
+  }) {
+    _writeField(field, targetId, after);
     _record(
-      LineUpGraphAction(
-        type: ActionType.edit,
+      LineUpEditAction(
         id: _uuid.v4(),
+        targetId: targetId,
+        field: field,
         before: before,
         after: after,
       ),
     );
+  }
+
+  /// Writes one field onto the entry as it is now; a missing entry is left
+  /// alone.
+  void _writeField(LineUpEditField field, String targetId, Object value) {
+    switch (field) {
+      case LineUpEditField.originPosition:
+        state = state.copyWith(origins: [
+          for (final origin in state.origins)
+            origin.id == targetId
+                ? origin.copyWith(
+                    agent: origin.agent.copyWith(position: value as Offset)
+                      ..isDeleted = origin.agent.isDeleted,
+                  )
+                : origin,
+        ]);
+      case LineUpEditField.landingPosition:
+      case LineUpEditField.landingVisibility:
+        state = state.copyWith(landings: [
+          for (final landing in state.landings)
+            landing.id == targetId
+                ? landing.copyWith(
+                    ability: (field == LineUpEditField.landingPosition
+                        ? landing.ability.copyWith(position: value as Offset)
+                        : landing.ability.copyWith(
+                            visualState: value as AbilityVisualState,
+                          ))
+                      ..isDeleted = landing.ability.isDeleted,
+                  )
+                : landing,
+        ]);
+      case LineUpEditField.linkDetails:
+        state = state.copyWith(links: [
+          for (final link in state.links)
+            link.id == targetId
+                ? (value as LineUpLinkDetails).writeTo(link)
+                : link,
+        ]);
+    }
   }
 
   // --- Deletions -----------------------------------------------------------
@@ -985,7 +1111,7 @@ class LineUpProvider extends Notifier<LineUpState> {
           .toList(),
       links: removedLinks,
     );
-    _apply(from: removed, to: LineUpGraph.empty, addMissing: false);
+    _apply(from: removed, to: LineUpGraph.empty);
     _record(
       LineUpGraphAction(
         type: ActionType.deletion,
@@ -1000,33 +1126,25 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   /// Moves the entries [from] names to their state in [to], leaving every
-  /// other origin, landing and link as it currently is. Entries only in
-  /// [from] are removed; an origin or landing some remaining link still uses
-  /// stays. Entries in [to] replace the current ones by id, and are added
-  /// when missing only if [addMissing] (restoring an addition or deletion,
-  /// never resurrecting something an edit touched that is now gone).
-  void _apply({
-    required LineUpGraph from,
-    required LineUpGraph to,
-    required bool addMissing,
-  }) {
+  /// other origin, landing and link as it currently is. Links only in [from]
+  /// are removed and links in [to] are put back. An origin or landing exists
+  /// only while some link uses it, so nodes are restored from [to] and any
+  /// node left without a link afterwards is dropped.
+  void _apply({required LineUpGraph from, required LineUpGraph to}) {
     List<T> upsert<T>(
       List<T> current,
       List<T> incoming,
       String Function(T) idOf,
     ) {
       final byId = {for (final entry in incoming) idOf(entry): entry};
-      final result = [
+      return [
         for (final entry in current) byId.remove(idOf(entry)) ?? entry,
+        ...byId.values,
       ];
-      if (addMissing) result.addAll(byId.values);
-      return result;
     }
 
-    Set<String> dropped<T>(List<T> a, List<T> b, String Function(T) idOf) =>
-        a.map(idOf).toSet()..removeAll(b.map(idOf));
-
-    final droppedLinks = dropped(from.links, to.links, (l) => l.id);
+    final droppedLinks = from.links.map((link) => link.id).toSet()
+      ..removeAll(to.links.map((link) => link.id));
     final links = upsert(
       state.links.where((link) => !droppedLinks.contains(link.id)).toList(),
       to.links,
@@ -1034,64 +1152,53 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
     final usedOrigins = links.map((link) => link.originId).toSet();
     final usedLandings = links.map((link) => link.landingId).toSet();
-    final droppedOrigins = dropped(from.origins, to.origins, (o) => o.id)
-      ..removeAll(usedOrigins);
-    final droppedLandings = dropped(from.landings, to.landings, (l) => l.id)
-      ..removeAll(usedLandings);
 
     state = state.copyWith(
-      origins: upsert(
-        state.origins
-            .where((origin) => !droppedOrigins.contains(origin.id))
-            .toList(),
-        to.origins,
-        (origin) => origin.id,
-      ),
-      landings: upsert(
-        state.landings
-            .where((landing) => !droppedLandings.contains(landing.id))
-            .toList(),
-        to.landings,
-        (landing) => landing.id,
-      ),
+      origins: upsert(state.origins, to.origins, (origin) => origin.id)
+          .where((origin) => usedOrigins.contains(origin.id))
+          .toList(),
+      landings: upsert(state.landings, to.landings, (landing) => landing.id)
+          .where((landing) => usedLandings.contains(landing.id))
+          .toList(),
       links: links,
     );
   }
 
-  /// Whether an edit still has something to act on. History drops edits
-  /// whose entries are gone rather than replaying them as silent no-ops.
-  bool canReplay(LineUpGraphAction action) {
-    if (action.type != ActionType.edit) return true;
-    return action.after.origins.every((o) => state.originById(o.id) != null) &&
-        action.after.landings.every((l) => state.landingById(l.id) != null) &&
-        action.after.links.every((l) => state.linkById(l.id) != null);
+  /// Every lineup entry [history] could still act on: the current graph plus
+  /// anything a retained addition or deletion can bring back.
+  Set<String> replayableIds(Iterable<UserAction> history) {
+    return {
+      ...state.origins.map((origin) => origin.id),
+      ...state.landings.map((landing) => landing.id),
+      ...state.links.map((link) => link.id),
+      for (final action in history)
+        if (action is LineUpGraphAction) ...action.entryIds,
+    };
   }
 
   void undoAction(UserAction action) {
-    if (action is WeaponSelectionAction) {
-      _applyOriginWeapon(action.id, action.before);
-      return;
-    }
-    if (action is LineUpGraphAction) {
-      _apply(
-        from: action.after,
-        to: action.before,
-        addMissing: action.type != ActionType.edit,
-      );
+    switch (action) {
+      case WeaponSelectionAction():
+        _applyOriginWeapon(action.id, action.before);
+      case LineUpGraphAction():
+        _apply(from: action.after, to: action.before);
+      case LineUpEditAction():
+        _writeField(action.field, action.targetId, action.before);
+      default:
+        return;
     }
   }
 
   void redoAction(UserAction action) {
-    if (action is WeaponSelectionAction) {
-      _applyOriginWeapon(action.id, action.after);
-      return;
-    }
-    if (action is LineUpGraphAction) {
-      _apply(
-        from: action.before,
-        to: action.after,
-        addMissing: action.type != ActionType.edit,
-      );
+    switch (action) {
+      case WeaponSelectionAction():
+        _applyOriginWeapon(action.id, action.after);
+      case LineUpGraphAction():
+        _apply(from: action.before, to: action.after);
+      case LineUpEditAction():
+        _writeField(action.field, action.targetId, action.after);
+      default:
+        return;
     }
   }
 

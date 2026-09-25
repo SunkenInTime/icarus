@@ -387,8 +387,13 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void reconcileHistory() {
-    state = _reconcileActions(state);
-    poppedItems = _reconcileActions(poppedItems);
+    // A lineup edit stays while its target exists or a retained lineup
+    // addition or deletion, on either stack, can bring it back.
+    final lineUpIds = ref
+        .read(lineUpProvider.notifier)
+        .replayableIds([...state, ...poppedItems]);
+    state = _reconcileActions(state, lineUpIds);
+    poppedItems = _reconcileActions(poppedItems, lineUpIds);
   }
 
   void clearAllAsAction() {
@@ -687,7 +692,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
     state = newState;
   }
 
-  List<UserAction> _reconcileActions(List<UserAction> actions) {
+  List<UserAction> _reconcileActions(
+    List<UserAction> actions,
+    Set<String> lineUpIds,
+  ) {
     final reconciled = <UserAction>[];
     for (final action in actions) {
       if (action.type == ActionType.edit && action.objectDelta != null) {
@@ -695,8 +703,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
           continue;
         }
       }
-      if (action is LineUpGraphAction &&
-          !ref.read(lineUpProvider.notifier).canReplay(action)) {
+      if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
         continue;
       }
       reconciled.add(action.copy());

@@ -148,10 +148,26 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final entry in remoteEntities.entries) {
       remoteRevisions[entry.key] = entry.value.revision;
     }
+    // An overlay holds local intent until the server has it. Once no op in
+    // the queue carries it, the snapshot this page just hydrated from is the
+    // truth; a leftover overlay would keep painting the old local version
+    // over later remote changes and eventually write it back. Acks usually
+    // clear overlays in syncLocalPage, but that skips a page mid-rehydrate.
+    final queue = ref.read(strategyOpQueueProvider);
+    bool isPending(EntitySyncKey key) =>
+        queue.queuedByEntityKey.containsKey(key) ||
+        queue.inFlightByEntityKey.containsKey(key) ||
+        queue.successorByEntityKey.containsKey(key) ||
+        queue.pausedByEntityKey.containsKey(key) ||
+        queue.attentionByEntityKey.containsKey(key);
+    final overlays = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
+      state.overlayByEntityKey,
+    )..removeWhere((key, _) => key.pageId == pageId && !isPending(key));
     state = state.copyWith(
       hydratedPageId: pageId,
       hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
       remoteBaseRevisionByEntity: remoteRevisions,
+      overlayByEntityKey: overlays,
     );
   }
 
