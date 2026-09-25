@@ -481,24 +481,37 @@ class ConvexStrategyRepository {
       token: token,
     );
     return switch (result) {
-      SharesRedeemResultFolder(:final folderPublicId, :final role) =>
+      SharesRedeemResultFolder(
+        :final folderPublicId,
+        :final role,
+        :final alreadyHadAccess,
+      ) =>
         ShareRedemption(
           targetType: 'folder',
           folderPublicId: folderPublicId,
           role: role.wireName,
+          alreadyHadAccess: _alreadyHadAccess(alreadyHadAccess, role.wireName),
         ),
       SharesRedeemResultStrategy(
         :final folderPublicId,
         :final strategyPublicId,
         :final role,
+        :final alreadyHadAccess,
       ) =>
         ShareRedemption(
           targetType: 'strategy',
           folderPublicId: folderPublicId,
           strategyPublicId: strategyPublicId,
           role: role.wireName,
+          alreadyHadAccess: _alreadyHadAccess(alreadyHadAccess, role.wireName),
         ),
     };
+  }
+
+  /// The server's answer, or, from a deployment that predates the field,
+  /// the part it can still tell us: an owner always had access.
+  static bool _alreadyHadAccess(ConvexOptional<bool> reported, String role) {
+    return reported.isPresent ? reported.value : role == 'owner';
   }
 }
 

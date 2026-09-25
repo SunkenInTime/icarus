@@ -13,6 +13,11 @@ final pendingShareCodeStoreProvider = Provider<PendingShareCodeStore>(
   (ref) => createPendingShareCodeStore(),
 );
 
+/// A cloud strategy a redeemed share link asks to open. The navigation layer
+/// (MouseNavigation, which owns the unsaved-changes guard) opens it and
+/// clears this back to null.
+final sharedStrategyToOpenProvider = StateProvider<String?>((ref) => null);
+
 final shareLinkControllerProvider =
     NotifierProvider<ShareLinkController, String?>(ShareLinkController.new);
 
@@ -54,7 +59,12 @@ class ShareLinkController extends Notifier<String?> {
 
     final auth = ref.read(authProvider);
     if (!auth.isAuthenticated || !auth.isConvexUserReady) {
-      if (showFailureToasts) {
+      // The code stays held in the pending store; the app redeems it once
+      // the cloud is ready. Only a user with no session at all needs telling:
+      // right after a page load a saved session is restored but its cloud
+      // setup is still running, and an auth incident has its own prompt.
+      final signedOut = !auth.isAuthenticated && !auth.isLoading;
+      if (signedOut && showFailureToasts) {
         Settings.showToast(
           message: 'Sign in to redeem shared links.',
           backgroundColor: Settings.tacticalVioletTheme.primary,
@@ -69,23 +79,36 @@ class ShareLinkController extends Notifier<String?> {
           .redeemShareLink(token);
       _release(generation);
 
+      // The library lands where the target now lives: the owner's own
+      // library, or Shared for anyone the link was shared with.
       ref
           .read(libraryWorkspaceProvider.notifier)
           .select(LibraryWorkspace.cloud);
-      ref
-          .read(cloudLibrarySectionProvider.notifier)
-          .select(CloudLibrarySection.sharedWithMe);
+      ref.read(cloudLibrarySectionProvider.notifier).select(
+            response.isOwner
+                ? CloudLibrarySection.home
+                : CloudLibrarySection.sharedWithMe,
+          );
       ref.read(folderProvider.notifier).updateWorkspaceFolderId(
             LibraryWorkspace.cloud,
             response.folderPublicId,
           );
 
-      Settings.showToast(
-        message: response.targetType == 'folder'
-            ? 'Shared folder added to your library.'
-            : 'Shared strategy added to your library.',
-        backgroundColor: Settings.tacticalVioletTheme.primary,
-      );
+      // Only a link that granted something is news; one for a strategy or
+      // folder the user could already open just takes them there.
+      if (!response.alreadyHadAccess) {
+        Settings.showToast(
+          message: response.targetType == 'folder'
+              ? 'Shared folder added to your library.'
+              : 'Shared strategy added to your library.',
+          backgroundColor: Settings.tacticalVioletTheme.primary,
+        );
+      }
+      final strategyPublicId = response.strategyPublicId;
+      if (response.targetType == 'strategy' && strategyPublicId != null) {
+        ref.read(sharedStrategyToOpenProvider.notifier).state =
+            strategyPublicId;
+      }
       return true;
     } catch (error, stackTrace) {
       if (isConvexUnauthenticatedError(error)) {

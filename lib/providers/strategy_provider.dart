@@ -1316,6 +1316,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       if (state.strategyId == strategyID &&
           state.source == StrategySource.cloud) {
+        // The editor title reads the open strategy's name from this state;
+        // the refreshed snapshot does not feed it back.
+        state = state.copyWith(strategyName: newName);
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       } else {
         ref.invalidate(cloudStrategiesProvider);

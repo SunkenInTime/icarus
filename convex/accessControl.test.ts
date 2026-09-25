@@ -214,6 +214,76 @@ describe("A/B/C access boundary", () => {
     ).resolves.toMatchObject({ ok: true, revision: 3 });
   });
 
+  test("redeeming reports whether the link granted anything new", async () => {
+    const { a, b } = await createHarness();
+    const strategyPublicId = "already-accessible";
+    await seedStrategy(a, strategyPublicId, "already-page");
+    const share = async (token: string, role: "viewer" | "editor") =>
+      a.mutation(createShare, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        targetType: "strategy",
+        targetPublicId: strategyPublicId,
+        token,
+        role,
+      });
+    const redeem = (who: Harness, token: string) =>
+      who.mutation(redeemShare, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        token,
+      });
+    await share("viewer-token", "viewer");
+    await share("editor-token", "editor");
+
+    // The owner opening their own link gains nothing.
+    await expect(redeem(a, "viewer-token")).resolves.toMatchObject({
+      targetType: "strategy",
+      strategyPublicId,
+      role: "owner",
+      alreadyHadAccess: true,
+    });
+    // A first redemption grants access; repeating it grants nothing.
+    await expect(redeem(b, "viewer-token")).resolves.toMatchObject({
+      role: "viewer",
+      alreadyHadAccess: false,
+    });
+    await expect(redeem(b, "viewer-token")).resolves.toMatchObject({
+      role: "viewer",
+      alreadyHadAccess: true,
+    });
+    // A higher role is new; a lower one after it is not.
+    await expect(redeem(b, "editor-token")).resolves.toMatchObject({
+      role: "editor",
+      alreadyHadAccess: false,
+    });
+    await expect(redeem(b, "viewer-token")).resolves.toMatchObject({
+      role: "editor",
+      alreadyHadAccess: true,
+    });
+
+    // Folders report the same way.
+    await a.mutation(createFolder, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      publicId: "owned-folder",
+      name: "Owned",
+    });
+    await a.mutation(createShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      targetType: "folder",
+      targetPublicId: "owned-folder",
+      token: "folder-token",
+      role: "viewer",
+    });
+    await expect(redeem(a, "folder-token")).resolves.toMatchObject({
+      targetType: "folder",
+      role: "owner",
+      alreadyHadAccess: true,
+    });
+    await expect(redeem(b, "folder-token")).resolves.toMatchObject({
+      role: "viewer",
+      alreadyHadAccess: false,
+    });
+  });
+
   test("folder roles inherit through descendants without granting ownership", async () => {
     const { a, b, c } = await createHarness();
     const rootFolderPublicId = "shared-root";

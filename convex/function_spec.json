@@ -141601,6 +141601,12 @@
           {
             "type": "object",
             "value": {
+              "alreadyHadAccess": {
+                "fieldType": {
+                  "type": "boolean"
+                },
+                "optional": true
+              },
               "folderPublicId": {
                 "fieldType": {
                   "type": "union",
@@ -141660,6 +141666,12 @@
           {
             "type": "object",
             "value": {
+              "alreadyHadAccess": {
+                "fieldType": {
+                  "type": "boolean"
+                },
+                "optional": true
+              },
               "folderPublicId": {
                 "fieldType": {
                   "type": "string"

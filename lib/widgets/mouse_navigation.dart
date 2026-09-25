@@ -13,6 +13,7 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -120,6 +121,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
 
   ProviderSubscription<String?>? _folderSub;
   ProviderSubscription<StrategyState>? _strategySub;
+  ProviderSubscription<String?>? _sharedStrategySub;
 
   @override
   void initState() {
@@ -132,12 +134,25 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       strategyProvider,
       (_, __) => _recordLocationChange(),
     );
+    // A redeemed share link opens its strategy the way any other navigation
+    // does here: guarded when an editor is open, recorded in history.
+    _sharedStrategySub = ref.listenManual(
+      sharedStrategyToOpenProvider,
+      (_, strategyPublicId) {
+        if (strategyPublicId == null) return;
+        ref.read(sharedStrategyToOpenProvider.notifier).state = null;
+        unawaited(_navigateTo(
+          _StrategyLocation(strategyPublicId, StrategySource.cloud),
+        ));
+      },
+    );
   }
 
   @override
   void dispose() {
     _folderSub?.close();
     _strategySub?.close();
+    _sharedStrategySub?.close();
     super.dispose();
   }
 
