@@ -3817,6 +3817,39 @@ void main() {
       expect(history(container).poppedItems, isEmpty);
     });
 
+    test(
+        'a weapon change on an agent a teammate deleted leaves history, '
+        'so the next undo undoes the change before it', () async {
+      final (container, remote, page) =
+          await open([jett('jett'), jett('sova')]);
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'sova');
+      container
+          .read(agentProvider.notifier)
+          .setWeapon('jett', WeaponType.classic);
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'jett'));
+      expect(container.read(actionProvider), hasLength(1));
+
+      history(container).undoAction();
+
+      expect(agentOn(container, 'sova').position, const Offset(10, 20));
+    });
+
+    test('a lineup weapon change a teammate deleted leaves history', () async {
+      final mine = _lineup('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: [mine]);
+
+      container
+          .read(lineUpProvider.notifier)
+          .setOriginWeapon('mine', WeaponType.classic);
+      await land(container, remote, page);
+
+      expect(container.read(actionProvider), isEmpty);
+    });
+
     test('undoing a lineup weapon change a teammate deleted does nothing',
         () async {
       final mine = _lineup('page-1', 'mine');

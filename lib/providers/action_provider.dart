@@ -640,6 +640,14 @@ class ActionProvider extends Notifier<List<UserAction>> {
     if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
       return null;
     }
+    if (action is WeaponSelectionAction) {
+      // A lineup weapon belongs to an origin, an agent weapon to an agent.
+      final targetKept = action.group == ActionGroup.lineUp
+          ? lineUpIds.contains(action.id)
+          : objectIds.contains(action.id) ||
+              _currentObjectState(action.id, ActionObjectKind.agent) != null;
+      if (!targetKept) return null;
+    }
     return action.copy();
   }
 
