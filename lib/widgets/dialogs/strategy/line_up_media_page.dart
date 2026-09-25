@@ -252,24 +252,21 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
 
   Widget _buildImageTile(int index) {
     final image = widget.images[index];
-    final imageProvider = ref
-        .watch(strategyImageSourceProvider(
-          (id: image.id, fileExtension: image.fileExtension),
-        ))
-        .imageProvider;
+    final imageProvider = watchStrategyImageSource(
+      ref,
+      (id: image.id, fileExtension: image.fileExtension),
+    ).imageProvider;
 
     return Stack(
+      fit: StackFit.expand,
       children: [
+        // An Image, not a DecorationImage: on web a cloud image may paint
+        // through an <img> element, which a decoration cannot draw.
         Container(
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             color: Settings.tacticalVioletTheme.secondary,
-            image: imageProvider == null
-                ? null
-                : DecorationImage(
-                    image: imageProvider,
-                    fit: BoxFit.cover,
-                  ),
           ),
           child: imageProvider == null
               ? Center(
@@ -278,7 +275,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                     color: Settings.tacticalVioletTheme.secondaryForeground,
                   ),
                 )
-              : null,
+              : Image(image: imageProvider, fit: BoxFit.cover),
         ),
         Positioned(
           top: 4,

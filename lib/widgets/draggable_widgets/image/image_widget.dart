@@ -159,9 +159,10 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
         .clamp(1.0, double.infinity);
     final contentWidth = (cardWidth - (PlacedImageDimensions.imagePadding * 2))
         .clamp(1.0, double.infinity);
-    final source = ref.watch(strategyImageSourceProvider(
+    final source = watchStrategyImageSource(
+      ref,
       (id: widget.id, fileExtension: widget.fileExtension),
-    ));
+    );
     final image = source.imageProvider;
 
     Widget buildThumb() => switch (source) {

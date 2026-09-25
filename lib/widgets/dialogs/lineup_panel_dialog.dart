@@ -414,11 +414,10 @@ class _LineUpThumbnail extends ConsumerWidget {
     final image = this.image;
     final imageProvider = image == null
         ? null
-        : ref
-            .watch(strategyImageSourceProvider(
-              (id: image.id, fileExtension: image.fileExtension),
-            ))
-            .imageProvider;
+        : watchStrategyImageSource(
+            ref,
+            (id: image.id, fileExtension: image.fileExtension),
+          ).imageProvider;
     if (imageProvider != null) {
       return Image(image: imageProvider, fit: BoxFit.cover);
     }

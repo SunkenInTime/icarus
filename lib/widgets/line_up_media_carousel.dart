@@ -184,9 +184,10 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                 }
 
                 final image = widget.images[imageIndex];
-                final source = ref.watch(strategyImageSourceProvider(
+                final source = watchStrategyImageSource(
+                  ref,
                   (id: image.id, fileExtension: image.fileExtension),
-                ));
+                );
                 return switch (source.imageProvider) {
                   final imageProvider? => InteractiveViewer(
                       minScale: 0.5,

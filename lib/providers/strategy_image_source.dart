@@ -50,8 +50,15 @@ final class ImageFailed extends StrategyImageSource {
 
 typedef StrategyImageKey = ({String id, String? fileExtension});
 
-final strategyImageSourceProvider = Provider.autoDispose
-    .family<StrategyImageSource, StrategyImageKey>((ref, image) {
+/// Where the bytes for [image] come from, read from a widget's build.
+///
+/// The file check runs on every build, so a file written or removed while
+/// the image is on screen is seen on the next rebuild. Every media cache
+/// change rebuilds the caller, so a finished download is seen at once.
+StrategyImageSource watchStrategyImageSource(
+  WidgetRef ref,
+  StrategyImageKey image,
+) {
   final (storageDirectory, source) = ref.watch(
     strategyProvider.select((s) => (s.storageDirectory, s.source)),
   );
@@ -59,11 +66,7 @@ final strategyImageSourceProvider = Provider.autoDispose
     remoteEditorSnapshotProvider
         .select((snapshot) => snapshot.valueOrNull?.assetsById[image.id]),
   );
-  // Look on the device again once the cloud media cache has downloaded it.
-  ref.watch(
-    cloudMediaCacheProvider
-        .select((cache) => cache.cachedAssetIds.contains(image.id)),
-  );
+  ref.watch(cloudMediaCacheProvider);
 
   return resolveStrategyImageSource(
     localFilePath: findLocalImageFile(
@@ -74,7 +77,7 @@ final strategyImageSourceProvider = Provider.autoDispose
     isCloudStrategy: source == StrategySource.cloud,
     remoteAsset: remoteAsset,
   );
-});
+}
 
 /// A file on this device wins, then the cloud URL. Without either, a cloud
 /// image is still on its way unless its upload failed.
