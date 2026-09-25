@@ -4,6 +4,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
+  expectAssets,
+  referencedAssetIds,
+  removeUploadPlaceholders,
+} from "./lib/imageAssets";
+import {
   clampPageIndex,
   getStrategyByPublicId,
   sortByNumberField,
@@ -1318,6 +1323,52 @@ async function applyLineupOp(
   return { status: "ack", appliedRevision: revision, eventPageId };
 }
 
+/// The element or lineup row an op targets in this strategy, if any.
+async function contentRowForOp(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+): Promise<Doc<"elements"> | Doc<"lineups"> | null> {
+  const publicId = op.entityPublicId;
+  if (publicId === undefined) return null;
+  const row =
+    op.entityType === "element"
+      ? await getElementByPublicIdOrNull(ctx, publicId)
+      : op.entityType === "lineup"
+        ? await getLineupByPublicIdOrNull(ctx, publicId)
+        : null;
+  return row !== null && row.strategyId === strategy._id ? row : null;
+}
+
+/// Keeps asset rows in step with an accepted content op. An image the row
+/// newly shows gets a placeholder if nothing has been uploaded for it yet, so
+/// a slow upload reads as on its way rather than missing, and a duplicate
+/// waits for it. A deleted image element drops its placeholder: its image id
+/// is its own element id, so nothing else shows it.
+async function reconcileExpectedAssets(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+  assetsBefore: Set<string>,
+): Promise<void> {
+  const row = await contentRowForOp(ctx, strategy, op);
+  if (row === null) return;
+  const assetsAfter = referencedAssetIds(row);
+  await expectAssets(
+    ctx,
+    strategy._id,
+    [...assetsAfter].filter((id) => !assetsBefore.has(id)),
+    Date.now(),
+  );
+  if (op.entityType === "element") {
+    await removeUploadPlaceholders(
+      ctx,
+      strategy._id,
+      [...assetsBefore].filter((id) => !assetsAfter.has(id)),
+    );
+  }
+}
+
 export const applyBatch = mutation({
   args: {
     ...cloudProtocolArgs,
@@ -1386,6 +1437,10 @@ export const applyBatch = mutation({
         op = { ...op, expectedRevision: strategy.revision };
       }
 
+      const assetsBefore = referencedAssetIds(
+        await contentRowForOp(ctx, strategy, op),
+      );
+
       let result: OperationResult;
       if (cloudOperationExceedsPolicy(rawOp)) {
         result = {
@@ -1413,6 +1468,9 @@ export const applyBatch = mutation({
           }
           if (result.status === "ack" && op.entityType !== "strategy") {
             contentChanged = true;
+          }
+          if (result.status === "ack") {
+            await reconcileExpectedAssets(ctx, strategy, op, assetsBefore);
           }
         } catch (error) {
           if (!(error instanceof ConvexError)) throw error;

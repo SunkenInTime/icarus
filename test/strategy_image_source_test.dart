@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -101,13 +102,48 @@ class _FixedSnapshot extends RemoteEditorSnapshotNotifier {
   }
 }
 
+class _FixedUploadQueue extends CloudMediaUploadQueueNotifier {
+  _FixedUploadQueue(this.jobs, {this.reliable = true});
+
+  final List<CloudMediaUploadJob> jobs;
+
+  /// False stands for an outbox with records it could not read.
+  final bool reliable;
+
+  @override
+  CloudMediaUploadQueueState build() => CloudMediaUploadQueueState(
+        jobs: jobs,
+        isProcessing: false,
+        durabilityError: reliable ? null : 'unreadable record',
+      );
+}
+
+CloudMediaUploadJob _queuedUpload() => CloudMediaUploadJob(
+      jobId: 'job-1',
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      assetPublicId: _imageId,
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      state: CloudMediaJobState.pendingUpload,
+      attempts: 0,
+      updatedAt: DateTime.utc(2026),
+    );
+
 List<Override> _overrides({
   required StrategySource source,
   required String? storageDirectory,
   List<RemoteImageAsset> assets = const [],
   Map<String, Uint8List> pendingBytes = const {},
+  List<CloudMediaUploadJob> uploads = const [],
+  String? accountId = 'account-a',
+  bool outboxReliable = true,
 }) {
   return [
+    cloudMediaUploadQueueProvider.overrideWith(
+      () => _FixedUploadQueue(uploads, reliable: outboxReliable),
+    ),
+    cloudMediaAccountIdProvider.overrideWithValue(accountId),
     strategyProvider.overrideWith(
       () => _FixedStrategy(source: source, storageDirectory: storageDirectory),
     ),
@@ -115,7 +151,6 @@ List<Override> _overrides({
     // Pending bytes only exist on web: no image files, signed in.
     if (pendingBytes.isNotEmpty) ...[
       imageFilesOnDeviceProvider.overrideWithValue(false),
-      cloudMediaAccountIdProvider.overrideWithValue('account-a'),
       pendingMediaBytesStoreProvider.overrideWithValue(
         MemoryPendingMediaBytesStore([
           for (final MapEntry(key: id, value: bytes) in pendingBytes.entries)
@@ -140,6 +175,9 @@ Widget _imageApp({
   required String? storageDirectory,
   List<RemoteImageAsset> assets = const [],
   Map<String, Uint8List> pendingBytes = const {},
+  List<CloudMediaUploadJob> uploads = const [],
+  String? accountId = 'account-a',
+  bool outboxReliable = true,
   ValueNotifier<int>? rebuild,
 }) {
   return ProviderScope(
@@ -148,6 +186,9 @@ Widget _imageApp({
       storageDirectory: storageDirectory,
       assets: assets,
       pendingBytes: pendingBytes,
+      uploads: uploads,
+      accountId: accountId,
+      outboxReliable: outboxReliable,
     ),
     child: MaterialApp(
       home: Scaffold(
@@ -205,6 +246,8 @@ void main() {
       final source = resolveStrategyImageSource(
         localFilePath: '/images/image-1.png',
         isCloudStrategy: true,
+        assetsLoaded: true,
+        uploadMayBeQueuedHere: false,
         remoteAsset: _asset(),
       );
       expect(source, isA<LocalImageFile>());
@@ -214,24 +257,43 @@ void main() {
       final source = resolveStrategyImageSource(
         localFilePath: null,
         isCloudStrategy: true,
+        assetsLoaded: true,
+        uploadMayBeQueuedHere: false,
         remoteAsset: _asset(),
       );
       expect((source as RemoteImageUrl).url, _remoteUrl);
     });
 
     test('a cloud image without a URL yet is loading', () {
+      // The page listing its asset has not arrived.
       expect(
         resolveStrategyImageSource(
           localFilePath: null,
           isCloudStrategy: true,
+          assetsLoaded: false,
+          uploadMayBeQueuedHere: false,
           remoteAsset: null,
         ),
         isA<ImageLoading>(),
       );
+      // This device has its upload queued but not started.
       expect(
         resolveStrategyImageSource(
           localFilePath: null,
           isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: true,
+          remoteAsset: null,
+        ),
+        isA<ImageLoading>(),
+      );
+      // Its upload is under way somewhere.
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(url: null, status: 'pending'),
         ),
         isA<ImageLoading>(),
@@ -243,6 +305,8 @@ void main() {
         resolveStrategyImageSource(
           localFilePath: '/images/image-1.png',
           isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
           remoteAsset: null,
           pendingBytes: _pendingPng,
         ),
@@ -252,6 +316,8 @@ void main() {
         resolveStrategyImageSource(
           localFilePath: null,
           isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(),
           pendingBytes: _pendingPng,
         ),
@@ -263,6 +329,8 @@ void main() {
       final uploading = resolveStrategyImageSource(
         localFilePath: null,
         isCloudStrategy: true,
+        assetsLoaded: true,
+        uploadMayBeQueuedHere: false,
         remoteAsset: _asset(url: null, status: 'pending'),
         pendingBytes: _pendingPng,
       );
@@ -274,6 +342,8 @@ void main() {
         resolveStrategyImageSource(
           localFilePath: null,
           isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(url: null, status: 'failed'),
           pendingBytes: _pendingPng,
         ),
@@ -284,10 +354,27 @@ void main() {
         resolveStrategyImageSource(
           localFilePath: null,
           isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(),
           pendingBytes: _pendingPng,
         ),
         isA<RemoteImageUrl>(),
+      );
+    });
+
+    test('a cloud image the loaded page has no asset for is unavailable', () {
+      // Its asset was deleted or never existed, and nothing is uploading it:
+      // no spinner that never ends.
+      expect(
+        resolveStrategyImageSource(
+          localFilePath: null,
+          isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
+          remoteAsset: null,
+        ),
+        isA<ImageFailed>(),
       );
     });
 
@@ -296,6 +383,8 @@ void main() {
         resolveStrategyImageSource(
           localFilePath: null,
           isCloudStrategy: true,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
           remoteAsset: _asset(url: null, status: 'failed'),
         ),
         isA<ImageFailed>(),
@@ -304,6 +393,8 @@ void main() {
         resolveStrategyImageSource(
           localFilePath: null,
           isCloudStrategy: false,
+          assetsLoaded: true,
+          uploadMayBeQueuedHere: false,
           remoteAsset: null,
         ),
         isA<ImageFailed>(),
@@ -393,10 +484,67 @@ void main() {
       await tester.pumpWidget(_imageApp(
         source: StrategySource.cloud,
         storageDirectory: null,
+        assets: [_asset(url: null, status: 'pending')],
       ));
       await tester.pump();
 
       expect(find.byType(Image), findsNothing);
+      expect(find.text('Syncing image'), findsOneWidget);
+    });
+
+    testWidgets('a cloud image with no asset on the server shows unavailable',
+        (tester) async {
+      // The loaded page lists no asset for the image and nothing is
+      // uploading it, as for a copy's image whose bytes were deleted.
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+      ));
+      await tester.pump();
+
+      expect(find.byType(Image), findsNothing);
+      expect(find.text('Syncing image'), findsNothing);
+      expect(find.text('Image unavailable'), findsOneWidget);
+    });
+
+    testWidgets('a cloud image this device has yet to upload shows syncing',
+        (tester) async {
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        uploads: [_queuedUpload()],
+      ));
+      await tester.pump();
+
+      expect(find.text('Syncing image'), findsOneWidget);
+      expect(find.text('Image unavailable'), findsNothing);
+    });
+
+    testWidgets(
+        'before the signed-in account is known, a missing asset shows syncing',
+        (tester) async {
+      // At startup the upload queue cannot yet say whether this device is
+      // uploading the image, so it must not flash unavailable.
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        accountId: null,
+      ));
+      await tester.pump();
+
+      expect(find.text('Syncing image'), findsOneWidget);
+      expect(find.text('Image unavailable'), findsNothing);
+    });
+
+    testWidgets('an outbox it could not read keeps a missing asset syncing',
+        (tester) async {
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        outboxReliable: false,
+      ));
+      await tester.pump();
+
       expect(find.text('Syncing image'), findsOneWidget);
     });
 

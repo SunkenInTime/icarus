@@ -5341,6 +5341,30 @@ ConvexObject encodeStrategiesDeleteArgs({
 FoldersDeleteResult decodeStrategiesDeleteResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'strategies.js:delete.returns');
 
+ConvexObject encodeStrategiesDuplicateArgs({
+  required double clientProtocolVersion,
+  ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+  required String name,
+  required String publicId,
+  required String sourceStrategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:duplicate.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'name': ConvexString(name),
+  'publicId': ConvexString(publicId),
+  'sourceStrategyPublicId': ConvexString(sourceStrategyPublicId),
+});
+
+ConvexValue decodeStrategiesDuplicateResult(ConvexValue value) => _decodeRaw(
+  value,
+  'strategies.js:duplicate.returns',
+  _validateFoldersCreateResult,
+);
+
 ConvexObject encodeStrategiesGetHeaderArgs({
   required String strategyPublicId,
 }) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});

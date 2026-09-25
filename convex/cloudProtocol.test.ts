@@ -86,6 +86,14 @@ const publicMutations = [
     },
   ],
   [
+    "strategies:duplicate",
+    {
+      sourceStrategyPublicId: "strategy",
+      publicId: "copy",
+      name: "Strategy (Copy)",
+    },
+  ],
+  [
     "strategies:update",
     { strategyPublicId: "strategy", expectedRevision: 0 },
   ],

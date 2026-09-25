@@ -163,6 +163,137 @@ export async function getActiveAssetForStrategy(
   );
 }
 
+/// A row recording that a strategy's content shows an image whose upload has
+/// not started: pending, with no bytes anywhere yet. The upload intent adopts
+/// it; the stale-upload sweep removes it if the upload never comes.
+export function isUploadPlaceholder(asset: Doc<"imageAssets">): boolean {
+  return (
+    inferUploadStatus(asset) === "pending" &&
+    asset.objectKey === undefined &&
+    asset.storageId === undefined
+  );
+}
+
+/// The image ids a live element or lineup row shows.
+export function referencedAssetIds(
+  row: Doc<"elements"> | Doc<"lineups"> | null,
+): Set<string> {
+  if (row === null || row.deleted) return new Set();
+  if ("elementType" in row) {
+    if (row.elementType !== "image") return new Set();
+    const assetId = collectAssetIdFromElementPayload(row.payload);
+    return new Set(assetId === null ? [] : [assetId]);
+  }
+  return collectAssetIdsFromLineupPayload(row.payload);
+}
+
+/// Records that the strategy's content now shows these images. Content and
+/// its upload reach the server independently, so an image can be referenced
+/// before its upload intent exists; without a row, readers could not tell an
+/// image that is on its way from one that will never come.
+export async function expectAssets(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  assetPublicIds: Iterable<string>,
+  now: number,
+): Promise<void> {
+  for (const publicId of assetPublicIds) {
+    if (
+      (await getViewerAssetForStrategy(ctx, strategyId, publicId)) !== null
+    ) {
+      continue;
+    }
+    await ctx.db.insert("imageAssets", {
+      publicId,
+      strategyId,
+      uploadStatus: "pending",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+/// Drops the placeholders for images content no longer shows. Rows holding
+/// bytes are left to the normal asset lifecycle.
+export async function removeUploadPlaceholders(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  assetPublicIds: Iterable<string>,
+): Promise<void> {
+  for (const publicId of assetPublicIds) {
+    const rows = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+        q
+          .eq("strategyId", strategyId)
+          .eq("publicId", publicId)
+          .eq("uploadStatus", "pending"),
+      )
+      .take(20);
+    for (const row of rows) {
+      if (isUploadPlaceholder(row)) await ctx.db.delete(row._id);
+    }
+  }
+}
+
+/// Gives `targetStrategyId` its own active row for the image the source
+/// strategy shows under `sourceAssetPublicId`, stored as `targetAssetPublicId`.
+/// The row points at the same R2 object or Convex storage file: physical
+/// cleanup only deletes bytes once no row points at them
+/// (`hasSharedDeletionTarget` in images.ts), so each row is one reference.
+/// Only an active source row is copied; a deleted one may already be mid-sweep.
+/// "uploading" means the source's image has not finished uploading, so there
+/// is nothing to copy yet; "unavailable" means the source cannot show it either.
+export async function copyActiveAssetToStrategy(
+  ctx: MutationCtx,
+  args: {
+    sourceStrategyId: Id<"strategies">;
+    sourceAssetPublicId: string;
+    targetStrategyId: Id<"strategies">;
+    targetAssetPublicId: string;
+    userId: Id<"users">;
+    now: number;
+  },
+): Promise<"copied" | "uploading" | "unavailable"> {
+  const source = await getActiveAssetForStrategy(
+    ctx,
+    args.sourceStrategyId,
+    args.sourceAssetPublicId,
+  );
+  if (source === null) {
+    const pending = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+        q
+          .eq("strategyId", args.sourceStrategyId)
+          .eq("publicId", args.sourceAssetPublicId)
+          .eq("uploadStatus", "pending"),
+      )
+      .first();
+    return pending === null ? "unavailable" : "uploading";
+  }
+  await ctx.db.insert("imageAssets", {
+    publicId: args.targetAssetPublicId,
+    provider: inferProvider(source),
+    strategyId: args.targetStrategyId,
+    createdByUserId: args.userId,
+    storageId: source.storageId,
+    objectKey: source.objectKey,
+    uploadStatus: "active",
+    fileExtension: source.fileExtension,
+    mimeType: source.mimeType,
+    width: source.width,
+    height: source.height,
+    byteSize: source.byteSize,
+    etag: source.etag,
+    uploadedAt: source.uploadedAt,
+    storagePath: source.storagePath,
+    createdAt: args.now,
+    updatedAt: args.now,
+  });
+  return "copied";
+}
+
 export async function getViewerAssetForStrategy(
   ctx: AnyCtx,
   strategyId: Id<"strategies">,
