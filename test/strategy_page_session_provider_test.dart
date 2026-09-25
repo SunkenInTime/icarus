@@ -1901,11 +1901,14 @@ void main() {
 
     /// The lineups the server stores once [ops] apply to [previous]: the
     /// real projection the client sent, JSON round-tripped.
+    /// [teammate] edits each stored lineup's data in the same round, as a
+    /// teammate's change landing alongside ours would.
     List<RemoteLineup> apply(
       Iterable<StrategyOp> ops,
       RemotePage page, {
       required int revision,
       required List<RemoteLineup> previous,
+      void Function(Map<String, dynamic> data)? teammate,
     }) {
       final byId = {for (final lineup in previous) lineup.publicId: lineup};
       for (final op in ops) {
@@ -1936,16 +1939,22 @@ void main() {
           deleted: false,
         );
       }
+      if (teammate != null) {
+        for (final lineup in byId.values) {
+          teammate(lineup.payload['data'] as Map<String, dynamic>);
+        }
+      }
       return byId.values.toList();
     }
 
     RemoteEditorSnapshot serverSnapshot(
       RemotePage page,
       List<RemoteLineup> lineups,
-      int contentRevision,
-    ) {
+      int contentRevision, {
+      List<RemotePage>? pages,
+    }) {
       return _editorSnapshot(
-        pages: [page],
+        pages: pages ?? [page],
         activePage: _pageSnapshot(
           page,
           settings: settingsFor(contentRevision),
@@ -1968,29 +1977,15 @@ void main() {
       );
     }
 
-    /// The edits' scheduled sync queues ops; one queue update then drains
-    /// them and publishes their acks (which also marks the page saved), and
-    /// the session reconciles the acks, refreshes from the server and
-    /// rehydrates, as in production. Returns what the server holds.
-    Future<List<RemoteLineup>> land(
-      ProviderContainer container,
-      _FakeRemoteEditorNotifier remote,
-      RemotePage page, {
-      required List<RemoteLineup> previous,
-      required int revision,
-      required int contentRevision,
-    }) async {
-      await _settle();
-      final pending = {
-        for (final entry in queue.state.queuedByEntityKey.entries)
-          entry.key: entry.value.pending.op,
-      };
-      final lineups =
-          apply(pending.values, page, revision: revision, previous: previous);
-      // The session fetches this on the refresh that follows the acks.
-      remote.initialSnapshot = serverSnapshot(page, lineups, contentRevision);
+    Map<EntitySyncKey, StrategyOp> queuedOps() => {
+          for (final entry in queue.state.queuedByEntityKey.entries)
+            entry.key: entry.value.pending.op,
+        };
+
+    /// One queue update drains [ops] and publishes their acks.
+    void publishAcks(Map<EntitySyncKey, StrategyOp> ops, int revision) {
       final acks = [
-        for (final entry in pending.entries)
+        for (final entry in ops.entries)
           AckedEntityIntent(
             entityKey: entry.key,
             op: entry.value,
@@ -2002,9 +1997,34 @@ void main() {
         lastAcks: [for (final intent in acks) intent.ack],
         lastAckBatch: acks,
       );
+    }
+
+    /// The edits' scheduled sync queues ops; one queue update then drains
+    /// them and publishes their acks (which also marks the page saved), and
+    /// the session reconciles the acks, refreshes from the server and
+    /// rehydrates, as in production. Returns what the server holds.
+    Future<List<RemoteLineup>> land(
+      ProviderContainer container,
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page, {
+      required List<RemoteLineup> previous,
+      required int revision,
+      required int contentRevision,
+      void Function(Map<String, dynamic> data)? teammate,
+    }) async {
+      await _settle();
+      final pending = queuedOps();
+      final lineups = apply(pending.values, page,
+          revision: revision, previous: previous, teammate: teammate);
+      // The session fetches this on the refresh that follows the acks.
+      remote.initialSnapshot = serverSnapshot(page, lineups, contentRevision);
+      publishAcks(pending, revision);
       await settleSync(container, contentRevision);
       return lineups;
     }
+
+    Map<String, dynamic> firstItem(Map<String, dynamic> data) =>
+        (data['items'] as List).first as Map<String, dynamic>;
 
     void expectNoEmptyGroups(Map<EntitySyncKey, StrategyOp> ops) {
       for (final op in ops.values) {
@@ -2144,6 +2164,268 @@ void main() {
       expect(originPosition(), moved);
       history.redoAction();
       expect(originPosition(), isNull);
+      await _settle();
+    });
+    test(
+        'undoing a deletion rebuilds a lineup whose shared landing was renamed',
+        () async {
+      final (container, remote, page) = await openEmpty();
+      final a = place(container);
+      final lineUps = container.read(lineUpProvider.notifier)
+        ..startToLanding(a.landingId);
+      lineUps.setDraftAgent(PlacedAgent(
+        id: 'agent-y',
+        type: AgentType.sova,
+        position: const Offset(150, 150),
+      ));
+      final b = lineUps.commitPlacement()!;
+      expect(b.landingId, a.landingId, reason: 'B fans in to A\'s landing');
+      lineUps.deleteOrigin(a.originId);
+      // The first hydration renames the surviving landing to B's link id.
+      await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      expect(container.read(lineUpProvider).landings.single.id, b.id);
+
+      container.read(actionProvider.notifier).undoAction();
+
+      final restored = container.read(lineUpProvider);
+      expect(restored.links, hasLength(2));
+      for (final link in restored.links) {
+        expect(restored.landingById(link.landingId), isNotNull,
+            reason: link.id);
+      }
+      expect(
+        restored
+            .landingById(restored.linkById(a.id)!.landingId)!
+            .ability
+            .position,
+        const Offset(300, 300),
+      );
+      final ops = desiredOps(container, page);
+      expectNoEmptyGroups(ops);
+      expect(ops.values.whereType<LineupDeleteOp>(), isEmpty);
+      final restoredA = ops[EntitySyncKey.lineup(page.publicId, a.originId)];
+      expect(restoredA, isA<LineupAddOp>());
+      expect(
+        container.read(activePageLiveSyncProvider).unsyncableLineupKeys,
+        isEmpty,
+      );
+      await _settle();
+    });
+
+    test('a lineup whose landing is missing is refused, loudly', () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      final graph = container.read(lineUpProvider).graph;
+      // A graph that projects an origin with links but no items.
+      container.read(lineUpProvider.notifier).fromHive(
+            LineUpGraph(origins: graph.origins, links: graph.links),
+          );
+
+      final ops = desiredOps(container, page);
+
+      final key = EntitySyncKey.lineup(page.publicId, link.originId);
+      expect(ops[key], isNull);
+      expectNoEmptyGroups(ops);
+      // Drives the attention status (see cloud_sync_button_test).
+      expect(
+        container.read(activePageLiveSyncProvider).unsyncableLineupKeys,
+        {key},
+      );
+
+      // Restoring the landing clears the refusal.
+      container.read(lineUpProvider.notifier).fromHive(graph);
+      desiredOps(container, page);
+      expect(
+        container.read(activePageLiveSyncProvider).unsyncableLineupKeys,
+        isEmpty,
+      );
+      await _settle();
+    });
+
+    test('undoing a notes edit keeps an image a teammate added', () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      var lineups = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(link.copyWith(notes: 'jump throw'));
+      lineups = await land(
+        container,
+        remote,
+        page,
+        previous: lineups,
+        revision: 2,
+        contentRevision: 3,
+        teammate: (data) => firstItem(data)['images'] = [
+          {'id': 'teammate-image', 'fileExtension': '.png'},
+        ],
+      );
+      expect(
+        container.read(lineUpProvider).links.single.images.map((i) => i.id),
+        ['teammate-image'],
+      );
+
+      container.read(actionProvider.notifier).undoAction();
+
+      final restored = container.read(lineUpProvider).links.single;
+      expect(restored.notes, '');
+      expect(restored.images.map((image) => image.id), ['teammate-image']);
+      final patch =
+          desiredOps(container, page).values.whereType<LineupPatchOp>().single;
+      final item = firstItem(cloudPayloadData(patch.payload));
+      expect(item['notes'], '');
+      expect(
+        (item['images'] as List).map((image) => (image as Map)['id']),
+        ['teammate-image'],
+      );
+      await _settle();
+    });
+
+    test('undoing a visibility toggle keeps a teammate toggle', () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      var lineups = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      final landing = container.read(lineUpProvider).landings.single;
+      container.read(lineUpProvider.notifier).updateLandingAbilityVisualState(
+            landingId: link.landingId,
+            visualState:
+                landing.ability.visualState.copyWith(showRangeOutline: false),
+          );
+      lineups = await land(
+        container,
+        remote,
+        page,
+        previous: lineups,
+        revision: 2,
+        contentRevision: 3,
+        teammate: (data) => ((firstItem(data)['ability'] as Map)['visualState']
+            as Map)['showRangeFill'] = false,
+      );
+
+      container.read(actionProvider.notifier).undoAction();
+
+      final visual = container
+          .read(lineUpProvider)
+          .landingById(link.landingId)!
+          .ability
+          .visualState;
+      expect(visual.showRangeOutline, isTrue);
+      expect(visual.showRangeFill, isFalse);
+      await _settle();
+    });
+
+    test('an ack refresh that already holds a teammate change shows it',
+        () async {
+      final (container, remote, page) = await openEmpty();
+      final link = place(container);
+      var lineups = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      const moved = Offset(500, 500);
+      container
+          .read(lineUpProvider.notifier)
+          .updateOriginAgentPosition(link.originId, moved);
+      // Our move lands and, in the same server state, a teammate arms it.
+      lineups = await land(
+        container,
+        remote,
+        page,
+        previous: lineups,
+        revision: 2,
+        contentRevision: 3,
+        teammate: (data) =>
+            (data['agent'] as Map<String, dynamic>)['weapon'] = 'vandal',
+      );
+
+      final origin = container.read(lineUpProvider).originById(link.originId)!;
+      expect(origin.agent.position, moved);
+      expect(origin.agent.weapon, WeaponType.vandal);
+      final ops = desiredOps(container, page);
+      expect(ops[EntitySyncKey.lineup(page.publicId, link.originId)], isNull);
+      await _settle();
+    });
+
+    test('an ack while another page is active does not revive the old lineup',
+        () async {
+      final first = _page('page-1', 0);
+      final second = _page('page-2', 1);
+      final secondSnapshot = _pageSnapshot(second, settings: settingsFor(9));
+      final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [first, second],
+          activePage: _pageSnapshot(first, settings: settingsFor(1)),
+        ),
+        pageCatalog: {
+          first.publicId: _pageSnapshot(first, settings: settingsFor(1)),
+          second.publicId: secondSnapshot,
+        },
+      );
+      queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      final session = container.read(strategyPageSessionProvider.notifier);
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+      );
+      final link = place(container);
+      await _settle();
+      var ops = queuedOps();
+      var lineups = apply(ops.values, first, revision: 1, previous: const []);
+      remote.initialSnapshot =
+          serverSnapshot(first, lineups, 2, pages: [first, second]);
+      remote.pageCatalog[first.publicId] = remote.initialSnapshot.activePage!;
+      publishAcks(ops, 1);
+      await settleSync(container, 2);
+
+      const moved = Offset(500, 500);
+      container
+          .read(lineUpProvider.notifier)
+          .updateOriginAgentPosition(link.originId, moved);
+      await session.setActivePage(second.publicId);
+      await _settle();
+      expect(container.read(strategySettingsProvider).agentSize, 39);
+
+      // Page 1's move lands with a teammate's weapon change while page 2 is
+      // on screen.
+      ops = queuedOps();
+      expect(ops.keys.where((key) => key.pageId == first.publicId), isNotEmpty);
+      lineups = apply(
+        ops.values,
+        first,
+        revision: 2,
+        previous: lineups,
+        teammate: (data) =>
+            (data['agent'] as Map<String, dynamic>)['weapon'] = 'vandal',
+      );
+      remote.pageCatalog[first.publicId] = _pageSnapshot(
+        first,
+        settings: settingsFor(3),
+        contentRevision: 3,
+        lineups: lineups,
+      );
+      remote.initialSnapshot = _editorSnapshot(
+        pages: [first, second],
+        activePage: secondSnapshot,
+      );
+      publishAcks(ops, 2);
+      await settleSync(container, 9);
+
+      await session.setActivePage(first.publicId);
+      await settleSync(container, 3);
+
+      final origin = container.read(lineUpProvider).originById(link.originId)!;
+      expect(origin.agent.position, moved);
+      expect(origin.agent.weapon, WeaponType.vandal);
+      expect(
+        desiredOps(container, first)[
+            EntitySyncKey.lineup(first.publicId, link.originId)],
+        isNull,
+      );
       await _settle();
     });
   });

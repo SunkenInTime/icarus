@@ -648,41 +648,141 @@ enum LineUpEditField {
   linkDetails
 }
 
-/// What a lineup's details dialog edits, apart from which origin and landing
-/// the link joins.
-class LineUpLinkDetails {
-  const LineUpLinkDetails({
-    required this.name,
-    required this.youtubeLink,
-    required this.notes,
-    required this.images,
+/// The properties of a link one edit changes, as that edit sets them.
+/// Properties it left alone are null (or empty for images), so writing the
+/// change keeps whatever they are now, including a teammate's edits.
+class LineUpLinkChange {
+  const LineUpLinkChange({
+    this.name,
+    this.youtubeLink,
+    this.notes,
+    this.addedImages = const [],
+    this.removedImageIds = const {},
   });
 
-  factory LineUpLinkDetails.of(LineUpLink link) => LineUpLinkDetails(
-        name: link.name,
-        youtubeLink: link.youtubeLink,
-        notes: link.notes,
-        images: link.images.map((image) => image.copyWith()).toList(),
-      );
+  final String? name;
+  final String? youtubeLink;
+  final String? notes;
+  final List<SimpleImageData> addedImages;
+  final Set<String> removedImageIds;
 
-  final String name;
-  final String youtubeLink;
-  final String notes;
-  final List<SimpleImageData> images;
+  bool get isEmpty =>
+      name == null &&
+      youtubeLink == null &&
+      notes == null &&
+      addedImages.isEmpty &&
+      removedImageIds.isEmpty;
 
-  LineUpLink writeTo(LineUpLink link) => link.copyWith(
-        name: name,
-        youtubeLink: youtubeLink,
-        notes: notes,
-        images: images.map((image) => image.copyWith()).toList(),
+  /// The change from [before] to [after], and the change that undoes it.
+  static ({LineUpLinkChange forward, LineUpLinkChange backward}) between(
+    LineUpLink before,
+    LineUpLink after,
+  ) {
+    String? changed(String a, String b) => a == b ? null : b;
+    final beforeIds = before.images.map((image) => image.id).toSet();
+    final afterIds = after.images.map((image) => image.id).toSet();
+    final added =
+        after.images.where((image) => !beforeIds.contains(image.id)).toList();
+    final removed =
+        before.images.where((image) => !afterIds.contains(image.id)).toList();
+    return (
+      forward: LineUpLinkChange(
+        name: changed(before.name, after.name),
+        youtubeLink: changed(before.youtubeLink, after.youtubeLink),
+        notes: changed(before.notes, after.notes),
+        addedImages: added,
+        removedImageIds: removed.map((image) => image.id).toSet(),
+      ),
+      backward: LineUpLinkChange(
+        name: changed(after.name, before.name),
+        youtubeLink: changed(after.youtubeLink, before.youtubeLink),
+        notes: changed(after.notes, before.notes),
+        addedImages: removed,
+        removedImageIds: added.map((image) => image.id).toSet(),
+      ),
+    );
+  }
+
+  LineUpLink writeTo(LineUpLink link) {
+    final present = link.images.map((image) => image.id).toSet();
+    return link.copyWith(
+      name: name ?? link.name,
+      youtubeLink: youtubeLink ?? link.youtubeLink,
+      notes: notes ?? link.notes,
+      images: [
+        for (final image in link.images)
+          if (!removedImageIds.contains(image.id)) image.copyWith(),
+        for (final image in addedImages)
+          if (!present.contains(image.id)) image.copyWith(),
+      ],
+    );
+  }
+}
+
+/// The visibility toggles one edit changes, as it sets them; toggles it left
+/// alone are null.
+class AbilityVisibilityChange {
+  const AbilityVisibilityChange({
+    this.showRangeOutline,
+    this.showRangeFill,
+    this.showInnerOutline,
+    this.showInnerFill,
+    this.showVisionCone,
+  });
+
+  final bool? showRangeOutline;
+  final bool? showRangeFill;
+  final bool? showInnerOutline;
+  final bool? showInnerFill;
+  final bool? showVisionCone;
+
+  bool get isEmpty =>
+      showRangeOutline == null &&
+      showRangeFill == null &&
+      showInnerOutline == null &&
+      showInnerFill == null &&
+      showVisionCone == null;
+
+  /// The change from [before] to [after], and the change that undoes it.
+  static ({AbilityVisibilityChange forward, AbilityVisibilityChange backward})
+      between(AbilityVisualState before, AbilityVisualState after) {
+    bool? changed(bool a, bool b) => a == b ? null : b;
+    return (
+      forward: AbilityVisibilityChange(
+        showRangeOutline:
+            changed(before.showRangeOutline, after.showRangeOutline),
+        showRangeFill: changed(before.showRangeFill, after.showRangeFill),
+        showInnerOutline:
+            changed(before.showInnerOutline, after.showInnerOutline),
+        showInnerFill: changed(before.showInnerFill, after.showInnerFill),
+        showVisionCone: changed(before.showVisionCone, after.showVisionCone),
+      ),
+      backward: AbilityVisibilityChange(
+        showRangeOutline:
+            changed(after.showRangeOutline, before.showRangeOutline),
+        showRangeFill: changed(after.showRangeFill, before.showRangeFill),
+        showInnerOutline:
+            changed(after.showInnerOutline, before.showInnerOutline),
+        showInnerFill: changed(after.showInnerFill, before.showInnerFill),
+        showVisionCone: changed(after.showVisionCone, before.showVisionCone),
+      ),
+    );
+  }
+
+  AbilityVisualState writeTo(AbilityVisualState state) => state.copyWith(
+        showRangeOutline: showRangeOutline,
+        showRangeFill: showRangeFill,
+        showInnerOutline: showInnerOutline,
+        showInnerFill: showInnerFill,
+        showVisionCone: showVisionCone,
       );
 }
 
-/// An edit to one field of one lineup entry. Undo and redo write only that
-/// field onto the entry as it is now, so anything else changed since (a
-/// teammate's weapon, a moved marker, renamed details) is kept. The values
-/// are an Offset for positions, an AbilityVisualState for visibility and a
-/// LineUpLinkDetails for link details.
+/// An edit to one field of one lineup entry. Undo and redo write only what
+/// the edit changed onto the entry as it is now, so anything else changed
+/// since (a teammate's weapon, image or toggle) is kept. The values are an
+/// Offset for positions, an AbilityVisibilityChange for visibility and a
+/// LineUpLinkChange for link details.
 class LineUpEditAction extends UserAction {
   LineUpEditAction({
     required super.id,
@@ -914,15 +1014,11 @@ class LineUpProvider extends Notifier<LineUpState> {
       notes: notes,
       images: images.map((image) => image.copyWith()).toList(),
     );
+    // Both endpoints are recorded even when pinned, so redo can recreate
+    // one that a cloud rehydrate renamed in between.
     final added = LineUpGraph(
-      origins: [
-        if (placement.pinnedOriginId == null)
-          origins.firstWhere((origin) => origin.id == originId),
-      ],
-      landings: [
-        if (placement.pinnedLandingId == null)
-          landings.firstWhere((landing) => landing.id == landingId),
-      ],
+      origins: [origins.firstWhere((origin) => origin.id == originId)],
+      landings: [landings.firstWhere((landing) => landing.id == landingId)],
       links: [link],
     );
     state = state.copyWith(
@@ -968,11 +1064,13 @@ class LineUpProvider extends Notifier<LineUpState> {
   void updateLink(LineUpLink link) {
     final current = state.linkById(link.id);
     if (current == null) return;
+    final change = LineUpLinkChange.between(current, link);
+    if (change.forward.isEmpty) return;
     _recordEdit(
       targetId: link.id,
       field: LineUpEditField.linkDetails,
-      before: LineUpLinkDetails.of(current),
-      after: LineUpLinkDetails.of(link),
+      before: change.backward,
+      after: change.forward,
     );
   }
 
@@ -1004,11 +1102,14 @@ class LineUpProvider extends Notifier<LineUpState> {
   }) {
     final current = state.landingById(landingId);
     if (current == null) return;
+    final change = AbilityVisibilityChange.between(
+        current.ability.visualState, visualState);
+    if (change.forward.isEmpty) return;
     _recordEdit(
       targetId: landingId,
       field: LineUpEditField.landingVisibility,
-      before: current.ability.visualState,
-      after: visualState,
+      before: change.backward,
+      after: change.forward,
     );
   }
 
@@ -1053,7 +1154,8 @@ class LineUpProvider extends Notifier<LineUpState> {
                     ability: (field == LineUpEditField.landingPosition
                         ? landing.ability.copyWith(position: value as Offset)
                         : landing.ability.copyWith(
-                            visualState: value as AbilityVisualState,
+                            visualState: (value as AbilityVisibilityChange)
+                                .writeTo(landing.ability.visualState),
                           ))
                       ..isDeleted = landing.ability.isDeleted,
                   )
@@ -1063,7 +1165,7 @@ class LineUpProvider extends Notifier<LineUpState> {
         state = state.copyWith(links: [
           for (final link in state.links)
             link.id == targetId
-                ? (value as LineUpLinkDetails).writeTo(link)
+                ? (value as LineUpLinkChange).writeTo(link)
                 : link,
         ]);
     }
@@ -1092,22 +1194,22 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
-  /// Removes [linkIds] plus any origin or landing they leave without links,
-  /// and records exactly that subgraph as the deletion.
+  /// Removes [linkIds] (origins and landings left without a link go with
+  /// them) and records the links plus every endpoint they joined, shared ones
+  /// included. Undo can then rebuild a lineup whose shared landing a cloud
+  /// rehydrate renamed in between, instead of restoring a link to nothing.
   void _recordDeletion(String actionId, Set<String> linkIds) {
     final removedLinks =
         state.links.where((link) => linkIds.contains(link.id)).toList();
     if (removedLinks.isEmpty) return;
-    final remaining =
-        state.links.where((link) => !linkIds.contains(link.id)).toList();
-    final liveOriginIds = remaining.map((link) => link.originId).toSet();
-    final liveLandingIds = remaining.map((link) => link.landingId).toSet();
+    final originIds = removedLinks.map((link) => link.originId).toSet();
+    final landingIds = removedLinks.map((link) => link.landingId).toSet();
     final removed = LineUpGraph(
       origins: state.origins
-          .where((origin) => !liveOriginIds.contains(origin.id))
+          .where((origin) => originIds.contains(origin.id))
           .toList(),
       landings: state.landings
-          .where((landing) => !liveLandingIds.contains(landing.id))
+          .where((landing) => landingIds.contains(landing.id))
           .toList(),
       links: removedLinks,
     );
@@ -1125,21 +1227,24 @@ class LineUpProvider extends Notifier<LineUpState> {
     ref.read(actionProvider.notifier).addAction(action);
   }
 
-  /// Moves the entries [from] names to their state in [to], leaving every
-  /// other origin, landing and link as it currently is. Links only in [from]
-  /// are removed and links in [to] are put back. An origin or landing exists
-  /// only while some link uses it, so nodes are restored from [to] and any
-  /// node left without a link afterwards is dropped.
+  /// Moves the graph from [from] to [to] for the entries they name, leaving
+  /// every other origin, landing and link as it currently is. Links only in
+  /// [from] are removed. Entries in [to] are put back only where missing: one
+  /// that exists now keeps its current state (edits since are kept, and a
+  /// restored link joins the surviving shared landing). An origin or landing
+  /// exists only while some link uses it, so any node left without a link
+  /// is dropped.
   void _apply({required LineUpGraph from, required LineUpGraph to}) {
     List<T> upsert<T>(
       List<T> current,
       List<T> incoming,
       String Function(T) idOf,
     ) {
-      final byId = {for (final entry in incoming) idOf(entry): entry};
+      final present = current.map(idOf).toSet();
       return [
-        for (final entry in current) byId.remove(idOf(entry)) ?? entry,
-        ...byId.values,
+        ...current,
+        for (final entry in incoming)
+          if (!present.contains(idOf(entry))) entry,
       ];
     }
 

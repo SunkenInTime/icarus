@@ -341,6 +341,14 @@ function assertLineupPayload(payload: unknown): LineupPayload {
       "Invalid lineup payload data",
     );
   }
+  // A lineup group with no items reads back as no lineup at all, so storing
+  // one would turn into a deletion nobody made on the next load.
+  if (!Array.isArray(payload.data.items) || payload.data.items.length === 0) {
+    throw errorWithCode(
+      "INVALID_LINEUP_PAYLOAD_DATA",
+      "Lineup payload has no items",
+    );
+  }
   return payload as LineupPayload;
 }
 

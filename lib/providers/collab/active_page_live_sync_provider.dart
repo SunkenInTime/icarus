@@ -3,6 +3,7 @@ import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
@@ -29,6 +30,7 @@ class ActivePageLiveSyncState {
     this.remoteBaseRevisionByEntity = const <EntitySyncKey, int>{},
     this.overlayByEntityKey = const <EntitySyncKey, ActivePageOverlayEntry>{},
     this.lastAckBatch = const <AckedEntityIntent>[],
+    this.unsyncableLineupKeys = const <EntitySyncKey>{},
   });
 
   final String? strategyPublicId;
@@ -38,6 +40,12 @@ class ActivePageLiveSyncState {
   final Map<EntitySyncKey, int> remoteBaseRevisionByEntity;
   final Map<EntitySyncKey, ActivePageOverlayEntry> overlayByEntityKey;
   final List<AckedEntityIntent> lastAckBatch;
+
+  /// Lineups the canvas holds but live sync refused to send, because their
+  /// cloud projection has no items (an origin whose landings are missing).
+  /// The server would store a lineup that the next hydration drops, so the
+  /// sync status shows attention while any remain.
+  final Set<EntitySyncKey> unsyncableLineupKeys;
 
   ActivePageLiveSyncState copyWith({
     String? strategyPublicId,
@@ -49,6 +57,7 @@ class ActivePageLiveSyncState {
     Map<EntitySyncKey, int>? remoteBaseRevisionByEntity,
     Map<EntitySyncKey, ActivePageOverlayEntry>? overlayByEntityKey,
     List<AckedEntityIntent>? lastAckBatch,
+    Set<EntitySyncKey>? unsyncableLineupKeys,
   }) {
     return ActivePageLiveSyncState(
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
@@ -61,6 +70,7 @@ class ActivePageLiveSyncState {
           remoteBaseRevisionByEntity ?? this.remoteBaseRevisionByEntity,
       overlayByEntityKey: overlayByEntityKey ?? this.overlayByEntityKey,
       lastAckBatch: lastAckBatch ?? this.lastAckBatch,
+      unsyncableLineupKeys: unsyncableLineupKeys ?? this.unsyncableLineupKeys,
     );
   }
 }
@@ -148,11 +158,25 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final entry in remoteEntities.entries) {
       remoteRevisions[entry.key] = entry.value.revision;
     }
-    // An overlay holds local intent until the server has it. Once no op in
-    // the queue carries it, the snapshot this page just hydrated from is the
-    // truth; a leftover overlay would keep painting the old local version
-    // over later remote changes and eventually write it back. Acks usually
-    // clear overlays in syncLocalPage, but that skips a page mid-rehydrate.
+    state = state.copyWith(
+      hydratedPageId: pageId,
+      hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
+      remoteBaseRevisionByEntity: remoteRevisions,
+    );
+  }
+
+  /// Drops [pageId]'s overlays that no op in the queue carries any more.
+  ///
+  /// An overlay holds local intent until the server has it. Once its op has
+  /// landed, the server's snapshot is the truth, and it may already hold a
+  /// teammate's newer change to that entity; painting the overlay would show
+  /// the older local version and the next sync would write it back. Call this
+  /// before projecting a page for hydration. Acks usually clear overlays in
+  /// syncLocalPage, but that skips a page that is being rehydrated or is not
+  /// the active one. A page only rehydrates once its local edits are queued
+  /// (the session waits for pending cloud sync), so this never drops unsent
+  /// work.
+  void dropSatisfiedOverlays(String pageId) {
     final queue = ref.read(strategyOpQueueProvider);
     bool isPending(EntitySyncKey key) =>
         queue.queuedByEntityKey.containsKey(key) ||
@@ -163,12 +187,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final overlays = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
       state.overlayByEntityKey,
     )..removeWhere((key, _) => key.pageId == pageId && !isPending(key));
-    state = state.copyWith(
-      hydratedPageId: pageId,
-      hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
-      remoteBaseRevisionByEntity: remoteRevisions,
-      overlayByEntityKey: overlays,
-    );
+    if (overlays.length == state.overlayByEntityKey.length) return;
+    state = state.copyWith(overlayByEntityKey: overlays);
   }
 
   bool hasOverlayForPage(String pageId) {
@@ -380,6 +400,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       state.overlayByEntityKey,
     );
     final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
+    final unsyncableLineups = <EntitySyncKey>{};
 
     for (final key in pageKeys) {
       if (_remoteAdoptionPending.contains(key)) {
@@ -397,6 +418,25 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final retainedOp = queueState.successorByEntityKey[key]?.pending.op ??
           queueState.inFlightByEntityKey[key]?.pending.op ??
           queueState.queuedByEntityKey[key]?.pending.op;
+
+      // Never author a lineup the server would store with no items: the next
+      // hydration drops it, so it reads as a deletion nobody made. Keep what
+      // is already overlaid or queued for it and show attention instead.
+      if (local != null && _isEmptyLineupGroup(local.payload)) {
+        unsyncableLineups.add(key);
+        if (!state.unsyncableLineupKeys.contains(key)) {
+          AppErrorReporter.reportError(
+            'A lineup could not be synced because its landing spot is '
+            'missing ($key).',
+            source: 'active_page_live_sync:empty_lineup',
+            promptUser: false,
+          );
+        }
+        if (existingOverlay == null && retainedOp != null) {
+          retainedDesiredOps[key] = retainedOp;
+        }
+        continue;
+      }
 
       final shouldPreserveTouched = hasQueued || hasInFlight || hasSuccessor;
       final matchesRemote = _entitiesEquivalent(local, remote);
@@ -530,6 +570,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       strategyPublicId: strategyPublicId,
       activePageId: pageId,
       overlayByEntityKey: nextOverlay,
+      unsyncableLineupKeys: {
+        ...state.unsyncableLineupKeys.where((key) => key.pageId != pageId),
+        ...unsyncableLineups,
+      },
     );
 
     return desiredOpsByEntityKey;
@@ -1065,6 +1109,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       _withFieldDefaults(left),
       _withFieldDefaults(right),
     );
+  }
+
+  static bool _isEmptyLineupGroup(Object? payload) {
+    if (payload is! Map || payload['kind'] != 'lineupGroup') return false;
+    final data = payload['data'];
+    final items = data is Map ? data['items'] : null;
+    return items is! List || items.isEmpty;
   }
 
   /// Payloads written before a field existed compare equal to the field's

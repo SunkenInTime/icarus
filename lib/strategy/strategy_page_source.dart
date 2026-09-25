@@ -203,6 +203,9 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => pages.first,
     );
 
+    ref.read(activePageLiveSyncProvider.notifier).dropSatisfiedOverlays(
+          page.publicId,
+        );
     final projected =
         ref.read(activePageLiveSyncProvider.notifier).projectPageState(
               strategyPublicId: strategyId,

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -175,15 +176,29 @@ class _ConflictSession extends StrategyPageSessionNotifier {
   }
 }
 
+class _FixedLiveSync extends ActivePageLiveSyncNotifier {
+  _FixedLiveSync(this.fixed);
+
+  final ActivePageLiveSyncState fixed;
+
+  @override
+  ActivePageLiveSyncState build() => fixed;
+}
+
 ProviderContainer _createContainer({
   bool connected = true,
   StrategyOpQueueState? opQueueState,
   CloudMediaUploadQueueState? mediaQueueState,
   StrategySaveState? saveState,
+  ActivePageLiveSyncState? liveSyncState,
 }) {
   return ProviderContainer(
     overrides: [
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
+      if (liveSyncState != null)
+        activePageLiveSyncProvider.overrideWith(
+          () => _FixedLiveSync(liveSyncState),
+        ),
       strategyOpQueueProvider.overrideWith(
         opQueueState == null
             ? _SettledOpQueue.new
@@ -280,6 +295,18 @@ void main() {
           ),
         ],
         isProcessing: false,
+      ),
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+  });
+
+  test('a lineup live sync refused to send shows attention', () async {
+    final container = _createContainer(
+      liveSyncState: ActivePageLiveSyncState(
+        unsyncableLineupKeys: {const EntitySyncKey.lineup('page-1', 'lineup-1')},
       ),
     );
     addTearDown(container.dispose);
