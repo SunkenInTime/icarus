@@ -174,6 +174,7 @@ code exchange. The allowlist holds:
 - `icarus://auth/callback` (desktop)
 - `https://beta.icarusstrats.com/` (web beta)
 - `https://icarus-web-a50.pages.dev/` (the Cloudflare Pages host of the beta)
+- `http://localhost:*/` (local `flutter run -d chrome`)
 
 Because the web sign-in leaves the page, anything held only in memory is lost.
 A share code opened while signed out waits in the tab's sessionStorage
@@ -198,12 +199,25 @@ Where the URI comes from:
   an auth callback or a share link. `app_links` is not used on web; its web
   plugin only echoes the page URL.
 
-The provider decides whether the incoming URI is an auth callback with
-`isAuthCallbackUri(uri, redirectUri: currentAuthRedirectUri())`: the URI must
-land on this build's redirect URI (same scheme, host, port, and path) and carry
-a sign-in result (`code`, `access_token`, or `error_description`). Requiring
-the redirect's path keeps a `/share?code=…` link from being mistaken for a
-sign-in.
+The provider classifies the incoming URI with
+`classifyAuthCallbackUri(uri, redirectUri: currentAuthRedirectUri())`. Only a
+URI that lands on this build's redirect URI (same scheme, host, port, and path)
+counts; requiring the redirect's path keeps a `/share?code=…` link from being
+mistaken for a sign-in. Then:
+
+- A PKCE `?code=` or an error is a sign-in result and goes to Supabase. A
+  forged code is harmless: it only exchanges with the verifier this device
+  saved when it started sign-in.
+- Session tokens (`access_token`, `refresh_token`, `provider_token`, …) in the
+  query or fragment are rejected, on desktop and web alike. We only use the
+  PKCE flow, so Supabase never sends them, but anyone can craft such a link,
+  and GoTrue's `getSessionFromUrl` would import them and sign the user into
+  the attacker's account. The link is logged (redacted) as rejected, never
+  handed to Supabase, and on web scrubbed from the address bar.
+
+Deep links are logged through `redactDeepLinkUri`, which hides sign-in secrets
+and share codes (the `/share/<code>` path, `?code=`, `?token=`): a share code
+is a credential.
 
 Then it completes the Supabase session:
 
@@ -716,7 +730,7 @@ First places to inspect:
 - `signInWithDiscord()`
 - `main.dart` deep link handling
 - `handleAuthCallbackUri(...)`
-- `isAuthCallbackUri(...)`
+- `classifyAuthCallbackUri(...)`
 
 ### Symptom: signed-in user cannot access a strategy
 

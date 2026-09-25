@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -66,6 +68,35 @@ void main() {
       expect(afterSignIn.read(shareLinkControllerProvider), _code);
     });
 
+    test('a late failure of an older attempt keeps the newer pending code',
+        () async {
+      const newer = 'ICR-XXXX-XXXX-XXXX-XXXX';
+      final store = MemoryPendingShareCodeStore();
+      final repository = _ControlledRepository();
+      final container = containerWith(
+        store,
+        signedIn: true,
+        repository: repository,
+      );
+      final controller = container.read(shareLinkControllerProvider.notifier);
+
+      // Attempt A is in flight when code B becomes pending.
+      final attemptA = controller.redeemToken(_code);
+      final attemptB = controller.redeemToken(newer);
+      expect(container.read(shareLinkControllerProvider), newer);
+
+      repository.fail(_code);
+      expect(await attemptA, isFalse);
+      expect(container.read(shareLinkControllerProvider), newer);
+      expect(store.read(), newer);
+
+      // B's own failure is the one that clears B.
+      repository.fail(newer);
+      expect(await attemptB, isFalse);
+      expect(container.read(shareLinkControllerProvider), isNull);
+      expect(store.read(), isNull);
+    });
+
     test('a failed redemption the user was told about clears the code',
         () async {
       final store = MemoryPendingShareCodeStore()..write(_code);
@@ -101,6 +132,18 @@ class _FixedAuthProvider extends AuthProvider {
             signedIn ? ConvexAuthStatus.ready : ConvexAuthStatus.signedOut,
         user: null,
       );
+}
+
+/// Holds each redemption open until the test fails it.
+class _ControlledRepository extends Fake implements ConvexStrategyRepository {
+  final _pending = <String, Completer<ShareRedemption>>{};
+
+  void fail(String token) =>
+      _pending[token]!.completeError(Exception('Share link revoked'));
+
+  @override
+  Future<ShareRedemption> redeemShareLink(String token) =>
+      (_pending[token] = Completer<ShareRedemption>()).future;
 }
 
 class _FailingRepository extends Fake implements ConvexStrategyRepository {

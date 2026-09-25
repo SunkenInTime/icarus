@@ -47,6 +47,7 @@ class ShareLinkController extends Notifier<String?> {
     bool showFailureToasts = true,
   }) async {
     final token = state;
+    final generation = _generation;
     if (token == null || token.isEmpty) {
       return false;
     }
@@ -66,7 +67,7 @@ class ShareLinkController extends Notifier<String?> {
       final response = await ref
           .read(convexStrategyRepositoryProvider)
           .redeemShareLink(token);
-      _release();
+      _release(generation);
 
       ref
           .read(libraryWorkspaceProvider.notifier)
@@ -97,7 +98,7 @@ class ShareLinkController extends Notifier<String?> {
       }
       // The user is told (here, or inline by the dialog), so the code is done
       // with. Keeping it would replay the failure on every web page reload.
-      _release();
+      _release(generation);
       if (showFailureToasts) {
         Settings.showToast(
           message: 'Failed to redeem share link.',
@@ -113,12 +114,21 @@ class ShareLinkController extends Notifier<String?> {
     return redeemPendingIfPossible(source: 'manual', showFailureToasts: false);
   }
 
+  /// Bumped each time a code becomes pending. A redeem attempt remembers the
+  /// generation it started with and only clears that one, so a slow attempt
+  /// finishing late cannot clear a newer code that arrived meanwhile.
+  int _generation = 0;
+
   void _hold(String token) {
+    _generation += 1;
     state = token;
     ref.read(pendingShareCodeStoreProvider).write(token);
   }
 
-  void _release() {
+  void _release(int generation) {
+    if (generation != _generation) {
+      return;
+    }
     state = null;
     ref.read(pendingShareCodeStoreProvider).clear();
   }

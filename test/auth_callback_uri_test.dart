@@ -22,94 +22,92 @@ void main() {
     });
   });
 
-  group('isAuthCallbackUri', () {
+  group('classifyAuthCallbackUri', () {
     final webRedirect = webAuthRedirectUri(
       Uri.parse('https://beta.icarusstrats.com/'),
     );
 
-    test('accepts the native deep link with a sign-in result', () {
-      for (final link in [
-        'icarus://auth/callback?code=abc',
-        'icarus://auth/callback#access_token=abc&refresh_token=def',
-        'icarus://auth/callback?error=access_denied&error_description=Denied',
-      ]) {
-        expect(
-          isAuthCallbackUri(
-            Uri.parse(link),
-            redirectUri: nativeAuthRedirectUri,
-          ),
-          isTrue,
-          reason: link,
+    AuthCallback web(String link) =>
+        classifyAuthCallbackUri(Uri.parse(link), redirectUri: webRedirect);
+    AuthCallback native(String link) => classifyAuthCallbackUri(
+          Uri.parse(link),
+          redirectUri: nativeAuthRedirectUri,
         );
-      }
-    });
 
-    test('accepts Supabase returning to the web origin', () {
+    test('a PKCE code or an error is a sign-in result', () {
       for (final link in [
         'https://beta.icarusstrats.com/?code=abc',
         'https://beta.icarusstrats.com?code=abc',
         'https://beta.icarusstrats.com/?code=abc#/',
-        'https://beta.icarusstrats.com/#access_token=abc&refresh_token=def',
         'https://beta.icarusstrats.com/?error=server_error'
             '&error_description=Something+broke',
+        'https://beta.icarusstrats.com/#error=access_denied'
+            '&error_description=Denied',
       ]) {
-        expect(
-          isAuthCallbackUri(Uri.parse(link), redirectUri: webRedirect),
-          isTrue,
-          reason: link,
-        );
+        expect(web(link), AuthCallback.signInResult, reason: link);
+      }
+      for (final link in [
+        'icarus://auth/callback?code=abc',
+        'icarus://auth/callback?error=access_denied&error_description=Denied',
+      ]) {
+        expect(native(link), AuthCallback.signInResult, reason: link);
       }
     });
 
-    test('rejects the web origin without a sign-in result', () {
+    test('session tokens are rejected on web and native, even beside a code',
+        () {
+      for (final link in [
+        'https://beta.icarusstrats.com/#access_token=a&refresh_token=b'
+            '&expires_in=3600&token_type=bearer',
+        'https://beta.icarusstrats.com/?access_token=a&refresh_token=b',
+        'https://beta.icarusstrats.com/?code=abc#access_token=a',
+        'https://beta.icarusstrats.com/#provider_token=a',
+      ]) {
+        expect(web(link), AuthCallback.injectedTokens, reason: link);
+      }
       expect(
-        isAuthCallbackUri(
-          Uri.parse('https://beta.icarusstrats.com/'),
-          redirectUri: webRedirect,
-        ),
-        isFalse,
-      );
-      expect(
-        isAuthCallbackUri(
-          Uri.parse('https://beta.icarusstrats.com/#/'),
-          redirectUri: webRedirect,
-        ),
-        isFalse,
-      );
-    });
-
-    test('rejects a share link that carries ?code=', () {
-      expect(
-        isAuthCallbackUri(
-          Uri.parse(
-            'https://beta.icarusstrats.com/share?code=ICR-2345-6789-ABCD-EFGH',
-          ),
-          redirectUri: webRedirect,
-        ),
-        isFalse,
+        native('icarus://auth/callback#access_token=a&refresh_token=b'),
+        AuthCallback.injectedTokens,
       );
     });
 
-    test('rejects a sign-in result aimed at a different origin', () {
+    test('undecodable escapes fail closed', () {
+      expect(
+        web('https://beta.icarusstrats.com/#access_token=%E0%A4%A'),
+        AuthCallback.injectedTokens,
+      );
+      expect(
+        web('https://beta.icarusstrats.com/?code=%E0%A4%A'),
+        AuthCallback.injectedTokens,
+      );
+    });
+
+    test('the web origin without a sign-in result is not a callback', () {
+      expect(web('https://beta.icarusstrats.com/'), AuthCallback.none);
+      expect(web('https://beta.icarusstrats.com/#/'), AuthCallback.none);
+    });
+
+    test('a share link that carries ?code= is not a callback', () {
+      expect(
+        web('https://beta.icarusstrats.com/share?code=ICR-2345-6789-ABCD-EFGH'),
+        AuthCallback.none,
+      );
+    });
+
+    test('anything aimed at a different origin is not a callback', () {
       for (final link in [
         'https://icarusstrats.com/?code=abc',
         'https://other.icarus-web-a50.pages.dev/?code=abc',
         'http://beta.icarusstrats.com/?code=abc',
         'https://beta.icarusstrats.com:8443/?code=abc',
+        'https://icarusstrats.com/#access_token=a',
         'icarus://auth/callback?code=abc',
       ]) {
-        expect(
-          isAuthCallbackUri(Uri.parse(link), redirectUri: webRedirect),
-          isFalse,
-          reason: link,
-        );
+        expect(web(link), AuthCallback.none, reason: link);
       }
       expect(
-        isAuthCallbackUri(
-          Uri.parse('https://beta.icarusstrats.com/?code=abc'),
-          redirectUri: nativeAuthRedirectUri,
-        ),
-        isFalse,
+        native('https://beta.icarusstrats.com/?code=abc'),
+        AuthCallback.none,
         reason: 'native builds only accept their own deep link',
       );
     });
@@ -141,6 +139,27 @@ void main() {
             'https://beta.icarusstrats.com/?error=access_denied'
             '&error_code=403&error_description=Denied'
             '#access_token=a&refresh_token=b&expires_in=3600&token_type=bearer',
+          ),
+        ).toString(),
+        'https://beta.icarusstrats.com/',
+      );
+    });
+
+    test('scrubs an injected token link, even an undecodable one', () {
+      expect(
+        withoutAuthCallbackParameters(
+          Uri.parse(
+            'https://beta.icarusstrats.com/#access_token=attacker'
+            '&refresh_token=attacker&expires_in=3600&token_type=bearer',
+          ),
+        ).toString(),
+        'https://beta.icarusstrats.com/',
+      );
+      expect(
+        withoutAuthCallbackParameters(
+          Uri.parse(
+            'https://beta.icarusstrats.com/?access_token=%E0%A4%A'
+            '#refresh_token=%E0%A4%A',
           ),
         ).toString(),
         'https://beta.icarusstrats.com/',

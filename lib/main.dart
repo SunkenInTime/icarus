@@ -78,7 +78,11 @@ Future<void> _initializeDeepLinkHandling() async {
     // (app_links' web plugin just echoes it). It matters when it is Supabase
     // returning from Discord sign-in, or a /share/<code> link.
     final pageUri = Uri.base;
-    if (isAuthCallbackUri(pageUri, redirectUri: currentAuthRedirectUri()) ||
+    final authCallback = classifyAuthCallbackUri(
+      pageUri,
+      redirectUri: currentAuthRedirectUri(),
+    );
+    if (authCallback != AuthCallback.none ||
         isIcarusShareUri(pageUri, currentOrigin: currentShareOrigin())) {
       _publishDeepLink(pageUri, source: 'web_location');
     }
@@ -113,7 +117,7 @@ Future<void> _initializeDeepLinkHandling() async {
 }
 
 void _publishDeepLink(Uri uri, {required String source}) {
-  final redactedUri = redactAuthUri(uri);
+  final redactedUri = redactDeepLinkUri(uri);
   developer.log('Deep link received [$source]: $redactedUri',
       name: 'deep_link');
   AppErrorReporter.reportInfo(
@@ -404,13 +408,13 @@ class _MyAppState extends ConsumerState<MyApp> {
     final uriText = uri.toString();
     if (!_processedDeepLinks.add(uriText)) {
       developer.log(
-        'Ignoring duplicate deep link [$source]: ${redactAuthUri(uri)}',
+        'Ignoring duplicate deep link [$source]: ${redactDeepLinkUri(uri)}',
         name: 'deep_link',
       );
       return;
     }
 
-    final redactedUri = redactAuthUri(uri);
+    final redactedUri = redactDeepLinkUri(uri);
     developer.log('Handling deep link [$source]: $redactedUri',
         name: 'deep_link');
     AppErrorReporter.reportInfo(
@@ -473,7 +477,7 @@ class _MyAppState extends ConsumerState<MyApp> {
 
       for (final argument in widget.data) {
         AppErrorReporter.reportInfo(
-          'Startup argument: $argument',
+          'Startup argument: ${redactLaunchArgument(argument)}',
           source: 'main.startupArgs',
         );
         unawaited(_handleIncomingArgument(argument, source: 'startup_args'));
@@ -485,7 +489,7 @@ class _MyAppState extends ConsumerState<MyApp> {
 
       for (final argument in args) {
         AppErrorReporter.reportInfo(
-          'Second-instance argument: $argument',
+          'Second-instance argument: ${redactLaunchArgument(argument)}',
           source: 'main.secondInstanceArgs',
         );
         unawaited(_handleIncomingArgument(argument, source: 'second_instance'));

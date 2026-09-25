@@ -126,7 +126,7 @@ void main() {
     container.read(authProvider);
     final handled =
         await container.read(authProvider.notifier).handleAuthCallbackUri(
-              Uri.parse('icarus://auth/callback#access_token=test-token'),
+              Uri.parse('icarus://auth/callback?code=test-code'),
               source: 'test',
             );
     await pumpMicrotasks();
@@ -144,14 +144,114 @@ void main() {
     expect(state.convexAuthStatus, ConvexAuthStatus.ready);
   });
 
+  test('a link carrying session tokens is rejected without a sign-in',
+      () async {
+    // Anyone can craft this link. GoTrue would import the tokens and sign
+    // the user into the attacker's account, so it must never reach it.
+    final injected = Uri.parse(
+      'icarus://auth/callback#access_token=attacker-access'
+      '&refresh_token=attacker-refresh&expires_in=3600&token_type=bearer',
+    );
+    supabaseApi.sessionFromUrlSession = fakeSession();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+    final before = container.read(authProvider);
+
+    final handled = await container
+        .read(authProvider.notifier)
+        .handleAuthCallbackUri(injected, source: 'test');
+    await pumpMicrotasks();
+
+    expect(handled, isTrue, reason: 'handled, so the caller scrubs the URL');
+    expect(supabaseApi.getSessionFromUrlCalls, 0);
+    expect(supabaseApi.currentSession, isNull);
+    final after = container.read(authProvider);
+    expect(after.isAuthenticated, before.isAuthenticated);
+    expect(after.convexAuthStatus, before.convexAuthStatus);
+    expect(after.isLoading, isFalse);
+    expect(convexApi.setAuthCalls, 0);
+
+    final report = AppErrorReporter.buildClipboardReport(
+      appProviderContainer.read(inAppDebugProvider),
+    );
+    expect(report, contains('Rejected auth callback carrying session tokens'));
+    expect(report, isNot(contains('attacker-access')));
+    expect(report, isNot(contains('attacker-refresh')));
+  });
+
+  group('redactDeepLinkUri', () {
+    const code = 'ICR-2345-6789-ABCD-EFGH';
+
+    test('hides share codes in every link form', () {
+      for (final link in [
+        'https://beta.icarusstrats.com/share/$code',
+        'https://icarusstrats.com/share/$code?utm=x',
+        'https://icarusstrats.com/share?code=$code',
+        'https://icarusstrats.com/share?token=0ee927ca-babc-4350',
+        'icarus://share?code=$code',
+        'icarus://share/$code',
+      ]) {
+        final redacted = redactDeepLinkUri(Uri.parse(link));
+        expect(redacted, contains('redacted'), reason: link);
+        expect(redacted, isNot(contains(code)), reason: link);
+        expect(redacted, isNot(contains('0ee927ca')), reason: link);
+      }
+      expect(
+        redactDeepLinkUri(
+          Uri.parse('https://icarusstrats.com/share/$code?utm=x'),
+        ),
+        'https://icarusstrats.com/share/%3Credacted%3E?utm=x',
+      );
+    });
+
+    test('hides sign-in secrets in the query and fragment', () {
+      final redacted = redactDeepLinkUri(
+        Uri.parse(
+          'https://beta.icarusstrats.com/?code=pkce-secret'
+          '#access_token=access-secret&refresh_token=refresh-secret',
+        ),
+      );
+      for (final secret in ['pkce-secret', 'access-secret', 'refresh-secret']) {
+        expect(redacted, isNot(contains(secret)));
+      }
+    });
+
+    test('leaves ordinary links readable and never throws', () {
+      expect(
+        redactDeepLinkUri(Uri.parse('https://beta.icarusstrats.com/#/')),
+        'https://beta.icarusstrats.com/#/',
+      );
+      expect(
+        redactDeepLinkUri(
+          Uri.parse('https://beta.icarusstrats.com/?x=%E0%A4%A#a=%E0%A4%A'),
+        ),
+        isNot(contains('%E0%A4')),
+      );
+    });
+
+    test('launch arguments: links are redacted, file paths are not', () {
+      expect(
+        redactLaunchArgument('icarus://share?code=$code'),
+        isNot(contains(code)),
+      );
+      expect(
+        redactLaunchArgument(r'C:\Users\me\plans\retake.ica'),
+        r'C:\Users\me\plans\retake.ica',
+      );
+    });
+  });
+
   test('callback failure removes credentials from UI and diagnostics',
       () async {
     final callback = Uri.parse(
-      'icarus://auth/callback?code=callback-code-secret'
-      '#access_token=access-secret&refresh_token=refresh-secret',
+      'icarus://auth/callback?code=callback-code-secret',
     );
     supabaseApi.sessionFromUrlError = Exception(
       'Provider rejected $callback '
+      'access_token=access-secret&refresh_token=refresh-secret '
       '{"code_verifier":"verifier-secret"} '
       'access_token%3Dencoded-secret%26token_type%3Dbearer',
     );

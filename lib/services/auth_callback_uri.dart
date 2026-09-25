@@ -12,23 +12,63 @@ final Uri nativeAuthRedirectUri = Uri(
 /// entry in the Supabase redirect allowlist.
 Uri webAuthRedirectUri(Uri pageUri) => Uri.parse('${pageUri.origin}/');
 
-/// Whether [uri] is Supabase returning to [redirectUri] with a sign-in
-/// result (a PKCE code, tokens, or an error) to exchange for a session.
-bool isAuthCallbackUri(Uri uri, {required Uri redirectUri}) {
+/// What a URI arriving on this build's auth redirect carries.
+enum AuthCallback {
+  /// Not a sign-in callback. Leave it to other handlers.
+  none,
+
+  /// A PKCE `code` or an error from Supabase: safe to hand to
+  /// `getSessionFromUrl`. A code only exchanges with the verifier this
+  /// device saved when it started sign-in, so a forged code just fails.
+  signInResult,
+
+  /// Session tokens in the URL. We only use the PKCE flow, so Supabase never
+  /// sends these; anyone can craft such a link, and GoTrue would sign the
+  /// user into the account it names. Never exchange it, only scrub it.
+  injectedTokens,
+}
+
+/// Classifies [uri] against [redirectUri], the redirect this build asked
+/// Supabase for.
+AuthCallback classifyAuthCallbackUri(Uri uri, {required Uri redirectUri}) {
   final landsOnRedirect =
       uri.scheme.toLowerCase() == redirectUri.scheme.toLowerCase() &&
           uri.host.toLowerCase() == redirectUri.host.toLowerCase() &&
           uri.port == redirectUri.port &&
           _rootedPath(uri) == _rootedPath(redirectUri);
   if (!landsOnRedirect) {
-    return false;
+    return AuthCallback.none;
   }
 
-  return uri.fragment.contains('access_token') ||
-      uri.queryParameters.containsKey('code') ||
-      uri.fragment.contains('error_description') ||
-      uri.queryParameters.containsKey('error_description');
+  final Map<String, String> query;
+  final Map<String, String> fragment;
+  try {
+    query = uri.queryParameters;
+    fragment = Uri.splitQueryString(uri.fragment);
+  } on FormatException {
+    // Undecodable escapes: nothing Supabase sends. Fail closed.
+    return AuthCallback.injectedTokens;
+  }
+  bool has(String key) => query.containsKey(key) || fragment.containsKey(key);
+
+  if (_sessionTokenParameters.any(has)) {
+    return AuthCallback.injectedTokens;
+  }
+  if (query.containsKey('code') ||
+      has('error') ||
+      has('error_code') ||
+      has('error_description')) {
+    return AuthCallback.signInResult;
+  }
+  return AuthCallback.none;
 }
+
+const _sessionTokenParameters = {
+  'access_token',
+  'refresh_token',
+  'provider_token',
+  'provider_refresh_token',
+};
 
 String _rootedPath(Uri uri) {
   final path = uri.path.toLowerCase();
@@ -56,8 +96,13 @@ const _authCallbackParameters = {
 /// (including a Flutter `#/route` fragment). Once handled, the code is spent;
 /// leaving it in the address bar would re-run the callback on refresh.
 Uri withoutAuthCallbackParameters(Uri uri) {
-  final query = Map<String, List<String>>.of(uri.queryParametersAll)
-    ..removeWhere((key, _) => _authCallbackParameters.contains(key));
+  Map<String, List<String>> query;
+  try {
+    query = Map.of(uri.queryParametersAll)
+      ..removeWhere((key, _) => _authCallbackParameters.contains(key));
+  } on FormatException {
+    query = const {}; // Undecodable, so drop it rather than keep a payload.
+  }
 
   return Uri(
     scheme: uri.scheme,
@@ -75,7 +120,12 @@ String? _withoutAuthFragmentParameters(String fragment) {
     return null;
   }
 
-  final parameters = Uri(query: fragment).queryParametersAll;
+  final Map<String, List<String>> parameters;
+  try {
+    parameters = Uri(query: fragment).queryParametersAll;
+  } on FormatException {
+    return null; // Undecodable, so it cannot be a route worth keeping.
+  }
   final kept = {
     for (final entry in parameters.entries)
       if (!_authCallbackParameters.contains(entry.key)) entry.key: entry.value,
