@@ -54,6 +54,98 @@ void main() {
     await pumpMicrotasks();
   });
 
+  test(
+      'a restored session gets one Convex setup, not one from build and '
+      'another from initialSession', () async {
+    // A page refresh on web: Supabase restores the session before the
+    // provider builds, then replays it to the new listener as initialSession,
+    // and the Convex socket takes a while to confirm the token.
+    supabaseApi.currentSession = fakeSession();
+    supabaseApi.emitInitialSessionOnListen = true;
+    convexApi.autoAuthenticateOnSetAuth = false;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+    convexApi.emitAuthState(true);
+    await pumpMicrotasks();
+    await pumpMicrotasks();
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.ready);
+    expect(state.isConvexUserReady, isTrue);
+    expect(convexApi.setAuthCalls, 1);
+    expect(convexApi.mutationCalls, 1);
+    expect(convexApi.handles.single.isDisposed, isFalse);
+  });
+
+  test('initialSession with a different session than build still sets up',
+      () async {
+    supabaseApi.currentSession = fakeSession();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(convexApi.setAuthCalls, 1);
+
+    // Supabase refreshed the restored session before replaying it.
+    final refreshed = fakeSession(accessToken: 'refreshed-token');
+    supabaseApi.currentSession = refreshed;
+    supabaseApi.emit(AuthChangeEvent.initialSession, refreshed);
+    await pumpMicrotasks();
+    await pumpMicrotasks();
+
+    expect(convexApi.setAuthCalls, 2);
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.ready,
+    );
+  });
+
+  test('a Convex setup failure is reported, redacted, to the console',
+      () async {
+    final printed = <String>[];
+    final originalDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) printed.add(message);
+    };
+    AppErrorReporter.echoToConsole = true;
+    addTearDown(() {
+      debugPrint = originalDebugPrint;
+      AppErrorReporter.echoToConsole = false;
+    });
+    supabaseApi.currentSession = fakeSession();
+    convexApi.mutationError = StateError('boom access_token=secret-value');
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.incident,
+    );
+    final entry = appProviderContainer
+        .read(inAppDebugProvider)
+        .singleWhere((entry) => entry.source == 'auth');
+    expect(entry.message, 'Convex auth setup failed [build]');
+    expect(entry.errorText, 'Bad state: boom access_token=<redacted>');
+    expect(printed, [
+      '[auth] warning: Convex auth setup failed [build]: '
+          'Bad state: boom access_token=<redacted>',
+    ]);
+    final everything = [
+      entry.message,
+      entry.errorText,
+      entry.stackTrace,
+      ...printed,
+    ].join('\n');
+    expect(everything, isNot(contains('secret-value')));
+  });
+
   test('build queues Convex auth setup without gating auth events', () async {
     supabaseApi.currentSession = fakeSession();
     convexApi.setAuthCompleter = Completer<AuthProviderAuthHandle>();
@@ -581,9 +673,9 @@ Future<void> pumpMicrotasks() async {
   await Future<void>.delayed(Duration.zero);
 }
 
-Session fakeSession() {
+Session fakeSession({String accessToken = 'test-token'}) {
   final session = Session(
-    accessToken: 'test-token',
+    accessToken: accessToken,
     refreshToken: 'refresh-token',
     tokenType: 'bearer',
     user: const User(
@@ -627,6 +719,7 @@ class FakeConvexApi implements AuthProviderConvexApi {
   Object? reconnectError;
   bool reconnectResult = true;
   Completer<AuthProviderAuthHandle>? setAuthCompleter;
+  final List<FakeAuthHandle> handles = <FakeAuthHandle>[];
 
   @override
   Stream<bool> get authState => _authStateController.stream;
@@ -676,7 +769,9 @@ class FakeConvexApi implements AuthProviderConvexApi {
       emitAuthState(true);
       onAuthChange?.call(true);
     }
-    return FakeAuthHandle();
+    final handle = FakeAuthHandle();
+    handles.add(handle);
+    return handle;
   }
 
   void emitAuthState(bool isAuthenticated) {
@@ -768,6 +863,12 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
     required String password,
   }) async {
     return AuthResponse(session: currentSession);
+  }
+
+  void emit(AuthChangeEvent event, Session? session) {
+    for (final controller in _controllers) {
+      controller.add(AuthState(event, session));
+    }
   }
 
   Future<void> dispose() async {}

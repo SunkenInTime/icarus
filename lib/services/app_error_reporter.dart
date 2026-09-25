@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/settings.dart';
@@ -16,6 +17,12 @@ class AppErrorReporter {
   static const Duration _interactiveNotificationRetention = Duration(
     minutes: 2,
   );
+
+  /// Whether warnings and errors are also printed to the console. On web,
+  /// `developer.log` does not reach the browser console in a release build,
+  /// so without this a failure there leaves no trace. Messages are already
+  /// redacted by their callers, as they are for the copyable debug report.
+  static bool echoToConsole = kIsWeb;
 
   static bool _isDebugDialogOpen = false;
   static File? _persistedLogFile;
@@ -143,6 +150,12 @@ class AppErrorReporter {
       stackTrace: stackTrace,
       level: _developerLogLevel(level),
     );
+    if (echoToConsole && level != DebugLogLevel.info) {
+      debugPrint(
+        '[${source ?? 'Icarus'}] ${level.name}: $message'
+        '${errorText == null ? '' : ': $errorText'}',
+      );
+    }
 
     try {
       appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
