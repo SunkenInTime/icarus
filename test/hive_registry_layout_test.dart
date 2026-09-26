@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:hive_ce/src/binary/binary_reader_impl.dart';
 import 'package:hive_ce/src/binary/binary_writer_impl.dart';
-import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -403,7 +402,7 @@ void main() {
         16: jsonEncode(
           page.lineUpGraph
               .toLegacyGroups()
-              .map((group) => cloudLineupPayload(group))
+              .map((group) => group.toJson())
               .toList(),
         ),
       });

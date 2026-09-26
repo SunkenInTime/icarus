@@ -72,18 +72,30 @@ export function collectAssetIdsFromLineupPayload(
     }
   };
 
-  // Legacy lineup payloads stored images at the top level.
-  addImages(payload.data.images);
-
-  // Grouped lineup payloads (LineUpGroup) nest them per item:
-  // data.items[*].images[*].id
-  const rawItems = payload.data.items;
-  if (Array.isArray(rawItems)) {
-    for (const item of rawItems) {
-      if (typeof item === "object" && item !== null) {
-        addImages((item as { images?: unknown }).images);
+  switch (payload.kind) {
+    case "lineupLink":
+      // A link holds its images: data.images[*].id. Origins and landings
+      // hold none.
+      addImages(payload.data.images);
+      break;
+    case "lineupGroup": {
+      // The oldest lineup payloads stored images at the top level.
+      addImages(payload.data.images);
+      // Grouped payloads (LineUpGroup) nest them per item:
+      // data.items[*].images[*].id
+      const rawItems = payload.data.items;
+      if (Array.isArray(rawItems)) {
+        for (const item of rawItems) {
+          if (typeof item === "object" && item !== null) {
+            addImages((item as { images?: unknown }).images);
+          }
+        }
       }
+      break;
     }
+    case "lineupOrigin":
+    case "lineupLanding":
+      break;
   }
 
   return assetIds;

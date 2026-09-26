@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -2396,25 +2397,12 @@ class StrategyImportExportService {
         assetIds.add(element.publicId);
       }
 
-      for (final lineup in snapshot.lineupsByPage[page.publicId] ?? const []) {
-        if (lineup.deleted) {
-          continue;
-        }
-        try {
-          // TODO(lineupGraph): cloud lineups are lineupGroup payloads.
-          final parsed = LineUpGroup.fromJson(cloudPayloadData(lineup.payload));
-          for (final item in parsed.items) {
-            for (final image in item.images) {
-              assetIds.add(image.id);
-            }
-          }
-        } catch (error, stackTrace) {
-          Error.throwWithStackTrace(
-            FormatException(
-              'Cloud lineup ${lineup.publicId} could not be exported: $error',
-            ),
-            stackTrace,
-          );
+      final lineups = _cloudLineupGraph(
+        snapshot.lineupsByPage[page.publicId] ?? const [],
+      );
+      for (final link in lineups.links) {
+        for (final image in link.images) {
+          assetIds.add(image.id);
         }
       }
     }
@@ -2532,26 +2520,7 @@ class StrategyImportExportService {
         }
       }
 
-      final parsedLineUpGroups = <LineUpGroup>[];
-      for (final lineup in lineups) {
-        if (lineup.deleted) continue;
-        try {
-          parsedLineUpGroups.add(
-            LineUpGroup.fromJson(cloudPayloadData(lineup.payload)),
-          );
-        } catch (error, stackTrace) {
-          Error.throwWithStackTrace(
-            FormatException(
-              'Cloud lineup ${lineup.publicId} could not be exported: $error',
-            ),
-            stackTrace,
-          );
-        }
-      }
-
-      // TODO(lineupGraph): cloud lineups are lineupGroup payloads; build the
-      // graph from that projection until Convex stores the graph.
-      final lineUpGraph = LineUpGraph.fromLegacyGroups(parsedLineUpGroups);
+      final lineUpGraph = _cloudLineupGraph(lineups);
 
       StrategySettings settings = StrategySettings();
       final settingsPayload = fullPage.content.settings;
@@ -2619,4 +2588,13 @@ class StrategyImportExportService {
       pages: pages,
     );
   }
+}
+
+/// A cloud page's live lineup rows as the graph its canvas draws.
+LineUpGraph _cloudLineupGraph(Iterable<RemoteLineup> lineups) {
+  return lineUpGraphFromCloudRows([
+    for (final lineup in lineups)
+      if (!lineup.deleted)
+        CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
+  ]).graph;
 }

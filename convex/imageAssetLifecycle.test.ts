@@ -195,6 +195,7 @@ describe("image asset lifecycle", () => {
         ["tombstoned-page-only", "pages/tombstoned-page-only.png"],
         ["still-used", "pages/still-used.png"],
         ["still-used-by-element", "pages/still-used-by-element.png"],
+        ["still-used-by-link", "pages/still-used-by-link.png"],
       ] as const) {
         await ctx.db.insert("imageAssets", {
           publicId,
@@ -211,6 +212,7 @@ describe("image asset lifecycle", () => {
         ["tombstoned-element", "tombstoned-page-only"],
         ["shared-element", "still-used"],
         ["shared-page-element", "still-used-by-element"],
+        ["shared-link-element", "still-used-by-link"],
       ] as const) {
         await ctx.db.insert("elements", {
           publicId,
@@ -235,6 +237,28 @@ describe("image asset lifecycle", () => {
         payloadVersion: 1,
         payload: lineupPayload("still-used"),
         sortIndex: 0,
+        revision: 1,
+        deleted: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("lineups", {
+        publicId: "lineupLink:remaining-link",
+        strategyId: strategy._id,
+        pageId: pageBId,
+        payloadKind: "lineupLink",
+        payloadVersion: 1,
+        payload: {
+          kind: "lineupLink",
+          payloadVersion: 1,
+          data: {
+            id: "remaining-link",
+            originId: "origin",
+            landingId: "landing",
+            images: [{ id: "still-used-by-link", fileExtension: ".png" }],
+          },
+        },
+        sortIndex: 1,
         revision: 1,
         deleted: false,
         createdAt: now,
@@ -268,6 +292,7 @@ describe("image asset lifecycle", () => {
     expect(assets).toMatchObject([
       { publicId: "still-used", uploadStatus: "active" },
       { publicId: "still-used-by-element", uploadStatus: "active" },
+      { publicId: "still-used-by-link", uploadStatus: "active" },
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
