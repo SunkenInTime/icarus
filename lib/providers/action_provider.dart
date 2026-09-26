@@ -289,8 +289,31 @@ class ActionProvider extends Notifier<List<UserAction>> {
           break;
       }
     }
+    // A weapon or lineup edit whose target a teammate deleted changes nothing.
+    if (!_editTargetExists(action)) return null;
     _apply(action, undo: undo);
     return action;
+  }
+
+  /// Whether the agent, origin, landing or link a weapon or lineup edit
+  /// writes to is still on the page. Other entries are checked above.
+  bool _editTargetExists(UserAction action) {
+    final lineUps = ref.read(lineUpProvider);
+    return switch (action) {
+      WeaponSelectionAction(group: ActionGroup.lineUp) =>
+        lineUps.originById(action.id) != null,
+      WeaponSelectionAction() =>
+        _currentObjectState(action.id, ActionObjectKind.agent) != null,
+      LineUpEditAction(:final field, :final targetId) => switch (field) {
+          LineUpEditField.originPosition =>
+            lineUps.originById(targetId) != null,
+          LineUpEditField.landingPosition ||
+          LineUpEditField.landingVisibility =>
+            lineUps.landingById(targetId) != null,
+          LineUpEditField.linkDetails => lineUps.linkById(targetId) != null,
+        },
+      _ => true,
+    };
   }
 
   /// [action], an addition or deletion, holding [object] as the copy to put
@@ -616,6 +639,14 @@ class ActionProvider extends Notifier<List<UserAction>> {
     }
     if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
       return null;
+    }
+    if (action is WeaponSelectionAction) {
+      // A lineup weapon belongs to an origin, an agent weapon to an agent.
+      final targetKept = action.group == ActionGroup.lineUp
+          ? lineUpIds.contains(action.id)
+          : objectIds.contains(action.id) ||
+              _currentObjectState(action.id, ActionObjectKind.agent) != null;
+      if (!targetKept) return null;
     }
     return action.copy();
   }

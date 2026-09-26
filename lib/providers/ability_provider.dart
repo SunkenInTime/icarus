@@ -15,16 +15,6 @@ import 'package:uuid/uuid.dart';
 final abilityProvider =
     NotifierProvider<AbilityProvider, List<PlacedAbility>>(AbilityProvider.new);
 
-class AbilityProviderSnapshot {
-  final List<PlacedAbility> abilities;
-  final List<PlacedAbility> poppedAbilities;
-
-  const AbilityProviderSnapshot({
-    required this.abilities,
-    required this.poppedAbilities,
-  });
-}
-
 class AbilitySnapshot {
   final String id;
   final List<PlacedAbility> snapshot;
@@ -345,24 +335,6 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     poppedAbility = [];
     _pendingEditBefore.clear();
     state = [];
-  }
-
-  AbilityProviderSnapshot takeSnapshot() {
-    return AbilityProviderSnapshot(
-      abilities: state.map((ability) => clonePlacedAbility(ability)).toList(),
-      poppedAbilities:
-          poppedAbility.map((ability) => clonePlacedAbility(ability)).toList(),
-    );
-  }
-
-  void restoreSnapshot(AbilityProviderSnapshot snapshot) {
-    poppedAbility = snapshot.poppedAbilities
-        .map((ability) => clonePlacedAbility(ability))
-        .toList();
-    _pendingEditBefore.clear();
-    state = snapshot.abilities
-        .map((ability) => clonePlacedAbility(ability))
-        .toList();
   }
 
   /// Writes an edit onto the ability as it is now. An ability that is gone

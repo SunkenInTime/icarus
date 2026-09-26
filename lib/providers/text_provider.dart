@@ -10,16 +10,6 @@ import 'package:icarus/providers/text_draft_provider.dart';
 final textProvider =
     NotifierProvider<TextProvider, List<PlacedText>>(TextProvider.new);
 
-class TextProviderSnapshot {
-  final List<PlacedText> texts;
-  final List<PlacedText> poppedText;
-
-  const TextProviderSnapshot({
-    required this.texts,
-    required this.poppedText,
-  });
-}
-
 class TextProvider extends Notifier<List<PlacedText>> {
   static final double _legacyWidthToWorldFactor =
       (1000.0 * (16 / 9)) / CoordinateSystem.screenShotSize.width;
@@ -289,20 +279,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
     ref.read(textDraftProvider.notifier).clearAllDrafts();
     poppedText = [];
     state = [];
-  }
-
-  TextProviderSnapshot takeSnapshot() {
-    return TextProviderSnapshot(
-      texts: state.map((text) => clonePlacedText(text)).toList(),
-      poppedText: poppedText.map((text) => clonePlacedText(text)).toList(),
-    );
-  }
-
-  void restoreSnapshot(TextProviderSnapshot snapshot) {
-    ref.read(textDraftProvider.notifier).clearAllDrafts();
-    poppedText =
-        snapshot.poppedText.map((text) => clonePlacedText(text)).toList();
-    state = snapshot.texts.map((text) => clonePlacedText(text)).toList();
   }
 
   /// Writes an edit onto the text as it is now. A text that is gone

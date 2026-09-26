@@ -93,7 +93,6 @@ void main() {
       expect(second.originId, isNot(first.originId));
       expect(state.linksToLanding(first.landingId), hasLength(2));
     });
-
   });
 
   group('deletion and undo', () {
@@ -140,13 +139,13 @@ void main() {
       final addSecond = container.read(actionProvider).last;
       expect(addSecond.id, second.id);
 
-      notifier.undoAction(addSecond);
+      container.read(actionProvider.notifier).undoAction();
       var state = container.read(lineUpProvider);
       expect(state.links.map((link) => link.id), [first.id]);
       expect(state.origins.map((origin) => origin.id), [first.originId]);
       expect(state.landings.single.id, first.landingId);
 
-      notifier.redoAction(addSecond);
+      container.read(actionProvider.notifier).redoAction();
       state = container.read(lineUpProvider);
       expect(state.links, hasLength(2));
       expect(state.origins, hasLength(2));
@@ -167,7 +166,7 @@ void main() {
       expect(container.read(lineUpProvider).links, isEmpty);
       expect(container.read(lineUpProvider).landings, isEmpty);
 
-      notifier.undoAction(deletion);
+      container.read(actionProvider.notifier).undoAction();
       final state = container.read(lineUpProvider);
       expect(state.links.map((link) => link.id), [first.id, second.id]);
       expect(state.origins.single.id, first.originId);
@@ -217,7 +216,8 @@ void main() {
 
       final groups = container.read(lineUpProvider).graph.toLegacyGroups();
 
-      expect(groups.map((group) => group.id), [first.originId, second.originId]);
+      expect(
+          groups.map((group) => group.id), [first.originId, second.originId]);
       for (final group in groups) {
         expect(group.agent.lineUpID, group.id);
         expect(group.items.single.ability.id, 'b1');
