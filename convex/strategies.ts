@@ -524,9 +524,32 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/// A lineup group's data under a new group id. The group's agent and its
-/// items' abilities name the group they belong to, so they move with it.
-function lineupGroupDataWithId(data: LineupData, id: string): LineupData {
+type LineupPayload = Doc<"lineups">["payload"];
+
+/// New entity ids for a copied strategy's lineups: one map across every
+/// kind, shared by every row. The source's lineups share ids across kinds
+/// (a landing may take its link's id; a legacy group's origin is the group
+/// id and its landing and link are the item id), and the copy keeps that
+/// shape. So a legacy group and the graph rows converted from it still
+/// describe one lineup, and a link still names its origin and landing,
+/// whatever order the rows are copied in. Keys stay unique through the kind
+/// prefix.
+function lineupIdMap() {
+  const ids = new Map<string, string>();
+  return (id: string): string => {
+    let next = ids.get(id);
+    if (next === undefined) ids.set(id, (next = createPublicId()));
+    return next;
+  };
+}
+
+/// A legacy lineup group's data under new ids from [newId]: the group id,
+/// which its agent and abilities name, and each item's id.
+function copiedLineupGroupData(
+  data: LineupData,
+  newId: (id: string) => string,
+): LineupData {
+  const id = newId(typeof data.id === "string" ? data.id : "");
   const { agent, items } = data;
   return {
     ...data,
@@ -535,8 +558,14 @@ function lineupGroupDataWithId(data: LineupData, id: string): LineupData {
     ...(Array.isArray(items)
       ? {
           items: items.map((item) =>
-            isJsonObject(item) && isJsonObject(item.ability)
-              ? { ...item, ability: { ...item.ability, lineUpID: id } }
+            isJsonObject(item)
+              ? {
+                  ...item,
+                  ...(typeof item.id === "string" ? { id: newId(item.id) } : {}),
+                  ...(isJsonObject(item.ability)
+                    ? { ability: { ...item.ability, lineUpID: id } }
+                    : {}),
+                }
               : item,
           ),
         }
@@ -544,41 +573,25 @@ function lineupGroupDataWithId(data: LineupData, id: string): LineupData {
   } as LineupData;
 }
 
-type LineupPayload = Doc<"lineups">["payload"];
-
-/// New entity ids for a copied strategy's lineups, one map per kind (ids
-/// repeat across kinds), shared by every row so a link follows its origin
-/// and landing to their new ids whatever order the rows are copied in.
-function lineupIdMap() {
-  const byKind = new Map<string, Map<string, string>>();
-  return (kind: string, id: string): string => {
-    let ids = byKind.get(kind);
-    if (ids === undefined) byKind.set(kind, (ids = new Map()));
-    let next = ids.get(id);
-    if (next === undefined) ids.set(id, (next = createPublicId()));
-    return next;
-  };
-}
-
 /// A lineup row as the copy stores it: its key and payload under new ids.
-/// Graph rows keep the `<kind>:<entity id>` key; a legacy group gets a new
-/// group id, which its agent and abilities follow.
+/// Graph rows keep the `<kind>:<entity id>` key; a legacy group keeps its
+/// group-id key. Every nested reference follows its entity.
 function copiedLineupRow(
   payload: LineupPayload,
-  newId: (kind: string, id: string) => string,
+  newId: (id: string) => string,
 ): { publicId: string; payload: LineupPayload } {
   const data = payload.data;
   const idOf = (value: unknown) => (typeof value === "string" ? value : "");
   switch (payload.kind) {
     case "lineupGroup": {
-      const id = createPublicId();
+      const copied = copiedLineupGroupData(data, newId);
       return {
-        publicId: id,
-        payload: { ...payload, data: lineupGroupDataWithId(data, id) },
+        publicId: copied.id as string,
+        payload: { ...payload, data: copied },
       };
     }
     case "lineupOrigin": {
-      const id = newId("lineupOrigin", idOf(data.id));
+      const id = newId(idOf(data.id));
       const agent = data.agent;
       return {
         publicId: `lineupOrigin:${id}`,
@@ -593,7 +606,7 @@ function copiedLineupRow(
       };
     }
     case "lineupLanding": {
-      const id = newId("lineupLanding", idOf(data.id));
+      const id = newId(idOf(data.id));
       const ability = data.ability;
       return {
         publicId: `lineupLanding:${id}`,
@@ -610,7 +623,7 @@ function copiedLineupRow(
       };
     }
     case "lineupLink": {
-      const id = newId("lineupLink", idOf(data.id));
+      const id = newId(idOf(data.id));
       return {
         publicId: `lineupLink:${id}`,
         payload: {
@@ -618,8 +631,8 @@ function copiedLineupRow(
           data: {
             ...data,
             id,
-            originId: newId("lineupOrigin", idOf(data.originId)),
-            landingId: newId("lineupLanding", idOf(data.landingId)),
+            originId: newId(idOf(data.originId)),
+            landingId: newId(idOf(data.landingId)),
           } as LineupData,
         },
       };

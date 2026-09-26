@@ -429,6 +429,15 @@ List<RemoteLineup> _lineupRows(
 EntitySyncKey _originKey(String pageId, String id) =>
     EntitySyncKey.lineup(pageId, cloudLineupRowId(CloudLineupKind.origin, id));
 
+/// Every row key of the lineup [_lineupRows] builds for [id].
+Set<EntitySyncKey> _lineupRowKeys(String pageId, String id) => {
+      _originKey(pageId, id),
+      EntitySyncKey.lineup(
+          pageId, cloudLineupRowId(CloudLineupKind.landing, 'landing-$id')),
+      EntitySyncKey.lineup(
+          pageId, cloudLineupRowId(CloudLineupKind.link, 'link-$id')),
+    };
+
 /// A lineup as clients stored it before the graph synced natively.
 RemoteLineup _legacyGroup(
   String pageId,
@@ -4259,8 +4268,10 @@ void main() {
 
       expect(container.read(lineUpProvider).links, isEmpty);
       expect(
-        desiredOps(container, page)[_originKey(page.publicId, 'mine')],
-        isNull,
+        desiredOps(container, page)
+            .keys
+            .where(_lineupRowKeys(page.publicId, 'mine').contains),
+        isEmpty,
       );
     });
 
@@ -4322,9 +4333,10 @@ void main() {
 
       expect(container.read(lineUpProvider).links, isEmpty);
       expect(
-        desiredOps(
-            container, page)[_originKey(page.publicId, 'mine')],
-        isNull,
+        desiredOps(container, page)
+            .keys
+            .where(_lineupRowKeys(page.publicId, 'mine').contains),
+        isEmpty,
       );
     });
 

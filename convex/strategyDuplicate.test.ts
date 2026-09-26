@@ -314,13 +314,17 @@ describe("strategies:duplicate", () => {
     expect(lineup!.pagePublicId).toBe(copySecondPage);
     expect(lineup!.publicId).not.toBe("lineup-group");
     // The group's agent and abilities point at the copy's group, not the
-    // original's.
+    // original's, and its item (the landing and link it converts to) gets a
+    // fresh id too.
+    const copiedItemId = (lineup!.payload.data.items as Array<{ id: string }>)[0]!
+      .id;
+    expect(copiedItemId).not.toBe("item-1");
     expect(lineup!.payload.data).toEqual({
       id: lineup!.publicId,
       agent: { type: "sova", lineUpID: lineup!.publicId },
       items: [
         {
-          id: "item-1",
+          id: copiedItemId,
           ability: { type: "shock_dart", lineUpID: lineup!.publicId },
           images: [{ id: "lineup-image" }],
         },
@@ -498,6 +502,84 @@ describe("strategies:duplicate", () => {
     expect(deletedKeys(fetchMock)).toContain(
       `/duplicate-bucket/strategies/${source}/link-image.png`,
     );
+  });
+
+  test("a page caught mid-conversion copies as one lineup, not two", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    // A client converted the seeded group: its graph rows landed, the group
+    // delete has not yet. Same ids: origin = group id, landing = link = item.
+    const converted: Array<[string, Record<string, unknown>]> = [
+      ["lineupOrigin", { id: "lineup-group", agent: { type: "sova", lineUpID: "lineup-group" } }],
+      ["lineupLanding", { id: "item-1", ability: { type: "shock_dart", lineUpID: "item-1" } }],
+      ["lineupLink", {
+        id: "item-1", originId: "lineup-group", landingId: "item-1",
+        images: [{ id: "lineup-image" }],
+      }],
+    ];
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "converting",
+      ops: converted.map(([kind, data], index) => ({
+        opId: `convert-${kind}`,
+        type: "lineup.add",
+        lineupPublicId: `${kind}:${data.id}`,
+        pagePublicId: secondPage,
+        payload: { kind, payloadVersion: 1, data },
+        sortIndex: 5 + index,
+      })),
+    });
+
+    type Row = {
+      publicId: string;
+      deleted: boolean;
+      payload: { kind: string; data: Record<string, any> };
+    };
+    /// The lineups a reader draws, the way hydration merges the two forms:
+    /// a legacy group stands for origin <group id> and link <item id>, and
+    /// a graph row for the same entity is the same lineup.
+    const drawn = (rows: Row[]) => {
+      const origins = new Set<string>();
+      const links = new Set<string>();
+      for (const { deleted, payload } of rows) {
+        if (deleted) continue;
+        if (payload.kind === "lineupGroup") {
+          origins.add(payload.data.id);
+          for (const item of payload.data.items) links.add(item.id);
+        } else if (payload.kind === "lineupOrigin") {
+          origins.add(payload.data.id);
+        } else if (payload.kind === "lineupLink") {
+          links.add(payload.data.id);
+        }
+      }
+      return { origins: origins.size, links: links.size };
+    };
+    const snapshot = async (strategyPublicId: string) =>
+      ((await owner.query(getFullSnapshot, { strategyPublicId })) as {
+        lineups: Row[];
+      }).lineups;
+
+    const sourceRows = await snapshot(source);
+    expect(drawn(sourceRows)).toEqual({ origins: 1, links: 1 });
+
+    await duplicate(owner);
+
+    const copyRows = await snapshot("duplicate-copy");
+    expect(copyRows).toHaveLength(4);
+    expect(drawn(copyRows)).toEqual({ origins: 1, links: 1 });
+    // The copy's group and graph rows still name the same (new) entities.
+    const group = copyRows.find((row) => row.payload.kind === "lineupGroup")!;
+    const byKind = (kind: string) =>
+      copyRows.find((row) => row.payload.kind === kind)!.payload.data;
+    expect(group.payload.data.id).not.toBe("lineup-group");
+    expect(byKind("lineupOrigin").id).toBe(group.payload.data.id);
+    expect(byKind("lineupLanding").id).toBe(group.payload.data.items[0].id);
+    expect(byKind("lineupLink")).toMatchObject({
+      id: group.payload.data.items[0].id,
+      originId: group.payload.data.id,
+      landingId: group.payload.data.items[0].id,
+    });
   });
 
   test("deleting the copy leaves the original's images alone", async () => {
