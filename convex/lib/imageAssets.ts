@@ -119,6 +119,69 @@ export function collectReferencedAssetIds(
   return assetIds;
 }
 
+/// How long a pending upload may wait before the stale-upload sweep removes
+/// it.
+export const staleUploadAgeMs = 24 * 60 * 60 * 1000;
+
+/// Every image id the strategy's live elements and lineups show, optionally
+/// leaving out one page's content.
+export async function collectReferencedAssetIdsForStrategy(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  excludedPageId?: Id<"pages">,
+): Promise<Set<string>> {
+  const assetIds = new Set<string>();
+
+  const elementQuery = ctx.db
+    .query("elements")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
+  for await (const element of elementQuery) {
+    if (
+      element.deleted ||
+      element.pageId === excludedPageId ||
+      element.elementType !== "image"
+    ) {
+      continue;
+    }
+    const assetId = collectAssetIdFromElementPayload(element.payload);
+    if (assetId !== null) {
+      assetIds.add(assetId);
+    }
+  }
+
+  for (const assetId of await collectAssetIdsShownByLineups(
+    ctx,
+    strategyId,
+    excludedPageId,
+  )) {
+    assetIds.add(assetId);
+  }
+
+  return assetIds;
+}
+
+/// Every image id the strategy's live lineups show, optionally leaving out
+/// one page's lineups.
+export async function collectAssetIdsShownByLineups(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  excludedPageId?: Id<"pages">,
+): Promise<Set<string>> {
+  const assetIds = new Set<string>();
+  const lineupQuery = ctx.db
+    .query("lineups")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
+  for await (const lineup of lineupQuery) {
+    if (lineup.deleted || lineup.pageId === excludedPageId) {
+      continue;
+    }
+    for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
+      assetIds.add(assetId);
+    }
+  }
+  return assetIds;
+}
+
 export function isVisibleAsset(asset: Doc<"imageAssets">): boolean {
   if (inferUploadStatus(asset) !== "active") {
     return false;
@@ -213,26 +276,36 @@ export async function expectAssets(
   }
 }
 
-/// Drops the placeholders for images content no longer shows. Rows holding
-/// bytes are left to the normal asset lifecycle.
+/// Drops the placeholders for images a deleted element showed, unless a
+/// lineup still shows the same image. No other element can: a placed
+/// image's id is its own element's publicId. Rows holding bytes are left to
+/// the normal asset lifecycle.
+///
+/// [shownByLineups] is called only when a placeholder is at stake. The
+/// caller shares one lineup read across a whole batch, so it may predate a
+/// later op in that batch; that can only keep a placeholder a lineup no
+/// longer shows, which the stale sweep removes.
 export async function removeUploadPlaceholders(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
   assetPublicIds: Iterable<string>,
+  shownByLineups: () => Promise<Set<string>>,
 ): Promise<void> {
   for (const publicId of assetPublicIds) {
-    const rows = await ctx.db
-      .query("imageAssets")
-      .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
-        q
-          .eq("strategyId", strategyId)
-          .eq("publicId", publicId)
-          .eq("uploadStatus", "pending"),
-      )
-      .take(20);
-    for (const row of rows) {
-      if (isUploadPlaceholder(row)) await ctx.db.delete(row._id);
-    }
+    const placeholders = (
+      await ctx.db
+        .query("imageAssets")
+        .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+          q
+            .eq("strategyId", strategyId)
+            .eq("publicId", publicId)
+            .eq("uploadStatus", "pending"),
+        )
+        .take(20)
+    ).filter(isUploadPlaceholder);
+    if (placeholders.length === 0) continue;
+    if ((await shownByLineups()).has(publicId)) continue;
+    for (const row of placeholders) await ctx.db.delete(row._id);
   }
 }
 

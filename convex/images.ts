@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   collectAssetIdFromElementPayload,
   collectAssetIdsFromLineupPayload,
+  collectReferencedAssetIdsForStrategy,
   getActiveAssetForStrategy,
   inferFileExtension,
   getViewerAssetForStrategy,
@@ -10,6 +11,7 @@ import {
   inferUploadStatus,
   isUploadPlaceholder,
   serializeAssetForViewer,
+  staleUploadAgeMs,
   type Provider,
   type UploadStatus,
 } from "./lib/imageAssets";
@@ -66,7 +68,6 @@ type DeletionTarget = {
 const maxDeletionBatch = 100;
 const physicalDeletionBatch = 25;
 const pageAssetIdBatch = 50;
-const staleUploadAgeMs = 24 * 60 * 60 * 1000;
 const staleDeletionClaimAgeMs = 15 * 60 * 1000;
 const deletionRetryDelayMs = 60 * 1000;
 
@@ -98,45 +99,6 @@ const releaseImageAssetDeletionClaimsRef = makeFunctionReference<"mutation">(
 
 function createUploadAttemptPublicId(): string {
   return crypto.randomUUID();
-}
-
-async function collectReferencedAssetIdsForStrategy(
-  ctx: AnyCtx,
-  strategyId: Doc<"strategies">["_id"],
-  excludedPageId?: Id<"pages">,
-): Promise<Set<string>> {
-  const assetIds = new Set<string>();
-
-  const elementQuery = ctx.db
-    .query("elements")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
-  for await (const element of elementQuery) {
-    if (
-      element.deleted ||
-      element.pageId === excludedPageId ||
-      element.elementType !== "image"
-    ) {
-      continue;
-    }
-    const assetId = collectAssetIdFromElementPayload(element.payload);
-    if (assetId !== null) {
-      assetIds.add(assetId);
-    }
-  }
-
-  const lineupQuery = ctx.db
-    .query("lineups")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
-  for await (const lineup of lineupQuery) {
-    if (lineup.deleted || lineup.pageId === excludedPageId) {
-      continue;
-    }
-    for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
-      assetIds.add(assetId);
-    }
-  }
-
-  return assetIds;
 }
 
 async function getDeletionCandidateForStrategy(

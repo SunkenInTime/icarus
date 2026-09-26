@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -491,11 +492,16 @@ class PlacedImageProvider extends Notifier<ImageState> {
   /// it: as a file in the strategy's image folder, or where there are no
   /// image files (web), as pending bytes until it has uploaded.
   /// Throws [MediaTooLargeException], keeping nothing, when the image can
-  /// never upload.
+  /// never upload. A local strategy never uploads, so it takes any size.
   Future<void> saveSecureImage(
       Uint8List imageBytes, String imageID, String fileExtenstion,
       {required String? strategyId}) async {
     if (strategyId == null) return;
+    final uploads = ref.read(strategyProvider).source == StrategySource.cloud ||
+        !ref.read(imageFilesOnDeviceProvider);
+    if (uploads && imageBytes.length > maxCloudImageBytes) {
+      throw MediaTooLargeException(imageBytes.length);
+    }
     if (!ref.read(imageFilesOnDeviceProvider)) {
       await ref.read(pendingMediaBytesProvider.notifier).put(
             _pendingKey(strategyId: strategyId, imageId: imageID),

@@ -4,9 +4,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
+  collectAssetIdsShownByLineups,
   expectAssets,
   referencedAssetIds,
   removeUploadPlaceholders,
+  staleUploadAgeMs,
 } from "./lib/imageAssets";
 import {
   clampPageIndex,
@@ -1343,28 +1345,48 @@ async function contentRowForOp(
 /// Keeps asset rows in step with an accepted content op. An image the row
 /// newly shows gets a placeholder if nothing has been uploaded for it yet, so
 /// a slow upload reads as on its way rather than missing, and a duplicate
-/// waits for it. A deleted image element drops its placeholder: its image id
-/// is its own element id, so nothing else shows it.
+/// waits for it. A deleted image element drops its placeholder unless a
+/// lineup still shows the image; [shownByLineups] reads that at most once
+/// per batch.
+///
+/// Restoring a deleted element (undo) usually finds its asset row still
+/// there, since deleting an element leaves its asset alone. With no row, an
+/// element restored within the stale-upload window may still have its upload
+/// coming, so it gets a placeholder like a new one. One first placed longer
+/// ago would have uploaded or been swept by now, so it does not: a
+/// placeholder there could only spin for another day before reading as
+/// unavailable.
 async function reconcileExpectedAssets(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
-  assetsBefore: Set<string>,
+  rowBefore: Doc<"elements"> | Doc<"lineups"> | null,
+  shownByLineups: () => Promise<Set<string>>,
 ): Promise<void> {
   const row = await contentRowForOp(ctx, strategy, op);
   if (row === null) return;
+  const now = Date.now();
+  const assetsBefore = referencedAssetIds(rowBefore);
   const assetsAfter = referencedAssetIds(row);
-  await expectAssets(
-    ctx,
-    strategy._id,
-    [...assetsAfter].filter((id) => !assetsBefore.has(id)),
-    Date.now(),
-  );
+  const restoredAfterUploadWindow =
+    op.entityType === "element" &&
+    rowBefore?.deleted === true &&
+    !row.deleted &&
+    now - row.createdAt >= staleUploadAgeMs;
+  if (!restoredAfterUploadWindow) {
+    await expectAssets(
+      ctx,
+      strategy._id,
+      [...assetsAfter].filter((id) => !assetsBefore.has(id)),
+      now,
+    );
+  }
   if (op.entityType === "element") {
     await removeUploadPlaceholders(
       ctx,
       strategy._id,
       [...assetsBefore].filter((id) => !assetsAfter.has(id)),
+      shownByLineups,
     );
   }
 }
@@ -1384,6 +1406,11 @@ export const applyBatch = mutation({
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
     let contentChanged = false;
+    // The images the strategy's lineups show, read once per batch and only
+    // when deleting an image leaves a placeholder at stake.
+    let lineupAssetIds: Promise<Set<string>> | null = null;
+    const shownByLineups = () =>
+      (lineupAssetIds ??= collectAssetIdsShownByLineups(ctx, strategy._id));
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
@@ -1437,9 +1464,7 @@ export const applyBatch = mutation({
         op = { ...op, expectedRevision: strategy.revision };
       }
 
-      const assetsBefore = referencedAssetIds(
-        await contentRowForOp(ctx, strategy, op),
-      );
+      const rowBefore = await contentRowForOp(ctx, strategy, op);
 
       let result: OperationResult;
       if (cloudOperationExceedsPolicy(rawOp)) {
@@ -1470,7 +1495,13 @@ export const applyBatch = mutation({
             contentChanged = true;
           }
           if (result.status === "ack") {
-            await reconcileExpectedAssets(ctx, strategy, op, assetsBefore);
+            await reconcileExpectedAssets(
+              ctx,
+              strategy,
+              op,
+              rowBefore,
+              shownByLineups,
+            );
           }
         } catch (error) {
           if (!(error instanceof ConvexError)) throw error;
