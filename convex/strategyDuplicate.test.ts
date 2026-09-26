@@ -959,6 +959,44 @@ describe("images placed before their upload", () => {
     await expect(duplicate(owner)).rejects.toThrow("still uploading");
   });
 
+  test("deleting an image keeps the placeholder while a lineup link still shows it", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "link-late-image");
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: "link-shows-shared",
+          type: "lineup.add",
+          lineupPublicId: "lineupLink:link-shows-shared",
+          pagePublicId: firstPage,
+          payload: {
+            kind: "lineupLink",
+            payloadVersion: 1,
+            data: {
+              id: "link-shows-shared",
+              originId: "o",
+              landingId: "l",
+              images: [{ id: "link-late-image", fileExtension: ".png" }],
+            },
+          },
+          sortIndex: 2,
+        },
+      ],
+    });
+    expect(await rowsFor(t, "link-late-image")).toHaveLength(1);
+
+    await deleteImage(owner, "link-late-image");
+
+    expect(await statusFor(owner, "link-late-image")).toMatchObject({
+      uploadStatus: "pending",
+    });
+    await expect(duplicate(owner)).rejects.toThrow("still uploading");
+  });
+
   test("deleting several images in one batch checks lineups for each", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);
