@@ -4308,8 +4308,8 @@ void main() {
     test(
         'redoing a lineup deletion a teammate already made removes nothing '
         'and the next undo does not resurrect it', () async {
-      final mine = _lineup('page-1', 'mine');
-      final (container, remote, page) = await open(const [], lineups: [mine]);
+      final mine = _lineupRows('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: mine);
 
       container.read(lineUpProvider.notifier).deleteOrigin('mine');
       history(container).undoAction();
@@ -4323,7 +4323,7 @@ void main() {
       expect(container.read(lineUpProvider).links, isEmpty);
       expect(
         desiredOps(
-            container, page)[EntitySyncKey.lineup(page.publicId, 'mine')],
+            container, page)[_originKey(page.publicId, 'mine')],
         isNull,
       );
     });
@@ -4366,8 +4366,8 @@ void main() {
     });
 
     test('a lineup weapon change a teammate deleted leaves history', () async {
-      final mine = _lineup('page-1', 'mine');
-      final (container, remote, page) = await open(const [], lineups: [mine]);
+      final mine = _lineupRows('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: mine);
 
       container
           .read(lineUpProvider.notifier)
@@ -4379,8 +4379,8 @@ void main() {
 
     test('undoing a lineup weapon change a teammate deleted does nothing',
         () async {
-      final mine = _lineup('page-1', 'mine');
-      final (container, remote, page) = await open(const [], lineups: [mine]);
+      final mine = _lineupRows('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: mine);
 
       container
           .read(lineUpProvider.notifier)
@@ -4396,8 +4396,8 @@ void main() {
     test(
         'undoing a lineup notes edit whose link a teammate deleted does '
         'nothing', () async {
-      final mine = _lineup('page-1', 'mine');
-      final (container, remote, page) = await open(const [], lineups: [mine]);
+      final mine = _lineupRows('page-1', 'mine');
+      final (container, remote, page) = await open(const [], lineups: mine);
       final lineUps = container.read(lineUpProvider.notifier);
 
       lineUps.updateLink(
