@@ -326,11 +326,28 @@ function assertElementPayload(payload: unknown): ElementPayload {
   return payload as ElementPayload;
 }
 
-function assertLineupPayload(payload: unknown): LineupPayload {
+const lineupGraphKinds = new Set<unknown>([
+  "lineupOrigin",
+  "lineupLanding",
+  "lineupLink",
+]);
+
+function invalidLineupData(message: string) {
+  return errorWithCode("INVALID_LINEUP_PAYLOAD_DATA", message);
+}
+
+/// Checks one lineup row before it is stored. A graph row (origin, landing
+/// or link) is keyed `<payloadKind>:<entity id>`: entity ids repeat across
+/// kinds (a landing made with a link shares the link's id), so the kind is
+/// part of the key, and the key must name the entity the payload holds.
+function assertLineupPayload(
+  payload: unknown,
+  lineupPublicId: string,
+): LineupPayload {
   if (!isRecord(payload)) {
     throw errorWithCode("MISSING_LINEUP_PAYLOAD", "Missing lineup payload");
   }
-  if (payload.kind !== "lineupGroup") {
+  if (payload.kind !== "lineupGroup" && !lineupGraphKinds.has(payload.kind)) {
     throw errorWithCode(
       "INVALID_LINEUP_PAYLOAD_KIND",
       "Invalid lineup payload kind",
@@ -348,13 +365,34 @@ function assertLineupPayload(payload: unknown): LineupPayload {
       "Invalid lineup payload data",
     );
   }
-  // A lineup group with no items reads back as no lineup at all, so storing
-  // one would turn into a deletion nobody made on the next load.
-  if (!Array.isArray(payload.data.items) || payload.data.items.length === 0) {
-    throw errorWithCode(
-      "INVALID_LINEUP_PAYLOAD_DATA",
-      "Lineup payload has no items",
-    );
+  const data = payload.data;
+  if (payload.kind === "lineupGroup") {
+    // A lineup group with no items reads back as no lineup at all, so storing
+    // one would turn into a deletion nobody made on the next load.
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      throw invalidLineupData("Lineup payload has no items");
+    }
+    return payload as LineupPayload;
+  }
+  if (typeof data.id !== "string" || data.id.length === 0) {
+    throw invalidLineupData("Lineup payload has no id");
+  }
+  if (lineupPublicId !== `${payload.kind}:${data.id}`) {
+    throw invalidLineupData("Lineup key does not match its payload");
+  }
+  // Each entity must carry what hydration draws; a row without it would load
+  // as nothing and read as a deletion nobody made.
+  if (payload.kind === "lineupOrigin" && !isRecord(data.agent)) {
+    throw invalidLineupData("Lineup origin has no agent");
+  }
+  if (payload.kind === "lineupLanding" && !isRecord(data.ability)) {
+    throw invalidLineupData("Lineup landing has no ability");
+  }
+  if (
+    payload.kind === "lineupLink" &&
+    (typeof data.originId !== "string" || typeof data.landingId !== "string")
+  ) {
+    throw invalidLineupData("Lineup link does not name its origin and landing");
   }
   return payload as LineupPayload;
 }
@@ -418,14 +456,20 @@ async function getElementByPublicIdOrNull(
     .first();
 }
 
+/// A lineup row key is unique within its strategy only: a strategy copied
+/// before the graph synced natively shares its original's item ids, so both
+/// convert to the same `lineupLanding:<id>` and `lineupLink:<id>` keys.
 async function getLineupByPublicIdOrNull(
   ctx: MutationCtx,
+  strategyId: Id<"strategies">,
   publicId: string,
 ): Promise<Doc<"lineups"> | null> {
   return await ctx.db
     .query("lineups")
-    .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
-    .first();
+    .withIndex("by_strategyId_and_publicId", (q) =>
+      q.eq("strategyId", strategyId).eq("publicId", publicId),
+    )
+    .unique();
 }
 
 async function getPageContent(
@@ -477,8 +521,8 @@ async function getTargetSnapshot(
     if (element === null || element.strategyId !== strategy._id) return null;
     return { revision: element.revision, payload: element.payload };
   }
-  const lineup = await getLineupByPublicIdOrNull(ctx, publicId);
-  if (lineup === null || lineup.strategyId !== strategy._id) return null;
+  const lineup = await getLineupByPublicIdOrNull(ctx, strategy._id, publicId);
+  if (lineup === null) return null;
   return { revision: lineup.revision, payload: lineup.payload };
 }
 
@@ -1172,7 +1216,11 @@ async function applyLineupOp(
   if (publicId === undefined) {
     throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
   }
-  const existing = await getLineupByPublicIdOrNull(ctx, publicId);
+  const existing = await getLineupByPublicIdOrNull(
+    ctx,
+    strategy._id,
+    publicId,
+  );
 
   if (op.kind === "add") {
     if (op.pagePublicId === undefined) {
@@ -1182,11 +1230,8 @@ async function applyLineupOp(
     if (page === null || page.strategyId !== strategy._id) {
       throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
-    const payload = assertLineupPayload(op.payload);
+    const payload = assertLineupPayload(op.payload, publicId);
     if (existing !== null) {
-      if (existing.strategyId !== strategy._id) {
-        return rejected("lineup_strategy_mismatch");
-      }
       if (existing.deleted) {
         const mismatch = requireExpectedRevision(op, existing.revision);
         if (mismatch !== null) {
@@ -1199,7 +1244,7 @@ async function applyLineupOp(
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
-          payloadKind: "lineupGroup",
+          payloadKind: payload.kind,
           payloadVersion: payload.payloadVersion,
           payload,
           sortIndex: op.sortIndex ?? 0,
@@ -1213,11 +1258,12 @@ async function applyLineupOp(
           eventPageId: page._id,
         };
       }
+      // The row already holds exactly this entity: two clients converted the
+      // same legacy group, or a retry landed twice. Order is not part of a
+      // lineup's content (each client places new rows after the highest it
+      // knows), so a different sortIndex alone is still the same add.
       const identical =
-        existing.pageId === page._id &&
-        valuesEqual(existing.payload, payload) &&
-        existing.sortIndex === (op.sortIndex ?? 0) &&
-        existing.deleted === false;
+        existing.pageId === page._id && valuesEqual(existing.payload, payload);
       if (identical) return noop(existing.revision, existing.pageId);
       return rejected(
         "already_exists",
@@ -1230,7 +1276,7 @@ async function applyLineupOp(
       publicId,
       strategyId: strategy._id,
       pageId: page._id,
-      payloadKind: "lineupGroup",
+      payloadKind: payload.kind,
       payloadVersion: payload.payloadVersion,
       payload,
       sortIndex: op.sortIndex ?? 0,
@@ -1274,7 +1320,7 @@ async function applyLineupOp(
   let eventPageId = existing.pageId;
   if (op.kind === "patch") {
     if (op.payload !== undefined) {
-      const payload = assertLineupPayload(op.payload);
+      const payload = assertLineupPayload(op.payload, publicId);
       setIfChanged(patch, "payload", existing.payload, payload);
       setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
       setIfChanged(
@@ -1337,7 +1383,7 @@ async function contentRowForOp(
     op.entityType === "element"
       ? await getElementByPublicIdOrNull(ctx, publicId)
       : op.entityType === "lineup"
-        ? await getLineupByPublicIdOrNull(ctx, publicId)
+        ? await getLineupByPublicIdOrNull(ctx, strategy._id, publicId)
         : null;
   return row !== null && row.strategyId === strategy._id ? row : null;
 }

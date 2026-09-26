@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 import {
   elementPayloadValidator,
-  lineupGroupPayloadValidator,
+  lineupPayloadValidator,
   mapThemePaletteValidator,
   pagePayloadValidator,
   strategyPatchPayloadValidator,
@@ -97,7 +97,7 @@ const lineupAddOpValidator = v.object({
   type: v.literal("lineup.add"),
   lineupPublicId: v.string(),
   pagePublicId: v.string(),
-  payload: lineupGroupPayloadValidator,
+  payload: lineupPayloadValidator,
   sortIndex: v.number(),
   expectedLineupRevision: v.optional(v.number()),
 });
@@ -107,7 +107,7 @@ const lineupPatchOpValidator = v.object({
   type: v.literal("lineup.patch"),
   lineupPublicId: v.string(),
   pagePublicId: v.optional(v.string()),
-  payload: v.optional(lineupGroupPayloadValidator),
+  payload: v.optional(lineupPayloadValidator),
   sortIndex: v.optional(v.number()),
   expectedLineupRevision: v.number(),
 });
@@ -197,7 +197,7 @@ const elementCurrentValidator = v.object({
 const lineupCurrentValidator = v.object({
   type: v.literal("lineup"),
   revision: v.number(),
-  value: lineupGroupPayloadValidator,
+  value: lineupPayloadValidator,
 });
 
 export const currentOpSnapshotValidator = v.union(

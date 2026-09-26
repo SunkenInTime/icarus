@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:math' show max;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -41,10 +43,12 @@ class ActivePageLiveSyncState {
   final Map<EntitySyncKey, ActivePageOverlayEntry> overlayByEntityKey;
   final List<AckedEntityIntent> lastAckBatch;
 
-  /// Lineups the canvas holds but live sync refused to send, because their
-  /// cloud projection has no items (an origin whose landings are missing).
-  /// The server would store a lineup that the next hydration drops, so the
-  /// sync status shows attention while any remain.
+  /// Lineup rows live sync refused to send because the canvas holds a broken
+  /// lineup: rows hydration would not draw back (a link whose origin or
+  /// landing is missing, an origin or landing no link uses) and the missing
+  /// ends themselves. Sending them would store rows every reader skips or
+  /// half-delete the lineup, so the sync status shows attention while any
+  /// remain.
   final Set<EntitySyncKey> unsyncableLineupKeys;
 
   ActivePageLiveSyncState copyWith({
@@ -145,10 +149,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     required RemoteEditorSnapshot snapshot,
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
-    final remoteEntities = snapshot.header.publicId != strategyPublicId ||
-            snapshot.activePage?.page.publicId != pageId
-        ? const <EntitySyncKey, _NormalizedEntity>{}
-        : _normalizedRemoteEntities(snapshot, pageId);
+    final matchesPage = snapshot.header.publicId == strategyPublicId &&
+        snapshot.activePage?.page.publicId == pageId;
+    // The base is what the canvas drew. A lineup row hydration skipped was
+    // never shown, so no outbound diff may change or delete it.
+    final undrawnLineups = matchesPage
+        ? _undrawnRemoteLineups(snapshot, pageId)
+        : const <EntitySyncKey>{};
+    final remoteEntities = {
+      if (matchesPage)
+        for (final entry in _normalizedRemoteEntities(snapshot, pageId).entries)
+          if (!undrawnLineups.contains(entry.key)) entry.key: entry.value,
+    };
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
     _hydratedBaseByEntityKey.addAll(remoteEntities);
     _remoteAdoptionPending.removeWhere((key) => key.pageId == pageId);
@@ -400,6 +412,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       state.overlayByEntityKey,
     );
     final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
+    final heldBackLineups = _heldBackLineups(pageId);
     final unsyncableLineups = <EntitySyncKey>{};
 
     for (final key in pageKeys) {
@@ -419,15 +432,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           queueState.inFlightByEntityKey[key]?.pending.op ??
           queueState.queuedByEntityKey[key]?.pending.op;
 
-      // Never author a lineup the server would store with no items: the next
-      // hydration drops it, so it reads as a deletion nobody made. Keep what
-      // is already overlaid or queued for it and show attention instead.
-      if (local != null && _isEmptyLineupGroup(local.payload)) {
+      // Never author a lineup row that hydration would not draw (every
+      // reader skips it, so it reads as a deletion nobody made), nor delete
+      // an end a local link still names. Keep what is already overlaid or
+      // queued for it and show attention instead.
+      if (heldBackLineups.contains(key)) {
         unsyncableLineups.add(key);
         if (!state.unsyncableLineupKeys.contains(key)) {
           AppErrorReporter.reportError(
-            'A lineup could not be synced because its landing spot is '
-            'missing ($key).',
+            'A lineup could not be synced because its origin or landing '
+            'spot is missing ($key).',
             source: 'active_page_live_sync:empty_lineup',
             promptUser: false,
           );
@@ -503,6 +517,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           _debugLog(
             'overlay.skip $key reason=not_in_hydrated_base',
           );
+          continue;
+        }
+        if (_legacyGroupConversionPending(
+          pageId: pageId,
+          base: hydratedBase ?? remote,
+          localEntities: localEntities,
+          remoteEntities: remoteEntities,
+        )) {
+          nextOverlay.remove(key);
+          _debugLog('overlay.skip $key reason=conversion_not_landed');
           continue;
         }
         final entityType = existingOverlay?.entityType ??
@@ -825,24 +849,117 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    // TODO(lineupGraph): sync the graph once Convex has a lineupGraph payload
-    // kind. Group ids are origin ids and item ids are link ids, so the
-    // projection keeps stable sync keys, but fan-in and link names are lost.
-    final groups = ref.read(lineUpProvider).graph.toLegacyGroups();
-    for (var index = 0; index < groups.length; index++) {
-      final group = groups[index];
-      final key = EntitySyncKey.lineup(pageId, group.id);
+    // One row per origin, landing and link. A row keeps the sortIndex it was
+    // first sent with and new rows go after the page's highest: order is
+    // never re-sent, so removing one lineup does not rewrite every row after
+    // it and collide with a teammate editing one of them.
+    // A row that another client already wrote (both converted the same
+    // legacy group) takes the server's sortIndex, so the same content reads
+    // as the same row instead of an add the server refuses.
+    bool isPageLineup(EntitySyncKey key) =>
+        key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup;
+    final remoteSortIndex = {
+      for (final lineup in ref
+              .read(remoteEditorSnapshotProvider)
+              .valueOrNull
+              ?.lineupsByPage[pageId] ??
+          const <RemoteLineup>[])
+        if (!lineup.deleted)
+          EntitySyncKey.lineup(pageId, lineup.publicId): lineup.sortIndex,
+    };
+    int? knownSortIndex(EntitySyncKey key) =>
+        state.overlayByEntityKey[key]?.desiredSortIndex ??
+        _hydratedBaseByEntityKey[key]?.sortIndex ??
+        remoteSortIndex[key];
+    var nextSortIndex = 1 +
+        [
+          for (final key in _hydratedBaseByEntityKey.keys)
+            if (isPageLineup(key)) knownSortIndex(key) ?? 0,
+          for (final key in state.overlayByEntityKey.keys)
+            if (isPageLineup(key)) knownSortIndex(key) ?? 0,
+        ].fold<int>(-1, max);
+    for (final row in cloudLineupRows(ref.read(lineUpProvider).graph)) {
+      final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
-        payload: cloudLineupGroupPayload(cloudLineupPayload(group)),
-        sortIndex: index,
+        payload: row.payload,
+        sortIndex: knownSortIndex(key) ?? nextSortIndex++,
         revision: 0,
         deleted: false,
       );
     }
 
     return entities;
+  }
+
+  /// Lineup rows live sync holds back from a broken local graph: rows the
+  /// canvas holds that hydration would not draw back (a link whose origin or
+  /// landing is missing, an origin or landing no link uses), judged by the
+  /// reader hydration uses, and the missing ends such a link still names, so
+  /// a broken lineup is neither half-written nor half-deleted.
+  Set<EntitySyncKey> _heldBackLineups(String pageId) {
+    EntitySyncKey key(String rowId) => EntitySyncKey.lineup(pageId, rowId);
+    final graph = ref.read(lineUpProvider).graph;
+    final rows = cloudLineupRows(graph);
+    final drawn = lineUpGraphFromCloudRows(rows).drawnRowIds;
+    final originIds = {for (final origin in graph.origins) origin.id};
+    final landingIds = {for (final landing in graph.landings) landing.id};
+    return {
+      for (final row in rows)
+        if (!drawn.contains(row.publicId)) key(row.publicId),
+      for (final link in graph.links) ...[
+        if (!originIds.contains(link.originId))
+          key(cloudLineupRowId(CloudLineupKind.origin, link.originId)),
+        if (!landingIds.contains(link.landingId))
+          key(cloudLineupRowId(CloudLineupKind.landing, link.landingId)),
+      ],
+    };
+  }
+
+  /// Whether [base] is a legacy group row whose conversion has not landed.
+  ///
+  /// A group converts by adding its graph rows and deleting the group. The
+  /// delete waits until every row the canvas still shows from it is live on
+  /// the server, so an add that fails (and keeps failing) never leaves the
+  /// lineup with neither form: the group stays, and a reload still shows it.
+  /// Rows the canvas no longer shows (the user deleted that lineup) do not
+  /// hold the delete back.
+  bool _legacyGroupConversionPending({
+    required String pageId,
+    required _NormalizedEntity? base,
+    required Map<EntitySyncKey, _NormalizedEntity> localEntities,
+    required Map<EntitySyncKey, _NormalizedEntity> remoteEntities,
+  }) {
+    final payload = base?.payload;
+    if (payload is! Map<String, dynamic>) return false;
+    final rowIds = legacyGroupRowIds(payload);
+    if (rowIds == null) return false;
+    return rowIds.any((rowId) {
+      final key = EntitySyncKey.lineup(pageId, rowId);
+      final remote = remoteEntities[key];
+      return localEntities.containsKey(key) &&
+          (remote == null || remote.deleted);
+    });
+  }
+
+  /// The page's live lineup rows that hydration skipped.
+  Set<EntitySyncKey> _undrawnRemoteLineups(
+    RemoteEditorSnapshot snapshot,
+    String pageId,
+  ) {
+    final live = [
+      for (final lineup
+          in snapshot.lineupsByPage[pageId] ?? const <RemoteLineup>[])
+        if (!lineup.deleted)
+          CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
+    ];
+    final drawn = lineUpGraphFromCloudRows(live).drawnRowIds;
+    return {
+      for (final row in live)
+        if (!drawn.contains(row.publicId))
+          EntitySyncKey.lineup(pageId, row.publicId),
+    };
   }
 
   List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {
@@ -1111,13 +1228,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
   }
 
-  static bool _isEmptyLineupGroup(Object? payload) {
-    if (payload is! Map || payload['kind'] != 'lineupGroup') return false;
-    final data = payload['data'];
-    final items = data is Map ? data['items'] : null;
-    return items is! List || items.isEmpty;
-  }
-
   /// Payloads written before a field existed compare equal to the field's
   /// default, so hydrating old cloud data never authors a rewrite of it.
   Object? _withFieldDefaults(Object? value) {
@@ -1138,21 +1248,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // Only agents carry an AgentState; firearms default to none.
     if (normalized.containsKey('state')) {
       normalized.putIfAbsent('weapon', () => WeaponType.none.name);
-    }
-    // A lineup group's agent and abilities point back at the group. The
-    // graph derives those references from the group id on every projection,
-    // so a payload uploaded with stale ones must still compare equal.
-    if (normalized['kind'] == 'lineupGroup') {
-      final data = normalized['data'];
-      final groupId = data is Map ? data['id'] : null;
-      if (groupId is String) {
-        final agent = data['agent'];
-        if (agent is Map) agent['lineUpID'] = groupId;
-        for (final item in (data['items'] as List?) ?? const []) {
-          final ability = item is Map ? item['ability'] : null;
-          if (ability is Map) ability['lineUpID'] = groupId;
-        }
-      }
     }
     return normalized;
   }
