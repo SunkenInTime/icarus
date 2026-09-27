@@ -26,9 +26,11 @@ export default {
       return new Response("Invalid or expired pass", { status: 401 });
     }
 
+    // The room gets the verified claims, never the pass itself.
     const headers = new Headers(request.headers);
     headers.set(CLAIMS_HEADER, JSON.stringify(claims));
+    url.search = "";
     const stub = env.PRESENCE_ROOM.get(env.PRESENCE_ROOM.idFromName(room));
-    return stub.fetch(new Request(request.url, { headers }));
+    return stub.fetch(new Request(url, { headers }));
   },
 } satisfies ExportedHandler<Env>;

@@ -100,9 +100,15 @@ function base64UrlEncode(bytes: Uint8Array): string {
 }
 
 function base64UrlDecode(text: string): Uint8Array<ArrayBuffer> | null {
-  if (!/^[A-Za-z0-9_-]*$/.test(text)) return null;
+  // A length of 1 mod 4 can't come from any byte string.
+  if (!/^[A-Za-z0-9_-]*$/.test(text) || text.length % 4 === 1) return null;
   const padded = text.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+  let binary: string;
+  try {
+    binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+  } catch {
+    return null;
+  }
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;

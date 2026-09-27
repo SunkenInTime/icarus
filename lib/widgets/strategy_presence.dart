@@ -9,11 +9,12 @@ import 'package:icarus/widgets/account_avatar.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// The same hue for a person on every screen. String.hashCode differs between
-/// web and native, so hash the id by hand (FNV-1a).
+/// web and native, so hash by hand, keeping every step small enough to be
+/// exact in JavaScript numbers.
 Color presenceColorFor(String uid) {
-  var hash = 0x811c9dc5;
+  var hash = 0;
   for (final unit in uid.codeUnits) {
-    hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+    hash = (hash * 31 + unit) % 1000003;
   }
   return Settings.presenceColors[hash % Settings.presenceColors.length];
 }
@@ -168,8 +169,11 @@ class _Ring extends StatelessWidget {
 /// attack-side world coordinates so it lands in the same spot for everyone.
 ///
 /// Sits over the map viewport with no child and a translucent hit test, so it
-/// sees every hover and drag while everything under it still gets them.
-class PresenceCursorReporter extends ConsumerWidget {
+/// sees every hover and drag while everything under it still gets them. The
+/// map can also move under a still pointer (scroll zoom, a page or side
+/// change, a resize), so it reports again from the last pointer position
+/// whenever any of those change.
+class PresenceCursorReporter extends ConsumerStatefulWidget {
   const PresenceCursorReporter({
     super.key,
     required this.transformationController,
@@ -182,26 +186,77 @@ class PresenceCursorReporter extends ConsumerWidget {
   final bool isAttack;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final presence = ref.read(strategyPresenceProvider.notifier);
-    void report(Offset viewportPosition) {
-      final world = transformationController.toScene(viewportPosition);
-      final canonical = coordinateSystem.positionFromSide(
-        sidePosition: coordinateSystem.screenToCoordinate(world),
-        reflectionOffset: Offset.zero,
-        isAttack: isAttack,
-      );
-      presence.moveCursor(canonical.dx, canonical.dy);
-    }
+  ConsumerState<PresenceCursorReporter> createState() =>
+      _PresenceCursorReporterState();
+}
 
+class _PresenceCursorReporterState
+    extends ConsumerState<PresenceCursorReporter> {
+  /// Where the pointer is in the viewport, while it is over the map.
+  Offset? _pointer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.transformationController.addListener(_reportAgain);
+  }
+
+  @override
+  void didUpdateWidget(PresenceCursorReporter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.transformationController != widget.transformationController) {
+      oldWidget.transformationController.removeListener(_reportAgain);
+      widget.transformationController.addListener(_reportAgain);
+    }
+    if (oldWidget.isAttack != widget.isAttack ||
+        oldWidget.coordinateSystem.effectiveSize !=
+            widget.coordinateSystem.effectiveSize) {
+      _reportAgain();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.transformationController.removeListener(_reportAgain);
+    super.dispose();
+  }
+
+  void _reportAgain() {
+    final pointer = _pointer;
+    if (pointer != null) _report(pointer);
+  }
+
+  void _report(Offset viewportPosition) {
+    _pointer = viewportPosition;
+    final world = widget.transformationController.toScene(viewportPosition);
+    final coordinateSystem = widget.coordinateSystem;
+    final canonical = coordinateSystem.positionFromSide(
+      sidePosition: coordinateSystem.screenToCoordinate(world),
+      reflectionOffset: Offset.zero,
+      isAttack: widget.isAttack,
+    );
+    ref
+        .read(strategyPresenceProvider.notifier)
+        .moveCursor(canonical.dx, canonical.dy);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(
+      strategyPageSessionProvider.select((s) => s.activePageId),
+      (_, __) => _reportAgain(),
+    );
     return MouseRegion(
       opaque: false,
       hitTestBehavior: HitTestBehavior.translucent,
-      onExit: (_) => presence.hideCursor(),
+      onExit: (_) {
+        _pointer = null;
+        ref.read(strategyPresenceProvider.notifier).hideCursor();
+      },
       child: Listener(
         behavior: HitTestBehavior.translucent,
-        onPointerHover: (event) => report(event.localPosition),
-        onPointerMove: (event) => report(event.localPosition),
+        onPointerHover: (event) => _report(event.localPosition),
+        onPointerMove: (event) => _report(event.localPosition),
       ),
     );
   }
@@ -292,13 +347,7 @@ class RemoteCursor extends StatelessWidget {
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(8),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x8a000000),
-                  offset: Offset(0, 4),
-                  blurRadius: 12,
-                ),
-              ],
+              boxShadow: const [Settings.cardForegroundBackdrop],
             ),
             child: Text(
               name,
@@ -339,7 +388,7 @@ class _ArrowPainter extends CustomPainter {
     canvas.drawPath(
       path.shift(const Offset(0, 1)),
       Paint()
-        ..color = const Color(0x8a000000)
+        ..color = Settings.cardForegroundBackdrop.color
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
     );
     canvas.drawPath(path, Paint()..color = color);

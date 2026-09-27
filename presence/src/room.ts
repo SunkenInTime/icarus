@@ -31,20 +31,24 @@ interface Attachment extends Peer {
   room: string;
   exp: number;
   lastCursorAt: number;
+  lastRenewAt: number;
 }
 
 export const MAX_PEERS = 25;
+/** A few windows each; one pass can't fill the room. */
+export const MAX_SESSIONS_PER_USER = 4;
 /** How often the room looks for passes that ran out without a renewal. */
 export const SWEEP_INTERVAL_MS = 30_000;
 /** Faster than any client sends (20/s); only a misbehaving client hits it. */
 const MIN_CURSOR_INTERVAL_MS = 25;
+/** Clients renew once a minute; anything faster is ignored unverified. */
+const MIN_RENEW_INTERVAL_MS = 10_000;
 const MAX_MESSAGE_CHARS = 2048;
 const MAX_PAGE_ID_CHARS = 128;
 /** The map is 1000 units tall and 1778 wide; allow the margin around it. */
 const COORDINATE_LIMIT = 10_000;
 
 export const CLOSE_PASS_EXPIRED = 4001;
-export const CLOSE_ROOM_FULL = 4008;
 
 /** Header the Worker uses to hand verified claims to the room. */
 export const CLAIMS_HEADER = "X-Icarus-Presence-Claims";
@@ -64,15 +68,17 @@ export class PresenceRoom extends DurableObject<Env> {
     ) as PassClaims | null;
     if (claims === null) return new Response("Missing claims", { status: 400 });
 
+    const others = this.peers();
+    if (others.length >= MAX_PEERS) {
+      return new Response("Room is full", { status: 503 });
+    }
+    if (others.filter((p) => p.uid === claims.uid).length >= MAX_SESSIONS_PER_USER) {
+      return new Response("Too many sessions", { status: 429 });
+    }
+
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     this.ctx.acceptWebSocket(server);
-
-    const others = this.peers();
-    if (others.length >= MAX_PEERS) {
-      server.close(CLOSE_ROOM_FULL, "Room is full");
-      return new Response(null, { status: 101, webSocket: client });
-    }
 
     const self: Attachment = {
       sid: crypto.randomUUID(),
@@ -84,6 +90,7 @@ export class PresenceRoom extends DurableObject<Env> {
       room: claims.room,
       exp: claims.exp,
       lastCursorAt: 0,
+      lastRenewAt: 0,
     };
     server.serializeAttachment(self);
     send(server, {
@@ -93,10 +100,7 @@ export class PresenceRoom extends DurableObject<Env> {
       peers: others.map(toPeer),
     });
     this.broadcast({ t: "join", peer: toPeer(self) }, server);
-
-    if ((await this.ctx.storage.getAlarm()) === null) {
-      await this.ctx.storage.setAlarm(Date.now() + SWEEP_INTERVAL_MS);
-    }
+    await this.scheduleSweep();
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -138,9 +142,12 @@ export class PresenceRoom extends DurableObject<Env> {
         return;
       }
       case "renew": {
+        const now = Date.now();
+        if (now - self.lastRenewAt < MIN_RENEW_INTERVAL_MS) return;
+        ws.serializeAttachment({ ...self, lastRenewAt: now });
         const claims =
           typeof m.pass === "string"
-            ? await verifyPass(m.pass, this.env.PRESENCE_PASS_SECRET, Date.now())
+            ? await verifyPass(m.pass, this.env.PRESENCE_PASS_SECRET, now)
             : null;
         // A renewal is for the same person in the same room. Anything else is
         // a client bug or a forgery; either way the socket is done.
@@ -150,6 +157,7 @@ export class PresenceRoom extends DurableObject<Env> {
         }
         const renewed: Attachment = {
           ...self,
+          lastRenewAt: now,
           exp: claims.exp,
           name: claims.name,
           avatar: claims.avatar,
@@ -195,15 +203,32 @@ export class PresenceRoom extends DurableObject<Env> {
 
   /** Closes sockets whose pass ran out; keeps sweeping while anyone is here. */
   override async alarm(): Promise<void> {
+    this.dropExpired();
+    await this.scheduleSweep();
+  }
+
+  /**
+   * Wakes the room when the next pass runs out, and at least every
+   * SWEEP_INTERVAL_MS, so a silent socket whose access was revoked is closed
+   * on time. Nothing to do once the room is empty.
+   */
+  private async scheduleSweep(): Promise<void> {
+    const peers = this.peers();
+    if (peers.length === 0) return;
+    const now = Date.now();
+    const nextExpiry = Math.min(...peers.map((p) => p.exp));
+    await this.ctx.storage.setAlarm(
+      Math.max(now + 1_000, Math.min(now + SWEEP_INTERVAL_MS, nextExpiry)),
+    );
+  }
+
+  private dropExpired(): void {
     const now = Date.now();
     for (const ws of this.ctx.getWebSockets()) {
       const self = attachmentOf(ws);
       if (self !== null && self.exp <= now) {
         this.drop(ws, self, CLOSE_PASS_EXPIRED, "Pass expired");
       }
-    }
-    if (this.peers().length > 0) {
-      await this.ctx.storage.setAlarm(now + SWEEP_INTERVAL_MS);
     }
   }
 
@@ -228,7 +253,9 @@ export class PresenceRoom extends DurableObject<Env> {
     this.broadcast({ t: "leave", sid: self.sid }, ws);
   }
 
+  /** Sends to everyone else whose pass is still good. */
   private broadcast(message: object, except: WebSocket): void {
+    this.dropExpired();
     const text = JSON.stringify(message);
     for (const ws of this.ctx.getWebSockets()) {
       if (ws === except || attachmentOf(ws) === null) continue;

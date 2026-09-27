@@ -10,14 +10,15 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 export 'package:icarus/collab/presence/presence_models.dart';
 
 /// Who else has the open cloud strategy open, and their cursors. Joins the
-/// strategy's room while a cloud strategy is open and leaves when it closes.
-/// Local strategies have no room.
+/// strategy's room while the editor shows a cloud strategy, and leaves as soon
+/// as nothing on screen watches it, however the editor was left. Local
+/// strategies have no room.
 final strategyPresenceProvider =
-    NotifierProvider<StrategyPresenceNotifier, PresenceRoomState>(
+    NotifierProvider.autoDispose<StrategyPresenceNotifier, PresenceRoomState>(
   StrategyPresenceNotifier.new,
 );
 
-class StrategyPresenceNotifier extends Notifier<PresenceRoomState> {
+class StrategyPresenceNotifier extends AutoDisposeNotifier<PresenceRoomState> {
   PresenceRoom? _room;
 
   @override

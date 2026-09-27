@@ -1,10 +1,15 @@
 import { env, runDurableObjectAlarm, SELF } from "cloudflare:test";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { signPass, verifyPass, type PassClaims } from "../src/pass";
 import { CLOSE_PASS_EXPIRED } from "../src/room";
 
 const SECRET = "test-secret";
-const ROOM = "strat_abc123";
+// A fresh room per test, so sockets closing after one test never reach the next.
+let roomCount = 0;
+let ROOM = "";
+beforeEach(() => {
+  ROOM = `strat_${++roomCount}`;
+});
 
 function claims(overrides: Partial<PassClaims> = {}): PassClaims {
   return {
@@ -89,6 +94,15 @@ describe("room pass", () => {
     expect(await verifyPass(`${version}.${forged}.${mac}`, SECRET, Date.now())).toBeNull();
     expect(await verifyPass(`${version}.${body}`, SECRET, Date.now())).toBeNull();
     expect(await verifyPass(pass, SECRET, Date.now() + 121_000)).toBeNull();
+  });
+
+  it("rejects malformed base64 instead of throwing", async () => {
+    expect(await verifyPass("v1.a.a", SECRET, Date.now())).toBeNull();
+    expect(await verifyPass("v1.abcde.ab", SECRET, Date.now())).toBeNull();
+    const response = await SELF.fetch(`https://presence.test/v1/rooms/${ROOM}?pass=v1.a.a`, {
+      headers: { Upgrade: "websocket" },
+    });
+    expect(response.status).toBe(401);
   });
 });
 
@@ -175,10 +189,55 @@ describe("room", () => {
     ana.ws.send(JSON.stringify({ t: "renew", pass: await signPass(claims({ exp }), SECRET) }));
     expect(await ana.next("renewed")).toEqual({ t: "renewed", exp });
 
-    ana.ws.send(
-      JSON.stringify({ t: "renew", pass: await signPass(claims({ uid: "u-eve" }), SECRET) }),
+    const eve = await connect(await signPass(claims({ uid: "u-eve" }), SECRET));
+    await eve.next("welcome");
+    eve.ws.send(
+      JSON.stringify({ t: "renew", pass: await signPass(claims({ uid: "u-ana" }), SECRET) }),
     );
-    expect((await ana.closed).code).toBe(CLOSE_PASS_EXPIRED);
+    expect((await eve.closed).code).toBe(CLOSE_PASS_EXPIRED);
+  });
+
+  it("ignores renewals faster than one per ten seconds", async () => {
+    const ana = await connect(await signPass(claims(), SECRET));
+    await ana.next("welcome");
+    ana.ws.send(JSON.stringify({ t: "renew", pass: await signPass(claims(), SECRET) }));
+    await ana.next("renewed");
+    ana.ws.send(JSON.stringify({ t: "renew", pass: "garbage" }));
+    await sleep(100);
+    expect(ana.messages).toEqual([]);
+    ana.ws.send(JSON.stringify({ t: "cursor", page: "p1", x: 1, y: 1 }));
+    await sleep(50);
+    // Still connected: the garbage renewal was never even checked.
+    expect(ana.ws.readyState).toBe(WebSocket.READY_STATE_OPEN);
+  });
+
+  it("stops sending to a silent socket once its pass runs out", async () => {
+    const ana = await connect(await signPass(claims(), SECRET));
+    await ana.next("welcome");
+    const ben = await connect(
+      await signPass(claims({ uid: "u-ben", name: "Ben", exp: Date.now() + 300 }), SECRET),
+    );
+    await ben.next("welcome");
+    await ana.next("join");
+    await sleep(400);
+
+    // No alarm yet; Ana's cursor is the first thing that happens.
+    ana.ws.send(JSON.stringify({ t: "cursor", page: "p1", x: 3, y: 4 }));
+    expect((await ben.closed).code).toBe(CLOSE_PASS_EXPIRED);
+    expect(ben.messages.filter((m) => m.t === "cursor")).toEqual([]);
+  });
+
+  it("limits one person to a few sessions", async () => {
+    const pass = await signPass(claims(), SECRET);
+    for (let i = 0; i < 4; i++) await (await connect(pass)).next("welcome");
+    const response = await SELF.fetch(
+      `https://presence.test/v1/rooms/${ROOM}?pass=${encodeURIComponent(pass)}`,
+      { headers: { Upgrade: "websocket" } },
+    );
+    expect(response.status).toBe(429);
+    // Someone else still gets in.
+    const ben = await connect(await signPass(claims({ uid: "u-ben" }), SECRET));
+    expect((await ben.next("welcome")).peers).toHaveLength(4);
   });
 
   it("closes sockets whose pass ran out at the next sweep", async () => {

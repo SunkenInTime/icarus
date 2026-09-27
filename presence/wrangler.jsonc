@@ -13,7 +13,8 @@
     "bindings": [{ "name": "PRESENCE_ROOM", "class_name": "PresenceRoom" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PresenceRoom"] }],
-  "observability": { "enabled": true },
+  // The room pass rides in the query string; keep it out of the logs.
+  "observability": { "enabled": true, "redact_query_string": true },
   "env": {
     "dev": {
       "name": "icarus-presence-dev",

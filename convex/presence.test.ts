@@ -85,7 +85,7 @@ describe("presence:issueRoomPass", () => {
       ...protocol,
       strategyPublicId: "strat-1",
     });
-    expect(issued.url).toBe("https://presence.test/v1/rooms/strat-1");
+    expect(issued.url).toBe("wss://presence.test/v1/rooms/strat-1");
     const claims = await verifyPass(issued.pass, SECRET, Date.now());
     expect(claims).toMatchObject({
       room: "strat-1",

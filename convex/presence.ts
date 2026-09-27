@@ -65,8 +65,10 @@ export const issueRoomPass = mutation({
       },
       secret,
     );
+    // PRESENCE_URL is the Worker's https address; sockets need ws(s).
+    const socketBase = baseUrl.replace(/^http/, "ws").replace(/\/+$/, "");
     return {
-      url: `${baseUrl.replace(/\/+$/, "")}/v1/rooms/${strategy.publicId}`,
+      url: `${socketBase}/v1/rooms/${strategy.publicId}`,
       pass,
       expiresAt,
     };
