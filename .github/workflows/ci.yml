@@ -19,8 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-      # Recreate one preview per PR or branch instead of leaking a new
-      # deployment on every retry. The recreated deployment is still empty.
+      # One preview name per PR or branch. The job deletes its preview when it
+      # finishes, so previews never count against the team deployment quota
+      # after the run.
       CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.event.pull_request.number || github.ref_name }}
 
     steps:
@@ -45,14 +46,46 @@ jobs:
       - name: Install Convex dependencies
         run: npm ci
 
+      # `--cmd` runs right after Convex claims the preview and before the push,
+      # so the preview URL is recorded even when typecheck or the push fails.
       - name: Deploy isolated Convex contract
-        run: npx convex deploy --preview-create "$CONVEX_PREVIEW_NAME" --typecheck enable
+        run: >-
+          npx convex deploy --preview-create "$CONVEX_PREVIEW_NAME" --typecheck enable
+          --cmd-url-env-var-name CONVEX_PREVIEW_URL
+          --cmd 'echo "CONVEX_PREVIEW_URL=$CONVEX_PREVIEW_URL" >> "$GITHUB_ENV"'
+
+      # Convex keeps previews for days by default and counts them against the
+      # team's deployment quota. Cap this one at an hour in case the delete
+      # below never runs (runner lost, job killed).
+      - name: Expire contract preview within an hour
+        if: always() && env.CONVEX_PREVIEW_URL != ''
+        shell: bash
+        run: |
+          name="${CONVEX_PREVIEW_URL#https://}"; name="${name%%.*}"
+          expires_at=$(( ($(date +%s) + 3600) * 1000 ))
+          curl --fail-with-body -sS -X PATCH \
+            -H "Authorization: Bearer $CONVEX_DEPLOY_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"expiresAt\": $expires_at}" \
+            "https://api.convex.dev/v1/deployments/$name"
 
       - name: Compare fresh scrubbed contract
         run: |
           npm run snapshot:convex-contract:check
           npm run audit:convex-contract
           git diff --exit-code -- convex/function_spec.json convex/error_codes.json convex/_generated
+
+      # The preview only exists for this run's contract check. A preview deploy
+      # key may delete preview deployments in its own project.
+      - name: Delete contract preview
+        if: always() && env.CONVEX_PREVIEW_URL != ''
+        shell: bash
+        run: |
+          name="${CONVEX_PREVIEW_URL#https://}"; name="${name%%.*}"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $CONVEX_DEPLOY_KEY" \
+            "https://api.convex.dev/v1/deployments/$name/delete"
+          echo "Deleted Convex preview $name"
 
   validate:
     runs-on: windows-latest

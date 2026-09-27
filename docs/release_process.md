@@ -99,6 +99,18 @@ the [`convex deploy` reference](https://docs.convex.dev/cli/reference/deploy).
 The production workflow never reads `CONVEX_PREVIEW_DEPLOY_KEY`. That secret is
 only for the isolated contract deployment in CI.
 
+Each `convex-contract` run creates one preview deployment named
+`typed-wrapper-contract-<PR number or branch>` and deletes it in its last step,
+through the Convex Management API (`POST /v1/deployments/<name>/delete`) with
+the same preview deploy key. Right after creating it, the job also sets the
+preview to expire in one hour, which covers runs that die before the delete
+step. Previews count against the team's deployment quota (40), and when the
+quota is full every PR fails with `DeploymentQuotaReached`. To clear leftovers
+by hand, list the project's deployments with
+`GET /v1/projects/<project id>/list_deployments` using the token in
+`~/.convex/config.json`. Then delete only `preview` deployments whose PR is
+closed. Never delete `majestic-eel-413` (dev) or the production deployment.
+
 ## Web beta deploy
 
 The web beta lives at `https://beta.icarusstrats.com`, served by the Cloudflare
