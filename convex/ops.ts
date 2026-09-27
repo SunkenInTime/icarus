@@ -511,29 +511,32 @@ async function assertLineupEndUnused(
   ctx: MutationCtx,
   end: Doc<"lineups">,
 ): Promise<void> {
-  const endField =
-    end.payloadKind === "lineupOrigin"
-      ? "originId"
-      : end.payloadKind === "lineupLanding"
-        ? "landingId"
-        : null;
-  if (endField === null) return;
+  if (end.payloadKind === "lineupLink") return;
   const endId = (end.payload.data as { id: string }).id;
-  // Only the page's live links are read, so a batch deleting many ends
+  // One indexed lookup reads at most one row, so a batch deleting many ends
   // stays well inside the transaction's read budget.
-  const liveLinks = await ctx.db
-    .query("lineups")
-    .withIndex("by_pageId_and_payloadKind_and_deleted", (q) =>
-      q
-        .eq("pageId", end.pageId)
-        .eq("payloadKind", "lineupLink")
-        .eq("deleted", false),
-    )
-    .collect();
-  const usedBy = liveLinks.some(
-    (row) => (row.payload.data as Record<string, unknown>)[endField] === endId,
-  );
-  if (usedBy) {
+  const linkNamingEnd = await (end.payloadKind === "lineupOrigin"
+    ? ctx.db
+        .query("lineups")
+        .withIndex("by_pageId_and_payloadKind_and_deleted_and_originId", (q) =>
+          q
+            .eq("pageId", end.pageId)
+            .eq("payloadKind", "lineupLink")
+            .eq("deleted", false)
+            .eq("payload.data.originId", endId),
+        )
+        .first()
+    : ctx.db
+        .query("lineups")
+        .withIndex("by_pageId_and_payloadKind_and_deleted_and_landingId", (q) =>
+          q
+            .eq("pageId", end.pageId)
+            .eq("payloadKind", "lineupLink")
+            .eq("deleted", false)
+            .eq("payload.data.landingId", endId),
+        )
+        .first());
+  if (linkNamingEnd !== null) {
     // The client matches this text (lineupEndInUseMessage).
     throw errorWithCode(
       "LINEUP_END_IN_USE",
