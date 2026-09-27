@@ -1,8 +1,12 @@
 name: Deploy Web
 
-# Publishes the Flutter web build to the Cloudflare Pages project `icarus-web`,
-# served at https://beta.icarusstrats.com. Every push to icarus-cloud that
-# touches the web build deploys; Actions > Deploy Web > Run workflow redeploys.
+# Publishes the web beta: first the Convex server to the production
+# deployment, then the Flutter web build (built against that deployment) to
+# the Cloudflare Pages project `icarus-web`, served at
+# https://beta.icarusstrats.com. Every push to icarus-cloud that touches the
+# server or the web build deploys both, server first, so the site never runs
+# ahead of the backend it talks to. Actions > Deploy Web > Run workflow
+# redeploys.
 # Setup and secrets: docs/release_process.md, "Web beta deploy".
 
 on:
@@ -20,6 +24,9 @@ on:
       - pubspec.yaml
       - pubspec.lock
       - .fvmrc
+      - convex/**
+      - package.json
+      - package-lock.json
       - .github/workflows/deploy-web.yml
   workflow_dispatch:
 
@@ -39,11 +46,14 @@ jobs:
       PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
     steps:
-      - name: Require icarus-cloud and Cloudflare secrets
+      - name: Require icarus-cloud, secrets and production settings
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONVEX_PRODUCTION_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
+          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
         run: |
           # Every run replaces the live beta, so a manual run from another
           # branch would ship unreviewed code to testers.
@@ -52,15 +62,35 @@ jobs:
             exit 1
           fi
           missing=0
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CONVEX_PRODUCTION_DEPLOY_KEY ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL ICARUS_PRODUCTION_CONVEX_CLIENT_ID; do
             if [[ -z "${!name}" ]]; then
-              echo "::error::Add the $name repository secret. See docs/release_process.md, \"Web beta deploy\"."
+              echo "::error::Add $name (repository secret or variable). See docs/release_process.md, \"Web beta deploy\"."
               missing=1
             fi
           done
+          if [[ -n "$CONVEX_PRODUCTION_DEPLOY_KEY" && "$CONVEX_PRODUCTION_DEPLOY_KEY" != prod:* ]]; then
+            echo "::error::CONVEX_PRODUCTION_DEPLOY_KEY must be a production deploy key (prod: prefix)."
+            missing=1
+          fi
           exit $missing
 
       - uses: actions/checkout@v4
+
+      # The server ships first. If it fails (type errors, schema that doesn't
+      # fit the data), nothing is published and the live site keeps working
+      # against the server it already knows.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Convex Dependencies
+        run: npm ci
+
+      - name: Deploy Convex Production Backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
+        run: npx convex deploy --typecheck enable --message "Deploy Web $GITHUB_SHA"
 
       # Flutter setup mirrors the linux job in ci.yml: FVM installs the
       # version pinned in .fvmrc.
@@ -95,12 +125,18 @@ jobs:
       - name: Get Dependencies
         run: fvm flutter pub get
 
-      # Keep this command identical to "Build Web Client" in ci.yml, so CI
-      # proves the exact build that ships. The beta deliberately uses the
-      # development Convex deployment (docs/release_process.md, "Cloud build
-      # configuration").
+      # Same flags as "Build Web Client" in ci.yml; only the Convex target
+      # differs. CI builds against development, the beta ships against the
+      # production deployment the step above just updated.
       - name: Build Web Client
-        run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
+        env:
+          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
+        run: >-
+          fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
+          --dart-define=ICARUS_CLOUD_ENVIRONMENT=production
+          --dart-define=ICARUS_CONVEX_DEPLOYMENT_URL="$ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL"
+          --dart-define=ICARUS_CONVEX_CLIENT_ID="$ICARUS_PRODUCTION_CONVEX_CLIENT_ID"
 
       # --branch=main: Cloudflare Pages treats a deploy to the project's
       # production branch (main) as the production deployment, and the custom
@@ -123,7 +159,7 @@ jobs:
           PAGES_ENVIRONMENT: ${{ steps.deploy.outputs.pages-environment }}
         run: |
           {
-            echo "### Web beta deployed"
+            echo "### Web beta deployed (production Convex)"
             echo ""
             echo "- Live: https://beta.icarusstrats.com"
             echo "- This deployment: ${DEPLOYMENT_URL:-see the Deploy to Cloudflare Pages log}"
