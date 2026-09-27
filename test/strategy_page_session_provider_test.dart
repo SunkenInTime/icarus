@@ -841,10 +841,8 @@ void main() {
       pages: [page],
       activePage: _pageSnapshot(page, text: 'before'),
     ));
-    final container = await _cloudContainer(
-      remote: remote,
-      queue: _FakeStrategyOpQueueNotifier(),
-    );
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
     await container
         .read(strategyPageSessionProvider.notifier)
         .initializeForStrategy(
@@ -879,6 +877,23 @@ void main() {
               (item) => item.op.entityPublicId == draft.id,
             ),
         isTrue);
+
+    // Once the stroke lands, the teammate's held-back change applies.
+    final acks = [
+      for (final entry in queue.state.queuedByEntityKey.entries)
+        AckedEntityIntent(
+          entityKey: entry.key,
+          op: entry.value.pending.op,
+          ack: AppliedOpAck(opId: entry.value.pending.op.opId, revision: 2),
+        ),
+    ];
+    queue.state = queue.state.copyWith(
+      queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+      lastAcks: [for (final intent in acks) intent.ack],
+      lastAckBatch: acks,
+    );
+    await _settle();
+    expect(container.read(textProvider).single.text, 'after');
   });
 
   test('streamed update waits for lineup placement to be dismissed', () async {
