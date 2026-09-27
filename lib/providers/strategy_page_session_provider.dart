@@ -9,6 +9,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
@@ -137,7 +138,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         }
 
         final pageIds = [...snapshot.pages]
-          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+          ..sortBySortIndex((item) => item.sortIndex);
         final orderedIds =
             pageIds.map((page) => page.publicId).toList(growable: false);
         if (!listEquals(orderedIds, state.availablePageIds)) {
@@ -893,7 +894,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
 
     final pages = [...snapshot.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     return pages.first.publicId;
   }
 
