@@ -508,24 +508,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       }
 
       final targetPageId = _resolveHydrationTargetPage(snapshot);
-      final hasPendingMetadata = ref.read(strategyOpQueueProvider).pending.any(
-        (pending) {
-          final op = pending.op;
-          return op is StrategyPatchOp &&
-              op.payload.keys.any((key) =>
-                  key == 'mapData' ||
-                  key == 'themeProfileId' ||
-                  key == 'clearThemeProfileId' ||
-                  key == 'themeOverridePalette' ||
-                  key == 'clearThemeOverridePalette');
-        },
-      );
-      final localMetadata = hasPendingMetadata
-          ? (
-              map: ref.read(mapProvider).currentMap,
-              theme: ref.read(strategyThemeProvider),
-            )
-          : null;
+      final localMetadata = _unsentLocalMetadata();
       if (targetPageId != null) {
         final pageSource = CloudStrategyPageSource(
           ref,
@@ -602,6 +585,30 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     } finally {
       _isResolvingConflicts = false;
     }
+  }
+
+  /// The strategy's map and theme on screen, while a change to them is still
+  /// on its way: loading a page must keep them rather than take the older
+  /// server copy (and so drop the change).
+  ({MapValue map, StrategyThemeState theme})? _unsentLocalMetadata() {
+    final hasPendingMetadata = ref.read(strategyOpQueueProvider).pending.any(
+      (pending) {
+        final op = pending.op;
+        return op is StrategyPatchOp &&
+            op.payload.keys.any((key) =>
+                key == 'mapData' ||
+                key == 'themeProfileId' ||
+                key == 'clearThemeProfileId' ||
+                key == 'themeOverridePalette' ||
+                key == 'clearThemeOverridePalette');
+      },
+    );
+    return hasPendingMetadata
+        ? (
+            map: ref.read(mapProvider).currentMap,
+            theme: ref.read(strategyThemeProvider),
+          )
+        : null;
   }
 
   bool get isApplyingPage => state.isApplyingPage;
@@ -934,17 +941,22 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         state.deletedPage != deleted) {
       return false;
     }
+    // A read that failed earlier would otherwise fail every retry.
+    final remote = ref.read(remoteEditorSnapshotProvider.notifier);
+    await remote.refresh();
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     final target =
         snapshot == null ? null : _resolveHydrationTargetPage(snapshot);
-    if (target == null || target == deleted.pageId) return false;
+    if (target == null ||
+        target == deleted.pageId ||
+        state.deletedPage != deleted) {
+      return false;
+    }
     // Loaded here, not through the reapply that waits for pending cloud
     // work: work queued for other pages is not on this canvas, and the
     // deleted page must not stay editable while it waits.
     try {
-      await ref
-          .read(remoteEditorSnapshotProvider.notifier)
-          .setActivePage(target);
+      await remote.setActivePage(target);
       final source = _resolvePageSource(strategyId, StrategySource.cloud);
       final pageData = await source.loadPage(target);
       if (state.deletedPage != deleted) return false;
@@ -953,6 +965,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         strategyId: strategyId,
         source: StrategySource.cloud,
         loadedRemoteSnapshot: source.loadedRemoteSnapshot,
+        preservedMetadata: _unsentLocalMetadata(),
       );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(

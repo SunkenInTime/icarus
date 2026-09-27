@@ -99,6 +99,9 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
     refreshCount += 1;
     state = AsyncData(initialSnapshot);
   }
+
+  /// A live read refused for auth: no snapshot until a later read works.
+  void failRead() => state = const AsyncData(null);
 }
 
 class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
@@ -1296,6 +1299,44 @@ void main() {
           .map((pending) => pending.op.pagePublicId),
       ['page-3'],
     );
+  });
+
+  test('reading the notice keeps a map change still on its way', () async {
+    final (:container, :queue, :two, one: _, remote: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    container.read(mapProvider.notifier).updateMap(MapValue.haven);
+    await queue.syncDesiredGenericOp(
+      entityKey: const EntitySyncKey.strategy(),
+      desiredOp: StrategyPatchOp(
+        opId: 'map-change',
+        expectedStrategyRevision: 1,
+        payload: {'mapData': Maps.mapNames[MapValue.haven]},
+      ),
+    );
+
+    final left = await container
+        .read(strategyPageSessionProvider.notifier)
+        .leaveDeletedPage();
+
+    expect(left, isTrue);
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, two.publicId);
+    expect(container.read(mapProvider).currentMap, MapValue.haven);
+  });
+
+  test('reading the notice reads the server again after a failed read',
+      () async {
+    final (:container, :remote, :two, one: _, queue: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    remote.failRead();
+
+    final left = await container
+        .read(strategyPageSessionProvider.notifier)
+        .leaveDeletedPage();
+
+    expect(left, isTrue);
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, two.publicId);
   });
 
   test('leaving waits for work already sent for the page', () async {
