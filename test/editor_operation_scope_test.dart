@@ -66,7 +66,7 @@ void main() {
     expect(container.read(editorPointersProvider).length, 2);
     await first.up();
     await tester.pump();
-    expect(container.read(editorPointersProvider), {2});
+    expect(container.read(editorPointersProvider).keys, {2});
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
     expect(container.read(editorPointersProvider), isEmpty);
@@ -87,14 +87,14 @@ void main() {
       kind: PointerDeviceKind.mouse,
       position: Offset(20, 20),
     ));
-    expect(container.read(editorPointersProvider), {7});
+    expect(container.read(editorPointersProvider).keys, {7});
     tester.binding.handlePointerEvent(const PointerHoverEvent(
       device: 4,
       kind: PointerDeviceKind.mouse,
       position: Offset(30, 30),
     ));
     await tester.pump();
-    expect(container.read(editorPointersProvider), {7});
+    expect(container.read(editorPointersProvider).keys, {7});
     tester.binding.handlePointerEvent(const PointerHoverEvent(
       device: 3,
       kind: PointerDeviceKind.mouse,
@@ -117,14 +117,14 @@ void main() {
       device: 5,
       position: Offset(20, 20),
     ));
-    expect(container.read(editorPointersProvider), {9});
+    expect(container.read(editorPointersProvider).keys, {9});
     tester.binding.handlePointerEvent(const PointerHoverEvent(
       device: 5,
       kind: PointerDeviceKind.mouse,
       position: Offset(30, 30),
     ));
     await tester.pump();
-    expect(container.read(editorPointersProvider), {9});
+    expect(container.read(editorPointersProvider).keys, {9});
     tester.binding.handlePointerEvent(const PointerPanZoomEndEvent(
       pointer: 9,
       device: 5,
@@ -132,5 +132,81 @@ void main() {
     ));
     await tester.pump();
     expect(container.read(editorPointersProvider), isEmpty);
+  });
+
+  group('what a press holds', () {
+    Future<ProviderContainer> pump(WidgetTester tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: EditorOperationScope(
+            child: Row(children: [
+              // The sidebar.
+              const SizedBox(width: 100, height: 400),
+              SizedBox(
+                width: 400,
+                height: 400,
+                child: EditorCanvasRegion(
+                  child: Stack(children: [
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onPanStart: (_) {},
+                      ),
+                    ),
+                    for (final (id, left) in [('a', 0.0), ('b', 200.0)])
+                      EditorEntityLayer(
+                        key: ValueKey(id),
+                        id: id,
+                        child: Positioned(
+                          left: left,
+                          top: 0,
+                          width: 50,
+                          height: 50,
+                          child: GestureDetector(
+                            onPanStart: (_) {},
+                            // Items paint something that takes the hit.
+                            child: const ColoredBox(color: Color(0xFF000000)),
+                          ),
+                        ),
+                      ),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ));
+      return container;
+    }
+
+    testWidgets('a press on an item holds that item only', (tester) async {
+      final container = await pump(tester);
+      final gesture = await tester.startGesture(const Offset(325, 125));
+      expect(container.read(editorHeldEntitiesProvider), {'b'});
+      await gesture.up();
+      await tester.pump();
+      expect(container.read(editorHeldEntitiesProvider), isEmpty);
+    });
+
+    testWidgets('a press on empty canvas holds nothing', (tester) async {
+      final container = await pump(tester);
+      final gesture = await tester.startGesture(const Offset(250, 400));
+      expect(container.read(editorPointersProvider), isNotEmpty);
+      expect(container.read(editorHeldEntitiesProvider), isEmpty);
+      await gesture.up();
+    });
+
+    testWidgets('a press off the canvas holds everything', (tester) async {
+      final container = await pump(tester);
+      final gesture = await tester.startGesture(const Offset(50, 150));
+      expect(container.read(editorHeldEntitiesProvider), isNull);
+      await gesture.up();
+      await tester.pump();
+      expect(container.read(editorHeldEntitiesProvider), isEmpty);
+    });
   });
 }

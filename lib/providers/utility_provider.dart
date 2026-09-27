@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -323,6 +324,18 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     poppedUtilities = [];
     _pendingEditBefore.clear();
     state = hiveUtilities;
+  }
+
+  /// Takes the server's copy of every item but those [keep] names; see
+  /// [mergeRemoteItems].
+  void mergeRemote(
+      List<PlacedUtility> incoming, bool Function(String id) keep) {
+    state = mergeRemoteItems(
+      current: state,
+      incoming: incoming,
+      idOf: (utility) => utility.id,
+      keep: keep,
+    );
   }
 
   void clearAll() {

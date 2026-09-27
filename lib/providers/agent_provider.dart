@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -516,6 +517,20 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     output += "]";
 
     return output;
+  }
+
+  /// Takes the server's copy of every item but those [keep] names; see
+  /// [mergeRemoteItems].
+  void mergeRemote(
+    List<PlacedAgentNode> incoming,
+    bool Function(String id) keep,
+  ) {
+    state = mergeRemoteItems(
+      current: state,
+      incoming: incoming,
+      idOf: (agent) => agent.id,
+      keep: keep,
+    );
   }
 
   void clearAll() {

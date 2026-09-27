@@ -70,3 +70,54 @@ class _EditorOperationScopeState extends ConsumerState<EditorOperationScope> {
         child: widget.child,
       );
 }
+
+/// The strategy canvas. A press here that lands on no item (drawing, panning)
+/// holds nothing back: remote changes keep arriving while it lasts.
+class EditorCanvasRegion extends ConsumerWidget {
+  const EditorCanvasRegion({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void mark(PointerEvent event) =>
+        ref.read(editorPointersProvider.notifier).markCanvas(event.pointer);
+    // Translucent: any press inside the canvas counts, even where the canvas
+    // widgets under it only listen.
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: mark,
+      onPointerPanZoomStart: mark,
+      child: child,
+    );
+  }
+}
+
+/// One canvas item, as a child of the canvas's item [Stack]. While a press on
+/// it (a drag, a rotate or resize handle) lasts, remote changes to this item
+/// wait; the rest of the page updates.
+///
+/// The item sits in its own full-size layer so its positioned widget lays out
+/// exactly as before, and the listener only fires when the item itself is hit.
+class EditorEntityLayer extends ConsumerWidget {
+  const EditorEntityLayer({required this.id, required this.child, super.key});
+
+  final String id;
+
+  /// A [Positioned] (or similar) item widget.
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void hold(PointerEvent event) =>
+        ref.read(editorPointersProvider.notifier).holdEntity(event.pointer, id);
+    return Positioned.fill(
+      child: Listener(
+        behavior: HitTestBehavior.deferToChild,
+        onPointerDown: hold,
+        onPointerPanZoomStart: hold,
+        child: Stack(clipBehavior: Clip.none, children: [child]),
+      ),
+    );
+  }
+}

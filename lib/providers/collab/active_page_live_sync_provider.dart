@@ -143,10 +143,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
   }
 
+  /// [keepBaseFor] names entities the canvas did not take from [snapshot]
+  /// (the user is holding them). They keep the base they were drawn from, so
+  /// an edit the user commits to one is checked against the version they saw.
   void markPageHydrated({
     required String strategyPublicId,
     required String pageId,
     required RemoteEditorSnapshot snapshot,
+    Set<EntitySyncKey> keepBaseFor = const {},
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
     final matchesPage = snapshot.header.publicId == strategyPublicId &&
@@ -161,6 +165,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         for (final entry in _normalizedRemoteEntities(snapshot, pageId).entries)
           if (!undrawnLineups.contains(entry.key)) entry.key: entry.value,
     };
+    for (final key in keepBaseFor) {
+      final drawnBase = _hydratedBaseByEntityKey[key];
+      if (drawnBase == null) {
+        remoteEntities.remove(key);
+      } else {
+        remoteEntities[key] = drawnBase;
+      }
+    }
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
     _hydratedBaseByEntityKey.addAll(remoteEntities);
     _remoteAdoptionPending.removeWhere((key) => key.pageId == pageId);
@@ -176,6 +188,33 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       remoteBaseRevisionByEntity: remoteRevisions,
     );
   }
+
+  /// The entities of [pageId] whose server copy in [snapshot] differs from the
+  /// one the canvas last drew. A row the canvas cannot draw counts as absent.
+  Set<EntitySyncKey> remoteChangesSinceHydration(
+    RemoteEditorSnapshot snapshot,
+    String pageId,
+  ) {
+    final undrawn = _undrawnRemoteLineups(snapshot, pageId);
+    _NormalizedEntity? live(_NormalizedEntity? entity) =>
+        entity == null || entity.deleted || undrawn.contains(entity.key)
+            ? null
+            : entity;
+    final remote = _normalizedRemoteEntities(snapshot, pageId);
+    final keys = {
+      ...remote.keys,
+      ..._hydratedBaseByEntityKey.keys.where((key) => key.pageId == pageId),
+    };
+    return {
+      for (final key in keys)
+        if (live(remote[key]) case final now
+            when !_sameLiveEntity(now, live(_hydratedBaseByEntityKey[key])))
+          key,
+    };
+  }
+
+  bool _sameLiveEntity(_NormalizedEntity? a, _NormalizedEntity? b) =>
+      a == null ? b == null : b != null && _entitiesEquivalent(a, b);
 
   /// Drops [pageId]'s overlays that no op in the queue carries any more.
   ///

@@ -3,6 +3,7 @@ import 'dart:ui' show Offset;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -329,6 +330,18 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     poppedAbility = [];
     _pendingEditBefore.clear();
     state = hiveAbilities;
+  }
+
+  /// Takes the server's copy of every item but those [keep] names; see
+  /// [mergeRemoteItems].
+  void mergeRemote(
+      List<PlacedAbility> incoming, bool Function(String id) keep) {
+    state = mergeRemoteItems(
+      current: state,
+      incoming: incoming,
+      idOf: (ability) => ability.id,
+      keep: keep,
+    );
   }
 
   void clearAll() {
