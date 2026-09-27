@@ -1302,25 +1302,47 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     };
   }
 
-  /// Whether [record] is a lineup link that must wait: the server refuses
-  /// a link whose origin or landing is not live, and one it names still has
-  /// a queued or in-flight record of its own (queued behind it, past a batch
-  /// cap, under another client id, backing off) that is not in [sentWith],
-  /// the batch being claimed. It is due once that end has been sent.
-  bool _waitsForUnsentEnd(
+  /// Whether [op] deletes a lineup row of one of [kinds].
+  static bool _deletesLineupRow(StrategyOp op, List<String> kinds) =>
+      op is LineupDeleteOp &&
+      kinds.any((kind) => op.lineupPublicId.startsWith('$kind:'));
+
+  /// Whether [record] is a lineup op that must wait for another one still
+  /// queued or in flight (queued behind it, past a batch cap, under another
+  /// client id, backing off) outside [sentWith], the batch being claimed.
+  /// The server refuses a link whose origin or landing is not live, so a
+  /// link add or patch waits for the records of the ends it names. It also
+  /// refuses deleting an origin or landing a live link names, so an end
+  /// delete waits for every link delete on its page. Either is due once the
+  /// record it waits for has been sent.
+  bool _waitsForLineupOrder(
     DurableOutboxRecord record, {
     Set<EntitySyncKey> sentWith = const {},
   }) {
-    return _lineupLinkEndKeys(record.pending.op).any((endKey) {
-      if (sentWith.contains(endKey)) return false;
+    bool isUnsent(DurableOutboxRecord other) =>
+        !sentWith.contains(other.entityKey) &&
+        (other.status == DurableOutboxStatus.queued ||
+            other.status == DurableOutboxStatus.inFlight);
+
+    final op = record.pending.op;
+    if (_deletesLineupRow(
+      op,
+      const [CloudLineupKind.origin, CloudLineupKind.landing],
+    )) {
+      return _recordsByStorageKey.values.any((other) =>
+          other.accountId == record.accountId &&
+          other.strategyPublicId == record.strategyPublicId &&
+          other.entityKey.pageId == record.entityKey.pageId &&
+          _deletesLineupRow(other.pending.op, const [CloudLineupKind.link]) &&
+          isUnsent(other));
+    }
+    return _lineupLinkEndKeys(op).any((endKey) {
       final end = _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
         accountId: record.accountId,
         strategyPublicId: record.strategyPublicId,
         entityKey: endKey,
       )];
-      return end != null &&
-          (end.status == DurableOutboxStatus.queued ||
-              end.status == DurableOutboxStatus.inFlight);
+      return end != null && isUnsent(end);
     });
   }
 
@@ -1342,16 +1364,26 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
+      // Link deletes go first, so the origin and landing deletes of a whole
+      // lineup can follow them in the same batch.
+      bool deletesLink(DurableOutboxRecord record) => _deletesLineupRow(
+            record.pending.op,
+            const [CloudLineupKind.link],
+          );
+      final ordered = [
+        ...candidates.where(deletesLink),
+        ...candidates.where((record) => !deletesLink(record)),
+      ];
       final selected = <DurableOutboxRecord>[];
       final selectedKeys = <EntitySyncKey>{};
-      bool waitsForAnEnd(DurableOutboxRecord record) =>
-          _waitsForUnsentEnd(record, sentWith: selectedKeys);
-      final sendable = candidates.where((record) => !waitsForAnEnd(record));
+      bool mustWait(DurableOutboxRecord record) =>
+          _waitsForLineupOrder(record, sentWith: selectedKeys);
+      final sendable = ordered.where((record) => !mustWait(record));
       if (sendable.isEmpty) return const <DurableOutboxRecord>[];
       final batchClientId = sendable.first.pending.clientId;
-      for (final candidate in candidates) {
+      for (final candidate in ordered) {
         if (candidate.pending.clientId != batchClientId) continue;
-        if (waitsForAnEnd(candidate)) continue;
+        if (mustWait(candidate)) continue;
         if (selected.length >= _maxBatchSize) break;
         final nextSelection = <DurableOutboxRecord>[...selected, candidate];
         final byteSize = serializedCloudBatchUtf8Bytes(
@@ -2122,7 +2154,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
             !cloudOperationExceedsPolicy(record.pending.op) &&
-            !_waitsForUnsentEnd(record))
+            !_waitsForLineupOrder(record))
         .toList(growable: false);
     if (candidates.isEmpty) return;
     final nextAttempt = candidates
@@ -2166,7 +2198,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
             !cloudOperationExceedsPolicy(record.pending.op) &&
-            !_waitsForUnsentEnd(record) &&
+            !_waitsForLineupOrder(record) &&
             (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
         .toList(growable: false)
       ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));

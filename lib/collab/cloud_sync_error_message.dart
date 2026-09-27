@@ -70,6 +70,10 @@ String friendlyCloudSyncError(String raw) {
         'cloud, so your change to it was not saved. Keep mine tries again; '
         'Use cloud drops your change.';
   }
+  if (lower.contains(lineupEndInUseMessage.toLowerCase())) {
+    return 'Another lineup still uses this origin or landing spot, so it was '
+        'not deleted from the cloud.';
+  }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '
         'saved on this device.';

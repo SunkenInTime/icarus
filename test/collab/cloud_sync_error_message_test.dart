@@ -53,6 +53,17 @@ void main() {
     }
   });
 
+  test('explains an origin or landing another lineup still uses', () {
+    final message = friendlyCloudSyncError(
+      'ConvexFunctionException(LINEUP_END_IN_USE, Another lineup still uses '
+      'this origin or landing spot)',
+    );
+
+    expect(message, contains('still uses this origin or landing spot'));
+    expect(message, contains('not deleted from the cloud'));
+    expect(message, isNot(contains('LINEUP_END_IN_USE')));
+  });
+
   test('does not expose unknown transport details', () {
     final message = friendlyCloudSyncError('socket exploded at 10.0.0.4');
 

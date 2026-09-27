@@ -166,25 +166,34 @@ async function apply(
   clientId: string,
   ops: Array<Record<string, unknown>>,
   strategy = strategyPublicId,
-  checkLineupLinkEnds?: boolean,
+  checks: {
+    checkLineupLinkEnds?: boolean;
+    checkLineupEndDeletes?: boolean;
+  } = {},
 ): Promise<Result[]> {
   const response = (await user.mutation(applyBatch, {
     strategyPublicId: strategy,
     clientId,
     clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     ops,
-    ...(checkLineupLinkEnds === undefined ? {} : { checkLineupLinkEnds }),
+    ...checks,
   })) as { results: Result[] };
   return response.results;
 }
 
-/** [apply] as a current client sends it: link ends are checked. */
+/**
+ * [apply] as a current client sends it: link ends are checked, and so are
+ * deletes of an end a live link names.
+ */
 async function applyChecked(
   user: Harness,
   clientId: string,
   ops: Array<Record<string, unknown>>,
 ): Promise<Result[]> {
-  return await apply(user, clientId, ops, strategyPublicId, true);
+  return await apply(user, clientId, ops, strategyPublicId, {
+    checkLineupLinkEnds: true,
+    checkLineupEndDeletes: true,
+  });
 }
 
 async function pageLineups(
@@ -789,6 +798,156 @@ describe("a link needs both of its ends", () => {
     const results = await applyChecked(owner, "owner-client", [
       deleteOp("delete-orphan", "lineupLink:orphan", 1),
     ]);
+    expect(results[0]).toMatchObject({ status: "applied" });
+  });
+});
+
+describe("an origin or landing a live link names is not deleted", () => {
+  test("deleting an origin a teammate's new link uses is refused", async () => {
+    const { owner, editor } = await createHarness();
+    await apply(
+      owner,
+      "owner-client",
+      [origin("a"), landing("a"), link("a", "a", "a")].map((row, index) =>
+        addOp(row, index),
+      ),
+    );
+    // The owner places a second lineup from origin "a", and it lands first.
+    await applyChecked(owner, "owner-client", [
+      addOp(landing("b"), 3),
+      addOp(link("b", "a", "b"), 4),
+    ]);
+
+    // The editor never saw lineup "b" and deletes lineup "a", which on
+    // their canvas takes origin "a" with it.
+    const results = await applyChecked(editor, "editor-client", [
+      deleteOp("delete-link-a", "lineupLink:a", 1),
+      deleteOp("delete-landing-a", "lineupLanding:a", 1),
+      deleteOp("delete-origin-a", "lineupOrigin:a", 1),
+    ]);
+    expect(results.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+      "failed",
+    ]);
+    expect(results[2]).toMatchObject({ code: "LINEUP_END_IN_USE" });
+
+    const rows = byKey(await pageLineups(owner));
+    expect(rows.get("lineupOrigin:a")).toMatchObject({
+      deleted: false,
+      revision: 1,
+    });
+    expect(rows.get("lineupLink:b")).toMatchObject({ deleted: false });
+    expect(rows.get("lineupLink:a")).toMatchObject({ deleted: true });
+  });
+
+  test("deleting a landing a live link uses is refused", async () => {
+    const { owner, editor } = await createHarness();
+    await apply(
+      owner,
+      "owner-client",
+      [origin("o"), landing("l"), link("k", "o", "l")].map((row, index) =>
+        addOp(row, index),
+      ),
+    );
+    const results = await applyChecked(editor, "editor-client", [
+      deleteOp("delete-landing", "lineupLanding:l", 1),
+    ]);
+    expect(results[0]).toMatchObject({
+      status: "failed",
+      code: "LINEUP_END_IN_USE",
+    });
+    const rows = byKey(await pageLineups(owner));
+    expect(rows.get("lineupLanding:l")).toMatchObject({ deleted: false });
+  });
+
+  test("a whole lineup deletes when its link goes first", async () => {
+    const { owner } = await createHarness();
+    await apply(
+      owner,
+      "owner-client",
+      [origin("o"), landing("l"), link("k", "o", "l")].map((row, index) =>
+        addOp(row, index),
+      ),
+    );
+    const results = await applyChecked(owner, "owner-client", [
+      deleteOp("delete-link", "lineupLink:k", 1),
+      deleteOp("delete-origin", "lineupOrigin:o", 1),
+      deleteOp("delete-landing", "lineupLanding:l", 1),
+    ]);
+    expect(results.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+      "applied",
+    ]);
+  });
+
+  test("a link on another page does not hold an end", async () => {
+    const { owner } = await createHarness();
+    const secondPage = "lineup-graph-page-2";
+    await owner.mutation(addPage, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId,
+      expectedRevision: 0,
+      pagePublicId: secondPage,
+      name: "Page 2",
+      sortIndex: 1,
+      isAttack: false,
+    });
+    // A link on page 2 names origin "o", which lives on page 1. Hydration
+    // reads each page on its own, so that link is never drawn from it.
+    await apply(owner, "owner-client", [
+      addOp(origin("o"), 0),
+      addOp(landing("l2"), 1, secondPage),
+      addOp(link("k2", "o", "l2"), 2, secondPage),
+    ]);
+    const results = await applyChecked(owner, "owner-client", [
+      deleteOp("delete-origin", "lineupOrigin:o", 1),
+    ]);
+    expect(results[0]).toMatchObject({ status: "applied" });
+  });
+
+  test("an older client's end delete still lands ahead of its link", async () => {
+    const { owner, editor } = await createHarness();
+    await apply(
+      owner,
+      "owner-client",
+      [origin("o"), landing("l"), link("k", "o", "l")].map((row, index) =>
+        addOp(row, index),
+      ),
+    );
+    // An outbox reloaded after a restart lists its rows by key (landing,
+    // link, origin); an older client does not reorder them.
+    const unflagged = await apply(editor, "old-client", [
+      deleteOp("delete-landing", "lineupLanding:l", 1),
+      deleteOp("delete-link", "lineupLink:k", 1),
+      deleteOp("delete-origin", "lineupOrigin:o", 1),
+    ]);
+    expect(unflagged.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+      "applied",
+    ]);
+  });
+
+  test("a client that only checks link ends is not refused a delete", async () => {
+    const { owner, editor } = await createHarness();
+    await apply(
+      owner,
+      "owner-client",
+      [origin("o"), landing("l"), link("k", "o", "l")].map((row, index) =>
+        addOp(row, index),
+      ),
+    );
+    // The web build that shipped checkLineupLinkEnds did not order its
+    // deletes yet.
+    const results = await apply(
+      editor,
+      "web-client",
+      [deleteOp("delete-origin", "lineupOrigin:o", 1)],
+      strategyPublicId,
+      { checkLineupLinkEnds: true },
+    );
     expect(results[0]).toMatchObject({ status: "applied" });
   });
 });

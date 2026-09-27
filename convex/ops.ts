@@ -500,6 +500,44 @@ async function assertLinkEndsLive(
   }
 }
 
+/// The mirror of assertLinkEndsLive: deleting an origin or landing that a
+/// live link on its page still names would leave that link undrawable, so
+/// its lineup would vanish on the next load while every chip says synced.
+/// That happens when a teammate's new link lands first and this client
+/// never saw it. The delete is refused instead. A link deleted earlier in
+/// the same batch is already a tombstone here, so a client deleting a whole
+/// lineup sends its link first.
+async function assertLineupEndUnused(
+  ctx: MutationCtx,
+  end: Doc<"lineups">,
+): Promise<void> {
+  const endField =
+    end.payloadKind === "lineupOrigin"
+      ? "originId"
+      : end.payloadKind === "lineupLanding"
+        ? "landingId"
+        : null;
+  if (endField === null) return;
+  const endId = (end.payload.data as { id: string }).id;
+  const pageRows = await ctx.db
+    .query("lineups")
+    .withIndex("by_pageId", (q) => q.eq("pageId", end.pageId))
+    .collect();
+  const usedBy = pageRows.some(
+    (row) =>
+      !row.deleted &&
+      row.payloadKind === "lineupLink" &&
+      (row.payload.data as Record<string, unknown>)[endField] === endId,
+  );
+  if (usedBy) {
+    // The client matches this text (lineupEndInUseMessage).
+    throw errorWithCode(
+      "LINEUP_END_IN_USE",
+      "Another lineup still uses this origin or landing spot",
+    );
+  }
+}
+
 async function getPageContent(
   ctx: MutationCtx,
   pageId: Id<"pages">,
@@ -1240,6 +1278,7 @@ async function applyLineupOp(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   checkLinkEnds: boolean,
+  checkEndDeletes: boolean,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
@@ -1335,6 +1374,7 @@ async function applyLineupOp(
         existing.pageId,
       );
     }
+    if (checkEndDeletes) await assertLineupEndUnused(ctx, existing);
     const revision = existing.revision + 1;
     await ctx.db.patch(existing._id, {
       deleted: true,
@@ -1507,6 +1547,10 @@ export const applyBatch = mutation({
     // sent (see assertLinkEndsLive). Older clients may send a link a batch
     // ahead of its ends, so their links are not checked.
     checkLineupLinkEnds: v.optional(v.boolean()),
+    // Set by clients that send an origin or landing delete only after the
+    // link deletes on its page (see assertLineupEndUnused). Older clients
+    // may send them in any order, so their deletes are not checked.
+    checkLineupEndDeletes: v.optional(v.boolean()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
@@ -1602,6 +1646,7 @@ export const applyBatch = mutation({
               strategy,
               op,
               args.checkLineupLinkEnds === true,
+              args.checkLineupEndDeletes === true,
             );
           }
           if (result.status === "ack" && op.entityType !== "strategy") {

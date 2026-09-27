@@ -61367,6 +61367,12 @@
       "args": {
         "type": "object",
         "value": {
+          "checkLineupEndDeletes": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "checkLineupLinkEnds": {
             "fieldType": {
               "type": "boolean"

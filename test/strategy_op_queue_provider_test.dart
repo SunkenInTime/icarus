@@ -1274,6 +1274,160 @@ void main() {
       expect(current.lastError, lineupPageMismatchMessage);
     });
 
+    test('a lineup delete sends its link before its origin and landing',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      LineupDeleteOp delete(String kind, String id) => LineupDeleteOp(
+            opId: 'delete-$kind',
+            lineupPublicId: cloudLineupRowId(kind, id),
+            pagePublicId: 'page-1',
+            expectedLineupRevision: 1,
+          );
+      // As an outbox reloads after a restart: by key, so the landing comes
+      // before the link.
+      for (final op in [
+        delete(CloudLineupKind.landing, 'l'),
+        delete(CloudLineupKind.link, 'k'),
+        delete(CloudLineupKind.origin, 'o'),
+      ]) {
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-1',
+          entityKey: EntitySyncKey.forStrategyOp(op)!,
+          pending: PendingOp(op: op, clientId: 'client-a'),
+          status: DurableOutboxStatus.queued,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ));
+      }
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      await notifier.flushNow();
+      for (var i = 0; i < 50 && repository.calls.isEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(
+        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
+        [
+          [
+            'delete-${CloudLineupKind.link}',
+            'delete-${CloudLineupKind.landing}',
+            'delete-${CloudLineupKind.origin}',
+          ],
+        ],
+      );
+      expect(store.load().records, isEmpty);
+    });
+
+    test('an origin delete waits for a link delete still to be sent', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      DurableOutboxRecord record(StrategyOp op, String clientId) =>
+          DurableOutboxRecord(
+            accountId: 'account-a',
+            strategyPublicId: 'strategy-1',
+            entityKey: EntitySyncKey.forStrategyOp(op)!,
+            pending: PendingOp(op: op, clientId: clientId),
+            status: DurableOutboxStatus.queued,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+      LineupDeleteOp delete(String kind, String id, {String? pageId}) =>
+          LineupDeleteOp(
+            opId: 'delete-$kind-$id',
+            lineupPublicId: cloudLineupRowId(kind, id),
+            pagePublicId: pageId ?? 'page-1',
+            expectedLineupRevision: 1,
+          );
+      // The link delete was queued by an earlier session under another
+      // client id, so it cannot share the origin's batch. An origin on
+      // another page does not wait for it.
+      await store.put(record(_cloudElementOp(), 'client-a'));
+      await store.put(record(delete(CloudLineupKind.origin, 'o'), 'client-a'));
+      await store.put(record(
+        delete(CloudLineupKind.origin, 'p2', pageId: 'page-2'),
+        'client-a',
+      ));
+      await store.put(record(delete(CloudLineupKind.link, 'k'), 'client-b'));
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      await notifier.flushNow();
+      for (var i = 0; i < 50 && repository.calls.length < 2; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(
+        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
+        [
+          ['delete-${CloudLineupKind.link}-k'],
+          [
+            'op-1',
+            'delete-${CloudLineupKind.origin}-o',
+            'delete-${CloudLineupKind.origin}-p2',
+          ],
+        ],
+      );
+      expect(store.load().records, isEmpty);
+    });
+
+    test('an end delete refused because a lineup uses it needs attention',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _MissingLinkEndRepository(
+          code: 'LINEUP_END_IN_USE',
+          message: lineupEndInUseMessage,
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      final delete = LineupDeleteOp(
+        opId: 'delete-origin',
+        lineupPublicId: cloudLineupRowId(CloudLineupKind.origin, 'o'),
+        pagePublicId: 'page-1',
+        expectedLineupRevision: 1,
+      );
+      final key = EntitySyncKey.forStrategyOp(delete)!;
+
+      await notifier.enqueue(delete, flushImmediately: false);
+      await notifier.flushNow();
+
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey[key]!.pending.op.opId, delete.opId);
+      expect(current.needsAttention, isTrue);
+      final durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(
+        friendlyCloudSyncError(durable.lastError!),
+        contains('still uses this origin or landing spot'),
+      );
+
+      // Keep mine asks again: the delete lands once that lineup is gone.
+      await notifier.retryRejected(flushImmediately: false);
+
+      current = container.read(strategyOpQueueProvider);
+      final retried = current.queuedByEntityKey[key]!.pending.op;
+      expect(retried, isA<LineupDeleteOp>());
+      expect(retried.opId, isNot(delete.opId));
+      expect(retried.expectedRevision, delete.expectedRevision);
+    });
+
     test('an oversized op is durably parked while independent work lands',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
