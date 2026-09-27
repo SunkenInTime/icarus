@@ -1,0 +1,31 @@
+// Live presence and cursors for cloud strategies. One Durable Object per
+// strategy relays who is in it and where their cursor is; nothing is stored.
+// Convex signs the room pass (convex/presence.ts) with PRESENCE_PASS_SECRET,
+// which each environment sets as a Worker secret matching its Convex
+// deployment: dev pairs with the development deployment, production with the
+// production one. See presence/README.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "icarus-presence",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-15",
+  "durable_objects": {
+    "bindings": [{ "name": "PRESENCE_ROOM", "class_name": "PresenceRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PresenceRoom"] }],
+  "observability": { "enabled": true },
+  "env": {
+    "dev": {
+      "name": "icarus-presence-dev",
+      "durable_objects": {
+        "bindings": [{ "name": "PRESENCE_ROOM", "class_name": "PresenceRoom" }]
+      }
+    },
+    "production": {
+      "name": "icarus-presence",
+      "durable_objects": {
+        "bindings": [{ "name": "PRESENCE_ROOM", "class_name": "PresenceRoom" }]
+      }
+    }
+  }
+}

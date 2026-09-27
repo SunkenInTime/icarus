@@ -87,6 +87,33 @@ jobs:
             "https://api.convex.dev/v1/deployments/$name/delete"
           echo "Deleted Convex preview $name"
 
+  presence-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: presence
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: presence/package-lock.json
+
+      - name: Install Presence Worker Dependencies
+        run: npm ci
+
+      - name: Typecheck Presence Worker
+        run: npm run typecheck
+
+      # Runs the Worker and its Durable Object in the real Workers runtime.
+      - name: Test Presence Worker
+        run: npm test
+
   validate:
     runs-on: windows-latest
     env:

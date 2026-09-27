@@ -32,6 +32,7 @@ import type * as maintenance from "../maintenance.js";
 import type * as ops from "../ops.js";
 import type * as page from "../page.js";
 import type * as pages from "../pages.js";
+import type * as presence from "../presence.js";
 import type * as shares from "../shares.js";
 import type * as strategies from "../strategies.js";
 import type * as strategy from "../strategy.js";
@@ -68,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   ops: typeof ops;
   page: typeof page;
   pages: typeof pages;
+  presence: typeof presence;
   shares: typeof shares;
   strategies: typeof strategies;
   strategy: typeof strategy;
