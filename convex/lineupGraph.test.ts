@@ -943,6 +943,27 @@ describe("an origin or landing a live link names is not deleted", () => {
     expect(results[2]).toMatchObject({ code: "LINEUP_END_IN_USE" });
   });
 
+  test("a patch to a deleted link after reading the page holds nothing", async () => {
+    const { owner } = await createHarness();
+    await apply(
+      owner,
+      "owner-client",
+      [origin("o"), landing("l"), link("k", "o", "l"), landing("spare")].map(
+        (row, index) => addOp(row, index),
+      ),
+    );
+    await apply(owner, "owner-client", [
+      deleteOp("delete-link-k", "lineupLink:k", 1),
+    ]);
+    const results = await applyChecked(owner, "owner-client", [
+      deleteOp("delete-spare", "lineupLanding:spare", 1),
+      patchOp("patch-deleted-k", link("k", "o", "l", { name: "Late" }), 2),
+      deleteOp("delete-origin-o", "lineupOrigin:o", 1),
+    ]);
+    expect(results[0]).toMatchObject({ status: "applied" });
+    expect(results[2]).toMatchObject({ status: "applied" });
+  });
+
   test("an older client's end delete still lands ahead of its link", async () => {
     const { owner, editor } = await createHarness();
     await apply(

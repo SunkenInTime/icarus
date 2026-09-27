@@ -538,7 +538,12 @@ class LiveLinkEnds {
     if (!publicId.startsWith("lineupLink:")) return;
     if (op.kind === "delete") {
       links.delete(publicId);
-    } else if (op.payload !== undefined) {
+    } else if (op.kind === "add") {
+      // An accepted add inserts the link or restores its tombstone.
+      links.set(publicId, linkEnds(op.payload as LineupPayload));
+    } else if (op.payload !== undefined && links.has(publicId)) {
+      // A patch never changes whether a link is live; one to a tombstone
+      // stays out.
       links.set(publicId, linkEnds(op.payload as LineupPayload));
     }
   }
