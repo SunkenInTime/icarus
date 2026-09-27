@@ -2489,6 +2489,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             record?.lastError == cloudOperationTooLargeMessage;
       });
       if (hasOversizedWork) return cloudOperationTooLargeMessage;
+      // A lineup the server refused for its own reason keeps that reason,
+      // so the sync button does not call it a conflict.
+      for (final entry in attention.entries) {
+        final record = _recordForActiveKey(entry.key);
+        final reason = record?.lastError;
+        if (record?.pending.op.opId == entry.value.pending.op.opId &&
+            (reason == lineupLinkEndMissingMessage ||
+                reason == lineupPageMismatchMessage)) {
+          return reason;
+        }
+      }
       return 'Some saved work needs attention.';
     }
     if (paused.isNotEmpty) return 'Some saved work is paused after retries.';

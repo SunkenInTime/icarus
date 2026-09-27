@@ -16,6 +16,17 @@ String redactSyncDiagnosticText(Object? error) {
           _secretKeyValue, (match) => '${match.group(1)}<redacted>');
 }
 
+/// Whether [error] is the specific reason saved work needs attention, one
+/// that [friendlyCloudSyncError] explains, rather than an edit that lost a
+/// race to another. The sync button shows it in place of the generic
+/// conflict text.
+bool isSpecificAttentionReason(String error) {
+  final lower = error.toLowerCase();
+  return lower.contains('too large for cloud sync') ||
+      lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
+      lower.contains(lineupLinkEndMissingMessage.toLowerCase());
+}
+
 String friendlyCloudSyncError(String raw) {
   final lower = raw.toLowerCase();
   if (lower.contains('strategy was deleted')) {
@@ -42,15 +53,18 @@ String friendlyCloudSyncError(String raw) {
   }
   if (lower.contains('too large for cloud sync')) {
     return 'A saved change is too large for cloud sync. It remains saved on '
-        'this device. Reduce it, then choose Keep mine to retry.';
+        'this device. Reduce it, then choose Keep mine to retry, or Use '
+        'cloud to drop it.';
   }
-  if (lower.contains('belongs to another page')) {
-    return 'A lineup here clashes with one on another page, so it was not '
-        'saved over it. Your lineup remains on this device.';
+  if (lower.contains(lineupPageMismatchMessage.toLowerCase())) {
+    return 'This lineup clashes with one on another page, so it was not '
+        'saved to the cloud. It remains on this device; Use cloud removes '
+        'it here.';
   }
   if (lower.contains(lineupLinkEndMissingMessage.toLowerCase())) {
-    return "A teammate deleted this lineup's origin or landing spot, so the "
-        'lineup was not saved to the cloud.';
+    return 'A teammate deleted the origin or landing spot this lineup uses, '
+        'so it was not saved to the cloud. Keep mine tries to save it again; '
+        'Use cloud removes it here.';
   }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/collab/collab_models.dart';
 
 void main() {
   test('turns a forbidden Convex failure into a permission explanation', () {
@@ -21,6 +22,8 @@ void main() {
 
     expect(message, contains('another page'));
     expect(message, contains('remains on this device'));
+    expect(message, contains('Use cloud removes it here'));
+    expect(message, isNot(contains('Keep mine')));
     expect(message, isNot(contains('LINEUP_PAGE_MISMATCH')));
   });
 
@@ -32,7 +35,22 @@ void main() {
 
     expect(message, contains('teammate deleted'));
     expect(message, contains('not saved to the cloud'));
+    expect(message, contains('Keep mine tries to save it again'));
+    expect(message, contains('Use cloud removes it here'));
     expect(message, isNot(contains('LINEUP_LINK_END_MISSING')));
+  });
+
+  test('lineup refusals and oversized work are specific attention reasons', () {
+    expect(isSpecificAttentionReason(lineupLinkEndMissingMessage), isTrue);
+    expect(isSpecificAttentionReason(lineupPageMismatchMessage), isTrue);
+    expect(isSpecificAttentionReason(cloudOperationTooLargeMessage), isTrue);
+    for (final reason in [
+      'Some saved work needs attention.',
+      'revision_mismatch',
+      'The server rejected this change.',
+    ]) {
+      expect(isSpecificAttentionReason(reason), isFalse, reason: reason);
+    }
   });
 
   test('does not expose unknown transport details', () {

@@ -1379,6 +1379,8 @@ async function applyLineupOp(
       // Moving it would take the lineup away from the page that shows it,
       // so refuse and let the conflict surface instead.
       if (page._id !== existing.pageId) {
+        // The client matches this text (lineupPageMismatchMessage) to
+        // explain the refusal.
         throw errorWithCode(
           "LINEUP_PAGE_MISMATCH",
           "This lineup belongs to another page and cannot be moved",
