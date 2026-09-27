@@ -71,6 +71,9 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     return Offset(rotatedX + origin.dx, rotatedY + origin.dy);
   }
 
+  int _currentIndex() =>
+      PlacedWidget.getIndexByID(widget.id, ref.read(utilityProvider));
+
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -147,7 +150,9 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
         buttonLeft: anchorPoint.dx - 7.5,
         onPanStart: (details) {
           // Save rotation history for undo/redo
-          ref.read(utilityProvider.notifier).updateRotationHistory(index);
+          ref
+              .read(utilityProvider.notifier)
+              .updateRotationHistory(_currentIndex());
 
           // Get the global position of the anchor point
           final box = context.findRenderObject() as RenderBox;
@@ -191,9 +196,14 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
           });
         },
         onPanEnd: (details) {
-          ref
-              .read(utilityProvider.notifier)
-              .updateRotation(index, localRotation!, localLength ?? 50);
+          // Looked up now, not at build: a teammate's change may have moved
+          // the cone in the list while the handle was held.
+          final current = _currentIndex();
+          if (current >= 0) {
+            ref
+                .read(utilityProvider.notifier)
+                .updateRotation(current, localRotation!, localLength ?? 50);
+          }
 
           setState(() {
             rotationOrigin = Offset.zero;

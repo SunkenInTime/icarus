@@ -917,6 +917,66 @@ void main() {
     expect(container.read(strategyOpQueueProvider).pending, isEmpty);
   });
 
+  test(
+      'a teammate deleting the page on screen waits for the stroke in progress',
+      () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: _pageSnapshot(one, text: 'one'),
+        ),
+        pageCatalog: {
+          one.publicId: _pageSnapshot(one, text: 'one'),
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(editorPointersProvider.notifier)
+      ..markCanvas(1)
+      ..down(1);
+    container.read(drawingProvider.notifier).startFreeDrawing(
+        const Offset(10, 20),
+        CoordinateSystem.instance,
+        Colors.white,
+        2,
+        false,
+        false,
+        false,
+        TraversalSpeedProfile.values.first);
+    final draft = container.read(drawingProvider).currentElement;
+
+    remote.setSnapshot(_editorSnapshot(
+      pages: [two],
+      activePage: _pageSnapshot(two, text: 'two'),
+    ));
+    await _settle();
+    expect(container.read(drawingProvider).currentElement, same(draft));
+    expect(container.read(textProvider).single.text, 'one');
+
+    // The finished stroke is unsaved work, so the page swap still waits
+    // instead of wiping it.
+    container
+        .read(drawingProvider.notifier)
+        .finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    container.read(editorPointersProvider.notifier).release(1);
+    await _settle();
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [draft!.id]);
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, one.publicId);
+  });
+
   group('holding an item while a teammate edits the page', () {
     RemotePageSnapshot texts(
       RemotePage page,

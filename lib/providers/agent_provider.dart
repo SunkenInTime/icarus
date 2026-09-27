@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
@@ -162,6 +163,10 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     final duplicatedAgent =
         _duplicateNode(sourceAgent, id: _uuid.v4(), position: position);
     addAgent(duplicatedAgent);
+    // The drag that made the copy moves the copy: hold it like the source.
+    ref
+        .read(editorPointersProvider.notifier)
+        .holdAlongside(sourceId, duplicatedAgent.id);
     return duplicatedAgent.id;
   }
 

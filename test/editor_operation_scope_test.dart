@@ -209,4 +209,14 @@ void main() {
       expect(container.read(editorHeldEntitiesProvider), isEmpty);
     });
   });
+
+  test('a copy made by a held drag is held with its source', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(editorPointersProvider.notifier)
+      ..holdEntity(1, 'source')
+      ..down(1)
+      ..holdAlongside('source', 'copy');
+    expect(container.read(editorHeldEntitiesProvider), {'source', 'copy'});
+  });
 }

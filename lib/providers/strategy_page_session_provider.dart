@@ -117,9 +117,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _isResolvingConflicts = false;
   bool _remoteReapplyInFlight = false;
 
-  /// A remote change is waiting for the user to let go of what it touches.
-  /// Retried when a hold changes, not before: the hold may last a while.
-  bool _heldBackRemoteChange = false;
+  /// A remote change is waiting for the user to finish what it touches.
+  /// Retried when the editor's holds change, not before: they may last a
+  /// while, and retrying sooner would only hold the change back again.
+  bool _remoteChangeWaitsForEditor = false;
   bool _disposed = false;
   int _pageSessionGeneration = 0;
 
@@ -169,15 +170,19 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       _resumePendingRemoteReapplyIfPossible();
     });
 
-    ref.listen<Set<String>?>(editorHeldEntitiesProvider, (_, __) {
-      if (_heldBackRemoteChange) {
-        _heldBackRemoteChange = false;
+    void editorChanged() {
+      if (_remoteChangeWaitsForEditor) {
+        _remoteChangeWaitsForEditor = false;
         _pendingRemoteReapply = true;
       }
       // Draft completion publishes its saved value and history in the same
       // call stack. Let those writes finish before inspecting save state.
       scheduleMicrotask(_resumePendingRemoteReapplyIfPossible);
-    });
+    }
+
+    ref.listen<bool>(editorBusyProvider, (_, __) => editorChanged());
+    ref.listen<Set<String>?>(
+        editorHeldEntitiesProvider, (_, __) => editorChanged());
 
     ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
       final previousAckBatch =
@@ -587,7 +592,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   void reset() {
-    _heldBackRemoteChange = false;
+    _remoteChangeWaitsForEditor = false;
     _pageSessionGeneration++;
     state = const StrategyPageSessionState(
       activePageId: null,
@@ -897,7 +902,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         strategyId: strategyId,
         source: StrategySource.cloud,
         loadedRemoteSnapshot: loadedSnapshot,
-        canApply: canApply,
+        // Replacing the page (say a teammate deleted the one on screen)
+        // clears everything, so it waits until nothing is mid-way.
+        canApply: () {
+          if (ref.read(editorBusyProvider)) {
+            _remoteChangeWaitsForEditor = true;
+            return false;
+          }
+          return canApply();
+        },
       );
     } finally {
       _remoteReapplyInFlight = false;
@@ -945,7 +958,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       pageId,
       hydrationKey: _buildRemotePageHydrationKey(snapshot, pageId),
     );
-    _heldBackRemoteChange = heldBack.isNotEmpty;
+    if (heldBack.isNotEmpty) _remoteChangeWaitsForEditor = true;
   }
 
   String? _resolveHydrationTargetPage(RemoteEditorSnapshot snapshot) {

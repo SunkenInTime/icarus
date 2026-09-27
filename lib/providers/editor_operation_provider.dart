@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 
 /// What a pressed pointer landed on.
@@ -47,6 +48,16 @@ class EditorPointersNotifier extends Notifier<Map<int, EditorPointerHold>> {
     };
   }
 
+  /// Every press holding [heldId] now holds [id] as well.
+  void holdAlongside(String heldId, String id) {
+    state = {
+      for (final MapEntry(key: pointer, value: hold) in state.entries)
+        pointer: hold.entityIds.contains(heldId)
+            ? hold.copyWith(entityIds: {...hold.entityIds, id})
+            : hold,
+    };
+  }
+
   void markCanvas(int pointer) {
     final hold = state[pointer] ?? const EditorPointerHold();
     state = {...state, pointer: hold.copyWith(onCanvas: true)};
@@ -83,4 +94,20 @@ final editorHeldEntitiesProvider = Provider<Set<String>?>((ref) {
     if (placement?.pinnedOriginId case final id?) id,
     if (placement?.pinnedLandingId case final id?) id,
   };
+});
+
+/// Whether anything at all is mid-way: a press, a stroke, a lineup placement
+/// or a text draft. Replacing the whole page (a different page than the one on
+/// screen) waits for this; merging into the page on screen does not.
+final editorBusyProvider = Provider<bool>((ref) {
+  final pointers = ref.watch(editorPointersProvider);
+  final drawing = ref.watch(
+    drawingProvider.select((state) => state.currentElement != null),
+  );
+  final placement = ref.watch(
+    lineUpProvider.select((state) => state.placement != null),
+  );
+  final text =
+      ref.watch(textDraftProvider.select((drafts) => drafts.isNotEmpty));
+  return pointers.isNotEmpty || drawing || placement || text;
 });
