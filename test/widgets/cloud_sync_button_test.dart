@@ -808,7 +808,7 @@ void main() {
     );
   });
 
-  testWidgets('a lineup refusal beside a conflict explains both',
+  testWidgets('a lineup refusal beside other refused work mentions both',
       (tester) async {
     final queue = _AttentionOpQueue(2);
     final container = _createConflictContainer(
@@ -817,7 +817,7 @@ void main() {
     );
     addTearDown(container.dispose);
     container.read(strategySaveStateProvider.notifier).setCloudSyncError(
-          '$lineupLinkEndMissingMessage. $otherWorkConflictsNote',
+          '$lineupLinkEndMissingMessage. $otherWorkNeedsAttentionNote',
         );
 
     await tester.pumpWidget(
@@ -835,10 +835,10 @@ void main() {
 
     expect(find.textContaining('on this page in the cloud'), findsOneWidget);
     expect(
-      find.textContaining('Another edit reached the cloud first for the '
-          'other changes'),
+      find.textContaining('Other changes here were not saved either'),
       findsOneWidget,
     );
+    expect(find.textContaining('Another edit reached'), findsNothing);
     expect(
       find.textContaining('applies to all 2 changes that need attention'),
       findsOneWidget,

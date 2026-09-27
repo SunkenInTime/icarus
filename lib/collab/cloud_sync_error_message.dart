@@ -17,8 +17,8 @@ String redactSyncDiagnosticText(Object? error) {
 }
 
 /// Follows a specific reason in the queue's error when other saved work
-/// needs attention because another edit reached the cloud first.
-const otherWorkConflictsNote = 'Other saved work conflicts.';
+/// needs attention too, for whatever reason.
+const otherWorkNeedsAttentionNote = 'Other saved work needs attention too.';
 
 /// Whether [error] is the specific reason saved work needs attention, one
 /// that [friendlyCloudSyncError] explains, rather than an edit that lost a

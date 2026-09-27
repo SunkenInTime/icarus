@@ -2509,10 +2509,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       });
       if (hasOversizedWork) return cloudOperationTooLargeMessage;
       // A lineup the server refused for its own reason keeps that reason,
-      // so the sync button does not call it a conflict. Conflicts beside it
-      // are noted so they are still explained.
+      // so the sync button does not call it a conflict. Other attention
+      // beside it is noted so it is not left unexplained.
       String? lineupReason;
-      var hasConflicts = false;
+      var hasOtherWork = false;
       for (final entry in attention.entries) {
         final record = recordFor(entry.key);
         final reason = record?.pending.op.opId == entry.value.pending.op.opId
@@ -2522,12 +2522,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             reason == lineupPageMismatchMessage) {
           lineupReason ??= reason;
         } else {
-          hasConflicts = true;
+          hasOtherWork = true;
         }
       }
       if (lineupReason != null) {
-        return hasConflicts
-            ? '$lineupReason. $otherWorkConflictsNote'
+        return hasOtherWork
+            ? '$lineupReason. $otherWorkNeedsAttentionNote'
             : lineupReason;
       }
       return 'Some saved work needs attention.';
