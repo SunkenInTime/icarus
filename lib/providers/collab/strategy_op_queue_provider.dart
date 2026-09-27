@@ -1568,6 +1568,39 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
+  /// Drops every outbox record of [pageId] in the active strategy, with any
+  /// successor it holds: work for a page the server no longer has, which
+  /// the user has been told cannot be saved. An op in flight stays until
+  /// the server answers it. Returns whether nothing is left for the page.
+  Future<bool> discardDeletedPage(String pageId) async {
+    await _serializeWrite(() async {
+      final accountId = state.accountId;
+      final strategyPublicId = state.strategyPublicId;
+      if (accountId == null || strategyPublicId == null) return;
+      final storageKeys = _recordsByStorageKey.values
+          .where((record) =>
+              record.accountId == accountId &&
+              record.strategyPublicId == strategyPublicId &&
+              record.entityKey.pageId == pageId &&
+              record.status != DurableOutboxStatus.inFlight)
+          .map((record) => record.storageKey)
+          .toList(growable: false);
+      try {
+        for (final storageKey in storageKeys) {
+          await _removeRecordByStorageKey(storageKey);
+        }
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+        return;
+      }
+      _refreshActiveQueueView();
+    });
+    return !_recordsByStorageKey.values.any((record) =>
+        record.accountId == state.accountId &&
+        record.strategyPublicId == state.strategyPublicId &&
+        record.entityKey.pageId == pageId);
+  }
+
   /// Whether [op] carries something the user authored, as opposed to only
   /// removing or reordering. Exhaustive, so a new op type must be placed.
   static bool _carriesAuthoredContent(StrategyOp op) => switch (op) {

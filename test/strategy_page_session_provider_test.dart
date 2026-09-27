@@ -115,14 +115,6 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   /// Plays the server for one flush, like acking what it accepts.
   FutureOr<void> Function()? onFlush;
 
-  /// Like the real queue: discarded rejected work waits for the server's
-  /// copy, and new work for it is skipped until [completeRemoteAdoption].
-  final Set<EntitySyncKey> awaitingAdoption = {};
-
-  @override
-  void completeRemoteAdoption(Set<EntitySyncKey> entityKeys) =>
-      awaitingAdoption.removeAll(entityKeys);
-
   @override
   StrategyOpQueueState build() => const StrategyOpQueueState(
         accountId: 'account-a',
@@ -143,7 +135,6 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     required StrategyOp? desiredOp,
     bool flushImmediately = false,
   }) async {
-    if (awaitingAdoption.contains(entityKey)) return;
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.queuedByEntityKey,
     );
@@ -192,7 +183,6 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
           key.pageId == pageId && !desiredOpsByEntityKey.containsKey(key));
     }
     for (final entry in desiredOpsByEntityKey.entries) {
-      if (awaitingAdoption.contains(entry.key)) continue;
       if (state.attentionByEntityKey.containsKey(entry.key)) {
         successors[entry.key] = QueuedEntityIntent(
           entityKey: entry.key,
@@ -248,7 +238,6 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       state.successorByEntityKey,
     );
     final discarded = attention.keys.toSet().intersection(entityKeys);
-    awaitingAdoption.addAll(discarded);
     for (final key in discarded) {
       attention.remove(key);
       successors.remove(key);
@@ -259,6 +248,23 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       clearError: attention.isEmpty,
     );
     return discarded;
+  }
+
+  @override
+  Future<bool> discardDeletedPage(String pageId) async {
+    Map<EntitySyncKey, QueuedEntityIntent> withoutPage(
+            Map<EntitySyncKey, QueuedEntityIntent> intents) =>
+        {
+          for (final entry in intents.entries)
+            if (entry.key.pageId != pageId) entry.key: entry.value,
+        };
+    state = state.copyWith(
+      queuedByEntityKey: withoutPage(state.queuedByEntityKey),
+      pausedByEntityKey: withoutPage(state.pausedByEntityKey),
+      attentionByEntityKey: withoutPage(state.attentionByEntityKey),
+      successorByEntityKey: withoutPage(state.successorByEntityKey),
+    );
+    return !state.inFlightByEntityKey.keys.any((key) => key.pageId == pageId);
   }
 
   void reject(StrategyOp op) {
@@ -964,7 +970,11 @@ void main() {
         RemotePage one,
         RemotePage two,
         String strokeId,
-      })> strokeOnDeletedPage() async {
+      })> strokeOnDeletedPage({
+    /// Clears the unsaved mark before the pointer lifts, as an unrelated op
+    /// landing does.
+    bool unrelatedAckFirst = false,
+  }) async {
     final one = _page('page-1', 0, name: 'A exec');
     final two = _page('page-2', 1);
     final remote = _FakeRemoteEditorNotifier(
@@ -1015,6 +1025,10 @@ void main() {
     container
         .read(drawingProvider.notifier)
         .finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    if (unrelatedAckFirst) {
+      await _settle();
+      container.read(strategySaveStateProvider.notifier).markPersisted();
+    }
     container.read(editorPointersProvider.notifier).release(1);
     await _settle();
     return (
@@ -1068,6 +1082,8 @@ void main() {
         container
             .read(strategyPageSessionProvider)
             .copyWith(clearDeletedPage: true));
+    // The tap on the page selector is still down when it switches.
+    container.read(editorPointersProvider.notifier).down(2);
 
     await container
         .read(strategyPageSessionProvider.notifier)
@@ -1083,6 +1099,68 @@ void main() {
     expect(
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
     expect(remote.selectedPageIds, isNot(contains('page-2')));
+  });
+
+  test('an unrelated op landing does not let the page go unseen', () async {
+    final (:container, :one, :strokeId, queue: _, remote: _, two: _) =
+        await strokeOnDeletedPage(unrelatedAckFirst: true);
+
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage?.pageId, one.publicId);
+    expect(session.activePageId, one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+  });
+
+  test("the user's own deletion of the page on screen says nothing", () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final loadedOne = _pageSnapshot(
+      one,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: loadedOne,
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    // The delete has landed and the live read shows it before its ack.
+    queue.holdInFlight(
+      EntitySyncKey.pageDescriptor(one.publicId),
+      PageDeleteOp(
+        opId: 'delete-page',
+        pagePublicId: one.publicId,
+        expectedStrategyRevision: 1,
+      ),
+    );
+    remote.setSnapshot(_editorSnapshot(
+      pages: [two],
+      activePage: _pageSnapshot(two, text: 'two'),
+      themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+    ));
+    await _settle();
+    expect(container.read(strategyPageSessionProvider).deletedPage, isNull);
+
+    queue.clearInFlight();
+    await _settle();
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, two.publicId);
   });
 
   test('reading the notice moves to a page that exists', () async {

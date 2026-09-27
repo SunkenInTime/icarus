@@ -585,6 +585,62 @@ void main() {
     });
   });
 
+  test('a page the server deleted drops all its work, successors too',
+      () async {
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'paused',
+      status: DurableOutboxStatus.paused,
+    ).copyWith(
+      successorPending: PendingOp(
+        op: _op(opId: 'successor', elementId: 'element-one', value: 'next'),
+        clientId: 'client-active',
+      ),
+    ));
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'rejected',
+      elementId: 'element-two',
+      status: DurableOutboxStatus.attention,
+    ));
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'other-page',
+      elementId: 'element-three',
+      status: DurableOutboxStatus.paused,
+      op: const ElementPatchOp(
+        opId: 'other-page',
+        elementPublicId: 'element-three',
+        pagePublicId: 'page-two',
+        payload: {'value': 'kept'},
+        expectedElementRevision: 1,
+      ),
+    ));
+    final container = _container(
+      store: store,
+      repository: _RecordingRepository(),
+      connected: () => false,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('active', accountId: 'account-a');
+    await _waitUntil(
+      () => container.read(strategyOpQueueProvider).durableLoaded,
+    );
+
+    expect(await notifier.discardDeletedPage('page-one'), isTrue);
+
+    expect(
+      store.load().records.map((record) => record.entityKey.pageId),
+      ['page-two'],
+    );
+    final queue = container.read(strategyOpQueueProvider);
+    expect(queue.pausedByEntityKey.keys.map((key) => key.pageId), ['page-two']);
+    expect(queue.attentionByEntityKey, isEmpty);
+    expect(queue.successorByEntityKey, isEmpty);
+  });
+
   test('auth readiness recovery resumes eligible closed-strategy work',
       () async {
     final store = MemoryDurableStrategyOutboxStore();
@@ -644,7 +700,7 @@ DurableOutboxRecord _record({
   return DurableOutboxRecord(
     accountId: accountId,
     strategyPublicId: strategyId,
-    entityKey: EntitySyncKey.element('page-one', elementId),
+    entityKey: EntitySyncKey.element(op.pagePublicId ?? 'page-one', elementId),
     pending: PendingOp(op: op, clientId: 'client-$strategyId'),
     status: status,
     createdAt: now,
