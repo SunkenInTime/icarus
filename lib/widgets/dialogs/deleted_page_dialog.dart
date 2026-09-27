@@ -33,18 +33,26 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
       _isBusy = true;
       _error = null;
     });
-    final restored = await ref
+    final result = await ref
         .read(strategyPageSessionProvider.notifier)
         .restoreDeletedPage();
     if (!mounted) return;
-    if (restored) {
+    if (result == DeletedPageRestore.restored) {
       Navigator.of(context).pop();
       return;
     }
     setState(() {
       _isBusy = false;
-      _error = 'Could not restore the page. Your changes are still on '
-          'screen. Check your connection and try again.';
+      _error = switch (result) {
+        DeletedPageRestore.imagesNotOnDevice =>
+          'Some images on this page are not on this device, so it cannot '
+              'be restored whole from here.',
+        DeletedPageRestore.restoredByTeammate =>
+          'A teammate restored this page first. Discard your changes to see '
+              'their version.',
+        _ => 'Could not restore the page. Your changes are still on screen. '
+            'Check your connection and try again.',
+      };
     });
   }
 
@@ -53,10 +61,19 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
       _isBusy = true;
       _error = null;
     });
-    await ref
+    final discarded = await ref
         .read(strategyPageSessionProvider.notifier)
         .discardDeletedPageWork();
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    if (discarded) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _isBusy = false;
+      _error = 'Some of your changes are still being sent. Try again in a '
+          'moment.';
+    });
   }
 
   @override

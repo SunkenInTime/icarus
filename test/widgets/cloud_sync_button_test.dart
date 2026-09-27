@@ -196,16 +196,18 @@ class _DeletedPageSession extends StrategyPageSessionNotifier {
       );
 
   @override
-  Future<bool> restoreDeletedPage() async {
+  Future<DeletedPageRestore> restoreDeletedPage() async {
     restoreCount += 1;
-    if (restores) setStateForTest(state.copyWith(clearDeletedPage: true));
-    return restores;
+    if (!restores) return DeletedPageRestore.notReached;
+    setStateForTest(state.copyWith(clearDeletedPage: true));
+    return DeletedPageRestore.restored;
   }
 
   @override
-  Future<void> discardDeletedPageWork() async {
+  Future<bool> discardDeletedPageWork() async {
     discardCount += 1;
     setStateForTest(state.copyWith(clearDeletedPage: true));
+    return true;
   }
 }
 
@@ -339,7 +341,9 @@ void main() {
   test('a lineup live sync refused to send shows attention', () async {
     final container = _createContainer(
       liveSyncState: ActivePageLiveSyncState(
-        unsyncableLineupKeys: {const EntitySyncKey.lineup('page-1', 'lineup-1')},
+        unsyncableLineupKeys: {
+          const EntitySyncKey.lineup('page-1', 'lineup-1')
+        },
       ),
     );
     addTearDown(container.dispose);

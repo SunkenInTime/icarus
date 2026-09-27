@@ -32,6 +32,7 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -114,6 +115,14 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   /// Plays the server for one flush, like acking what it accepts.
   FutureOr<void> Function()? onFlush;
 
+  /// Like the real queue: discarded rejected work waits for the server's
+  /// copy, and new work for it is skipped until [completeRemoteAdoption].
+  final Set<EntitySyncKey> awaitingAdoption = {};
+
+  @override
+  void completeRemoteAdoption(Set<EntitySyncKey> entityKeys) =>
+      awaitingAdoption.removeAll(entityKeys);
+
   @override
   StrategyOpQueueState build() => const StrategyOpQueueState(
         accountId: 'account-a',
@@ -134,6 +143,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     required StrategyOp? desiredOp,
     bool flushImmediately = false,
   }) async {
+    if (awaitingAdoption.contains(entityKey)) return;
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.queuedByEntityKey,
     );
@@ -182,6 +192,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
           key.pageId == pageId && !desiredOpsByEntityKey.containsKey(key));
     }
     for (final entry in desiredOpsByEntityKey.entries) {
+      if (awaitingAdoption.contains(entry.key)) continue;
       if (state.attentionByEntityKey.containsKey(entry.key)) {
         successors[entry.key] = QueuedEntityIntent(
           entityKey: entry.key,
@@ -237,6 +248,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       state.successorByEntityKey,
     );
     final discarded = attention.keys.toSet().intersection(entityKeys);
+    awaitingAdoption.addAll(discarded);
     for (final key in discarded) {
       attention.remove(key);
       successors.remove(key);
@@ -497,6 +509,7 @@ Future<ProviderContainer> _cloudContainer({
   final container = ProviderContainer(overrides: [
     remoteEditorSnapshotProvider.overrideWith(() => remote),
     strategyOpQueueProvider.overrideWith(() => queue),
+    cloudMediaAccountIdProvider.overrideWithValue('account-a'),
   ]);
   addTearDown(container.dispose);
   container.read(strategyProvider.notifier).setFromState(const StrategyState(
@@ -966,6 +979,8 @@ void main() {
         });
     final queue = _FakeStrategyOpQueueNotifier();
     final container = await _cloudContainer(remote: remote, queue: queue);
+    container.read(strategyPageSessionProvider.notifier).pageWorkSettleTimeout =
+        const Duration(milliseconds: 100);
     await container
         .read(strategyPageSessionProvider.notifier)
         .initializeForStrategy(
@@ -1043,11 +1058,30 @@ void main() {
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
   });
 
+  /// Makes the server take the page add for [one] back, empty unless
+  /// [elements] are on it, when the queue next flushes.
+  void serverRestores(
+    _FakeRemoteEditorNotifier remote,
+    _FakeStrategyOpQueueNotifier queue,
+    RemotePage one,
+    RemotePage two, {
+    List<RemoteElement> elements = const [],
+  }) {
+    final restoredPage = _page(one.publicId, 0, name: 'A exec', revision: 5);
+    final restored = _pageSnapshot(restoredPage, elements: elements);
+    remote.initialSnapshot = _editorSnapshot(
+      pages: [restoredPage, _page(two.publicId, 1)],
+      activePage: restored,
+      themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+    );
+    remote.pageCatalog[one.publicId] = restored;
+    queue.ackQueued();
+  }
+
   test('restoring the deleted page sends it back with everything on it',
       () async {
     final (:container, :remote, :queue, :one, :two, :strokeId) =
         await strokeOnDeletedPage();
-    final restoredPage = _page(one.publicId, 0, name: 'A exec', revision: 5);
     queue.onFlush = () {
       final add = queue.state.queuedByEntityKey.values
           .map((intent) => intent.pending.op)
@@ -1056,16 +1090,8 @@ void main() {
       expect(add.pagePublicId, one.publicId);
       expect(add.sortIndex, 0);
       expect(add.payload['name'], 'A exec');
-      remote.initialSnapshot = _editorSnapshot(
-        pages: [restoredPage, _page(two.publicId, 1)],
-        activePage: _pageSnapshot(restoredPage, elements: const []),
-        themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
-      );
-      remote.pageCatalog[one.publicId] =
-          _pageSnapshot(restoredPage, elements: const []);
-      queue
-        ..ackQueued()
-        ..onFlush = null;
+      serverRestores(remote, queue, one, two);
+      queue.onFlush = null;
     };
 
     final restored = await container
@@ -1073,7 +1099,7 @@ void main() {
         .restoreDeletedPage();
     await _settle();
 
-    expect(restored, isTrue);
+    expect(restored, DeletedPageRestore.restored);
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, isNull);
     expect(session.activePageId, one.publicId);
@@ -1093,7 +1119,60 @@ void main() {
         {strokeId, 'text-${one.publicId}'});
   });
 
-  test('a restore the server does not take keeps the choice open', () async {
+  test('a restore sends again an edit the server turned down', () async {
+    final (:container, :remote, :queue, :one, :two, strokeId: _) =
+        await strokeOnDeletedPage();
+    // An edit to the text, rejected once the page was gone.
+    queue.reject(ElementPatchOp(
+      opId: 'rejected-edit',
+      elementPublicId: 'text-${one.publicId}',
+      pagePublicId: one.publicId,
+      payload: const {'value': 'mine'},
+      expectedElementRevision: 1,
+    ));
+    await _settle();
+    queue.onFlush = () {
+      serverRestores(remote, queue, one, two);
+      queue.onFlush = null;
+    };
+
+    final restored = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+    await _settle();
+
+    expect(restored, DeletedPageRestore.restored);
+    expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey, isEmpty);
+    expect(
+      container
+          .read(strategyOpQueueProvider)
+          .pending
+          .map((pending) => pending.op)
+          .whereType<ElementAddOp>()
+          .map((op) => op.entityPublicId),
+      contains('text-${one.publicId}'),
+    );
+  });
+
+  test('a restore acked behind another batch still completes', () async {
+    final (:container, :remote, :queue, :one, :two, strokeId: _) =
+        await strokeOnDeletedPage();
+    queue.onFlush = () {
+      queue.onFlush = null;
+      Future<void>.delayed(const Duration(milliseconds: 10),
+          () => serverRestores(remote, queue, one, two));
+    };
+
+    final restored = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(restored, DeletedPageRestore.restored);
+    expect(container.read(strategyPageSessionProvider).deletedPage, isNull);
+  });
+
+  test('a restore the server does not answer keeps the choice open', () async {
     final (:container, :one, :strokeId, queue: _, remote: _, two: _) =
         await strokeOnDeletedPage();
 
@@ -1103,11 +1182,62 @@ void main() {
         .restoreDeletedPage();
     await _settle();
 
-    expect(restored, isFalse);
+    expect(restored, DeletedPageRestore.notReached);
     expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
         one.publicId);
     expect(
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+  });
+
+  test('a page a teammate already restored is not taken as empty', () async {
+    final (:container, :remote, :queue, :one, :two, strokeId: _) =
+        await strokeOnDeletedPage();
+    queue.onFlush = () {
+      serverRestores(remote, queue, one, two, elements: [
+        _textElement(one.publicId, 'theirs', 'their restore', sortIndex: 3),
+      ]);
+      queue.onFlush = null;
+    };
+
+    final restored = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+    await _settle();
+
+    // Taking their page as the base would read their text as deleted here.
+    expect(restored, DeletedPageRestore.restoredByTeammate);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+    expect(
+      container
+          .read(strategyOpQueueProvider)
+          .pending
+          .where((pending) => pending.op.pagePublicId == one.publicId),
+      isEmpty,
+    );
+  });
+
+  test('an image this device cannot upload again stops the restore', () async {
+    final (:container, :queue, :one, remote: _, two: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    container.read(placedImageProvider.notifier).fromHive([
+      PlacedImage(
+        id: 'image-1',
+        position: const Offset(10, 10),
+        aspectRatio: 1,
+        scale: 100,
+        fileExtension: '.png',
+      ),
+    ]);
+
+    final restored = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(restored, DeletedPageRestore.imagesNotOnDevice);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+    expect(queue.flushNowCount, 0);
   });
 
   test('discarding the work on the deleted page moves to one that exists',
@@ -1125,11 +1255,12 @@ void main() {
       ),
     );
 
-    await container
+    final discarded = await container
         .read(strategyPageSessionProvider.notifier)
         .discardDeletedPageWork();
     await _settle();
 
+    expect(discarded, isTrue);
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, isNull);
     expect(session.activePageId, two.publicId);
@@ -1137,6 +1268,57 @@ void main() {
     expect(container.read(textProvider).single.text, 'two');
     expect(container.read(strategyOpQueueProvider).pending, isEmpty);
     expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+  });
+
+  test('discarding waits for work already sent for the page', () async {
+    final (:container, :queue, :one, :two, remote: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    final key = EntitySyncKey.element(one.publicId, 'sent');
+    queue.holdInFlight(
+      key,
+      ElementDeleteOp(
+        opId: 'sent-op',
+        pagePublicId: one.publicId,
+        elementPublicId: 'sent',
+        expectedElementRevision: 1,
+      ),
+    );
+    Future<void>.delayed(
+        const Duration(milliseconds: 10), () => queue.clearInFlight());
+
+    final discarded = await container
+        .read(strategyPageSessionProvider.notifier)
+        .discardDeletedPageWork();
+    await _settle();
+
+    expect(discarded, isTrue);
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, two.publicId);
+  });
+
+  test('work sent for the page that never comes back keeps the choice open',
+      () async {
+    final (:container, :queue, :one, :strokeId, remote: _, two: _) =
+        await strokeOnDeletedPage();
+    queue.holdInFlight(
+      EntitySyncKey.element(one.publicId, 'sent'),
+      ElementDeleteOp(
+        opId: 'sent-op',
+        pagePublicId: one.publicId,
+        elementPublicId: 'sent',
+        expectedElementRevision: 1,
+      ),
+    );
+
+    final discarded = await container
+        .read(strategyPageSessionProvider.notifier)
+        .discardDeletedPageWork();
+
+    expect(discarded, isFalse);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
   });
 
   test('a deleted page with nothing unsent gives way to one that exists',
