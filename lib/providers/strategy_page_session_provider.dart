@@ -306,11 +306,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
 
     try {
-      await _switchToPage(
+      final switched = await _switchToPage(
         pageId,
         animated: true,
         direction: direction,
       );
+      if (!switched) {
+        transitionNotifier.complete();
+        state = state.copyWith(transitionState: PageTransitionState.idle);
+        return;
+      }
     } catch (error, stackTrace) {
       transitionNotifier.complete();
       final strategyState = ref.read(strategyProvider);
@@ -620,7 +625,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     ref.read(activePageLiveSyncProvider.notifier).reset();
   }
 
-  Future<void> _switchToPage(
+  /// Returns false, leaving the page on screen, if a teammate deleted it
+  /// while its work was being flushed.
+  Future<bool> _switchToPage(
     String pageId, {
     required bool animated,
     PageTransitionDirection? direction,
@@ -630,7 +637,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final strategyId = strategyState.strategyId;
     final source = strategyState.source;
     if (strategyId == null || source == null) {
-      return;
+      return true;
     }
 
     final pageSource = _resolvePageSource(strategyId, source);
@@ -643,6 +650,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           .read(strategyOpQueueProvider.notifier)
           .flushNow()
           .timeout(const Duration(milliseconds: 750), onTimeout: () {});
+      // The page may have been deleted while its work was flushed.
+      if (_deletedPageHoldsWork()) return false;
       state = state.copyWith(activePageId: pageId);
       ref.read(activePageLiveSyncProvider.notifier).setContext(
             strategyPublicId: strategyId,
@@ -664,6 +673,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (animated && direction != null) {
       _updateHydrationBookkeeping(pageData.pageId);
     }
+    return true;
   }
 
   Future<void> _rehydrateActivePageFromSource(

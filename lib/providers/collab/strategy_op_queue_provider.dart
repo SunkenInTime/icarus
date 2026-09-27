@@ -1569,36 +1569,63 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   /// Drops every outbox record of [pageId] in the active strategy, with any
-  /// successor it holds: work for a page the server no longer has, which
-  /// the user has been told cannot be saved. An op in flight stays until
-  /// the server answers it. Returns whether nothing is left for the page.
+  /// successor it holds, including work whose first save could not be
+  /// verified: work for a page the server no longer has, which the user has
+  /// been told cannot be saved. An op in flight stays until the server
+  /// answers it. Returns whether nothing is left for the page.
   Future<bool> discardDeletedPage(String pageId) async {
     await _serializeWrite(() async {
       final accountId = state.accountId;
       final strategyPublicId = state.strategyPublicId;
       if (accountId == null || strategyPublicId == null) return;
-      final storageKeys = _recordsByStorageKey.values
-          .where((record) =>
-              record.accountId == accountId &&
+      final storageKeys = {
+        for (final record in [
+          ..._recordsByStorageKey.values,
+          ..._uncertainDurableIntents.values,
+        ])
+          if (record.accountId == accountId &&
               record.strategyPublicId == strategyPublicId &&
               record.entityKey.pageId == pageId &&
               record.status != DurableOutboxStatus.inFlight)
-          .map((record) => record.storageKey)
-          .toList(growable: false);
-      try {
-        for (final storageKey in storageKeys) {
+            record.storageKey,
+      };
+      Object? persistenceError;
+      for (final storageKey in storageKeys) {
+        try {
           await _removeRecordByStorageKey(storageKey);
+          _uncertainOversizedParking.remove(storageKey);
+        } catch (error, stackTrace) {
+          persistenceError = error;
+          log(
+            'Durable outbox persistence failed: $error',
+            name: 'strategy_outbox',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          break;
         }
-      } catch (error, stackTrace) {
-        _recordPersistenceFailure(error, stackTrace);
-        return;
       }
-      _refreshActiveQueueView();
+      if (_uncertainOversizedParking.isEmpty) {
+        _uncertainOversizedParkingMessage = null;
+      }
+      // The error shown was about the dropped work or about what remains;
+      // what remains says it again.
+      _refreshActiveQueueView(
+        useProvidedError: true,
+        lastError: persistenceError == null
+            ? null
+            : 'Cloud work could not be removed from the durable outbox: '
+                '$persistenceError',
+      );
     });
-    return !_recordsByStorageKey.values.any((record) =>
-        record.accountId == state.accountId &&
-        record.strategyPublicId == state.strategyPublicId &&
-        record.entityKey.pageId == pageId);
+    final left = state;
+    return ![
+      left.queuedByEntityKey,
+      left.inFlightByEntityKey,
+      left.successorByEntityKey,
+      left.pausedByEntityKey,
+      left.attentionByEntityKey,
+    ].any((intents) => intents.keys.any((key) => key.pageId == pageId));
   }
 
   /// Whether [op] carries something the user authored, as opposed to only

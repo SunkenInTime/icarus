@@ -628,6 +628,7 @@ void main() {
     await _waitUntil(
       () => container.read(strategyOpQueueProvider).durableLoaded,
     );
+    expect(container.read(strategyOpQueueProvider).lastError, isNotNull);
 
     expect(await notifier.discardDeletedPage('page-one'), isTrue);
 
@@ -639,6 +640,33 @@ void main() {
     expect(queue.pausedByEntityKey.keys.map((key) => key.pageId), ['page-two']);
     expect(queue.attentionByEntityKey, isEmpty);
     expect(queue.successorByEntityKey, isEmpty);
+    // The attention was the dropped work's; the paused edit on page two
+    // speaks for itself.
+    expect(queue.lastError, isNot(contains('rejected')));
+  });
+
+  test('a deleted page drops work whose first save could not be verified',
+      () async {
+    final container = _container(
+      store: _FailingPutStore(),
+      repository: _RecordingRepository(),
+      connected: () => false,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('active', accountId: 'account-a');
+    await notifier.enqueue(
+      _op(opId: 'unverified', elementId: 'element-one'),
+      flushImmediately: false,
+    );
+    expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+        isNotEmpty);
+
+    expect(await notifier.discardDeletedPage('page-one'), isTrue);
+
+    final queue = container.read(strategyOpQueueProvider);
+    expect(queue.attentionByEntityKey, isEmpty);
+    expect(queue.lastError, isNull);
   });
 
   test('auth readiness recovery resumes eligible closed-strategy work',

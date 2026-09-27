@@ -1163,6 +1163,76 @@ void main() {
     expect(session.activePageId, two.publicId);
   });
 
+  test('a deletion landing while a switch flushes still tells the user',
+      () async {
+    final one = _page('page-1', 0, name: 'A exec');
+    final two = _page('page-2', 1);
+    final loadedOne = _pageSnapshot(
+      one,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: loadedOne,
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(editorPointersProvider.notifier)
+      ..markCanvas(1)
+      ..down(1);
+    container.read(drawingProvider.notifier)
+      ..startFreeDrawing(
+          const Offset(10, 20),
+          CoordinateSystem.instance,
+          Colors.white,
+          2,
+          false,
+          false,
+          false,
+          TraversalSpeedProfile.values.first)
+      ..finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    container.read(editorPointersProvider.notifier).release(1);
+    await _settle();
+    final stroke = container.read(drawingProvider).elements.single.id;
+    // The switch sends the stroke; the teammate's delete gets there first.
+    queue.onFlush = () {
+      queue.onFlush = null;
+      remote.setSnapshot(_editorSnapshot(
+        pages: [two],
+        activePage: _pageSnapshot(two, text: 'two'),
+        themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+      ));
+    };
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          two.publicId,
+          direction: PageTransitionDirection.forward,
+        );
+    await _settle();
+
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
+    expect(session.activePageId, one.publicId);
+    expect(session.transitionState, PageTransitionState.idle);
+    expect(container.read(drawingProvider).elements.map((d) => d.id), [stroke]);
+  });
+
   test('reading the notice moves to a page that exists', () async {
     final (:container, :queue, :one, :two, remote: _, strokeId: _) =
         await strokeOnDeletedPage();
