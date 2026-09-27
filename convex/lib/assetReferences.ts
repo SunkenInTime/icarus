@@ -19,31 +19,50 @@ export type ReferencingLineup = Pick<
   "strategyId" | "pageId" | "deleted" | "payload"
 >;
 
-/// The name of the backfill that gave content written before the
-/// reference table its reference rows.
-const assetReferencesBackfill = "assetReferences";
+/// The backfill that gives content written before the reference table its
+/// reference rows runs once per content table; each finished table is
+/// recorded under its own name.
+export type ContentTable = "elements" | "lineups";
+const backfillName = (table: ContentTable) => `assetReferences:${table}`;
 
-/// Whether every content row has its reference rows: true once
-/// maintenance.backfillAssetReferences has finished. Until then a missing
-/// reference row proves nothing, so nothing may be deleted on its say-so.
-export async function assetReferencesReady(ctx: AnyCtx): Promise<boolean> {
+async function isBackfilled(ctx: AnyCtx, table: ContentTable) {
   const row = await ctx.db
     .query("completedBackfills")
-    .withIndex("by_name", (q) => q.eq("name", assetReferencesBackfill))
+    .withIndex("by_name", (q) => q.eq("name", backfillName(table)))
     .first();
   return row !== null;
 }
 
-/// Records that the reference backfill has finished (see
-/// assetReferencesReady). Idempotent.
+/// Whether every content row has its reference rows: true once
+/// maintenance.backfillAssetReferences has finished both elements and
+/// lineups, in either order. Until then a missing reference row proves
+/// nothing, so nothing may be deleted on its say-so: no asset marked
+/// deleted, and no stored bytes removed.
+export async function assetReferencesReady(ctx: AnyCtx): Promise<boolean> {
+  return (
+    (await isBackfilled(ctx, "elements")) &&
+    (await isBackfilled(ctx, "lineups"))
+  );
+}
+
+/// Records that the backfill of [table] has finished. Idempotent.
+export async function markContentTableBackfilled(
+  ctx: MutationCtx,
+  table: ContentTable,
+): Promise<void> {
+  if (await isBackfilled(ctx, table)) return;
+  await ctx.db.insert("completedBackfills", {
+    name: backfillName(table),
+    completedAt: Date.now(),
+  });
+}
+
+/// Records both tables as backfilled (tests, and a fresh deployment).
 export async function markAssetReferencesReady(
   ctx: MutationCtx,
 ): Promise<void> {
-  if (await assetReferencesReady(ctx)) return;
-  await ctx.db.insert("completedBackfills", {
-    name: assetReferencesBackfill,
-    completedAt: Date.now(),
-  });
+  await markContentTableBackfilled(ctx, "elements");
+  await markContentTableBackfilled(ctx, "lineups");
 }
 
 /// The image ids a content row shows, whether or not it is deleted: a
@@ -61,32 +80,39 @@ export function assetIdsOfRow(
 
 /// Brings the reference rows of one element in step with it. Call after
 /// every write to the element; pass the id with `null` after hard-deleting
-/// it. Touches only this element's reference rows.
+/// it. Touches only this element's reference rows. With [maxWrites] it
+/// stops after that many writes and reports whether the rows are fully in
+/// step; syncing again continues (see syncRows).
 export async function syncElementAssetReferences(
   ctx: MutationCtx,
   elementId: Id<"elements">,
   element: ReferencingElement | null,
-): Promise<void> {
+  maxWrites = Infinity,
+): Promise<SyncResult> {
   const existing = await ctx.db
     .query("assetReferences")
     .withIndex("by_elementId", (q) => q.eq("elementId", elementId))
     .collect();
-  await syncRows(ctx, existing, element, { elementId });
+  return await syncRows(ctx, existing, element, { elementId }, maxWrites);
 }
 
 /// Brings the reference rows of one lineup row in step with it. Call after
 /// every write to the row; pass the id with `null` after hard-deleting it.
+/// [maxWrites] as for syncElementAssetReferences.
 export async function syncLineupAssetReferences(
   ctx: MutationCtx,
   lineupId: Id<"lineups">,
   lineup: ReferencingLineup | null,
-): Promise<void> {
+  maxWrites = Infinity,
+): Promise<SyncResult> {
   const existing = await ctx.db
     .query("assetReferences")
     .withIndex("by_lineupId", (q) => q.eq("lineupId", lineupId))
     .collect();
-  await syncRows(ctx, existing, lineup, { lineupId });
+  return await syncRows(ctx, existing, lineup, { lineupId }, maxWrites);
 }
+
+export type SyncResult = { writes: number; complete: boolean };
 
 /// Writes the reference rows of a content row inserted in this same
 /// transaction, which has none yet, so nothing is read.
@@ -106,31 +132,40 @@ export async function insertAssetReferences(
   }
 }
 
+/// Diffs a row's reference rows against the images it shows and writes the
+/// difference, at most [maxWrites] writes. Every write moves the rows closer
+/// to the wanted set, so a sync cut short is finished by syncing again.
 async function syncRows(
   ctx: MutationCtx,
   existing: Doc<"assetReferences">[],
   row: ReferencingElement | ReferencingLineup | null,
   source: { elementId?: Id<"elements">; lineupId?: Id<"lineups"> },
-): Promise<void> {
+  maxWrites: number,
+): Promise<SyncResult> {
   const wanted = row === null ? new Set<string>() : assetIdsOfRow(row);
   const kept = new Set<string>();
+  let writes = 0;
+  const outOfWrites = () => writes++ >= maxWrites;
   for (const reference of existing) {
     if (row === null || !wanted.has(reference.assetPublicId) ||
         kept.has(reference.assetPublicId)) {
+      if (outOfWrites()) return { writes: maxWrites, complete: false };
       await ctx.db.delete(reference._id);
       continue;
     }
     kept.add(reference.assetPublicId);
     if (reference.deleted !== row.deleted || reference.pageId !== row.pageId) {
+      if (outOfWrites()) return { writes: maxWrites, complete: false };
       await ctx.db.patch(reference._id, {
         deleted: row.deleted,
         pageId: row.pageId,
       });
     }
   }
-  if (row === null) return;
+  if (row === null) return { writes, complete: true };
   for (const assetPublicId of wanted) {
     if (kept.has(assetPublicId)) continue;
+    if (outOfWrites()) return { writes: maxWrites, complete: false };
     await ctx.db.insert("assetReferences", {
       strategyId: row.strategyId,
       assetPublicId,
@@ -139,6 +174,7 @@ async function syncRows(
       deleted: row.deleted,
     });
   }
+  return { writes, complete: true };
 }
 
 /// Whether any content of the strategy shows the image: a live element or

@@ -614,13 +614,16 @@ function copiedLineupRow(
 // so its budget is what it reads:
 //  - bytes: each content row's stored size (deleted rows included, as
 //    read), and for each image the copy shows the most its asset copy can
-//    read (duplicateImageReadBytes). 12 MiB leaves 4 MiB for pages and
-//    settings. Measured on a local backend with 700 KiB rows: 23 rows
-//    (15.7 MiB) copied, 24 (16.4 MiB) failed on the read limit.
-//  - documents: content rows read plus reference rows written, which keeps
-//    writes far under the document limit.
-// The byte charge also caps images near 550, so their asset lookups (at
-// most three index reads each) stay under the index read limit.
+//    read (duplicateImageReadBytes), and each page and its settings. 12 MiB
+//    leaves 4 MiB of headroom. Measured on a local backend with 700 KiB
+//    rows: 23 rows (15.7 MiB) copied, 24 (16.4 MiB) failed on the read
+//    limit.
+//  - documents: pages (three each: read, and the page and settings rows
+//    written), content rows read, and reference rows written. This keeps
+//    writes far under the document limit, and caps the per-page settings
+//    reads.
+// Index reads stay under Convex's 4,096: at most ~1,333 page settings
+// reads, and the byte charge caps images near 550 at three reads each.
 const duplicateMaxBytes = 12 * 1024 * 1024;
 const duplicateMaxDocuments = 4000;
 // An image's asset copy reads at most 22 asset rows (one active row, up to
@@ -716,11 +719,16 @@ export const duplicate = mutation({
       updatedAt: now,
     });
 
+    // One transaction copies everything. Past the budget the whole
+    // duplicate is refused with a clear error: the transaction rolls back,
+    // so no part of a copy is ever left behind.
+    const budget = new DuplicateBudget();
     const pageIdMap = new Map<Id<"pages">, Id<"pages">>();
-    const sourcePages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
-      .collect();
+    const sourcePages = await budget.read(
+      ctx.db
+        .query("pages")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
+    );
     for (const page of sourcePages) {
       const pageId = await ctx.db.insert("pages", {
         publicId: createPublicId(),
@@ -740,6 +748,11 @@ export const duplicate = mutation({
         .query("pageContents")
         .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
         .first();
+      // The settings read, and the two rows this page's copy writes.
+      budget.spend({
+        bytes: content === null ? 0 : getConvexSize(content),
+        documents: 2,
+      });
       await ctx.db.insert("pageContents", {
         pageId,
         settings: content?.settings,
@@ -755,10 +768,6 @@ export const duplicate = mutation({
     // are scoped to a strategy.
     const sourceAssetIdByCopyId = new Map<string, string>();
 
-    // One transaction copies everything. Past the budget the whole
-    // duplicate is refused with a clear error: the transaction rolls back,
-    // so no part of a copy is ever left behind.
-    const budget = new DuplicateBudget();
     const showImage = (copyAssetId: string, sourceAssetId: string) => {
       if (sourceAssetIdByCopyId.has(copyAssetId)) return;
       budget.spend({ bytes: duplicateImageReadBytes });

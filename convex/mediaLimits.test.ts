@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { getConvexSize } from "convex/values";
 import type { DataModel, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import * as images from "./images";
 import { processAssetReclaimBatch } from "./images";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
@@ -35,6 +36,18 @@ const backfillAssetReferences = makeFunctionReference<"mutation">(
 );
 const checkAssetReferences = makeFunctionReference<"query">(
   "maintenance:checkAssetReferences",
+);
+const findShownUnavailableAssets = makeFunctionReference<"query">(
+  "maintenance:findShownUnavailableAssets",
+);
+const claimDeletedImageAssets = makeFunctionReference<"mutation">(
+  "images:claimDeletedImageAssets",
+);
+const completeLegacyUpload = makeFunctionReference<"mutation">(
+  "images:completeLegacyUpload",
+);
+const sweepDeletedImageAssets = makeFunctionReference<"action">(
+  "images:sweepDeletedImageAssets",
 );
 const processAssetReclaimCandidates = makeFunctionReference<"mutation">(
   "images:processAssetReclaimCandidates",
@@ -169,6 +182,7 @@ async function seedLargeStrategy(
 function countReads<Ctx extends MutationCtx>(ctx: Ctx) {
   let bytes = 0;
   let rangeReads = 0;
+  let writes = 0;
   const count = <T>(doc: T): T => {
     if (doc !== null && doc !== undefined) bytes += getConvexSize(doc as any);
     return doc;
@@ -213,6 +227,12 @@ function countReads<Ctx extends MutationCtx>(ctx: Ctx) {
       if (prop === "get") {
         return (id: any) => (target as any).get(id).then(count);
       }
+      if (prop === "insert" || prop === "patch" || prop === "delete") {
+        return (...args: unknown[]) => {
+          writes += 1;
+          return (target as any)[prop](...args);
+        };
+      }
       const value = Reflect.get(target, prop, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
@@ -221,6 +241,7 @@ function countReads<Ctx extends MutationCtx>(ctx: Ctx) {
     ctx: { ...ctx, db } as Ctx,
     bytesRead: () => bytes,
     rangeReads: () => rangeReads,
+    writes: () => writes,
   };
 }
 
@@ -565,7 +586,10 @@ describe("asset references follow their content", () => {
     const completed = await t.run(
       async (ctx) => await ctx.db.query("completedBackfills").collect(),
     );
-    expect(completed.map((row) => row.name)).toEqual(["assetReferences"]);
+    expect(completed.map((row) => row.name).sort()).toEqual([
+      "assetReferences:elements",
+      "assetReferences:lineups",
+    ]);
   });
 });
 
@@ -682,6 +706,277 @@ describe("before the reference backfill", () => {
     );
     expect(remaining.filter((row) => row.deleted)).toEqual([]);
     expect(await candidates(t)).toEqual([]);
+  });
+});
+
+describe("the backfill and its gate", () => {
+  /// A lineup link showing [images] images, inserted without reference
+  /// rows, as the previous version wrote it.
+  async function insertOldLineup(
+    t: RootHarness,
+    linkId: string,
+    images: number,
+  ) {
+    const { strategyId, pageId } = await ids(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("lineups", {
+        publicId: `lineupLink:${linkId}`,
+        strategyId,
+        pageId,
+        payloadKind: "lineupLink",
+        payloadVersion: 1,
+        payload: {
+          kind: "lineupLink",
+          payloadVersion: 1,
+          data: {
+            id: linkId,
+            originId: "o",
+            landingId: "l",
+            images: Array.from({ length: images }, (_, index) => ({
+              id: `${linkId}-${index}`,
+            })),
+          },
+        },
+        sortIndex: 0,
+        revision: 1,
+        deleted: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+  }
+
+  test("image-heavy lineups are backfilled across runs, each within its write budget", async () => {
+    const { t } = await createHarness({ backfilled: false });
+    // Codex's replay: 8 lineups x 2,100 images, 16,800 reference rows in one
+    // run before, past Convex's 8,192 writes.
+    for (let index = 0; index < 8; index++) {
+      await insertOldLineup(t, `heavy-${index}`, 2100);
+    }
+    const args = {
+      table: "lineups" as const,
+      paginationOpts: { numItems: 8, cursor: null },
+    };
+
+    const firstRun = await t.run(async (ctx) => {
+      const counted = countReads(ctx);
+      const result = await (maintenance.backfillAssetReferences as any)
+        ._handler(counted.ctx, args);
+      return { result, writes: counted.writes() };
+    });
+    expect(firstRun.result.isDone).toBe(false);
+    expect(firstRun.writes).toBeLessThanOrEqual(2000);
+
+    // Each run commits its writes; the same page runs again and continues.
+    await t.mutation(backfillAssetReferences, args);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const state = await t.run(async (ctx) => ({
+      references: (await ctx.db.query("assetReferences").collect()).length,
+      completed: (await ctx.db.query("completedBackfills").collect()).map(
+        (row) => row.name,
+      ),
+    }));
+    expect(state.references).toBe(16800);
+    // Lineups are done, but elements have not been backfilled: still gated.
+    expect(state.completed).toEqual(["assetReferences:lineups"]);
+  });
+
+  test("the gate opens only once both tables are backfilled, in either order", async () => {
+    const { t } = await createHarness({ backfilled: false });
+    const { strategyId, pageId } = await ids(t);
+    // A live placed image from the previous version: no reference row.
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("imageAssets", {
+        publicId: "live-image",
+        provider: "r2",
+        strategyId,
+        objectKey: "tests/live-image.png",
+        uploadStatus: "active",
+        fileExtension: ".png",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("elements", {
+        publicId: "live-image",
+        strategyId,
+        pageId,
+        elementType: "image",
+        payloadKind: "image",
+        payloadVersion: 1,
+        payload: {
+          kind: "image",
+          payloadVersion: 1,
+          data: { id: "live-image", elementType: "image" },
+        },
+        sortIndex: 0,
+        revision: 1,
+        deleted: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await t.mutation(markPurgedTombstoneImageAssets, {
+      strategyId,
+      assetPublicIds: ["live-image"],
+    });
+
+    // Codex's replay: the lineups backfill first, on an empty table.
+    await t.mutation(backfillAssetReferences, {
+      table: "lineups",
+      paginationOpts: { numItems: 8, cursor: null },
+    });
+    await t.mutation(processAssetReclaimCandidates, {});
+    expect(await assetStatus(t, "live-image")).toEqual(["active"]);
+    expect((await candidates(t)).map((row) => row.assetPublicId)).toEqual([
+      "live-image",
+    ]);
+
+    // Elements finish too: the gate opens and the element keeps its image.
+    await t.mutation(backfillAssetReferences, {
+      table: "elements",
+      paginationOpts: { numItems: 8, cursor: null },
+    });
+    await t.mutation(backfillAssetReferences, {
+      table: "lineups",
+      paginationOpts: { numItems: 8, cursor: null },
+    });
+    await t.mutation(processAssetReclaimCandidates, {});
+    expect(await assetStatus(t, "live-image")).toEqual(["active"]);
+    expect(await candidates(t)).toEqual([]);
+  });
+
+  test("an old cleanup job with thousands of images queues them in bounded runs", async () => {
+    const { t } = await createHarness({ backfilled: false });
+    const { strategyId } = await ids(t);
+    const assetPublicIds = Array.from(
+      { length: 4250 },
+      (_, index) => `old-${index}`,
+    );
+
+    const firstRun = await t.run(async (ctx) => {
+      const counted = countReads(ctx);
+      await (images.markPurgedTombstoneImageAssets as any)._handler(
+        counted.ctx,
+        { strategyId, assetPublicIds },
+      );
+      return counted.rangeReads();
+    });
+    // Before: 4,250 index reads in one run, past Convex's 4,096.
+    expect(firstRun).toBeLessThanOrEqual(110);
+    expect(await candidates(t)).toHaveLength(100);
+
+    // The rest was scheduled in the same transaction, never lost.
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await candidates(t)).toHaveLength(4250);
+  });
+
+  test("stored bytes are not removed before the backfill", async () => {
+    const { t } = await createHarness({ backfilled: false });
+    const { strategyId } = await ids(t);
+    // Marked deleted, and waiting for the physical sweep.
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("imageAssets", {
+        publicId: "marked",
+        provider: "r2",
+        strategyId,
+        objectKey: "tests/marked.png",
+        uploadStatus: "deleted",
+        deletedAt: now,
+        fileExtension: ".png",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    expect(await t.mutation(claimDeletedImageAssets, {})).toEqual([]);
+    expect(await assetStatus(t, "marked")).toEqual(["deleted"]);
+
+    await t.run(markAssetReferencesReady);
+    expect(await t.mutation(claimDeletedImageAssets, {})).toHaveLength(1);
+  });
+
+  test("a replaced legacy blob waits for the backfill, then the sweep removes it", async () => {
+    const { t, owner } = await createHarness({ backfilled: false });
+    const { strategyId } = await ids(t);
+    const { oldBlob, newBlob } = await t.run(async (ctx) => {
+      const oldBlob = await ctx.storage.store(new Blob(["old"]));
+      const newBlob = await ctx.storage.store(new Blob(["new"]));
+      const now = Date.now();
+      await ctx.db.insert("imageAssets", {
+        publicId: "legacy-image",
+        provider: "convex",
+        strategyId,
+        storageId: oldBlob,
+        uploadStatus: "active",
+        fileExtension: ".png",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return { oldBlob, newBlob };
+    });
+
+    await owner.mutation(completeLegacyUpload, {
+      strategyPublicId,
+      assetPublicId: "legacy-image",
+      storageId: newBlob,
+      fileExtension: ".png",
+    });
+    await t.action(sweepDeletedImageAssets, {});
+    const blobExists = async (id: typeof oldBlob) =>
+      await t.run(async (ctx) => (await ctx.storage.get(id)) !== null);
+    expect(await blobExists(oldBlob)).toBe(true);
+    expect((await assetStatus(t, "legacy-image")).sort()).toEqual([
+      "active",
+      "deleted",
+    ]);
+
+    await t.run(markAssetReferencesReady);
+    await t.action(sweepDeletedImageAssets, {});
+    expect(await blobExists(oldBlob)).toBe(false);
+    expect(await blobExists(newBlob)).toBe(true);
+    expect(await assetStatus(t, "legacy-image")).toEqual(["active"]);
+  });
+
+  test("the safety check lists shown images whose assets are not active", async () => {
+    const { t } = await createHarness({ backfilled: false });
+    const { strategyId } = await ids(t);
+    await insertOldLineup(t, "shown", 3);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const statuses = ["active", "deleted", "pending"] as const;
+      for (let index = 0; index < 3; index++) {
+        await ctx.db.insert("imageAssets", {
+          publicId: `shown-${index}`,
+          provider: "r2",
+          strategyId,
+          objectKey: `tests/shown-${index}.png`,
+          uploadStatus: statuses[index],
+          fileExtension: ".png",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    const result = await t.query(findShownUnavailableAssets, {
+      table: "lineups",
+      paginationOpts: { numItems: 100, cursor: null },
+    });
+    expect(result.unavailable).toEqual([
+      {
+        content: "lineupLink:shown",
+        assetPublicId: "shown-1",
+        statuses: ["deleted"],
+      },
+      {
+        content: "lineupLink:shown",
+        assetPublicId: "shown-2",
+        statuses: ["pending"],
+      },
+    ]);
   });
 });
 
@@ -1017,6 +1312,42 @@ describe("duplicate stays within transaction limits", () => {
         .collect();
     });
     expect(copyReferences).toHaveLength(500);
+  });
+
+  test("a strategy with thousands of pages is refused whole", async () => {
+    const { t, owner } = await createHarness();
+    const { strategyId } = await ids(t);
+    // Codex's replay: 4,251 small pages blew the limits before the budget
+    // existed.
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      for (let index = 0; index < 4251; index++) {
+        await ctx.db.insert("pages", {
+          publicId: `extra-page-${index}`,
+          strategyId,
+          name: `Page ${index}`,
+          sortIndex: index + 1,
+          isAttack: true,
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    const error = await owner
+      .mutation(duplicateStrategy, {
+        ...protocol,
+        sourceStrategyPublicId: strategyPublicId,
+        publicId: "pages-copy",
+        name: "Copy",
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+    expect(errorCode(error)).toBe("STRATEGY_TOO_LARGE_TO_DUPLICATE");
+    expect(await strategyExists(t, "pages-copy")).toBe(false);
   });
 
   test("a strategy over the row limit is refused whole", async () => {

@@ -9,11 +9,16 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   assetIdsOfRow,
   assetReferencesReady,
-  markAssetReferencesReady,
+  markContentTableBackfilled,
   syncElementAssetReferences,
   syncLineupAssetReferences,
 } from "./lib/assetReferences";
-import { processAssetReclaimCandidatesRef, queueAssetReclaim } from "./images";
+import { inferUploadStatus } from "./lib/imageAssets";
+import {
+  processAssetReclaimCandidatesRef,
+  queueAssetReclaim,
+  sweepDeletedImageAssetsRef,
+} from "./images";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 
 const MAINTENANCE_BATCH_SIZE = 200;
@@ -24,6 +29,9 @@ const CONTENT_BATCH_SIZE = 8;
 // Reference rows a purge run turns into reclaim candidates. Each costs one
 // indexed read and two writes, far under Convex's 4,096 index reads.
 const PURGE_REFERENCE_BUDGET = 200;
+// Reference rows the backfill writes per run, well under Convex's 8,192
+// documents written per transaction.
+const BACKFILL_WRITE_BUDGET = 2000;
 // How long a deleted page's purge waits before checking again whether the
 // reference backfill has finished.
 const PURGE_WAIT_FOR_BACKFILL_MS = 10 * 60 * 1000;
@@ -216,10 +224,11 @@ export const purgeOldTombstones = internalMutation({
 /// element and lineup row, tombstones included, its reference rows. Pages
 /// through elements, then lineups, a few rows per run (rows can be large),
 /// rescheduling itself until done. Rows written meanwhile get theirs from
-/// the writer itself. When the last page is done it records the backfill
-/// as complete, which opens every reference-dependent deletion (see
-/// assetReferencesReady), and starts the purge and reclaim work that was
-/// waiting for it. Safe to re-run: syncing a row is idempotent.
+/// the writer itself. When a table's last page is done it records that
+/// table as backfilled. Once both are, every reference-dependent deletion
+/// opens (see assetReferencesReady), and the lineups run starts the purge,
+/// reclaim, and physical sweep that were waiting. Safe to re-run: syncing a
+/// row is idempotent.
 export const backfillAssetReferences = internalMutation({
   args: {
     table: v.union(v.literal("elements"), v.literal("lineups")),
@@ -230,11 +239,19 @@ export const backfillAssetReferences = internalMutation({
       args.table === "elements"
         ? await ctx.db.query("elements").paginate(args.paginationOpts)
         : await ctx.db.query("lineups").paginate(args.paginationOpts);
+    // A row can show thousands of images, so writes are budgeted, not rows.
+    // A run that spends its budget mid-page runs the same page again: rows
+    // already in step cost no writes, and the row it stopped in continues.
+    let writesLeft = BACKFILL_WRITE_BUDGET;
     for (const row of page.page) {
-      if ("elementType" in row) {
-        await syncElementAssetReferences(ctx, row._id, row);
-      } else {
-        await syncLineupAssetReferences(ctx, row._id, row);
+      const result =
+        "elementType" in row
+          ? await syncElementAssetReferences(ctx, row._id, row, writesLeft)
+          : await syncLineupAssetReferences(ctx, row._id, row, writesLeft);
+      writesLeft -= result.writes;
+      if (!result.complete) {
+        await ctx.scheduler.runAfter(0, backfillAssetReferencesRef, args);
+        return { synced: page.page.length, isDone: false };
       }
     }
     if (!page.isDone) {
@@ -245,17 +262,20 @@ export const backfillAssetReferences = internalMutation({
           cursor: page.continueCursor,
         },
       });
-    } else if (args.table === "elements") {
+      return { synced: page.page.length, isDone: false };
+    }
+    await markContentTableBackfilled(ctx, args.table);
+    if (args.table === "elements") {
       await ctx.scheduler.runAfter(0, backfillAssetReferencesRef, {
         table: "lineups",
         paginationOpts: { numItems: args.paginationOpts.numItems, cursor: null },
       });
-    } else {
-      await markAssetReferencesReady(ctx);
+    } else if (await assetReferencesReady(ctx)) {
       await ctx.scheduler.runAfter(0, purgeOldTombstonesRef, {});
       await ctx.scheduler.runAfter(0, processAssetReclaimCandidatesRef, {});
+      await ctx.scheduler.runAfter(0, sweepDeletedImageAssetsRef, {});
     }
-    return { synced: page.page.length, isDone: page.isDone };
+    return { synced: page.page.length, isDone: true };
   },
 });
 
@@ -300,6 +320,57 @@ export const checkAssetReferences = internalQuery({
     return {
       checked: page.page.length,
       mismatched,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+/// Read-only safety check, usable before and after the reference backfill:
+/// reads live content itself (not reference rows) and lists every image it
+/// shows that has no active asset, with the statuses of that image's asset
+/// rows (deleted, pending, failed; none at all if the rows are gone). An
+/// image mid-upload shows as pending; a shown image marked deleted is the
+/// case cleanup must never cause. Page with continueCursor until isDone;
+/// its cost is one indexed read per image shown, so keep pages small.
+export const findShownUnavailableAssets = internalQuery({
+  args: {
+    table: v.union(v.literal("elements"), v.literal("lineups")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const page =
+      args.table === "elements"
+        ? await ctx.db.query("elements").paginate(args.paginationOpts)
+        : await ctx.db.query("lineups").paginate(args.paginationOpts);
+    const unavailable: {
+      content: string;
+      assetPublicId: string;
+      statuses: string[];
+    }[] = [];
+    for (const row of page.page) {
+      if (row.deleted) continue;
+      for (const assetPublicId of assetIdsOfRow(row)) {
+        // One indexed read per image, so a page's cost is its images.
+        const rows = await ctx.db
+          .query("imageAssets")
+          .withIndex("by_strategyId_and_publicId", (q) =>
+            q.eq("strategyId", row.strategyId).eq("publicId", assetPublicId),
+          )
+          .take(20);
+        if (rows.some((asset) => inferUploadStatus(asset) === "active")) {
+          continue;
+        }
+        unavailable.push({
+          content: row.publicId,
+          assetPublicId,
+          statuses: rows.map((asset) => inferUploadStatus(asset)),
+        });
+      }
+    }
+    return {
+      checked: page.page.length,
+      unavailable,
       isDone: page.isDone,
       continueCursor: page.continueCursor,
     };

@@ -80,6 +80,12 @@ export const markDeletedStrategyImageAssetsRef =
   makeFunctionReference<"mutation">("images:markDeletedStrategyImageAssets");
 export const processAssetReclaimCandidatesRef =
   makeFunctionReference<"mutation">("images:processAssetReclaimCandidates");
+const markDeletedPageImageAssetsRef = makeFunctionReference<"mutation">(
+  "images:markDeletedPageImageAssets",
+);
+const markPurgedTombstoneImageAssetsRef = makeFunctionReference<"mutation">(
+  "images:markPurgedTombstoneImageAssets",
+);
 export const markStaleImageUploadsDeletedRef =
   makeFunctionReference<"mutation">("images:markStaleImageUploadsDeleted");
 export const sweepDeletedImageAssetsRef = makeFunctionReference<"action">(
@@ -176,7 +182,10 @@ export async function queueAssetReclaim(
 // Earlier versions scheduled these two to reclaim a deleted page's or
 // purged tombstones' images. Runs already scheduled when this version
 // deploys land here and hand their images to the reclaim queue, which
-// checks them the same way.
+// checks them the same way: a bounded slice per run (each costs an indexed
+// read), with the rest rescheduled in the same transaction.
+const compatibilityQueueSlice = 100;
+
 export const markDeletedPageImageAssets = internalMutation({
   args: {
     strategyId: v.id("strategies"),
@@ -184,7 +193,18 @@ export const markDeletedPageImageAssets = internalMutation({
     assetPublicIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    await queueAssetReclaim(ctx, args.strategyId, args.assetPublicIds);
+    await queueAssetReclaim(
+      ctx,
+      args.strategyId,
+      args.assetPublicIds.slice(0, compatibilityQueueSlice),
+    );
+    const rest = args.assetPublicIds.slice(compatibilityQueueSlice);
+    if (rest.length > 0) {
+      await ctx.scheduler.runAfter(0, markDeletedPageImageAssetsRef, {
+        ...args,
+        assetPublicIds: rest,
+      });
+    }
   },
 });
 
@@ -194,7 +214,18 @@ export const markPurgedTombstoneImageAssets = internalMutation({
     assetPublicIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    await queueAssetReclaim(ctx, args.strategyId, args.assetPublicIds);
+    await queueAssetReclaim(
+      ctx,
+      args.strategyId,
+      args.assetPublicIds.slice(0, compatibilityQueueSlice),
+    );
+    const rest = args.assetPublicIds.slice(compatibilityQueueSlice);
+    if (rest.length > 0) {
+      await ctx.scheduler.runAfter(0, markPurgedTombstoneImageAssetsRef, {
+        ...args,
+        assetPublicIds: rest,
+      });
+    }
   },
 });
 
@@ -638,12 +669,24 @@ export const completeLegacyUpload = internalMutation({
         uploadedAt: now,
         updatedAt: now,
       });
+      // The replaced bytes go the way of every deletion: a row marked
+      // deleted for the physical sweep, which removes them only once nothing
+      // else points at them and the reference backfill has finished.
       if (
         previousStorageId !== undefined &&
-        previousStorageId !== args.storageId &&
-        !(await hasSharedDeletionTarget(ctx, existing))
+        previousStorageId !== args.storageId
       ) {
-        await ctx.storage.delete(previousStorageId);
+        await ctx.db.insert("imageAssets", {
+          publicId: args.assetPublicId,
+          provider: "convex",
+          strategyId: strategy._id,
+          storageId: previousStorageId,
+          uploadStatus: "deleted",
+          deletedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await schedulePhysicalDeletion(ctx);
       }
     } else {
       await ctx.db.insert("imageAssets", {
@@ -1000,6 +1043,11 @@ export const claimDeletedImageAssets = internalMutation({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Every physical deletion of stored bytes goes through this claim. Until
+    // the reference backfill has finished, an asset may have been marked
+    // deleted on the say-so of missing references, so no bytes go; the
+    // backfill starts a sweep when it finishes.
+    if (!(await assetReferencesReady(ctx))) return [];
     const limit = Math.max(
       1,
       Math.min(args.limit ?? physicalDeletionBatch, physicalDeletionBatch),
