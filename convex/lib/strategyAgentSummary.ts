@@ -1,4 +1,4 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 /// Reads the agent type of one agent element or lineup payload. The client
@@ -26,11 +26,6 @@ export async function refreshStrategyAgentSummary(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
 ): Promise<void> {
-  const counts = new Map<string, number>();
-  const bump = (type: string | null) => {
-    if (type === null) return;
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-  };
   // Only agent elements and lineup origins carry an agent; reading just
   // those keeps this cheap however large the strategy's other content is
   // (it runs after every batch of content ops).
@@ -40,24 +35,49 @@ export async function refreshStrategyAgentSummary(
       q.eq("strategyId", strategyId).eq("elementType", "agent"),
     )
     .collect();
-  for (const element of agents) {
-    if (element.deleted) continue;
-    bump(agentTypeOf(element.payload.data));
-  }
   const origins = await ctx.db
     .query("lineups")
     .withIndex("by_strategyId_and_payloadKind", (q) =>
       q.eq("strategyId", strategyId).eq("payloadKind", "lineupOrigin"),
     )
     .collect();
-  for (const lineup of origins) {
-    if (lineup.deleted) continue;
+  await storeStrategyAgentSummary(
+    ctx,
+    strategyId,
+    agentTypesOf(agents, origins),
+  );
+}
+
+/// The agents that live content uses, most used first. Takes any elements
+/// and lineup rows; only live agent elements and lineup origins count.
+export function agentTypesOf(
+  elements: Pick<Doc<"elements">, "deleted" | "elementType" | "payload">[],
+  lineups: Pick<Doc<"lineups">, "deleted" | "payloadKind" | "payload">[],
+): string[] {
+  const counts = new Map<string, number>();
+  const bump = (type: string | null) => {
+    if (type === null) return;
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  };
+  for (const element of elements) {
+    if (element.deleted || element.elementType !== "agent") continue;
+    bump(agentTypeOf(element.payload.data));
+  }
+  for (const lineup of lineups) {
+    if (lineup.deleted || lineup.payloadKind !== "lineupOrigin") continue;
     bump(agentTypeOf(lineup.payload.data));
   }
-  const agentTypes = [...counts.entries()]
+  return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([type]) => type);
+}
 
+/// Stores [agentTypes] as the strategy's summary, writing only on change.
+export async function storeStrategyAgentSummary(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  agentTypes: string[],
+): Promise<void> {
   const existing = await ctx.db
     .query("strategyAgentSummaries")
     .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))

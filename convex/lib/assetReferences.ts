@@ -19,9 +19,36 @@ export type ReferencingLineup = Pick<
   "strategyId" | "pageId" | "deleted" | "payload"
 >;
 
+/// The name of the backfill that gave content written before the
+/// reference table its reference rows.
+const assetReferencesBackfill = "assetReferences";
+
+/// Whether every content row has its reference rows: true once
+/// maintenance.backfillAssetReferences has finished. Until then a missing
+/// reference row proves nothing, so nothing may be deleted on its say-so.
+export async function assetReferencesReady(ctx: AnyCtx): Promise<boolean> {
+  const row = await ctx.db
+    .query("completedBackfills")
+    .withIndex("by_name", (q) => q.eq("name", assetReferencesBackfill))
+    .first();
+  return row !== null;
+}
+
+/// Records that the reference backfill has finished (see
+/// assetReferencesReady). Idempotent.
+export async function markAssetReferencesReady(
+  ctx: MutationCtx,
+): Promise<void> {
+  if (await assetReferencesReady(ctx)) return;
+  await ctx.db.insert("completedBackfills", {
+    name: assetReferencesBackfill,
+    completedAt: Date.now(),
+  });
+}
+
 /// The image ids a content row shows, whether or not it is deleted: a
 /// tombstone keeps referencing its image until it is purged.
-function assetIdsOfRow(
+export function assetIdsOfRow(
   row: ReferencingElement | ReferencingLineup,
 ): Set<string> {
   if ("elementType" in row) {
@@ -59,6 +86,24 @@ export async function syncLineupAssetReferences(
     .withIndex("by_lineupId", (q) => q.eq("lineupId", lineupId))
     .collect();
   await syncRows(ctx, existing, lineup, { lineupId });
+}
+
+/// Writes the reference rows of a content row inserted in this same
+/// transaction, which has none yet, so nothing is read.
+export async function insertAssetReferences(
+  ctx: MutationCtx,
+  source: { elementId: Id<"elements"> } | { lineupId: Id<"lineups"> },
+  row: ReferencingElement | ReferencingLineup,
+): Promise<void> {
+  for (const assetPublicId of assetIdsOfRow(row)) {
+    await ctx.db.insert("assetReferences", {
+      strategyId: row.strategyId,
+      assetPublicId,
+      pageId: row.pageId,
+      ...source,
+      deleted: row.deleted,
+    });
+  }
 }
 
 async function syncRows(
@@ -99,12 +144,17 @@ async function syncRows(
 /// Whether any content of the strategy shows the image: a live element or
 /// lineup row, and, with [includeTombstones], a deleted one still inside
 /// its retention window. One indexed read, whatever the strategy's size.
+///
+/// Until the reference backfill has finished, every image counts as
+/// referenced: content written before the table existed has no reference
+/// rows yet, and keeping an image is always safe where deleting it is not.
 export async function isAssetReferenced(
   ctx: AnyCtx,
   strategyId: Id<"strategies">,
   assetPublicId: string,
   { includeTombstones }: { includeTombstones: boolean },
 ): Promise<boolean> {
+  if (!(await assetReferencesReady(ctx))) return true;
   const reference = includeTombstones
     ? await ctx.db
         .query("assetReferences")

@@ -5,13 +5,17 @@ import {
 } from "convex-test";
 import { makeFunctionReference } from "convex/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { getConvexSize } from "convex/values";
 import type { DataModel, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { processAssetReclaimBatch } from "./images";
+import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import * as maintenance from "./maintenance";
 import schema from "./schema";
+import * as strategies from "./strategies";
 import { modules } from "./test.setup";
-import { insertElement } from "./testContent.helpers";
+import { insertElement, insertLineup } from "./testContent.helpers";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
   "users:ensureCurrentUser",
@@ -29,6 +33,16 @@ const purgeOldTombstones = makeFunctionReference<"mutation">(
 const backfillAssetReferences = makeFunctionReference<"mutation">(
   "maintenance:backfillAssetReferences",
 );
+const checkAssetReferences = makeFunctionReference<"query">(
+  "maintenance:checkAssetReferences",
+);
+const processAssetReclaimCandidates = makeFunctionReference<"mutation">(
+  "images:processAssetReclaimCandidates",
+);
+const markPurgedTombstoneImageAssets = makeFunctionReference<"mutation">(
+  "images:markPurgedTombstoneImageAssets",
+);
+const deleteAssetRef = makeFunctionReference<"action">("images:deleteAssetRef");
 
 type Harness = TestConvexForDataModel<DataModel>;
 type RootHarness = TestConvexForDataModelAndIdentity<DataModel>;
@@ -40,8 +54,14 @@ const day = 24 * 60 * 60 * 1000;
 // Rows as large as the op size cap allows, the way Codex's replay built them.
 const largeText = "x".repeat(700 * 1024);
 
-async function createHarness(): Promise<{ t: RootHarness; owner: Harness }> {
+/// A deployment with one strategy. By default its reference backfill has
+/// run, as every deployment's will have; [backfilled] false is the window
+/// between deploying this version and running the backfill.
+async function createHarness(
+  { backfilled }: { backfilled: boolean } = { backfilled: true },
+): Promise<{ t: RootHarness; owner: Harness }> {
   const t = convexTest(schema, modules);
+  if (backfilled) await t.run(markAssetReferencesReady);
   const owner = t.withIdentity({
     issuer: "https://media-limits.test",
     subject: "owner",
@@ -80,7 +100,10 @@ async function ids(t: RootHarness) {
 async function seedLargeStrategy(
   t: RootHarness,
   rows: number,
-  { oldImageTombstone }: { oldImageTombstone: boolean },
+  {
+    oldImageTombstone,
+    text = largeText,
+  }: { oldImageTombstone: boolean; text?: string },
 ) {
   const { strategyId, pageId } = await ids(t);
   await t.run(async (ctx) => {
@@ -96,7 +119,7 @@ async function seedLargeStrategy(
         payload: {
           kind: "text",
           payloadVersion: 1,
-          data: { id: `text-${index}`, elementType: "text", text: largeText },
+          data: { id: `text-${index}`, elementType: "text", text },
         },
         sortIndex: index,
         revision: 1,
@@ -139,13 +162,15 @@ async function seedLargeStrategy(
   return { strategyId, pageId };
 }
 
-/// [ctx] with every document its queries and gets return counted, as a
+/// [ctx] with every document its queries and gets return counted, in
+/// stored bytes, and every query run counted as one index range read: a
 /// stand-in for Convex's per-transaction read accounting (convex-test does
 /// not enforce the limits).
-function countReads(ctx: MutationCtx) {
+function countReads<Ctx extends MutationCtx>(ctx: Ctx) {
   let bytes = 0;
+  let rangeReads = 0;
   const count = <T>(doc: T): T => {
-    if (doc !== null && doc !== undefined) bytes += JSON.stringify(doc).length;
+    if (doc !== null && doc !== undefined) bytes += getConvexSize(doc as any);
     return doc;
   };
   const wrapQuery = (query: any): any =>
@@ -153,6 +178,7 @@ function countReads(ctx: MutationCtx) {
       get(target, prop) {
         if (prop === Symbol.asyncIterator) {
           return async function* () {
+            rangeReads += 1;
             for await (const doc of target) yield count(doc);
           };
         }
@@ -160,11 +186,16 @@ function countReads(ctx: MutationCtx) {
         if (typeof value !== "function") return value;
         return (...args: unknown[]) => {
           const result = value.apply(target, args);
-          if (prop === "first" || prop === "unique") return result.then(count);
+          if (prop === "first" || prop === "unique") {
+            rangeReads += 1;
+            return result.then(count);
+          }
           if (prop === "take" || prop === "collect") {
+            rangeReads += 1;
             return result.then((docs: unknown[]) => docs.map(count));
           }
           if (prop === "paginate") {
+            rangeReads += 1;
             return result.then((page: { page: unknown[] }) => {
               page.page.forEach(count);
               return page;
@@ -186,7 +217,11 @@ function countReads(ctx: MutationCtx) {
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  return { ctx: { ...ctx, db } as MutationCtx, bytesRead: () => bytes };
+  return {
+    ctx: { ...ctx, db } as Ctx,
+    bytesRead: () => bytes,
+    rangeReads: () => rangeReads,
+  };
 }
 
 async function candidates(t: RootHarness) {
@@ -438,8 +473,8 @@ describe("asset references follow their content", () => {
     );
   });
 
-  test("the backfill gives existing content its references", async () => {
-    const { t } = await createHarness();
+  test("the backfill gives existing content its references, then opens the gate", async () => {
+    const { t } = await createHarness({ backfilled: false });
     const { strategyId, pageId } = await ids(t);
     await t.run(async (ctx) => {
       const now = Date.now();
@@ -488,11 +523,33 @@ describe("asset references follow their content", () => {
       }
     });
 
+    const mismatched = async () => [
+      ...(
+        await t.query(checkAssetReferences, {
+          table: "elements",
+          paginationOpts: { numItems: 100, cursor: null },
+        })
+      ).mismatched,
+      ...(
+        await t.query(checkAssetReferences, {
+          table: "lineups",
+          paginationOpts: { numItems: 100, cursor: null },
+        })
+      ).mismatched,
+    ];
+    expect((await mismatched()).sort()).toEqual([
+      "before-image",
+      "lineupLink:before-0",
+      "lineupLink:before-1",
+      "lineupLink:before-2",
+    ]);
+
     await t.mutation(backfillAssetReferences, {
       table: "elements",
       paginationOpts: { numItems: 1, cursor: null },
     });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await mismatched()).toEqual([]);
 
     const references = await t.run(async (ctx) =>
       (await ctx.db.query("assetReferences").collect())
@@ -505,6 +562,196 @@ describe("asset references follow their content", () => {
       "link-image-1:false",
       "link-image-2:true",
     ]);
+    const completed = await t.run(
+      async (ctx) => await ctx.db.query("completedBackfills").collect(),
+    );
+    expect(completed.map((row) => row.name)).toEqual(["assetReferences"]);
+  });
+});
+
+describe("before the reference backfill", () => {
+  test("nothing is deleted on the say-so of missing references", async () => {
+    const { t, owner } = await createHarness({ backfilled: false });
+    const { strategyId, pageId } = await ids(t);
+    const longAgo = Date.now() - 40 * day;
+    // Written by the previous version: an image only an old tombstone
+    // shows, and one a live lineup also shows. No reference rows.
+    await t.run(async (ctx) => {
+      for (const publicId of ["tombstone-only", "lineup-shown"]) {
+        await ctx.db.insert("imageAssets", {
+          publicId,
+          provider: "r2",
+          strategyId,
+          objectKey: `tests/${publicId}.png`,
+          uploadStatus: "active",
+          fileExtension: ".png",
+          createdAt: longAgo,
+          updatedAt: longAgo,
+        });
+        await ctx.db.insert("elements", {
+          publicId,
+          strategyId,
+          pageId,
+          elementType: "image",
+          payloadKind: "image",
+          payloadVersion: 1,
+          payload: {
+            kind: "image",
+            payloadVersion: 1,
+            data: { id: publicId, elementType: "image" },
+          },
+          sortIndex: 0,
+          revision: 2,
+          deleted: true,
+          createdAt: longAgo,
+          updatedAt: longAgo,
+        });
+      }
+      await ctx.db.insert("lineups", {
+        publicId: "lineupLink:live",
+        strategyId,
+        pageId,
+        payloadKind: "lineupLink",
+        payloadVersion: 1,
+        payload: {
+          kind: "lineupLink",
+          payloadVersion: 1,
+          data: {
+            id: "live",
+            originId: "o",
+            landingId: "l",
+            images: [{ id: "lineup-shown" }],
+          },
+        },
+        sortIndex: 0,
+        revision: 1,
+        deleted: false,
+        createdAt: longAgo,
+        updatedAt: longAgo,
+      });
+    });
+
+    // Everything that deletes on a reference check, before the backfill:
+    // the tombstone purge, a cleanup the previous version scheduled, the
+    // reclaim worker, and a user deleting an image.
+    await t.mutation(purgeOldTombstones, {});
+    await t.mutation(markPurgedTombstoneImageAssets, {
+      strategyId,
+      assetPublicIds: ["tombstone-only", "lineup-shown"],
+    });
+    await t.mutation(processAssetReclaimCandidates, {});
+    await expect(
+      owner.action(deleteAssetRef, {
+        ...protocol,
+        strategyPublicId,
+        assetPublicId: "lineup-shown",
+      }),
+    ).rejects.toThrow("still referenced");
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await assetStatus(t, "tombstone-only")).toEqual(["active"]);
+    expect(await assetStatus(t, "lineup-shown")).toEqual(["active"]);
+    const tombstones = await t.run(async (ctx) =>
+      (await ctx.db.query("elements").collect()).filter((row) => row.deleted),
+    );
+    expect(tombstones).toHaveLength(2);
+    // The old run's images wait in the queue for the backfill.
+    expect((await candidates(t)).map((row) => row.assetPublicId).sort()).toEqual(
+      ["lineup-shown", "tombstone-only"],
+    );
+
+    // The backfill opens the gate, then the purge and reclaim it starts run.
+    // (Run by hand: the physical sweep after them needs R2.)
+    await t.mutation(backfillAssetReferences, {
+      table: "elements",
+      paginationOpts: { numItems: 8, cursor: null },
+    });
+    expect(
+      await t.mutation(backfillAssetReferences, {
+        table: "lineups",
+        paginationOpts: { numItems: 8, cursor: null },
+      }),
+    ).toEqual({ synced: 1, isDone: true });
+    await t.mutation(purgeOldTombstones, {});
+    await t.mutation(processAssetReclaimCandidates, {});
+
+    expect(await assetStatus(t, "tombstone-only")).toEqual(["deleted"]);
+    expect(await assetStatus(t, "lineup-shown")).toEqual(["active"]);
+    const remaining = await t.run(
+      async (ctx) => await ctx.db.query("elements").collect(),
+    );
+    expect(remaining.filter((row) => row.deleted)).toEqual([]);
+    expect(await candidates(t)).toEqual([]);
+  });
+});
+
+describe("purges stay within transaction limits", () => {
+  test("lineups showing hundreds of images are purged across runs, each bounded", async () => {
+    const { t } = await createHarness();
+    const { strategyId, pageId } = await ids(t);
+    const longAgo = Date.now() - 40 * day;
+    // Codex's replay: five tombstoned lineups showing 850 images each.
+    await t.run(async (ctx) => {
+      for (let lineup = 0; lineup < 5; lineup++) {
+        await insertLineup(ctx, {
+          publicId: `lineupLink:many-${lineup}`,
+          strategyId,
+          pageId,
+          payloadKind: "lineupLink",
+          payloadVersion: 1,
+          payload: {
+            kind: "lineupLink",
+            payloadVersion: 1,
+            data: {
+              id: `many-${lineup}`,
+              originId: "o",
+              landingId: "l",
+              images: Array.from({ length: 850 }, (_, image) => ({
+                id: `image-${lineup}-${image}`,
+              })),
+            },
+          },
+          sortIndex: lineup,
+          revision: 2,
+          deleted: true,
+          createdAt: longAgo,
+          updatedAt: longAgo,
+        });
+      }
+    });
+    const state = async () =>
+      await t.run(async (ctx) => ({
+        lineups: (await ctx.db.query("lineups").collect()).length,
+        references: (await ctx.db.query("assetReferences").collect()).length,
+        candidates: (await ctx.db.query("assetReclaimCandidates").collect())
+          .length,
+      }));
+
+    const firstRun = await t.run(async (ctx) => {
+      const counted = countReads(ctx);
+      await (maintenance.purgeOldTombstones as any)._handler(counted.ctx, {});
+      return counted.rangeReads();
+    });
+    // Before: one run, 4,257 index reads, past Convex's 4,096.
+    expect(firstRun).toBeLessThan(300);
+    expect(await state()).toEqual({
+      lineups: 5,
+      references: 4250 - 200,
+      candidates: 200,
+    });
+
+    // Each run commits its part, so the next resumes where it stopped.
+    let runs = 1;
+    while ((await state()).lineups > 0) {
+      await t.mutation(purgeOldTombstones, {});
+      runs += 1;
+      expect(runs).toBeLessThanOrEqual(22);
+    }
+    expect(await state()).toEqual({
+      lineups: 0,
+      references: 0,
+      candidates: 4250,
+    });
   });
 });
 
@@ -599,6 +846,177 @@ describe("duplicate stays within transaction limits", () => {
         .collect();
     });
     expect(copyReferences).toHaveLength(1);
+  });
+
+  test("the size limit counts stored bytes, not characters", async () => {
+    const { t, owner } = await createHarness();
+    // 界 is three bytes stored. 15 rows of 290K characters are 4.5 M
+    // characters, but 13 MB stored, past the 12 MiB budget.
+    await seedLargeStrategy(t, 15, {
+      oldImageTombstone: false,
+      text: "界".repeat(290 * 1024),
+    });
+
+    const error = await owner
+      .mutation(duplicateStrategy, {
+        ...protocol,
+        sourceStrategyPublicId: strategyPublicId,
+        publicId: "wide-copy",
+        name: "Copy",
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+    expect(errorCode(error)).toBe("STRATEGY_TOO_LARGE_TO_DUPLICATE");
+    expect(await strategyExists(t, "wide-copy")).toBe(false);
+  });
+
+  test("a duplicate reads its source once: no reread for the summary or references", async () => {
+    const { t, owner } = await createHarness();
+    const { strategyId, pageId } = await ids(t);
+    // Codex's replay: thirteen 700 KiB agents read 18.6 MB before.
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      for (let index = 0; index < 13; index++) {
+        await insertElement(ctx, {
+          publicId: `agent-${index}`,
+          strategyId,
+          pageId,
+          elementType: "agent",
+          payloadKind: "agent",
+          payloadVersion: 1,
+          payload: {
+            kind: "agent",
+            payloadVersion: 1,
+            data: {
+              id: `agent-${index}`,
+              elementType: "agent",
+              type: "jett",
+              note: largeText,
+            },
+          },
+          sortIndex: index,
+          revision: 1,
+          deleted: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+    const sourceBytes = await t.run(async (ctx) =>
+      (await ctx.db.query("elements").collect())
+        .map((row) => getConvexSize(row as any))
+        .reduce((a, b) => a + b, 0),
+    );
+
+    const bytesRead = await owner.run(async (ctx) => {
+      const counted = countReads(ctx);
+      await (strategies.duplicate as any)._handler(counted.ctx, {
+        ...protocol,
+        sourceStrategyPublicId: strategyPublicId,
+        publicId: "agents-copy",
+        name: "Copy",
+      });
+      return counted.bytesRead();
+    });
+
+    expect(bytesRead).toBeGreaterThanOrEqual(sourceBytes);
+    expect(bytesRead).toBeLessThan(sourceBytes + 64 * 1024);
+    const summary = await t.run(async (ctx) => {
+      const copy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", "agents-copy"))
+        .unique();
+      return await ctx.db
+        .query("strategyAgentSummaries")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", copy!._id))
+        .unique();
+    });
+    expect(summary?.agentTypes).toEqual(["jett"]);
+  });
+
+  async function seedLinkImages(t: RootHarness, count: number) {
+    const { strategyId, pageId } = await ids(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await insertLineup(ctx, {
+        publicId: "lineupLink:gallery",
+        strategyId,
+        pageId,
+        payloadKind: "lineupLink",
+        payloadVersion: 1,
+        payload: {
+          kind: "lineupLink",
+          payloadVersion: 1,
+          data: {
+            id: "gallery",
+            originId: "o",
+            landingId: "l",
+            images: Array.from({ length: count }, (_, index) => ({
+              id: `gallery-${index}`,
+            })),
+          },
+        },
+        sortIndex: 0,
+        revision: 1,
+        deleted: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+  }
+
+  test("a strategy showing too many images is refused whole", async () => {
+    const { t, owner } = await createHarness();
+    // Codex's replay copied 2,100 images with 4,210 index reads, past
+    // Convex's 4,096.
+    await seedLinkImages(t, 2100);
+
+    const error = await owner
+      .mutation(duplicateStrategy, {
+        ...protocol,
+        sourceStrategyPublicId: strategyPublicId,
+        publicId: "gallery-copy",
+        name: "Copy",
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+    expect(errorCode(error)).toBe("STRATEGY_TOO_LARGE_TO_DUPLICATE");
+    expect(await strategyExists(t, "gallery-copy")).toBe(false);
+  });
+
+  test("a strategy showing hundreds of images copies within the index read limit", async () => {
+    const { t, owner } = await createHarness();
+    await seedLinkImages(t, 500);
+
+    const rangeReads = await owner.run(async (ctx) => {
+      const counted = countReads(ctx);
+      await (strategies.duplicate as any)._handler(counted.ctx, {
+        ...protocol,
+        sourceStrategyPublicId: strategyPublicId,
+        publicId: "gallery-copy",
+        name: "Copy",
+      });
+      return counted.rangeReads();
+    });
+
+    expect(rangeReads).toBeLessThan(4096);
+    const copyReferences = await t.run(async (ctx) => {
+      const copy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", "gallery-copy"))
+        .unique();
+      return await ctx.db
+        .query("assetReferences")
+        .withIndex("by_strategyId_and_deleted", (q) =>
+          q.eq("strategyId", copy!._id).eq("deleted", false),
+        )
+        .collect();
+    });
+    expect(copyReferences).toHaveLength(500);
   });
 
   test("a strategy over the row limit is refused whole", async () => {

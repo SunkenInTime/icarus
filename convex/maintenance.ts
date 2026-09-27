@@ -1,16 +1,19 @@
 import { makeFunctionReference, paginationOptsValidator } from "convex/server";
-import { internalMutation } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
-  collectAssetIdFromElementPayload,
-  collectAssetIdsFromLineupPayload,
-} from "./lib/imageAssets";
-import {
+  assetIdsOfRow,
+  assetReferencesReady,
+  markAssetReferencesReady,
   syncElementAssetReferences,
   syncLineupAssetReferences,
 } from "./lib/assetReferences";
-import { queueAssetReclaim } from "./images";
+import { processAssetReclaimCandidatesRef, queueAssetReclaim } from "./images";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 
 const MAINTENANCE_BATCH_SIZE = 200;
@@ -18,6 +21,12 @@ const MAINTENANCE_BATCH_SIZE = 200;
 // that read content take only a few rows per transaction, well under
 // Convex's 16 MiB read and write limits, and reschedule themselves.
 const CONTENT_BATCH_SIZE = 8;
+// Reference rows a purge run turns into reclaim candidates. Each costs one
+// indexed read and two writes, far under Convex's 4,096 index reads.
+const PURGE_REFERENCE_BUDGET = 200;
+// How long a deleted page's purge waits before checking again whether the
+// reference backfill has finished.
+const PURGE_WAIT_FOR_BACKFILL_MS = 10 * 60 * 1000;
 const DAYS_30_MS = 30 * 24 * 60 * 60 * 1000;
 
 // NOTE: replace these makeFunctionReference calls with internal.maintenance.* after
@@ -35,38 +44,66 @@ export const backfillAssetReferencesRef = makeFunctionReference<"mutation">(
   "maintenance:backfillAssetReferences",
 );
 
-/// Hard-deletes content rows with their reference rows, and queues the
-/// images they showed for reclaim, all in the caller's transaction: the
-/// purge and the reclaim candidates land together or not at all.
+/// Hard-deletes content rows, and queues the images they showed for
+/// reclaim, in the caller's transaction: a purged row and its reclaim
+/// candidates land together or not at all.
+///
+/// A row's reference rows are its purge progress. Each one is turned into a
+/// reclaim candidate and deleted, at most PURGE_REFERENCE_BUDGET per run
+/// (each costs one indexed read to skip a duplicate candidate); the row
+/// itself goes once it has none left. A lineup showing hundreds of images
+/// is purged across several runs, each committing its part, so a retry
+/// resumes where the last run stopped. Returns whether every row was purged.
 async function purgeContentRows(
-  ctx: Parameters<typeof syncElementAssetReferences>[0],
+  ctx: MutationCtx,
   elements: Doc<"elements">[],
   lineups: Doc<"lineups">[],
-): Promise<void> {
-  const assetIdsByStrategy = new Map<Id<"strategies">, Set<string>>();
-  const note = (strategyId: Id<"strategies">, ids: Iterable<string>) => {
-    let set = assetIdsByStrategy.get(strategyId);
-    if (set === undefined) {
-      assetIdsByStrategy.set(strategyId, (set = new Set()));
+): Promise<boolean> {
+  let budget = PURGE_REFERENCE_BUDGET;
+  const rows: (
+    | { strategyId: Id<"strategies">; elementId: Id<"elements"> }
+    | { strategyId: Id<"strategies">; lineupId: Id<"lineups"> }
+  )[] = [
+    ...elements.map((row) => ({
+      strategyId: row.strategyId,
+      elementId: row._id,
+    })),
+    ...lineups.map((row) => ({
+      strategyId: row.strategyId,
+      lineupId: row._id,
+    })),
+  ];
+  const assetIdsByStrategy = new Map<Id<"strategies">, string[]>();
+  let purgedAll = true;
+  for (const row of rows) {
+    const references =
+      "elementId" in row
+        ? await ctx.db
+            .query("assetReferences")
+            .withIndex("by_elementId", (q) => q.eq("elementId", row.elementId))
+            .take(budget + 1)
+        : await ctx.db
+            .query("assetReferences")
+            .withIndex("by_lineupId", (q) => q.eq("lineupId", row.lineupId))
+            .take(budget + 1);
+    const handled = references.slice(0, budget);
+    const assetIds = assetIdsByStrategy.get(row.strategyId) ?? [];
+    assetIdsByStrategy.set(row.strategyId, assetIds);
+    for (const reference of handled) {
+      assetIds.push(reference.assetPublicId);
+      await ctx.db.delete(reference._id);
     }
-    for (const id of ids) set.add(id);
-  };
-  for (const element of elements) {
-    if (element.elementType === "image") {
-      const assetId = collectAssetIdFromElementPayload(element.payload);
-      if (assetId !== null) note(element.strategyId, [assetId]);
+    budget -= handled.length;
+    if (references.length > handled.length) {
+      purgedAll = false;
+      break;
     }
-    await ctx.db.delete(element._id);
-    await syncElementAssetReferences(ctx, element._id, null);
-  }
-  for (const lineup of lineups) {
-    note(lineup.strategyId, collectAssetIdsFromLineupPayload(lineup.payload));
-    await ctx.db.delete(lineup._id);
-    await syncLineupAssetReferences(ctx, lineup._id, null);
+    await ctx.db.delete("elementId" in row ? row.elementId : row.lineupId);
   }
   for (const [strategyId, assetPublicIds] of assetIdsByStrategy) {
     await queueAssetReclaim(ctx, strategyId, assetPublicIds);
   }
+  return purgedAll;
 }
 
 export const purgeDeletedPageOrphans = internalMutation({
@@ -75,6 +112,16 @@ export const purgeDeletedPageOrphans = internalMutation({
     strategyId: v.id("strategies"),
   },
   handler: async (ctx, args) => {
+    // A purge reclaims images through reference rows, which content from
+    // before the reference table only has once the backfill has run.
+    if (!(await assetReferencesReady(ctx))) {
+      await ctx.scheduler.runAfter(
+        PURGE_WAIT_FOR_BACKFILL_MS,
+        purgeDeletedPageOrphansRef,
+        args,
+      );
+      return;
+    }
     const elements = await ctx.db
       .query("elements")
       .withIndex("by_pageId", (q) => q.eq("pageId", args.pageId))
@@ -88,9 +135,10 @@ export const purgeDeletedPageOrphans = internalMutation({
             .take(remainingSlots)
         : [];
 
-    await purgeContentRows(ctx, elements, lineups);
+    const purgedAll = await purgeContentRows(ctx, elements, lineups);
 
     const shouldContinue =
+      !purgedAll ||
       elements.length === CONTENT_BATCH_SIZE ||
       (remainingSlots > 0 && lineups.length === remainingSlots);
 
@@ -129,6 +177,9 @@ export const purgeOldOperationEvents = internalMutation({
 export const purgeOldTombstones = internalMutation({
   args: {},
   handler: async (ctx) => {
+    // Waits for the reference backfill (see purgeDeletedPageOrphans), which
+    // starts this purge when it finishes.
+    if (!(await assetReferencesReady(ctx))) return;
     const cutoff = Date.now() - DAYS_30_MS;
     const staleElements = await ctx.db
       .query("elements")
@@ -148,9 +199,10 @@ export const purgeOldTombstones = internalMutation({
             .take(remainingSlots)
         : [];
 
-    await purgeContentRows(ctx, staleElements, staleLineups);
+    const purgedAll = await purgeContentRows(ctx, staleElements, staleLineups);
 
     const shouldContinue =
+      !purgedAll ||
       staleElements.length === CONTENT_BATCH_SIZE ||
       (remainingSlots > 0 && staleLineups.length === remainingSlots);
 
@@ -161,9 +213,13 @@ export const purgeOldTombstones = internalMutation({
 });
 
 /// One-off after the asset reference table shipped: gives every existing
-/// element and lineup row its reference rows. Pages through elements, then
-/// lineups, a few rows per run (rows can be large), rescheduling itself
-/// until done. Safe to re-run: syncing a row is idempotent.
+/// element and lineup row, tombstones included, its reference rows. Pages
+/// through elements, then lineups, a few rows per run (rows can be large),
+/// rescheduling itself until done. Rows written meanwhile get theirs from
+/// the writer itself. When the last page is done it records the backfill
+/// as complete, which opens every reference-dependent deletion (see
+/// assetReferencesReady), and starts the purge and reclaim work that was
+/// waiting for it. Safe to re-run: syncing a row is idempotent.
 export const backfillAssetReferences = internalMutation({
   args: {
     table: v.union(v.literal("elements"), v.literal("lineups")),
@@ -194,11 +250,61 @@ export const backfillAssetReferences = internalMutation({
         table: "lineups",
         paginationOpts: { numItems: args.paginationOpts.numItems, cursor: null },
       });
+    } else {
+      await markAssetReferencesReady(ctx);
+      await ctx.scheduler.runAfter(0, purgeOldTombstonesRef, {});
+      await ctx.scheduler.runAfter(0, processAssetReclaimCandidatesRef, {});
     }
     return { synced: page.page.length, isDone: page.isDone };
   },
 });
 
+
+/// Verifies the reference backfill, one page of rows at a time: returns
+/// the rows whose reference rows do not match the images they show (the
+/// set of images, deleted flag, and page). Page with continueCursor until
+/// isDone; every page should report no mismatched rows.
+export const checkAssetReferences = internalQuery({
+  args: {
+    table: v.union(v.literal("elements"), v.literal("lineups")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const page =
+      args.table === "elements"
+        ? await ctx.db.query("elements").paginate(args.paginationOpts)
+        : await ctx.db.query("lineups").paginate(args.paginationOpts);
+    const mismatched: string[] = [];
+    for (const row of page.page) {
+      const references =
+        "elementType" in row
+          ? await ctx.db
+              .query("assetReferences")
+              .withIndex("by_elementId", (q) => q.eq("elementId", row._id))
+              .collect()
+          : await ctx.db
+              .query("assetReferences")
+              .withIndex("by_lineupId", (q) => q.eq("lineupId", row._id))
+              .collect();
+      const expected = assetIdsOfRow(row);
+      const matches =
+        references.length === expected.size &&
+        references.every(
+          (reference) =>
+            expected.has(reference.assetPublicId) &&
+            reference.deleted === row.deleted &&
+            reference.pageId === row.pageId,
+        );
+      if (!matches) mismatched.push(row.publicId);
+    }
+    return {
+      checked: page.page.length,
+      mismatched,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
 
 /// One-off after the agent summary table shipped: every strategy written
 /// before it needs its summary computed once. Safe to re-run.

@@ -2,6 +2,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   addAssetReclaimCandidates,
+  assetReferencesReady,
   collectLiveAssetIds,
   isAssetReferenced,
 } from "./lib/assetReferences";
@@ -171,6 +172,31 @@ export async function queueAssetReclaim(
     await ctx.scheduler.runAfter(0, processAssetReclaimCandidatesRef, {});
   }
 }
+
+// Earlier versions scheduled these two to reclaim a deleted page's or
+// purged tombstones' images. Runs already scheduled when this version
+// deploys land here and hand their images to the reclaim queue, which
+// checks them the same way.
+export const markDeletedPageImageAssets = internalMutation({
+  args: {
+    strategyId: v.id("strategies"),
+    pageId: v.id("pages"),
+    assetPublicIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await queueAssetReclaim(ctx, args.strategyId, args.assetPublicIds);
+  },
+});
+
+export const markPurgedTombstoneImageAssets = internalMutation({
+  args: {
+    strategyId: v.id("strategies"),
+    assetPublicIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await queueAssetReclaim(ctx, args.strategyId, args.assetPublicIds);
+  },
+});
 
 export const generateUploadUrl = action({
   args: {
@@ -715,7 +741,10 @@ export const deleteAssetRef = action({
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const target: { assetId: Id<"imageAssets"> } = await ctx.runQuery(
       internal.images.getAssetDeletionTarget,
-      args,
+      {
+        strategyPublicId: args.strategyPublicId,
+        assetPublicId: args.assetPublicId,
+      },
     );
 
     await ctx.runMutation(internal.images.markDeletedAssetRefsForStrategy, {
@@ -804,6 +833,9 @@ export const processAssetReclaimCandidates = internalMutation({
 /// One run of [processAssetReclaimCandidates] (exported for the read-budget
 /// test).
 export async function processAssetReclaimBatch(ctx: MutationCtx) {
+  // Before the reference backfill, "no reference row" proves nothing: the
+  // candidates wait, and the backfill starts this worker when it finishes.
+  if (!(await assetReferencesReady(ctx))) return { checked: 0, marked: 0 };
   const candidates = await ctx.db
     .query("assetReclaimCandidates")
     .withIndex("by_createdAt")

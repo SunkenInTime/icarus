@@ -7,6 +7,7 @@ import { makeFunctionReference } from "convex/server";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import cronDefinitions from "./crons";
+import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
 import { insertElement, insertLineup } from "./testContent.helpers";
@@ -51,6 +52,8 @@ async function createHarness(): Promise<{
   owner: Harness;
 }> {
   const t = convexTest(schema, modules);
+  // A deployment whose reference backfill has run, as every one will be.
+  await t.run(markAssetReferencesReady);
   const owner = t.withIdentity(identity());
   await owner.mutation(ensureCurrentUser, {
     clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,

@@ -145,6 +145,12 @@ export default defineSchema({
   })
     .index("by_createdAt", ["createdAt"])
     .index("by_strategyId_and_assetPublicId", ["strategyId", "assetPublicId"]),
+  // One row per one-off data backfill that has finished. Code that relies on
+  // backfilled data checks for its row first (see assetReferencesReady).
+  completedBackfills: defineTable({
+    name: v.string(),
+    completedAt: v.number(),
+  }).index("by_name", ["name"]),
   strategyCollaborators: defineTable({
     strategyId: v.id("strategies"),
     userId: v.id("users"),
