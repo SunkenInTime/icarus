@@ -2551,7 +2551,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             ? record?.lastError
             : null;
         if (reason == lineupLinkEndMissingMessage ||
-            reason == lineupPageMismatchMessage) {
+            reason == lineupPageMismatchMessage ||
+            reason == lineupEndInUseMessage) {
           lineupReason ??= reason;
         } else {
           hasOtherWork = true;

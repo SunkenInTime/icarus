@@ -43,6 +43,7 @@ void main() {
   test('lineup refusals and oversized work are specific attention reasons', () {
     expect(isSpecificAttentionReason(lineupLinkEndMissingMessage), isTrue);
     expect(isSpecificAttentionReason(lineupPageMismatchMessage), isTrue);
+    expect(isSpecificAttentionReason(lineupEndInUseMessage), isTrue);
     expect(isSpecificAttentionReason(cloudOperationTooLargeMessage), isTrue);
     for (final reason in [
       'Some saved work needs attention.',
@@ -60,7 +61,9 @@ void main() {
     );
 
     expect(message, contains('still uses this origin or landing spot'));
-    expect(message, contains('not deleted from the cloud'));
+    expect(message, contains('was not deleted'));
+    expect(message, contains('Keep mine tries again'));
+    expect(message, contains('Use cloud brings back that lineup'));
     expect(message, isNot(contains('LINEUP_END_IN_USE')));
   });
 

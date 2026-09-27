@@ -1411,6 +1411,9 @@ void main() {
       var current = container.read(strategyOpQueueProvider);
       expect(current.attentionByEntityKey[key]!.pending.op.opId, delete.opId);
       expect(current.needsAttention, isTrue);
+      // The sync button explains the refusal, not a generic conflict.
+      expect(current.lastError, lineupEndInUseMessage);
+      expect(isSpecificAttentionReason(current.lastError!), isTrue);
       final durable = store.load().records.single;
       expect(durable.status, DurableOutboxStatus.attention);
       expect(
