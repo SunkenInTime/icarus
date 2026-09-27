@@ -62,9 +62,9 @@ String friendlyCloudSyncError(String raw) {
         'it here.';
   }
   if (lower.contains(lineupLinkEndMissingMessage.toLowerCase())) {
-    return "This lineup's origin or landing spot is no longer in the cloud, "
-        'so your change to it was not saved. Keep mine tries again; Use '
-        'cloud drops your change.';
+    return "This lineup's origin or landing spot isn't on this page in the "
+        'cloud, so your change to it was not saved. Keep mine tries again; '
+        'Use cloud drops your change.';
   }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '

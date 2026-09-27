@@ -33,7 +33,7 @@ void main() {
       'or landing spot is no longer on the page)',
     );
 
-    expect(message, contains('origin or landing spot is no longer'));
+    expect(message, contains("origin or landing spot isn't on this page"));
     expect(message, contains('was not saved'));
     expect(message, contains('Keep mine tries again'));
     expect(message, contains('Use cloud drops your change'));

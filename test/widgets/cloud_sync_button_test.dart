@@ -733,7 +733,7 @@ void main() {
     (
       'a missing origin or landing',
       lineupLinkEndMissingMessage,
-      'origin or landing spot is no longer in the cloud',
+      "origin or landing spot isn't on this page in the cloud",
     ),
     (
       'another page',
@@ -801,7 +801,7 @@ void main() {
     await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('no longer in the cloud'), findsOneWidget);
+    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
     expect(
       find.textContaining('applies to all 2 changes that need attention'),
       findsOneWidget,

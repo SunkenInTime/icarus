@@ -1085,7 +1085,7 @@ void main() {
       expect(durable.status, DurableOutboxStatus.attention);
       expect(
         friendlyCloudSyncError(durable.lastError!),
-        contains('no longer in the cloud'),
+        contains('on this page in the cloud'),
       );
     });
 

@@ -614,7 +614,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Leave anyway'), findsOneWidget);
-      expect(find.textContaining('no longer in the cloud'), findsOneWidget);
+      expect(find.textContaining('on this page in the cloud'), findsOneWidget);
       expect(find.textContaining('from the sync button'), findsOneWidget);
       expect(find.textContaining('retry it later'), findsNothing);
       await tester.tap(find.text('Leave anyway'));
