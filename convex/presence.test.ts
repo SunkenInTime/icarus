@@ -24,24 +24,26 @@ const protocol = { clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION };
 
 function identity(
   subject: string,
-  metadata?: Record<string, JSONValue>,
+  claims: Record<string, JSONValue> = {},
 ): Partial<UserIdentity> {
   return {
     issuer: "https://presence.test",
     subject,
     tokenIdentifier: `presence|${subject}`,
     name: `User ${subject}`,
-    ...(metadata === undefined ? {} : { user_metadata: metadata }),
+    ...claims,
   };
 }
 
 async function harness() {
   const t = convexTest(schema, modules);
   const owner = t.withIdentity(
+    // What Convex actually hands over for a Supabase Discord sign-in: nested
+    // claims flattened into dotted keys.
     identity("owner", {
-      full_name: "ana",
-      avatar_url: "https://cdn.discordapp.com/avatars/1/a.png",
-      custom_claims: { global_name: "Ana" },
+      "user_metadata.full_name": "ana",
+      "user_metadata.avatar_url": "https://cdn.discordapp.com/avatars/1/a.png",
+      "user_metadata.custom_claims.global_name": "Ana",
     }),
   );
   const viewer = t.withIdentity(identity("viewer"));
@@ -112,6 +114,37 @@ describe("presence:issueRoomPass", () => {
     );
     expect(first).toMatchObject({ role: "viewer", name: "User viewer" });
     expect(second!.uid).toBe(first!.uid);
+  });
+
+  test("reads the Discord profile however the claims are nested", async () => {
+    const t = convexTest(schema, modules);
+    const shapes: Record<string, JSONValue>[] = [
+      { "user_metadata.full_name": "bo_b", "user_metadata.avatar_url": "https://x/b.png" },
+      { "user_metadata.custom_claims": { global_name: "Bo" }, "user_metadata.avatar_url": "https://x/b.png" },
+      { user_metadata: { custom_claims: { global_name: "Bo" }, avatar_url: "https://x/b.png" } },
+    ];
+    const names: string[] = [];
+    for (const [index, claims] of shapes.entries()) {
+      const user = t.withIdentity(identity(`shape-${index}`, claims));
+      await user.mutation(ensureCurrentUser, protocol);
+      await user.mutation(createStrategy, {
+        ...protocol,
+        publicId: `strat-shape-${index}`,
+        name: "Mine",
+        mapData: "bind",
+        initialPagePublicId: `page-shape-${index}`,
+        initialPageName: "Page 1",
+        initialPageIsAttack: true,
+      });
+      const issued = await user.mutation(issueRoomPass, {
+        ...protocol,
+        strategyPublicId: `strat-shape-${index}`,
+      });
+      const claimsOut = await verifyPass(issued.pass, SECRET, Date.now());
+      expect(claimsOut!.avatar).toBe("https://x/b.png");
+      names.push(claimsOut!.name);
+    }
+    expect(names).toEqual(["bo_b", "Bo", "Bo"]);
   });
 
   test("names an email sign-in by its address, never the placeholder", async () => {
