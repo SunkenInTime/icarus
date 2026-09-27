@@ -148,18 +148,22 @@ class _Ring extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      padding: const EdgeInsets.all(1.5),
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    // Rings sit inside a ShadTooltip, which only opens for children that
+    // report hover through the Shad theme; a plain Container doesn't.
+    return ShadGestureDetector(
       child: Container(
+        width: size,
+        height: size,
         padding: const EdgeInsets.all(1.5),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Settings.tacticalVioletTheme.card,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+        child: Container(
+          padding: const EdgeInsets.all(1.5),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Settings.tacticalVioletTheme.card,
+          ),
+          child: child,
         ),
-        child: child,
       ),
     );
   }
@@ -306,6 +310,11 @@ class RemoteCursorsLayer extends ConsumerWidget {
         isAttack: isAttack,
       ),
     );
+    // Near the right or bottom of the world the name tag would run off the
+    // map, so it flips to the other side of the arrow.
+    final world = coordinateSystem.effectiveSize;
+    final tagOnLeft = world.width - screen.dx < RemoteCursor.maxTagWidth / zoom;
+    final tagAbove = world.height - screen.dy < 48 / zoom;
     // Updates arrive about 20 times a second; gliding between them reads as
     // continuous motion instead of hops.
     return AnimatedPositioned(
@@ -320,49 +329,72 @@ class RemoteCursorsLayer extends ConsumerWidget {
         child: RemoteCursor(
           name: peer.name,
           color: presenceColorFor(peer.uid),
+          tagOnLeft: tagOnLeft,
+          tagAbove: tagAbove,
         ),
       ),
     );
   }
 }
 
-/// An arrow with the person's name beside it.
+/// An arrow with the person's name beside it. The arrow's tip is the
+/// widget's top-left corner.
 class RemoteCursor extends StatelessWidget {
-  const RemoteCursor({super.key, required this.name, required this.color});
+  const RemoteCursor({
+    super.key,
+    required this.name,
+    required this.color,
+    this.tagOnLeft = false,
+    this.tagAbove = false,
+  });
+
+  static const Size arrowSize = Size(14, 18);
+  static const double maxTagWidth = 160;
 
   final String name;
   final Color color;
+  final bool tagOnLeft;
+  final bool tagAbove;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CustomPaint(size: const Size(14, 18), painter: _ArrowPainter(color)),
-        Transform.translate(
-          offset: const Offset(10, -4),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: const [Settings.cardForegroundBackdrop],
-            ),
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Settings.presenceTagInk,
-                height: 1.2,
-              ),
-            ),
+    final tag = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: maxTagWidth),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [Settings.cardForegroundBackdrop],
+        ),
+        child: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Settings.presenceTagInk,
+            height: 1.2,
           ),
         ),
-      ],
+      ),
+    );
+    return SizedBox.fromSize(
+      size: arrowSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CustomPaint(size: arrowSize, painter: _ArrowPainter(color)),
+          Positioned(
+            left: tagOnLeft ? null : 10,
+            right: tagOnLeft ? arrowSize.width + 2 : null,
+            top: tagAbove ? null : 14,
+            bottom: tagAbove ? arrowSize.height + 2 : null,
+            child: tag,
+          ),
+        ],
+      ),
     );
   }
 }

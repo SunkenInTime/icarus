@@ -17,6 +17,7 @@ import { getStrategyByPublicId } from "./lib/entities";
 export const ROOM_PASS_TTL_MS = 2 * 60 * 1000;
 const MAX_NAME_CHARS = 64;
 const MAX_AVATAR_URL_CHARS = 512;
+const UNKNOWN_DISCORD_NAME = "Discord user";
 
 export const issueRoomPass = mutation({
   args: {
@@ -44,8 +45,13 @@ export const issueRoomPass = mutation({
 
     const identity = await ctx.auth.getUserIdentity();
     const metadata = discordMetadata(identity);
+    // Email sign-ins have no Discord name; the part before the @ is what a
+    // teammate would recognize. "Discord user" is ensureCurrentUser's
+    // placeholder, never a name.
+    const storedName =
+      user.displayName === UNKNOWN_DISCORD_NAME ? null : user.displayName;
     const name = truncate(
-      metadata.name ?? user.displayName,
+      metadata.name ?? storedName ?? emailName(identity?.email) ?? "Teammate",
       MAX_NAME_CHARS,
     );
     const avatar = metadata.avatar ?? user.avatarUrl ?? null;
@@ -123,6 +129,12 @@ function safeParseObject(text: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function emailName(email: unknown): string | null {
+  if (typeof email !== "string") return null;
+  const local = email.split("@")[0]?.trim();
+  return local ? local : null;
 }
 
 function truncate(text: string, max: number): string {

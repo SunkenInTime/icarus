@@ -114,6 +114,32 @@ describe("presence:issueRoomPass", () => {
     expect(second!.uid).toBe(first!.uid);
   });
 
+  test("names an email sign-in by its address, never the placeholder", async () => {
+    const t = convexTest(schema, modules);
+    const emailUser = t.withIdentity({
+      issuer: "https://presence.test",
+      subject: "email-user",
+      tokenIdentifier: "presence|email-user",
+      email: "ana.lyst@example.com",
+    });
+    await emailUser.mutation(ensureCurrentUser, protocol);
+    await emailUser.mutation(createStrategy, {
+      ...protocol,
+      publicId: "strat-email",
+      name: "Mine",
+      mapData: "bind",
+      initialPagePublicId: "page-email",
+      initialPageName: "Page 1",
+      initialPageIsAttack: true,
+    });
+    const issued = await emailUser.mutation(issueRoomPass, {
+      ...protocol,
+      strategyPublicId: "strat-email",
+    });
+    const claims = await verifyPass(issued.pass, SECRET, Date.now());
+    expect(claims!.name).toBe("ana.lyst");
+  });
+
   test("refuses someone without access", async () => {
     const { stranger } = await harness();
     await expect(
