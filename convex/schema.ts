@@ -110,19 +110,12 @@ export default defineSchema({
     .index("by_pageId", ["pageId"])
     .index("by_strategyId", ["strategyId"])
     .index("by_strategyId_and_payloadKind", ["strategyId", "payloadKind"])
-    // Whether a live link on a page names an origin or landing, checked
-    // when one is deleted (see assertLineupEndUnused in ops.ts).
-    .index("by_pageId_and_payloadKind_and_deleted_and_originId", [
+    // Live links on a page, read when an origin or landing is deleted (see
+    // assertLineupEndUnused in ops.ts).
+    .index("by_pageId_and_payloadKind_and_deleted", [
       "pageId",
       "payloadKind",
       "deleted",
-      "payload.data.originId",
-    ])
-    .index("by_pageId_and_payloadKind_and_deleted_and_landingId", [
-      "pageId",
-      "payloadKind",
-      "deleted",
-      "payload.data.landingId",
     ])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   // Which content rows show which images: one small row per (element or

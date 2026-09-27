@@ -907,6 +907,42 @@ describe("an origin or landing a live link names is not deleted", () => {
     expect(results[0]).toMatchObject({ status: "applied" });
   });
 
+  test("a batch sees its own link writes after reading the page", async () => {
+    const { owner } = await createHarness();
+    await apply(
+      owner,
+      "owner-client",
+      [
+        origin("o"),
+        landing("l"),
+        link("k", "o", "l"),
+        origin("o2"),
+        landing("l2"),
+        landing("spare"),
+      ].map((row, index) => addOp(row, index)),
+    );
+    const results = await applyChecked(owner, "owner-client", [
+      // No link names this landing; checking it reads the page's links.
+      deleteOp("delete-spare", "lineupLanding:spare", 1),
+      // A link added after that read holds its origin...
+      addOp(link("k2", "o2", "l2"), 6),
+      deleteOp("delete-origin-o2", "lineupOrigin:o2", 1),
+      // ...and a link deleted after it no longer holds its ends.
+      deleteOp("delete-link-k", "lineupLink:k", 1),
+      deleteOp("delete-origin-o", "lineupOrigin:o", 1),
+      deleteOp("delete-landing-l", "lineupLanding:l", 1),
+    ]);
+    expect(results.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+      "failed",
+      "applied",
+      "applied",
+      "applied",
+    ]);
+    expect(results[2]).toMatchObject({ code: "LINEUP_END_IN_USE" });
+  });
+
   test("an older client's end delete still lands ahead of its link", async () => {
     const { owner, editor } = await createHarness();
     await apply(

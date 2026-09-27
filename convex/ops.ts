@@ -500,48 +500,84 @@ async function assertLinkEndsLive(
   }
 }
 
+/// The origin and landing each live link names, per page, as this batch
+/// has left them. A page's links are read once, when an end on it is first
+/// deleted, and the batch's own link writes update that copy, so a batch
+/// deleting many lineups reads each page's links once rather than once per
+/// end.
+class LiveLinkEnds {
+  private readonly byPage = new Map<
+    Id<"pages">,
+    Map<string, { originId: unknown; landingId: unknown }>
+  >();
+
+  async of(ctx: MutationCtx, pageId: Id<"pages">) {
+    let links = this.byPage.get(pageId);
+    if (links === undefined) {
+      const rows = await ctx.db
+        .query("lineups")
+        .withIndex("by_pageId_and_payloadKind_and_deleted", (q) =>
+          q
+            .eq("pageId", pageId)
+            .eq("payloadKind", "lineupLink")
+            .eq("deleted", false),
+        )
+        .collect();
+      links = new Map(rows.map((row) => [row.publicId, linkEnds(row.payload)]));
+      this.byPage.set(pageId, links);
+    }
+    return links;
+  }
+
+  /// Follows an accepted lineup op. A page not read yet needs nothing: its
+  /// read will see the write.
+  recordAccepted(op: StrategyOp, pageId: Id<"pages"> | undefined): void {
+    const links = pageId === undefined ? undefined : this.byPage.get(pageId);
+    const publicId = op.entityPublicId;
+    if (links === undefined || publicId === undefined) return;
+    if (!publicId.startsWith("lineupLink:")) return;
+    if (op.kind === "delete") {
+      links.delete(publicId);
+    } else if (op.payload !== undefined) {
+      links.set(publicId, linkEnds(op.payload as LineupPayload));
+    }
+  }
+}
+
+function linkEnds(payload: LineupPayload) {
+  const data = payload.data as Record<string, unknown>;
+  return { originId: data.originId, landingId: data.landingId };
+}
+
 /// The mirror of assertLinkEndsLive: deleting an origin or landing that a
 /// live link on its page still names would leave that link undrawable, so
 /// its lineup would vanish on the next load while every chip says synced.
 /// That happens when a teammate's new link lands first and this client
 /// never saw it. The delete is refused instead. A link deleted earlier in
-/// the same batch is already a tombstone here, so a client deleting a whole
+/// the same batch is already gone here, so a client deleting a whole
 /// lineup sends its link first.
 async function assertLineupEndUnused(
   ctx: MutationCtx,
   end: Doc<"lineups">,
+  liveLinkEnds: LiveLinkEnds,
 ): Promise<void> {
-  if (end.payloadKind === "lineupLink") return;
+  const endField =
+    end.payloadKind === "lineupOrigin"
+      ? "originId"
+      : end.payloadKind === "lineupLanding"
+        ? "landingId"
+        : null;
+  if (endField === null) return;
   const endId = (end.payload.data as { id: string }).id;
-  // One indexed lookup reads at most one row, so a batch deleting many ends
-  // stays well inside the transaction's read budget.
-  const linkNamingEnd = await (end.payloadKind === "lineupOrigin"
-    ? ctx.db
-        .query("lineups")
-        .withIndex("by_pageId_and_payloadKind_and_deleted_and_originId", (q) =>
-          q
-            .eq("pageId", end.pageId)
-            .eq("payloadKind", "lineupLink")
-            .eq("deleted", false)
-            .eq("payload.data.originId", endId),
-        )
-        .first()
-    : ctx.db
-        .query("lineups")
-        .withIndex("by_pageId_and_payloadKind_and_deleted_and_landingId", (q) =>
-          q
-            .eq("pageId", end.pageId)
-            .eq("payloadKind", "lineupLink")
-            .eq("deleted", false)
-            .eq("payload.data.landingId", endId),
-        )
-        .first());
-  if (linkNamingEnd !== null) {
-    // The client matches this text (lineupEndInUseMessage).
-    throw errorWithCode(
-      "LINEUP_END_IN_USE",
-      "Another lineup still uses this origin or landing spot",
-    );
+  const links = await liveLinkEnds.of(ctx, end.pageId);
+  for (const ends of links.values()) {
+    if (ends[endField] === endId) {
+      // The client matches this text (lineupEndInUseMessage).
+      throw errorWithCode(
+        "LINEUP_END_IN_USE",
+        "Another lineup still uses this origin or landing spot",
+      );
+    }
   }
 }
 
@@ -1286,6 +1322,7 @@ async function applyLineupOp(
   op: StrategyOp,
   checkLinkEnds: boolean,
   checkEndDeletes: boolean,
+  liveLinkEnds: LiveLinkEnds,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
@@ -1381,7 +1418,9 @@ async function applyLineupOp(
         existing.pageId,
       );
     }
-    if (checkEndDeletes) await assertLineupEndUnused(ctx, existing);
+    if (checkEndDeletes) {
+      await assertLineupEndUnused(ctx, existing, liveLinkEnds);
+    }
     const revision = existing.revision + 1;
     await ctx.db.patch(existing._id, {
       deleted: true,
@@ -1570,6 +1609,7 @@ export const applyBatch = mutation({
     // Images deleted elements showed, whose upload placeholders may go once
     // the whole batch has applied and nothing shows them any more.
     const placeholderCandidates = new Set<string>();
+    const liveLinkEnds = new LiveLinkEnds();
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
@@ -1654,7 +1694,11 @@ export const applyBatch = mutation({
               op,
               args.checkLineupLinkEnds === true,
               args.checkLineupEndDeletes === true,
+              liveLinkEnds,
             );
+            if (result.status === "ack") {
+              liveLinkEnds.recordAccepted(op, result.eventPageId);
+            }
           }
           if (result.status === "ack" && op.entityType !== "strategy") {
             contentChanged = true;
