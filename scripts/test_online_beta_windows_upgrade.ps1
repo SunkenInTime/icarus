@@ -201,7 +201,54 @@ function Stop-Icarus {
             }
         }
     }
-    Get-Process -Name "icarus" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process -Name "icarus" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+# Processes that can hold files in the support directory: Icarus itself and
+# helpers started with a path inside it (for example a WebView2 user-data dir).
+function Get-SupportDirProcesses {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -eq "icarus.exe" -or
+                ($null -ne $_.CommandLine -and $_.CommandLine.Contains($supportDir))
+        }
+}
+
+function Wait-ForSupportDirRelease {
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+        $holders = @(Get-SupportDirProcesses)
+        if ($holders.Count -eq 0) {
+            return
+        }
+        $holders | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $names = (@(Get-SupportDirProcesses) | ForEach-Object { "$($_.Name) ($($_.ProcessId))" }) -join ", "
+    Write-Warning "Processes still running 30 seconds after Icarus was stopped: $names"
+}
+
+function Remove-SupportDir {
+    $attempts = 10
+    for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+        if (-not (Test-Path $supportDir)) {
+            return
+        }
+        try {
+            Remove-Item -Path $supportDir -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            if ($attempt -eq $attempts) {
+                throw "Could not delete $supportDir after $attempts attempts: $($_.Exception.Message)"
+            }
+            Write-Host "Delete of $supportDir failed (attempt $attempt of $attempts), retrying: $($_.Exception.Message)"
+            Start-Sleep -Seconds 2
+        }
+    }
 }
 
 function Wait-ForStrategyLibrary {
@@ -298,6 +345,7 @@ if ($hadPreexistingSupport) {
 }
 
 $runningProcess = $null
+$testError = $null
 try {
     Invoke-WebRequest -Uri $PublicInstallerUrl -OutFile $publicInstaller
     $observedPublicInstallerSha256 =
@@ -391,13 +439,32 @@ try {
     Write-Host "Windows public-upgrade and rollback smoke passed."
     Write-Host "Evidence: $evidencePath"
 }
-finally {
+catch {
+    $testError = $_
+}
+
+# Cleanup runs after the test either way. If both fail, the test's error is the
+# one reported; a cleanup failure is only fatal when the test itself passed.
+$cleanupError = $null
+try {
     Stop-Icarus -Process $runningProcess
-    if (Test-Path $supportDir) {
-        Remove-Item -Path $supportDir -Recurse -Force
-    }
+    Wait-ForSupportDirRelease
+    Remove-SupportDir
     if ($hadPreexistingSupport -and (Test-Path $supportBackup)) {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $supportDir) | Out-Null
         Move-Item -Path $supportBackup -Destination $supportDir
     }
+}
+catch {
+    $cleanupError = $_
+}
+
+if ($null -ne $testError) {
+    if ($null -ne $cleanupError) {
+        Write-Warning "Cleanup also failed: $cleanupError"
+    }
+    throw $testError
+}
+if ($null -ne $cleanupError) {
+    throw "The upgrade and rollback test passed, but cleanup failed: $cleanupError"
 }
