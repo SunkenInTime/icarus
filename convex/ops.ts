@@ -470,6 +470,36 @@ async function getLineupByPublicIdOrNull(
     .unique();
 }
 
+/// A link is drawn only while its origin and landing are live rows on its
+/// page (see lineUpGraphFromCloudRows on the client). Storing a link whose
+/// end is gone, say one a teammate deleted while it was being placed, would
+/// make the lineup vanish on the next load with nothing on screen, so it is
+/// refused instead. Ends are read in this transaction: one added earlier in
+/// the same batch counts.
+async function assertLinkEndsLive(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  pageId: Id<"pages">,
+  payload: LineupPayload,
+): Promise<void> {
+  if (payload.kind !== "lineupLink") return;
+  const data = payload.data as { originId: string; landingId: string };
+  for (const endKey of [
+    `lineupOrigin:${data.originId}`,
+    `lineupLanding:${data.landingId}`,
+  ]) {
+    const end = await getLineupByPublicIdOrNull(ctx, strategyId, endKey);
+    if (end === null || end.deleted || end.pageId !== pageId) {
+      // The client matches this text (lineupLinkEndMissingMessage) to
+      // re-send the link as it was on "Keep mine".
+      throw errorWithCode(
+        "LINEUP_LINK_END_MISSING",
+        "This lineup's origin or landing spot is no longer on the page",
+      );
+    }
+  }
+}
+
 async function getPageContent(
   ctx: MutationCtx,
   pageId: Id<"pages">,
@@ -1209,6 +1239,7 @@ async function applyLineupOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
+  checkLinkEnds: boolean,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
@@ -1239,6 +1270,9 @@ async function applyLineupOp(
             existing.pageId,
           );
         }
+        if (checkLinkEnds) {
+          await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
+        }
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
@@ -1268,6 +1302,9 @@ async function applyLineupOp(
         { revision: existing.revision, payload: existing.payload },
         existing.pageId,
       );
+    }
+    if (checkLinkEnds) {
+      await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
     }
     const now = Date.now();
     await ctx.db.insert("lineups", {
@@ -1369,6 +1406,14 @@ async function applyLineupOp(
       existing.pageId,
     );
   }
+  if (checkLinkEnds && op.kind === "patch" && op.payload !== undefined) {
+    await assertLinkEndsLive(
+      ctx,
+      strategy._id,
+      existing.pageId,
+      op.payload as LineupPayload,
+    );
+  }
   const revision = existing.revision + 1;
   await ctx.db.patch(existing._id, {
     ...patch,
@@ -1456,6 +1501,10 @@ export const applyBatch = mutation({
     strategyPublicId: v.string(),
     clientId: v.string(),
     ops: v.array(strategyOpValidator),
+    // Set by clients that send a link only once its origin and landing are
+    // sent (see assertLinkEndsLive). Older clients may send a link a batch
+    // ahead of its ends, so their links are not checked.
+    checkLineupLinkEnds: v.optional(v.boolean()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
@@ -1546,7 +1595,12 @@ export const applyBatch = mutation({
           } else if (op.entityType === "element") {
             result = await applyElementOp(ctx, strategy, op);
           } else {
-            result = await applyLineupOp(ctx, strategy, op);
+            result = await applyLineupOp(
+              ctx,
+              strategy,
+              op,
+              args.checkLineupLinkEnds === true,
+            );
           }
           if (result.status === "ack" && op.entityType !== "strategy") {
             contentChanged = true;

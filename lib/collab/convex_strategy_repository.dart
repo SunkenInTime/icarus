@@ -240,6 +240,9 @@ class ConvexStrategyRepository {
       clientId: clientId,
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       ops: typedOps,
+      // Links are sent only with or after their origin and landing (see
+      // the outbox's batch claim), so the server may refuse an orphan.
+      checkLineupLinkEnds: const ConvexOptional.present(true),
     );
     return result.results.map(_opAck).toList(growable: false);
   }

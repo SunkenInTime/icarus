@@ -15,6 +15,12 @@ const cloudOperationTooLargeMessage =
 const cloudStrategyDeletedMessage =
     'This strategy was deleted, so its unsent changes cannot be saved.';
 
+/// The server's message when it refuses a lineup link whose origin or
+/// landing is not live on its page (LINEUP_LINK_END_MISSING). "Keep mine"
+/// re-sends such a link as it was.
+const lineupLinkEndMissingMessage =
+    "This lineup's origin or landing spot is no longer on the page";
+
 typedef CloudPayload = Map<String, dynamic>;
 
 int serializedConvexValueUtf8Bytes(Object? value) =>
