@@ -1185,6 +1185,56 @@ void main() {
       expect(retried.queuedByEntityKey[key]!.pending.op, isA<LineupAddOp>());
     });
 
+    test('a lineup refusal beside a conflict notes the conflict', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final link = LineupAddOp(
+        opId: 'refused-link',
+        lineupPublicId: cloudLineupRowId(CloudLineupKind.link, 'k'),
+        pagePublicId: 'page-1',
+        payload: cloudLineupPayload(
+          kind: CloudLineupKind.link,
+          data: {'id': 'k', 'originId': 'o', 'landingId': 'l'},
+        ),
+        sortIndex: 0,
+      );
+      const element = ElementPatchOp(
+        opId: 'stale-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'mine'},
+        expectedElementRevision: 1,
+      );
+      for (final (StrategyOp op, reason) in [
+        (link, lineupLinkEndMissingMessage),
+        (element, 'revision_mismatch'),
+      ]) {
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-1',
+          entityKey: EntitySyncKey.forStrategyOp(op)!,
+          pending: PendingOp(op: op, clientId: 'client-a'),
+          status: DurableOutboxStatus.attention,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          lastError: reason,
+          latestServerRevision: 2,
+        ));
+      }
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+
+      container
+          .read(strategyOpQueueProvider.notifier)
+          .setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      final error = container.read(strategyOpQueueProvider).lastError!;
+      expect(error, contains(lineupLinkEndMissingMessage));
+      expect(error, contains(otherWorkConflictsNote));
+    });
+
     test('a lineup refused for another page keeps that reason', () async {
       final container = _cloudQueueContainer(
         store: MemoryDurableStrategyOutboxStore(),

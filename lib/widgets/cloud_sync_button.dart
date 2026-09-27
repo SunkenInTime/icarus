@@ -494,6 +494,12 @@ class _SyncStatusPopover extends StatelessWidget {
         (!hasRejectedWork || retryUnavailable || hasSpecificReason)) {
       parts.add(friendlyCloudSyncError(error));
     }
+    if (error?.contains(otherWorkConflictsNote) ?? false) {
+      parts.add(
+        'Another edit reached the cloud first for the other changes. They '
+        'remain saved on this device.',
+      );
+    }
     if (hasRejectedWork && hasSpecificReason && rejectedCount > 1) {
       parts.add(
         'Your choice applies to all $rejectedCount changes that need '

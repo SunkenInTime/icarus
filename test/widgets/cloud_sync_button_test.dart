@@ -808,6 +808,43 @@ void main() {
     );
   });
 
+  testWidgets('a lineup refusal beside a conflict explains both',
+      (tester) async {
+    final queue = _AttentionOpQueue(2);
+    final container = _createConflictContainer(
+      queue: queue,
+      session: _ConflictSession(),
+    );
+    addTearDown(container.dispose);
+    container.read(strategySaveStateProvider.notifier).setCloudSyncError(
+          '$lineupLinkEndMissingMessage. $otherWorkConflictsNote',
+        );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(_syncButton('attention'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+    expect(
+      find.textContaining('Another edit reached the cloud first for the '
+          'other changes'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('applies to all 2 changes that need attention'),
+      findsOneWidget,
+    );
+  });
+
   group('refusal toast', () {
     Finder toast(String text) => find.byWidgetPredicate(
           (widget) => widget is Text && widget.data == text,
