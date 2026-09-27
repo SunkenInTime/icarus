@@ -1262,6 +1262,42 @@ void main() {
     expect(container.read(strategySaveStateProvider).isDirty, isFalse);
   });
 
+  test("reading the notice moves on while another page's work waits", () async {
+    final (:container, :queue, :two, one: _, remote: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    // Another page's edit, waiting on the server (paused, say).
+    final otherKey = EntitySyncKey.element('page-3', 'other');
+    await queue.syncDesiredGenericOp(
+      entityKey: otherKey,
+      desiredOp: ElementDeleteOp(
+        opId: 'other-op',
+        pagePublicId: 'page-3',
+        elementPublicId: 'other',
+        expectedElementRevision: 1,
+      ),
+    );
+
+    final left = await container
+        .read(strategyPageSessionProvider.notifier)
+        .leaveDeletedPage();
+    await _settle();
+
+    expect(left, isTrue);
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, two.publicId);
+    expect(container.read(drawingProvider).elements, isEmpty);
+    expect(container.read(textProvider).single.text, 'two');
+    // The deleted page's work is gone; the other page's still waits.
+    expect(
+      container
+          .read(strategyOpQueueProvider)
+          .pending
+          .map((pending) => pending.op.pagePublicId),
+      ['page-3'],
+    );
+  });
+
   test('leaving waits for work already sent for the page', () async {
     final (:container, :queue, :one, :two, remote: _, strokeId: _) =
         await strokeOnDeletedPage();

@@ -879,7 +879,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(session.leaveCount, 1);
-      expect(find.textContaining('still being sent'), findsOneWidget);
+      expect(
+        find.textContaining('Could not leave this page yet'),
+        findsOneWidget,
+      );
       expect(find.text('A teammate deleted this page'), findsOneWidget);
     });
   });

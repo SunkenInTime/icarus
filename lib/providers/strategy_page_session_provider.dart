@@ -35,6 +35,7 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
@@ -922,8 +923,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   /// Lets the deleted page on screen go, with the unsaved work on it, and
-  /// moves to a page the server has. Returns false, staying on it, while
-  /// some of that work is still on its way and cannot be taken back.
+  /// puts a page the server has on screen. Returns false, staying on the
+  /// deleted page, while some of that work is still on its way and cannot be
+  /// taken back, or if no other page could be loaded.
   Future<bool> leaveDeletedPage() async {
     final deleted = state.deletedPage;
     final strategyId = ref.read(strategyProvider).strategyId;
@@ -932,17 +934,38 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         state.deletedPage != deleted) {
       return false;
     }
-    // Nothing on the canvas is to be sent any more, and what replaces it is
-    // a different page.
-    ref.read(activePageLiveSyncProvider.notifier).markPageUnhydrated(
-          strategyPublicId: strategyId,
-          pageId: deleted.pageId,
-        );
-    _lastHydratedRemotePageKey = null;
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final target =
+        snapshot == null ? null : _resolveHydrationTargetPage(snapshot);
+    if (target == null || target == deleted.pageId) return false;
+    // Loaded here, not through the reapply that waits for pending cloud
+    // work: work queued for other pages is not on this canvas, and the
+    // deleted page must not stay editable while it waits.
+    try {
+      await ref
+          .read(remoteEditorSnapshotProvider.notifier)
+          .setActivePage(target);
+      final source = _resolvePageSource(strategyId, StrategySource.cloud);
+      final pageData = await source.loadPage(target);
+      if (state.deletedPage != deleted) return false;
+      await _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: StrategySource.cloud,
+        loadedRemoteSnapshot: source.loadedRemoteSnapshot,
+      );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not load a page to replace the deleted one.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'strategy_page_session:leave_deleted_page',
+        promptUser: false,
+      );
+      return false;
+    }
     ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
     state = state.copyWith(clearDeletedPage: true);
-    _pendingRemoteReapply = true;
-    _resumePendingRemoteReapplyIfPossible();
     return true;
   }
 

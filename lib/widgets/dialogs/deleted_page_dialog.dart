@@ -41,8 +41,8 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
     }
     setState(() {
       _isBusy = false;
-      _error = 'Some of your changes are still being sent. Try again in a '
-          'moment.';
+      _error = 'Could not leave this page yet: changes to it are still being '
+          'sent, or another page could not load. Try again in a moment.';
     });
   }
 
