@@ -616,14 +616,6 @@ class LineUpGraphAction extends UserAction {
   final LineUpGraph before;
   final LineUpGraph after;
 
-  Iterable<String> get entryIds sync* {
-    for (final graph in [before, after]) {
-      yield* graph.origins.map((origin) => origin.id);
-      yield* graph.landings.map((landing) => landing.id);
-      yield* graph.links.map((link) => link.id);
-    }
-  }
-
   // History stores copies, so the copy must keep the change.
   @override
   LineUpGraphAction copy() {
@@ -1288,16 +1280,34 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
-  /// Every lineup entry [history] could still act on: the current graph plus
-  /// anything a retained addition or deletion can bring back.
-  Set<String> replayableIds(Iterable<UserAction> history) {
-    return {
-      ...state.origins.map((origin) => origin.id),
-      ...state.landings.map((landing) => landing.id),
-      ...state.links.map((link) => link.id),
-      for (final action in history)
-        if (action is LineUpGraphAction) ...action.entryIds,
-    };
+  /// Undoes or redoes a link details edit on the link as it is now and
+  /// returns the edit that reverses exactly what this changed: the fields
+  /// that took a new value and the images actually put in or taken out.
+  /// Images a teammate already added or removed are left out, so replaying
+  /// the result can never bring back an image they removed. Returns null
+  /// when nothing changed or the link is gone.
+  LineUpEditAction? replayLinkDetails(
+    LineUpEditAction action, {
+    required bool undo,
+  }) {
+    final link = state.linkById(action.targetId);
+    if (link == null) return null;
+    final change = (undo ? action.before : action.after) as LineUpLinkChange;
+    final written = change.writeTo(link);
+    final applied = LineUpLinkChange.between(link, written);
+    if (applied.forward.isEmpty) return null;
+
+    _writeField(LineUpEditField.linkDetails, link.id, applied.forward);
+    // Undo writes an edit's `before` and redo its `after`. After an undo
+    // this entry goes on the redo stack: its redo reverses what the undo just
+    // did and a later undo repeats it. After a redo it is the other way round.
+    return LineUpEditAction(
+      id: action.id,
+      targetId: action.targetId,
+      field: LineUpEditField.linkDetails,
+      before: undo ? applied.forward : applied.backward,
+      after: undo ? applied.backward : applied.forward,
+    );
   }
 
   /// Undoes or redoes [action] on the graph as it is now and returns the
