@@ -176,6 +176,39 @@ class _ConflictSession extends StrategyPageSessionNotifier {
   }
 }
 
+class _DeletedPageSession extends StrategyPageSessionNotifier {
+  _DeletedPageSession({required this.restores});
+
+  final bool restores;
+  int restoreCount = 0;
+  int discardCount = 0;
+
+  @override
+  StrategyPageSessionState build() => const StrategyPageSessionState(
+        activePageId: 'page-1',
+        availablePageIds: ['page-2'],
+        transitionState: PageTransitionState.idle,
+        isApplyingPage: false,
+      );
+
+  void teammateDeletes() => setStateForTest(
+        state.copyWith(deletedPage: (pageId: 'page-1', name: 'A exec')),
+      );
+
+  @override
+  Future<bool> restoreDeletedPage() async {
+    restoreCount += 1;
+    if (restores) setStateForTest(state.copyWith(clearDeletedPage: true));
+    return restores;
+  }
+
+  @override
+  Future<void> discardDeletedPageWork() async {
+    discardCount += 1;
+    setStateForTest(state.copyWith(clearDeletedPage: true));
+  }
+}
+
 class _FixedLiveSync extends ActivePageLiveSyncNotifier {
   _FixedLiveSync(this.fixed);
 
@@ -796,5 +829,68 @@ void main() {
       container.read(strategyOpQueueProvider).attentionByEntityKey,
       hasLength(1),
     );
+  });
+
+  group('unsaved work on a page a teammate deleted', () {
+    Future<_DeletedPageSession> pumpButton(
+      WidgetTester tester, {
+      required bool restores,
+    }) async {
+      final session = _DeletedPageSession(restores: restores);
+      final container = ProviderContainer(overrides: [
+        strategyProvider.overrideWith(_CloudStrategyProvider.new),
+        strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+        strategyPageSessionProvider.overrideWith(() => session),
+        cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+      ]);
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+                body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          ),
+        ),
+      );
+      await tester.pump();
+      session.teammateDeletes();
+      await tester.pumpAndSettle();
+      return session;
+    }
+
+    testWidgets('asks, and a failed restore keeps asking', (tester) async {
+      final session = await pumpButton(tester, restores: false);
+
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(find.textContaining('“A exec” was deleted'), findsOneWidget);
+      // Only a choice closes it.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+
+      await tester.tap(find.text('Restore page'));
+      await tester.pumpAndSettle();
+      expect(session.restoreCount, 1);
+      expect(find.textContaining('Could not restore the page'), findsOneWidget);
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+
+      await tester.tap(find.text('Discard changes'));
+      await tester.pumpAndSettle();
+      expect(session.discardCount, 1);
+      expect(find.text('A teammate deleted this page'), findsNothing);
+    });
+
+    testWidgets('a restore closes it', (tester) async {
+      final session = await pumpButton(tester, restores: true);
+
+      await tester.tap(find.text('Restore page'));
+      await tester.pumpAndSettle();
+
+      expect(session.restoreCount, 1);
+      expect(session.discardCount, 0);
+      expect(find.text('A teammate deleted this page'), findsNothing);
+    });
   });
 }

@@ -160,6 +160,26 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
     );
   }
 
+  /// Clears an unsaved mark no op stands behind. Edits to a page the server
+  /// no longer has leave one: they produce no op, so the queue never changes
+  /// to clear it.
+  void clearStaleCloudMark() {
+    final queue = ref.read(strategyOpQueueProvider);
+    if (!state.isDirty ||
+        queue.isFlushing ||
+        queue.pending.isNotEmpty ||
+        queue.lastError != null) {
+      return;
+    }
+    state = state.copyWith(
+      isDirty: false,
+      isSaving: false,
+      hasPendingCloudSync: false,
+      clearCloudSyncError: true,
+      lastPersistedAt: DateTime.now(),
+    );
+  }
+
   void markPersisted() {
     state = state.copyWith(
       isDirty: false,

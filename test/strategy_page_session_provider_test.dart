@@ -111,6 +111,9 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   Completer<void>? writeGate;
   int flushNowCount = 0;
 
+  /// Plays the server for one flush, like acking what it accepts.
+  FutureOr<void> Function()? onFlush;
+
   @override
   StrategyOpQueueState build() => const StrategyOpQueueState(
         accountId: 'account-a',
@@ -201,6 +204,25 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   Future<void> flushNow() async {
     flushNowCount += 1;
     if (blockFlush) await Completer<void>().future;
+    await onFlush?.call();
+  }
+
+  /// Lands every queued op, as the server accepting them all.
+  void ackQueued() {
+    final landed = state.queuedByEntityKey.values.toList();
+    final acks = [
+      for (final intent in landed)
+        AckedEntityIntent(
+          entityKey: intent.entityKey,
+          op: intent.pending.op,
+          ack: AppliedOpAck(opId: intent.pending.op.opId, revision: 1),
+        ),
+    ];
+    state = state.copyWith(
+      queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+      lastAcks: [for (final acked in acks) acked.ack],
+      lastAckBatch: acks,
+    );
   }
 
   @override
@@ -919,24 +941,31 @@ void main() {
     expect(container.read(strategyOpQueueProvider).pending, isEmpty);
   });
 
-  test(
-      'a teammate deleting the page on screen waits for the stroke in progress',
-      () async {
-    final one = _page('page-1', 0);
+  /// Page one on screen with a stroke finished after a teammate deleted it:
+  /// work live sync can no longer send anywhere.
+  Future<
+      ({
+        ProviderContainer container,
+        _FakeRemoteEditorNotifier remote,
+        _FakeStrategyOpQueueNotifier queue,
+        RemotePage one,
+        RemotePage two,
+        String strokeId,
+      })> strokeOnDeletedPage() async {
+    final one = _page('page-1', 0, name: 'A exec');
     final two = _page('page-2', 1);
     final remote = _FakeRemoteEditorNotifier(
         _editorSnapshot(
           pages: [one, two],
           activePage: _pageSnapshot(one, text: 'one'),
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
         ),
         pageCatalog: {
           one.publicId: _pageSnapshot(one, text: 'one'),
           two.publicId: _pageSnapshot(two, text: 'two'),
         });
-    final container = await _cloudContainer(
-      remote: remote,
-      queue: _FakeStrategyOpQueueNotifier(),
-    );
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
     await container
         .read(strategyPageSessionProvider.notifier)
         .initializeForStrategy(
@@ -961,22 +990,206 @@ void main() {
     remote.setSnapshot(_editorSnapshot(
       pages: [two],
       activePage: _pageSnapshot(two, text: 'two'),
+      themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
     ));
     await _settle();
+    // Replacing the page waits for the stroke in progress.
     expect(container.read(drawingProvider).currentElement, same(draft));
     expect(container.read(textProvider).single.text, 'one');
 
-    // The finished stroke is unsaved work, so the page swap still waits
-    // instead of wiping it.
     container
         .read(drawingProvider.notifier)
         .finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
     container.read(editorPointersProvider.notifier).release(1);
     await _settle();
+    return (
+      container: container,
+      remote: remote,
+      queue: queue,
+      one: one,
+      two: two,
+      strokeId: draft!.id,
+    );
+  }
+
+  test(
+      'a teammate deleting the page on screen asks what to do with the '
+      'unsaved stroke', () async {
+    final (:container, :one, :strokeId, queue: _, remote: _, two: _) =
+        await strokeOnDeletedPage();
+
+    // The stroke can never be sent to a page the server no longer has.
+    // Before, the page stayed on screen with the sync button spinning for
+    // good; now the user is asked, and nothing moves until they answer.
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
+    expect(session.activePageId, one.publicId);
     expect(
-        container.read(drawingProvider).elements.map((d) => d.id), [draft!.id]);
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+    expect(
+        container
+            .read(strategyOpQueueProvider)
+            .pending
+            .where((pending) => pending.op.pagePublicId == one.publicId),
+        isEmpty);
+
+    // Leaving would drop the stroke the user has not decided about.
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePage('page-2');
     expect(
         container.read(strategyPageSessionProvider).activePageId, one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+  });
+
+  test('restoring the deleted page sends it back with everything on it',
+      () async {
+    final (:container, :remote, :queue, :one, :two, :strokeId) =
+        await strokeOnDeletedPage();
+    final restoredPage = _page(one.publicId, 0, name: 'A exec', revision: 5);
+    queue.onFlush = () {
+      final add = queue.state.queuedByEntityKey.values
+          .map((intent) => intent.pending.op)
+          .whereType<PageAddOp>()
+          .single;
+      expect(add.pagePublicId, one.publicId);
+      expect(add.sortIndex, 0);
+      expect(add.payload['name'], 'A exec');
+      remote.initialSnapshot = _editorSnapshot(
+        pages: [restoredPage, _page(two.publicId, 1)],
+        activePage: _pageSnapshot(restoredPage, elements: const []),
+        themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+      );
+      remote.pageCatalog[one.publicId] =
+          _pageSnapshot(restoredPage, elements: const []);
+      queue
+        ..ackQueued()
+        ..onFlush = null;
+    };
+
+    final restored = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+    await _settle();
+
+    expect(restored, isTrue);
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+    expect(container.read(textProvider).single.text, 'one');
+    // The restored page is empty on the server, so the stroke and the text
+    // that was on the page are both sent as new.
+    final ops = container
+        .read(strategyOpQueueProvider)
+        .pending
+        .map((pending) => pending.op)
+        .whereType<ElementAddOp>()
+        .toList();
+    expect(ops.map((op) => op.pagePublicId).toSet(), {one.publicId});
+    expect(ops.map((op) => op.entityPublicId).toSet(),
+        {strokeId, 'text-${one.publicId}'});
+  });
+
+  test('a restore the server does not take keeps the choice open', () async {
+    final (:container, :one, :strokeId, queue: _, remote: _, two: _) =
+        await strokeOnDeletedPage();
+
+    // No ack: offline, say.
+    final restored = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+    await _settle();
+
+    expect(restored, isFalse);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+  });
+
+  test('discarding the work on the deleted page moves to one that exists',
+      () async {
+    final (:container, :queue, :one, :two, remote: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    // Work queued before the deletion goes too.
+    await queue.syncDesiredGenericOp(
+      entityKey: EntitySyncKey.element(one.publicId, 'old'),
+      desiredOp: ElementDeleteOp(
+        opId: 'old-op',
+        pagePublicId: one.publicId,
+        elementPublicId: 'old',
+        expectedElementRevision: 1,
+      ),
+    );
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .discardDeletedPageWork();
+    await _settle();
+
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, two.publicId);
+    expect(container.read(drawingProvider).elements, isEmpty);
+    expect(container.read(textProvider).single.text, 'two');
+    expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+    expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+  });
+
+  test('a deleted page with nothing unsent gives way to one that exists',
+      () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    // Page one as this client writes it, so loading it changes nothing.
+    final loadedOne = _pageSnapshot(
+      one,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: loadedOne,
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(editorPointersProvider.notifier)
+      ..markCanvas(1)
+      ..down(1);
+    remote.setSnapshot(_editorSnapshot(
+      pages: [two],
+      activePage: _pageSnapshot(two, text: 'two'),
+      themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+    ));
+    await _settle();
+    // An edit that changed nothing still marks the page unsaved.
+    await container.read(strategyProvider.notifier).notifyCloudMutation();
+    container.read(editorPointersProvider.notifier).release(1);
+    await _settle();
+    await _settle();
+
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, two.publicId);
+    expect(container.read(textProvider).single.text, 'two');
+    expect(container.read(strategySaveStateProvider).isDirty, isFalse);
   });
 
   test('a held lineup origin a teammate made undrawable keeps its base',

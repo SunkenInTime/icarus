@@ -14,6 +14,7 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/dialogs/deleted_page_dialog.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -30,6 +31,7 @@ enum _SyncStatus { synced, editing, syncing, offline, attention }
 /// Pressing it saves now. When sync needs attention the press opens a popover
 /// that explains what happened and offers recovery instead. Conflicts (the
 /// server rejected an edit while the local intent was kept) surface as a toast.
+/// Unsaved work on a page a teammate deleted asks the user what to do with it.
 ///
 /// Renders nothing for local strategies; [AutoSaveButton] covers those.
 class CloudSyncButton extends ConsumerStatefulWidget {
@@ -160,6 +162,12 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     final source = ref.watch(strategyProvider.select((state) => state.source));
     ref.listen(strategyConflictProvider, (previous, next) {
       _onConflicts(previous?.length ?? 0, next.length);
+    });
+    ref.listen(strategyPageSessionProvider.select((state) => state.deletedPage),
+        (previous, next) {
+      if (next != null && previous == null) {
+        DeletedPageDialog.show(context, next);
+      }
     });
 
     if (source != StrategySource.cloud) {
