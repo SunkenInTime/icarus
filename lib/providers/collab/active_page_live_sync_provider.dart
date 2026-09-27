@@ -190,16 +190,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   /// The entities of [pageId] whose server copy in [snapshot] differs from the
-  /// one the canvas last drew. A row the canvas cannot draw counts as absent.
+  /// one the canvas last drew.
   Set<EntitySyncKey> remoteChangesSinceHydration(
     RemoteEditorSnapshot snapshot,
     String pageId,
   ) {
     final undrawn = _undrawnRemoteLineups(snapshot, pageId);
     _NormalizedEntity? live(_NormalizedEntity? entity) =>
-        entity == null || entity.deleted || undrawn.contains(entity.key)
-            ? null
-            : entity;
+        entity == null || entity.deleted ? null : entity;
     final remote = _normalizedRemoteEntities(snapshot, pageId);
     final keys = {
       ...remote.keys,
@@ -207,7 +205,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     };
     return {
       for (final key in keys)
-        if (live(remote[key]) case final now
+        // A row the canvas cannot draw counts as gone on the server side
+        // only: the base is what the canvas did draw.
+        if (undrawn.contains(key) ? null : live(remote[key]) case final now
             when !_sameLiveEntity(now, live(_hydratedBaseByEntityKey[key])))
           key,
     };
@@ -864,13 +864,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
 
     // A row keeps the sortIndex it was first sent with and new rows go after
-    // the page's highest: order is never re-sent, so removing one element or
-    // lineup (here or by a teammate) does not rewrite every row after it and
-    // collide with a teammate editing one of them. Nothing reorders rows.
+    // the page's highest. Removing an element or lineup (here or by a
+    // teammate) then rewrites no row after it, which would collide with a
+    // teammate editing one of them; the server never renumbers either.
     int? knownSortIndex(EntitySyncKey key) =>
         state.overlayByEntityKey[key]?.desiredSortIndex ??
         _hydratedBaseByEntityKey[key]?.sortIndex;
-    int Function(EntitySyncKey key) sortIndexFor(EntitySyncKeyKind kind) {
+
+    /// Hands out sortIndexes after the page's highest for [kind].
+    int Function() freshSortIndexes(EntitySyncKeyKind kind) {
       bool onPage(EntitySyncKey key) =>
           key.pageId == pageId && key.kind == kind;
       var next = 1 +
@@ -880,10 +882,26 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             for (final key in state.overlayByEntityKey.keys)
               if (onPage(key)) knownSortIndex(key) ?? 0,
           ].fold<int>(-1, max);
-      return (key) => knownSortIndex(key) ?? next++;
+      return () => next++;
     }
 
-    final elementSortIndex = sortIndexFor(EntitySyncKeyKind.element);
+    // Elements stack in list order within each kind (each kind is its own
+    // canvas layer), and moving or restoring one brings it to the front of its
+    // list. A known sortIndex is kept while it still sorts after the one
+    // before it in the same list; an element that moved ahead goes after the
+    // page's highest.
+    final freshElementSortIndex = freshSortIndexes(EntitySyncKeyKind.element);
+    final floorByKind = <_CollabElementKind, int>{};
+    int stackedSortIndex(EntitySyncKey key, _CollabElementKind kind) {
+      final known = knownSortIndex(key);
+      final floor = floorByKind[kind];
+      final sortIndex = known != null && (floor == null || known >= floor)
+          ? known
+          : freshElementSortIndex();
+      floorByKind[kind] = sortIndex;
+      return sortIndex;
+    }
+
     for (final envelope in _collectLocalElementEnvelopes()) {
       final key = EntitySyncKey.element(pageId, envelope.publicId);
       entities[key] = _NormalizedEntity(
@@ -891,21 +909,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         overlayEntityType: ActivePageOverlayEntityType.element,
         payload: cloudElementPayload(
             kind: envelope.kind.name, data: envelope.payload),
-        sortIndex: elementSortIndex(key),
+        sortIndex: stackedSortIndex(key, envelope.kind),
         revision: 0,
         deleted: false,
       );
     }
 
     // One row per origin, landing and link.
-    final lineupSortIndex = sortIndexFor(EntitySyncKeyKind.lineup);
+    final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
     for (final row in cloudLineupRows(ref.read(lineUpProvider).graph)) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
         payload: row.payload,
-        sortIndex: lineupSortIndex(key),
+        sortIndex: knownSortIndex(key) ?? freshLineupSortIndex(),
         revision: 0,
         deleted: false,
       );
