@@ -11,11 +11,13 @@ import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/agents.dart';
@@ -830,6 +832,160 @@ void main() {
     await _settle();
 
     expect(container.read(textProvider).single.text, 'after');
+  });
+
+  test('streamed update preserves an unfinished drawing and queues its finish',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'before'),
+    ));
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    final drawing = container.read(drawingProvider.notifier);
+    drawing.startFreeDrawing(
+        const Offset(10, 20),
+        CoordinateSystem.instance,
+        Colors.white,
+        2,
+        false,
+        false,
+        false,
+        TraversalSpeedProfile.values.first);
+    final draft = container.read(drawingProvider).currentElement;
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'after', contentRevision: 2),
+    ));
+    await _settle();
+    expect(container.read(drawingProvider).currentElement, same(draft));
+    expect(container.read(textProvider).single.text, 'before');
+
+    drawing.finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    await _settle();
+    expect(container.read(drawingProvider).elements.single.id, draft!.id);
+    expect(
+        container.read(strategyOpQueueProvider).pending.any(
+              (item) => item.op.entityPublicId == draft.id,
+            ),
+        isTrue);
+  });
+
+  test('streamed update waits for lineup placement to be dismissed', () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'before'),
+    ));
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(lineUpProvider.notifier).startFresh();
+    final placement = container.read(lineUpProvider).placement;
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'after', contentRevision: 2),
+    ));
+    await _settle();
+    expect(container.read(lineUpProvider).placement, same(placement));
+    expect(container.read(textProvider).single.text, 'before');
+    container.read(lineUpProvider.notifier).clearPlacement();
+    await _settle();
+    expect(container.read(textProvider).single.text, 'after');
+  });
+
+  for (final startDuringLoad in [false, true]) {
+    test(
+        'remote hydration waits for pointer, started during load=$startDuringLoad',
+        () async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, text: 'before'),
+      ));
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      final pointers = container.read(editorPointersProvider.notifier);
+      if (!startDuringLoad) pointers.down(1);
+      remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, text: 'after', contentRevision: 2),
+      ));
+      if (startDuringLoad) pointers.down(1);
+      await _settle();
+      expect(container.read(textProvider).single.text, 'before');
+      expect(container.read(activePageLiveSyncProvider).hydratedPageId,
+          page.publicId);
+      remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, text: 'latest', contentRevision: 3),
+      ));
+      await _settle();
+      expect(container.read(textProvider).single.text, 'before');
+      pointers.release(1);
+      await _settle();
+      expect(container.read(textProvider).single.text, 'latest');
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+    });
+  }
+
+  test('a page switch supersedes a remote reload already in progress',
+      () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: _pageSnapshot(one, text: 'one'),
+        ),
+        pageCatalog: {
+          one.publicId: _pageSnapshot(one, text: 'one'),
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true);
+    remote.setSnapshot(_editorSnapshot(
+        pages: [one, two],
+        activePage: _pageSnapshot(one, text: 'stale', contentRevision: 2)));
+    await session.setActivePage(two.publicId);
+    await _settle();
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, two.publicId);
+    expect(container.read(textProvider).single.text, 'two');
   });
 
   test('remote hydration preserves and queues a committed text draft',
