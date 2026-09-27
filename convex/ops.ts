@@ -240,29 +240,6 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
   }
 }
 
-/// The order a batch's ops are applied in. A link is refused unless its ends
-/// are live (see assertLinkEndsLive), but a client may send them in any
-/// order: an outbox reloaded after a restart lists its rows by key, links
-/// before origins. So the lineup ops keep their slots and fill them with
-/// the origin and landing ops first, then the link ops, each group in the
-/// order sent. Every other op keeps its place.
-function applicationOrder(ops: StrategyOp[]): number[] {
-  const isLink = (op: StrategyOp) =>
-    op.entityPublicId?.startsWith("lineupLink:") === true;
-  const lineupSlots = ops.flatMap((op, index) =>
-    op.entityType === "lineup" ? [index] : [],
-  );
-  const lineupOrder = [
-    ...lineupSlots.filter((index) => !isLink(ops[index]!)),
-    ...lineupSlots.filter((index) => isLink(ops[index]!)),
-  ];
-  const order = ops.map((_, index) => index);
-  lineupSlots.forEach((slot, n) => {
-    order[slot] = lineupOrder[n]!;
-  });
-  return order;
-}
-
 function isRecord(payload: unknown): payload is Record<string, unknown> {
   return (
     typeof payload === "object" && payload !== null && !Array.isArray(payload)
@@ -513,6 +490,8 @@ async function assertLinkEndsLive(
   ]) {
     const end = await getLineupByPublicIdOrNull(ctx, strategyId, endKey);
     if (end === null || end.deleted || end.pageId !== pageId) {
+      // The client matches this text (lineupLinkEndMissingMessage) to
+      // re-send the link as it was on "Keep mine".
       throw errorWithCode(
         "LINEUP_LINK_END_MISSING",
         "This lineup's origin or landing spot is no longer on the page",
@@ -1260,6 +1239,7 @@ async function applyLineupOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
+  checkLinkEnds: boolean,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
@@ -1290,7 +1270,9 @@ async function applyLineupOp(
             existing.pageId,
           );
         }
-        await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
+        if (checkLinkEnds) {
+          await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
+        }
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
@@ -1321,7 +1303,9 @@ async function applyLineupOp(
         existing.pageId,
       );
     }
-    await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
+    if (checkLinkEnds) {
+      await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
+    }
     const now = Date.now();
     await ctx.db.insert("lineups", {
       publicId,
@@ -1422,7 +1406,7 @@ async function applyLineupOp(
       existing.pageId,
     );
   }
-  if (op.kind === "patch" && op.payload !== undefined) {
+  if (checkLinkEnds && op.kind === "patch" && op.payload !== undefined) {
     await assertLinkEndsLive(
       ctx,
       strategy._id,
@@ -1517,15 +1501,17 @@ export const applyBatch = mutation({
     strategyPublicId: v.string(),
     clientId: v.string(),
     ops: v.array(strategyOpValidator),
+    // Set by clients that send a link only once its origin and landing are
+    // sent (see assertLinkEndsLive). Older clients may send a link a batch
+    // ahead of its ends, so their links are not checked.
+    checkLineupLinkEnds: v.optional(v.boolean()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-    const ops = args.ops.map(normalizeOp);
-    // Results stay in the order the ops were sent.
-    const results: PublicOperationResult[] = new Array(ops.length);
+    const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
     let contentChanged = false;
     // Images deleted elements showed, whose upload placeholders may go once
@@ -1535,9 +1521,8 @@ export const applyBatch = mutation({
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
     // not erase an independent op that the server already accepted.
-    for (const index of applicationOrder(ops)) {
-      const rawOp = args.ops[index]!;
-      let op = ops[index]!;
+    for (const rawOp of args.ops) {
+      let op = normalizeOp(rawOp);
       const existingEvent = await ctx.db
         .query("operationEvents")
         .withIndex("by_strategyId_clientId_opId", (q) =>
@@ -1565,7 +1550,7 @@ export const applyBatch = mutation({
                   latestPayload: latest?.payload,
                 }
               : noop(latest?.revision);
-        results[index] = toPublicResult(op, replayResult);
+        results.push(toPublicResult(op, replayResult));
         continue;
       }
 
@@ -1610,7 +1595,12 @@ export const applyBatch = mutation({
           } else if (op.entityType === "element") {
             result = await applyElementOp(ctx, strategy, op);
           } else {
-            result = await applyLineupOp(ctx, strategy, op);
+            result = await applyLineupOp(
+              ctx,
+              strategy,
+              op,
+              args.checkLineupLinkEnds === true,
+            );
           }
           if (result.status === "ack" && op.entityType !== "strategy") {
             contentChanged = true;
@@ -1678,7 +1668,7 @@ export const applyBatch = mutation({
               : undefined,
         createdAt: Date.now(),
       });
-      results[index] = publicResult;
+      results.push(publicResult);
     }
 
     // Checked against the batch's final state, once.

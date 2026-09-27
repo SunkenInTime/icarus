@@ -265,37 +265,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/// Adds for origin "o" and landing "l" on [firstPage], the ends the image
-/// fixtures' links name; a link is stored only while both are live.
-function linkEndOps() {
-  return [
-    {
-      opId: "add-origin-o",
-      type: "lineup.add",
-      lineupPublicId: "lineupOrigin:o",
-      pagePublicId: firstPage,
-      payload: {
-        kind: "lineupOrigin",
-        payloadVersion: 1,
-        data: { id: "o", agent: { type: "sova", lineUpID: "o" } },
-      },
-      sortIndex: 0,
-    },
-    {
-      opId: "add-landing-l",
-      type: "lineup.add",
-      lineupPublicId: "lineupLanding:l",
-      pagePublicId: firstPage,
-      payload: {
-        kind: "lineupLanding",
-        payloadVersion: 1,
-        data: { id: "l", ability: { type: "shock_dart", lineUpID: "l" } },
-      },
-      sortIndex: 0,
-    },
-  ];
-}
-
 describe("strategies:duplicate", () => {
   test("copies pages, live content, and images under fresh ids", async () => {
     const { t, owner } = await createHarness();
@@ -660,7 +629,6 @@ describe("strategies:duplicate", () => {
       strategyPublicId: source,
       clientId: "editor",
       ops: [
-        ...linkEndOps(),
         {
           opId: "add-late-link",
           type: "lineup.add",
@@ -1122,7 +1090,6 @@ describe("images placed before their upload", () => {
       strategyPublicId: source,
       clientId: "slow-uploader",
       ops: [
-        ...linkEndOps(),
         {
           opId: "link-shows-shared",
           type: "lineup.add",
@@ -1157,12 +1124,6 @@ describe("images placed before their upload", () => {
     await seedSource(t, owner);
     await placeImage(owner, "pending-a");
     await placeImage(owner, "pending-b");
-    await owner.mutation(applyBatch, {
-      ...protocol,
-      strategyPublicId: source,
-      clientId: "slow-uploader",
-      ops: linkEndOps(),
-    });
 
     // One batch: delete A, add a lineup that shows B, then delete placed B.
     const response = (await owner.mutation(applyBatch, {
@@ -1228,7 +1189,6 @@ describe("images placed before their upload", () => {
       strategyPublicId: source,
       clientId: "slow-uploader",
       ops: [
-        ...linkEndOps(),
         {
           opId: "lineup-shows-batch",
           type: "lineup.add",
@@ -1274,7 +1234,6 @@ describe("images placed before their upload", () => {
       strategyPublicId: source,
       clientId: "slow-uploader",
       ops: [
-        ...linkEndOps(),
         {
           opId: "late-link",
           type: "lineup.add",

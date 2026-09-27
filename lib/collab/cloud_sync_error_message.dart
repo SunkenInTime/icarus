@@ -1,3 +1,5 @@
+import 'package:icarus/collab/collab_models.dart';
+
 final _urlQuery = RegExp(r'''(https?://[^\s?#"'<>]+)\?[^\s"'<>]*''');
 final _secretKeyValue = RegExp(
   r'''((?:access_token|refresh_token|provider_token|provider_refresh_token|code_verifier|token|X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token)["']?\s*[=:]\s*["']?)[^&#,;\s}\]"']+''',
@@ -46,7 +48,7 @@ String friendlyCloudSyncError(String raw) {
     return 'A lineup here clashes with one on another page, so it was not '
         'saved over it. Your lineup remains on this device.';
   }
-  if (lower.contains('landing spot is no longer on the page')) {
+  if (lower.contains(lineupLinkEndMissingMessage.toLowerCase())) {
     return "A teammate deleted this lineup's origin or landing spot, so the "
         'lineup was not saved to the cloud.';
   }

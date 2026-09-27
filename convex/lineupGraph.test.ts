@@ -166,14 +166,25 @@ async function apply(
   clientId: string,
   ops: Array<Record<string, unknown>>,
   strategy = strategyPublicId,
+  checkLineupLinkEnds?: boolean,
 ): Promise<Result[]> {
   const response = (await user.mutation(applyBatch, {
     strategyPublicId: strategy,
     clientId,
     clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     ops,
+    ...(checkLineupLinkEnds === undefined ? {} : { checkLineupLinkEnds }),
   })) as { results: Result[] };
   return response.results;
+}
+
+/** [apply] as a current client sends it: link ends are checked. */
+async function applyChecked(
+  user: Harness,
+  clientId: string,
+  ops: Array<Record<string, unknown>>,
+): Promise<Result[]> {
+  return await apply(user, clientId, ops, strategyPublicId, true);
 }
 
 async function pageLineups(
@@ -537,13 +548,7 @@ describe("lineup row keys belong to their strategy", () => {
       sortIndex: 1,
       isAttack: false,
     });
-    await apply(
-      owner,
-      "page-1-client",
-      [origin("o"), landing("l"), link("k", "o", "l")].map((row, index) =>
-        addOp(row, index),
-      ),
-    );
+    await apply(owner, "page-1-client", [addOp(link("k", "o", "l"), 0)]);
 
     // Another page wants the same key: the add is refused, and "Keep mine"
     // would turn it into a patch naming the other page.
@@ -564,15 +569,9 @@ describe("lineup row keys belong to their strategy", () => {
     });
 
     // The row stays on its page, untouched.
-    const first = byKey(await pageLineups(owner));
-    expect([...first.keys()]).toEqual([
-      "lineupOrigin:o",
-      "lineupLanding:l",
-      "lineupLink:k",
-    ]);
-    expect(first.get("lineupLink:k")!.payload.data).toMatchObject({
-      originId: "o",
-    });
+    const first = await pageLineups(owner);
+    expect(first.map((row) => row.publicId)).toEqual(["lineupLink:k"]);
+    expect(first[0]!.payload.data).toMatchObject({ originId: "o" });
     expect(await pageLineups(owner, strategyPublicId, secondPage)).toEqual([]);
   });
 
@@ -622,7 +621,7 @@ describe("a link needs both of its ends", () => {
 
     // The owner's client still had origin "a" as its base, so it sends only
     // the new landing and link.
-    const results = await apply(owner, "owner-client", [
+    const results = await applyChecked(owner, "owner-client", [
       addOp(landing("b"), 3),
       addOp(link("b", "a", "b"), 4),
     ]);
@@ -635,24 +634,28 @@ describe("a link needs both of its ends", () => {
     expect(rows.has("lineupLink:b")).toBe(false);
   });
 
-  test("a batch sent link before origin lands whole, results in sent order", async () => {
+  test("an older client's link a batch ahead of its origin still lands", async () => {
     const { owner } = await createHarness();
-    // An outbox reloaded after a restart lists its rows by key: landing,
-    // link, origin.
-    const rows = [landing("l"), link("k", "o", "l"), origin("o")];
-    const results = await apply(
-      owner,
-      "owner-client",
-      rows.map((row, index) => addOp(row, index)),
-    );
-    expect(results.map((result) => [result.opId, result.status])).toEqual([
-      ["add-lineupLanding:l", "applied"],
-      ["add-lineupLink:k", "applied"],
-      ["add-lineupOrigin:o", "applied"],
+    // An outbox reloaded after a restart lists its rows by key (landing,
+    // link, origin) and may cut the batch before the origin.
+    const first = await apply(owner, "old-client", [
+      addOp(landing("l"), 0),
+      addOp(link("k", "o", "l"), 1),
     ]);
-    expect(
-      (await pageLineups(owner)).filter((row) => !row.deleted),
-    ).toHaveLength(3);
+    const second = await apply(owner, "old-client", [addOp(origin("o"), 2)]);
+    expect([...first, ...second].map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+      "applied",
+    ]);
+    // The same batch from a current client is refused.
+    const checked = await applyChecked(owner, "new-client", [
+      addOp(link("k2", "o2", "l"), 3),
+    ]);
+    expect(checked[0]).toMatchObject({
+      status: "failed",
+      code: "LINEUP_LINK_END_MISSING",
+    });
   });
 
   test("an origin restored earlier in the same batch lets the link land", async () => {
@@ -670,7 +673,7 @@ describe("a link needs both of its ends", () => {
       deleteOp("delete-origin-a", "lineupOrigin:a", 1),
     ]);
 
-    const results = await apply(owner, "owner-client", [
+    const results = await applyChecked(owner, "owner-client", [
       {
         ...addOp(origin("a"), 0),
         opId: "restore-origin-a",
@@ -707,7 +710,7 @@ describe("a link needs both of its ends", () => {
       deleteOp("delete-landing", "lineupLanding:l", 1),
     ]);
 
-    const results = await apply(owner, "owner-client", [
+    const results = await applyChecked(owner, "owner-client", [
       patchOp("rename-k", link("k", "o", "l", { name: "Renamed" }), 1),
     ]);
     expect(results[0]).toMatchObject({
@@ -736,7 +739,7 @@ describe("a link needs both of its ends", () => {
       addOp(landing("l"), 1),
     ]);
 
-    const results = await apply(owner, "owner-client", [
+    const results = await applyChecked(owner, "owner-client", [
       addOp(link("k", "o", "l"), 0, secondPage),
     ]);
     expect(results[0]).toMatchObject({
@@ -783,7 +786,7 @@ describe("a link needs both of its ends", () => {
     expect(full.lineups.map((row) => row.publicId)).toEqual([
       "lineupLink:orphan",
     ]);
-    const results = await apply(owner, "owner-client", [
+    const results = await applyChecked(owner, "owner-client", [
       deleteOp("delete-orphan", "lineupLink:orphan", 1),
     ]);
     expect(results[0]).toMatchObject({ status: "applied" });

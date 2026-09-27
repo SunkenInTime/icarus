@@ -863,14 +863,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final isPayloadPolicyAttention =
               record?.lastError == cloudOperationTooLargeMessage ||
                   cloudOperationExceedsPolicy(rejectedOp);
+          // Nothing moved on the server: the link is re-sent as it was,
+          // add or patch, once its ends are back.
+          final isMissingLinkEnd =
+              record?.lastError == lineupLinkEndMissingMessage;
+          final retriesAsSent = isPayloadPolicyAttention || isMissingLinkEnd;
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
-          if (!isPayloadPolicyAttention && retryRevision == null) continue;
+          if (!retriesAsSent && retryRevision == null) continue;
           final isTombstoneRestore =
               (retryOp is ElementAddOp || retryOp is LineupAddOp) &&
                   (record?.lastError == 'missing_expected_revision' ||
                       record?.lastError == 'revision_mismatch');
-          final rebasedOp = isPayloadPolicyAttention
+          final rebasedOp = retriesAsSent
               ? retryOp.withOpId(const Uuid().v4())
               : _rebaseRejectedOp(
                   retryOp,
@@ -1268,30 +1273,29 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
   }
 
-  /// [records] with every lineup link op after the origin and landing ops,
-  /// in the slots lineup ops already hold; everything else keeps its place.
-  /// The server refuses a link whose ends are not live, and records reloaded
-  /// after a restart are listed by key (links before origins), so a batch
-  /// cut must not send a link ahead of the ends queued with it.
-  static List<DurableOutboxRecord> _lineupLinksAfterTheirEnds(
-    List<DurableOutboxRecord> records,
-  ) {
-    bool isLineup(DurableOutboxRecord record) =>
-        record.pending.op.entityType == StrategyOpEntityType.lineup;
-    bool isLink(DurableOutboxRecord record) =>
-        record.pending.op.entityPublicId
-            ?.startsWith('${CloudLineupKind.link}:') ??
-        false;
-    final lineups = records.where(isLineup);
-    final lineupsInOrder = [
-      ...lineups.where((record) => !isLink(record)),
-      ...lineups.where(isLink),
-    ];
-    var nextLineup = 0;
-    return [
-      for (final record in records)
-        isLineup(record) ? lineupsInOrder[nextLineup++] : record,
-    ];
+  /// The origin and landing rows a lineup link add or patch names; empty
+  /// for any other op.
+  static Set<EntitySyncKey> _lineupLinkEndKeys(StrategyOp op) {
+    final pageId = op.pagePublicId;
+    final payload = op.payload;
+    final data = payload is Map ? payload['data'] : null;
+    if (op.entityType != StrategyOpEntityType.lineup ||
+        payload is! Map ||
+        payload['kind'] != CloudLineupKind.link ||
+        pageId == null ||
+        data is! Map) {
+      return const {};
+    }
+    return {
+      EntitySyncKey.lineup(
+        pageId,
+        cloudLineupRowId(CloudLineupKind.origin, '${data['originId']}'),
+      ),
+      EntitySyncKey.lineup(
+        pageId,
+        cloudLineupRowId(CloudLineupKind.landing, '${data['landingId']}'),
+      ),
+    };
   }
 
   Future<List<DurableOutboxRecord>> _claimBatch({
@@ -1312,11 +1316,30 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
-      final ordered = _lineupLinksAfterTheirEnds(candidates);
-      final batchClientId = ordered.first.pending.clientId;
+      // The server refuses a link whose origin or landing is not live, so a
+      // link waits while one it names is still to be sent outside this
+      // batch: queued behind it (records reload in key order, links before
+      // origins), past the batch cap, from another client id, or backing
+      // off.
+      final unsentKeys = {
+        for (final record in _recordsByStorageKey.values)
+          if (record.accountId == accountId &&
+              record.strategyPublicId == strategyPublicId &&
+              (record.status == DurableOutboxStatus.queued ||
+                  record.status == DurableOutboxStatus.inFlight))
+            record.entityKey,
+      };
       final selected = <DurableOutboxRecord>[];
-      for (final candidate in ordered) {
+      final selectedKeys = <EntitySyncKey>{};
+      bool waitsForAnEnd(DurableOutboxRecord record) =>
+          _lineupLinkEndKeys(record.pending.op).any(
+              (key) => unsentKeys.contains(key) && !selectedKeys.contains(key));
+      final sendable = candidates.where((record) => !waitsForAnEnd(record));
+      if (sendable.isEmpty) return const <DurableOutboxRecord>[];
+      final batchClientId = sendable.first.pending.clientId;
+      for (final candidate in candidates) {
         if (candidate.pending.clientId != batchClientId) continue;
+        if (waitsForAnEnd(candidate)) continue;
         if (selected.length >= _maxBatchSize) break;
         final nextSelection = <DurableOutboxRecord>[...selected, candidate];
         final byteSize = serializedCloudBatchUtf8Bytes(
@@ -1326,6 +1349,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
         if (byteSize > maxCloudBatchBytes) break;
         selected.add(candidate);
+        selectedKeys.add(candidate.entityKey);
       }
       final claimed = <DurableOutboxRecord>[];
       for (final record in selected) {

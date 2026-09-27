@@ -938,9 +938,46 @@ void main() {
       expect(store.load().records.single.pending.op.opId, op.opId);
     });
 
-    test('a lineup link is sent after the origin and landing queued with it',
+    test('a lineup link waits for the origin and landing still to be sent',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
+      DurableOutboxRecord record(StrategyOp op, String clientId) =>
+          DurableOutboxRecord(
+            accountId: 'account-a',
+            strategyPublicId: 'strategy-1',
+            entityKey: EntitySyncKey.forStrategyOp(op)!,
+            pending: PendingOp(op: op, clientId: clientId),
+            status: DurableOutboxStatus.queued,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+      LineupAddOp add(String kind, Map<String, dynamic> data) => LineupAddOp(
+            opId: 'add-$kind',
+            lineupPublicId: cloudLineupRowId(kind, data['id'] as String),
+            pagePublicId: 'page-1',
+            payload: cloudLineupPayload(kind: kind, data: data),
+            sortIndex: 0,
+          );
+      // As an outbox reloads after a restart: by key, so the link comes
+      // before the origin, and the origin was queued by an earlier session
+      // under another client id.
+      await store.put(record(_cloudElementOp(), 'client-b'));
+      await store.put(record(
+        add(CloudLineupKind.landing, {'id': 'l', 'ability': {}}),
+        'client-b',
+      ));
+      await store.put(record(
+        add(CloudLineupKind.link, {
+          'id': 'k',
+          'originId': 'o',
+          'landingId': 'l',
+        }),
+        'client-b',
+      ));
+      await store.put(record(
+        add(CloudLineupKind.origin, {'id': 'o', 'agent': {}}),
+        'client-a',
+      ));
       final repository = _RecordingAckRepository();
       final container = _cloudQueueContainer(
         store: store,
@@ -949,47 +986,71 @@ void main() {
       addTearDown(container.dispose);
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      container
-          .read(cloudCollabModeProvider.notifier)
-          .setForceLocalFallback(true);
-      LineupAddOp add(String kind, Map<String, dynamic> data) => LineupAddOp(
-            opId: 'add-$kind',
-            lineupPublicId: cloudLineupRowId(kind, data['id'] as String),
-            pagePublicId: 'page-1',
-            payload: cloudLineupPayload(kind: kind, data: data),
-            sortIndex: 0,
-          );
-      // Queued link first, as an outbox reloaded after a restart lists its
-      // rows (by key: landing, link, origin).
-      await notifier.enqueue(
-        add(CloudLineupKind.link, {
-          'id': 'k',
-          'originId': 'o',
-          'landingId': 'l',
-        }),
-        flushImmediately: false,
-      );
-      await notifier.enqueue(_cloudElementOp(), flushImmediately: false);
-      await notifier.enqueue(
-        add(CloudLineupKind.landing, {'id': 'l', 'ability': {}}),
-        flushImmediately: false,
-      );
-      await notifier.enqueue(
-        add(CloudLineupKind.origin, {'id': 'o', 'agent': {}}),
-        flushImmediately: false,
-      );
-      container
-          .read(cloudCollabModeProvider.notifier)
-          .setForceLocalFallback(false);
 
       await notifier.flushNow();
+      for (var i = 0; i < 50 && repository.calls.length < 3; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
 
-      expect(repository.calls.single.map((op) => op.opId), [
-        'add-${CloudLineupKind.landing}',
-        'op-1',
-        'add-${CloudLineupKind.origin}',
-        'add-${CloudLineupKind.link}',
-      ]);
+      expect(
+        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
+        [
+          ['op-1', 'add-${CloudLineupKind.landing}'],
+          ['add-${CloudLineupKind.origin}'],
+          ['add-${CloudLineupKind.link}'],
+        ],
+      );
+      expect(store.load().records, isEmpty);
+    });
+
+    test('keep mine re-sends a link refused for a missing end as it was',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      LineupAddOp link(String id, {int? expectedRevision}) => LineupAddOp(
+            opId: 'refused-$id',
+            lineupPublicId: cloudLineupRowId(CloudLineupKind.link, id),
+            pagePublicId: 'page-1',
+            payload: cloudLineupPayload(
+              kind: CloudLineupKind.link,
+              data: {'id': id, 'originId': 'o', 'landingId': 'l'},
+            ),
+            sortIndex: 0,
+            expectedLineupRevision: expectedRevision,
+          );
+      // A new link, and a deleted one being restored.
+      final refused = [link('new'), link('restored', expectedRevision: 3)];
+      for (final op in refused) {
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-1',
+          entityKey: EntitySyncKey.forStrategyOp(op)!,
+          pending: PendingOp(op: op, clientId: 'client-a'),
+          status: DurableOutboxStatus.attention,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          lastError: lineupLinkEndMissingMessage,
+        ));
+      }
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      await notifier.retryRejected(flushImmediately: false);
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      for (final op in refused) {
+        final retried = current
+            .queuedByEntityKey[EntitySyncKey.forStrategyOp(op)!]!.pending.op;
+        expect(retried, isA<LineupAddOp>());
+        expect(retried.opId, isNot(op.opId));
+        expect(retried.expectedRevision, op.expectedRevision);
+        expect(retried.payload, op.payload);
+      }
     });
 
     test('a link refused for a missing end stays saved and needs attention',
@@ -2455,8 +2516,7 @@ class _MissingLinkEndRepository extends ConvexStrategyRepository {
           opId: op.opId,
           code: 'LINEUP_LINK_END_MISSING',
           rawCode: 'LINEUP_LINK_END_MISSING',
-          message: "This lineup's origin or landing spot is no longer on the "
-              'page',
+          message: lineupLinkEndMissingMessage,
         ),
     ];
   }
