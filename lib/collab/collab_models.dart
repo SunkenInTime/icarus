@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:icarus/const/sort_index_order.dart';
+
 const currentCloudProtocolVersion = 3;
 const currentCloudPayloadVersion = 1;
 const maxCloudOperationBytes = 900 * 1024;
@@ -1423,7 +1425,7 @@ class RemoteFullStrategySnapshot {
       (grouped[element.pagePublicId] ??= <RemoteElement>[]).add(element);
     }
     for (final elements in grouped.values) {
-      elements.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      elements.sortBySortIndex((item) => item.sortIndex);
     }
     return grouped;
   }
@@ -1436,7 +1438,7 @@ class RemoteFullStrategySnapshot {
       (grouped[lineup.pagePublicId] ??= <RemoteLineup>[]).add(lineup);
     }
     for (final lineups in grouped.values) {
-      lineups.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      lineups.sortBySortIndex((item) => item.sortIndex);
     }
     return grouped;
   }

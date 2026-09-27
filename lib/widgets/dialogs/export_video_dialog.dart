@@ -7,6 +7,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -70,8 +71,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     final doc = Hive.box<StrategyData>(
       HiveBoxNames.strategiesBox,
     ).get(ref.read(strategyProvider).id);
-    _pages = [...?doc?.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    _pages = [...?doc?.pages]..sortBySortIndex((item) => item.sortIndex);
     _selectedPageIds.addAll(_pages.map((p) => p.id));
   }
 
@@ -131,7 +131,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     // Resolve pages from the freshly saved document — the dialog's initial
     // snapshot may predate unsaved edits on the active page.
     final selectedPages = ([...doc.pages]
-          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
+          ..sortBySortIndex((item) => item.sortIndex))
         .where((p) => _selectedPageIds.contains(p.id))
         .toList();
     if (selectedPages.isEmpty) return;

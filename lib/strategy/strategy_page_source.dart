@@ -11,6 +11,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -60,7 +61,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       return const [];
     }
     final pages = [...strategy.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     return pages.map((page) => page.id).toList(growable: false);
   }
 
@@ -78,7 +79,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
     }
 
     final orderedPages = [...migrated.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     final page = orderedPages.firstWhere(
       (entry) => entry.id == pageId,
       orElse: () => orderedPages.first,
@@ -167,7 +168,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
   @override
   Future<List<String>> listPageIds() async {
     final pages = [..._snapshot.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     return pages.map((page) => page.publicId).toList(growable: false);
   }
 
@@ -198,7 +199,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final snapshot = _snapshot;
     _loadedRemoteSnapshot = snapshot;
     final pages = [...snapshot.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     final page = pages.firstWhere(
       (entry) => entry.publicId == pageId,
       orElse: () => pages.first,
