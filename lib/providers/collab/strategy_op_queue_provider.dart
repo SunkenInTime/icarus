@@ -1298,6 +1298,28 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     };
   }
 
+  /// Whether [record] is a lineup link that must wait: the server refuses
+  /// a link whose origin or landing is not live, and one it names still has
+  /// a queued or in-flight record of its own (queued behind it, past a batch
+  /// cap, under another client id, backing off) that is not in [sentWith],
+  /// the batch being claimed. It is due once that end has been sent.
+  bool _waitsForUnsentEnd(
+    DurableOutboxRecord record, {
+    Set<EntitySyncKey> sentWith = const {},
+  }) {
+    return _lineupLinkEndKeys(record.pending.op).any((endKey) {
+      if (sentWith.contains(endKey)) return false;
+      final end = _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
+        accountId: record.accountId,
+        strategyPublicId: record.strategyPublicId,
+        entityKey: endKey,
+      )];
+      return end != null &&
+          (end.status == DurableOutboxStatus.queued ||
+              end.status == DurableOutboxStatus.inFlight);
+    });
+  }
+
   Future<List<DurableOutboxRecord>> _claimBatch({
     required String accountId,
     required String strategyPublicId,
@@ -1316,24 +1338,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
-      // The server refuses a link whose origin or landing is not live, so a
-      // link waits while one it names is still to be sent outside this
-      // batch: queued behind it (records reload in key order, links before
-      // origins), past the batch cap, from another client id, or backing
-      // off.
-      final unsentKeys = {
-        for (final record in _recordsByStorageKey.values)
-          if (record.accountId == accountId &&
-              record.strategyPublicId == strategyPublicId &&
-              (record.status == DurableOutboxStatus.queued ||
-                  record.status == DurableOutboxStatus.inFlight))
-            record.entityKey,
-      };
       final selected = <DurableOutboxRecord>[];
       final selectedKeys = <EntitySyncKey>{};
       bool waitsForAnEnd(DurableOutboxRecord record) =>
-          _lineupLinkEndKeys(record.pending.op).any(
-              (key) => unsentKeys.contains(key) && !selectedKeys.contains(key));
+          _waitsForUnsentEnd(record, sentWith: selectedKeys);
       final sendable = candidates.where((record) => !waitsForAnEnd(record));
       if (sendable.isEmpty) return const <DurableOutboxRecord>[];
       final batchClientId = sendable.first.pending.clientId;
@@ -2109,7 +2117,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             (record.status == DurableOutboxStatus.queued ||
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
-            !cloudOperationExceedsPolicy(record.pending.op))
+            !cloudOperationExceedsPolicy(record.pending.op) &&
+            !_waitsForUnsentEnd(record))
         .toList(growable: false);
     if (candidates.isEmpty) return;
     final nextAttempt = candidates
@@ -2153,6 +2162,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
             !cloudOperationExceedsPolicy(record.pending.op) &&
+            !_waitsForUnsentEnd(record) &&
             (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
         .toList(growable: false)
       ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));
