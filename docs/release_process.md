@@ -115,19 +115,27 @@ closed. Never delete `majestic-eel-413` (dev) or the production deployment.
 
 The web beta lives at `https://beta.icarusstrats.com`, served by the Cloudflare
 Pages project `icarus-web` (also reachable at `https://icarus-web-a50.pages.dev`).
-It uses the development Convex deployment, like every non-stable build.
+It runs against the **production** Convex deployment (`basic-dove-69`), because
+it is public. The development deployment (`majestic-eel-413`) stays the place
+to try server changes by hand; never test on production.
 
 - A push to `icarus-cloud` that changes `lib/`, `web/`, `assets/`, `shaders/`,
-  a path package (`packages/`, `third_party/convex_flutter/`), `pubspec.yaml`,
-  `pubspec.lock`, or `.fvmrc` deploys automatically.
+  `convex/`, a path package (`packages/`, `third_party/convex_flutter/`),
+  `pubspec.yaml`, `pubspec.lock`, `package.json`, `package-lock.json`, or
+  `.fvmrc` deploys automatically: first the Convex server to production, then
+  the web build. If the server deploy fails, nothing is published.
+- Because production updates on merge, a PR that changes the Convex contract
+  must stay compatible with the web build already live (additive first; see
+  the deploy order in each server PR).
 - To redeploy by hand: `Actions` > `Deploy Web` > `Run workflow` on
   `icarus-cloud`. GitHub only shows that button once the workflow is on the
   default branch; until then, re-run the latest `Deploy Web` run.
 - The run summary links the deployment. To roll back, promote an earlier
   deployment in the Cloudflare dashboard under the project's `Deployments`.
 
-The workflow builds with the same command as CI's `Build Web Client` step and
-uploads `build/web` with `wrangler pages deploy --branch=main`. `main` is the
+The workflow builds with the same flags as CI's `Build Web Client` step, but
+with `ICARUS_CLOUD_ENVIRONMENT=production` and the production URL and client ID
+from the repository variables, and uploads `build/web` with `wrangler pages deploy --branch=main`. `main` is the
 Pages project's production branch, and the custom domain follows production.
 Share links and the auth callback load because Pages serves `index.html` for
 unknown paths whenever `build/web` has no top-level `404.html`, so never add
@@ -140,6 +148,13 @@ GitHub repository secrets:
   `Account` > `Cloudflare Pages` > `Edit`, scoped to the Icarus account.
 - `CLOUDFLARE_ACCOUNT_ID`: the account ID shown on the account's Workers & Pages
   overview.
+- `CONVEX_PRODUCTION_DEPLOY_KEY`: a `prod:` deploy key for `basic-dove-69`
+  (`npx convex deployment token create <name> --prod`).
+
+GitHub repository variables: `ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL`
+(`https://basic-dove-69.convex.cloud`) and `ICARUS_PRODUCTION_CONVEX_CLIENT_ID`
+(`prod:basic-dove-69`). The production deployment needs the same R2
+environment values as development (`npx convex env list --prod`).
 
 One-time Cloudflare setup:
 
