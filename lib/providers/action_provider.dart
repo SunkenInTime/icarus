@@ -226,11 +226,14 @@ class ActionProvider extends Notifier<List<UserAction>> {
           .read(lineUpProvider.notifier)
           .replayGraphAction(action, undo: undo);
     }
-    if (action is LineUpEditAction &&
-        action.field == LineUpEditField.linkDetails) {
-      return ref
-          .read(lineUpProvider.notifier)
-          .replayLinkDetails(action, undo: undo);
+    if (action is LineUpEditAction) {
+      return ref.read(lineUpProvider.notifier).replayEdit(action, undo: undo);
+    }
+    if (action is WeaponSelectionAction) {
+      return _replayWeapon(action, undo: undo);
+    }
+    if (action is StrategySettingsAction) {
+      return _replaySettings(action, undo: undo);
     }
 
     final delta = action.objectDelta;
@@ -255,36 +258,83 @@ class ActionProvider extends Notifier<List<UserAction>> {
         case ActionType.edit:
           // An object a teammate deleted stays deleted.
           if (current == null) return null;
+          final written =
+              undo ? delta.undoOnto(current) : delta.redoOnto(current);
+          // A teammate already put the fields back where this would.
+          if (cloudJsonEquivalent(written.toJson(), current.toJson())) {
+            return null;
+          }
+          _apply(action, undo: undo);
+          return UserAction(
+            type: ActionType.edit,
+            id: action.id,
+            group: action.group,
+            objectDelta: _between(undo: undo, from: current, to: written),
+          );
         case ActionType.bulkDeletion:
         case ActionType.transaction:
           break;
       }
     }
-    // A weapon or lineup edit whose target a teammate deleted changes nothing.
-    if (!_editTargetExists(action)) return null;
     _apply(action, undo: undo);
     return action;
   }
 
-  /// Whether the agent, origin, landing or link a weapon or lineup edit
-  /// writes to is still on the page. Other entries are checked above.
-  bool _editTargetExists(UserAction action) {
-    final lineUps = ref.read(lineUpProvider);
-    return switch (action) {
-      WeaponSelectionAction(group: ActionGroup.lineUp) =>
-        lineUps.originById(action.id) != null,
-      WeaponSelectionAction() =>
-        _currentObjectState(action.id, ActionObjectKind.agent) != null,
-      LineUpEditAction(:final field, :final targetId) => switch (field) {
-          LineUpEditField.originPosition =>
-            lineUps.originById(targetId) != null,
-          LineUpEditField.landingPosition ||
-          LineUpEditField.landingVisibility =>
-            lineUps.landingById(targetId) != null,
-          LineUpEditField.linkDetails => lineUps.linkById(targetId) != null,
-        },
-      _ => true,
-    };
+  /// The edit for the opposite stack after a replay moved an object from
+  /// [from] to [to]: undo writes an edit's `before`, redo its `after`, so
+  /// after an undo the entry's redo returns to [from] and after a redo its
+  /// undo does.
+  static ObjectHistoryDelta _between({
+    required bool undo,
+    required ActionObjectState from,
+    required ActionObjectState to,
+  }) {
+    return undo
+        ? ObjectHistoryDelta(before: to, after: from)
+        : ObjectHistoryDelta(before: from, after: to);
+  }
+
+  /// Sets the weapon of an agent or lineup origin, unless it is already
+  /// that weapon or the agent or origin is gone.
+  UserAction? _replayWeapon(
+    WeaponSelectionAction action, {
+    required bool undo,
+  }) {
+    final current = action.group == ActionGroup.lineUp
+        ? ref.read(lineUpProvider).originById(action.id)?.agent.weapon
+        : _currentObjectState(action.id, ActionObjectKind.agent)?.agent?.weapon;
+    final target = undo ? action.before : action.after;
+    if (current == null || current == target) return null;
+    _apply(action, undo: undo);
+    return WeaponSelectionAction(
+      id: action.id,
+      group: action.group,
+      before: undo ? target : current,
+      after: undo ? current : target,
+    );
+  }
+
+  /// Writes only the settings [action] changed, unless they already hold
+  /// the values it would write.
+  UserAction? _replaySettings(
+    StrategySettingsAction action, {
+    required bool undo,
+  }) {
+    final current = ref.read(strategySettingsProvider);
+    final (to, from) =
+        undo ? (action.before, action.after) : (action.after, action.before);
+    final written = StrategySettings.fromJson(writeChangedFields(
+      to: to.toJson(),
+      from: from.toJson(),
+      onto: current.toJson(),
+    ));
+    if (cloudJsonEquivalent(written.toJson(), current.toJson())) return null;
+    ref.read(strategySettingsProvider.notifier).fromHive(written);
+    return StrategySettingsAction(
+      id: action.id,
+      before: undo ? written : current,
+      after: undo ? current : written,
+    );
   }
 
   /// [action], an addition or deletion, holding [object] as the copy to put
@@ -333,28 +383,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
         final lineUps = ref.read(lineUpProvider.notifier);
         undo ? lineUps.undoAction(action) : lineUps.redoAction(action);
       case ActionGroup.strategySettings:
-        if (action is StrategySettingsAction) {
-          undo
-              ? _writeSettings(to: action.before, from: action.after)
-              : _writeSettings(to: action.after, from: action.before);
-        }
       case ActionGroup.bulk:
         break;
     }
-  }
-
-  void _writeSettings({
-    required StrategySettings to,
-    required StrategySettings from,
-  }) {
-    final written = writeChangedFields(
-      to: to.toJson(),
-      from: from.toJson(),
-      onto: ref.read(strategySettingsProvider).toJson(),
-    );
-    ref
-        .read(strategySettingsProvider.notifier)
-        .fromHive(StrategySettings.fromJson(written));
   }
 
   // Hard reset used by strategy/page lifecycle flows. This is not undoable.
