@@ -23,6 +23,11 @@ const cloudStrategyDeletedMessage =
 const lineupLinkEndMissingMessage =
     "This lineup's origin or landing spot is no longer on the page";
 
+/// The server's message when it refuses a lineup whose row already lives on
+/// another page (LINEUP_PAGE_MISMATCH).
+const lineupPageMismatchMessage =
+    'This lineup belongs to another page and cannot be moved';
+
 typedef CloudPayload = Map<String, dynamic>;
 
 int serializedConvexValueUtf8Bytes(Object? value) =>
