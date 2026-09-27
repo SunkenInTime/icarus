@@ -519,15 +519,19 @@ async function assertLineupEndUnused(
         : null;
   if (endField === null) return;
   const endId = (end.payload.data as { id: string }).id;
-  const pageRows = await ctx.db
+  // Only the page's live links are read, so a batch deleting many ends
+  // stays well inside the transaction's read budget.
+  const liveLinks = await ctx.db
     .query("lineups")
-    .withIndex("by_pageId", (q) => q.eq("pageId", end.pageId))
+    .withIndex("by_pageId_and_payloadKind_and_deleted", (q) =>
+      q
+        .eq("pageId", end.pageId)
+        .eq("payloadKind", "lineupLink")
+        .eq("deleted", false),
+    )
     .collect();
-  const usedBy = pageRows.some(
-    (row) =>
-      !row.deleted &&
-      row.payloadKind === "lineupLink" &&
-      (row.payload.data as Record<string, unknown>)[endField] === endId,
+  const usedBy = liveLinks.some(
+    (row) => (row.payload.data as Record<string, unknown>)[endField] === endId,
   );
   if (usedBy) {
     // The client matches this text (lineupEndInUseMessage).
