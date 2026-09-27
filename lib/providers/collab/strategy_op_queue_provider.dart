@@ -396,6 +396,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               loadIssues: state.loadIssues,
               paused: paused,
               attention: attention,
+              accountId: accountId,
+              strategyPublicId: strategyPublicId,
             ),
       accountOutbox: _accountSummary(accountId),
     );
@@ -558,16 +560,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                   _uncertainOversizedParking.contains(storageKey);
               final isOversized =
                   cloudOperationExceedsPolicy(current.pending.op);
+              final requeues = hasUncertainDurableRecord && !isOversized;
+              // Dropping only the successor leaves the refused change as it
+              // was, so it keeps the server's reason for refusing it.
               await _putRecord(current.copyWith(
                 status: isOversized
                     ? DurableOutboxStatus.attention
-                    : (hasUncertainDurableRecord
-                        ? DurableOutboxStatus.queued
-                        : current.status),
+                    : (requeues ? DurableOutboxStatus.queued : current.status),
                 clearSuccessorPending: true,
                 updatedAt: DateTime.now(),
                 lastError: isOversized ? cloudOperationTooLargeMessage : null,
-                clearError: !isOversized,
+                clearError: requeues ||
+                    current.lastError == cloudOperationTooLargeMessage,
               ));
               if (recoveredOversizedParking) {
                 _uncertainOversizedParking.remove(storageKey);
@@ -2465,11 +2469,26 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     };
   }
 
+  /// The queue's error for [attention] and [paused] work in a strategy:
+  /// the active one unless [accountId] and [strategyPublicId] name the one
+  /// being opened, whose state is not built yet.
   String? _loadedAttentionMessage({
     required List<DurableOutboxLoadIssue> loadIssues,
     required Map<EntitySyncKey, QueuedEntityIntent> paused,
     required Map<EntitySyncKey, QueuedEntityIntent> attention,
+    String? accountId,
+    String? strategyPublicId,
   }) {
+    accountId ??= state.accountId;
+    strategyPublicId ??= state.strategyPublicId;
+    DurableOutboxRecord? recordFor(EntitySyncKey key) =>
+        accountId == null || strategyPublicId == null
+            ? null
+            : _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
+                accountId: accountId,
+                strategyPublicId: strategyPublicId,
+                entityKey: key,
+              )];
     if (loadIssues.isNotEmpty) {
       return 'The cloud outbox contains unreadable saved work.';
     }
@@ -2484,7 +2503,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     if (attention.isNotEmpty) {
       final hasOversizedWork = attention.entries.any((entry) {
         if (cloudOperationExceedsPolicy(entry.value.pending.op)) return true;
-        final record = _recordForActiveKey(entry.key);
+        final record = recordFor(entry.key);
         return record?.pending.op.opId == entry.value.pending.op.opId &&
             record?.lastError == cloudOperationTooLargeMessage;
       });
@@ -2492,7 +2511,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // A lineup the server refused for its own reason keeps that reason,
       // so the sync button does not call it a conflict.
       for (final entry in attention.entries) {
-        final record = _recordForActiveKey(entry.key);
+        final record = recordFor(entry.key);
         final reason = record?.lastError;
         if (record?.pending.op.opId == entry.value.pending.op.opId &&
             (reason == lineupLinkEndMissingMessage ||

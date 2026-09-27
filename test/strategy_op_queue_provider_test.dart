@@ -1085,8 +1085,104 @@ void main() {
       expect(durable.status, DurableOutboxStatus.attention);
       expect(
         friendlyCloudSyncError(durable.lastError!),
-        contains('teammate deleted'),
+        contains('no longer in the cloud'),
       );
+    });
+
+    test('opening a strategy shows its saved lineup refusal', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final link = LineupAddOp(
+        opId: 'refused-link',
+        lineupPublicId: cloudLineupRowId(CloudLineupKind.link, 'k'),
+        pagePublicId: 'page-1',
+        payload: cloudLineupPayload(
+          kind: CloudLineupKind.link,
+          data: {'id': 'k', 'originId': 'o', 'landingId': 'l'},
+        ),
+        sortIndex: 0,
+      );
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: EntitySyncKey.forStrategyOp(link)!,
+        pending: PendingOp(op: link, clientId: 'client-a'),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        lastError: lineupLinkEndMissingMessage,
+      ));
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier);
+
+      // Straight after a restart, and after switching from another strategy.
+      notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
+      expect(
+        container.read(strategyOpQueueProvider).lastError,
+        lineupLinkEndMissingMessage,
+      );
+      notifier.setActiveStrategy('strategy-2', accountId: 'account-a');
+      notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
+      expect(
+        container.read(strategyOpQueueProvider).lastError,
+        lineupLinkEndMissingMessage,
+      );
+    });
+
+    test('undoing an edit to a refused lineup keeps why it was refused',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _MissingLinkEndRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      LineupAddOp link(String name) => LineupAddOp(
+            opId: 'add-$name',
+            lineupPublicId: cloudLineupRowId(CloudLineupKind.link, 'k'),
+            pagePublicId: 'page-1',
+            payload: cloudLineupPayload(
+              kind: CloudLineupKind.link,
+              data: {
+                'id': 'k',
+                'originId': 'o',
+                'landingId': 'l',
+                'name': name,
+              },
+            ),
+            sortIndex: 0,
+          );
+      final key = EntitySyncKey.forStrategyOp(link('first'))!;
+
+      await notifier.enqueue(link('first'), flushImmediately: false);
+      await notifier.flushNow();
+      await notifier.syncDesiredGenericOp(
+        entityKey: key,
+        desiredOp: link('edited'),
+      );
+      expect(container.read(strategyOpQueueProvider).successorByEntityKey,
+          contains(key));
+      await notifier.syncDesiredGenericOp(
+        entityKey: key,
+        desiredOp: link('first'),
+      );
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.successorByEntityKey, isEmpty);
+      expect(current.lastError, lineupLinkEndMissingMessage);
+      expect(
+          store.load().records.single.lastError, lineupLinkEndMissingMessage);
+
+      // Keep mine still re-sends it as it was.
+      await notifier.retryRejected(flushImmediately: false);
+      final retried = container.read(strategyOpQueueProvider);
+      expect(retried.attentionByEntityKey, isEmpty);
+      expect(retried.queuedByEntityKey[key]!.pending.op, isA<LineupAddOp>());
     });
 
     test('a lineup refused for another page keeps that reason', () async {

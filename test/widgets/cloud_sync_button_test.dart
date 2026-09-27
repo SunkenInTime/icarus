@@ -733,7 +733,7 @@ void main() {
     (
       'a missing origin or landing',
       lineupLinkEndMissingMessage,
-      'teammate deleted the origin or landing spot',
+      'origin or landing spot is no longer in the cloud',
     ),
     (
       'another page',
@@ -801,7 +801,7 @@ void main() {
     await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('teammate deleted'), findsOneWidget);
+    expect(find.textContaining('no longer in the cloud'), findsOneWidget);
     expect(
       find.textContaining('applies to all 2 changes that need attention'),
       findsOneWidget,

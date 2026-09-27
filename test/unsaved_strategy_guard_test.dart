@@ -572,6 +572,56 @@ void main() {
       expect(logs.last.source, 'guard-test-error');
     });
 
+    testWidgets('refused work can leave without a promise to retry it',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          attentionByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          lastError: lineupLinkEndMissingMessage,
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-refused',
+        onContinue: () async {},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave anyway'), findsOneWidget);
+      expect(find.textContaining('no longer in the cloud'), findsOneWidget);
+      expect(find.textContaining('from the sync button'), findsOneWidget);
+      expect(find.textContaining('retry it later'), findsNothing);
+      await tester.tap(find.text('Leave anyway'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isTrue);
+    });
+
     testWidgets('offline durable work can leave and remains queued',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(

@@ -62,9 +62,9 @@ String friendlyCloudSyncError(String raw) {
         'it here.';
   }
   if (lower.contains(lineupLinkEndMissingMessage.toLowerCase())) {
-    return 'A teammate deleted the origin or landing spot this lineup uses, '
-        'so it was not saved to the cloud. Keep mine tries to save it again; '
-        'Use cloud removes it here.';
+    return "This lineup's origin or landing spot is no longer in the cloud, "
+        'so your change to it was not saved. Keep mine tries again; Use '
+        'cloud drops your change.';
   }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '

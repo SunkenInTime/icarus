@@ -27,16 +27,16 @@ void main() {
     expect(message, isNot(contains('LINEUP_PAGE_MISMATCH')));
   });
 
-  test('explains a lineup whose origin or landing a teammate deleted', () {
+  test('explains a lineup whose origin or landing is gone', () {
     final message = friendlyCloudSyncError(
       "ConvexFunctionException(LINEUP_LINK_END_MISSING, This lineup's origin "
       'or landing spot is no longer on the page)',
     );
 
-    expect(message, contains('teammate deleted'));
-    expect(message, contains('not saved to the cloud'));
-    expect(message, contains('Keep mine tries to save it again'));
-    expect(message, contains('Use cloud removes it here'));
+    expect(message, contains('origin or landing spot is no longer'));
+    expect(message, contains('was not saved'));
+    expect(message, contains('Keep mine tries again'));
+    expect(message, contains('Use cloud drops your change'));
     expect(message, isNot(contains('LINEUP_LINK_END_MISSING')));
   });
 
