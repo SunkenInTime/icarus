@@ -6,9 +6,13 @@ import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
   expectAssets,
   referencedAssetIds,
-  removeUploadPlaceholders,
   staleUploadAgeMs,
 } from "./lib/imageAssets";
+import {
+  removeUploadPlaceholders,
+  syncElementAssetReferences,
+  syncLineupAssetReferences,
+} from "./lib/assetReferences";
 import {
   clampPageIndex,
   getStrategyByPublicId,
@@ -1414,6 +1418,13 @@ async function reconcileExpectedAssets(
 ): Promise<void> {
   const row = await contentRowForOp(ctx, strategy, op);
   if (row === null) return;
+  // Keep the row's image references in step with it (media cleanup reads
+  // those, not the content).
+  if ("elementType" in row) {
+    await syncElementAssetReferences(ctx, row._id, row);
+  } else {
+    await syncLineupAssetReferences(ctx, row._id, row);
+  }
   const now = Date.now();
   const assetsBefore = referencedAssetIds(rowBefore);
   const assetsAfter = referencedAssetIds(row);

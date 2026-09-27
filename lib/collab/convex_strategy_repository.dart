@@ -554,6 +554,16 @@ bool isTypedConvexForbiddenError(Object error) {
           error.rawCode == ConvexErrorCode.forbidden.wireName);
 }
 
+/// The server refused a duplicate because the strategy holds more content
+/// than one copy can move within Convex's per-transaction limits.
+bool isStrategyTooLargeToDuplicateError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.strategyTooLargeToDuplicate) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode ==
+              ConvexErrorCode.strategyTooLargeToDuplicate.wireName);
+}
+
 bool isMissingImageUploadIntentError(Object error) =>
     error is ConvexFunctionException &&
     error.code == ConvexErrorCode.uploadIntentNotFound;

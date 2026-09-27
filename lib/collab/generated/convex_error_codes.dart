@@ -37,6 +37,7 @@ enum ConvexErrorCode {
   pageStrategyMismatch('PAGE_STRATEGY_MISMATCH'),
   r2ObjectKeyMismatch('R2_OBJECT_KEY_MISMATCH'),
   shareLinkRevoked('SHARE_LINK_REVOKED'),
+  strategyTooLargeToDuplicate('STRATEGY_TOO_LARGE_TO_DUPLICATE'),
   unauthenticated('UNAUTHENTICATED'),
   unsupportedOp('UNSUPPORTED_OP'),
   uploadIntentNotFound('UPLOAD_INTENT_NOT_FOUND'),

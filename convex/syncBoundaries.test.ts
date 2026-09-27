@@ -6,6 +6,7 @@ import {
 import { makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
+import { markAssetReferencesReady } from "./lib/assetReferences";
 import {
   CLOUD_OPERATION_TOO_LARGE_MESSAGE,
   CURRENT_CLOUD_PROTOCOL_VERSION,
@@ -14,6 +15,7 @@ import {
   serializedConvexValueUtf8Bytes,
 } from "./lib/cloudProtocol";
 import schema from "./schema";
+import { insertElement, insertLineup } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -97,6 +99,8 @@ async function createHarness(): Promise<{
   owner: Harness;
 }> {
   const t = convexTest(schema, modules);
+  // A deployment whose reference backfill has run, as every one will be.
+  await t.run(markAssetReferencesReady);
   const owner = t.withIdentity(identity);
   await owner.mutation(ensureCurrentUser, {
     clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
@@ -318,7 +322,7 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.insert("elements", {
+    await insertElement(ctx, {
       publicId: "element-a",
       strategyId: strategy._id,
       pageId: pageAId,
@@ -332,7 +336,7 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.insert("elements", {
+    await insertElement(ctx, {
       publicId: "element-b",
       strategyId: strategy._id,
       pageId: pageBId,
@@ -346,7 +350,7 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.insert("lineups", {
+    await insertLineup(ctx, {
       publicId: "lineupLink:lineup-b",
       strategyId: strategy._id,
       pageId: pageBId,

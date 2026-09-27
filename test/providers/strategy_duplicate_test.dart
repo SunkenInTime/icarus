@@ -69,6 +69,30 @@ void main() {
       expect(messages, ["Couldn't duplicate this strategy. Try again."]);
       expect(transport.libraryListBuilds, 0);
     });
+    test('a strategy too large to copy says so instead of asking to retry',
+        () async {
+      final transport = _RecordingTransport(
+        mutationError: const ConvexTransportError(
+          rawCode: 'STRATEGY_TOO_LARGE_TO_DUPLICATE',
+          message: 'This strategy is too large to duplicate.',
+        ),
+      );
+      final messages = <String>[];
+      final container = _container(transport, messages);
+      addTearDown(container.dispose);
+
+      await container.read(strategyProvider.notifier).duplicateStrategy(
+            'source-strategy',
+            source: StrategySource.cloud,
+          );
+
+      expect(transport.mutations.map((call) => call.$1), [
+        'strategies:duplicate',
+      ]);
+      expect(messages, ['This strategy is too large to duplicate.']);
+      expect(transport.libraryListBuilds, 0);
+    });
+
     test('an image this device has not uploaded yet holds the duplicate',
         () async {
       final transport = _RecordingTransport();

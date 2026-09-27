@@ -1,8 +1,10 @@
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { getConvexSize, v, type Value } from "convex/values";
 import {
+  agentTypesOf,
   deleteStrategyAgentSummary,
   refreshStrategyAgentSummary,
+  storeStrategyAgentSummary,
 } from "./lib/strategyAgentSummary";
 import {
   collectAssetIdFromElementPayload,
@@ -31,8 +33,15 @@ import {
 } from "./lib/payloadValidators";
 import {
   conflictError,
+  errorWithCode,
   forbiddenError,
 } from "./lib/errors";
+import {
+  assetIdsOfRow,
+  insertAssetReferences,
+  type ReferencingElement,
+  type ReferencingLineup,
+} from "./lib/assetReferences";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import { markDeletedStrategyImageAssetsRef } from "./images";
 import {
@@ -599,6 +608,57 @@ function copiedLineupRow(
   }
 }
 
+// A duplicate is one transaction, and Convex refuses a transaction past
+// 16 MiB read or written, 4,096 index reads, or too many documents
+// written. The copy reads the source's content once and writes it once,
+// so its budget is what it reads:
+//  - bytes: each content row's stored size (deleted rows included, as
+//    read), and for each image the copy shows the most its asset copy can
+//    read (duplicateImageReadBytes), and each page and its settings. 12 MiB
+//    leaves 4 MiB of headroom. Measured on a local backend with 700 KiB
+//    rows: 23 rows (15.7 MiB) copied, 24 (16.4 MiB) failed on the read
+//    limit.
+//  - documents: pages (three each: read, and the page and settings rows
+//    written), content rows read, and reference rows written. This keeps
+//    writes far under the document limit, and caps the per-page settings
+//    reads.
+// Index reads stay under Convex's 4,096: at most ~1,333 page settings
+// reads, and the byte charge caps images near 550 at three reads each.
+const duplicateMaxBytes = 12 * 1024 * 1024;
+const duplicateMaxDocuments = 4000;
+// An image's asset copy reads at most 22 asset rows (one active row, up to
+// 20 legacy rows, one upload placeholder), each well under 1 KiB.
+const duplicateImageReadBytes = 22 * 1024;
+
+/// Counts a duplicate's reads and writes against its budget, and refuses
+/// the duplicate as soon as the budget is spent, before Convex's own
+/// limits are.
+class DuplicateBudget {
+  private bytes = duplicateMaxBytes;
+  private documents = duplicateMaxDocuments;
+
+  spend(cost: { bytes?: number; documents?: number }): void {
+    this.bytes -= cost.bytes ?? 0;
+    this.documents -= cost.documents ?? 0;
+    if (this.bytes < 0 || this.documents < 0) {
+      throw errorWithCode(
+        "STRATEGY_TOO_LARGE_TO_DUPLICATE",
+        "This strategy is too large to duplicate.",
+      );
+    }
+  }
+
+  /// Reads a query's rows, each charged its stored size.
+  async read<T extends Value>(rows: AsyncIterable<T>): Promise<T[]> {
+    const result: T[] = [];
+    for await (const row of rows) {
+      this.spend({ bytes: getConvexSize(row), documents: 1 });
+      result.push(row);
+    }
+    return result;
+  }
+}
+
 /// Copies a strategy into the caller's library in one transaction: pages,
 /// page settings, live elements and lineups under fresh publicIds, and an
 /// image asset row per image the copy shows. The rows share the source's
@@ -659,11 +719,16 @@ export const duplicate = mutation({
       updatedAt: now,
     });
 
+    // One transaction copies everything. Past the budget the whole
+    // duplicate is refused with a clear error: the transaction rolls back,
+    // so no part of a copy is ever left behind.
+    const budget = new DuplicateBudget();
     const pageIdMap = new Map<Id<"pages">, Id<"pages">>();
-    const sourcePages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
-      .collect();
+    const sourcePages = await budget.read(
+      ctx.db
+        .query("pages")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
+    );
     for (const page of sourcePages) {
       const pageId = await ctx.db.insert("pages", {
         publicId: createPublicId(),
@@ -683,6 +748,11 @@ export const duplicate = mutation({
         .query("pageContents")
         .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
         .first();
+      // The settings read, and the two rows this page's copy writes.
+      budget.spend({
+        bytes: content === null ? 0 : getConvexSize(content),
+        documents: 2,
+      });
       await ctx.db.insert("pageContents", {
         pageId,
         settings: content?.settings,
@@ -698,10 +768,24 @@ export const duplicate = mutation({
     // are scoped to a strategy.
     const sourceAssetIdByCopyId = new Map<string, string>();
 
-    const sourceElements = await ctx.db
-      .query("elements")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
-      .collect();
+    const showImage = (copyAssetId: string, sourceAssetId: string) => {
+      if (sourceAssetIdByCopyId.has(copyAssetId)) return;
+      budget.spend({ bytes: duplicateImageReadBytes });
+      sourceAssetIdByCopyId.set(copyAssetId, sourceAssetId);
+    };
+    const sourceElements = await budget.read(
+      ctx.db
+        .query("elements")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
+    );
+    const sourceLineups = await budget.read(
+      ctx.db
+        .query("lineups")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
+    );
+    const copiedElements: ReferencingElement[] = [];
+    const copiedLineups: (ReferencingLineup &
+      Pick<Doc<"lineups">, "payloadKind">)[] = [];
     for (const element of sourceElements) {
       const pageId = pageIdMap.get(element.pageId);
       if (element.deleted || pageId === undefined) continue;
@@ -710,10 +794,8 @@ export const duplicate = mutation({
         element.elementType === "image"
           ? collectAssetIdFromElementPayload(element.payload)
           : null;
-      if (sourceAssetId !== null) {
-        sourceAssetIdByCopyId.set(publicId, sourceAssetId);
-      }
-      await ctx.db.insert("elements", {
+      if (sourceAssetId !== null) showImage(publicId, sourceAssetId);
+      const copiedElement = {
         publicId,
         strategyId,
         pageId,
@@ -729,22 +811,22 @@ export const duplicate = mutation({
         deleted: false,
         createdAt: now,
         updatedAt: now,
-      });
+      };
+      budget.spend({ documents: assetIdsOfRow(copiedElement).size });
+      const elementId = await ctx.db.insert("elements", copiedElement);
+      await insertAssetReferences(ctx, { elementId }, copiedElement);
+      copiedElements.push(copiedElement);
     }
 
-    const sourceLineups = await ctx.db
-      .query("lineups")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
-      .collect();
     const newLineupId = lineupIdMap();
     for (const lineup of sourceLineups) {
       const pageId = pageIdMap.get(lineup.pageId);
       if (lineup.deleted || pageId === undefined) continue;
       for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
-        sourceAssetIdByCopyId.set(assetId, assetId);
+        showImage(assetId, assetId);
       }
       const copy = copiedLineupRow(lineup.payload, newLineupId);
-      await ctx.db.insert("lineups", {
+      const copiedLineup = {
         publicId: copy.publicId,
         strategyId,
         pageId,
@@ -756,7 +838,11 @@ export const duplicate = mutation({
         deleted: false,
         createdAt: now,
         updatedAt: now,
-      });
+      };
+      budget.spend({ documents: assetIdsOfRow(copiedLineup).size });
+      const lineupId = await ctx.db.insert("lineups", copiedLineup);
+      await insertAssetReferences(ctx, { lineupId }, copiedLineup);
+      copiedLineups.push(copiedLineup);
     }
 
     for (const [targetAssetPublicId, sourceAssetPublicId] of
@@ -778,7 +864,13 @@ export const duplicate = mutation({
       }
     }
 
-    await refreshStrategyAgentSummary(ctx, strategyId);
+    // The copy's summary comes from the rows just copied: reading them back
+    // would read the strategy's agents a second time.
+    await storeStrategyAgentSummary(
+      ctx,
+      strategyId,
+      agentTypesOf(copiedElements, copiedLineups),
+    );
     return { ok: true } as const;
   },
 });

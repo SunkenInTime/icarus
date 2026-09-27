@@ -7,8 +7,10 @@ import { makeFunctionReference } from "convex/server";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import cronDefinitions from "./crons";
+import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
+import { insertElement, insertLineup } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -50,6 +52,8 @@ async function createHarness(): Promise<{
   owner: Harness;
 }> {
   const t = convexTest(schema, modules);
+  // A deployment whose reference backfill has run, as every one will be.
+  await t.run(markAssetReferencesReady);
   const owner = t.withIdentity(identity());
   await owner.mutation(ensureCurrentUser, {
     clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
@@ -155,7 +159,7 @@ describe("image asset lifecycle", () => {
         uploadStatus: "pending", fileExtension: ".png", mimeType: "image/png",
         createdAt: staleAt, updatedAt: staleAt,
       });
-      await ctx.db.insert("elements", {
+      await insertElement(ctx, {
         publicId: "offline-image", strategyId: strategy._id, pageId: pages[0]!._id,
         elementType: "image", payloadKind: "image", payloadVersion: 1, payload: imagePayload("offline-image"),
         sortIndex: 0, revision: 1, deleted: false, createdAt: staleAt, updatedAt: staleAt,
@@ -219,7 +223,7 @@ describe("image asset lifecycle", () => {
         ["shared-page-element", "still-used-by-element"],
         ["shared-link-element", "still-used-by-link"],
       ] as const) {
-        await ctx.db.insert("elements", {
+        await insertElement(ctx, {
           publicId,
           strategyId: strategy._id,
           pageId: pageAId,
@@ -234,7 +238,7 @@ describe("image asset lifecycle", () => {
           updatedAt: now,
         });
       }
-      await ctx.db.insert("lineups", {
+      await insertLineup(ctx, {
         publicId: "lineupLink:remaining-lineup",
         strategyId: strategy._id,
         pageId: pageBId,
@@ -247,7 +251,7 @@ describe("image asset lifecycle", () => {
         createdAt: now,
         updatedAt: now,
       });
-      await ctx.db.insert("lineups", {
+      await insertLineup(ctx, {
         publicId: "lineupLink:remaining-link",
         strategyId: strategy._id,
         pageId: pageBId,
@@ -269,7 +273,7 @@ describe("image asset lifecycle", () => {
         createdAt: now,
         updatedAt: now,
       });
-      await ctx.db.insert("elements", {
+      await insertElement(ctx, {
         publicId: "remaining-image-element",
         strategyId: strategy._id,
         pageId: pageBId,
@@ -573,7 +577,7 @@ describe("image asset lifecycle", () => {
         createdAt: now,
         updatedAt: now,
       });
-      await ctx.db.insert("elements", {
+      await insertElement(ctx, {
         publicId: "legacy-image-element",
         strategyId: strategy._id,
         pageId,

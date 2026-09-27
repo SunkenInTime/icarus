@@ -5,6 +5,7 @@ import {
 } from "./maintenance";
 import {
   markStaleImageUploadsDeletedRef,
+  processAssetReclaimCandidatesRef,
   sweepDeletedImageAssetsRef,
 } from "./images";
 
@@ -26,6 +27,14 @@ crons.interval(
   "mark-stale-image-uploads-deleted",
   { hours: 1 },
   markStaleImageUploadsDeletedRef,
+  {},
+);
+// Purges start the reclaim worker themselves; this picks up any batch a
+// failed run left queued.
+crons.interval(
+  "process-asset-reclaim-candidates",
+  { hours: 1 },
+  processAssetReclaimCandidatesRef,
   {},
 );
 crons.interval(
