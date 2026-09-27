@@ -49,6 +49,28 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   Timer? _pendingConflictToast;
   bool _isResolving = false;
   String? _resolutionError;
+  bool _showingDeletedPage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // The editor may have been rebuilt while a deleted page was waiting.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final page = ref.read(strategyPageSessionProvider).deletedPage;
+      if (page != null) _showDeletedPage(page);
+    });
+  }
+
+  Future<void> _showDeletedPage(DeletedPage page) async {
+    if (_showingDeletedPage) return;
+    _showingDeletedPage = true;
+    try {
+      await DeletedPageDialog.show(context, page);
+    } finally {
+      _showingDeletedPage = false;
+    }
+  }
 
   @override
   void dispose() {
@@ -165,9 +187,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     });
     ref.listen(strategyPageSessionProvider.select((state) => state.deletedPage),
         (previous, next) {
-      if (next != null && previous == null) {
-        DeletedPageDialog.show(context, next);
-      }
+      if (next != null && previous == null) _showDeletedPage(next);
     });
 
     if (source != StrategySource.cloud) {

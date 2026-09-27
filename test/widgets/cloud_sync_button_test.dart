@@ -824,10 +824,30 @@ void main() {
     );
   });
 
+  test('an image still uploading keeps the unsaved mark', () {
+    final container = _createContainer(
+      saveState: const StrategySaveState(
+        isDirty: true,
+        isSaving: false,
+        hasPendingCloudSync: false,
+        cloudSyncError: null,
+        hasPendingMediaSync: true,
+        mediaSyncErrorCount: 0,
+        lastPersistedAt: null,
+      ),
+    );
+    addTearDown(container.dispose);
+
+    container.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
+
+    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+  });
+
   group('unsaved work on a page a teammate deleted', () {
     Future<_DeletedPageSession> pumpButton(
       WidgetTester tester, {
       required bool leaves,
+      bool deletedBeforeMount = false,
     }) async {
       final session = _DeletedPageSession(leaves: leaves);
       final container = ProviderContainer(overrides: [
@@ -838,6 +858,10 @@ void main() {
         convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
       ]);
       addTearDown(container.dispose);
+      if (deletedBeforeMount) {
+        container.read(strategyPageSessionProvider);
+        session.teammateDeletes();
+      }
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
@@ -848,7 +872,7 @@ void main() {
         ),
       );
       await tester.pump();
-      session.teammateDeletes();
+      if (!deletedBeforeMount) session.teammateDeletes();
       await tester.pumpAndSettle();
       return session;
     }
@@ -870,6 +894,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(session.leaveCount, 1);
       expect(find.text('A teammate deleted this page'), findsNothing);
+    });
+
+    testWidgets('shows when the button mounts after the page was deleted',
+        (tester) async {
+      await pumpButton(tester, leaves: true, deletedBeforeMount: true);
+
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
     });
 
     testWidgets('stays while changes are still being sent', (tester) async {

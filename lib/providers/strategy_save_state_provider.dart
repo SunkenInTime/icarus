@@ -166,6 +166,7 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
   void clearStaleCloudMark() {
     final queue = ref.read(strategyOpQueueProvider);
     if (!state.isDirty ||
+        state.hasPendingMediaSync ||
         queue.isFlushing ||
         queue.pending.isNotEmpty ||
         queue.lastError != null) {

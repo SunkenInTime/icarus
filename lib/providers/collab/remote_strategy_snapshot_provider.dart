@@ -191,8 +191,15 @@ class RemoteEditorSnapshotNotifier
     String strategyPublicId,
     String pagePublicId,
   ) async {
-    await _pageSubscription?.cancel();
+    // Claimed before the await: a start that overlaps this one wins, and
+    // this one must not install a second watcher.
     final epoch = ++_pageEpoch;
+    await _pageSubscription?.cancel();
+    if (epoch != _pageEpoch ||
+        _activeStrategyPublicId != strategyPublicId ||
+        _activePagePublicId != pagePublicId) {
+      return;
+    }
     _subscribedPagePublicId = pagePublicId;
     _pageSubscription = ref
         .read(convexStrategyRepositoryProvider)

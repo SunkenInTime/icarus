@@ -36,7 +36,9 @@ void main() {
     expect(repository.watchedPages, isNot(contains('b')));
 
     repository.failPageReads = false;
-    await remote.refresh();
+    // Two refreshes at once start one live read, not two.
+    await Future.wait([remote.refresh(), remote.refresh()]);
+    expect(repository.watchedPages.where((id) => id == 'b'), hasLength(1));
     expect(
       container
           .read(remoteEditorSnapshotProvider)
