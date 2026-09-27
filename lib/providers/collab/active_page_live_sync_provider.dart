@@ -90,6 +90,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   final Map<EntitySyncKey, _NormalizedEntity> _hydratedBaseByEntityKey = {};
   final Set<EntitySyncKey> _remoteAdoptionPending = {};
 
+  /// Each element's place in its canvas list right after the page was last
+  /// hydrated, to tell a local restack from the order hydration drew.
+  final Map<EntitySyncKey, int> _hydratedPositionByKey = {};
+
+  /// Items the user holds that the server deleted: still on screen until the
+  /// hold ends, but no longer ordered against anything on the server.
+  final Set<EntitySyncKey> _heldDeletedKeys = {};
+
   @override
   ActivePageLiveSyncState build() {
     return const ActivePageLiveSyncState();
@@ -98,6 +106,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   void reset() {
     _hydratedBaseByEntityKey.clear();
     _remoteAdoptionPending.clear();
+    _hydratedPositionByKey.clear();
+    _heldDeletedKeys.clear();
     state = const ActivePageLiveSyncState();
   }
 
@@ -115,6 +125,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     if (strategyChanged) {
       _hydratedBaseByEntityKey.clear();
       _remoteAdoptionPending.clear();
+      _hydratedPositionByKey.clear();
+      _heldDeletedKeys.clear();
     }
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
@@ -165,13 +177,29 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         for (final entry in _normalizedRemoteEntities(snapshot, pageId).entries)
           if (!undrawnLineups.contains(entry.key)) entry.key: entry.value,
     };
+    _heldDeletedKeys
+      ..removeWhere((key) => key.pageId == pageId)
+      ..addAll({
+        for (final key in keepBaseFor)
+          if (remoteEntities[key]?.deleted ?? true) key,
+      });
     for (final key in keepBaseFor) {
       final drawnBase = _hydratedBaseByEntityKey[key];
       if (drawnBase == null) {
         remoteEntities.remove(key);
-      } else {
-        remoteEntities[key] = drawnBase;
+        continue;
       }
+      // Its content and revision stay as drawn; its place is where the
+      // merge put it on screen, the server's.
+      final serverSortIndex = remoteEntities[key]?.sortIndex;
+      remoteEntities[key] = _NormalizedEntity(
+        key: key,
+        overlayEntityType: drawnBase.overlayEntityType,
+        payload: drawnBase.payload,
+        sortIndex: serverSortIndex ?? drawnBase.sortIndex,
+        revision: drawnBase.revision,
+        deleted: drawnBase.deleted,
+      );
     }
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
     _hydratedBaseByEntityKey.addAll(remoteEntities);
@@ -182,6 +210,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final entry in remoteEntities.entries) {
       remoteRevisions[entry.key] = entry.value.revision;
     }
+    _hydratedPositionByKey
+      ..removeWhere((key, _) => key.pageId == pageId)
+      ..addAll({
+        for (final (position, envelope)
+            in _collectLocalElementEnvelopes().indexed)
+          EntitySyncKey.element(pageId, envelope.publicId): position,
+      });
     state = state.copyWith(
       hydratedPageId: pageId,
       hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
@@ -888,17 +923,27 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // Elements stack in list order within each kind (each kind is its own
     // canvas layer), and moving or restoring one brings it to the front of its
     // list. A known sortIndex is kept while it still sorts after the one
-    // before it in the same list; an element that moved ahead goes after the
+    // before it in the same list (a tie only while the two are still in the
+    // order hydration drew them); an element that moved ahead goes after the
     // page's highest.
     final freshElementSortIndex = freshSortIndexes(EntitySyncKeyKind.element);
-    final floorByKind = <_CollabElementKind, int>{};
+    final previousByKind = <_CollabElementKind, (EntitySyncKey, int)>{};
+    bool drawnInThisOrder(EntitySyncKey first, EntitySyncKey second) {
+      final a = _hydratedPositionByKey[first];
+      final b = _hydratedPositionByKey[second];
+      return a != null && b != null && a < b;
+    }
+
     int stackedSortIndex(EntitySyncKey key, _CollabElementKind kind) {
       final known = knownSortIndex(key);
-      final floor = floorByKind[kind];
-      final sortIndex = known != null && (floor == null || known >= floor)
-          ? known
-          : freshElementSortIndex();
-      floorByKind[kind] = sortIndex;
+      if (_heldDeletedKeys.contains(key) && known != null) return known;
+      final previous = previousByKind[kind];
+      final keep = known != null &&
+          (previous == null ||
+              known > previous.$2 ||
+              (known == previous.$2 && drawnInThisOrder(previous.$1, key)));
+      final sortIndex = keep ? known : freshElementSortIndex();
+      previousByKind[kind] = (key, sortIndex);
       return sortIndex;
     }
 

@@ -1036,6 +1036,109 @@ void main() {
     await _settle();
   });
 
+  group('stacking order across merges', () {
+    final page = _page('page-1', 0);
+    RemoteElement text(String id, int sortIndex,
+            {int revision = 1, bool deleted = false}) =>
+        _textElement(page.publicId, id, id,
+            sortIndex: sortIndex,
+            revision: revision,
+            deleted: deleted,
+            worldSized: true);
+    RemoteEditorSnapshot snapshot(List<RemoteElement> elements,
+            {int contentRevision = 1}) =>
+        _editorSnapshot(
+          pages: [page],
+          activePage: _pageSnapshot(page,
+              contentRevision: contentRevision, elements: elements),
+        );
+
+    Future<ProviderContainer> open(_FakeRemoteEditorNotifier remote) async {
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return container;
+    }
+
+    Map<String?, StrategyOp> elementOps(ProviderContainer container) {
+      final ops = container
+          .read(activePageLiveSyncProvider.notifier)
+          .syncLocalPage(
+              strategyPublicId: 'cloud-strategy', pageId: page.publicId)!;
+      return {
+        for (final entry in ops.entries)
+          if (entry.key.kind == EntitySyncKeyKind.element)
+            entry.key.entityId: entry.value,
+      };
+    }
+
+    test('moving past an element with the same sortIndex is sent', () async {
+      final container = await open(
+          _FakeRemoteEditorNotifier(snapshot([text('a', 3), text('b', 3)])));
+      expect(elementOps(container), isEmpty);
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'a');
+      final ops = elementOps(container);
+      expect(ops.keys, ['a']);
+      expect((ops['a']! as ElementPatchOp).sortIndex, 4);
+      await _settle();
+    });
+
+    test('a teammate restacking a held item re-sends nothing else', () async {
+      final remote =
+          _FakeRemoteEditorNotifier(snapshot([text('a', 0), text('b', 1)]));
+      final container = await open(remote);
+      container.read(textDraftProvider.notifier).setDraft('a', 'typing');
+      // The teammate brings 'a' forward and adds 'c'.
+      remote.setSnapshot(snapshot(
+          [text('b', 1), text('a', 2, revision: 2), text('c', 3)],
+          contentRevision: 2));
+      await _settle();
+      expect(container.read(textProvider).map((t) => t.id), ['b', 'a', 'c']);
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'b');
+      final ops = elementOps(container);
+      // The user's move, and the open draft on 'a' (the user's words): sent
+      // at the revision they saw, so it conflicts with the teammate's edit,
+      // and at the server's place, not restacked. 'c' is not re-sent.
+      expect(ops.keys.toSet(), {'b', 'a'});
+      expect(ops['a']!.expectedRevision, 1);
+      expect((ops['a']! as ElementPatchOp).sortIndex, 2);
+      await _settle();
+    });
+
+    test('a held item the server deleted re-sends nothing else', () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot(
+          [text('mover', 0), text('a', 1), text('held', 2), text('b', 3)]));
+      final container = await open(remote);
+      container.read(editorPointersProvider.notifier)
+        ..holdEntity(1, 'held')
+        ..down(1);
+      remote.setSnapshot(snapshot([
+        text('mover', 0),
+        text('held', 2, revision: 2, deleted: true),
+        text('b', 3),
+        text('a', 4, revision: 2),
+      ], contentRevision: 2));
+      await _settle();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(400, 400), 'mover');
+      expect(elementOps(container).keys, ['mover']);
+      await _settle();
+    });
+  });
+
   group('holding an item while a teammate edits the page', () {
     RemotePageSnapshot texts(
       RemotePage page,
