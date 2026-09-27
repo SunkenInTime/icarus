@@ -18,6 +18,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -114,9 +115,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   RemoteEditorSnapshot? _lastAppliedRemoteSnapshot;
   bool _pendingRemoteReapply = false;
   bool _isResolvingConflicts = false;
+  bool _remoteReapplyInFlight = false;
+  bool _disposed = false;
+  int _pageSessionGeneration = 0;
 
   @override
   StrategyPageSessionState build() {
+    ref.onDispose(() => _disposed = true);
     ref.listen<AsyncValue<RemoteEditorSnapshot?>>(
       remoteEditorSnapshotProvider,
       (previous, next) {
@@ -151,10 +156,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         }
 
         if (_lastHydratedRemotePageKey != hydrationKey) {
-          _requestRemoteRehydrate(
-            targetPageId,
-            hydrationKey: hydrationKey,
-          );
+          _requestRemoteRehydrate(targetPageId);
         }
       },
     );
@@ -163,9 +165,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       _resumePendingRemoteReapplyIfPossible();
     });
 
-    ref.listen<Map<String, String>>(textDraftProvider, (previous, next) {
-      if (next.isEmpty && (previous?.isNotEmpty ?? false)) {
-        _resumePendingRemoteReapplyIfPossible();
+    ref.listen<bool>(editorOperationActiveProvider, (previous, next) {
+      if (!next && previous == true) {
+        // Draft completion publishes its saved value and history in the same
+        // call stack. Let those writes finish before inspecting save state.
+        scheduleMicrotask(_resumePendingRemoteReapplyIfPossible);
       }
     });
 
@@ -194,6 +198,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required StrategySource source,
     required bool selectFirstPageIfNeeded,
   }) async {
+    _pageSessionGeneration++;
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await pageSource.listPageIds();
     final initialPageId =
@@ -576,6 +581,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   void reset() {
+    _pageSessionGeneration++;
     state = const StrategyPageSessionState(
       activePageId: null,
       availablePageIds: [],
@@ -594,6 +600,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required bool animated,
     PageTransitionDirection? direction,
   }) async {
+    _pageSessionGeneration++;
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
     final source = strategyState.source;
@@ -676,7 +683,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     bool preserveTextDrafts = false,
     RemoteEditorSnapshot? loadedRemoteSnapshot,
     ({MapValue map, StrategyThemeState theme})? preservedMetadata,
+    bool Function()? canApply,
   }) async {
+    final availablePageIds =
+        await _resolvePageSource(strategyId, source).listPageIds();
+    if (canApply != null && !canApply()) return;
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
         _lastHydratedRemotePageKey?.pageId == pageData.pageId;
@@ -690,8 +701,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     state = state.copyWith(
       isApplyingPage: true,
       activePageId: pageData.pageId,
-      availablePageIds:
-          await _resolvePageSource(strategyId, source).listPageIds(),
+      availablePageIds: availablePageIds,
     );
 
     final retainedTextDrafts = preserveTextDrafts
@@ -804,25 +814,70 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return !_isResolvingConflicts &&
         !state.isApplyingPage &&
         state.transitionState == PageTransitionState.idle &&
-        ref.read(textDraftProvider).isEmpty &&
+        !ref.read(editorOperationActiveProvider) &&
         !saveState.isDirty &&
         !saveState.isSaving &&
         !saveState.hasPendingCloudSync;
   }
 
-  void _requestRemoteRehydrate(
-    String pageId, {
-    required _RemotePageHydrationKey hydrationKey,
-  }) {
+  void _requestRemoteRehydrate(String pageId) {
     if (_canSafelyReapplyRemotePage()) {
-      unawaited(
-        _rehydrateActivePageFromSource(
-          pageId,
-          hydrationKey: hydrationKey,
-        ),
-      );
+      unawaited(_reapplyRemotePage(pageId));
     } else {
       _pendingRemoteReapply = true;
+    }
+  }
+
+  Future<void> _reapplyRemotePage(String pageId) async {
+    if (_remoteReapplyInFlight || !_canSafelyReapplyRemotePage()) {
+      _pendingRemoteReapply = true;
+      return;
+    }
+    final strategy = ref.read(strategyProvider);
+    final strategyId = strategy.strategyId;
+    if (!strategy.isOpen ||
+        strategy.source != StrategySource.cloud ||
+        strategyId == null) return;
+    final generation = _pageSessionGeneration;
+    final startingPageId = state.activePageId;
+    // The clean canvas is about to consume the server copy. A previously
+    // scheduled diff must not re-author that already-saved work while loading.
+    ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
+    _remoteReapplyInFlight = true;
+    _pendingRemoteReapply = false;
+    try {
+      final source = _resolvePageSource(strategyId, StrategySource.cloud);
+      final pageData = await source.loadPage(pageId);
+      if (_disposed || generation != _pageSessionGeneration) return;
+      await _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: StrategySource.cloud,
+        loadedRemoteSnapshot: source.loadedRemoteSnapshot,
+        canApply: () {
+          if (_disposed || generation != _pageSessionGeneration) return false;
+          final current = ref.read(strategyProvider);
+          if (!current.isOpen ||
+              current.strategyId != strategyId ||
+              current.source != StrategySource.cloud ||
+              state.activePageId != startingPageId) return false;
+          // Loading yields. A new gesture, local commit, or newer remote
+          // snapshot may have arrived since the request started.
+          final loadedKey = _buildRemotePageHydrationKey(
+            source.loadedRemoteSnapshot!,
+            pageId,
+          );
+          if (!_canSafelyReapplyRemotePage() ||
+              loadedKey != _currentRemotePageHydrationKey(pageId)) {
+            _pendingRemoteReapply = true;
+            return false;
+          }
+          return true;
+        },
+      );
+    } finally {
+      _remoteReapplyInFlight = false;
+      if (!_disposed) _resumePendingRemoteReapplyIfPossible();
     }
   }
 
@@ -990,7 +1045,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
 
     await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-    if (!_canSafelyReapplyRemotePage()) {
+    if (_remoteReapplyInFlight || !_canSafelyReapplyRemotePage()) {
       _pendingRemoteReapply = true;
       return;
     }
@@ -1011,7 +1066,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             );
       }
       if (_canSafelyReapplyRemotePage()) {
-        await _rehydrateActivePageFromSource(activePageId);
+        await _reapplyRemotePage(activePageId);
       } else {
         _pendingRemoteReapply = true;
       }
@@ -1021,14 +1076,19 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   void _resumePendingRemoteReapplyIfPossible() {
-    if (!_pendingRemoteReapply || !_canSafelyReapplyRemotePage()) {
+    if (_disposed ||
+        _remoteReapplyInFlight ||
+        !_pendingRemoteReapply ||
+        !_canSafelyReapplyRemotePage()) {
       return;
     }
     _pendingRemoteReapply = false;
-    final pageId = state.activePageId;
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final pageId =
+        snapshot == null ? null : _resolveHydrationTargetPage(snapshot);
     if (pageId != null) {
       unawaited(
-        _rehydrateActivePageFromSource(pageId),
+        _reapplyRemotePage(pageId),
       );
     }
   }

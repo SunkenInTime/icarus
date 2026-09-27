@@ -10,6 +10,7 @@ import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
@@ -650,7 +651,9 @@ class _MyAppState extends ConsumerState<MyApp> {
             : null,
         builder: (context, child) {
           return GlobalShortcuts(
-            child: MouseNavigation(child: child ?? const SizedBox.shrink()),
+            child: EditorOperationScope(
+              child: MouseNavigation(child: child ?? const SizedBox.shrink()),
+            ),
           );
         },
       ),
