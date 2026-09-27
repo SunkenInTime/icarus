@@ -46,6 +46,10 @@ String friendlyCloudSyncError(String raw) {
     return 'A lineup here clashes with one on another page, so it was not '
         'saved over it. Your lineup remains on this device.';
   }
+  if (lower.contains('landing spot is no longer on the page')) {
+    return "A teammate deleted this lineup's origin or landing spot, so the "
+        'lineup was not saved to the cloud.';
+  }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '
         'saved on this device.';

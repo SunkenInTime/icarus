@@ -24,6 +24,17 @@ void main() {
     expect(message, isNot(contains('LINEUP_PAGE_MISMATCH')));
   });
 
+  test('explains a lineup whose origin or landing a teammate deleted', () {
+    final message = friendlyCloudSyncError(
+      "ConvexFunctionException(LINEUP_LINK_END_MISSING, This lineup's origin "
+      'or landing spot is no longer on the page)',
+    );
+
+    expect(message, contains('teammate deleted'));
+    expect(message, contains('not saved to the cloud'));
+    expect(message, isNot(contains('LINEUP_LINK_END_MISSING')));
+  });
+
   test('does not expose unknown transport details', () {
     final message = friendlyCloudSyncError('socket exploded at 10.0.0.4');
 

@@ -274,6 +274,40 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/// Adds for the origin and landing a link names; a link is stored only while
+/// both are live on its page.
+function linkEndOps(originId: string, landingId: string) {
+  return [
+    {
+      opId: `add-origin-${originId}`,
+      type: "lineup.add",
+      lineupPublicId: `lineupOrigin:${originId}`,
+      pagePublicId,
+      payload: {
+        kind: "lineupOrigin",
+        payloadVersion: 1,
+        data: { id: originId, agent: { type: "sova", lineUpID: originId } },
+      },
+      sortIndex: 0,
+    },
+    {
+      opId: `add-landing-${landingId}`,
+      type: "lineup.add",
+      lineupPublicId: `lineupLanding:${landingId}`,
+      pagePublicId,
+      payload: {
+        kind: "lineupLanding",
+        payloadVersion: 1,
+        data: {
+          id: landingId,
+          ability: { type: "shock_dart", lineUpID: landingId },
+        },
+      },
+      sortIndex: 0,
+    },
+  ];
+}
+
 describe("media cleanup stays within transaction limits", () => {
   test("reclaiming an image reads its references, not the strategy's content", async () => {
     const { t } = await createHarness();
@@ -357,6 +391,7 @@ describe("media cleanup stays within transaction limits", () => {
       strategyPublicId,
       clientId: "editor",
       ops: [
+        ...linkEndOps("o", "l"),
         {
           opId: "link-shows-old-image",
           type: "lineup.add",
@@ -406,6 +441,7 @@ describe("asset references follow their content", () => {
       strategyPublicId,
       clientId: "editor",
       ops: [
+        ...linkEndOps("o", "l"),
         {
           opId: "add-image",
           type: "element.add",

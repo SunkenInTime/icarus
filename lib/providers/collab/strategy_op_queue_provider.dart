@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -1267,6 +1268,32 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
   }
 
+  /// [records] with every lineup link op after the origin and landing ops,
+  /// in the slots lineup ops already hold; everything else keeps its place.
+  /// The server refuses a link whose ends are not live, and records reloaded
+  /// after a restart are listed by key (links before origins), so a batch
+  /// cut must not send a link ahead of the ends queued with it.
+  static List<DurableOutboxRecord> _lineupLinksAfterTheirEnds(
+    List<DurableOutboxRecord> records,
+  ) {
+    bool isLineup(DurableOutboxRecord record) =>
+        record.pending.op.entityType == StrategyOpEntityType.lineup;
+    bool isLink(DurableOutboxRecord record) =>
+        record.pending.op.entityPublicId
+            ?.startsWith('${CloudLineupKind.link}:') ??
+        false;
+    final lineups = records.where(isLineup);
+    final lineupsInOrder = [
+      ...lineups.where((record) => !isLink(record)),
+      ...lineups.where(isLink),
+    ];
+    var nextLineup = 0;
+    return [
+      for (final record in records)
+        isLineup(record) ? lineupsInOrder[nextLineup++] : record,
+    ];
+  }
+
   Future<List<DurableOutboxRecord>> _claimBatch({
     required String accountId,
     required String strategyPublicId,
@@ -1285,9 +1312,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
-      final batchClientId = candidates.first.pending.clientId;
+      final ordered = _lineupLinksAfterTheirEnds(candidates);
+      final batchClientId = ordered.first.pending.clientId;
       final selected = <DurableOutboxRecord>[];
-      for (final candidate in candidates) {
+      for (final candidate in ordered) {
         if (candidate.pending.clientId != batchClientId) continue;
         if (selected.length >= _maxBatchSize) break;
         final nextSelection = <DurableOutboxRecord>[...selected, candidate];

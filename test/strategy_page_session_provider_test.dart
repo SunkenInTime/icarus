@@ -2612,6 +2612,74 @@ void main() {
       await _settle();
     });
 
+    test('a lineup placed from an origin a teammate deleted re-adds it',
+        () async {
+      final (container, remote, page) = await openEmpty();
+      final first = place(container);
+      final landed = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      final originKey = keyOf(page, CloudLineupKind.origin, first.originId);
+
+      // The user starts a new lineup from the landed origin...
+      final lineUps = container.read(lineUpProvider.notifier)
+        ..startFromOrigin(first.originId);
+      lineUps.setDraftAbility(PlacedAbility(
+        id: 'ability-y',
+        data: AgentData.agents[AgentType.sova]!.abilities[2],
+        position: const Offset(500, 500),
+      ));
+      // ...while a teammate deletes that lineup, origin included.
+      remote.setSnapshot(serverSnapshot(
+        page,
+        [
+          for (final row in landed)
+            RemoteLineup(
+              publicId: row.publicId,
+              strategyPublicId: row.strategyPublicId,
+              pagePublicId: row.pagePublicId,
+              payload: row.payload,
+              sortIndex: row.sortIndex,
+              revision: 2,
+              deleted: true,
+            ),
+        ],
+        3,
+      ));
+      await _settle();
+      // Nothing the user has made names the origin yet, so the teammate's
+      // delete stands.
+      expect(desiredOps(container, page), isNot(contains(originKey)));
+
+      final second = lineUps.commitPlacement()!;
+      await _settle();
+
+      // The origin goes back with the new landing and link, restoring the
+      // teammate's tombstone (revision 2) rather than orphaning the link.
+      final queued = queuedOps();
+      expect(
+        queued[originKey],
+        isA<LineupAddOp>()
+            .having((op) => op.expectedLineupRevision, 'revision', 2),
+      );
+      expect(
+        queued.keys,
+        containsAll([
+          keyOf(page, CloudLineupKind.landing, second.landingId),
+          keyOf(page, CloudLineupKind.link, second.id),
+        ]),
+      );
+      expect(
+          queued, isNot(contains(keyOf(page, CloudLineupKind.link, first.id))));
+
+      // The server holds the new lineup whole, and it loads back.
+      await land(container, remote, page,
+          previous: const [], revision: 3, contentRevision: 4);
+      final hydrated = container.read(lineUpProvider).graph;
+      expect(hydrated.links.map((link) => link.id), [second.id]);
+      expect(hydrated.origins.map((origin) => origin.id), [first.originId]);
+      await _settle();
+    });
+
     test('each lineup action undoes after hydration, one row at a time',
         () async {
       final (container, remote, page) = await openEmpty();

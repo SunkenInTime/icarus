@@ -88,6 +88,40 @@ function lineupPayload(assetPublicId: string, linkId = "restorable") {
   };
 }
 
+/// The origin and landing every [lineupPayload] link names. A link is
+/// stored only while both are live on its page.
+function lineupEndOps(pagePublicId: string) {
+  return [
+    {
+      opId: `add-origin-${pagePublicId}`,
+      kind: "add",
+      entityType: "lineup",
+      entityPublicId: "lineupOrigin:origin",
+      pagePublicId,
+      payload: {
+        kind: "lineupOrigin" as const,
+        payloadVersion: 1,
+        data: { id: "origin", agent: { type: "sova", lineUpID: "origin" } },
+      },
+    },
+    {
+      opId: `add-landing-${pagePublicId}`,
+      kind: "add",
+      entityType: "lineup",
+      entityPublicId: "lineupLanding:landing",
+      pagePublicId,
+      payload: {
+        kind: "lineupLanding" as const,
+        payloadVersion: 1,
+        data: {
+          id: "landing",
+          ability: { type: "shock_dart", lineUpID: "landing" },
+        },
+      },
+    },
+  ];
+}
+
 /** A ConvexError's code (convex-test passes its data as JSON text). */
 function errorCode(error: unknown): unknown {
   const data = (error as { data?: unknown }).data;
@@ -1052,6 +1086,7 @@ describe("record-scoped write contract", () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
     await applyOps(owner, "undo-restore", [
+      ...lineupEndOps(pageA),
       {
         opId: "add-element",
         kind: "add",
@@ -1186,7 +1221,9 @@ describe("record-scoped write contract", () => {
     expect(stillDeleted.elements).toMatchObject([
       { publicId: elementId, deleted: true },
     ]);
-    expect(stillDeleted.lineups).toMatchObject([
+    expect(
+      stillDeleted.lineups.filter((row) => row.publicId === lineupId),
+    ).toMatchObject([
       { publicId: lineupId, deleted: true },
     ]);
 
@@ -1240,7 +1277,9 @@ describe("record-scoped write contract", () => {
         payload: { data: { text: restoredText } },
       },
     ]);
-    expect(snapshot.lineups).toMatchObject([
+    expect(
+      snapshot.lineups.filter((row) => row.publicId === lineupId),
+    ).toMatchObject([
       {
         publicId: lineupId,
         revision: 3,
@@ -1372,6 +1411,7 @@ describe("record-scoped write contract", () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
 
+    await applyOps(owner, "empty-lineup", lineupEndOps(pageA));
     const response = await applyOps(owner, "empty-lineup", [
       {
         opId: "add-empty-lineup",

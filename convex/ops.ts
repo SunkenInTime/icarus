@@ -240,6 +240,29 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
   }
 }
 
+/// The order a batch's ops are applied in. A link is refused unless its ends
+/// are live (see assertLinkEndsLive), but a client may send them in any
+/// order: an outbox reloaded after a restart lists its rows by key, links
+/// before origins. So the lineup ops keep their slots and fill them with
+/// the origin and landing ops first, then the link ops, each group in the
+/// order sent. Every other op keeps its place.
+function applicationOrder(ops: StrategyOp[]): number[] {
+  const isLink = (op: StrategyOp) =>
+    op.entityPublicId?.startsWith("lineupLink:") === true;
+  const lineupSlots = ops.flatMap((op, index) =>
+    op.entityType === "lineup" ? [index] : [],
+  );
+  const lineupOrder = [
+    ...lineupSlots.filter((index) => !isLink(ops[index]!)),
+    ...lineupSlots.filter((index) => isLink(ops[index]!)),
+  ];
+  const order = ops.map((_, index) => index);
+  lineupSlots.forEach((slot, n) => {
+    order[slot] = lineupOrder[n]!;
+  });
+  return order;
+}
+
 function isRecord(payload: unknown): payload is Record<string, unknown> {
   return (
     typeof payload === "object" && payload !== null && !Array.isArray(payload)
@@ -468,6 +491,34 @@ async function getLineupByPublicIdOrNull(
       q.eq("strategyId", strategyId).eq("publicId", publicId),
     )
     .unique();
+}
+
+/// A link is drawn only while its origin and landing are live rows on its
+/// page (see lineUpGraphFromCloudRows on the client). Storing a link whose
+/// end is gone, say one a teammate deleted while it was being placed, would
+/// make the lineup vanish on the next load with nothing on screen, so it is
+/// refused instead. Ends are read in this transaction: one added earlier in
+/// the same batch counts.
+async function assertLinkEndsLive(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  pageId: Id<"pages">,
+  payload: LineupPayload,
+): Promise<void> {
+  if (payload.kind !== "lineupLink") return;
+  const data = payload.data as { originId: string; landingId: string };
+  for (const endKey of [
+    `lineupOrigin:${data.originId}`,
+    `lineupLanding:${data.landingId}`,
+  ]) {
+    const end = await getLineupByPublicIdOrNull(ctx, strategyId, endKey);
+    if (end === null || end.deleted || end.pageId !== pageId) {
+      throw errorWithCode(
+        "LINEUP_LINK_END_MISSING",
+        "This lineup's origin or landing spot is no longer on the page",
+      );
+    }
+  }
 }
 
 async function getPageContent(
@@ -1239,6 +1290,7 @@ async function applyLineupOp(
             existing.pageId,
           );
         }
+        await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
@@ -1269,6 +1321,7 @@ async function applyLineupOp(
         existing.pageId,
       );
     }
+    await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
     const now = Date.now();
     await ctx.db.insert("lineups", {
       publicId,
@@ -1369,6 +1422,14 @@ async function applyLineupOp(
       existing.pageId,
     );
   }
+  if (op.kind === "patch" && op.payload !== undefined) {
+    await assertLinkEndsLive(
+      ctx,
+      strategy._id,
+      existing.pageId,
+      op.payload as LineupPayload,
+    );
+  }
   const revision = existing.revision + 1;
   await ctx.db.patch(existing._id, {
     ...patch,
@@ -1462,7 +1523,9 @@ export const applyBatch = mutation({
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-    const results: PublicOperationResult[] = [];
+    const ops = args.ops.map(normalizeOp);
+    // Results stay in the order the ops were sent.
+    const results: PublicOperationResult[] = new Array(ops.length);
     let acceptedStrategyBatchBaseRevision: number | undefined;
     let contentChanged = false;
     // Images deleted elements showed, whose upload placeholders may go once
@@ -1472,8 +1535,9 @@ export const applyBatch = mutation({
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
     // not erase an independent op that the server already accepted.
-    for (const rawOp of args.ops) {
-      let op = normalizeOp(rawOp);
+    for (const index of applicationOrder(ops)) {
+      const rawOp = args.ops[index]!;
+      let op = ops[index]!;
       const existingEvent = await ctx.db
         .query("operationEvents")
         .withIndex("by_strategyId_clientId_opId", (q) =>
@@ -1501,7 +1565,7 @@ export const applyBatch = mutation({
                   latestPayload: latest?.payload,
                 }
               : noop(latest?.revision);
-        results.push(toPublicResult(op, replayResult));
+        results[index] = toPublicResult(op, replayResult);
         continue;
       }
 
@@ -1614,7 +1678,7 @@ export const applyBatch = mutation({
               : undefined,
         createdAt: Date.now(),
       });
-      results.push(publicResult);
+      results[index] = publicResult;
     }
 
     // Checked against the batch's final state, once.
