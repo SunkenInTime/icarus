@@ -3371,6 +3371,44 @@ final class PageGetSnapshotResultPage {
   }
 }
 
+final class PresenceIssueRoomPassResult {
+  const PresenceIssueRoomPassResult({
+    required this.expiresAt,
+    required this.pass,
+    required this.url,
+  });
+  final double expiresAt;
+  final String pass;
+  final String url;
+
+  factory PresenceIssueRoomPassResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'expiresAt', 'pass', 'url'});
+    return PresenceIssueRoomPassResult(
+      expiresAt: _decodeNumber(
+        object.value['expiresAt'] ?? _missing(path, 'expiresAt'),
+        '$path.expiresAt',
+      ),
+      pass: _decodeString(
+        object.value['pass'] ?? _missing(path, 'pass'),
+        '$path.pass',
+      ),
+      url: _decodeString(
+        object.value['url'] ?? _missing(path, 'url'),
+        '$path.url',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'expiresAt': _encodeNumber(expiresAt, '$path.expiresAt'),
+      'pass': ConvexString(pass),
+      'url': ConvexString(url),
+    });
+  }
+}
+
 final class SharesListResultItem {
   const SharesListResultItem({
     required this.createdAt,
@@ -5373,6 +5411,26 @@ ConvexObject encodePagesReorderArgs({
 
 ConvexValue decodePagesReorderResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:reorder.returns', _validatePagesAddResult);
+
+ConvexObject encodePresenceIssueRoomPassArgs({
+  required double clientProtocolVersion,
+  required String strategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'presence.js:issueRoomPass.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+PresenceIssueRoomPassResult? decodePresenceIssueRoomPassResult(
+  ConvexValue value,
+) => (value) is ConvexNull
+    ? null
+    : PresenceIssueRoomPassResult.decode(
+        value,
+        'presence.js:issueRoomPass.returns',
+      );
 
 ConvexObject encodeSharesCreateArgs({
   required double clientProtocolVersion,

@@ -254,6 +254,20 @@ class Settings {
   static const Color sightlineReportBlockingWall = Color(0xffd6a24a);
   static const Color sightlineReportClearWall = Color(0xff6b5527);
   static const Color sightlineReportCone = Color(0xff5da0e8);
+
+  // Live presence on a cloud strategy. Each person gets one hue for their
+  // avatar ring, cursor, and name tag, picked from their id so every viewer
+  // sees them in the same color. None is the violet command hue or a
+  // tactical one (ally green, enemy red, defender blue, favorite amber).
+  static const List<Color> presenceColors = [
+    Color(0xfff472b6), // pink-400
+    Color(0xfffb923c), // orange-400
+    Color(0xff22d3ee), // cyan-400
+    Color(0xffa3e635), // lime-400
+    Color(0xffe4e4e7), // zinc-200
+  ];
+  // Text on a presence name tag; every presence hue is light.
+  static const Color presenceTagInk = Color(0xff09090b); // zinc-950
   // Resting glyph color for toolbar controls: a step under foreground so the
   // strip of icons stays quiet, but above mutedForeground, which vanishes at
   // the light stroke weights. Hover still comes up to foreground.
