@@ -1280,34 +1280,75 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
-  /// Undoes or redoes a link details edit on the link as it is now and
-  /// returns the edit that reverses exactly what this changed: the fields
-  /// that took a new value and the images actually put in or taken out.
-  /// Images a teammate already added or removed are left out, so replaying
-  /// the result can never bring back an image they removed. Returns null
-  /// when nothing changed or the link is gone.
-  LineUpEditAction? replayLinkDetails(
-    LineUpEditAction action, {
-    required bool undo,
-  }) {
-    final link = state.linkById(action.targetId);
-    if (link == null) return null;
-    final change = (undo ? action.before : action.after) as LineUpLinkChange;
-    final written = change.writeTo(link);
-    final applied = LineUpLinkChange.between(link, written);
-    if (applied.forward.isEmpty) return null;
+  /// Undoes or redoes a field edit on the entry as it is now and returns the
+  /// edit that reverses exactly what this changed: a position that moved,
+  /// the visibility toggles that flipped, the link details that took a new
+  /// value and the images actually put in or taken out. What a teammate
+  /// already changed is left out, so replaying the result can never undo
+  /// their work. Returns null when nothing changed or the entry is gone.
+  LineUpEditAction? replayEdit(LineUpEditAction action, {required bool undo}) {
+    final value = undo ? action.before : action.after;
+    final ({Object forward, Object backward})? applied = switch (action.field) {
+      LineUpEditField.originPosition => _positionChange(
+          state.originById(action.targetId)?.agent.position,
+          value as Offset,
+        ),
+      LineUpEditField.landingPosition => _positionChange(
+          state.landingById(action.targetId)?.ability.position,
+          value as Offset,
+        ),
+      LineUpEditField.landingVisibility => switch (
+            state.landingById(action.targetId)?.ability.visualState) {
+          null => null,
+          final current => _nonEmpty(AbilityVisibilityChange.between(
+              current,
+              (value as AbilityVisibilityChange).writeTo(current),
+            )),
+        },
+      LineUpEditField.linkDetails => switch (state.linkById(action.targetId)) {
+          null => null,
+          final link => _nonEmpty(LineUpLinkChange.between(
+              link,
+              (value as LineUpLinkChange).writeTo(link),
+            )),
+        },
+    };
+    if (applied == null) return null;
 
-    _writeField(LineUpEditField.linkDetails, link.id, applied.forward);
+    _writeField(action.field, action.targetId, applied.forward);
     // Undo writes an edit's `before` and redo its `after`. After an undo
     // this entry goes on the redo stack: its redo reverses what the undo just
     // did and a later undo repeats it. After a redo it is the other way round.
     return LineUpEditAction(
       id: action.id,
       targetId: action.targetId,
-      field: LineUpEditField.linkDetails,
+      field: action.field,
       before: undo ? applied.forward : applied.backward,
       after: undo ? applied.backward : applied.forward,
     );
+  }
+
+  /// Moving from [current] to [target], or null when there is nothing to
+  /// move (the entry is gone or already there).
+  static ({Object forward, Object backward})? _positionChange(
+    Offset? current,
+    Offset target,
+  ) {
+    if (current == null || current == target) return null;
+    return (forward: target, backward: current);
+  }
+
+  /// [change], or null when its forward half changes nothing.
+  static ({Object forward, Object backward})? _nonEmpty(
+    ({Object forward, Object backward}) change,
+  ) {
+    final forward = change.forward;
+    final isEmpty = switch (forward) {
+      AbilityVisibilityChange() => forward.isEmpty,
+      LineUpLinkChange() => forward.isEmpty,
+      _ => false,
+    };
+    return isEmpty ? null : change;
   }
 
   /// Undoes or redoes [action] on the graph as it is now and returns the
@@ -1371,29 +1412,18 @@ class LineUpProvider extends Notifier<LineUpState> {
     ).deepCopy();
   }
 
-  /// Undoes a weapon or field edit. Graph changes (additions, deletions,
-  /// clears) replay through [replayGraphAction].
+  /// Undoes an origin weapon change. Graph changes replay through
+  /// [replayGraphAction] and field edits through [replayEdit].
   void undoAction(UserAction action) {
-    switch (action) {
-      case WeaponSelectionAction():
-        _applyOriginWeapon(action.id, action.before);
-      case LineUpEditAction():
-        _writeField(action.field, action.targetId, action.before);
-      default:
-        return;
+    if (action is WeaponSelectionAction) {
+      _applyOriginWeapon(action.id, action.before);
     }
   }
 
-  /// Redoes a weapon or field edit. Graph changes replay through
-  /// [replayGraphAction].
+  /// Redoes an origin weapon change; see [undoAction].
   void redoAction(UserAction action) {
-    switch (action) {
-      case WeaponSelectionAction():
-        _applyOriginWeapon(action.id, action.after);
-      case LineUpEditAction():
-        _writeField(action.field, action.targetId, action.after);
-      default:
-        return;
+    if (action is WeaponSelectionAction) {
+      _applyOriginWeapon(action.id, action.after);
     }
   }
 

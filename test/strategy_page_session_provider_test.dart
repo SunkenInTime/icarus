@@ -4570,6 +4570,78 @@ void main() {
       expect(agentOn(container, 'sova').position, const Offset(10, 20));
     });
 
+    test(
+        'a weapon change a teammate already reverted is skipped: undo '
+        'undoes the move made before', () async {
+      final (container, remote, page) = await open([
+        jett('jett')..weapon = WeaponType.classic,
+        jett('sova'),
+      ]);
+      final agents = container.read(agentProvider.notifier);
+
+      agents.updatePosition(const Offset(300, 300), 'sova');
+      agents.setWeapon('jett', WeaponType.vandal);
+      // A teammate sets Jett back to the Classic.
+      await land(container, remote, page,
+          teammate: (canvas) => editing(
+                canvas,
+                'jett',
+                (o) =>
+                    (o as PlacedAgent).copyWith()..weapon = WeaponType.classic,
+              ));
+      expect(agentOn(container, 'jett').weapon, WeaponType.classic);
+
+      history(container).undoAction();
+
+      expect(agentOn(container, 'sova').position, const Offset(10, 20));
+      expect(agentOn(container, 'jett').weapon, WeaponType.classic);
+    });
+
+    test(
+        'a visibility toggle a teammate already reverted is skipped: undo '
+        'undoes the move made before', () async {
+      final ability = PlacedAbility(
+        id: 'mine',
+        data: AgentData.agents[AgentType.jett]!.abilities.first,
+        position: const Offset(60, 60),
+      );
+      final (container, remote, page) = await open([ability, jett('sova')]);
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'sova');
+      final abilities = container.read(abilityProvider.notifier);
+      abilities.updateVisualState(
+        0,
+        container
+            .read(abilityProvider)
+            .single
+            .visualState
+            .copyWith(showRangeOutline: false),
+      );
+      // A teammate turns the outline back on.
+      await land(container, remote, page,
+          teammate: (canvas) => editing(
+                canvas,
+                'mine',
+                (o) => PlacedAbility.fromJson({
+                  ...payloadOf(o),
+                  'visualState': {
+                    ...(o as PlacedAbility).visualState.toJson(),
+                    'showRangeOutline': true,
+                  },
+                }),
+              ));
+      expect(
+        container.read(abilityProvider).single.visualState.showRangeOutline,
+        isTrue,
+      );
+
+      history(container).undoAction();
+
+      expect(agentOn(container, 'sova').position, const Offset(10, 20));
+    });
+
     test('undoing a lineup clear keeps a lineup a teammate added', () async {
       final (container, remote, page) =
           await open(const [], lineups: _lineupRows('page-1', 'mine'));
