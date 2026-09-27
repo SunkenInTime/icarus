@@ -13,6 +13,17 @@ void main() {
     expect(message, isNot(contains('ConvexFunctionException')));
   });
 
+  test('explains a lineup that clashes with one on another page', () {
+    final message = friendlyCloudSyncError(
+      'ConvexFunctionException(LINEUP_PAGE_MISMATCH, This lineup belongs to '
+      'another page and cannot be moved)',
+    );
+
+    expect(message, contains('another page'));
+    expect(message, contains('remains on this device'));
+    expect(message, isNot(contains('LINEUP_PAGE_MISMATCH')));
+  });
+
   test('does not expose unknown transport details', () {
     final message = friendlyCloudSyncError('socket exploded at 10.0.0.4');
 

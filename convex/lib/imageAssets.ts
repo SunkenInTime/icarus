@@ -78,21 +78,6 @@ export function collectAssetIdsFromLineupPayload(
       // hold none.
       addImages(payload.data.images);
       break;
-    case "lineupGroup": {
-      // The oldest lineup payloads stored images at the top level.
-      addImages(payload.data.images);
-      // Grouped payloads (LineUpGroup) nest them per item:
-      // data.items[*].images[*].id
-      const rawItems = payload.data.items;
-      if (Array.isArray(rawItems)) {
-        for (const item of rawItems) {
-          if (typeof item === "object" && item !== null) {
-            addImages((item as { images?: unknown }).images);
-          }
-        }
-      }
-      break;
-    }
     case "lineupOrigin":
     case "lineupLanding":
       break;
@@ -169,6 +154,33 @@ export async function collectReferencedAssetIdsForStrategy(
     assetIds.add(assetId);
   }
 
+  return assetIds;
+}
+
+/// Every image id the strategy's tombstoned (soft-deleted, still restorable
+/// by undo) elements and lineups show.
+export async function collectTombstonedAssetIds(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+): Promise<Set<string>> {
+  const assetIds = new Set<string>();
+  const elementQuery = ctx.db
+    .query("elements")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
+  for await (const element of elementQuery) {
+    if (!element.deleted || element.elementType !== "image") continue;
+    const assetId = collectAssetIdFromElementPayload(element.payload);
+    if (assetId !== null) assetIds.add(assetId);
+  }
+  const lineupQuery = ctx.db
+    .query("lineups")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
+  for await (const lineup of lineupQuery) {
+    if (!lineup.deleted) continue;
+    for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
+      assetIds.add(assetId);
+    }
+  }
   return assetIds;
 }
 
@@ -288,22 +300,51 @@ export async function expectAssets(
   }
 }
 
-/// Drops the placeholders for images a deleted element showed, unless a
-/// lineup still shows the same image. No other element can: a placed
-/// image's id is its own element's publicId. Rows holding bytes are left to
-/// the normal asset lifecycle.
+/// The images among [candidates] the strategy still shows: through a live
+/// lineup, or through a live image element with that id (a placed image's
+/// id is its element's publicId, so no other element can show it).
+export async function collectStillShownAssetIds(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  candidates: Iterable<string>,
+): Promise<Set<string>> {
+  const shownByLineups = await collectAssetIdsShownByLineups(ctx, strategyId);
+  const shown = new Set<string>();
+  for (const publicId of candidates) {
+    if (shownByLineups.has(publicId)) {
+      shown.add(publicId);
+      continue;
+    }
+    const element = await ctx.db
+      .query("elements")
+      .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+      .first();
+    if (
+      element !== null &&
+      element.strategyId === strategyId &&
+      !element.deleted &&
+      element.elementType === "image"
+    ) {
+      shown.add(publicId);
+    }
+  }
+  return shown;
+}
+
+/// Drops the upload placeholders among [assetPublicIds] (images deleted
+/// elements showed) that nothing in the strategy shows any more. Rows
+/// holding bytes are left to the normal asset lifecycle.
 ///
-/// [shownByLineups] is called only when a placeholder is at stake. The
-/// caller shares one lineup read across a whole batch, so it may predate a
-/// later op in that batch; that can only keep a placeholder a lineup no
-/// longer shows, which the stale sweep removes.
+/// Called once, after every op of a batch has applied, so the check sees the
+/// batch's final state: a lineup added later in the same batch keeps the
+/// placeholder of the image it shows.
 export async function removeUploadPlaceholders(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
   assetPublicIds: Iterable<string>,
-  shownByLineups: () => Promise<Set<string>>,
 ): Promise<void> {
-  for (const publicId of assetPublicIds) {
+  const placeholdersById = new Map<string, Doc<"imageAssets">[]>();
+  for (const publicId of new Set(assetPublicIds)) {
     const placeholders = (
       await ctx.db
         .query("imageAssets")
@@ -315,8 +356,17 @@ export async function removeUploadPlaceholders(
         )
         .take(20)
     ).filter(isUploadPlaceholder);
-    if (placeholders.length === 0) continue;
-    if ((await shownByLineups()).has(publicId)) continue;
+    if (placeholders.length > 0) placeholdersById.set(publicId, placeholders);
+  }
+  // References are read only when a placeholder is at stake.
+  if (placeholdersById.size === 0) return;
+  const stillShown = await collectStillShownAssetIds(
+    ctx,
+    strategyId,
+    placeholdersById.keys(),
+  );
+  for (const [publicId, placeholders] of placeholdersById) {
+    if (stillShown.has(publicId)) continue;
     for (const row of placeholders) await ctx.db.delete(row._id);
   }
 }

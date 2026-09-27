@@ -527,13 +527,10 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 type LineupPayload = Doc<"lineups">["payload"];
 
 /// New entity ids for a copied strategy's lineups: one map across every
-/// kind, shared by every row. The source's lineups share ids across kinds
-/// (a landing may take its link's id; a legacy group's origin is the group
-/// id and its landing and link are the item id), and the copy keeps that
-/// shape. So a legacy group and the graph rows converted from it still
-/// describe one lineup, and a link still names its origin and landing,
-/// whatever order the rows are copied in. Keys stay unique through the kind
-/// prefix.
+/// kind, shared by every row. The source's lineups may share ids across
+/// kinds (a landing may take its link's id), and the copy keeps that shape,
+/// so a link still names its origin and landing whatever order the rows are
+/// copied in. Keys stay unique through the kind prefix.
 function lineupIdMap() {
   const ids = new Map<string, string>();
   return (id: string): string => {
@@ -543,39 +540,8 @@ function lineupIdMap() {
   };
 }
 
-/// A legacy lineup group's data under new ids from [newId]: the group id,
-/// which its agent and abilities name, and each item's id.
-function copiedLineupGroupData(
-  data: LineupData,
-  newId: (id: string) => string,
-): LineupData {
-  const id = newId(typeof data.id === "string" ? data.id : "");
-  const { agent, items } = data;
-  return {
-    ...data,
-    id,
-    ...(isJsonObject(agent) ? { agent: { ...agent, lineUpID: id } } : {}),
-    ...(Array.isArray(items)
-      ? {
-          items: items.map((item) =>
-            isJsonObject(item)
-              ? {
-                  ...item,
-                  ...(typeof item.id === "string" ? { id: newId(item.id) } : {}),
-                  ...(isJsonObject(item.ability)
-                    ? { ability: { ...item.ability, lineUpID: id } }
-                    : {}),
-                }
-              : item,
-          ),
-        }
-      : {}),
-  } as LineupData;
-}
-
-/// A lineup row as the copy stores it: its key and payload under new ids.
-/// Graph rows keep the `<kind>:<entity id>` key; a legacy group keeps its
-/// group-id key. Every nested reference follows its entity.
+/// A lineup row as the copy stores it: its `<kind>:<entity id>` key and
+/// payload under new ids, with every nested reference following its entity.
 function copiedLineupRow(
   payload: LineupPayload,
   newId: (id: string) => string,
@@ -583,13 +549,6 @@ function copiedLineupRow(
   const data = payload.data;
   const idOf = (value: unknown) => (typeof value === "string" ? value : "");
   switch (payload.kind) {
-    case "lineupGroup": {
-      const copied = copiedLineupGroupData(data, newId);
-      return {
-        publicId: copied.id as string,
-        payload: { ...payload, data: copied },
-      };
-    }
     case "lineupOrigin": {
       const id = newId(idOf(data.id));
       const agent = data.agent;

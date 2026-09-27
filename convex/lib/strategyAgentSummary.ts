@@ -3,7 +3,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 /// Reads the agent type of one agent element or lineup payload. The client
 /// stores the agent enum name under `type` (an element) or under
-/// `agent.type` (a lineup origin or legacy lineup group); anything else,
+/// `agent.type` (a lineup origin); anything else,
 /// landings and links included, is not an agent.
 function agentTypeOf(data: unknown): string | null {
   if (typeof data !== "object" || data === null) return null;

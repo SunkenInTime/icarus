@@ -25,6 +25,10 @@ const listStrategies = makeFunctionReference<"query">(
   "strategies:listForFolder",
 );
 const addPage = makeFunctionReference<"mutation">("pages:add");
+const deletePage = makeFunctionReference<"mutation">("pages:delete");
+const purgeOldTombstones = makeFunctionReference<"mutation">(
+  "maintenance:purgeOldTombstones",
+);
 const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 const getFullSnapshot = makeFunctionReference<"query">(
   "strategy:getFullSnapshot",
@@ -163,28 +167,25 @@ async function seedSource(t: RootHarness, owner: Harness): Promise<void> {
         pagePublicId: firstPage,
         expectedElementRevision: 1,
       },
-      {
-        opId: "add-lineup",
+      // One lineup: an origin, a landing and the link between them (the
+      // landing shares its link's id), the link showing an image.
+      ...(
+        [
+          ["lineupOrigin", { id: "origin-1", agent: { type: "sova", lineUpID: "origin-1" } }],
+          ["lineupLanding", { id: "item-1", ability: { type: "shock_dart", lineUpID: "item-1" } }],
+          ["lineupLink", {
+            id: "item-1", originId: "origin-1", landingId: "item-1",
+            images: [{ id: "lineup-image" }],
+          }],
+        ] as Array<[string, Record<string, unknown>]>
+      ).map(([kind, data], index) => ({
+        opId: `add-${kind}`,
         type: "lineup.add",
-        lineupPublicId: "lineup-group",
+        lineupPublicId: `${kind}:${data.id}`,
         pagePublicId: secondPage,
-        payload: {
-          kind: "lineupGroup",
-          payloadVersion: 1,
-          data: {
-            id: "lineup-group",
-            agent: { type: "sova", lineUpID: "lineup-group" },
-            items: [
-              {
-                id: "item-1",
-                ability: { type: "shock_dart", lineUpID: "lineup-group" },
-                images: [{ id: "lineup-image" }],
-              },
-            ],
-          },
-        },
-        sortIndex: 0,
-      },
+        payload: { kind, payloadVersion: 1, data },
+        sortIndex: index,
+      })),
     ],
   });
 }
@@ -309,26 +310,34 @@ describe("strategies:duplicate", () => {
     expect(agent.publicId).not.toBe("placed-agent");
     expect(agent.payload.data).toEqual({ id: agent.publicId, type: "jett" });
 
-    const [lineup] = copy.lineups;
-    expect(copy.lineups).toHaveLength(1);
-    expect(lineup!.pagePublicId).toBe(copySecondPage);
-    expect(lineup!.publicId).not.toBe("lineup-group");
-    // The group's agent and abilities point at the copy's group, not the
-    // original's, and its item (the landing and link it converts to) gets a
-    // fresh id too.
-    const copiedItemId = (lineup!.payload.data.items as Array<{ id: string }>)[0]!
-      .id;
-    expect(copiedItemId).not.toBe("item-1");
-    expect(lineup!.payload.data).toEqual({
-      id: lineup!.publicId,
-      agent: { type: "sova", lineUpID: lineup!.publicId },
-      items: [
-        {
-          id: copiedItemId,
-          ability: { type: "shock_dart", lineUpID: lineup!.publicId },
-          images: [{ id: "lineup-image" }],
-        },
-      ],
+    expect(copy.lineups).toHaveLength(3);
+    for (const row of copy.lineups) {
+      expect(row.pagePublicId).toBe(copySecondPage);
+    }
+    const copied = (kind: string) =>
+      copy.lineups.find((row) => row.payload.kind === kind)!.payload.data;
+    const origin = copied("lineupOrigin");
+    const landing = copied("lineupLanding");
+    const link = copied("lineupLink");
+    // Fresh ids, still shared where the source shared them, with every
+    // reference following: the origin's agent, the landing's ability, and
+    // the link's ends.
+    expect(origin.id).not.toBe("origin-1");
+    expect(landing.id).not.toBe("item-1");
+    expect(link.id).toBe(landing.id);
+    expect(origin).toEqual({
+      id: origin.id,
+      agent: { type: "sova", lineUpID: origin.id },
+    });
+    expect(landing).toEqual({
+      id: landing.id,
+      ability: { type: "shock_dart", lineUpID: landing.id },
+    });
+    expect(link).toEqual({
+      id: link.id,
+      originId: origin.id,
+      landingId: landing.id,
+      images: [{ id: "lineup-image" }],
     });
 
     expect(await imageUrls(owner, "duplicate-copy")).toEqual({
@@ -459,12 +468,16 @@ describe("strategies:duplicate", () => {
 
     type Row = {
       publicId: string;
+      pagePublicId: string;
       payload: { kind: string; data: Record<string, any> };
     };
     const copy = (await owner.query(getFullSnapshot, {
       strategyPublicId: "duplicate-copy",
-    })) as { lineups: Row[] };
-    const graph = copy.lineups.filter((row) => row.payload.kind !== "lineupGroup");
+    })) as { pages: Array<{ publicId: string; sortIndex: number }>; lineups: Row[] };
+    // The fan-in sits on the first page (the seed's lineup is on the second).
+    const copyFirstPage = [...copy.pages].sort((a, b) => a.sortIndex - b.sortIndex)[0]!
+      .publicId;
+    const graph = copy.lineups.filter((row) => row.pagePublicId === copyFirstPage);
     // Every graph row is keyed by its kind and its new entity id.
     for (const row of graph) {
       expect(row.publicId).toBe(`${row.payload.kind}:${row.payload.data.id}`);
@@ -504,82 +517,144 @@ describe("strategies:duplicate", () => {
     );
   });
 
-  test("a page caught mid-conversion copies as one lineup, not two", async () => {
+  test("an image whose tombstone is purged is reclaimed once nothing shows it", async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockR2Deletes();
     const { t, owner } = await createHarness();
     await seedSource(t, owner);
-    // A client converted the seeded group: its graph rows landed, the group
-    // delete has not yet. Same ids: origin = group id, landing = link = item.
-    const converted: Array<[string, Record<string, unknown>]> = [
-      ["lineupOrigin", { id: "lineup-group", agent: { type: "sova", lineUpID: "lineup-group" } }],
-      ["lineupLanding", { id: "item-1", ability: { type: "shock_dart", lineUpID: "item-1" } }],
-      ["lineupLink", {
-        id: "item-1", originId: "lineup-group", landingId: "item-1",
-        images: [{ id: "lineup-image" }],
-      }],
-    ];
+    await duplicate(owner);
+
+    // The copy's placed image (its own asset row, sharing the source's bytes).
+    type Row = Record<string, any>;
+    const copy = (await owner.query(getFullSnapshot, {
+      strategyPublicId: "duplicate-copy",
+    })) as { pages: Row[]; elements: Row[] };
+    const copyImage = copy.elements.find((row) => row.elementType === "image")!;
+    const copyImagePage = copyImage.pagePublicId as string;
+
+    // Delete the copy's image element, leaving a tombstone.
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: "duplicate-copy",
+      clientId: "copy-editor",
+      ops: [
+        {
+          opId: "delete-copy-image",
+          type: "element.delete",
+          elementPublicId: copyImage.publicId,
+          pagePublicId: copyImagePage,
+          expectedElementRevision: 1,
+        },
+      ],
+    });
+    // 31 days later the tombstone is purged.
+    vi.setSystemTime(Date.now() + 31 * 24 * 60 * 60 * 1000);
+    await t.mutation(purgeOldTombstones, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // Then the copy's page and the original go.
+    const copyRevision = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", "duplicate-copy"))
+        .unique();
+      return row!.revision;
+    });
+    await owner.mutation(deletePage, {
+      ...protocol,
+      strategyPublicId: "duplicate-copy",
+      pagePublicId: copyImagePage,
+      expectedRevision: copyRevision,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await deleteAndSweep(t, owner, source);
+
+    // The copy keeps no live row for the image, and its bytes are deleted
+    // once no row points at them.
+    const copyRows = await t.run(async (ctx) =>
+      (await ctx.db.query("imageAssets").collect()).filter(
+        (row) =>
+          row.publicId === copyImage.publicId && row.uploadStatus !== "deleted",
+      ),
+    );
+    expect(copyRows).toEqual([]);
+    expect(deletedKeys(fetchMock)).toContain(
+      `/duplicate-bucket/strategies/${source}/placed-image.png`,
+    );
+  });
+
+  test("a purged tombstone keeps an image a recent tombstone may still restore", async () => {
+    vi.useFakeTimers();
+    mockR2Deletes();
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    const day = 24 * 60 * 60 * 1000;
+    const activeRows = async () =>
+      (await t.run(async (ctx) => await ctx.db.query("imageAssets").collect()))
+        .filter((row) => row.publicId === "placed-image")
+        .map((row) => row.uploadStatus);
+
+    // The placed image is deleted; a month later a lineup link shows the
+    // same image and is deleted too, so undo could still restore it.
     await owner.mutation(applyBatch, {
       ...protocol,
       strategyPublicId: source,
-      clientId: "converting",
-      ops: converted.map(([kind, data], index) => ({
-        opId: `convert-${kind}`,
-        type: "lineup.add",
-        lineupPublicId: `${kind}:${data.id}`,
-        pagePublicId: secondPage,
-        payload: { kind, payloadVersion: 1, data },
-        sortIndex: 5 + index,
-      })),
+      clientId: "editor",
+      ops: [
+        {
+          opId: "delete-placed",
+          type: "element.delete",
+          elementPublicId: "placed-image",
+          pagePublicId: firstPage,
+          expectedElementRevision: 1,
+        },
+      ],
+    });
+    vi.setSystemTime(Date.now() + 31 * day);
+    const showing = {
+      kind: "lineupLink",
+      payloadVersion: 1,
+      data: {
+        id: "late-link",
+        originId: "o",
+        landingId: "l",
+        images: [{ id: "placed-image" }],
+      },
+    };
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "editor",
+      ops: [
+        {
+          opId: "add-late-link",
+          type: "lineup.add",
+          lineupPublicId: "lineupLink:late-link",
+          pagePublicId: firstPage,
+          payload: showing,
+          sortIndex: 9,
+        },
+        {
+          opId: "delete-late-link",
+          type: "lineup.delete",
+          lineupPublicId: "lineupLink:late-link",
+          pagePublicId: firstPage,
+          expectedLineupRevision: 1,
+        },
+      ],
     });
 
-    type Row = {
-      publicId: string;
-      deleted: boolean;
-      payload: { kind: string; data: Record<string, any> };
-    };
-    /// The lineups a reader draws, the way hydration merges the two forms:
-    /// a legacy group stands for origin <group id> and link <item id>, and
-    /// a graph row for the same entity is the same lineup.
-    const drawn = (rows: Row[]) => {
-      const origins = new Set<string>();
-      const links = new Set<string>();
-      for (const { deleted, payload } of rows) {
-        if (deleted) continue;
-        if (payload.kind === "lineupGroup") {
-          origins.add(payload.data.id);
-          for (const item of payload.data.items) links.add(item.id);
-        } else if (payload.kind === "lineupOrigin") {
-          origins.add(payload.data.id);
-        } else if (payload.kind === "lineupLink") {
-          links.add(payload.data.id);
-        }
-      }
-      return { origins: origins.size, links: links.size };
-    };
-    const snapshot = async (strategyPublicId: string) =>
-      ((await owner.query(getFullSnapshot, { strategyPublicId })) as {
-        lineups: Row[];
-      }).lineups;
+    // Purging the old element tombstone keeps the image: the link's
+    // tombstone is still inside its retention window.
+    await t.mutation(purgeOldTombstones, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await activeRows()).toEqual(["active"]);
 
-    const sourceRows = await snapshot(source);
-    expect(drawn(sourceRows)).toEqual({ origins: 1, links: 1 });
-
-    await duplicate(owner);
-
-    const copyRows = await snapshot("duplicate-copy");
-    expect(copyRows).toHaveLength(4);
-    expect(drawn(copyRows)).toEqual({ origins: 1, links: 1 });
-    // The copy's group and graph rows still name the same (new) entities.
-    const group = copyRows.find((row) => row.payload.kind === "lineupGroup")!;
-    const byKind = (kind: string) =>
-      copyRows.find((row) => row.payload.kind === kind)!.payload.data;
-    expect(group.payload.data.id).not.toBe("lineup-group");
-    expect(byKind("lineupOrigin").id).toBe(group.payload.data.id);
-    expect(byKind("lineupLanding").id).toBe(group.payload.data.items[0].id);
-    expect(byKind("lineupLink")).toMatchObject({
-      id: group.payload.data.items[0].id,
-      originId: group.payload.data.id,
-      landingId: group.payload.data.items[0].id,
-    });
+    // Once that tombstone is purged too, the image is reclaimed.
+    vi.setSystemTime(Date.now() + 31 * day);
+    await t.mutation(purgeOldTombstones, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await activeRows()).not.toContain("active");
   });
 
   test("deleting the copy leaves the original's images alone", async () => {
@@ -1003,44 +1078,6 @@ describe("images placed before their upload", () => {
     expect(rows[0]).toMatchObject({ uploadStatus: "active" });
   });
 
-  test("deleting an image keeps the placeholder while a lineup still shows it", async () => {
-    const { t, owner } = await createHarness();
-    await seedSource(t, owner);
-    await placeImage(owner, "shared-late-image");
-    await owner.mutation(applyBatch, {
-      ...protocol,
-      strategyPublicId: source,
-      clientId: "slow-uploader",
-      ops: [
-        {
-          opId: "lineup-shows-shared",
-          type: "lineup.add",
-          lineupPublicId: "lineup-shows-shared",
-          pagePublicId: firstPage,
-          payload: {
-            kind: "lineupGroup",
-            payloadVersion: 1,
-            data: {
-              id: "lineup-shows-shared",
-              items: [
-                { id: "shared-item", images: [{ id: "shared-late-image" }] },
-              ],
-            },
-          },
-          sortIndex: 2,
-        },
-      ],
-    });
-    expect(await rowsFor(t, "shared-late-image")).toHaveLength(1);
-
-    await deleteImage(owner, "shared-late-image");
-
-    expect(await statusFor(owner, "shared-late-image")).toMatchObject({
-      uploadStatus: "pending",
-    });
-    await expect(duplicate(owner)).rejects.toThrow("still uploading");
-  });
-
   test("deleting an image keeps the placeholder while a lineup link still shows it", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);
@@ -1079,6 +1116,66 @@ describe("images placed before their upload", () => {
     await expect(duplicate(owner)).rejects.toThrow("still uploading");
   });
 
+  test("a lineup added later in the same batch keeps a deleted image's placeholder", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await placeImage(owner, "pending-a");
+    await placeImage(owner, "pending-b");
+
+    // One batch: delete A, add a lineup that shows B, then delete placed B.
+    const response = (await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "slow-uploader",
+      ops: [
+        {
+          opId: "delete-a",
+          type: "element.delete",
+          elementPublicId: "pending-a",
+          pagePublicId: firstPage,
+          expectedElementRevision: 1,
+        },
+        {
+          opId: "link-shows-b",
+          type: "lineup.add",
+          lineupPublicId: "lineupLink:shows-b",
+          pagePublicId: firstPage,
+          payload: {
+            kind: "lineupLink",
+            payloadVersion: 1,
+            data: {
+              id: "shows-b",
+              originId: "o",
+              landingId: "l",
+              images: [{ id: "pending-b", fileExtension: ".png" }],
+            },
+          },
+          sortIndex: 5,
+        },
+        {
+          opId: "delete-b",
+          type: "element.delete",
+          elementPublicId: "pending-b",
+          pagePublicId: firstPage,
+          expectedElementRevision: 1,
+        },
+      ],
+    })) as { results: Array<{ status: string }> };
+    expect(response.results.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+      "applied",
+    ]);
+
+    // A is shown by nothing: its placeholder goes. B is still shown by the
+    // new lineup: its placeholder stays, so a duplicate waits for B.
+    expect(await rowsFor(t, "pending-a")).toEqual([]);
+    expect(await statusFor(owner, "pending-b")).toMatchObject({
+      uploadStatus: "pending",
+    });
+    await expect(duplicate(owner)).rejects.toThrow("still uploading");
+  });
+
   test("deleting several images in one batch checks lineups for each", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);
@@ -1092,14 +1189,16 @@ describe("images placed before their upload", () => {
         {
           opId: "lineup-shows-batch",
           type: "lineup.add",
-          lineupPublicId: "lineup-shows-batch",
+          lineupPublicId: "lineupLink:lineup-shows-batch",
           pagePublicId: firstPage,
           payload: {
-            kind: "lineupGroup",
+            kind: "lineupLink",
             payloadVersion: 1,
             data: {
               id: "lineup-shows-batch",
-              items: [{ id: "batch-item", images: [{ id: "batch-shown" }] }],
+              originId: "o",
+              landingId: "l",
+              images: [{ id: "batch-shown" }],
             },
           },
           sortIndex: 3,
@@ -1122,38 +1221,6 @@ describe("images placed before their upload", () => {
 
     expect(await rowsFor(t, "batch-shown")).toHaveLength(1);
     expect(await rowsFor(t, "batch-alone")).toEqual([]);
-  });
-
-  test("a lineup image referenced before its upload is expected too", async () => {
-    const { t, owner } = await createHarness();
-    await seedSource(t, owner);
-    await owner.mutation(applyBatch, {
-      ...protocol,
-      strategyPublicId: source,
-      clientId: "slow-uploader",
-      ops: [
-        {
-          opId: "late-lineup",
-          type: "lineup.add",
-          lineupPublicId: "late-lineup",
-          pagePublicId: firstPage,
-          payload: {
-            kind: "lineupGroup",
-            payloadVersion: 1,
-            data: {
-              id: "late-lineup",
-              items: [{ id: "late-item", images: [{ id: "late-lineup-image" }] }],
-            },
-          },
-          sortIndex: 1,
-        },
-      ],
-    });
-
-    expect(await statusFor(owner, "late-lineup-image")).toMatchObject({
-      uploadStatus: "pending",
-    });
-    await expect(duplicate(owner)).rejects.toThrow("still uploading");
   });
 
   test("a lineup link's image referenced before its upload is expected too", async () => {

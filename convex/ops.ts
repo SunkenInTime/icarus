@@ -4,7 +4,6 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
-  collectAssetIdsShownByLineups,
   expectAssets,
   referencedAssetIds,
   removeUploadPlaceholders,
@@ -347,7 +346,10 @@ function assertLineupPayload(
   if (!isRecord(payload)) {
     throw errorWithCode("MISSING_LINEUP_PAYLOAD", "Missing lineup payload");
   }
-  if (payload.kind !== "lineupGroup" && !lineupGraphKinds.has(payload.kind)) {
+  // Lineups are stored only as graph rows. The legacy `lineupGroup` shape is
+  // not part of the contract (argument validation already refuses it); this
+  // check keeps the rule where the row is written.
+  if (!lineupGraphKinds.has(payload.kind)) {
     throw errorWithCode(
       "INVALID_LINEUP_PAYLOAD_KIND",
       "Invalid lineup payload kind",
@@ -366,14 +368,6 @@ function assertLineupPayload(
     );
   }
   const data = payload.data;
-  if (payload.kind === "lineupGroup") {
-    // A lineup group with no items reads back as no lineup at all, so storing
-    // one would turn into a deletion nobody made on the next load.
-    if (!Array.isArray(data.items) || data.items.length === 0) {
-      throw invalidLineupData("Lineup payload has no items");
-    }
-    return payload as LineupPayload;
-  }
   if (typeof data.id !== "string" || data.id.length === 0) {
     throw invalidLineupData("Lineup payload has no id");
   }
@@ -1338,8 +1332,17 @@ async function applyLineupOp(
       if (page === null || page.strategyId !== strategy._id) {
         throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
       }
-      setIfChanged(patch, "pageId", existing.pageId, page._id);
-      eventPageId = page._id;
+      // A lineup row never moves between pages: no client action does that,
+      // and a patch naming another page means its key clashed with a row on
+      // a different page (a rejected add turned into a patch by "Keep mine").
+      // Moving it would take the lineup away from the page that shows it,
+      // so refuse and let the conflict surface instead.
+      if (page._id !== existing.pageId) {
+        throw errorWithCode(
+          "LINEUP_PAGE_MISMATCH",
+          "This lineup belongs to another page and cannot be moved",
+        );
+      }
     }
   } else if (op.kind === "reorder") {
     setIfChanged(
@@ -1391,9 +1394,9 @@ async function contentRowForOp(
 /// Keeps asset rows in step with an accepted content op. An image the row
 /// newly shows gets a placeholder if nothing has been uploaded for it yet, so
 /// a slow upload reads as on its way rather than missing, and a duplicate
-/// waits for it. A deleted image element drops its placeholder unless a
-/// lineup still shows the image; [shownByLineups] reads that at most once
-/// per batch.
+/// waits for it. An image a deleted element showed is added to
+/// [placeholderCandidates]; applyBatch drops those placeholders after the
+/// whole batch, if nothing shows the image by then.
 ///
 /// Restoring a deleted element (undo) usually finds its asset row still
 /// there, since deleting an element leaves its asset alone. With no row, an
@@ -1407,7 +1410,7 @@ async function reconcileExpectedAssets(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   rowBefore: Doc<"elements"> | Doc<"lineups"> | null,
-  shownByLineups: () => Promise<Set<string>>,
+  placeholderCandidates: Set<string>,
 ): Promise<void> {
   const row = await contentRowForOp(ctx, strategy, op);
   if (row === null) return;
@@ -1428,12 +1431,11 @@ async function reconcileExpectedAssets(
     );
   }
   if (op.entityType === "element") {
-    await removeUploadPlaceholders(
-      ctx,
-      strategy._id,
-      [...assetsBefore].filter((id) => !assetsAfter.has(id)),
-      shownByLineups,
-    );
+    // Only nominated here; removed once the whole batch has applied (see
+    // applyBatch), since a later op in the batch may show the image again.
+    for (const id of assetsBefore) {
+      if (!assetsAfter.has(id)) placeholderCandidates.add(id);
+    }
   }
 }
 
@@ -1452,11 +1454,9 @@ export const applyBatch = mutation({
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
     let contentChanged = false;
-    // The images the strategy's lineups show, read once per batch and only
-    // when deleting an image leaves a placeholder at stake.
-    let lineupAssetIds: Promise<Set<string>> | null = null;
-    const shownByLineups = () =>
-      (lineupAssetIds ??= collectAssetIdsShownByLineups(ctx, strategy._id));
+    // Images deleted elements showed, whose upload placeholders may go once
+    // the whole batch has applied and nothing shows them any more.
+    const placeholderCandidates = new Set<string>();
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
@@ -1546,7 +1546,7 @@ export const applyBatch = mutation({
               strategy,
               op,
               rowBefore,
-              shownByLineups,
+              placeholderCandidates,
             );
           }
         } catch (error) {
@@ -1605,6 +1605,9 @@ export const applyBatch = mutation({
       });
       results.push(publicResult);
     }
+
+    // Checked against the batch's final state, once.
+    await removeUploadPlaceholders(ctx, strategy._id, placeholderCandidates);
 
     if (contentChanged) {
       await refreshStrategyAgentSummary(ctx, strategy._id);

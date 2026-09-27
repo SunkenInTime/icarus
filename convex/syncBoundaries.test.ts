@@ -71,13 +71,17 @@ function imagePayload(assetPublicId: string) {
   };
 }
 
-function lineupPayload(assetPublicId: string) {
+/// A lineup link showing one image; its row key is `lineupLink:<linkId>`.
+function lineupPayload(assetPublicId: string, linkId = "restorable") {
   return {
-    kind: "lineupGroup" as const,
+    kind: "lineupLink" as const,
     payloadVersion: 1,
     data: {
+      id: linkId,
+      originId: "origin",
+      landingId: "landing",
       name: "B lineup",
-      items: [{ images: [{ id: assetPublicId }] }],
+      images: [{ id: assetPublicId }],
     },
   };
 }
@@ -343,12 +347,12 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       updatedAt: now,
     });
     await ctx.db.insert("lineups", {
-      publicId: "lineup-b",
+      publicId: "lineupLink:lineup-b",
       strategyId: strategy._id,
       pageId: pageBId,
-      payloadKind: "lineupGroup",
+      payloadKind: "lineupLink",
       payloadVersion: 1,
-      payload: lineupPayload(assetB),
+      payload: lineupPayload(assetB, "lineup-b"),
       sortIndex: 0,
       revision: 1,
       deleted: false,
@@ -423,7 +427,9 @@ describe("page-scoped read contract", () => {
       "element-a",
       "element-b",
     ]);
-    expect(snapshot.lineups.map((item) => item.publicId)).toEqual(["lineup-b"]);
+    expect(snapshot.lineups.map((item) => item.publicId)).toEqual([
+      "lineupLink:lineup-b",
+    ]);
     expect(snapshot.assets.map((item) => item.publicId).sort()).toEqual([
       "asset-a",
       "asset-b",
@@ -1036,7 +1042,7 @@ describe("record-scoped write contract", () => {
 
   test("soft-deleted elements and lineups can be restored with their ids", async () => {
     const elementId = "restorable-element";
-    const lineupId = "restorable-lineup";
+    const lineupId = "lineupLink:restorable";
     const restoredText = "restored";
     const restoredAsset = "restored-asset";
     const { owner } = await createHarness();
@@ -1219,7 +1225,7 @@ describe("record-scoped write contract", () => {
         publicId: string;
         revision: number;
         deleted: boolean;
-        payload: { data: { items: Array<{ images: Array<{ id: string }> }> } };
+        payload: { data: { images: Array<{ id: string }> } };
       }>;
     };
     expect(snapshot.elements).toMatchObject([
@@ -1236,7 +1242,7 @@ describe("record-scoped write contract", () => {
         revision: 3,
         deleted: false,
         payload: {
-          data: { items: [{ images: [{ id: restoredAsset }] }] },
+          data: { images: [{ id: restoredAsset }] },
         },
       },
     ]);
@@ -1358,7 +1364,7 @@ describe("record-scoped write contract", () => {
     expect(replayed).toMatchObject({ revision: 2, reused: true });
   });
 
-  test("a lineup group without items is refused", async () => {
+  test("a lineup link without its landing is refused", async () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
 
@@ -1367,21 +1373,21 @@ describe("record-scoped write contract", () => {
         opId: "add-empty-lineup",
         kind: "add",
         entityType: "lineup",
-        entityPublicId: "lineup-empty",
+        entityPublicId: "lineupLink:lineup-empty",
         pagePublicId: pageA,
         payload: {
-          kind: "lineupGroup" as const,
+          kind: "lineupLink" as const,
           payloadVersion: 1,
-          data: { id: "lineup-empty", items: [] },
+          data: { id: "lineup-empty", originId: "origin" },
         },
       },
       {
         opId: "add-lineup",
         kind: "add",
         entityType: "lineup",
-        entityPublicId: "lineup-full",
+        entityPublicId: "lineupLink:lineup-full",
         pagePublicId: pageA,
-        payload: lineupPayload("asset-full"),
+        payload: lineupPayload("asset-full", "lineup-full"),
       },
     ]);
 
@@ -1394,6 +1400,33 @@ describe("record-scoped write contract", () => {
       opId: "add-lineup",
       status: "applied",
     });
+  });
+
+  test("a legacy lineup group is no longer part of the contract", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+
+    await expect(
+      applyOps(owner, "old-client", [
+        {
+          opId: "add-legacy-group",
+          kind: "add",
+          entityType: "lineup",
+          entityPublicId: "legacy-group",
+          pagePublicId: pageA,
+          payload: {
+            kind: "lineupGroup",
+            payloadVersion: 1,
+            data: { id: "legacy-group", items: [{ id: "item" }] },
+          },
+        },
+      ]),
+    ).rejects.toThrow(/lineupGroup|ArgumentValidationError|Validator/);
+    const snapshot = (await owner.query(getPageSnapshot, {
+      strategyPublicId,
+      pagePublicId: pageA,
+    })) as { lineups: unknown[] };
+    expect(snapshot.lineups).toEqual([]);
   });
 
   test("direct page reorder rejects duplicate page ids", async () => {
