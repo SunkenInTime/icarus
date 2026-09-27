@@ -4395,6 +4395,145 @@ void main() {
       expect(agentOn(container, 'sova').position, const Offset(10, 20));
     });
 
+    test(
+        'an edit a teammate partly reverted undoes and redoes only the '
+        'fields they left alone', () async {
+      const white = 0xFFFFFFFF;
+      const red = 0xFFFF0000;
+      final (container, remote, page) = await open([
+        PlacedCircleAgent(
+          id: 'circle',
+          type: AgentType.jett,
+          position: const Offset(10, 20),
+          diameterMeters: 5,
+          colorValue: white,
+          opacityPercent: 60,
+        ),
+      ]);
+      PlacedCircleAgent circle() =>
+          container.read(agentProvider).single as PlacedCircleAgent;
+
+      // One edit changes the diameter and the colour.
+      container.read(agentProvider.notifier).updateCircleGeometry(
+            id: 'circle',
+            diameterMeters: 8,
+            colorValue: red,
+            opacityPercent: 60,
+          );
+      // A teammate sets the colour back to white; the diameter stays 8.
+      await land(container, remote, page,
+          teammate: (canvas) => [
+                for (final o in canvas)
+                  PlacedAgentNode.fromJson({
+                    ...payloadOf(o)..remove('elementType'),
+                    'colorValue': white,
+                  }),
+              ]);
+      expect((circle().diameterMeters, circle().colorValue), (8.0, white));
+
+      history(container).undoAction();
+      expect((circle().diameterMeters, circle().colorValue), (5.0, white));
+
+      history(container).redoAction();
+      expect((circle().diameterMeters, circle().colorValue), (8.0, white));
+
+      history(container).undoAction();
+      expect((circle().diameterMeters, circle().colorValue), (5.0, white));
+    });
+
+    test('a tiny move is still a move: undo puts the agent back', () async {
+      final (container, remote, page) = await open([jett('jett')]);
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(10.001, 20), 'jett');
+      await land(container, remote, page);
+      expect(agentOn(container, 'jett').position, const Offset(10.001, 20));
+
+      history(container).undoAction();
+      expect(agentOn(container, 'jett').position, const Offset(10, 20));
+      expect(
+        desiredOps(
+            container, page)[EntitySyncKey.element(page.publicId, 'jett')],
+        isA<ElementPatchOp>(),
+      );
+
+      history(container).redoAction();
+      expect(agentOn(container, 'jett').position, const Offset(10.001, 20));
+    });
+
+    PlacedAgentNode jettNode(ProviderContainer container) =>
+        container.read(agentProvider).singleWhere((a) => a.id == 'jett');
+
+    /// Drops a view cone utility onto Jett as one step, the way the editor
+    /// does, after moving Sova.
+    Future<(ProviderContainer, _FakeRemoteEditorNotifier, RemotePage)>
+        coneOnJettAfterSovaMove() async {
+      final opened = await open([jett('jett'), jett('sova'), cone('cone')]);
+      final container = opened.$1;
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'sova');
+      history(container).performTransaction(
+        groups: const [ActionGroup.agent, ActionGroup.utility],
+        mutation: () {
+          container
+              .read(utilityProvider.notifier)
+              .removeUtilityAsAction('cone');
+          container.read(agentProvider.notifier).convertPlainAgentToViewCone(
+                id: 'jett',
+                presetType: UtilityType.viewCone90,
+                rotation: 0,
+                length: 50,
+              );
+        },
+      );
+      return opened;
+    }
+
+    test(
+        'a transaction a teammate partly reverted undoes only what they '
+        'left', () async {
+      final (container, remote, page) = await coneOnJettAfterSovaMove();
+      // A teammate puts the cone back; Jett stays a view cone agent.
+      await land(container, remote, page,
+          teammate: (canvas) => [...canvas, cone('cone')]);
+
+      history(container).undoAction();
+
+      expect(jettNode(container), isNot(isA<PlacedViewConeAgent>()));
+      expect(container.read(utilityProvider).map((u) => u.id), ['cone']);
+      // Sova's move is the next step, still to undo.
+      expect(agentOn(container, 'sova').position, const Offset(300, 300));
+      expect(
+        desiredOps(container, page).values.whereType<ElementDeleteOp>(),
+        isEmpty,
+      );
+
+      history(container).redoAction();
+      expect(jettNode(container), isA<PlacedViewConeAgent>());
+      expect(container.read(utilityProvider).map((u) => u.id), ['cone']);
+    });
+
+    test(
+        'a transaction a teammate fully reverted is skipped: undo undoes '
+        'the step before', () async {
+      final (container, remote, page) = await coneOnJettAfterSovaMove();
+      // A teammate puts the cone back and turns Jett back into an agent.
+      await land(container, remote, page,
+          teammate: (canvas) => [
+                for (final o in canvas)
+                  if (idOf(o) == 'jett') jett('jett') else o,
+                cone('cone'),
+              ]);
+
+      history(container).undoAction();
+
+      expect(agentOn(container, 'sova').position, const Offset(10, 20));
+      expect(jettNode(container), isNot(isA<PlacedViewConeAgent>()));
+      expect(container.read(utilityProvider).map((u) => u.id), ['cone']);
+    });
+
     test('undoing a lineup clear keeps a lineup a teammate added', () async {
       final (container, remote, page) =
           await open(const [], lineups: _lineupRows('page-1', 'mine'));
