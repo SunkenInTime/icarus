@@ -124,14 +124,16 @@ void main() {
       expect(container.read(utilityProvider), isEmpty);
       expect(container.read(agentProvider), hasLength(1));
 
+      // The clear is one step on top of the history before it, which it
+      // leaves as it was; it deletes only utilities.
       final actions = container.read(actionProvider);
-      expect(actions, hasLength(2));
-      expect(actions.first.group, ActionGroup.agent);
+      expect(actions, hasLength(3));
+      expect(actions[1].group, ActionGroup.agent);
       expect(actions.last.group, ActionGroup.bulk);
       expect(actions.last.type, ActionType.bulkDeletion);
       expect(
-        actions.last.bulkSnapshot!.targetGroups,
-        [ActionGroup.utility],
+        actions.last.changes.map((change) => (change.group, change.id)),
+        [(ActionGroup.utility, 'utility-1')],
       );
     });
 
@@ -232,9 +234,8 @@ void main() {
       container
           .read(utilityProvider.notifier)
           .fromHive([_buildUtility('utility-all')]);
-      container
-          .read(lineUpProvider.notifier)
-          .fromHive(LineUpGraph.fromLegacyLineUps([_buildLineUp('lineup-all')]));
+      container.read(lineUpProvider.notifier).fromHive(
+          LineUpGraph.fromLegacyLineUps([_buildLineUp('lineup-all')]));
 
       container.read(actionProvider.notifier).clearAllAsAction();
 

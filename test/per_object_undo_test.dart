@@ -143,6 +143,75 @@ void main() {
     expect(history.poppedItems, hasLength(1));
   });
 
+  test('one undo steps past entries that change nothing to one that does', () {
+    final container = _container();
+    final agents = container.read(agentProvider.notifier)
+      ..fromHive([
+        _agent('sova', const Offset(10, 10)),
+        _agent('jett', const Offset(20, 20)),
+      ]);
+    final history = container.read(actionProvider.notifier);
+
+    agents.updatePosition(const Offset(100, 100), 'sova');
+    agents.updatePosition(const Offset(200, 200), 'jett');
+    // Jett goes without a history entry, as a teammate's deletion does
+    // before history is reconciled.
+    agents.removeAgent('jett');
+
+    history.undoAction();
+    expect(container.read(agentProvider).single.position, const Offset(10, 10));
+    expect(container.read(actionProvider), isEmpty);
+
+    history.redoAction();
+    expect(
+        container.read(agentProvider).single.position, const Offset(100, 100));
+  });
+
+  test('alternating clears keep history growing linearly', () {
+    final container = _container();
+    final history = container.read(actionProvider.notifier);
+    int retained(Iterable<UserAction> actions) => actions.fold(
+          0,
+          (count, action) => count + 1 + retained(action.changes),
+        );
+
+    for (var i = 0; i < 20; i++) {
+      container
+          .read(agentProvider.notifier)
+          .addAgent(_agent('agent-$i', const Offset(10, 10)));
+      container.read(utilityProvider.notifier).addUtility(PlacedUtility(
+            id: 'utility-$i',
+            type: UtilityType.viewCone90,
+            position: const Offset(40, 40),
+          ));
+      history.clearGroupAsAction(
+        i.isEven ? ActionGroup.agent : ActionGroup.utility,
+      );
+    }
+
+    // Each round adds two objects and one clear of at most two of them.
+    expect(
+      retained([...container.read(actionProvider), ...history.poppedItems]),
+      lessThanOrEqualTo(20 * 5),
+    );
+  });
+
+  test('history keeps the most recent steps up to its limit', () {
+    final container = _container();
+    final agents = container.read(agentProvider.notifier)
+      ..fromHive([_agent('jett', const Offset(0, 0))]);
+
+    for (var i = 1; i <= ActionProvider.historyLimit + 10; i++) {
+      agents.updatePosition(Offset(i.toDouble(), 0), 'jett');
+    }
+
+    final steps = container.read(actionProvider);
+    expect(steps, hasLength(ActionProvider.historyLimit));
+    // The oldest ten went; the first kept step moved Jett from x = 10.
+    expect(
+        steps.first.objectDelta!.before!.agent!.position, const Offset(10, 0));
+  });
+
   test('a transaction that changes nothing adds no undo step', () {
     final container = _container();
     container

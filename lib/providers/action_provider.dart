@@ -36,32 +36,11 @@ enum ActionType {
   transaction,
 }
 
-/// The history entries a bulk clear took out along with the objects: the
-/// ones for the cleared groups. Undoing the clear puts them back.
-class BulkActionSnapshot {
-  final List<ActionGroup> targetGroups;
-  final List<UserAction> actionStateBefore;
-
-  const BulkActionSnapshot({
-    required this.targetGroups,
-    required this.actionStateBefore,
-  });
-
-  BulkActionSnapshot copy() {
-    return BulkActionSnapshot(
-      targetGroups: [...targetGroups],
-      actionStateBefore:
-          actionStateBefore.map((action) => action.copy()).toList(),
-    );
-  }
-}
-
 class UserAction {
   final ActionGroup group;
   final String id;
   final ActionType type;
   final ObjectHistoryDelta? objectDelta;
-  final BulkActionSnapshot? bulkSnapshot;
 
   /// For a transaction or bulk clear (group [ActionGroup.bulk]): the change
   /// to each object, in the order they happened. Undo reverses them last to
@@ -74,7 +53,6 @@ class UserAction {
     required this.id,
     required this.group,
     this.objectDelta,
-    this.bulkSnapshot,
     this.changes = const [],
   });
 
@@ -84,7 +62,6 @@ class UserAction {
       id: id,
       group: group,
       objectDelta: objectDelta?.clone(),
-      bulkSnapshot: bulkSnapshot?.copy(),
       changes: changes.map((change) => change.copy()).toList(),
     );
   }
@@ -157,6 +134,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ActionGroup.lineUp,
   ];
   static const _uuid = Uuid();
+
+  /// The most undo steps kept; older ones are dropped.
+  static const historyLimit = 200;
+
   List<UserAction> poppedItems = [];
 
   /// While a transaction's mutation runs, the changes it records.
@@ -180,56 +161,40 @@ class ActionProvider extends Notifier<List<UserAction>> {
           .updateData(null); // Make the agent tab disappear after an action
     }
     poppedItems = [];
-    state = [...state, action.copy()];
+    final history = [...state, action.copy()];
+    state = history.length > historyLimit
+        ? history.sublist(history.length - historyLimit)
+        : history;
   }
 
+  /// Redoes the most recent undone step that still changes something. Steps
+  /// that no longer can (a teammate removed what they act on) are dropped on
+  /// the way, so one keypress always does something visible while anything
+  /// is left to redo. Each pass takes a step off the stack, so this ends.
   void redoAction() {
-    if (poppedItems.isEmpty) return;
-
-    final action = poppedItems.removeLast();
-    final undo = _redo(action);
-    if (undo == null) return;
-
-    final cleared = undo.bulkSnapshot?.targetGroups;
-    if (cleared == null) {
+    while (poppedItems.isNotEmpty) {
+      final action = poppedItems.removeLast();
+      final undo = _redo(action);
+      if (undo == null) continue;
       state = [...state, undo];
-    } else {
-      // The clear sets aside the history it makes unreplayable, as it did
-      // the first time.
-      final historyBefore = state.map((item) => item.copy()).toList();
-      state = [
-        ..._filterActionsForGroups(historyBefore, cleared),
-        _withChanges(
-          undo,
-          undo.changes,
-          bulkSnapshot: BulkActionSnapshot(
-            targetGroups: cleared,
-            actionStateBefore: historyBefore,
-          ),
-        ),
-      ];
-    }
-    if (action.group == ActionGroup.bulk) {
-      ref.read(abilityBarProvider.notifier).updateData(null);
-    }
-  }
-
-  void undoAction() {
-    if (state.isEmpty) return;
-
-    final action = state.last;
-    final redo = _undo(action);
-    if (redo != null) poppedItems.add(redo);
-
-    final bulkSnapshot = action.bulkSnapshot;
-    if (bulkSnapshot == null) {
-      state = state.sublist(0, state.length - 1);
+      if (action.group == ActionGroup.bulk) {
+        ref.read(abilityBarProvider.notifier).updateData(null);
+      }
       return;
     }
-    // The history the clear set aside comes back, less what hydration has
-    // since made unreplayable.
-    state = bulkSnapshot.actionStateBefore.map((item) => item.copy()).toList();
-    reconcileHistory();
+  }
+
+  /// Undoes the most recent step that still changes something, dropping the
+  /// steps on the way that no longer can, as [redoAction] does.
+  void undoAction() {
+    while (state.isNotEmpty) {
+      final action = state.last;
+      state = state.sublist(0, state.length - 1);
+      final redo = _undo(action);
+      if (redo == null) continue;
+      poppedItems.add(redo);
+      return;
+    }
   }
 
   /// Undoes [action] against the page as it is now. Returns the entry that
@@ -260,6 +225,12 @@ class ActionProvider extends Notifier<List<UserAction>> {
       return ref
           .read(lineUpProvider.notifier)
           .replayGraphAction(action, undo: undo);
+    }
+    if (action is LineUpEditAction &&
+        action.field == LineUpEditField.linkDetails) {
+      return ref
+          .read(lineUpProvider.notifier)
+          .replayLinkDetails(action, undo: undo);
     }
 
     final delta = action.objectDelta;
@@ -329,16 +300,11 @@ class ActionProvider extends Notifier<List<UserAction>> {
     );
   }
 
-  static UserAction _withChanges(
-    UserAction action,
-    List<UserAction> changes, {
-    BulkActionSnapshot? bulkSnapshot,
-  }) {
+  static UserAction _withChanges(UserAction action, List<UserAction> changes) {
     return UserAction(
       type: action.type,
       id: action.id,
       group: action.group,
-      bulkSnapshot: bulkSnapshot ?? action.bulkSnapshot,
       changes: changes,
     );
   }
@@ -410,27 +376,97 @@ class ActionProvider extends Notifier<List<UserAction>> {
     state = [];
   }
 
+  /// Drops the steps that can no longer change anything after the page was
+  /// rehydrated. Each stack is followed in the order it would replay from the
+  /// page as it is now, so a step is kept only if what it acts on will be
+  /// there when its turn comes: an object a teammate deleted is recoverable
+  /// for an undo step only through a deletion undo reaches first, and for a
+  /// redo step only through an addition redo reaches first.
   void reconcileHistory() {
-    // An edit stays while its target exists or a retained addition or
-    // deletion, on either stack, can bring it back.
-    final history = _andChanges([...state, ...poppedItems]).toList();
-    final lineUpIds = ref.read(lineUpProvider.notifier).replayableIds(history);
-    final objectIds = {
-      for (final action in history)
-        if (action.type != ActionType.edit && action.objectDelta != null)
-          action.objectDelta!.id,
-    };
-    state = _reconcileActions(state, lineUpIds, objectIds);
-    poppedItems = _reconcileActions(poppedItems, lineUpIds, objectIds);
+    state = _stillReplayable(state, undo: true);
+    poppedItems = _stillReplayable(poppedItems, undo: false);
   }
 
-  static Iterable<UserAction> _andChanges(
-    Iterable<UserAction> actions,
-  ) sync* {
-    for (final action in actions) {
-      yield action;
-      yield* _andChanges(action.changes);
+  List<UserAction> _stillReplayable(
+    List<UserAction> stack, {
+    required bool undo,
+  }) {
+    final page = _PagePresence(
+      objects: {
+        ...ref.read(agentProvider).map((agent) => agent.id),
+        ...ref.read(abilityProvider).map((ability) => ability.id),
+        ...ref.read(drawingProvider).elements.map((drawing) => drawing.id),
+        ...ref.read(textProvider).map((text) => text.id),
+        ...ref.read(placedImageProvider).images.map((image) => image.id),
+        ...ref.read(utilityProvider).map((utility) => utility.id),
+      },
+      links: {
+        for (final link in ref.read(lineUpProvider).links) link.id: link,
+      },
+    );
+    final kept = [
+      for (final action in stack.reversed)
+        if (_replayableOn(page, action, undo: undo) case final step?) step,
+    ];
+    return kept.reversed.toList();
+  }
+
+  /// [action] as far as replaying it on [page] would still change something,
+  /// with [page] moved on to what that replay leaves; null when it would
+  /// change nothing. Mirrors [_replay] without touching the canvas.
+  UserAction? _replayableOn(
+    _PagePresence page,
+    UserAction action, {
+    required bool undo,
+  }) {
+    if (action.group == ActionGroup.bulk) {
+      final order = undo ? action.changes.reversed : action.changes;
+      final kept = [
+        for (final change in order)
+          if (_replayableOn(page, change, undo: undo) case final step?) step,
+      ];
+      if (kept.isEmpty) return null;
+      return _withChanges(action, undo ? kept.reversed.toList() : kept);
     }
+
+    if (action is LineUpGraphAction) {
+      final from = undo ? action.after : action.before;
+      final to = undo ? action.before : action.after;
+      final kept = to.links.map((link) => link.id).toSet();
+      final removing = [
+        for (final link in from.links)
+          if (!kept.contains(link.id) && page.links.containsKey(link.id))
+            link.id,
+      ];
+      final inserting = [
+        for (final link in to.links)
+          if (!page.links.containsKey(link.id)) link,
+      ];
+      if (removing.isEmpty && inserting.isEmpty) return null;
+      removing.forEach(page.links.remove);
+      for (final link in inserting) {
+        page.links[link.id] = link;
+      }
+      return action.copy();
+    }
+
+    final delta = action.objectDelta;
+    if (delta != null && action.type != ActionType.edit) {
+      final removes = (action.type == ActionType.addition) == undo;
+      // Taking away needs the object there; putting back needs it gone.
+      if (removes != page.objects.contains(delta.id)) return null;
+      removes ? page.objects.remove(delta.id) : page.objects.add(delta.id);
+      return action.copy();
+    }
+
+    final target = switch (action) {
+      _ when delta != null => delta.id,
+      WeaponSelectionAction() => action.id,
+      LineUpEditAction() => action.targetId,
+      _ => null,
+    };
+    if (target != null && !page.has(target)) return null;
+    return action.copy();
   }
 
   void clearAllAsAction() {
@@ -497,19 +533,12 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ];
     if (changes.isEmpty) return;
 
-    final historyBefore = state.map((action) => action.copy()).toList();
     _clearProvidersForGroups(targetGroups);
-
-    state = _filterActionsForGroups(historyBefore, targetGroups);
     addAction(
       UserAction(
         type: ActionType.bulkDeletion,
         id: _uuid.v4(),
         group: ActionGroup.bulk,
-        bulkSnapshot: BulkActionSnapshot(
-          targetGroups: targetGroups,
-          actionStateBefore: historyBefore,
-        ),
         changes: changes,
       ),
     );
@@ -558,30 +587,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ];
   }
 
-  List<UserAction> _filterActionsForGroups(
-    List<UserAction> actions,
-    List<ActionGroup> targetGroups,
-  ) {
-    final groupSet = targetGroups.toSet();
-
-    return actions
-        .where((action) => !_actionIntersectsGroups(action, groupSet))
-        .toList();
-  }
-
-  bool _actionIntersectsGroups(
-      UserAction action, Set<ActionGroup> targetGroups) {
-    final bulkSnapshot = action.bulkSnapshot;
-    if (bulkSnapshot != null) {
-      return bulkSnapshot.targetGroups.any(targetGroups.contains);
-    }
-    if (action.group == ActionGroup.bulk) {
-      return action.changes
-          .any((change) => _actionIntersectsGroups(change, targetGroups));
-    }
-    return targetGroups.contains(action.group);
-  }
-
   void _clearProvidersForGroups(List<ActionGroup> groups) {
     for (final group in groups) {
       switch (group) {
@@ -605,60 +610,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
           break;
       }
     }
-  }
-
-  List<UserAction> _reconcileActions(
-    List<UserAction> actions,
-    Set<String> lineUpIds,
-    Set<String> objectIds,
-  ) {
-    return [
-      for (final action in actions)
-        if (_reconciled(action, lineUpIds, objectIds) case final kept?) kept,
-    ];
-  }
-
-  /// [action] as far as it can still be replayed, or null when it cannot.
-  /// A transaction or clear keeps the changes that stay and goes with the
-  /// last of them.
-  UserAction? _reconciled(
-    UserAction action,
-    Set<String> lineUpIds,
-    Set<String> objectIds,
-  ) {
-    if (action.group == ActionGroup.bulk) {
-      final changes = _reconcileActions(action.changes, lineUpIds, objectIds);
-      return changes.isEmpty ? null : _withChanges(action, changes);
-    }
-    final delta = action.objectDelta;
-    if (action.type == ActionType.edit &&
-        delta != null &&
-        !objectIds.contains(delta.id) &&
-        !_canKeepEditAction(delta)) {
-      return null;
-    }
-    if (action is LineUpEditAction && !lineUpIds.contains(action.targetId)) {
-      return null;
-    }
-    if (action is WeaponSelectionAction) {
-      // A lineup weapon belongs to an origin, an agent weapon to an agent.
-      final targetKept = action.group == ActionGroup.lineUp
-          ? lineUpIds.contains(action.id)
-          : objectIds.contains(action.id) ||
-              _currentObjectState(action.id, ActionObjectKind.agent) != null;
-      if (!targetKept) return null;
-    }
-    return action.copy();
-  }
-
-  bool _canKeepEditAction(ObjectHistoryDelta delta) {
-    final current =
-        _currentObjectState(delta.id, delta.before?.kind ?? delta.after?.kind);
-    if (current == null) {
-      return false;
-    }
-    final expectedKind = delta.after?.kind ?? delta.before?.kind;
-    return current.kind == expectedKind;
   }
 
   ActionObjectState? _currentObjectState(String id, ActionObjectKind? kind) {
@@ -699,4 +650,20 @@ class ActionProvider extends Notifier<List<UserAction>> {
         return null;
     }
   }
+}
+
+/// The canvas objects and lineup links a page holds, followed step by step
+/// while history is reconciled.
+class _PagePresence {
+  _PagePresence({required this.objects, required this.links});
+
+  final Set<String> objects;
+  final Map<String, LineUpLink> links;
+
+  /// Whether [id] names an object, a link, or an origin or landing a link
+  /// joins (they exist only while a link uses them).
+  bool has(String id) =>
+      objects.contains(id) ||
+      links.containsKey(id) ||
+      links.values.any((link) => link.originId == id || link.landingId == id);
 }

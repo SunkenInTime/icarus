@@ -4419,12 +4419,155 @@ void main() {
       history(container).undoAction(); // the deletion
       await land(container, remote, page); // the teammate deleted it
 
-      // The edit stays in history (a retained deletion can bring its link
-      // back), but with the link gone undoing it changes nothing.
+      // Nothing left can change anything: undo never reaches the deletion on
+      // the redo stack, so the edit's link cannot come back for it, and
+      // redoing the deletion would remove nothing. Both steps go.
+      expect(container.read(actionProvider), isEmpty);
+      expect(history(container).poppedItems, isEmpty);
+
+      history(container).undoAction();
+      expect(container.read(lineUpProvider).links, isEmpty);
+    });
+
+    /// [lineup]'s rows with the link's data changed by [edit], as a teammate
+    /// left them.
+    List<RemoteLineup> editLink(
+      List<RemoteLineup> lineup,
+      void Function(Map<String, dynamic> link) edit,
+    ) {
+      RemoteLineup edited(RemoteLineup row) {
+        final payload = jsonDecode(jsonEncode(row.payload)) as CloudPayload;
+        edit(payload['data'] as Map<String, dynamic>);
+        return RemoteLineup(
+          publicId: row.publicId,
+          strategyPublicId: row.strategyPublicId,
+          pagePublicId: row.pagePublicId,
+          payload: payload,
+          sortIndex: row.sortIndex,
+          revision: row.revision + 1,
+          deleted: false,
+        );
+      }
+
+      return [
+        for (final row in lineup)
+          row.payload['kind'] == CloudLineupKind.link ? edited(row) : row,
+      ];
+    }
+
+    Map<String, dynamic> image(String id) =>
+        {'id': id, 'fileExtension': '.png'};
+
+    List<String> linkImages(ProviderContainer container) => [
+          for (final image
+              in container.read(lineUpProvider).links.single.images)
+            image.id,
+        ];
+
+    test(
+        'redoing an image removal a teammate already made, then undoing, '
+        'does not bring the image back', () async {
+      final mine = editLink(
+        _lineupRows('page-1', 'mine'),
+        (link) => link['images'] = [image('x'), image('y')],
+      );
+      final (container, remote, page) = await open(const [], lineups: mine);
+      final link = container.read(lineUpProvider).links.single;
+
+      container.read(lineUpProvider.notifier).updateLink(
+            link.copyWith(
+              images: link.images.where((i) => i.id != 'x').toList(),
+            ),
+          );
+      history(container).undoAction();
+      expect(linkImages(container), ['x', 'y']);
+      // A teammate removes x too.
+      await land(container, remote, page,
+          lineups: editLink(mine, (link) => link['images'] = [image('y')]));
+      expect(linkImages(container), ['y']);
+
+      history(container).redoAction();
+      expect(linkImages(container), ['y']);
+      history(container).undoAction();
+      expect(linkImages(container), ['y']);
+    });
+
+    test(
+        'an edit that removed an image and changed notes replays only the '
+        'notes once a teammate removed the image', () async {
+      final mine = editLink(
+        _lineupRows('page-1', 'mine'),
+        (link) => link['images'] = [image('x'), image('y')],
+      );
+      final (container, remote, page) = await open(const [], lineups: mine);
+      final link = container.read(lineUpProvider).links.single;
+
+      container.read(lineUpProvider.notifier).updateLink(
+            link.copyWith(
+              notes: 'mine',
+              images: link.images.where((i) => i.id != 'x').toList(),
+            ),
+          );
+      history(container).undoAction();
+      await land(container, remote, page,
+          lineups: editLink(mine, (link) => link['images'] = [image('y')]));
+
+      history(container).redoAction();
+      expect(container.read(lineUpProvider).links.single.notes, 'mine');
+      expect(linkImages(container), ['y']);
+
+      history(container).undoAction();
+      expect(
+        container.read(lineUpProvider).links.single.notes,
+        'remote lineup',
+      );
+      expect(linkImages(container), ['y']);
+    });
+
+    test(
+        'an agent a teammate deleted does not swallow the next undo: it '
+        'undoes the move made before', () async {
+      final (container, remote, page) = await open([jett('sova')]);
+      final agents = container.read(agentProvider.notifier);
+
+      agents.addAgent(jett('jett'));
+      agents.updatePosition(const Offset(300, 300), 'sova');
+      agents.updatePosition(const Offset(200, 200), 'jett');
+      await land(container, remote, page,
+          teammate: (canvas) => without(canvas, 'jett'));
+
       history(container).undoAction();
 
+      expect(agentOn(container, 'sova').position, const Offset(10, 20));
+    });
+
+    test(
+        'a lineup a teammate deleted does not swallow the next undo: it '
+        'undoes the move made before', () async {
+      final (container, remote, page) = await open([jett('sova')]);
+      final lineUps = container.read(lineUpProvider.notifier)..startFresh();
+      lineUps.setDraftAgent(PlacedAgent(
+        id: 'agent-new',
+        type: AgentType.sova,
+        position: const Offset(100, 100),
+      ));
+      lineUps.setDraftAbility(PlacedAbility(
+        id: 'ability-new',
+        data: AgentData.agents[AgentType.sova]!.abilities[2],
+        position: const Offset(300, 300),
+      ));
+      final placed = lineUps.commitPlacement()!;
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'sova');
+      lineUps.setOriginWeapon(placed.originId, WeaponType.classic);
+      // The teammate deletes the new lineup.
+      await land(container, remote, page, lineups: const []);
       expect(container.read(lineUpProvider).links, isEmpty);
-      expect(history(container).poppedItems, hasLength(1));
+
+      history(container).undoAction();
+
+      expect(agentOn(container, 'sova').position, const Offset(10, 20));
     });
 
     test('undoing a lineup clear keeps a lineup a teammate added', () async {
