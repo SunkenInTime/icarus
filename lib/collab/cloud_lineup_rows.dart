@@ -10,20 +10,16 @@ abstract final class CloudLineupKind {
   static const origin = 'lineupOrigin';
   static const landing = 'lineupLanding';
   static const link = 'lineupLink';
-
-  /// The shape clients wrote before the graph synced: one group per origin,
-  /// one item per link. Still read; never written.
-  static const legacyGroup = 'lineupGroup';
 }
 
-/// One lineup row: an origin, a landing or a link (or a legacy group).
+/// One lineup row: an origin, a landing or a link.
 class CloudLineupRow {
   const CloudLineupRow({required this.publicId, required this.payload});
 
-  /// `<payload kind>:<entity id>` for a graph row. Entity ids repeat across
-  /// kinds (a landing made with its link shares the link's id, and lineups
-  /// from 3.x used one id for all three), so the kind is part of the key.
-  /// The entity's own id is `payload.data.id`, exactly as on the canvas.
+  /// `<payload kind>:<entity id>`. Entity ids repeat across kinds (a landing
+  /// made with its link shares the link's id, and lineups from 3.x used one
+  /// id for all three), so the kind is part of the key. The entity's own id
+  /// is `payload.data.id`, exactly as on the canvas.
   final String publicId;
   final CloudPayload payload;
 }
@@ -66,14 +62,12 @@ class CloudLineupGraph {
 
 /// Reads a page's live lineup rows, in their stored order, into the graph.
 ///
-/// Legacy group rows are read through [LineUpGraph.fromLegacyGroups]; when a
-/// graph row stores the same entity, the graph row wins. Throws a
-/// [FormatException] naming the row when one cannot be read.
+/// Throws a [FormatException] naming the row when one cannot be read,
+/// including a row of any kind other than origin, landing or link.
 CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
   final origins = <String, (LineUpOrigin, String)>{};
   final landings = <String, (LineUpLanding, String)>{};
   final links = <String, (LineUpLink, String)>{};
-  final legacyGroups = <(LineUpGroup, String)>[];
 
   for (final row in rows) {
     final data = cloudPayloadData(row.payload);
@@ -88,8 +82,6 @@ CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
         case CloudLineupKind.link:
           final link = LineUpLink.fromJson(data);
           links[link.id] = (link, row.publicId);
-        case CloudLineupKind.legacyGroup:
-          legacyGroups.add((LineUpGroup.fromJson(data), row.publicId));
         case final kind:
           throw FormatException('unknown lineup kind $kind');
       }
@@ -99,24 +91,6 @@ CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
             '$error'),
         stackTrace,
       );
-    }
-  }
-
-  // Each legacy group row, with the graph row ids its projection stands for.
-  final legacyRowIds = <String, Set<String>>{};
-  for (final (group, rowId) in legacyGroups) {
-    final legacy = LineUpGraph.fromLegacyGroups([group]);
-    legacyRowIds[rowId] = {
-      for (final row in cloudLineupRows(legacy)) row.publicId,
-    };
-    for (final origin in legacy.origins) {
-      origins.putIfAbsent(origin.id, () => (origin, rowId));
-    }
-    for (final landing in legacy.landings) {
-      landings.putIfAbsent(landing.id, () => (landing, rowId));
-    }
-    for (final link in legacy.links) {
-      links.putIfAbsent(link.id, () => (link, rowId));
     }
   }
 
@@ -137,14 +111,6 @@ CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
       if (usedLandings.contains(entry.$1.id)) entry,
   ];
 
-  final drawnEntities = {
-    for (final (origin, _) in drawnOrigins)
-      cloudLineupRowId(CloudLineupKind.origin, origin.id),
-    for (final (landing, _) in drawnLandings)
-      cloudLineupRowId(CloudLineupKind.landing, landing.id),
-    for (final (link, _) in drawnLinks)
-      cloudLineupRowId(CloudLineupKind.link, link.id),
-  };
   return CloudLineupGraph(
     graph: LineUpGraph(
       origins: [for (final (origin, _) in drawnOrigins) origin],
@@ -155,27 +121,8 @@ CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
       for (final (_, rowId) in drawnOrigins) rowId,
       for (final (_, rowId) in drawnLandings) rowId,
       for (final (_, rowId) in drawnLinks) rowId,
-      // A legacy group is on the canvas while any lineup it stands for is,
-      // even once graph rows supply them: it is still the user's to convert.
-      for (final MapEntry(key: rowId, value: entities) in legacyRowIds.entries)
-        if (entities.any(drawnEntities.contains)) rowId,
     },
   );
-}
-
-/// The graph row ids a legacy group row converts into, or null when
-/// [payload] is not a readable legacy group.
-Set<String>? legacyGroupRowIds(CloudPayload payload) {
-  if (payload['kind'] != CloudLineupKind.legacyGroup) return null;
-  try {
-    final group = LineUpGroup.fromJson(cloudPayloadData(payload));
-    return {
-      for (final row in cloudLineupRows(LineUpGraph.fromLegacyGroups([group])))
-        row.publicId,
-    };
-  } on Object {
-    return null;
-  }
 }
 
 /// [graph] with every origin, landing and link id passed through [newId],

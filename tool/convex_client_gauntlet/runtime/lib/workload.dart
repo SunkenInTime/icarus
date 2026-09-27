@@ -47,7 +47,9 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
     _addRevisionCycle(
       add: add,
       entity: _ContentEntity.lineup,
-      publicId: '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}',
+      // Lineup rows are keyed `<payload kind>:<entity id>`.
+      publicId:
+          'lineupOrigin:${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}',
       pagePublicId: initialPageId(seed),
       payloadBuilder: (variant) => _lineupPayload(seed, cycle, variant),
       initialSortIndex: 1000 + cycle,
@@ -260,8 +262,9 @@ Map<String, Object?> _utilityPayload(int seed, int cycle, int variant) {
 
 Map<String, Object?> _lineupPayload(int seed, int cycle, int variant) {
   final id = '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}';
+  // One lineup origin row; each revision cycle moves its agent.
   return {
-    'kind': 'lineupGroup',
+    'kind': 'lineupOrigin',
     'payloadVersion': payloadVersion,
     'data': {
       'id': id,
@@ -275,31 +278,6 @@ Map<String, Object?> _lineupPayload(int seed, int cycle, int variant) {
         'kind': 'plain',
         'lineUpID': id,
       },
-      'items': [
-        {
-          'id': '$id-item',
-          'ability': {
-            'id': '$id-ability',
-            'isDeleted': false,
-            'data': {'type': 'sova', 'index': 2},
-            'position': {'dx': 30 + cycle, 'dy': 40 + variant},
-            'isAlly': true,
-            'rotation': 0,
-            'length': 0,
-            'lineUpID': id,
-            'visualState': {
-              'showRangeOutline': true,
-              'showRangeFill': true,
-              'showInnerOutline': true,
-              'showInnerFill': true,
-            },
-            'armLengthsMeters': [10, 10, 10, 10],
-          },
-          'youtubeLink': '',
-          'notes': 'seed $seed cycle $cycle variant $variant',
-          'images': <Object?>[],
-        },
-      ],
     },
   };
 }

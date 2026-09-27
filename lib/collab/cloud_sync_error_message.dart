@@ -42,6 +42,10 @@ String friendlyCloudSyncError(String raw) {
     return 'A saved change is too large for cloud sync. It remains saved on '
         'this device. Reduce it, then choose Keep mine to retry.';
   }
+  if (lower.contains('belongs to another page')) {
+    return 'A lineup here clashes with one on another page, so it was not '
+        'saved over it. Your lineup remains on this device.';
+  }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '
         'saved on this device.';

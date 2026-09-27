@@ -111,19 +111,6 @@ final class UtilityConvexCodec implements ConvexPayloadCodec<CloudPayload> {
   ConvexValue encode(CloudPayload value) => _encodePayload(value, 'utility');
 }
 
-@ConvexPayload('lineupGroup')
-final class LineupGroupConvexCodec implements ConvexPayloadCodec<CloudPayload> {
-  const LineupGroupConvexCodec();
-
-  @override
-  CloudPayload decode(ConvexValue value) =>
-      _decodePayload(value, 'lineupGroup');
-
-  @override
-  ConvexValue encode(CloudPayload value) =>
-      _encodePayload(value, 'lineupGroup');
-}
-
 @ConvexPayload('lineupOrigin')
 final class LineupOriginConvexCodec
     implements ConvexPayloadCodec<CloudPayload> {

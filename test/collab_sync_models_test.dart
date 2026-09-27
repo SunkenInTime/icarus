@@ -395,39 +395,24 @@ void main() {
   test('cloud payload data normalizes nested bridge maps for lineup parsing',
       () {
     final payload = <String, dynamic>{
-      'kind': 'lineupGroup',
+      'kind': 'lineupLanding',
       'payloadVersion': 1,
       'data': <Object?, Object?>{
-        'id': 'lineup-1',
-        'agent': <Object?, Object?>{
-          'id': 'agent-1',
-          'position': <Object?, Object?>{'dx': 10, 'dy': 20},
-          'type': 'sova',
-          'isAlly': true,
-          'state': 'none',
-          'lineUpID': 'lineup-1',
+        'id': 'landing-1',
+        'ability': <Object?, Object?>{
+          'id': 'ability-1',
+          'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
+          'position': <Object?, Object?>{'dx': 30, 'dy': 40},
+          'lineUpID': 'landing-1',
         },
-        'items': <Object?>[
-          <Object?, Object?>{
-            'id': 'item-1',
-            'ability': <Object?, Object?>{
-              'id': 'ability-1',
-              'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
-              'position': <Object?, Object?>{'dx': 30, 'dy': 40},
-              'lineUpID': 'lineup-1',
-            },
-            'youtubeLink': '',
-            'notes': 'proof',
-            'images': <Object?>[],
-          },
-        ],
       },
     };
 
-    final group = LineUpGroup.fromJson(cloudPayloadData(payload));
+    final landing = LineUpLanding.fromJson(cloudPayloadData(payload));
 
-    expect(group.id, 'lineup-1');
-    expect(group.items.single.notes, 'proof');
+    expect(landing.id, 'landing-1');
+    expect(landing.ability.lineUpID, 'landing-1');
+    expect(landing.ability.position, const Offset(30, 40));
   });
 
   test('ability info accepts Convex float64 integers and rejects fractions',

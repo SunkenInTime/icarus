@@ -74,72 +74,23 @@ void main() {
     expect(read.graph.links.map((link) => link.id), ['k1']);
   });
 
-  test('a legacy group reads through its projection; graph rows win', () {
-    final group = LineUpGroup(
-      id: 'g',
-      agent: PlacedAgent(
-        id: 'agent-g',
-        type: AgentType.sova,
-        position: const Offset(1, 2),
-      ),
-      items: [
-        LineUpItem(
-          id: 'item',
-          ability: _landing('item').ability,
-          notes: 'from the group',
-        ),
-      ],
-    );
-    final groupRow = CloudLineupRow(
-      publicId: 'g',
-      payload: {
-        'kind': CloudLineupKind.legacyGroup,
-        'payloadVersion': 1,
-        'data': group.toJson(),
-      },
-    );
-
-    final legacyOnly = lineUpGraphFromCloudRows([groupRow]);
-    expect(legacyOnly.graph.origins.single.id, 'g');
-    expect(legacyOnly.graph.links.single.notes, 'from the group');
-    expect(legacyOnly.drawnRowIds, {'g'});
-
-    // The same link written again as a graph row by a new client.
-    final linkRow = cloudLineupRows(LineUpGraph(links: [
-      LineUpLink(
-        id: 'item',
-        originId: 'g',
-        landingId: 'item',
-        notes: 'from the graph',
-      ),
-    ])).single;
-    final mixed = lineUpGraphFromCloudRows([groupRow, linkRow]);
-    expect(mixed.graph.links.single.notes, 'from the graph');
-    expect(mixed.drawnRowIds, {'g', 'lineupLink:item'});
-
-    // Fully converted: the group still counts as drawn, so the client that
-    // shows it is the one that deletes it.
-    final converted = cloudLineupRows(legacyOnly.graph);
-    final both = lineUpGraphFromCloudRows([groupRow, ...converted]);
-    expect(both.drawnRowIds, {'g', ...converted.map((row) => row.publicId)});
-    expect(legacyGroupRowIds(groupRow.payload),
-        converted.map((row) => row.publicId).toSet());
-  });
-
-  test('an unknown row kind fails loudly, naming the row', () {
-    expect(
-      () => lineUpGraphFromCloudRows([
-        const CloudLineupRow(
-          publicId: 'odd',
-          payload: {'kind': 'lineupSomething', 'payloadVersion': 1, 'data': {}},
-        ),
-      ]),
-      throwsA(isA<FormatException>().having(
-        (error) => error.message,
-        'message',
-        contains('Cloud lineup odd could not be read'),
-      )),
-    );
+  test('a row of any other kind fails loudly, naming the row', () {
+    // Legacy lineup groups included: they are not part of the cloud format.
+    for (final kind in ['lineupSomething', 'lineupGroup']) {
+      expect(
+        () => lineUpGraphFromCloudRows([
+          CloudLineupRow(
+            publicId: 'odd',
+            payload: {'kind': kind, 'payloadVersion': 1, 'data': {}},
+          ),
+        ]),
+        throwsA(isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('Cloud lineup odd could not be read'),
+        )),
+      );
+    }
   });
 
   test('new ids carry every reference with them', () {

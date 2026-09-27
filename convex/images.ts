@@ -4,6 +4,7 @@ import {
   collectAssetIdFromElementPayload,
   collectAssetIdsFromLineupPayload,
   collectReferencedAssetIdsForStrategy,
+  collectTombstonedAssetIds,
   getActiveAssetForStrategy,
   inferFileExtension,
   getViewerAssetForStrategy,
@@ -76,6 +77,8 @@ export const markDeletedPageImageAssetsRef = makeFunctionReference<"mutation">(
 );
 export const markDeletedStrategyImageAssetsRef =
   makeFunctionReference<"mutation">("images:markDeletedStrategyImageAssets");
+export const markPurgedTombstoneImageAssetsRef =
+  makeFunctionReference<"mutation">("images:markPurgedTombstoneImageAssets");
 export const markStaleImageUploadsDeletedRef =
   makeFunctionReference<"mutation">("images:markStaleImageUploadsDeleted");
 export const sweepDeletedImageAssetsRef = makeFunctionReference<"action">(
@@ -844,6 +847,77 @@ export const markDeletedPageImageAssets = internalMutation({
     }
     if (assets.length === maxDeletionBatch) {
       await ctx.scheduler.runAfter(0, markDeletedPageImageAssetsRef, args);
+    }
+    return { ok: true as const, deleted: assets.length };
+  },
+});
+
+/// Schedules the reclaim of images whose last tombstone was just purged.
+/// The purge removes the only record that content ever showed them, so
+/// without this their asset rows (and bytes) would stay forever.
+export async function capturePurgedTombstoneImageAssets(
+  ctx: MutationCtx,
+  args: {
+    strategyId: Id<"strategies">;
+    assetPublicIds: Iterable<string>;
+  },
+): Promise<void> {
+  const assetPublicIds = [...new Set(args.assetPublicIds)];
+  for (const assetIdChunk of chunks(assetPublicIds, pageAssetIdBatch)) {
+    await ctx.scheduler.runAfter(0, markPurgedTombstoneImageAssetsRef, {
+      strategyId: args.strategyId,
+      assetPublicIds: assetIdChunk,
+    });
+  }
+}
+
+/// Marks deleted the assets of purged tombstones that nothing still shows:
+/// no live element or lineup, and no tombstone still inside its retention
+/// window (undo may restore it, and it will be checked when it is purged).
+/// Physical deletion then follows the normal sweep, which removes stored
+/// bytes only once no asset row points at them.
+export const markPurgedTombstoneImageAssets = internalMutation({
+  args: {
+    strategyId: v.id("strategies"),
+    assetPublicIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const candidateIds = new Set(
+      args.assetPublicIds.slice(0, pageAssetIdBatch),
+    );
+    for (const id of await collectReferencedAssetIdsForStrategy(
+      ctx,
+      args.strategyId,
+    )) {
+      candidateIds.delete(id);
+    }
+    for (const id of await collectTombstonedAssetIds(ctx, args.strategyId)) {
+      candidateIds.delete(id);
+    }
+
+    const assets: Doc<"imageAssets">[] = [];
+    for (const assetPublicId of candidateIds) {
+      const remainingSlots = maxDeletionBatch - assets.length;
+      if (remainingSlots <= 0) break;
+      const matches = await ctx.db
+        .query("imageAssets")
+        .withIndex("by_strategyId_and_publicId", (q) =>
+          q.eq("strategyId", args.strategyId).eq("publicId", assetPublicId),
+        )
+        .filter((q) => q.neq(q.field("uploadStatus"), "deleted"))
+        .take(remainingSlots);
+      assets.push(...matches);
+    }
+
+    const now = Date.now();
+    for (const asset of assets) {
+      await markImageAssetDeleted(ctx, asset, now);
+    }
+    if (assets.length > 0) {
+      await schedulePhysicalDeletion(ctx);
+    }
+    if (assets.length === maxDeletionBatch) {
+      await ctx.scheduler.runAfter(0, markPurgedTombstoneImageAssetsRef, args);
     }
     return { ok: true as const, deleted: assets.length };
   },

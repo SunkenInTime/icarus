@@ -96,9 +96,14 @@ function imagePayload(assetPublicId: string) {
 
 function lineupPayload(assetPublicId: string) {
   return {
-    kind: "lineupGroup" as const,
+    kind: "lineupLink" as const,
     payloadVersion: 1,
-    data: { items: [{ images: [{ id: assetPublicId }] }] },
+    data: {
+      id: "remaining-lineup",
+      originId: "origin",
+      landingId: "landing",
+      images: [{ id: assetPublicId }],
+    },
   };
 }
 
@@ -230,10 +235,10 @@ describe("image asset lifecycle", () => {
         });
       }
       await ctx.db.insert("lineups", {
-        publicId: "remaining-lineup",
+        publicId: "lineupLink:remaining-lineup",
         strategyId: strategy._id,
         pageId: pageBId,
-        payloadKind: "lineupGroup",
+        payloadKind: "lineupLink",
         payloadVersion: 1,
         payload: lineupPayload("still-used"),
         sortIndex: 0,

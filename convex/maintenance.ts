@@ -1,11 +1,15 @@
 import { makeFunctionReference } from "convex/server";
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import {
   collectAssetIdFromElementPayload,
   collectAssetIdsFromLineupPayload,
 } from "./lib/imageAssets";
-import { captureDeletedPageImageAssets } from "./images";
+import {
+  captureDeletedPageImageAssets,
+  capturePurgedTombstoneImageAssets,
+} from "./images";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 
 const MAINTENANCE_BATCH_SIZE = 200;
@@ -113,10 +117,6 @@ export const purgeOldTombstones = internalMutation({
       )
       .take(MAINTENANCE_BATCH_SIZE);
 
-    for (const element of staleElements) {
-      await ctx.db.delete(element._id);
-    }
-
     const remainingSlots = MAINTENANCE_BATCH_SIZE - staleElements.length;
     const staleLineups =
       remainingSlots > 0
@@ -128,8 +128,40 @@ export const purgeOldTombstones = internalMutation({
             .take(remainingSlots)
         : [];
 
+    // A tombstone is the last record that its content showed an image. Note
+    // those images per strategy before purging, so their assets are
+    // reclaimed once nothing else shows them (instead of staying forever).
+    const assetIdsByStrategy = new Map<Id<"strategies">, Set<string>>();
+    const noteAssets = (strategyId: Id<"strategies">, ids: Iterable<string>) => {
+      let set = assetIdsByStrategy.get(strategyId);
+      if (set === undefined) assetIdsByStrategy.set(strategyId, (set = new Set()));
+      for (const id of ids) set.add(id);
+    };
+    for (const element of staleElements) {
+      if (element.elementType !== "image") continue;
+      const assetId = collectAssetIdFromElementPayload(element.payload);
+      if (assetId !== null) noteAssets(element.strategyId, [assetId]);
+    }
+    for (const lineup of staleLineups) {
+      noteAssets(
+        lineup.strategyId,
+        collectAssetIdsFromLineupPayload(lineup.payload),
+      );
+    }
+
+    for (const element of staleElements) {
+      await ctx.db.delete(element._id);
+    }
     for (const lineup of staleLineups) {
       await ctx.db.delete(lineup._id);
+    }
+
+    for (const [strategyId, assetPublicIds] of assetIdsByStrategy) {
+      if (assetPublicIds.size === 0) continue;
+      await capturePurgedTombstoneImageAssets(ctx, {
+        strategyId,
+        assetPublicIds,
+      });
     }
 
     const shouldContinue =
