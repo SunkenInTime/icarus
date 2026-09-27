@@ -989,7 +989,7 @@ void main() {
           elements: [
             for (final (index, entry) in byId.entries.indexed)
               _textElement(page.publicId, entry.key, entry.value.$1,
-                  revision: entry.value.$2, sortIndex: index),
+                  revision: entry.value.$2, sortIndex: index, worldSized: true),
           ],
         );
 
@@ -1082,6 +1082,31 @@ void main() {
       await _settle();
       expect(container.read(textProvider).map((text) => text.id), ['other']);
       expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+    });
+
+    test('a teammate deleting an item re-sends no other item', () async {
+      final (container, remote, page) = await open();
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+      remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        // The server keeps 'other' at sortIndex 1; it never renumbers.
+        activePage: _pageSnapshot(page, contentRevision: 2, elements: [
+          _textElement(page.publicId, 'other', 'other v1',
+              sortIndex: 1, worldSized: true),
+        ]),
+      ));
+      await _settle();
+      final ops = container
+          .read(activePageLiveSyncProvider.notifier)
+          .syncLocalPage(
+              strategyPublicId: 'cloud-strategy', pageId: page.publicId)!;
+      expect(
+          ops.keys
+              .where((key) => key.kind == EntitySyncKeyKind.element)
+              .map((key) => key.entityId),
+          isEmpty);
+      await _settle();
     });
 
     test('an open text draft holds its text the same way', () async {

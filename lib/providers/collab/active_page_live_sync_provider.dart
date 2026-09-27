@@ -863,44 +863,49 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       deleted: false,
     );
 
-    final elementEnvelopes = _collectLocalElementEnvelopes();
-    for (var index = 0; index < elementEnvelopes.length; index++) {
-      final envelope = elementEnvelopes[index];
+    // A row keeps the sortIndex it was first sent with and new rows go after
+    // the page's highest: order is never re-sent, so removing one element or
+    // lineup (here or by a teammate) does not rewrite every row after it and
+    // collide with a teammate editing one of them. Nothing reorders rows.
+    int? knownSortIndex(EntitySyncKey key) =>
+        state.overlayByEntityKey[key]?.desiredSortIndex ??
+        _hydratedBaseByEntityKey[key]?.sortIndex;
+    int Function(EntitySyncKey key) sortIndexFor(EntitySyncKeyKind kind) {
+      bool onPage(EntitySyncKey key) =>
+          key.pageId == pageId && key.kind == kind;
+      var next = 1 +
+          [
+            for (final key in _hydratedBaseByEntityKey.keys)
+              if (onPage(key)) knownSortIndex(key) ?? 0,
+            for (final key in state.overlayByEntityKey.keys)
+              if (onPage(key)) knownSortIndex(key) ?? 0,
+          ].fold<int>(-1, max);
+      return (key) => knownSortIndex(key) ?? next++;
+    }
+
+    final elementSortIndex = sortIndexFor(EntitySyncKeyKind.element);
+    for (final envelope in _collectLocalElementEnvelopes()) {
       final key = EntitySyncKey.element(pageId, envelope.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.element,
         payload: cloudElementPayload(
             kind: envelope.kind.name, data: envelope.payload),
-        sortIndex: index,
+        sortIndex: elementSortIndex(key),
         revision: 0,
         deleted: false,
       );
     }
 
-    // One row per origin, landing and link. A row keeps the sortIndex it was
-    // first sent with and new rows go after the page's highest: order is
-    // never re-sent, so removing one lineup does not rewrite every row after
-    // it and collide with a teammate editing one of them.
-    bool isPageLineup(EntitySyncKey key) =>
-        key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup;
-    int? knownSortIndex(EntitySyncKey key) =>
-        state.overlayByEntityKey[key]?.desiredSortIndex ??
-        _hydratedBaseByEntityKey[key]?.sortIndex;
-    var nextSortIndex = 1 +
-        [
-          for (final key in _hydratedBaseByEntityKey.keys)
-            if (isPageLineup(key)) knownSortIndex(key) ?? 0,
-          for (final key in state.overlayByEntityKey.keys)
-            if (isPageLineup(key)) knownSortIndex(key) ?? 0,
-        ].fold<int>(-1, max);
+    // One row per origin, landing and link.
+    final lineupSortIndex = sortIndexFor(EntitySyncKeyKind.lineup);
     for (final row in cloudLineupRows(ref.read(lineUpProvider).graph)) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
         payload: row.payload,
-        sortIndex: knownSortIndex(key) ?? nextSortIndex++,
+        sortIndex: lineupSortIndex(key),
         revision: 0,
         deleted: false,
       );
