@@ -177,11 +177,10 @@ class _ConflictSession extends StrategyPageSessionNotifier {
 }
 
 class _DeletedPageSession extends StrategyPageSessionNotifier {
-  _DeletedPageSession({required this.restores});
+  _DeletedPageSession({required this.leaves});
 
-  final bool restores;
-  int restoreCount = 0;
-  int discardCount = 0;
+  final bool leaves;
+  int leaveCount = 0;
 
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
@@ -196,18 +195,10 @@ class _DeletedPageSession extends StrategyPageSessionNotifier {
       );
 
   @override
-  Future<DeletedPageRestore> restoreDeletedPage() async {
-    restoreCount += 1;
-    if (!restores) return DeletedPageRestore.notReached;
-    setStateForTest(state.copyWith(clearDeletedPage: true));
-    return DeletedPageRestore.restored;
-  }
-
-  @override
-  Future<bool> discardDeletedPageWork() async {
-    discardCount += 1;
-    setStateForTest(state.copyWith(clearDeletedPage: true));
-    return true;
+  Future<bool> leaveDeletedPage() async {
+    leaveCount += 1;
+    if (leaves) setStateForTest(state.copyWith(clearDeletedPage: true));
+    return leaves;
   }
 }
 
@@ -341,9 +332,7 @@ void main() {
   test('a lineup live sync refused to send shows attention', () async {
     final container = _createContainer(
       liveSyncState: ActivePageLiveSyncState(
-        unsyncableLineupKeys: {
-          const EntitySyncKey.lineup('page-1', 'lineup-1')
-        },
+        unsyncableLineupKeys: {const EntitySyncKey.lineup('page-1', 'lineup-1')},
       ),
     );
     addTearDown(container.dispose);
@@ -838,9 +827,9 @@ void main() {
   group('unsaved work on a page a teammate deleted', () {
     Future<_DeletedPageSession> pumpButton(
       WidgetTester tester, {
-      required bool restores,
+      required bool leaves,
     }) async {
-      final session = _DeletedPageSession(restores: restores);
+      final session = _DeletedPageSession(leaves: leaves);
       final container = ProviderContainer(overrides: [
         strategyProvider.overrideWith(_CloudStrategyProvider.new),
         strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
@@ -864,37 +853,34 @@ void main() {
       return session;
     }
 
-    testWidgets('asks, and a failed restore keeps asking', (tester) async {
-      final session = await pumpButton(tester, restores: false);
+    testWidgets('says so until the user has read it', (tester) async {
+      final session = await pumpButton(tester, leaves: true);
 
       expect(find.text('A teammate deleted this page'), findsOneWidget);
-      expect(find.textContaining('“A exec” was deleted'), findsOneWidget);
-      // Only a choice closes it.
+      expect(
+        find.textContaining('“A exec” was deleted while you were editing it'),
+        findsOneWidget,
+      );
+      // Only reading it closes it.
       await tester.tapAt(const Offset(5, 5));
       await tester.pumpAndSettle();
       expect(find.text('A teammate deleted this page'), findsOneWidget);
 
-      await tester.tap(find.text('Restore page'));
+      await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
-      expect(session.restoreCount, 1);
-      expect(find.textContaining('Could not restore the page'), findsOneWidget);
-      expect(find.text('A teammate deleted this page'), findsOneWidget);
-
-      await tester.tap(find.text('Discard changes'));
-      await tester.pumpAndSettle();
-      expect(session.discardCount, 1);
+      expect(session.leaveCount, 1);
       expect(find.text('A teammate deleted this page'), findsNothing);
     });
 
-    testWidgets('a restore closes it', (tester) async {
-      final session = await pumpButton(tester, restores: true);
+    testWidgets('stays while changes are still being sent', (tester) async {
+      final session = await pumpButton(tester, leaves: false);
 
-      await tester.tap(find.text('Restore page'));
+      await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
-      expect(session.restoreCount, 1);
-      expect(session.discardCount, 0);
-      expect(find.text('A teammate deleted this page'), findsNothing);
+      expect(session.leaveCount, 1);
+      expect(find.textContaining('still being sent'), findsOneWidget);
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
     });
   });
 }

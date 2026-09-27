@@ -3,10 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Asks what happens to unsaved work on the page on screen after a teammate
-/// deleted it: restore the page with the work, or discard the work. The
-/// session keeps the canvas on the page until one is chosen, so the dialog
-/// cannot be dismissed without choosing.
+/// Tells the user that a teammate deleted the page on screen and their
+/// unsaved work on it cannot be saved. The canvas stays on the page until
+/// they have read it, so the dialog cannot be dismissed any other way.
 class DeletedPageDialog extends ConsumerStatefulWidget {
   const DeletedPageDialog({super.key, required this.page});
 
@@ -28,44 +27,15 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
   bool _isBusy = false;
   String? _error;
 
-  Future<void> _restore() async {
+  Future<void> _leave() async {
     setState(() {
       _isBusy = true;
       _error = null;
     });
-    final result = await ref
-        .read(strategyPageSessionProvider.notifier)
-        .restoreDeletedPage();
+    final left =
+        await ref.read(strategyPageSessionProvider.notifier).leaveDeletedPage();
     if (!mounted) return;
-    if (result == DeletedPageRestore.restored) {
-      Navigator.of(context).pop();
-      return;
-    }
-    setState(() {
-      _isBusy = false;
-      _error = switch (result) {
-        DeletedPageRestore.imagesNotOnDevice =>
-          'Some images on this page are not on this device, so it cannot '
-              'be restored whole from here.',
-        DeletedPageRestore.restoredByTeammate =>
-          'A teammate restored this page first. Discard your changes to see '
-              'their version.',
-        _ => 'Could not restore the page. Your changes are still on screen. '
-            'Check your connection and try again.',
-      };
-    });
-  }
-
-  Future<void> _discard() async {
-    setState(() {
-      _isBusy = true;
-      _error = null;
-    });
-    final discarded = await ref
-        .read(strategyPageSessionProvider.notifier)
-        .discardDeletedPageWork();
-    if (!mounted) return;
-    if (discarded) {
+    if (left) {
       Navigator.of(context).pop();
       return;
     }
@@ -78,7 +48,7 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Leaving the strategy resets the session; nothing is left to decide.
+    // Leaving the strategy resets the session; nothing is left to read.
     ref.listen(strategyPageSessionProvider.select((state) => state.deletedPage),
         (_, next) {
       if (next == null && !_isBusy) Navigator.of(context).pop();
@@ -93,8 +63,7 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
         children: [
           Text(
             '“${widget.page.name}” was deleted while you were editing it, so '
-            'your latest changes to it are not saved. Restore the page with '
-            'your changes, or discard them.',
+            'your latest changes to it could not be saved.',
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
@@ -106,13 +75,9 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
         ],
       ),
       actions: [
-        ShadButton.secondary(
-          onPressed: _isBusy ? null : _discard,
-          child: const Text('Discard changes'),
-        ),
         ShadButton(
-          onPressed: _isBusy ? null : _restore,
-          child: const Text('Restore page'),
+          onPressed: _isBusy ? null : _leave,
+          child: const Text('OK'),
         ),
       ],
     );

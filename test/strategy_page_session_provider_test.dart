@@ -1028,14 +1028,14 @@ void main() {
   }
 
   test(
-      'a teammate deleting the page on screen asks what to do with the '
-      'unsaved stroke', () async {
+      'a teammate deleting the page on screen says the unsaved stroke '
+      'cannot be saved', () async {
     final (:container, :one, :strokeId, queue: _, remote: _, two: _) =
         await strokeOnDeletedPage();
 
     // The stroke can never be sent to a page the server no longer has.
     // Before, the page stayed on screen with the sync button spinning for
-    // good; now the user is asked, and nothing moves until they answer.
+    // good; now the user is told, and nothing moves until they have read it.
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
     expect(session.activePageId, one.publicId);
@@ -1048,7 +1048,7 @@ void main() {
             .where((pending) => pending.op.pagePublicId == one.publicId),
         isEmpty);
 
-    // Leaving would drop the stroke the user has not decided about.
+    // Leaving before then would drop the stroke unseen.
     await container
         .read(strategyPageSessionProvider.notifier)
         .setActivePage('page-2');
@@ -1058,190 +1058,34 @@ void main() {
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
   });
 
-  /// Makes the server take the page add for [one] back, empty unless
-  /// [elements] are on it, when the queue next flushes.
-  void serverRestores(
-    _FakeRemoteEditorNotifier remote,
-    _FakeStrategyOpQueueNotifier queue,
-    RemotePage one,
-    RemotePage two, {
-    List<RemoteElement> elements = const [],
-  }) {
-    final restoredPage = _page(one.publicId, 0, name: 'A exec', revision: 5);
-    final restored = _pageSnapshot(restoredPage, elements: elements);
-    remote.initialSnapshot = _editorSnapshot(
-      pages: [restoredPage, _page(two.publicId, 1)],
-      activePage: restored,
-      themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
-    );
-    remote.pageCatalog[one.publicId] = restored;
-    queue.ackQueued();
-  }
-
-  test('restoring the deleted page sends it back with everything on it',
+  test('switching pages before the notice shows still tells the user first',
       () async {
-    final (:container, :remote, :queue, :one, :two, :strokeId) =
+    final (:container, :remote, :one, :strokeId, queue: _, two: _) =
         await strokeOnDeletedPage();
-    queue.onFlush = () {
-      final add = queue.state.queuedByEntityKey.values
-          .map((intent) => intent.pending.op)
-          .whereType<PageAddOp>()
-          .single;
-      expect(add.pagePublicId, one.publicId);
-      expect(add.sortIndex, 0);
-      expect(add.payload['name'], 'A exec');
-      serverRestores(remote, queue, one, two);
-      queue.onFlush = null;
-    };
+    // Take back the notice: as if the finished stroke landed while the
+    // replacement page was still loading, before anything asked.
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+        container
+            .read(strategyPageSessionProvider)
+            .copyWith(clearDeletedPage: true));
 
-    final restored = await container
+    await container
         .read(strategyPageSessionProvider.notifier)
-        .restoreDeletedPage();
-    await _settle();
+        .setActivePageAnimated(
+          'page-2',
+          direction: PageTransitionDirection.forward,
+        );
 
-    expect(restored, DeletedPageRestore.restored);
     final session = container.read(strategyPageSessionProvider);
-    expect(session.deletedPage, isNull);
+    expect(session.deletedPage?.pageId, one.publicId);
     expect(session.activePageId, one.publicId);
+    expect(session.transitionState, PageTransitionState.idle);
     expect(
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
-    expect(container.read(textProvider).single.text, 'one');
-    // The restored page is empty on the server, so the stroke and the text
-    // that was on the page are both sent as new.
-    final ops = container
-        .read(strategyOpQueueProvider)
-        .pending
-        .map((pending) => pending.op)
-        .whereType<ElementAddOp>()
-        .toList();
-    expect(ops.map((op) => op.pagePublicId).toSet(), {one.publicId});
-    expect(ops.map((op) => op.entityPublicId).toSet(),
-        {strokeId, 'text-${one.publicId}'});
+    expect(remote.selectedPageIds, isNot(contains('page-2')));
   });
 
-  test('a restore sends again an edit the server turned down', () async {
-    final (:container, :remote, :queue, :one, :two, strokeId: _) =
-        await strokeOnDeletedPage();
-    // An edit to the text, rejected once the page was gone.
-    queue.reject(ElementPatchOp(
-      opId: 'rejected-edit',
-      elementPublicId: 'text-${one.publicId}',
-      pagePublicId: one.publicId,
-      payload: const {'value': 'mine'},
-      expectedElementRevision: 1,
-    ));
-    await _settle();
-    queue.onFlush = () {
-      serverRestores(remote, queue, one, two);
-      queue.onFlush = null;
-    };
-
-    final restored = await container
-        .read(strategyPageSessionProvider.notifier)
-        .restoreDeletedPage();
-    await _settle();
-
-    expect(restored, DeletedPageRestore.restored);
-    expect(
-        container.read(strategyOpQueueProvider).attentionByEntityKey, isEmpty);
-    expect(
-      container
-          .read(strategyOpQueueProvider)
-          .pending
-          .map((pending) => pending.op)
-          .whereType<ElementAddOp>()
-          .map((op) => op.entityPublicId),
-      contains('text-${one.publicId}'),
-    );
-  });
-
-  test('a restore acked behind another batch still completes', () async {
-    final (:container, :remote, :queue, :one, :two, strokeId: _) =
-        await strokeOnDeletedPage();
-    queue.onFlush = () {
-      queue.onFlush = null;
-      Future<void>.delayed(const Duration(milliseconds: 10),
-          () => serverRestores(remote, queue, one, two));
-    };
-
-    final restored = await container
-        .read(strategyPageSessionProvider.notifier)
-        .restoreDeletedPage();
-
-    expect(restored, DeletedPageRestore.restored);
-    expect(container.read(strategyPageSessionProvider).deletedPage, isNull);
-  });
-
-  test('a restore the server does not answer keeps the choice open', () async {
-    final (:container, :one, :strokeId, queue: _, remote: _, two: _) =
-        await strokeOnDeletedPage();
-
-    // No ack: offline, say.
-    final restored = await container
-        .read(strategyPageSessionProvider.notifier)
-        .restoreDeletedPage();
-    await _settle();
-
-    expect(restored, DeletedPageRestore.notReached);
-    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
-        one.publicId);
-    expect(
-        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
-  });
-
-  test('a page a teammate already restored is not taken as empty', () async {
-    final (:container, :remote, :queue, :one, :two, strokeId: _) =
-        await strokeOnDeletedPage();
-    queue.onFlush = () {
-      serverRestores(remote, queue, one, two, elements: [
-        _textElement(one.publicId, 'theirs', 'their restore', sortIndex: 3),
-      ]);
-      queue.onFlush = null;
-    };
-
-    final restored = await container
-        .read(strategyPageSessionProvider.notifier)
-        .restoreDeletedPage();
-    await _settle();
-
-    // Taking their page as the base would read their text as deleted here.
-    expect(restored, DeletedPageRestore.restoredByTeammate);
-    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
-        one.publicId);
-    expect(
-      container
-          .read(strategyOpQueueProvider)
-          .pending
-          .where((pending) => pending.op.pagePublicId == one.publicId),
-      isEmpty,
-    );
-  });
-
-  test('an image this device cannot upload again stops the restore', () async {
-    final (:container, :queue, :one, remote: _, two: _, strokeId: _) =
-        await strokeOnDeletedPage();
-    container.read(placedImageProvider.notifier).fromHive([
-      PlacedImage(
-        id: 'image-1',
-        position: const Offset(10, 10),
-        aspectRatio: 1,
-        scale: 100,
-        fileExtension: '.png',
-      ),
-    ]);
-
-    final restored = await container
-        .read(strategyPageSessionProvider.notifier)
-        .restoreDeletedPage();
-
-    expect(restored, DeletedPageRestore.imagesNotOnDevice);
-    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
-        one.publicId);
-    expect(queue.flushNowCount, 0);
-  });
-
-  test('discarding the work on the deleted page moves to one that exists',
-      () async {
+  test('reading the notice moves to a page that exists', () async {
     final (:container, :queue, :one, :two, remote: _, strokeId: _) =
         await strokeOnDeletedPage();
     // Work queued before the deletion goes too.
@@ -1255,12 +1099,12 @@ void main() {
       ),
     );
 
-    final discarded = await container
+    final left = await container
         .read(strategyPageSessionProvider.notifier)
-        .discardDeletedPageWork();
+        .leaveDeletedPage();
     await _settle();
 
-    expect(discarded, isTrue);
+    expect(left, isTrue);
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, isNull);
     expect(session.activePageId, two.publicId);
@@ -1270,7 +1114,7 @@ void main() {
     expect(container.read(strategySaveStateProvider).isDirty, isFalse);
   });
 
-  test('discarding waits for work already sent for the page', () async {
+  test('leaving waits for work already sent for the page', () async {
     final (:container, :queue, :one, :two, remote: _, strokeId: _) =
         await strokeOnDeletedPage();
     final key = EntitySyncKey.element(one.publicId, 'sent');
@@ -1286,12 +1130,12 @@ void main() {
     Future<void>.delayed(
         const Duration(milliseconds: 10), () => queue.clearInFlight());
 
-    final discarded = await container
+    final left = await container
         .read(strategyPageSessionProvider.notifier)
-        .discardDeletedPageWork();
+        .leaveDeletedPage();
     await _settle();
 
-    expect(discarded, isTrue);
+    expect(left, isTrue);
     expect(
         container.read(strategyPageSessionProvider).activePageId, two.publicId);
   });
@@ -1310,11 +1154,11 @@ void main() {
       ),
     );
 
-    final discarded = await container
+    final left = await container
         .read(strategyPageSessionProvider.notifier)
-        .discardDeletedPageWork();
+        .leaveDeletedPage();
 
-    expect(discarded, isFalse);
+    expect(left, isFalse);
     expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
         one.publicId);
     expect(

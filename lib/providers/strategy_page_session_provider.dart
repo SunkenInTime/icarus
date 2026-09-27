@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
@@ -22,7 +21,6 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
-import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -41,7 +39,6 @@ import 'package:icarus/strategy/strategy_page_apply.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
-import 'package:uuid/uuid.dart';
 
 enum PageTransitionState {
   idle,
@@ -54,20 +51,6 @@ enum PageSwitchDirection { next, previous }
 /// The page on screen, which a teammate deleted while it held work the server
 /// never got. [name] is its name when it was last loaded.
 typedef DeletedPage = ({String pageId, String name});
-
-/// How an attempt to put a deleted page back ended.
-enum DeletedPageRestore {
-  restored,
-
-  /// The server did not answer, or turned the page down.
-  notReached,
-
-  /// Some image on the page is not on this device to upload again.
-  imagesNotOnDevice,
-
-  /// The page came back with someone else's content on it.
-  restoredByTeammate,
-}
 
 class StrategyPageSessionState {
   const StrategyPageSessionState({
@@ -83,9 +66,8 @@ class StrategyPageSessionState {
   final PageTransitionState transitionState;
   final bool isApplyingPage;
 
-  /// Set while the user decides whether to restore the deleted page on
-  /// screen or discard their unsaved work on it. The canvas stays on it
-  /// until then.
+  /// Set until the user has read that their unsaved work on the deleted page
+  /// on screen cannot be saved. The canvas stays on it until then.
   final DeletedPage? deletedPage;
 
   StrategyPageSessionState copyWith({
@@ -266,7 +248,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   Future<void> setActivePage(String pageId) async {
-    if (pageId == state.activePageId) {
+    if (pageId == state.activePageId || _leavingLosesWork()) {
       return;
     }
     await _switchToPage(pageId, animated: false);
@@ -277,7 +259,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required PageTransitionDirection direction,
     Duration duration = kPageTransitionDuration,
   }) async {
-    if (pageId == state.activePageId) {
+    if (pageId == state.activePageId || _leavingLosesWork()) {
       return;
     }
     final previousPageId = state.activePageId;
@@ -643,8 +625,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required bool animated,
     PageTransitionDirection? direction,
   }) async {
-    // Leaving would drop the unsaved work the user has not decided about.
-    if (state.deletedPage != null) return;
     _pageSessionGeneration++;
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
@@ -875,11 +855,19 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
-  /// A replace of the page on screen is waiting. If a teammate deleted that
-  /// page, work on it can never be sent, so waiting for it would wait
-  /// forever: the user decides what happens to it instead. With nothing
-  /// unsent, the unsaved mark its edits left is stale and is dropped, so the
-  /// canvas can move to a page the server has.
+  /// A replace of the page on screen is waiting, or the user is leaving it.
+  /// If a teammate deleted that page, work on it can never be sent, so
+  /// waiting for it would wait forever and leaving would drop it unseen: the
+  /// user is told first. With nothing unsent, the unsaved mark its edits left
+  /// is stale and is dropped, so the canvas can move to a page the server
+  /// has.
+  /// Whether switching away would drop unsaved work on a page a teammate
+  /// deleted before the user has been told.
+  bool _leavingLosesWork() {
+    _checkActivePageOnServer();
+    return state.deletedPage != null;
+  }
+
   void _checkActivePageOnServer() {
     final pageId = state.activePageId;
     final strategy = ref.read(strategyProvider);
@@ -913,111 +901,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
   }
 
-  /// Puts the deleted page on screen back on the server, then syncs
-  /// everything the canvas holds for it. Anything short of
-  /// [DeletedPageRestore.restored] leaves the choice open and sends nothing
-  /// for the page's content.
-  Future<DeletedPageRestore> restoreDeletedPage() async {
-    final deleted = state.deletedPage;
-    final strategyId = ref.read(strategyProvider).strategyId;
-    if (deleted == null || strategyId == null) {
-      return DeletedPageRestore.notReached;
-    }
-    // The server let go of the page's images with it. Only images this
-    // device can upload again come back whole.
-    final media = ref.read(cloudMediaUploadQueueProvider.notifier);
-    for (final image in ref.read(placedImageProvider).images) {
-      if (!await media.hasBytesOnThisDevice(
-        strategyPublicId: strategyId,
-        image: image,
-      )) {
-        return DeletedPageRestore.imagesNotOnDevice;
-      }
-    }
-    // Work queued for the page before it was deleted was based on rows the
-    // server no longer has. The canvas holds it all, and it is sent again
-    // from the restored page.
-    if (!await _withdrawPageWork(deleted.pageId)) {
-      return DeletedPageRestore.notReached;
-    }
-    final remote = ref.read(remoteEditorSnapshotProvider.notifier);
-    await remote.refresh();
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    if (snapshot == null ||
-        snapshot.header.publicId != strategyId ||
-        state.deletedPage != deleted) {
-      return DeletedPageRestore.notReached;
-    }
-    final lastSeen = _lastAppliedRemoteSnapshot?.pages
-        .where((page) => page.publicId == deleted.pageId)
-        .firstOrNull;
-    final op = PageAddOp(
-      opId: const Uuid().v4(),
-      pagePublicId: deleted.pageId,
-      payload: {
-        'name': deleted.name,
-        'isAutoNamed': lastSeen?.isAutoNamed ?? false,
-        'isAttack': ref.read(mapProvider).isAttack,
-        'settings': ref.read(strategySettingsProvider).toJson(),
-      },
-      sortIndex: min(
-        lastSeen?.sortIndex ?? snapshot.pages.length,
-        snapshot.pages.length,
-      ),
-      expectedStrategyRevision: snapshot.header.revision,
-    );
-    final queue = ref.read(strategyOpQueueProvider.notifier);
-    await queue.enqueueAll([op]);
-    await queue.flushNow();
-    // Another batch may be on its way first; the add lands behind it.
-    OpAck? ackFor(StrategyOpQueueState queue) =>
-        queue.lastAcks.where((ack) => ack.opId == op.opId).firstOrNull;
-    await _queueSettles((queue) => ackFor(queue) != null);
-    final ack = ackFor(ref.read(strategyOpQueueProvider));
-    if (ack == null || state.deletedPage != deleted) {
-      return DeletedPageRestore.notReached;
-    }
-    // Turned down: the page is already back (a teammate restored it, or an
-    // earlier attempt landed late), or the strategy moved on. Whether the
-    // page is there now decides; the rejection is not the user's to settle.
-    if (!ack.isAck) await _withdrawPageWork(deleted.pageId);
-
-    await remote.setActivePage(deleted.pageId);
-    await remote.refresh();
-    final restored = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    final restoredPage = restored?.activePage;
-    if (restored == null ||
-        restoredPage?.page.publicId != deleted.pageId ||
-        state.deletedPage != deleted) {
-      return DeletedPageRestore.notReached;
-    }
-    // Content already on it is someone else's, and the canvas cannot tell
-    // it from its own: taken as the base it would read as deleted here.
-    if (restoredPage!.elements.any((element) => !element.deleted) ||
-        restoredPage.lineups.any((lineup) => !lineup.deleted)) {
-      return DeletedPageRestore.restoredByTeammate;
-    }
-    // The canvas keeps what it holds. With the empty page as its base, all
-    // of it is work to send.
-    ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
-          strategyPublicId: strategyId,
-          pageId: deleted.pageId,
-          snapshot: restored,
-        );
-    _lastAppliedRemoteSnapshot = restored;
-    _updateHydrationBookkeeping(
-      deleted.pageId,
-      hydrationKey: _buildRemotePageHydrationKey(restored, deleted.pageId),
-    );
-    state = state.copyWith(clearDeletedPage: true);
-    await ref.read(strategyProvider.notifier).notifyCloudMutation();
-    return DeletedPageRestore.restored;
-  }
-
   /// Lets the deleted page on screen go, with the unsaved work on it, and
-  /// moves to a page the server has. Returns false, leaving the choice open,
-  /// while some of that work is still on its way and cannot be taken back.
-  Future<bool> discardDeletedPageWork() async {
+  /// moves to a page the server has. Returns false, staying on it, while
+  /// some of that work is still on its way and cannot be taken back.
+  Future<bool> leaveDeletedPage() async {
     final deleted = state.deletedPage;
     final strategyId = ref.read(strategyProvider).strategyId;
     if (deleted == null || strategyId == null) return false;
@@ -1354,7 +1241,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
-  /// How long restoring or discarding waits on work already sent.
+  /// How long leaving a deleted page waits on work already sent for it.
   @visibleForTesting
   Duration pageWorkSettleTimeout = const Duration(seconds: 10);
 

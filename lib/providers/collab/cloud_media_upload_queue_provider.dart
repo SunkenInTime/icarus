@@ -479,24 +479,6 @@ class CloudMediaUploadQueueNotifier
 
   /// Where [key]'s bytes are on this device, or null when they are gone.
   /// Pending bytes (web) come first; otherwise the image file.
-  /// Whether this device could upload [image] again if the server lost it.
-  Future<bool> hasBytesOnThisDevice({
-    required String strategyPublicId,
-    required PlacedImage image,
-  }) async {
-    final accountId = ref.read(cloudMediaAccountIdProvider);
-    if (accountId == null || accountId.isEmpty) return false;
-    final bytes = await _findMediaBytes(
-      (
-        accountId: accountId,
-        strategyPublicId: strategyPublicId,
-        assetPublicId: image.id,
-      ),
-      fileExtension: image.fileExtension ?? '',
-    );
-    return bytes != null;
-  }
-
   Future<MediaBytesSource?> _findMediaBytes(
     PendingMediaKey key, {
     required String fileExtension,
