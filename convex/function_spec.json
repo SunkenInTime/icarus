@@ -40687,42 +40687,6 @@
       "args": {
         "type": "object",
         "value": {
-          "assetPublicIds": {
-            "fieldType": {
-              "type": "array",
-              "value": {
-                "type": "string"
-              }
-            },
-            "optional": false
-          },
-          "pageId": {
-            "fieldType": {
-              "tableName": "pages",
-              "type": "id"
-            },
-            "optional": false
-          },
-          "strategyId": {
-            "fieldType": {
-              "tableName": "strategies",
-              "type": "id"
-            },
-            "optional": false
-          }
-        }
-      },
-      "functionType": "Mutation",
-      "identifier": "images.js:markDeletedPageImageAssets",
-      "returns": null,
-      "visibility": {
-        "kind": "internal"
-      }
-    },
-    {
-      "args": {
-        "type": "object",
-        "value": {
           "strategyId": {
             "fieldType": {
               "tableName": "strategies",
@@ -40734,35 +40698,6 @@
       },
       "functionType": "Mutation",
       "identifier": "images.js:markDeletedStrategyImageAssets",
-      "returns": null,
-      "visibility": {
-        "kind": "internal"
-      }
-    },
-    {
-      "args": {
-        "type": "object",
-        "value": {
-          "assetPublicIds": {
-            "fieldType": {
-              "type": "array",
-              "value": {
-                "type": "string"
-              }
-            },
-            "optional": false
-          },
-          "strategyId": {
-            "fieldType": {
-              "tableName": "strategies",
-              "type": "id"
-            },
-            "optional": false
-          }
-        }
-      },
-      "functionType": "Mutation",
-      "identifier": "images.js:markPurgedTombstoneImageAssets",
       "returns": null,
       "visibility": {
         "kind": "internal"
@@ -40882,6 +40817,18 @@
       },
       "functionType": "Mutation",
       "identifier": "images.js:markStaleImageUploadsDeleted",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:processAssetReclaimCandidates",
       "returns": null,
       "visibility": {
         "kind": "internal"
@@ -61017,6 +60964,95 @@
       },
       "visibility": {
         "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "paginationOpts": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "cursor": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optional": false
+                },
+                "endCursor": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optional": true
+                },
+                "id": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "maximumBytesRead": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "maximumRowsRead": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": true
+                },
+                "numItems": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          },
+          "table": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "elements"
+                },
+                {
+                  "type": "literal",
+                  "value": "lineups"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "maintenance.js:backfillAssetReferences",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
       }
     },
     {

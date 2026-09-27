@@ -1368,12 +1368,22 @@ class StrategyProvider extends Notifier<StrategyState> {
       final result = await reporter.run(
         action: () async {
           final shell = await repository.fetchShell(strategyID);
-          await repository.duplicateStrategy(
-            sourceStrategyPublicId: strategyID,
-            publicId: const Uuid().v4(),
-            name: "${shell.header.name} (Copy)",
-            folderPublicId: ref.read(folderProvider),
-          );
+          try {
+            await repository.duplicateStrategy(
+              sourceStrategyPublicId: strategyID,
+              publicId: const Uuid().v4(),
+              name: "${shell.header.name} (Copy)",
+              folderPublicId: ref.read(folderProvider),
+            );
+          } on Object catch (error) {
+            // Not a failure to retry: the copy was refused whole, so nothing
+            // was made. Say why.
+            if (!isStrategyTooLargeToDuplicateError(error)) rethrow;
+            reporter.showMessage(
+              "This strategy is too large to duplicate.",
+            );
+            return false;
+          }
           return true;
         },
         source: sourceName,

@@ -87,6 +87,8 @@ export default defineSchema({
     .index("by_publicId", ["publicId"])
     .index("by_pageId", ["pageId"])
     .index("by_strategyId", ["strategyId"])
+    // Reads one element type without touching the rest (large text rows).
+    .index("by_strategyId_and_elementType", ["strategyId", "elementType"])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   lineups: defineTable({
     publicId: v.string(),
@@ -107,7 +109,42 @@ export default defineSchema({
     .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_pageId", ["pageId"])
     .index("by_strategyId", ["strategyId"])
+    .index("by_strategyId_and_payloadKind", ["strategyId", "payloadKind"])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
+  // Which content rows show which images: one small row per (element or
+  // lineup row, image id it shows), kept in step with every content write
+  // (see lib/assetReferences.ts). Media cleanup checks an image's references
+  // here with an indexed lookup instead of reading every element and lineup
+  // of the strategy, which can exceed Convex's per-transaction read limit.
+  assetReferences: defineTable({
+    strategyId: v.id("strategies"),
+    assetPublicId: v.string(),
+    pageId: v.id("pages"),
+    elementId: v.optional(v.id("elements")),
+    lineupId: v.optional(v.id("lineups")),
+    // Mirrors the content row's `deleted`: a tombstone still references its
+    // image until it is purged, since undo may restore it.
+    deleted: v.boolean(),
+  })
+    .index("by_strategyId_and_assetPublicId", ["strategyId", "assetPublicId"])
+    .index("by_strategyId_and_assetPublicId_and_deleted", [
+      "strategyId",
+      "assetPublicId",
+      "deleted",
+    ])
+    .index("by_strategyId_and_deleted", ["strategyId", "deleted"])
+    .index("by_elementId", ["elementId"])
+    .index("by_lineupId", ["lineupId"]),
+  // Images that may have lost their last reference (their content was
+  // purged), written in the same transaction as the purge and checked in
+  // small scheduled batches, so a failed check is retried, never lost.
+  assetReclaimCandidates: defineTable({
+    strategyId: v.id("strategies"),
+    assetPublicId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_createdAt", ["createdAt"])
+    .index("by_strategyId_and_assetPublicId", ["strategyId", "assetPublicId"]),
   strategyCollaborators: defineTable({
     strategyId: v.id("strategies"),
     userId: v.id("users"),

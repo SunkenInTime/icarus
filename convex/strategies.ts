@@ -31,8 +31,13 @@ import {
 } from "./lib/payloadValidators";
 import {
   conflictError,
+  errorWithCode,
   forbiddenError,
 } from "./lib/errors";
+import {
+  syncElementAssetReferences,
+  syncLineupAssetReferences,
+} from "./lib/assetReferences";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import { markDeletedStrategyImageAssetsRef } from "./images";
 import {
@@ -599,6 +604,37 @@ function copiedLineupRow(
   }
 }
 
+// The most content (elements and lineups, deleted rows included, as read)
+// a duplicate copies in its one transaction. The copy reads the content
+// once and writes it once; Convex refuses a transaction past 16 MiB read or
+// written. Measured on a local backend with 700 KiB rows: 23 rows (15.7
+// MiB) copied, 24 (16.4 MiB) failed on the read limit. 12 MiB leaves room
+// for the rest of the transaction (pages, assets, reference rows); 4,000
+// rows keeps writes far under the per-transaction document limit.
+const duplicateMaxContentBytes = 12 * 1024 * 1024;
+const duplicateMaxContentRows = 4000;
+
+/// Reads a query's rows, counting them against [budget], and refuses the
+/// duplicate as soon as the budget is spent, before Convex's own limit is.
+async function readWithinDuplicateBudget<T>(
+  rows: AsyncIterable<T>,
+  budget: { bytes: number; rows: number },
+): Promise<T[]> {
+  const result: T[] = [];
+  for await (const row of rows) {
+    budget.rows -= 1;
+    budget.bytes -= JSON.stringify(row).length;
+    if (budget.rows < 0 || budget.bytes < 0) {
+      throw errorWithCode(
+        "STRATEGY_TOO_LARGE_TO_DUPLICATE",
+        "This strategy is too large to duplicate.",
+      );
+    }
+    result.push(row);
+  }
+  return result;
+}
+
 /// Copies a strategy into the caller's library in one transaction: pages,
 /// page settings, live elements and lineups under fresh publicIds, and an
 /// image asset row per image the copy shows. The rows share the source's
@@ -698,10 +734,27 @@ export const duplicate = mutation({
     // are scoped to a strategy.
     const sourceAssetIdByCopyId = new Map<string, string>();
 
-    const sourceElements = await ctx.db
-      .query("elements")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
-      .collect();
+    // One transaction copies everything, so the source's content must fit
+    // Convex's per-transaction limits twice over (read once, written once).
+    // Reading stops as soon as it passes the budget and the whole duplicate
+    // is refused with a clear error: the transaction rolls back, so no part
+    // of a copy is ever left behind.
+    const budget = {
+      bytes: duplicateMaxContentBytes,
+      rows: duplicateMaxContentRows,
+    };
+    const sourceElements = await readWithinDuplicateBudget(
+      ctx.db
+        .query("elements")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
+      budget,
+    );
+    const sourceLineups = await readWithinDuplicateBudget(
+      ctx.db
+        .query("lineups")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
+      budget,
+    );
     for (const element of sourceElements) {
       const pageId = pageIdMap.get(element.pageId);
       if (element.deleted || pageId === undefined) continue;
@@ -713,7 +766,7 @@ export const duplicate = mutation({
       if (sourceAssetId !== null) {
         sourceAssetIdByCopyId.set(publicId, sourceAssetId);
       }
-      await ctx.db.insert("elements", {
+      const copiedElement = {
         publicId,
         strategyId,
         pageId,
@@ -729,13 +782,11 @@ export const duplicate = mutation({
         deleted: false,
         createdAt: now,
         updatedAt: now,
-      });
+      };
+      const elementId = await ctx.db.insert("elements", copiedElement);
+      await syncElementAssetReferences(ctx, elementId, copiedElement);
     }
 
-    const sourceLineups = await ctx.db
-      .query("lineups")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id))
-      .collect();
     const newLineupId = lineupIdMap();
     for (const lineup of sourceLineups) {
       const pageId = pageIdMap.get(lineup.pageId);
@@ -744,7 +795,7 @@ export const duplicate = mutation({
         sourceAssetIdByCopyId.set(assetId, assetId);
       }
       const copy = copiedLineupRow(lineup.payload, newLineupId);
-      await ctx.db.insert("lineups", {
+      const copiedLineup = {
         publicId: copy.publicId,
         strategyId,
         pageId,
@@ -756,7 +807,9 @@ export const duplicate = mutation({
         deleted: false,
         createdAt: now,
         updatedAt: now,
-      });
+      };
+      const lineupId = await ctx.db.insert("lineups", copiedLineup);
+      await syncLineupAssetReferences(ctx, lineupId, copiedLineup);
     }
 
     for (const [targetAssetPublicId, sourceAssetPublicId] of

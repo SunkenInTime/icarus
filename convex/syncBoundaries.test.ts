@@ -14,6 +14,7 @@ import {
   serializedConvexValueUtf8Bytes,
 } from "./lib/cloudProtocol";
 import schema from "./schema";
+import { insertElement, insertLineup } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -318,7 +319,7 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.insert("elements", {
+    await insertElement(ctx, {
       publicId: "element-a",
       strategyId: strategy._id,
       pageId: pageAId,
@@ -332,7 +333,7 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.insert("elements", {
+    await insertElement(ctx, {
       publicId: "element-b",
       strategyId: strategy._id,
       pageId: pageBId,
@@ -346,7 +347,7 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.insert("lineups", {
+    await insertLineup(ctx, {
       publicId: "lineupLink:lineup-b",
       strategyId: strategy._id,
       pageId: pageBId,

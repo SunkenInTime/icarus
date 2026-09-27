@@ -31,19 +31,26 @@ export async function refreshStrategyAgentSummary(
     if (type === null) return;
     counts.set(type, (counts.get(type) ?? 0) + 1);
   };
-  const elements = await ctx.db
+  // Only agent elements and lineup origins carry an agent; reading just
+  // those keeps this cheap however large the strategy's other content is
+  // (it runs after every batch of content ops).
+  const agents = await ctx.db
     .query("elements")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+    .withIndex("by_strategyId_and_elementType", (q) =>
+      q.eq("strategyId", strategyId).eq("elementType", "agent"),
+    )
     .collect();
-  for (const element of elements) {
-    if (element.deleted || element.payload.kind !== "agent") continue;
+  for (const element of agents) {
+    if (element.deleted) continue;
     bump(agentTypeOf(element.payload.data));
   }
-  const lineups = await ctx.db
+  const origins = await ctx.db
     .query("lineups")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+    .withIndex("by_strategyId_and_payloadKind", (q) =>
+      q.eq("strategyId", strategyId).eq("payloadKind", "lineupOrigin"),
+    )
     .collect();
-  for (const lineup of lineups) {
+  for (const lineup of origins) {
     if (lineup.deleted) continue;
     bump(agentTypeOf(lineup.payload.data));
   }
