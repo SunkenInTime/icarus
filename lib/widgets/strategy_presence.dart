@@ -70,6 +70,12 @@ class StrategyPresenceAvatars extends ConsumerWidget {
       ].join('\u0001');
 }
 
+const _belowStrip = ShadAnchor(
+  offset: Offset(0, 6),
+  childAlignment: Alignment.topCenter,
+  overlayAlignment: Alignment.bottomCenter,
+);
+
 String _describe(PresencePeer peer) =>
     peer.role == 'viewer' ? '${peer.name} (viewing)' : peer.name;
 
@@ -85,6 +91,8 @@ class _PresenceAvatar extends StatelessWidget {
     final initial = peer.name.isEmpty ? '?' : peer.name.characters.first;
     return ShadTooltip(
       builder: (context) => Text(_describe(peer)),
+      // The strip is the top of the window; there is no room above it.
+      anchor: _belowStrip,
       child: _Ring(
         color: presenceColorFor(peer.uid),
         size: size,
@@ -117,6 +125,7 @@ class _OverflowAvatar extends StatelessWidget {
     const theme = Settings.tacticalVioletTheme;
     return ShadTooltip(
       builder: (context) => Text(people.map(_describe).join('\n')),
+      anchor: _belowStrip,
       child: _Ring(
         color: theme.border,
         size: size,
@@ -225,9 +234,20 @@ class _PresenceCursorReporterState
     super.dispose();
   }
 
+  bool _reportScheduled = false;
+
+  /// Reports again once the frame settles. A wheel zoom sets the transform
+  /// in steps (scale, then the pan that keeps the pointer's spot fixed), and
+  /// reporting between them would fling the cursor across teammates' maps.
   void _reportAgain() {
-    final pointer = _pointer;
-    if (pointer != null) _report(pointer);
+    if (_pointer == null || _reportScheduled) return;
+    _reportScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reportScheduled = false;
+      final pointer = _pointer;
+      if (mounted && pointer != null) _report(pointer);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _report(Offset viewportPosition) {
