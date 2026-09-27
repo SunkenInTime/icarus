@@ -61367,6 +61367,12 @@
       "args": {
         "type": "object",
         "value": {
+          "checkLineupLinkEnds": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "clientId": {
             "fieldType": {
               "type": "string"

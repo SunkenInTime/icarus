@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -862,14 +863,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final isPayloadPolicyAttention =
               record?.lastError == cloudOperationTooLargeMessage ||
                   cloudOperationExceedsPolicy(rejectedOp);
+          // Nothing moved on the server: the link is re-sent as it was,
+          // add or patch, once its ends are back.
+          final isMissingLinkEnd =
+              record?.lastError == lineupLinkEndMissingMessage;
+          final retriesAsSent = isPayloadPolicyAttention || isMissingLinkEnd;
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
-          if (!isPayloadPolicyAttention && retryRevision == null) continue;
+          if (!retriesAsSent && retryRevision == null) continue;
           final isTombstoneRestore =
               (retryOp is ElementAddOp || retryOp is LineupAddOp) &&
                   (record?.lastError == 'missing_expected_revision' ||
                       record?.lastError == 'revision_mismatch');
-          final rebasedOp = isPayloadPolicyAttention
+          final rebasedOp = retriesAsSent
               ? retryOp.withOpId(const Uuid().v4())
               : _rebaseRejectedOp(
                   retryOp,
@@ -1267,6 +1273,53 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
   }
 
+  /// The origin and landing rows a lineup link add or patch names; empty
+  /// for any other op.
+  static Set<EntitySyncKey> _lineupLinkEndKeys(StrategyOp op) {
+    final pageId = op.pagePublicId;
+    final payload = op.payload;
+    final data = payload is Map ? payload['data'] : null;
+    if (op.entityType != StrategyOpEntityType.lineup ||
+        payload is! Map ||
+        payload['kind'] != CloudLineupKind.link ||
+        pageId == null ||
+        data is! Map) {
+      return const {};
+    }
+    return {
+      EntitySyncKey.lineup(
+        pageId,
+        cloudLineupRowId(CloudLineupKind.origin, '${data['originId']}'),
+      ),
+      EntitySyncKey.lineup(
+        pageId,
+        cloudLineupRowId(CloudLineupKind.landing, '${data['landingId']}'),
+      ),
+    };
+  }
+
+  /// Whether [record] is a lineup link that must wait: the server refuses
+  /// a link whose origin or landing is not live, and one it names still has
+  /// a queued or in-flight record of its own (queued behind it, past a batch
+  /// cap, under another client id, backing off) that is not in [sentWith],
+  /// the batch being claimed. It is due once that end has been sent.
+  bool _waitsForUnsentEnd(
+    DurableOutboxRecord record, {
+    Set<EntitySyncKey> sentWith = const {},
+  }) {
+    return _lineupLinkEndKeys(record.pending.op).any((endKey) {
+      if (sentWith.contains(endKey)) return false;
+      final end = _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
+        accountId: record.accountId,
+        strategyPublicId: record.strategyPublicId,
+        entityKey: endKey,
+      )];
+      return end != null &&
+          (end.status == DurableOutboxStatus.queued ||
+              end.status == DurableOutboxStatus.inFlight);
+    });
+  }
+
   Future<List<DurableOutboxRecord>> _claimBatch({
     required String accountId,
     required String strategyPublicId,
@@ -1285,10 +1338,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
-      final batchClientId = candidates.first.pending.clientId;
       final selected = <DurableOutboxRecord>[];
+      final selectedKeys = <EntitySyncKey>{};
+      bool waitsForAnEnd(DurableOutboxRecord record) =>
+          _waitsForUnsentEnd(record, sentWith: selectedKeys);
+      final sendable = candidates.where((record) => !waitsForAnEnd(record));
+      if (sendable.isEmpty) return const <DurableOutboxRecord>[];
+      final batchClientId = sendable.first.pending.clientId;
       for (final candidate in candidates) {
         if (candidate.pending.clientId != batchClientId) continue;
+        if (waitsForAnEnd(candidate)) continue;
         if (selected.length >= _maxBatchSize) break;
         final nextSelection = <DurableOutboxRecord>[...selected, candidate];
         final byteSize = serializedCloudBatchUtf8Bytes(
@@ -1298,6 +1357,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
         if (byteSize > maxCloudBatchBytes) break;
         selected.add(candidate);
+        selectedKeys.add(candidate.entityKey);
       }
       final claimed = <DurableOutboxRecord>[];
       for (final record in selected) {
@@ -2057,7 +2117,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             (record.status == DurableOutboxStatus.queued ||
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
-            !cloudOperationExceedsPolicy(record.pending.op))
+            !cloudOperationExceedsPolicy(record.pending.op) &&
+            !_waitsForUnsentEnd(record))
         .toList(growable: false);
     if (candidates.isEmpty) return;
     final nextAttempt = candidates
@@ -2101,6 +2162,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
             !cloudOperationExceedsPolicy(record.pending.op) &&
+            !_waitsForUnsentEnd(record) &&
             (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
         .toList(growable: false)
       ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));

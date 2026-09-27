@@ -487,6 +487,11 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
     final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
     final heldBackLineups = _heldBackLineups(pageId);
+    final restoredLineupEnds = _lineupEndsToRestore(
+      pageId: pageId,
+      localEntities: localEntities,
+      remoteEntities: remoteEntities,
+    );
     final unsyncableLineups = <EntitySyncKey>{};
 
     for (final key in pageKeys) {
@@ -523,6 +528,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         if (existingOverlay == null && retainedOp != null) {
           retainedDesiredOps[key] = retainedOp;
         }
+        continue;
+      }
+
+      if (restoredLineupEnds.contains(key)) {
+        nextOverlay[key] = ActivePageOverlayEntry(
+          entityKey: key,
+          entityType: ActivePageOverlayEntityType.lineup,
+          desiredPayload: local!.payload,
+          desiredSortIndex: local.sortIndex,
+          deletion: false,
+          baseRevision: remote?.revision,
+          baseDeleted: true,
+          dirtyAt: DateTime.now(),
+        );
+        _debugLog('overlay.upsert $key reason=restore_deleted_lineup_end');
         continue;
       }
 
@@ -999,6 +1019,46 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           key(cloudLineupRowId(CloudLineupKind.landing, link.landingId)),
       ],
     };
+  }
+
+  /// Origins and landings a teammate deleted after this canvas drew them,
+  /// which a link the user is placing or editing still names. They are added
+  /// back with the link: the server refuses a link whose ends are gone, and
+  /// the lineup the user just made would not save. A link the teammate
+  /// deleted too is left to the conflict flow.
+  Set<EntitySyncKey> _lineupEndsToRestore({
+    required String pageId,
+    required Map<EntitySyncKey, _NormalizedEntity> localEntities,
+    required Map<EntitySyncKey, _NormalizedEntity> remoteEntities,
+  }) {
+    EntitySyncKey key(String kind, String id) =>
+        EntitySyncKey.lineup(pageId, cloudLineupRowId(kind, id));
+    bool deletedSinceDrawn(EntitySyncKey endKey) {
+      final drawn = _hydratedBaseByEntityKey[endKey];
+      final remote = remoteEntities[endKey];
+      return localEntities.containsKey(endKey) &&
+          drawn != null &&
+          !drawn.deleted &&
+          (remote == null || remote.deleted);
+    }
+
+    final ends = <EntitySyncKey>{};
+    for (final link in ref.read(lineUpProvider).graph.links) {
+      final linkKey = key(CloudLineupKind.link, link.id);
+      final isAuthored = !_entitiesEquivalent(
+        localEntities[linkKey],
+        _hydratedBaseByEntityKey[linkKey],
+      );
+      final isDeletedRemotely = remoteEntities[linkKey]?.deleted ?? false;
+      if (!isAuthored || isDeletedRemotely) continue;
+      for (final endKey in [
+        key(CloudLineupKind.origin, link.originId),
+        key(CloudLineupKind.landing, link.landingId),
+      ]) {
+        if (deletedSinceDrawn(endKey)) ends.add(endKey);
+      }
+    }
+    return ends;
   }
 
   /// The page's live lineup rows that hydration skipped.

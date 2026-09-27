@@ -677,6 +677,7 @@ final class _LineupsModule implements LineupsModule {
 
 abstract interface class OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
     required List<OpsApplyBatchArgsOpsItem> ops,
@@ -689,12 +690,14 @@ final class _OpsModule implements OpsModule {
   final ConvexTransport _transport;
   @override
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
     required List<OpsApplyBatchArgsOpsItem> ops,
     required String strategyPublicId,
   }) {
     final args = encodeOpsApplyBatchArgs(
+      checkLineupLinkEnds: checkLineupLinkEnds,
       clientId: clientId,
       clientProtocolVersion: clientProtocolVersion,
       ops: ops,

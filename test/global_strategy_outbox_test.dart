@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -153,6 +154,72 @@ void main() {
     final finalOp = repository.calls.last.ops.single as ElementPatchOp;
     expect(finalOp.payload, {'value': 'final'});
     expect(finalOp.expectedElementRevision, 2);
+  });
+
+  test('a link waiting for a backing-off origin does not hold up the drain',
+      () async {
+    final store = MemoryDurableStrategyOutboxStore();
+    DurableOutboxRecord lineup(
+      String kind,
+      Map<String, dynamic> data, {
+      required DateTime updatedAt,
+      int attempts = 0,
+    }) {
+      final op = LineupAddOp(
+        opId: 'add-$kind',
+        lineupPublicId: cloudLineupRowId(kind, data['id'] as String),
+        pagePublicId: 'page-one',
+        payload: cloudLineupPayload(kind: kind, data: data),
+        sortIndex: 0,
+      );
+      return DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'blocked',
+        entityKey: EntitySyncKey.forStrategyOp(op)!,
+        pending: PendingOp(
+          op: op,
+          clientId: 'client-blocked',
+          attempts: attempts,
+          lastAttemptAt: attempts == 0 ? null : DateTime.now(),
+        ),
+        status: DurableOutboxStatus.queued,
+        createdAt: updatedAt,
+        updatedAt: updatedAt,
+      );
+    }
+
+    // The oldest work is a link whose origin just failed to send and is
+    // backing off; the link must wait for it.
+    await store.put(lineup(
+      CloudLineupKind.link,
+      {'id': 'k', 'originId': 'o', 'landingId': 'l'},
+      updatedAt: DateTime(2025),
+    ));
+    await store.put(lineup(
+      CloudLineupKind.origin,
+      {'id': 'o', 'agent': <String, dynamic>{}},
+      updatedAt: DateTime(2025),
+      attempts: 3,
+    ));
+    // The first drain after sign-in ignores backoff; this older work takes
+    // it, so the drains after it honour the origin's backoff.
+    await store.put(_record(strategyId: 'first', opId: 'first')
+        .copyWith(updatedAt: DateTime(2024)));
+    await store.put(_record(strategyId: 'open', opId: 'open'));
+    final repository = _RecordingRepository();
+    final container = _container(store: store, repository: repository);
+    addTearDown(container.dispose);
+
+    container
+        .read(strategyOpQueueProvider.notifier)
+        .setCurrentAccount('account-a');
+
+    await _waitUntil(() => repository.calls.length == 2);
+    expect(repository.calls.map((call) => call.strategyId), ['first', 'open']);
+    expect(
+      store.load().records.map((record) => record.pending.op.opId).toSet(),
+      {'add-${CloudLineupKind.link}', 'add-${CloudLineupKind.origin}'},
+    );
   });
 
   test('one failed closed strategy does not block another', () async {

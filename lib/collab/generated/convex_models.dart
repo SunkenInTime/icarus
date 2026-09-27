@@ -5216,11 +5216,14 @@ List<LineupsListForPageResultItem> decodeLineupsListForStrategyResult(
     .toList(growable: false);
 
 ConvexObject encodeOpsApplyBatchArgs({
+  ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
   required String clientId,
   required double clientProtocolVersion,
   required List<OpsApplyBatchArgsOpsItem> ops,
   required String strategyPublicId,
 }) => ConvexObject({
+  if (checkLineupLinkEnds.isPresent)
+    'checkLineupLinkEnds': ConvexBoolean(checkLineupLinkEnds.value),
   'clientId': ConvexString(clientId),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
