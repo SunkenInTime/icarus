@@ -1246,7 +1246,8 @@ void main() {
       expect(repository.uploadedAssetIds, isEmpty);
     });
 
-    test('a failed removal is checked again, never uploaded', () async {
+    test('a failed removal is tried again, never uploaded, and waits alone',
+        () async {
       final mediaStore = _FailingBatchStore()..failRemove = true;
       await mediaStore.put(job('page-image'));
       await mediaStore.put(job('queued-image'));
@@ -1271,10 +1272,13 @@ void main() {
       // Restored at launch, so already marked for the check.
       await queue.retryNow(ignoreBackoff: true);
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(
-        mediaStore.load().jobs.map((job) => job.assetPublicId),
-        contains('page-image'),
-      );
+      final jobs = {
+        for (final job in mediaStore.load().jobs) job.assetPublicId: job,
+      };
+      expect(jobs.keys, containsAll(['page-image', 'queued-image']));
+      expect(jobs['page-image']!.attempts, 3);
+      // The other upload was tried meanwhile (its bytes are gone here).
+      expect(jobs['queued-image']!.attempts, 4);
 
       mediaStore.failRemove = false;
       await queue.retryNow(ignoreBackoff: true);
@@ -1285,6 +1289,30 @@ void main() {
         ['queued-image'],
       );
       expect(bytes.bytesFor(key('page-image')), isNull);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('a staged upload whose removal fails keeps retrying', () async {
+      final mediaStore = _FailingBatchStore()..failRemove = true;
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await queue.enqueuePlacedImageUpload(
+        strategyPublicId: 'strategy-a',
+        imagePublicId: 'late-image',
+        fileExtension: '.png',
+      );
+      goOnline();
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      expect(mediaStore.load().jobs, hasLength(1));
+
+      mediaStore.failRemove = false;
+      await queue.retryNow(ignoreBackoff: true);
+      expect(mediaStore.load().jobs, isEmpty);
       expect(repository.uploadedAssetIds, isEmpty);
     });
 
