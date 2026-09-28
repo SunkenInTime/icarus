@@ -210,12 +210,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           identical(previousAckBatch, next.lastAckBatch)) {
         return;
       }
-      for (final acked in next.lastAckBatch) {
-        if (acked.op case PageDeleteOp(:final pagePublicId)
-            when acked.ack.isAck) {
-          _pagesDeletedHere.add(pagePublicId);
-        }
-      }
+      _notePagesDeletedHere(next);
       unawaited(_reconcileAcks(next.lastAcks, next.lastAckBatch));
     });
 
@@ -920,8 +915,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
     // The user deleted it here: their delete landed, or is still on its way.
     // Work on it the server paused or refused stays in the sync status.
-    if (_pagesDeletedHere.contains(pageId)) return false;
     final queue = ref.read(strategyOpQueueProvider);
+    _notePagesDeletedHere(queue);
+    if (_pagesDeletedHere.contains(pageId)) return false;
     final descriptor = EntitySyncKey.pageDescriptor(pageId);
     if ([
       queue.queuedByEntityKey[descriptor]?.pending.op,
@@ -941,6 +937,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       deletedPage: (pageId: pageId, name: lastSeen?.name ?? 'This page'),
     );
     return true;
+  }
+
+  /// Records the pages whose delete the server just accepted from [queue].
+  /// Called from the check as well as the queue listener: a listener
+  /// registered earlier (save state) can run the check first.
+  void _notePagesDeletedHere(StrategyOpQueueState queue) {
+    for (final acked in queue.lastAckBatch) {
+      if (acked.op case PageDeleteOp(:final pagePublicId)
+          when acked.ack.isAck) {
+        _pagesDeletedHere.add(pagePublicId);
+      }
+    }
   }
 
   /// Lets the deleted page on screen go, with the unsaved work on it, and
