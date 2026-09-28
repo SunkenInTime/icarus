@@ -326,14 +326,15 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = hiveUtilities;
   }
 
-  /// Takes the server's copy of the items [rule] does not keep; see
+  /// Takes the server's copy of every item but those [keep] names; see
   /// [mergeRemoteItems].
-  void mergeRemote(List<PlacedUtility> incoming, RemoteMergeRule rule) {
+  void mergeRemote(
+      List<PlacedUtility> incoming, bool Function(String id) keep) {
     state = mergeRemoteItems(
       current: state,
       incoming: incoming,
       idOf: (utility) => utility.id,
-      rule: rule,
+      keep: keep,
     );
   }
 

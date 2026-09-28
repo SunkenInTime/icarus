@@ -920,21 +920,21 @@ class DrawingProvider extends Notifier<DrawingState> {
     _triggerRepaint();
   }
 
-  /// Takes the server's copy of the items [rule] does not keep; see
+  /// Takes the server's copy of every item but those [keep] names; see
   /// [mergeRemoteItems].
   /// A drawing still being drawn is not on the page yet and is left alone.
-  void mergeRemote(List<DrawingElement> incoming, RemoteMergeRule rule) {
+  void mergeRemote(
+      List<DrawingElement> incoming, bool Function(String id) keep) {
+    final coordinateSystem = CoordinateSystem.instance;
     final merged = mergeRemoteItems(
       current: state.elements,
       incoming: incoming,
       idOf: (drawing) => drawing.id,
-      rule: rule,
+      keep: keep,
     );
-    // Only drawings taken from the server need their paths built.
-    final onScreen = Set<DrawingElement>.identity()..addAll(state.elements);
-    for (final drawing in merged) {
-      if (drawing is FreeDrawing && !onScreen.contains(drawing)) {
-        drawing.rebuildPath(CoordinateSystem.instance);
+    for (final drawing in incoming) {
+      if (drawing is FreeDrawing && !keep(drawing.id)) {
+        drawing.rebuildPath(coordinateSystem);
       }
     }
     state = state.copyWith(elements: merged);

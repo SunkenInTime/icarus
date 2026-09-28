@@ -524,14 +524,17 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     return output;
   }
 
-  /// Takes the server's copy of the items [rule] does not keep; see
+  /// Takes the server's copy of every item but those [keep] names; see
   /// [mergeRemoteItems].
-  void mergeRemote(List<PlacedAgentNode> incoming, RemoteMergeRule rule) {
+  void mergeRemote(
+    List<PlacedAgentNode> incoming,
+    bool Function(String id) keep,
+  ) {
     state = mergeRemoteItems(
       current: state,
       incoming: incoming,
       idOf: (agent) => agent.id,
-      rule: rule,
+      keep: keep,
     );
   }
 

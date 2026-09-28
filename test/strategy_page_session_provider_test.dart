@@ -1080,19 +1080,6 @@ void main() {
       };
     }
 
-    test('a merge keeps every item it did not change as the same object',
-        () async {
-      final remote =
-          _FakeRemoteEditorNotifier(snapshot([text('a', 0), text('b', 1)]));
-      final container = await open(remote);
-      final before = container.read(textProvider).first;
-      remote.setSnapshot(snapshot([text('a', 0), text('b', 1, revision: 2)],
-          contentRevision: 2));
-      await _settle();
-      expect(identical(container.read(textProvider).first, before), isTrue);
-      expect(container.read(textProvider).last.id, 'b');
-    });
-
     test('an acked edit the canvas never showed is still taken', () async {
       final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
       final queue = _FakeStrategyOpQueueNotifier();
@@ -1158,38 +1145,6 @@ void main() {
         lastAckBatch: [ack],
       );
     }
-
-    test('a recovered edit landing under a held item makes the drop conflict',
-        () async {
-      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
-      final (container, queue) = await openWithQueue(remote);
-      container.read(editorPointersProvider.notifier)
-        ..holdEntity(1, 'a')
-        ..down(1);
-      final landed = _textElement(page.publicId, 'a', 'restored',
-          revision: 2, worldSized: true);
-      remote.setSnapshot(snapshot([landed], contentRevision: 2));
-      land(
-          queue,
-          ElementPatchOp(
-            opId: 'restored-patch',
-            pagePublicId: page.publicId,
-            elementPublicId: 'a',
-            expectedElementRevision: 1,
-            payload: landed.payload,
-            sortIndex: 0,
-          ),
-          2);
-      await _settle();
-      expect(container.read(textProvider).single.text, 'a');
-      // The drag ends on the old text: sent against the version the user
-      // saw, so the server refuses it instead of replacing 'restored'.
-      container
-          .read(textProvider.notifier)
-          .updatePosition(const Offset(300, 300), 'a');
-      expect(elementOps(container)['a']!.expectedRevision, 1);
-      await _settle();
-    });
 
     test('grabbing an item again as its own edit lands is no conflict',
         () async {

@@ -91,11 +91,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   final Map<EntitySyncKey, _NormalizedEntity> _hydratedBaseByEntityKey = {};
   final Set<EntitySyncKey> _remoteAdoptionPending = {};
 
-  /// What the canvas last drew from the server, entity by entity. Unlike the
-  /// base above, an ack does not move it: an acked op the canvas never showed
-  /// (one restored from the outbox) must still count as a change to take.
-  final Map<EntitySyncKey, _NormalizedEntity> _drawnByEntityKey = {};
-
   /// Each element's place in its canvas list right after the page was last
   /// hydrated, to tell a local restack from the order hydration drew.
   final Map<EntitySyncKey, int> _hydratedPositionByKey = {};
@@ -111,7 +106,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
   void reset() {
     _hydratedBaseByEntityKey.clear();
-    _drawnByEntityKey.clear();
     _remoteAdoptionPending.clear();
     _hydratedPositionByKey.clear();
     _heldDeletedKeys.clear();
@@ -131,7 +125,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         activePageId != state.activePageId;
     if (strategyChanged) {
       _hydratedBaseByEntityKey.clear();
-      _drawnByEntityKey.clear();
       _remoteAdoptionPending.clear();
       _hydratedPositionByKey.clear();
       _heldDeletedKeys.clear();
@@ -192,9 +185,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           if (remoteEntities[key]?.deleted ?? true) key,
       });
     for (final key in keepBaseFor) {
-      // Checked against the version the user saw, so an edit they commit to
-      // it conflicts with whatever landed underneath instead of replacing it.
-      final drawnBase = _drawnByEntityKey[key] ?? _hydratedBaseByEntityKey[key];
+      final drawnBase = _hydratedBaseByEntityKey[key];
       if (drawnBase == null) {
         remoteEntities.remove(key);
         continue;
@@ -213,15 +204,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
     _hydratedBaseByEntityKey.addAll(remoteEntities);
-    // A held item still shows what it showed before.
-    final heldDrawn = {
-      for (final key in keepBaseFor)
-        if (_drawnByEntityKey[key] case final drawn?) key: drawn,
-    };
-    _drawnByEntityKey
-      ..removeWhere((key, _) => key.pageId == pageId)
-      ..addAll(remoteEntities)
-      ..addAll(heldDrawn);
     _remoteAdoptionPending.removeWhere((key) => key.pageId == pageId);
     final remoteRevisions = Map<EntitySyncKey, int>.from(
       state.remoteBaseRevisionByEntity,
@@ -244,8 +226,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   /// The entities of [pageId] whose server copy in [snapshot] differs from the
-  /// one the canvas last drew (not the last acked version: see
-  /// [_drawnByEntityKey]).
+  /// one the canvas last drew.
   Set<EntitySyncKey> remoteChangesSinceHydration(
     RemoteEditorSnapshot snapshot,
     String pageId,
@@ -256,23 +237,20 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final remote = _normalizedRemoteEntities(snapshot, pageId);
     final keys = {
       ...remote.keys,
-      ..._drawnByEntityKey.keys.where((key) => key.pageId == pageId),
+      ..._hydratedBaseByEntityKey.keys.where((key) => key.pageId == pageId),
     };
     return {
       for (final key in keys)
         // A row the canvas cannot draw counts as gone on the server side
-        // only: the drawn copy is what the canvas did draw.
+        // only: the base is what the canvas did draw.
         if (undrawn.contains(key) ? null : live(remote[key]) case final now
-            when !_sameLiveEntity(now, live(_drawnByEntityKey[key])))
+            when !_sameLiveEntity(now, live(_hydratedBaseByEntityKey[key])))
           key,
     };
   }
 
-  /// Same version of the same content: a teammate's write that happens to
-  /// restore what the canvas drew is still a newer version.
-  bool _sameLiveEntity(_NormalizedEntity? a, _NormalizedEntity? b) => a == null
-      ? b == null
-      : b != null && a.revision == b.revision && _entitiesEquivalent(a, b);
+  bool _sameLiveEntity(_NormalizedEntity? a, _NormalizedEntity? b) =>
+      a == null ? b == null : b != null && _entitiesEquivalent(a, b);
 
   /// Drops [pageId]'s overlays that no op in the queue carries any more.
   ///
@@ -311,7 +289,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final remoteRevisions = Map<EntitySyncKey, int>.from(
       state.remoteBaseRevisionByEntity,
     );
-    Map<EntitySyncKey, _NormalizedEntity>? onScreen;
     for (final intent in intents) {
       final revision = intent.ack.appliedRevision;
       final key = intent.entityKey;
@@ -326,20 +303,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       if (accepted == null) continue;
 
       _hydratedBaseByEntityKey[key] = accepted;
-      // The user has seen this version if this session authored it (it has
-      // an overlay; they may have kept editing since) or the canvas shows
-      // exactly what landed. An op restored from the outbox has no overlay
-      // and may have landed under older content still on screen.
-      final hydratedPage = state.hydratedPageId;
-      if (key.pageId != null && key.pageId == hydratedPage) {
-        final authoredHere = state.overlayByEntityKey.containsKey(key);
-        if (!authoredHere) {
-          onScreen ??= _normalizedLocalEntities(hydratedPage!);
-        }
-        if (authoredHere || _entitiesEquivalent(onScreen![key], accepted)) {
-          _drawnByEntityKey[key] = accepted;
-        }
-      }
       remoteRevisions[key] = revision;
       final overlay = overlays[key];
       if (overlay != null) {

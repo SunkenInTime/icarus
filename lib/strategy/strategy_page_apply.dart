@@ -14,7 +14,6 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
-import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 Future<void> applyStrategyEditorPageData(
@@ -77,24 +76,20 @@ Set<EntitySyncKey> mergeRemoteStrategyEditorPageData(
   required MapThemePalette? themeOverridePalette,
   MapValue? mapOverride,
 }) {
-  final pageId = data.pageId;
   final heldBack = {
     for (final key in changed)
       if (key.kind == EntitySyncKeyKind.element &&
           holding.contains(key.entityId))
         key,
   };
-  final rule = RemoteMergeRule(
-    held: holding.contains,
-    changed: (id) => changed.contains(EntitySyncKey.element(pageId, id)),
-  );
+  bool keep(String id) => holding.contains(id);
 
-  ref.read(agentProvider.notifier).mergeRemote(data.agents, rule);
-  ref.read(abilityProvider.notifier).mergeRemote(data.abilities, rule);
-  ref.read(drawingProvider.notifier).mergeRemote(data.drawings, rule);
-  ref.read(textProvider.notifier).mergeRemote(data.texts, rule);
-  ref.read(placedImageProvider.notifier).mergeRemote(data.images, rule);
-  ref.read(utilityProvider.notifier).mergeRemote(data.utilities, rule);
+  ref.read(agentProvider.notifier).mergeRemote(data.agents, keep);
+  ref.read(abilityProvider.notifier).mergeRemote(data.abilities, keep);
+  ref.read(drawingProvider.notifier).mergeRemote(data.drawings, keep);
+  ref.read(textProvider.notifier).mergeRemote(data.texts, keep);
+  ref.read(placedImageProvider.notifier).mergeRemote(data.images, keep);
+  ref.read(utilityProvider.notifier).mergeRemote(data.utilities, keep);
 
   // Links name their origin and landing, so the lineup graph changes as one
   // piece: all of it, or none while the user holds part of it.
