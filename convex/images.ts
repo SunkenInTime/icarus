@@ -76,8 +76,10 @@ const physicalDeletionBatch = 25;
 const reclaimCandidateBatch = 25;
 const staleDeletionClaimAgeMs = 15 * 60 * 1000;
 // R2 checks a presigned URL when the PUT starts, so a PUT that started just
-// before expiry can still be sending bytes after it. This covers that PUT.
-const uploadInFlightGraceMs = 15 * 60 * 1000;
+// before expiry can still be sending bytes after it, for as long as a slow
+// connection takes. A day covers any real upload, and waiting costs little:
+// a deleted element's image already stays for its 30-day tombstone.
+const uploadInFlightGraceMs = 24 * 60 * 60 * 1000;
 const deletionRetryDelayMs = 60 * 1000;
 
 export const markDeletedStrategyImageAssetsRef =

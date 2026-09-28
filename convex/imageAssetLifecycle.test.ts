@@ -582,14 +582,14 @@ describe("image asset lifecycle", () => {
       { uploadStatus: "deleted", objectKey: upload.objectKey },
     ]);
 
-    // Still inside the grace after expiry: a PUT that started in time may
-    // not have finished.
-    vi.setSystemTime(upload.expiresAt + 14 * 60 * 1000);
+    // Well after expiry, a PUT that started in time may still be sending
+    // over a slow connection.
+    vi.setSystemTime(upload.expiresAt + 23 * 60 * 60 * 1000);
     await expect(
       t.action(sweepDeletedImageAssets, {}),
     ).resolves.toMatchObject({ deleted: 0, failed: 0 });
 
-    vi.setSystemTime(upload.expiresAt + 15 * 60 * 1000);
+    vi.setSystemTime(upload.expiresAt + 24 * 60 * 60 * 1000);
     await expect(
       t.action(sweepDeletedImageAssets, {}),
     ).resolves.toMatchObject({ deleted: 1, failed: 0 });
