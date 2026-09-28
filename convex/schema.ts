@@ -230,6 +230,9 @@ export default defineSchema({
     byteSize: v.optional(v.number()),
     etag: v.optional(v.string()),
     uploadedAt: v.optional(v.number()),
+    // When the presigned PUT URL for this upload attempt stops working. Until
+    // then the bytes can still land, so they are not deleted before it.
+    uploadUrlExpiresAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     cleanupClaimedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),

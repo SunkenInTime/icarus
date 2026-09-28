@@ -35,6 +35,7 @@ import {
   deleteR2Object,
   expectedMimeTypeForExtension,
   getR2Config,
+  getUploadUrlExpiresSeconds,
   headR2Object,
   normalizeImageExtension,
   presignR2PutUrl,
@@ -74,6 +75,9 @@ const physicalDeletionBatch = 25;
 // size, so a batch stays far below Convex's per-transaction limits.
 const reclaimCandidateBatch = 25;
 const staleDeletionClaimAgeMs = 15 * 60 * 1000;
+// R2 checks a presigned URL when the PUT starts, so a PUT that started just
+// before expiry can still be sending bytes after it. This covers that PUT.
+const uploadInFlightGraceMs = 15 * 60 * 1000;
 const deletionRetryDelayMs = 60 * 1000;
 
 export const markDeletedStrategyImageAssetsRef =
@@ -269,6 +273,7 @@ export const generateUploadUrl = action({
       uploadId: Id<"imageAssets">;
       uploadAttemptPublicId: string;
       objectKey: string;
+      issuedAt: number;
     } =
       await ctx.runMutation(internal.images.createR2UploadIntent, {
         strategyPublicId: args.strategyPublicId,
@@ -281,10 +286,13 @@ export const generateUploadUrl = action({
         width: args.width,
         height: args.height,
       });
+    // Signed at the intent's time, so the URL expires exactly when the
+    // intent's uploadUrlExpiresAt says it does.
     const signed = await presignR2PutUrl({
       config,
       objectKey: intent.objectKey,
       mimeType: validated.mimeType,
+      now: new Date(intent.issuedAt),
     });
 
     return {
@@ -337,6 +345,7 @@ export const createR2UploadIntent = internalMutation({
       width: args.width,
       height: args.height,
       byteSize: args.byteSize,
+      uploadUrlExpiresAt: now + getUploadUrlExpiresSeconds() * 1000,
       updatedAt: now,
     };
     // Content that shows this image may have landed first and left a
@@ -367,6 +376,7 @@ export const createR2UploadIntent = internalMutation({
       uploadId,
       uploadAttemptPublicId: args.uploadAttemptPublicId,
       objectKey: args.objectKey,
+      issuedAt: now,
     };
   },
 });
@@ -1052,6 +1062,10 @@ export const claimDeletedImageAssets = internalMutation({
       1,
       Math.min(args.limit ?? physicalDeletionBatch, physicalDeletionBatch),
     );
+    const now = Date.now();
+    // An upload deleted while its PUT may still be in flight waits for the
+    // URL to die. Deleting first would let the bytes land afterwards with no
+    // row left to reclaim them; the hourly sweep picks the asset up later.
     const assets = await ctx.db
       .query("imageAssets")
       .withIndex("by_uploadStatus_and_updatedAt", (q) =>
@@ -1061,10 +1075,16 @@ export const claimDeletedImageAssets = internalMutation({
         q.and(
           q.neq(q.field("strategyId"), undefined),
           q.eq(q.field("cleanupClaimedAt"), undefined),
+          q.or(
+            q.eq(q.field("uploadUrlExpiresAt"), undefined),
+            q.lte(
+              q.field("uploadUrlExpiresAt"),
+              now - uploadInFlightGraceMs,
+            ),
+          ),
         ),
       )
       .take(limit);
-    const now = Date.now();
     for (const asset of assets) {
       await ctx.db.patch(asset._id, { cleanupClaimedAt: now });
     }
