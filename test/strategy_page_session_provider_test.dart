@@ -1093,6 +1093,45 @@ void main() {
       expect(container.read(textProvider).last.id, 'b');
     });
 
+    test('an acked edit the canvas never showed is still taken', () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      expect(container.read(textProvider).single.text, 'a');
+      // A patch restored from the outbox lands after the page was drawn.
+      final landed = _textElement(page.publicId, 'a', 'restored',
+          revision: 2, worldSized: true);
+      final op = ElementPatchOp(
+        opId: 'restored-patch',
+        pagePublicId: page.publicId,
+        elementPublicId: 'a',
+        expectedElementRevision: 1,
+        payload: landed.payload,
+        sortIndex: 0,
+      );
+      remote.setSnapshot(snapshot([landed], contentRevision: 2));
+      final ack = AckedEntityIntent(
+        entityKey: EntitySyncKey.element(page.publicId, 'a'),
+        op: op,
+        ack: const AppliedOpAck(opId: 'restored-patch', revision: 2),
+      );
+      queue.state = queue.state.copyWith(
+        lastAcks: [ack.ack],
+        lastAckBatch: [ack],
+      );
+      await _settle();
+      expect(container.read(textProvider).single.text, 'restored');
+      expect(elementOps(container), isEmpty);
+      await _settle();
+    });
+
     test('moving past an element with the same sortIndex is sent', () async {
       final container = await open(
           _FakeRemoteEditorNotifier(snapshot([text('a', 3), text('b', 3)])));
