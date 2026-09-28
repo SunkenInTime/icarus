@@ -29,6 +29,9 @@ const sweepDeletedImageAssets = makeFunctionReference<"action">(
   "images:sweepDeletedImageAssets",
 );
 const completeUpload = makeFunctionReference<"action">("images:completeUpload");
+const generateUploadUrl = makeFunctionReference<"action">(
+  "images:generateUploadUrl",
+);
 const getAssetUrl = makeFunctionReference<"query">("images:getAssetUrl");
 
 type Harness = TestConvexForDataModel<DataModel>;
@@ -549,6 +552,51 @@ describe("image asset lifecycle", () => {
 
     expect(await allAssets(t)).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("an upload deleted while its URL still works keeps its row until the URL dies", async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockR2Deletes();
+    const { t, owner } = await createHarness();
+    await seedStrategy(owner);
+    const upload = (await owner.action(generateUploadUrl, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId,
+      assetPublicId: "in-flight",
+      mimeType: "image/png",
+      fileExtension: "png",
+    })) as { objectKey: string; expiresAt: number };
+    expect(await allAssets(t)).toMatchObject([
+      { uploadStatus: "pending", uploadUrlExpiresAt: upload.expiresAt },
+    ]);
+
+    // The strategy goes while the client's PUT may still be sending bytes.
+    await owner.mutation(deleteStrategy, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId,
+      expectedRevision: 0,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await allAssets(t)).toMatchObject([
+      { uploadStatus: "deleted", objectKey: upload.objectKey },
+    ]);
+
+    // Well after expiry, a PUT that started in time may still be sending
+    // over a slow connection.
+    vi.setSystemTime(upload.expiresAt + 23 * 60 * 60 * 1000);
+    await expect(
+      t.action(sweepDeletedImageAssets, {}),
+    ).resolves.toMatchObject({ deleted: 0, failed: 0 });
+
+    vi.setSystemTime(upload.expiresAt + 24 * 60 * 60 * 1000);
+    await expect(
+      t.action(sweepDeletedImageAssets, {}),
+    ).resolves.toMatchObject({ deleted: 1, failed: 0 });
+    expect(await allAssets(t)).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(upload.objectKey);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
   });
 
   test("legacy reads survive while completion inserts an exact-owned replacement", async () => {
