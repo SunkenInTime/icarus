@@ -23,10 +23,12 @@ env:
   PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
 jobs:
-  # Decides which lanes a run needs. Every lane runs for pushes, manual runs,
-  # PRs into main, PRs that change CI itself, and PRs whose files can't be
-  # listed. Otherwise a PR runs the always-on lanes (analyze, test, web) plus
-  # the lanes its changed files reach.
+  # Decides which lanes a run needs. Every lane runs for manual runs, PRs into
+  # main, PRs that change CI itself, and PRs whose files can't be listed.
+  # Pushes run every lane but the desktop builds: the release runs the upgrade
+  # and rollback test on its signed installer before publishing. Otherwise a
+  # PR runs the always-on lanes (analyze, test, web) plus the lanes its
+  # changed files reach.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -37,7 +39,7 @@ jobs:
       presence: ${{ steps.lanes.outputs.presence }}
       contract: ${{ steps.lanes.outputs.contract }}
       rust: ${{ steps.lanes.outputs.rust }}
-      native: ${{ steps.lanes.outputs.native }}
+      desktop: ${{ steps.lanes.outputs.desktop }}
     steps:
       - name: Pick lanes from changed files
         id: lanes
@@ -50,8 +52,11 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           full=false
+          merged=false
           files=""
-          if [[ "$EVENT" != "pull_request" || "$BASE_REF" == "main" ]]; then
+          if [[ "$EVENT" == "push" ]]; then
+            merged=true
+          elif [[ "$EVENT" != "pull_request" || "$BASE_REF" == "main" ]]; then
             full=true
           elif ! files=$(gh pr diff "$PR" --repo "$REPO" --name-only); then
             echo "Could not list the PR's files; running every lane."
@@ -61,7 +66,9 @@ jobs:
           fi
 
           lane() {
-            if [[ "$full" == true ]] || grep -qE "$2" <<<"$files"; then
+            if [[ "$full" == true ]] ||
+              { [[ "$merged" == true ]] && [[ "$1" != desktop ]]; } ||
+              grep -qE "$2" <<<"$files"; then
               echo "$1=true" >> "$GITHUB_OUTPUT"
               echo "$1: runs"
             else
@@ -73,10 +80,11 @@ jobs:
           lane presence '^presence/'
           lane contract '^(convex/|tool/|lib/collab/)'
           lane rust '^third_party/'
-          # The desktop builds, installer, and upgrade/rollback test: native
-          # code, dependencies, release scripts, and anything that changes
-          # what a shipped build finds in its Hive store.
-          lane native '^(windows/|linux/|installer/|scripts/|third_party/|pubspec\.(yaml|lock)$|\.fvmrc$|lib/main\.dart$|lib/migrations/)|\.g\.dart$'
+          # The desktop builds and the upgrade/rollback test, for changes to
+          # what a shipped build finds in its Hive store, the installer, the
+          # release scripts, or the test itself. The release runs the same
+          # test on every signed installer; this catches a break on its PR.
+          lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$'
 
   analyze:
     runs-on: ubuntu-latest
@@ -306,7 +314,7 @@ jobs:
 
   linux-build:
     needs: changes
-    if: needs.changes.outputs.native == 'true'
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
@@ -334,7 +342,7 @@ jobs:
   # public release to it, then rolls back.
   windows-build:
     needs: changes
-    if: needs.changes.outputs.native == 'true'
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -408,7 +416,7 @@ jobs:
   # The suite on the platform we ship, for the same changes as windows-build.
   windows-test:
     needs: changes
-    if: needs.changes.outputs.native == 'true'
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-latest
     defaults:
       run:
