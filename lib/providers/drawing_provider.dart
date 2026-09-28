@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
@@ -932,8 +933,20 @@ class DrawingProvider extends Notifier<DrawingState> {
       idOf: (drawing) => drawing.id,
       keep: keep,
     );
+    final onScreen = {
+      for (final drawing in state.elements)
+        if (drawing is FreeDrawing) drawing.id: drawing,
+    };
     for (final drawing in incoming) {
-      if (drawing is FreeDrawing && !keep(drawing.id)) {
+      if (drawing is! FreeDrawing || keep(drawing.id)) continue;
+      // A stroke whose points did not change reuses the path already built
+      // for this canvas; on a busy page most strokes are unchanged.
+      final current = onScreen[drawing.id];
+      if (current != null &&
+          current.thickness == drawing.thickness &&
+          listEquals(current.listOfPoints, drawing.listOfPoints)) {
+        drawing.updatePath(current.path);
+      } else {
         drawing.rebuildPath(coordinateSystem);
       }
     }
