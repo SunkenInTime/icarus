@@ -249,8 +249,11 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     };
   }
 
-  bool _sameLiveEntity(_NormalizedEntity? a, _NormalizedEntity? b) =>
-      a == null ? b == null : b != null && _entitiesEquivalent(a, b);
+  /// Same version of the same content: a teammate's write that happens to
+  /// restore what the canvas drew is still a newer version.
+  bool _sameLiveEntity(_NormalizedEntity? a, _NormalizedEntity? b) => a == null
+      ? b == null
+      : b != null && a.revision == b.revision && _entitiesEquivalent(a, b);
 
   /// Drops [pageId]'s overlays that no op in the queue carries any more.
   ///

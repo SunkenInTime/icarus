@@ -276,15 +276,15 @@ class TextProvider extends Notifier<List<PlacedText>> {
     return jsonEncode(jsonList);
   }
 
-  /// Takes the server's copy of every item but those [keep] names; see
+  /// Takes the server's copy of the items [rule] does not keep; see
   /// [mergeRemoteItems].
   /// Open drafts stay open.
-  void mergeRemote(List<PlacedText> incoming, bool Function(String id) keep) {
+  void mergeRemote(List<PlacedText> incoming, RemoteMergeRule rule) {
     state = mergeRemoteItems(
       current: state,
       incoming: incoming.map(_migrateLoadedText).toList(),
       idOf: (text) => text.id,
-      keep: keep,
+      rule: rule,
     );
   }
 

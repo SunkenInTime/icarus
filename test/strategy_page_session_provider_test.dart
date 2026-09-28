@@ -1080,6 +1080,19 @@ void main() {
       };
     }
 
+    test('a merge keeps every item it did not change as the same object',
+        () async {
+      final remote =
+          _FakeRemoteEditorNotifier(snapshot([text('a', 0), text('b', 1)]));
+      final container = await open(remote);
+      final before = container.read(textProvider).first;
+      remote.setSnapshot(snapshot([text('a', 0), text('b', 1, revision: 2)],
+          contentRevision: 2));
+      await _settle();
+      expect(identical(container.read(textProvider).first, before), isTrue);
+      expect(container.read(textProvider).last.id, 'b');
+    });
+
     test('moving past an element with the same sortIndex is sent', () async {
       final container = await open(
           _FakeRemoteEditorNotifier(snapshot([text('a', 3), text('b', 3)])));

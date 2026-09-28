@@ -548,15 +548,15 @@ class PlacedImageProvider extends Notifier<ImageState> {
     );
   }
 
-  /// Takes the server's copy of every item but those [keep] names; see
+  /// Takes the server's copy of the items [rule] does not keep; see
   /// [mergeRemoteItems].
-  void mergeRemote(List<PlacedImage> incoming, bool Function(String id) keep) {
+  void mergeRemote(List<PlacedImage> incoming, RemoteMergeRule rule) {
     state = state.copyWith(
       images: mergeRemoteItems(
         current: state.images,
         incoming: incoming.map(_migrateLoadedImage).toList(),
         idOf: (image) => image.id,
-        keep: keep,
+        rule: rule,
       ),
     );
   }
