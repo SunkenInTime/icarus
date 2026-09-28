@@ -7,7 +7,11 @@ description: >-
 runs:
   using: composite
   steps:
+    # Its problem matcher resolves against the calling action's folder and
+    # fails inside a composite action, so it stays off.
     - uses: dart-lang/setup-dart@v1
+      with:
+        problem-matcher: false
 
     - name: Cache Pub Packages
       uses: actions/cache@v4
