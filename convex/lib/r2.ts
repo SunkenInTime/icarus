@@ -68,6 +68,14 @@ function optionalPositiveIntEnv(
   return parsed;
 }
 
+export function getUploadUrlExpiresSeconds(): number {
+  return optionalPositiveIntEnv(
+    "R2_UPLOAD_URL_EXPIRES_SECONDS",
+    defaultUploadUrlExpiresSeconds,
+    { min: 1, max: 604800 },
+  );
+}
+
 export function getR2Config(): R2Config {
   const accountId = requiredEnv("R2_ACCOUNT_ID");
   const bucket = requiredEnv("R2_BUCKET");
@@ -82,11 +90,7 @@ export function getR2Config(): R2Config {
     accessKeyId: requiredEnv("R2_ACCESS_KEY_ID"),
     secretAccessKey: requiredEnv("R2_SECRET_ACCESS_KEY"),
     publicBaseUrl: getR2PublicBaseUrl(),
-    uploadUrlExpiresSeconds: optionalPositiveIntEnv(
-      "R2_UPLOAD_URL_EXPIRES_SECONDS",
-      defaultUploadUrlExpiresSeconds,
-      { min: 1, max: 604800 },
-    ),
+    uploadUrlExpiresSeconds: getUploadUrlExpiresSeconds(),
     maxImageBytes: optionalPositiveIntEnv(
       "R2_MAX_IMAGE_BYTES",
       defaultMaxImageBytes,
