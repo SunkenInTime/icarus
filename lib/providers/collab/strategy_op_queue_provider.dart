@@ -1608,12 +1608,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// successor it holds, including work whose first save could not be
   /// verified: work for a page the server no longer has, which the user has
   /// been told cannot be saved. An op in flight stays until the server
-  /// answers it. Returns whether nothing is left for the page.
+  /// answers it; one marked in flight by a send that never finished (the app
+  /// closed mid-request) is only waiting to be replayed, and goes. Returns
+  /// whether nothing is left for the page.
   Future<bool> discardDeletedPage(String pageId) async {
     await _serializeWrite(() async {
       final accountId = state.accountId;
       final strategyPublicId = state.strategyPublicId;
       if (accountId == null || strategyPublicId == null) return;
+      final isSending = _drainingStrategy ==
+          (accountId: accountId, strategyPublicId: strategyPublicId);
       final storageKeys = {
         for (final record in [
           ..._recordsByStorageKey.values,
@@ -1622,7 +1626,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           if (record.accountId == accountId &&
               record.strategyPublicId == strategyPublicId &&
               record.entityKey.pageId == pageId &&
-              record.status != DurableOutboxStatus.inFlight)
+              !(isSending && record.status == DurableOutboxStatus.inFlight))
             record.storageKey,
       };
       Object? persistenceError;
