@@ -9,6 +9,7 @@ import 'package:icarus/const/placed_media_geometry.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/migrations/map_scale_history.dart';
+import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 abstract final class CanonicalCoordinatesMigration {
@@ -78,7 +79,7 @@ abstract final class CanonicalCoordinatesMigration {
     PlacedAbility ability,
     double mapScale,
   ) {
-    final data = ability.data.abilityData!;
+    final data = abilityDataBeforeVersion104(ability.data)!;
     final shouldRotate = isRotatable(data) ||
         AbilityVisionConeSpec.forAbility(ability.data) != null;
     final migrated = ability.copyWith(

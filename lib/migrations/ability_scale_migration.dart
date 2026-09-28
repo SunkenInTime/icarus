@@ -6,6 +6,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/map_scale_history.dart';
+import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 class AbilityScaleMigration {
@@ -54,7 +55,7 @@ class AbilityScaleMigration {
     required PlacedAbility ability,
     required MapValue map,
   }) {
-    final data = ability.data.abilityData;
+    final data = abilityDataBeforeVersion104(ability.data);
     if (data == null) return ability;
 
     final oldMapScale = _oldMapScale[map] ?? 1.0;
