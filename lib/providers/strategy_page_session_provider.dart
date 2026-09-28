@@ -138,6 +138,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _disposed = false;
   int _pageSessionGeneration = 0;
 
+  /// Pages whose delete from this device the server accepted. Their
+  /// disappearing is the user's own doing, whatever work is left on them.
+  final Set<String> _pagesDeletedHere = {};
+
   @override
   StrategyPageSessionState build() {
     ref.onDispose(() => _disposed = true);
@@ -204,6 +208,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       if (next.lastAckBatch.isEmpty ||
           identical(previousAckBatch, next.lastAckBatch)) {
         return;
+      }
+      for (final acked in next.lastAckBatch) {
+        if (acked.op case PageDeleteOp(:final pagePublicId)
+            when acked.ack.isAck) {
+          _pagesDeletedHere.add(pagePublicId);
+        }
       }
       unawaited(_reconcileAcks(next.lastAcks, next.lastAckBatch));
     });
@@ -907,7 +917,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         _lastHydratedRemotePageKey?.pageId != pageId) {
       return false;
     }
-    // The user deleted it here: their delete is still on its way.
+    // The user deleted it here: their delete landed, or is still on its way.
+    // Work on it the server paused or refused stays in the sync status.
+    if (_pagesDeletedHere.contains(pageId)) return false;
     final queue = ref.read(strategyOpQueueProvider);
     final descriptor = EntitySyncKey.pageDescriptor(pageId);
     if ([

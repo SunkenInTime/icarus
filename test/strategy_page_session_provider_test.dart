@@ -292,6 +292,21 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     );
   }
 
+  /// Parks [op] after too many failed sends, as paused work.
+  void pause(StrategyOp op) {
+    final key = EntitySyncKey.forStrategyOp(op)!;
+    state = state.copyWith(
+      pausedByEntityKey: {
+        ...state.pausedByEntityKey,
+        key: QueuedEntityIntent(
+          entityKey: key,
+          pending: PendingOp(op: op, clientId: 'test-client'),
+        ),
+      },
+      lastError: 'Some saved work is paused.',
+    );
+  }
+
   void holdInFlight(EntitySyncKey key, StrategyOp op) {
     state = state.copyWith(
       inFlightByEntityKey: {
@@ -1164,6 +1179,71 @@ void main() {
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, isNull);
     expect(session.activePageId, two.publicId);
+  });
+
+  test("the user's own deletion says nothing over an earlier paused edit",
+      () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: _pageSnapshot(one, text: 'one'),
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {
+          one.publicId: _pageSnapshot(one, text: 'one'),
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    // An earlier edit on the page that the server kept failing.
+    final paused = ElementPatchOp(
+      opId: 'paused-edit',
+      pagePublicId: one.publicId,
+      elementPublicId: 'text-${one.publicId}',
+      payload: const {'value': 'kept'},
+      expectedElementRevision: 1,
+    );
+    queue.pause(paused);
+    // The server accepts the delete, and the live read drops the page.
+    queue.onFlush = () {
+      final deleting = container
+          .read(strategyOpQueueProvider)
+          .queuedByEntityKey
+          .values
+          .any((intent) => intent.pending.op is PageDeleteOp);
+      if (!deleting) return;
+      queue.ackQueued();
+      remote.setSnapshot(_editorSnapshot(
+        pages: [two],
+        activePage: _pageSnapshot(two, text: 'two'),
+        themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+      ));
+    };
+
+    await container.read(strategyProvider.notifier).deletePage(one.publicId);
+    queue.onFlush = null;
+    await _settle();
+
+    // Before, the page read as deleted by a teammate and the switch the
+    // delete planned was refused.
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, two.publicId);
+    expect(container.read(textProvider).single.text, 'two');
+    // The paused edit still shows in the sync status.
+    expect(
+      container.read(strategyOpQueueProvider).pausedByEntityKey.keys,
+      [EntitySyncKey.forStrategyOp(paused)],
+    );
   });
 
   test('a deletion landing while a switch flushes still tells the user',
