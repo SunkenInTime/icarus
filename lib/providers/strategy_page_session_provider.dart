@@ -22,6 +22,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -36,6 +37,7 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
@@ -49,12 +51,17 @@ enum PageTransitionState {
 
 enum PageSwitchDirection { next, previous }
 
+/// The page on screen, which a teammate deleted while it held work the server
+/// never got. [name] is its name when it was last loaded.
+typedef DeletedPage = ({String pageId, String name});
+
 class StrategyPageSessionState {
   const StrategyPageSessionState({
     required this.activePageId,
     required this.availablePageIds,
     required this.transitionState,
     required this.isApplyingPage,
+    this.deletedPage,
   });
 
   final String? activePageId;
@@ -62,12 +69,18 @@ class StrategyPageSessionState {
   final PageTransitionState transitionState;
   final bool isApplyingPage;
 
+  /// Set until the user has read that their unsaved work on the deleted page
+  /// on screen cannot be saved. The canvas stays on it until then.
+  final DeletedPage? deletedPage;
+
   StrategyPageSessionState copyWith({
     String? activePageId,
     bool clearActivePageId = false,
     List<String>? availablePageIds,
     PageTransitionState? transitionState,
     bool? isApplyingPage,
+    DeletedPage? deletedPage,
+    bool clearDeletedPage = false,
   }) {
     return StrategyPageSessionState(
       activePageId:
@@ -75,6 +88,7 @@ class StrategyPageSessionState {
       availablePageIds: availablePageIds ?? this.availablePageIds,
       transitionState: transitionState ?? this.transitionState,
       isApplyingPage: isApplyingPage ?? this.isApplyingPage,
+      deletedPage: clearDeletedPage ? null : (deletedPage ?? this.deletedPage),
     );
   }
 }
@@ -124,6 +138,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _remoteChangeWaitsForEditor = false;
   bool _disposed = false;
   int _pageSessionGeneration = 0;
+
+  /// Pages whose delete from this device the server accepted. Their
+  /// disappearing is the user's own doing, whatever work is left on them.
+  final Set<String> _pagesDeletedHere = {};
 
   @override
   StrategyPageSessionState build() {
@@ -192,6 +210,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           identical(previousAckBatch, next.lastAckBatch)) {
         return;
       }
+      _notePagesDeletedHere(next);
       unawaited(_reconcileAcks(next.lastAcks, next.lastAckBatch));
     });
 
@@ -224,6 +243,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       clearActivePageId: selected == null,
       transitionState: PageTransitionState.idle,
       isApplyingPage: false,
+      clearDeletedPage: true,
     );
     ref.read(activePageLiveSyncProvider.notifier).setContext(
           strategyPublicId: strategyId,
@@ -236,7 +256,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   Future<void> setActivePage(String pageId) async {
-    if (pageId == state.activePageId) {
+    if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
     await _switchToPage(pageId, animated: false);
@@ -247,7 +267,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required PageTransitionDirection direction,
     Duration duration = kPageTransitionDuration,
   }) async {
-    if (pageId == state.activePageId) {
+    if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
     final previousPageId = state.activePageId;
@@ -294,11 +314,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
 
     try {
-      await _switchToPage(
+      final switched = await _switchToPage(
         pageId,
         animated: true,
         direction: direction,
       );
+      if (!switched) {
+        transitionNotifier.complete();
+        state = state.copyWith(transitionState: PageTransitionState.idle);
+        return;
+      }
     } catch (error, stackTrace) {
       transitionNotifier.complete();
       final strategyState = ref.read(strategyProvider);
@@ -490,24 +515,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       }
 
       final targetPageId = _resolveHydrationTargetPage(snapshot);
-      final hasPendingMetadata = ref.read(strategyOpQueueProvider).pending.any(
-        (pending) {
-          final op = pending.op;
-          return op is StrategyPatchOp &&
-              op.payload.keys.any((key) =>
-                  key == 'mapData' ||
-                  key == 'themeProfileId' ||
-                  key == 'clearThemeProfileId' ||
-                  key == 'themeOverridePalette' ||
-                  key == 'clearThemeOverridePalette');
-        },
-      );
-      final localMetadata = hasPendingMetadata
-          ? (
-              map: ref.read(mapProvider).currentMap,
-              theme: ref.read(strategyThemeProvider),
-            )
-          : null;
+      final localMetadata = _unsentLocalMetadata();
       if (targetPageId != null) {
         final pageSource = CloudStrategyPageSource(
           ref,
@@ -586,6 +594,30 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
+  /// The strategy's map and theme on screen, while a change to them is still
+  /// on its way: loading a page must keep them rather than take the older
+  /// server copy (and so drop the change).
+  ({MapValue map, StrategyThemeState theme})? _unsentLocalMetadata() {
+    final hasPendingMetadata = ref.read(strategyOpQueueProvider).pending.any(
+      (pending) {
+        final op = pending.op;
+        return op is StrategyPatchOp &&
+            op.payload.keys.any((key) =>
+                key == 'mapData' ||
+                key == 'themeProfileId' ||
+                key == 'clearThemeProfileId' ||
+                key == 'themeOverridePalette' ||
+                key == 'clearThemeOverridePalette');
+      },
+    );
+    return hasPendingMetadata
+        ? (
+            map: ref.read(mapProvider).currentMap,
+            theme: ref.read(strategyThemeProvider),
+          )
+        : null;
+  }
+
   bool get isApplyingPage => state.isApplyingPage;
 
   void setStateForTest(StrategyPageSessionState newState) {
@@ -608,7 +640,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     ref.read(activePageLiveSyncProvider.notifier).reset();
   }
 
-  Future<void> _switchToPage(
+  /// Returns false, leaving the page on screen, if a teammate deleted it
+  /// while its work was being flushed.
+  Future<bool> _switchToPage(
     String pageId, {
     required bool animated,
     PageTransitionDirection? direction,
@@ -618,7 +652,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final strategyId = strategyState.strategyId;
     final source = strategyState.source;
     if (strategyId == null || source == null) {
-      return;
+      return true;
     }
 
     final pageSource = _resolvePageSource(strategyId, source);
@@ -631,6 +665,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           .read(strategyOpQueueProvider.notifier)
           .flushNow()
           .timeout(const Duration(milliseconds: 750), onTimeout: () {});
+      // The page may have been deleted while its work was flushed.
+      if (_deletedPageHoldsWork()) return false;
       state = state.copyWith(activePageId: pageId);
       ref.read(activePageLiveSyncProvider.notifier).setContext(
             strategyPublicId: strategyId,
@@ -652,6 +688,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (animated && direction != null) {
       _updateHydrationBookkeeping(pageData.pageId);
     }
+    return true;
   }
 
   Future<void> _rehydrateActivePageFromSource(
@@ -825,6 +862,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _canSafelyReapplyRemotePage() {
     final saveState = ref.read(strategySaveStateProvider);
     return !_isResolvingConflicts &&
+        state.deletedPage == null &&
         !state.isApplyingPage &&
         state.transitionState == PageTransitionState.idle &&
         ref.read(editorHeldEntitiesProvider) != null &&
@@ -838,7 +876,136 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       unawaited(_reapplyRemotePage(pageId));
     } else {
       _pendingRemoteReapply = true;
+      _checkActivePageOnServer();
     }
+  }
+
+  /// A replace of the page on screen is waiting. If it waits on work for a
+  /// page a teammate deleted, the user is told now, unless they are
+  /// mid-gesture: the gesture ending asks again.
+  void _checkActivePageOnServer() {
+    if (_isResolvingConflicts ||
+        state.isApplyingPage ||
+        state.transitionState != PageTransitionState.idle ||
+        ref.read(editorBusyProvider)) {
+      return;
+    }
+    _deletedPageHoldsWork();
+  }
+
+  /// Whether the canvas is on a page a teammate deleted, holding work the
+  /// server never got. That work can never be sent, so waiting for it would
+  /// wait forever and replacing the page would drop it unseen: the user is
+  /// told first ([StrategyPageSessionState.deletedPage]). Checked before the
+  /// canvas leaves the page, and while a replace of it waits. With nothing
+  /// unsent, the unsaved mark its edits left is stale and is dropped.
+  bool _deletedPageHoldsWork() {
+    if (state.deletedPage != null) return true;
+    final pageId = state.activePageId;
+    final strategy = ref.read(strategyProvider);
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (pageId == null ||
+        !strategy.isOpen ||
+        strategy.source != StrategySource.cloud ||
+        snapshot == null ||
+        snapshot.header.publicId != strategy.strategyId ||
+        snapshot.pages.any((page) => page.publicId == pageId) ||
+        _lastHydratedRemotePageKey?.pageId != pageId) {
+      return false;
+    }
+    // The user deleted it here: their delete landed, or is still on its way.
+    // Work on it the server paused or refused stays in the sync status.
+    final queue = ref.read(strategyOpQueueProvider);
+    _notePagesDeletedHere(queue);
+    if (_pagesDeletedHere.contains(pageId)) return false;
+    final descriptor = EntitySyncKey.pageDescriptor(pageId);
+    if ([
+      queue.queuedByEntityKey[descriptor]?.pending.op,
+      queue.inFlightByEntityKey[descriptor]?.pending.op,
+      queue.successorByEntityKey[descriptor]?.pending.op,
+    ].any((op) => op is PageDeleteOp)) {
+      return false;
+    }
+    if (!ref.read(activePageLiveSyncProvider.notifier).hasUnsentWork(pageId)) {
+      ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
+      return false;
+    }
+    final lastSeen = _lastAppliedRemoteSnapshot?.pages
+        .where((page) => page.publicId == pageId)
+        .firstOrNull;
+    state = state.copyWith(
+      deletedPage: (pageId: pageId, name: lastSeen?.name ?? 'This page'),
+    );
+    return true;
+  }
+
+  /// Records the pages whose delete the server just accepted from [queue].
+  /// Called from the check as well as the queue listener: a listener
+  /// registered earlier (save state) can run the check first.
+  void _notePagesDeletedHere(StrategyOpQueueState queue) {
+    for (final acked in queue.lastAckBatch) {
+      if (acked.op case PageDeleteOp(:final pagePublicId)
+          when acked.ack.isAck) {
+        _pagesDeletedHere.add(pagePublicId);
+      }
+    }
+  }
+
+  /// Lets the deleted page on screen go, with the unsaved work on it, and
+  /// puts a page the server has on screen. Returns false, staying on the
+  /// deleted page, while some of that work is still on its way and cannot be
+  /// taken back, or if no other page could be loaded.
+  Future<bool> leaveDeletedPage() async {
+    final deleted = state.deletedPage;
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (deleted == null || strategyId == null) return false;
+    if (!await _withdrawPageWork(deleted.pageId) ||
+        state.deletedPage != deleted) {
+      return false;
+    }
+    // Images only that work placed have nothing left to show them.
+    unawaited(ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .recheckAfterDiscardedWork(strategyId));
+    // A read that failed earlier would otherwise fail every retry.
+    final remote = ref.read(remoteEditorSnapshotProvider.notifier);
+    await remote.refresh();
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final target =
+        snapshot == null ? null : _resolveHydrationTargetPage(snapshot);
+    if (target == null ||
+        target == deleted.pageId ||
+        state.deletedPage != deleted) {
+      return false;
+    }
+    // Loaded here, not through the reapply that waits for pending cloud
+    // work: work queued for other pages is not on this canvas, and the
+    // deleted page must not stay editable while it waits.
+    try {
+      await remote.setActivePage(target);
+      final source = _resolvePageSource(strategyId, StrategySource.cloud);
+      final pageData = await source.loadPage(target);
+      if (state.deletedPage != deleted) return false;
+      await _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: StrategySource.cloud,
+        loadedRemoteSnapshot: source.loadedRemoteSnapshot,
+        preservedMetadata: _unsentLocalMetadata(),
+      );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not load a page to replace the deleted one.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'strategy_page_session:leave_deleted_page',
+        promptUser: false,
+      );
+      return false;
+    }
+    ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
+    state = state.copyWith(clearDeletedPage: true);
+    return true;
   }
 
   Future<void> _reapplyRemotePage(String pageId) async {
@@ -910,6 +1077,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             _remoteChangeWaitsForEditor = true;
             return false;
           }
+          if (_deletedPageHoldsWork()) return false;
           return canApply();
         },
       );
@@ -1156,11 +1324,58 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
+  /// How long leaving a deleted page waits on work already sent for it.
+  @visibleForTesting
+  Duration pageWorkSettleTimeout = const Duration(seconds: 10);
+
+  /// Takes every op for [pageId] out of the queue, with the local intent
+  /// (overlays) they carried. An op already sent cannot be taken back, so
+  /// this waits for it to be answered, then takes out what it left. Returns
+  /// whether the queue holds nothing for the page.
+  Future<bool> _withdrawPageWork(String pageId) async {
+    final queue = ref.read(strategyOpQueueProvider.notifier);
+    if (!await queue.discardDeletedPage(pageId)) {
+      await _queueSettles((state) =>
+          !state.inFlightByEntityKey.keys.any((key) => key.pageId == pageId));
+      await queue.discardDeletedPage(pageId);
+    }
+    ref.read(activePageLiveSyncProvider.notifier).dropSatisfiedOverlays(pageId);
+    final state = ref.read(strategyOpQueueProvider);
+    return ![
+      state.queuedByEntityKey,
+      state.inFlightByEntityKey,
+      state.successorByEntityKey,
+      state.pausedByEntityKey,
+      state.attentionByEntityKey,
+    ].any((intents) => intents.keys.any((key) => key.pageId == pageId));
+  }
+
+  /// Waits, at most [pageWorkSettleTimeout], for the op queue to satisfy
+  /// [settled].
+  Future<void> _queueSettles(
+    bool Function(StrategyOpQueueState queue) settled,
+  ) async {
+    if (settled(ref.read(strategyOpQueueProvider))) return;
+    final done = Completer<void>();
+    final subscription = ref.listen<StrategyOpQueueState>(
+      strategyOpQueueProvider,
+      (_, next) {
+        if (settled(next) && !done.isCompleted) done.complete();
+      },
+    );
+    try {
+      await done.future.timeout(pageWorkSettleTimeout, onTimeout: () {});
+    } finally {
+      subscription.close();
+    }
+  }
+
   void _resumePendingRemoteReapplyIfPossible() {
-    if (_disposed ||
-        _remoteReapplyInFlight ||
-        !_pendingRemoteReapply ||
-        !_canSafelyReapplyRemotePage()) {
+    if (_disposed || _remoteReapplyInFlight || !_pendingRemoteReapply) {
+      return;
+    }
+    if (!_canSafelyReapplyRemotePage()) {
+      _checkActivePageOnServer();
       return;
     }
     _pendingRemoteReapply = false;

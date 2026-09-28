@@ -179,6 +179,32 @@ class _ConflictSession extends StrategyPageSessionNotifier {
   }
 }
 
+class _DeletedPageSession extends StrategyPageSessionNotifier {
+  _DeletedPageSession({required this.leaves});
+
+  final bool leaves;
+  int leaveCount = 0;
+
+  @override
+  StrategyPageSessionState build() => const StrategyPageSessionState(
+        activePageId: 'page-1',
+        availablePageIds: ['page-2'],
+        transitionState: PageTransitionState.idle,
+        isApplyingPage: false,
+      );
+
+  void teammateDeletes() => setStateForTest(
+        state.copyWith(deletedPage: (pageId: 'page-1', name: 'A exec')),
+      );
+
+  @override
+  Future<bool> leaveDeletedPage() async {
+    leaveCount += 1;
+    if (leaves) setStateForTest(state.copyWith(clearDeletedPage: true));
+    return leaves;
+  }
+}
+
 class _FixedLiveSync extends ActivePageLiveSyncNotifier {
   _FixedLiveSync(this.fixed);
 
@@ -1002,5 +1028,99 @@ void main() {
       container.read(strategyOpQueueProvider).attentionByEntityKey,
       hasLength(1),
     );
+  });
+
+  test('an image still uploading keeps the unsaved mark', () {
+    final container = _createContainer(
+      saveState: const StrategySaveState(
+        isDirty: true,
+        isSaving: false,
+        hasPendingCloudSync: false,
+        cloudSyncError: null,
+        hasPendingMediaSync: true,
+        mediaSyncErrorCount: 0,
+        lastPersistedAt: null,
+      ),
+    );
+    addTearDown(container.dispose);
+
+    container.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
+
+    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+  });
+
+  group('unsaved work on a page a teammate deleted', () {
+    Future<_DeletedPageSession> pumpButton(
+      WidgetTester tester, {
+      required bool leaves,
+      bool deletedBeforeMount = false,
+    }) async {
+      final session = _DeletedPageSession(leaves: leaves);
+      final container = ProviderContainer(overrides: [
+        strategyProvider.overrideWith(_CloudStrategyProvider.new),
+        strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+        strategyPageSessionProvider.overrideWith(() => session),
+        cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+      ]);
+      addTearDown(container.dispose);
+      if (deletedBeforeMount) {
+        container.read(strategyPageSessionProvider);
+        session.teammateDeletes();
+      }
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+                body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          ),
+        ),
+      );
+      await tester.pump();
+      if (!deletedBeforeMount) session.teammateDeletes();
+      await tester.pumpAndSettle();
+      return session;
+    }
+
+    testWidgets('says so until the user has read it', (tester) async {
+      final session = await pumpButton(tester, leaves: true);
+
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(
+        find.textContaining('“A exec” was deleted while you were editing it'),
+        findsOneWidget,
+      );
+      // Only reading it closes it.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(session.leaveCount, 1);
+      expect(find.text('A teammate deleted this page'), findsNothing);
+    });
+
+    testWidgets('shows when the button mounts after the page was deleted',
+        (tester) async {
+      await pumpButton(tester, leaves: true, deletedBeforeMount: true);
+
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+    });
+
+    testWidgets('stays while changes are still being sent', (tester) async {
+      final session = await pumpButton(tester, leaves: false);
+
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      expect(session.leaveCount, 1);
+      expect(
+        find.textContaining('Could not leave this page yet'),
+        findsOneWidget,
+      );
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+    });
   });
 }

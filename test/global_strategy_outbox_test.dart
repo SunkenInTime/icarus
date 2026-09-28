@@ -585,6 +585,132 @@ void main() {
     });
   });
 
+  test('a page the server deleted drops all its work, successors too',
+      () async {
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'paused',
+      status: DurableOutboxStatus.paused,
+    ).copyWith(
+      successorPending: PendingOp(
+        op: _op(opId: 'successor', elementId: 'element-one', value: 'next'),
+        clientId: 'client-active',
+      ),
+    ));
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'rejected',
+      elementId: 'element-two',
+      status: DurableOutboxStatus.attention,
+    ));
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'other-page',
+      elementId: 'element-three',
+      status: DurableOutboxStatus.paused,
+      op: const ElementPatchOp(
+        opId: 'other-page',
+        elementPublicId: 'element-three',
+        pagePublicId: 'page-two',
+        payload: {'value': 'kept'},
+        expectedElementRevision: 1,
+      ),
+    ));
+    final container = _container(
+      store: store,
+      repository: _RecordingRepository(),
+      connected: () => false,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('active', accountId: 'account-a');
+    await _waitUntil(
+      () => container.read(strategyOpQueueProvider).durableLoaded,
+    );
+    expect(container.read(strategyOpQueueProvider).lastError, isNotNull);
+
+    expect(await notifier.discardDeletedPage('page-one'), isTrue);
+
+    expect(
+      store.load().records.map((record) => record.entityKey.pageId),
+      ['page-two'],
+    );
+    final queue = container.read(strategyOpQueueProvider);
+    expect(queue.pausedByEntityKey.keys.map((key) => key.pageId), ['page-two']);
+    expect(queue.attentionByEntityKey, isEmpty);
+    expect(queue.successorByEntityKey, isEmpty);
+    // The attention was the dropped work's; the paused edit on page two
+    // speaks for itself.
+    expect(queue.lastError, isNot(contains('rejected')));
+  });
+
+  test('a deleted page drops work whose first save could not be verified',
+      () async {
+    final container = _container(
+      store: _FailingPutStore(),
+      repository: _RecordingRepository(),
+      connected: () => false,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('active', accountId: 'account-a');
+    await notifier.enqueue(
+      _op(opId: 'unverified', elementId: 'element-one'),
+      flushImmediately: false,
+    );
+    expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+        isNotEmpty);
+
+    expect(await notifier.discardDeletedPage('page-one'), isTrue);
+
+    final queue = container.read(strategyOpQueueProvider);
+    expect(queue.attentionByEntityKey, isEmpty);
+    expect(queue.lastError, isNull);
+  });
+
+  test('a deleted page drops a send the app closed in the middle of', () async {
+    // Saved as in flight, then the app closed before the server answered.
+    // After a restart, offline, it only waits to be replayed.
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'interrupted',
+      status: DurableOutboxStatus.inFlight,
+    ));
+    final container = _container(
+      store: store,
+      repository: _RecordingRepository(),
+      connected: () => false,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('active', accountId: 'account-a');
+
+    expect(await notifier.discardDeletedPage('page-one'), isTrue);
+
+    expect(store.values, isEmpty);
+    expect(container.read(strategyOpQueueProvider).queuedByEntityKey, isEmpty);
+  });
+
+  test('a deleted page keeps a send the server has not answered', () async {
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(_record(strategyId: 'active', opId: 'sending'));
+    final repository = _HeldFirstRepository();
+    final container = _container(store: store, repository: repository);
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('active', accountId: 'account-a');
+    await repository.firstStarted.future;
+
+    expect(await notifier.discardDeletedPage('page-one'), isFalse);
+    expect(store.values, hasLength(1));
+
+    repository.releaseFirst();
+    await _waitUntil(() => store.values.isEmpty);
+    expect(await notifier.discardDeletedPage('page-one'), isTrue);
+  });
+
   test('auth readiness recovery resumes eligible closed-strategy work',
       () async {
     final store = MemoryDurableStrategyOutboxStore();
@@ -644,7 +770,7 @@ DurableOutboxRecord _record({
   return DurableOutboxRecord(
     accountId: accountId,
     strategyPublicId: strategyId,
-    entityKey: EntitySyncKey.element('page-one', elementId),
+    entityKey: EntitySyncKey.element(op.pagePublicId ?? 'page-one', elementId),
     pending: PendingOp(op: op, clientId: 'client-$strategyId'),
     status: status,
     createdAt: now,

@@ -21,6 +21,7 @@ class RemoteEditorSnapshotNotifier
   String? _activePagePublicId;
   StreamSubscription<RemoteStrategyShell>? _shellSubscription;
   StreamSubscription<RemotePageSnapshot>? _pageSubscription;
+  String? _subscribedPagePublicId;
   Timer? _refreshDebounce;
   int _pageEpoch = 0;
   Map<String, RemoteImageAsset>? _lastReconciledAssetsById;
@@ -66,6 +67,7 @@ class RemoteEditorSnapshotNotifier
     final epoch = ++_pageEpoch;
     await _pageSubscription?.cancel();
     _pageSubscription = null;
+    _subscribedPagePublicId = null;
 
     final current = state.valueOrNull;
     if (current != null) {
@@ -96,7 +98,18 @@ class RemoteEditorSnapshotNotifier
   }
 
   Future<void> refresh() async {
-    if (_activeStrategyPublicId != null) await _refreshFromServer();
+    final strategyPublicId = _activeStrategyPublicId;
+    if (strategyPublicId == null) return;
+    await _refreshFromServer();
+    // A page whose selection failed, or that the refresh moved to, has no
+    // live read yet: a read that worked starts one.
+    final pageId = _activePagePublicId;
+    if (pageId != null &&
+        pageId != _subscribedPagePublicId &&
+        strategyPublicId == _activeStrategyPublicId &&
+        state.valueOrNull?.activePage?.page.publicId == pageId) {
+      await _startPageSubscription(strategyPublicId, pageId);
+    }
   }
 
   void clear() {
@@ -178,8 +191,16 @@ class RemoteEditorSnapshotNotifier
     String strategyPublicId,
     String pagePublicId,
   ) async {
-    await _pageSubscription?.cancel();
+    // Claimed before the await: a start that overlaps this one wins, and
+    // this one must not install a second watcher.
     final epoch = ++_pageEpoch;
+    await _pageSubscription?.cancel();
+    if (epoch != _pageEpoch ||
+        _activeStrategyPublicId != strategyPublicId ||
+        _activePagePublicId != pagePublicId) {
+      return;
+    }
+    _subscribedPagePublicId = pagePublicId;
     _pageSubscription = ref
         .read(convexStrategyRepositoryProvider)
         .watchPageSnapshot(
@@ -292,5 +313,6 @@ class RemoteEditorSnapshotNotifier
     unawaited(_pageSubscription?.cancel());
     _shellSubscription = null;
     _pageSubscription = null;
+    _subscribedPagePublicId = null;
   }
 }

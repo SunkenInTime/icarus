@@ -126,6 +126,15 @@ class CloudMediaUploadQueueNotifier
   final Map<String, CloudMediaUploadJob> _jobsByStorageKey = {};
   final Set<String> _restoredStagedJobIds = {};
   final Map<String, _MediaOutboxMutation> _unverifiedByStorageKey = {};
+
+  /// Jobs that wait, not uploading, until a check finds whether anything
+  /// still references their image; if nothing does, they go with their
+  /// bytes. See [recheckAfterDiscardedWork] and [_settleReferenceChecks].
+  /// Held in memory only, so every job restored at launch with a durable
+  /// reference starts marked: the work that referenced it may have been
+  /// discarded before a restart. Restored staged jobs have their own check.
+  final Set<String> _referenceCheckDue = {};
+  Future<void>? _settling;
   Future<void> _writeTail = Future<void>.value();
   bool _disposed = false;
   late DurableCloudMediaOutboxStore _store;
@@ -145,6 +154,11 @@ class CloudMediaUploadQueueNotifier
     _restoredStagedJobIds.addAll(
       loaded.jobs
           .where((job) => !job.referenceDurable)
+          .map(durableCloudMediaOutboxStorageKey),
+    );
+    _referenceCheckDue.addAll(
+      loaded.jobs
+          .where((job) => job.referenceDurable)
           .map(durableCloudMediaOutboxStorageKey),
     );
     // Unreadable records might name bytes, so only a clean load can prove
@@ -400,6 +414,8 @@ class CloudMediaUploadQueueNotifier
   Future<void> retryNow({bool ignoreBackoff = false}) async {
     if (_disposed) return;
     _retryTimer?.cancel();
+    await _settleReferenceChecks();
+    if (_disposed) return;
     await _reconcileStagedJobReferences();
     if (_disposed) return;
     _logMedia(
@@ -535,6 +551,59 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
+  /// Unsaved work of [strategyPublicId] was discarded (a page the server
+  /// deleted), so an image only it placed has nothing left to show it. Every
+  /// upload of the strategy is checked before its next attempt, and goes if
+  /// no queued change and no page on the server references its image.
+  Future<void> recheckAfterDiscardedWork(String strategyPublicId) {
+    _referenceCheckDue.addAll([
+      for (final job in _readJobs())
+        if (job.strategyPublicId == strategyPublicId)
+          durableCloudMediaOutboxStorageKey(job),
+    ]);
+    return retryNow(ignoreBackoff: true);
+  }
+
+  /// Settles each pending reference check: a job whose image nothing
+  /// references any more goes, with its bytes. One still referenced may
+  /// upload. When it cannot be told, a job that could upload may (nothing
+  /// the user made is lost that way), and a staged one keeps its check,
+  /// which is its only way out. Needs the server, and waits while an upload
+  /// runs (it may be one of these jobs, marked since it started). A removal
+  /// that fails is reported and tried again later; the job keeps waiting
+  /// and other jobs go on. One pass at a time, and every retry waits for
+  /// it: two passes could decide the same job differently. A marked job
+  /// never uploads, so no upload runs on a job a pass may delete.
+  Future<void> _settleReferenceChecks() => _settling ??=
+      _settleReferenceChecksOnce().whenComplete(() => _settling = null);
+
+  Future<void> _settleReferenceChecksOnce() async {
+    if (_referenceCheckDue.isEmpty ||
+        state.isProcessing ||
+        !ref.read(authProvider).isConvexUserReady ||
+        !ref.read(convexConnectionSnapshotProvider)) {
+      return;
+    }
+    for (final key in _referenceCheckDue.toList(growable: false)) {
+      final job = _jobsByStorageKey[key];
+      if (job == null) {
+        _referenceCheckDue.remove(key);
+        continue;
+      }
+      // Another account's job waits for that account.
+      if (!_belongsToActiveAccount(job)) continue;
+      final bool? deleted;
+      try {
+        deleted = await _deleteJobWhenReferenceIsGone(job);
+      } catch (_) {
+        continue;
+      }
+      if (deleted == false || (deleted == null && job.referenceDurable)) {
+        _referenceCheckDue.remove(key);
+      }
+    }
+  }
+
   Future<void> clearJobsForStrategy(String strategyPublicId) async {
     final jobs = _readJobs()
         .where((job) => job.strategyPublicId == strategyPublicId)
@@ -577,13 +646,19 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
+  /// Whether [job] may upload: its image is referenced by saved work, and
+  /// no check of that reference is pending.
+  bool _canUpload(CloudMediaUploadJob job) =>
+      job.referenceDurable &&
+      !_referenceCheckDue.contains(durableCloudMediaOutboxStorageKey(job));
+
   CloudMediaUploadJob? _nextRunnableJob({required bool ignoreBackoff}) {
     // A copy: _readJobs() may be the shared `const []` (signed out).
     final jobs = [..._readJobs()]
       ..sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
     final now = DateTime.now();
     for (final job in jobs) {
-      if (!job.referenceDurable) {
+      if (!_canUpload(job)) {
         continue;
       }
       if (ignoreBackoff || !_nextAttemptAt(job).isAfter(now)) {
@@ -642,7 +717,7 @@ class CloudMediaUploadQueueNotifier
       );
       if (bytes == null) {
         _logMedia('upload.local_missing ${_describeJob(job)}');
-        if (await _deleteJobWhenReferenceIsGone(job)) {
+        if (await _deleteJobWhenReferenceIsGone(job) == true) {
           return;
         }
         await _markJobFailed(
@@ -744,11 +819,15 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
-  Future<bool> _deleteJobWhenReferenceIsGone(
+  /// Deletes [job] if nothing references its image any more. Returns true
+  /// when it went, false when something still references the image, and
+  /// null when that could not be told (offline, unreadable outbox, a failed
+  /// read, the job changed meanwhile).
+  Future<bool?> _deleteJobWhenReferenceIsGone(
     CloudMediaUploadJob job,
   ) async {
     final durableOps = ref.read(durableStrategyOutboxStoreProvider).load();
-    if (durableOps.issues.isNotEmpty) return false;
+    if (durableOps.issues.isNotEmpty) return null;
     final pendingReferences = durableOps.records.any(
       (record) =>
           record.accountId == job.accountId &&
@@ -760,10 +839,10 @@ class CloudMediaUploadQueueNotifier
                     job.assetPublicId,
                   ))),
     );
-    if (pendingReferences ||
-        !ref.read(authProvider).isConvexUserReady ||
+    if (pendingReferences) return false;
+    if (!ref.read(authProvider).isConvexUserReady ||
         !ref.read(convexConnectionSnapshotProvider)) {
-      return false;
+      return null;
     }
 
     late final RemoteFullStrategySnapshot snapshot;
@@ -776,18 +855,18 @@ class CloudMediaUploadQueueNotifier
         'missing_source.reference_check_deferred '
         'strategy=${job.strategyPublicId} error=$error',
       );
-      return false;
+      return null;
     }
     final current = _getJob(job.jobId);
     if (!_belongsToActiveAccount(job) ||
         current == null ||
-        current.updatedAt != job.updatedAt ||
-        _snapshotReferencesAsset(snapshot, job.assetPublicId)) {
-      return false;
+        current.updatedAt != job.updatedAt) {
+      return null;
     }
+    if (_snapshotReferencesAsset(snapshot, job.assetPublicId)) return false;
 
     final deleted = await _deleteJob(job, onlyIfUnreferenced: true);
-    if (!deleted) return false;
+    if (!deleted) return null;
     _refreshState();
     _logMedia(
       'missing_source.removed_unreferenced job=${job.jobId} '
@@ -962,10 +1041,9 @@ class CloudMediaUploadQueueNotifier
   void _scheduleRetryForNextEligibleJob({Duration? minimumDelay}) {
     _retryTimer?.cancel();
     final allJobs = _readJobs();
-    final jobs =
-        allJobs.where((job) => job.referenceDurable).toList(growable: false);
+    final jobs = allJobs.where(_canUpload).toList(growable: false);
     if (jobs.isEmpty) {
-      if (allJobs.any((job) => !job.referenceDurable)) {
+      if (allJobs.any((job) => !_canUpload(job))) {
         _retryTimer = Timer(
           minimumDelay ?? _blockedRetryDelay,
           () => unawaited(retryNow()),
@@ -1076,6 +1154,7 @@ class CloudMediaUploadQueueNotifier
         // Both jobs and op references may change while the server is read.
         // Never promote or delete using a stale copy of a media job.
         if (!identical(_getJob(job.jobId), job)) continue;
+        final key = durableCloudMediaOutboxStorageKey(job);
         final localReference = _hasLocalReference(job);
         if (_snapshotReferencesAsset(snapshot, job.assetPublicId) ||
             localReference == true) {
@@ -1089,9 +1168,7 @@ class CloudMediaUploadQueueNotifier
             replacing: job,
           );
         } else if (localReference == false &&
-            _restoredStagedJobIds.contains(
-              durableCloudMediaOutboxStorageKey(job),
-            )) {
+            _restoredStagedJobIds.contains(key)) {
           await _deleteJob(job, onlyIfUnreferenced: true);
         }
       }
@@ -1343,6 +1420,7 @@ class CloudMediaUploadQueueNotifier
           await _store.remove(job);
           _jobsByStorageKey.remove(key);
           _restoredStagedJobIds.remove(key);
+          _referenceCheckDue.remove(key);
           _unverifiedByStorageKey.remove(key);
           _refreshState();
           return true;

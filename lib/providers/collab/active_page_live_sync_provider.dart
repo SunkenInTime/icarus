@@ -278,6 +278,30 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     state = state.copyWith(overlayByEntityKey: overlays);
   }
 
+  /// Whether the server lacks work the canvas holds for [pageId]: an entity
+  /// that differs from the one last drawn from (or accepted by) the server,
+  /// or an op for the page still in the queue.
+  bool hasUnsentWork(String pageId) {
+    final local = _normalizedLocalEntities(pageId);
+    final keys = {
+      ...local.keys,
+      ..._hydratedBaseByEntityKey.keys.where((key) => key.pageId == pageId),
+    };
+    if (keys.any(
+      (key) => !_entitiesEquivalent(local[key], _hydratedBaseByEntityKey[key]),
+    )) {
+      return true;
+    }
+    final queue = ref.read(strategyOpQueueProvider);
+    return [
+      queue.queuedByEntityKey,
+      queue.inFlightByEntityKey,
+      queue.successorByEntityKey,
+      queue.pausedByEntityKey,
+      queue.attentionByEntityKey,
+    ].any((intents) => intents.keys.any((key) => key.pageId == pageId));
+  }
+
   bool hasOverlayForPage(String pageId) {
     return state.overlayByEntityKey.keys.any((key) => key.pageId == pageId);
   }
