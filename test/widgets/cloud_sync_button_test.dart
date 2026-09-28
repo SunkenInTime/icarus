@@ -740,6 +740,11 @@ void main() {
       lineupPageMismatchMessage,
       'clashes with one on another page',
     ),
+    (
+      'an origin or landing another lineup uses',
+      lineupEndInUseMessage,
+      'still uses this origin or landing spot, so it was not deleted',
+    ),
   ]) {
     testWidgets('a lineup refused for $name says why, not "another edit"',
         (tester) async {

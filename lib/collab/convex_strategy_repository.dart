@@ -259,6 +259,9 @@ class ConvexStrategyRepository {
       // Links are sent only with or after their origin and landing (see
       // the outbox's batch claim), so the server may refuse an orphan.
       checkLineupLinkEnds: const ConvexOptional.present(true),
+      // An origin or landing delete is sent only with or after the link
+      // deletes on its page, so the server may refuse one a live link names.
+      checkLineupEndDeletes: const ConvexOptional.present(true),
     );
     return result.results.map(_opAck).toList(growable: false);
   }

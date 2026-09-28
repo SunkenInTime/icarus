@@ -28,7 +28,8 @@ bool isSpecificAttentionReason(String error) {
   final lower = error.toLowerCase();
   return lower.contains('too large for cloud sync') ||
       lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
-      lower.contains(lineupLinkEndMissingMessage.toLowerCase());
+      lower.contains(lineupLinkEndMissingMessage.toLowerCase()) ||
+      lower.contains(lineupEndInUseMessage.toLowerCase());
 }
 
 String friendlyCloudSyncError(String raw) {
@@ -69,6 +70,11 @@ String friendlyCloudSyncError(String raw) {
     return "This lineup's origin or landing spot isn't on this page in the "
         'cloud, so your change to it was not saved. Keep mine tries again; '
         'Use cloud drops your change.';
+  }
+  if (lower.contains(lineupEndInUseMessage.toLowerCase())) {
+    return 'Another lineup in the cloud still uses this origin or landing '
+        'spot, so it was not deleted. Keep mine tries again; Use cloud '
+        'brings back that lineup here.';
   }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '

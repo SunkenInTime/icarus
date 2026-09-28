@@ -43,6 +43,7 @@ void main() {
   test('lineup refusals and oversized work are specific attention reasons', () {
     expect(isSpecificAttentionReason(lineupLinkEndMissingMessage), isTrue);
     expect(isSpecificAttentionReason(lineupPageMismatchMessage), isTrue);
+    expect(isSpecificAttentionReason(lineupEndInUseMessage), isTrue);
     expect(isSpecificAttentionReason(cloudOperationTooLargeMessage), isTrue);
     for (final reason in [
       'Some saved work needs attention.',
@@ -51,6 +52,19 @@ void main() {
     ]) {
       expect(isSpecificAttentionReason(reason), isFalse, reason: reason);
     }
+  });
+
+  test('explains an origin or landing another lineup still uses', () {
+    final message = friendlyCloudSyncError(
+      'ConvexFunctionException(LINEUP_END_IN_USE, Another lineup still uses '
+      'this origin or landing spot)',
+    );
+
+    expect(message, contains('still uses this origin or landing spot'));
+    expect(message, contains('was not deleted'));
+    expect(message, contains('Keep mine tries again'));
+    expect(message, contains('Use cloud brings back that lineup'));
+    expect(message, isNot(contains('LINEUP_END_IN_USE')));
   });
 
   test('does not expose unknown transport details', () {
