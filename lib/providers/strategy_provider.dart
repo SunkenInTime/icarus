@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -665,7 +666,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null || snapshot.pages.isEmpty) return;
       final ordered = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+        ..sortBySortIndex((item) => item.sortIndex);
       if (oldIndex < 0 ||
           oldIndex >= ordered.length ||
           newIndex < 0 ||
@@ -695,8 +696,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strat = box.get(strategyId);
     if (strat == null || strat.pages.isEmpty) return;
 
-    final ordered = [...strat.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final ordered = [...strat.pages]..sortBySortIndex((item) => item.sortIndex);
 
     if (oldIndex < 0 ||
         oldIndex >= ordered.length ||
@@ -770,7 +770,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strat == null || strat.pages.length < 2) return const [];
 
     final orderedPages = [...strat.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     final currentPageId = ref.read(strategyPageSessionProvider).activePageId;
     final currentIndex = orderedPages.indexWhere(
       (page) => page.id == currentPageId,
@@ -808,7 +808,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strat == null || strat.pages.length < 2) return false;
 
     final orderedPages = [...strat.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     final currentPageId = ref.read(strategyPageSessionProvider).activePageId;
     final currentIndex = orderedPages.indexWhere(
       (page) => page.id == currentPageId,
@@ -914,7 +914,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null) return;
       final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+        ..sortBySortIndex((item) => item.sortIndex);
       final pageID = const Uuid().v4();
       final activePageId = ref.read(strategyPageSessionProvider).activePageId;
       final activeIndex = pages.indexWhere(
@@ -958,7 +958,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strat == null || strat.pages.isEmpty) return;
 
     final orderedPages = [...strat.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     final currentPageId = ref.read(strategyPageSessionProvider).activePageId;
     final currentIndex = orderedPages.indexWhere(
       (page) => page.id == currentPageId,
@@ -1039,7 +1039,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         return;
       }
       final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+        ..sortBySortIndex((item) => item.sortIndex);
       final activePageId = ref.read(strategyPageSessionProvider).activePageId ??
           pages.first.publicId;
       final remaining = pages
@@ -1081,7 +1081,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strat == null || strat.pages.length <= 1) return;
 
     final remaining = [...strat.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex))
+      ..sortBySortIndex((item) => item.sortIndex)
       ..removeWhere((page) => page.id == pageId);
     final reindexed = reindexPagesAfterStructuralChange(remaining);
     final activePageId = ref.read(strategyPageSessionProvider).activePageId;

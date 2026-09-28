@@ -1,8 +1,8 @@
 name: Deploy Web
 
 # Publishes the web beta: first the Convex server to the production
-# deployment, then the Flutter web build (built against that deployment) to
-# the Cloudflare Pages project `icarus-web`, served at
+# deployment and the presence Worker, then the Flutter web build (built
+# against that deployment) to the Cloudflare Pages project `icarus-web`, served at
 # https://beta.icarusstrats.com. Every push to icarus-cloud that touches the
 # server or the web build deploys both, server first, so the site never runs
 # ahead of the backend it talks to. Actions > Deploy Web > Run workflow
@@ -25,6 +25,7 @@ on:
       - pubspec.lock
       - .fvmrc
       - convex/**
+      - presence/**
       - package.json
       - package-lock.json
       - .github/workflows/deploy-web.yml
@@ -91,6 +92,21 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
         run: npx convex deploy --typecheck enable --message "Deploy Web $GITHUB_SHA"
+
+      # Live presence (who is on a strategy, their cursors) runs in its own
+      # Worker. It pairs with production Convex through PRESENCE_URL and
+      # PRESENCE_PASS_SECRET, set once on both sides (presence/README.md).
+      - name: Install Presence Worker Dependencies
+        working-directory: presence
+        run: npm ci
+
+      - name: Deploy Presence Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: presence
+          command: deploy --env production
 
       # Flutter setup mirrors the linux job in ci.yml: FVM installs the
       # version pinned in .fvmrc.

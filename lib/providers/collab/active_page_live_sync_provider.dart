@@ -4,6 +4,7 @@ import 'dart:math' show max;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -810,9 +811,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       isAttack: projectedIsAttack,
       settingsPayload: projectedSettingsPayload,
       elements: remoteElements.values.toList(growable: false)
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)),
+        ..sortBySortIndex((item) => item.sortIndex),
       lineups: remoteLineups.values.toList(growable: false)
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)),
+        ..sortBySortIndex((item) => item.sortIndex),
     );
   }
 

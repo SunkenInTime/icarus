@@ -25,6 +25,7 @@ import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
+import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -276,6 +277,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     const Expanded(
                       child: WindowDragArea(child: SizedBox.expand()),
                     ),
+                    // Who else has this strategy open. Beside the strategy's
+                    // own name, where you look to see what you're in.
+                    const StrategyPresenceAvatars(),
                     const _DiscordLink(),
                     const SizedBox(width: 10),
                   ],

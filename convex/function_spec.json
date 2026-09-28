@@ -180891,6 +180891,61 @@
             },
             "optional": false
           },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "presence.js:issueRoomPass",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "expiresAt": {
+                "fieldType": {
+                  "type": "number"
+                },
+                "optional": false
+              },
+              "pass": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              },
+              "url": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "role": {
             "fieldType": {
               "type": "union",

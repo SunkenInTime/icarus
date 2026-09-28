@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
@@ -410,7 +411,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       return null;
     }
     final pages = [...strategy.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     final items = pages
         .map(
           (page) => PageListItemViewModel(
@@ -429,7 +430,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       return null;
     }
     final pages = [...snapshot.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      ..sortBySortIndex((item) => item.sortIndex);
     final items = pages
         .map(
           (page) => PageListItemViewModel(

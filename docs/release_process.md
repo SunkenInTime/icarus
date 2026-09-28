@@ -144,8 +144,10 @@ files, so testers get a new deploy on refresh.
 
 GitHub repository secrets:
 
-- `CLOUDFLARE_API_TOKEN`: a Cloudflare API token with one permission,
-  `Account` > `Cloudflare Pages` > `Edit`, scoped to the Icarus account.
+- `CLOUDFLARE_API_TOKEN`: the Cloudflare API token `icarus-web-pages-deploy`,
+  scoped to the Icarus account with `Account` > `Cloudflare Pages` > `Edit`
+  (the web build) and `Account` > `Workers Scripts` > `Edit` (the presence
+  Worker, `presence/README.md`).
 - `CLOUDFLARE_ACCOUNT_ID`: the account ID shown on the account's Workers & Pages
   overview.
 - `CONVEX_PRODUCTION_DEPLOY_KEY`: a `prod:` deploy key for `basic-dove-69`
