@@ -134,6 +134,7 @@ class CloudMediaUploadQueueNotifier
   /// reference starts marked: the work that referenced it may have been
   /// discarded before a restart. Restored staged jobs have their own check.
   final Set<String> _referenceCheckDue = {};
+  Future<void>? _settling;
   Future<void> _writeTail = Future<void>.value();
   bool _disposed = false;
   late DurableCloudMediaOutboxStore _store;
@@ -564,12 +565,18 @@ class CloudMediaUploadQueueNotifier
   }
 
   /// Settles each pending reference check: a job whose image nothing
-  /// references any more goes, with its bytes. A check that cannot prove
-  /// the image unreferenced lets the job upload. Needs the server, and
-  /// waits while an upload runs (it may be one of these jobs, marked since
-  /// it started). A removal that fails is reported and tried again later;
-  /// the job keeps waiting and other jobs go on.
-  Future<void> _settleReferenceChecks() async {
+  /// references any more goes, with its bytes. One still referenced may
+  /// upload. When it cannot be told, a job that could upload may (nothing
+  /// the user made is lost that way), and a staged one keeps its check,
+  /// which is its only way out. Needs the server, and waits while an upload
+  /// runs (it may be one of these jobs, marked since it started). A removal
+  /// that fails is reported and tried again later; the job keeps waiting
+  /// and other jobs go on. One pass at a time: every retry waits for the
+  /// pass running, so no upload starts while a check can still delete.
+  Future<void> _settleReferenceChecks() => _settling ??=
+      _settleReferenceChecksOnce().whenComplete(() => _settling = null);
+
+  Future<void> _settleReferenceChecksOnce() async {
     if (_referenceCheckDue.isEmpty ||
         state.isProcessing ||
         !ref.read(authProvider).isConvexUserReady ||
@@ -584,12 +591,15 @@ class CloudMediaUploadQueueNotifier
       }
       // Another account's job waits for that account.
       if (!_belongsToActiveAccount(job)) continue;
+      final bool? deleted;
       try {
-        if (await _deleteJobWhenReferenceIsGone(job)) continue;
+        deleted = await _deleteJobWhenReferenceIsGone(job);
       } catch (_) {
         continue;
       }
-      _referenceCheckDue.remove(key);
+      if (deleted == false || (deleted == null && job.referenceDurable)) {
+        _referenceCheckDue.remove(key);
+      }
     }
   }
 
@@ -706,7 +716,7 @@ class CloudMediaUploadQueueNotifier
       );
       if (bytes == null) {
         _logMedia('upload.local_missing ${_describeJob(job)}');
-        if (await _deleteJobWhenReferenceIsGone(job)) {
+        if (await _deleteJobWhenReferenceIsGone(job) == true) {
           return;
         }
         await _markJobFailed(
@@ -808,11 +818,15 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
-  Future<bool> _deleteJobWhenReferenceIsGone(
+  /// Deletes [job] if nothing references its image any more. Returns true
+  /// when it went, false when something still references the image, and
+  /// null when that could not be told (offline, unreadable outbox, a failed
+  /// read, the job changed meanwhile).
+  Future<bool?> _deleteJobWhenReferenceIsGone(
     CloudMediaUploadJob job,
   ) async {
     final durableOps = ref.read(durableStrategyOutboxStoreProvider).load();
-    if (durableOps.issues.isNotEmpty) return false;
+    if (durableOps.issues.isNotEmpty) return null;
     final pendingReferences = durableOps.records.any(
       (record) =>
           record.accountId == job.accountId &&
@@ -824,10 +838,10 @@ class CloudMediaUploadQueueNotifier
                     job.assetPublicId,
                   ))),
     );
-    if (pendingReferences ||
-        !ref.read(authProvider).isConvexUserReady ||
+    if (pendingReferences) return false;
+    if (!ref.read(authProvider).isConvexUserReady ||
         !ref.read(convexConnectionSnapshotProvider)) {
-      return false;
+      return null;
     }
 
     late final RemoteFullStrategySnapshot snapshot;
@@ -840,18 +854,18 @@ class CloudMediaUploadQueueNotifier
         'missing_source.reference_check_deferred '
         'strategy=${job.strategyPublicId} error=$error',
       );
-      return false;
+      return null;
     }
     final current = _getJob(job.jobId);
     if (!_belongsToActiveAccount(job) ||
         current == null ||
-        current.updatedAt != job.updatedAt ||
-        _snapshotReferencesAsset(snapshot, job.assetPublicId)) {
-      return false;
+        current.updatedAt != job.updatedAt) {
+      return null;
     }
+    if (_snapshotReferencesAsset(snapshot, job.assetPublicId)) return false;
 
     final deleted = await _deleteJob(job, onlyIfUnreferenced: true);
-    if (!deleted) return false;
+    if (!deleted) return null;
     _refreshState();
     _logMedia(
       'missing_source.removed_unreferenced job=${job.jobId} '

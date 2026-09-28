@@ -1131,6 +1131,7 @@ void main() {
       required MemoryDurableCloudMediaOutboxStore mediaStore,
       required MemoryDurableStrategyOutboxStore strategyStore,
       PendingMediaBytesStore? bytesStore,
+      CloudMediaReferenceSnapshotLoader? referenceSnapshotLoader,
     }) {
       var online = false;
       final repository = _UploadRecordingRepository();
@@ -1149,18 +1150,19 @@ void main() {
         pendingMediaBytesStoreProvider
             .overrideWithValue(bytesStore ?? MemoryPendingMediaBytesStore()),
         cloudMediaReferenceSnapshotLoaderProvider.overrideWithValue(
-          (_) async => _fullSnapshot(elements: [
-            const RemoteElement(
-              publicId: 'server-image',
-              strategyPublicId: 'strategy-a',
-              pagePublicId: 'page-a',
-              elementType: 'image',
-              payload: {'id': 'server-image'},
-              sortIndex: 0,
-              revision: 1,
-              deleted: false,
-            ),
-          ]),
+          referenceSnapshotLoader ??
+              (_) async => _fullSnapshot(elements: [
+                    const RemoteElement(
+                      publicId: 'server-image',
+                      strategyPublicId: 'strategy-a',
+                      pagePublicId: 'page-a',
+                      elementType: 'image',
+                      payload: {'id': 'server-image'},
+                      sortIndex: 0,
+                      revision: 1,
+                      deleted: false,
+                    ),
+                  ]),
         ),
       ]);
       return (
@@ -1312,6 +1314,72 @@ void main() {
 
       mediaStore.failRemove = false;
       await queue.retryNow(ignoreBackoff: true);
+      expect(mediaStore.load().jobs, isEmpty);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('a staged upload keeps its check through a failed server read',
+        () async {
+      var reads = 0;
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        referenceSnapshotLoader: (_) async {
+          reads += 1;
+          if (reads == 1) throw StateError('read failed');
+          return _fullSnapshot();
+        },
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await queue.enqueuePlacedImageUpload(
+        strategyPublicId: 'strategy-a',
+        imagePublicId: 'late-image',
+        fileExtension: '.png',
+      );
+      goOnline();
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      expect(mediaStore.load().jobs, hasLength(1));
+
+      await queue.retryNow(ignoreBackoff: true);
+      expect(mediaStore.load().jobs, isEmpty);
+    });
+
+    test('a retry during a check waits for it, uploading nothing', () async {
+      final snapshot = Completer<RemoteFullStrategySnapshot>();
+      var reads = 0;
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(job('page-image'));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        referenceSnapshotLoader: (_) {
+          reads += 1;
+          // A second, overlapping check could not tell and let it upload.
+          if (reads > 1) throw StateError('read failed');
+          return snapshot.future;
+        },
+      );
+      addTearDown(container.dispose);
+      await container
+          .read(pendingMediaBytesProvider.notifier)
+          .put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      goOnline();
+
+      final first = queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(Duration.zero);
+      final second = queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(repository.uploadedAssetIds, isEmpty);
+
+      snapshot.complete(_fullSnapshot());
+      await Future.wait([first, second]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(reads, 1);
       expect(mediaStore.load().jobs, isEmpty);
       expect(repository.uploadedAssetIds, isEmpty);
     });
