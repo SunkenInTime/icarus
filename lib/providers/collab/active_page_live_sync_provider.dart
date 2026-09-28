@@ -192,7 +192,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           if (remoteEntities[key]?.deleted ?? true) key,
       });
     for (final key in keepBaseFor) {
-      final drawnBase = _hydratedBaseByEntityKey[key];
+      // Checked against the version the user saw, so an edit they commit to
+      // it conflicts with whatever landed underneath instead of replacing it.
+      final drawnBase = _drawnByEntityKey[key] ?? _hydratedBaseByEntityKey[key];
       if (drawnBase == null) {
         remoteEntities.remove(key);
         continue;
@@ -309,6 +311,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final remoteRevisions = Map<EntitySyncKey, int>.from(
       state.remoteBaseRevisionByEntity,
     );
+    Map<EntitySyncKey, _NormalizedEntity>? onScreen;
     for (final intent in intents) {
       final revision = intent.ack.appliedRevision;
       final key = intent.entityKey;
@@ -323,6 +326,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       if (accepted == null) continue;
 
       _hydratedBaseByEntityKey[key] = accepted;
+      // The canvas drew this version only if it shows what landed: the
+      // user's own edit. An op restored from the outbox may have landed
+      // under older content still on screen.
+      final hydratedPage = state.hydratedPageId;
+      if (key.pageId != null && key.pageId == hydratedPage) {
+        onScreen ??= _normalizedLocalEntities(hydratedPage!);
+        if (_entitiesEquivalent(onScreen[key], accepted)) {
+          _drawnByEntityKey[key] = accepted;
+        }
+      }
       remoteRevisions[key] = revision;
       final overlay = overlays[key];
       if (overlay != null) {

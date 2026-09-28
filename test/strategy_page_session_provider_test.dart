@@ -1132,6 +1132,103 @@ void main() {
       await _settle();
     });
 
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier)> openWithQueue(
+        _FakeRemoteEditorNotifier remote) async {
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return (container, queue);
+    }
+
+    void land(_FakeStrategyOpQueueNotifier queue, ElementPatchOp op, int rev) {
+      final ack = AckedEntityIntent(
+        entityKey: EntitySyncKey.element(page.publicId, op.elementPublicId),
+        op: op,
+        ack: AppliedOpAck(opId: op.opId, revision: rev),
+      );
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+        lastAcks: [ack.ack],
+        lastAckBatch: [ack],
+      );
+    }
+
+    test('a recovered edit landing under a held item makes the drop conflict',
+        () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final (container, queue) = await openWithQueue(remote);
+      container.read(editorPointersProvider.notifier)
+        ..holdEntity(1, 'a')
+        ..down(1);
+      final landed = _textElement(page.publicId, 'a', 'restored',
+          revision: 2, worldSized: true);
+      remote.setSnapshot(snapshot([landed], contentRevision: 2));
+      land(
+          queue,
+          ElementPatchOp(
+            opId: 'restored-patch',
+            pagePublicId: page.publicId,
+            elementPublicId: 'a',
+            expectedElementRevision: 1,
+            payload: landed.payload,
+            sortIndex: 0,
+          ),
+          2);
+      await _settle();
+      expect(container.read(textProvider).single.text, 'a');
+      // The drag ends on the old text: sent against the version the user
+      // saw, so the server refuses it instead of replacing 'restored'.
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'a');
+      expect(elementOps(container)['a']!.expectedRevision, 1);
+      await _settle();
+    });
+
+    test('grabbing an item again as its own edit lands is no conflict',
+        () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final (container, queue) = await openWithQueue(remote);
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'a');
+      await _settle();
+      final sent = queue
+          .state
+          .queuedByEntityKey[EntitySyncKey.element(page.publicId, 'a')]!
+          .pending
+          .op as ElementPatchOp;
+      container.read(editorPointersProvider.notifier)
+        ..holdEntity(1, 'a')
+        ..down(1);
+      land(queue, sent, 2);
+      container.read(strategySaveStateProvider.notifier).markPersisted();
+      remote.setSnapshot(snapshot([
+        RemoteElement(
+          publicId: 'a',
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: page.publicId,
+          elementType: 'text',
+          payload: sent.payload!,
+          sortIndex: 0,
+          revision: 2,
+          deleted: false,
+        ),
+      ], contentRevision: 2));
+      await _settle();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'a');
+      expect(elementOps(container)['a']!.expectedRevision, 2);
+      await _settle();
+    });
+
     test('moving past an element with the same sortIndex is sent', () async {
       final container = await open(
           _FakeRemoteEditorNotifier(snapshot([text('a', 3), text('b', 3)])));
