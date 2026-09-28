@@ -571,8 +571,9 @@ class CloudMediaUploadQueueNotifier
   /// which is its only way out. Needs the server, and waits while an upload
   /// runs (it may be one of these jobs, marked since it started). A removal
   /// that fails is reported and tried again later; the job keeps waiting
-  /// and other jobs go on. One pass at a time: every retry waits for the
-  /// pass running, so no upload starts while a check can still delete.
+  /// and other jobs go on. One pass at a time, and every retry waits for
+  /// it: two passes could decide the same job differently. A marked job
+  /// never uploads, so no upload runs on a job a pass may delete.
   Future<void> _settleReferenceChecks() => _settling ??=
       _settleReferenceChecksOnce().whenComplete(() => _settling = null);
 
