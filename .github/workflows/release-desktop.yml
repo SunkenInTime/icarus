@@ -197,6 +197,22 @@ jobs:
           Assert-AuthenticodeSignatures -Path "build/windows/x64/runner/Release"
           Assert-AuthenticodeSignatures -Path "build/installer"
 
+      # The gate for players' libraries: install the last public build, import
+      # a historical .ica, upgrade to this signed installer, then roll back,
+      # checking the Strategy library survives each step. Nothing is staged or
+      # published if it fails.
+      - name: Test Public Upgrade And Rollback
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path build/installer -Filter 'icarus-setup-*.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "The signed installer was not found in build/installer."
+          }
+          powershell -ExecutionPolicy Bypass -File scripts/test_online_beta_windows_upgrade.ps1 `
+            -ReleaseCandidateInstaller $installer.FullName
+
       - name: Stage Desktop Release
         shell: pwsh
         env:
