@@ -10,6 +10,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
+import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -17,6 +18,14 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 const _oldScale = 0.9502102049421427;
 const _newScale = 1.06;
 const _virtualToWorld = 1000 / 831;
+
+// Saved data predates version 104, so its anchors use the sizes of that time.
+Offset _savedAbilityAnchor(PlacedAbility ability, double scale) =>
+    abilityDataBeforeVersion104(ability.data)!.getAnchorPoint(
+      mapScale: scale,
+      abilitySize: Settings.abilitySize,
+    ) *
+    _virtualToWorld;
 
 Offset _abilityAnchor(PlacedAbility ability, double scale) =>
     ability.data.abilityData!.getAnchorPoint(
@@ -140,7 +149,7 @@ void _expectAnchors(StrategyPage before, StrategyPage after) {
     final next = after.abilityData[i];
     _expectPoint(
       next.position + _abilityAnchor(next, _newScale),
-      old.position + _abilityAnchor(old, _oldScale),
+      old.position + _savedAbilityAnchor(old, _oldScale),
     );
     expect(next.toJson()..remove('position'), old.toJson()..remove('position'));
   }
@@ -161,7 +170,8 @@ void _expectAnchors(StrategyPage before, StrategyPage after) {
   final nextItem = nextGroup.items.single;
   _expectPoint(
     nextItem.ability.position + _abilityAnchor(nextItem.ability, _newScale),
-    oldItem.ability.position + _abilityAnchor(oldItem.ability, _oldScale),
+    oldItem.ability.position +
+        _savedAbilityAnchor(oldItem.ability, _oldScale),
   );
   expect(
     jsonDecode(jsonEncode(nextItem.toJson()..remove('ability'))),
@@ -197,7 +207,7 @@ void main() {
 
   test('other maps keep their pages unchanged', () {
     final source = _strategy(map: MapValue.split);
-    final result = StrategyProvider.migrateToCurrentVersion(source);
+    final result = StrategyProvider.migrateSunsetScale(source, force: true);
     expect(identical(result.pages, source.pages), isTrue);
   });
 

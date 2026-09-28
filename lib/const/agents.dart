@@ -742,9 +742,11 @@ class AgentData implements DraggableData {
           ),
         );
 
+      // Matches the in-game minimap indicator: MinimapWidth 9 m by
+      // MaxDistance 25 m + Targeting Box Offset 3 m (Valorant 13.05 files).
       agent.abilities[1].abilityData = SquareAbility(
-        width: 4.3 * inGameMetersDiameter,
-        height: 25 * inGameMeters,
+        width: 9 * inGameMeters,
+        height: 28 * inGameMeters,
         iconPath: agent.abilities[1].iconPath,
         color: Colors.deepPurple,
       );
