@@ -326,6 +326,19 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   }
 }
 
+class _RecordingMediaQueue extends CloudMediaUploadQueueNotifier {
+  final List<String> rechecked = [];
+
+  @override
+  CloudMediaUploadQueueState build() =>
+      const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
+
+  @override
+  Future<void> recheckAfterDiscardedWork(String strategyPublicId) async {
+    rechecked.add(strategyPublicId);
+  }
+}
+
 Future<void> _settle() async {
   await Future<void>.delayed(Duration.zero);
   await Future<void>.delayed(Duration.zero);
@@ -529,11 +542,14 @@ RemoteEditorSnapshot _editorSnapshot({
 Future<ProviderContainer> _cloudContainer({
   required _FakeRemoteEditorNotifier remote,
   required _FakeStrategyOpQueueNotifier queue,
+  _RecordingMediaQueue? mediaQueue,
 }) async {
   final container = ProviderContainer(overrides: [
     remoteEditorSnapshotProvider.overrideWith(() => remote),
     strategyOpQueueProvider.overrideWith(() => queue),
     cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+    cloudMediaUploadQueueProvider
+        .overrideWith(() => mediaQueue ?? _RecordingMediaQueue()),
   ]);
   addTearDown(container.dispose);
   container.read(strategyProvider.notifier).setFromState(const StrategyState(
@@ -992,6 +1008,7 @@ void main() {
     /// Clears the unsaved mark before the pointer lifts, as an unrelated op
     /// landing does.
     bool unrelatedAckFirst = false,
+    _RecordingMediaQueue? mediaQueue,
   }) async {
     final one = _page('page-1', 0, name: 'A exec');
     final two = _page('page-2', 1);
@@ -1006,7 +1023,11 @@ void main() {
           two.publicId: _pageSnapshot(two, text: 'two'),
         });
     final queue = _FakeStrategyOpQueueNotifier();
-    final container = await _cloudContainer(remote: remote, queue: queue);
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: queue,
+      mediaQueue: mediaQueue,
+    );
     container.read(strategyPageSessionProvider.notifier).pageWorkSettleTimeout =
         const Duration(milliseconds: 100);
     await container
@@ -1317,8 +1338,9 @@ void main() {
   });
 
   test('reading the notice moves to a page that exists', () async {
+    final mediaQueue = _RecordingMediaQueue();
     final (:container, :queue, :one, :two, remote: _, strokeId: _) =
-        await strokeOnDeletedPage();
+        await strokeOnDeletedPage(mediaQueue: mediaQueue);
     // Work queued before the deletion goes too.
     await queue.syncDesiredGenericOp(
       entityKey: EntitySyncKey.element(one.publicId, 'old'),
@@ -1343,6 +1365,8 @@ void main() {
     expect(container.read(textProvider).single.text, 'two');
     expect(container.read(strategyOpQueueProvider).pending, isEmpty);
     expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+    // Images only the dropped work placed are checked before they upload.
+    expect(mediaQueue.rechecked, ['cloud-strategy']);
   });
 
   test("reading the notice moves on while another page's work waits", () async {

@@ -126,6 +126,10 @@ class CloudMediaUploadQueueNotifier
   final Map<String, CloudMediaUploadJob> _jobsByStorageKey = {};
   final Set<String> _restoredStagedJobIds = {};
   final Map<String, _MediaOutboxMutation> _unverifiedByStorageKey = {};
+
+  /// Jobs to drop, with their bytes, before their next attempt if nothing
+  /// references their image any more. See [recheckAfterDiscardedWork].
+  final Set<String> _referenceCheckDue = {};
   Future<void> _writeTail = Future<void>.value();
   bool _disposed = false;
   late DurableCloudMediaOutboxStore _store;
@@ -535,6 +539,19 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
+  /// Unsaved work of [strategyPublicId] was discarded (a page the server
+  /// deleted), so an image only it placed has nothing left to show it. Every
+  /// upload of the strategy is checked before its next attempt, and goes if
+  /// no queued change and no page on the server references its image.
+  Future<void> recheckAfterDiscardedWork(String strategyPublicId) {
+    _referenceCheckDue.addAll([
+      for (final job in _readJobs())
+        if (job.strategyPublicId == strategyPublicId)
+          durableCloudMediaOutboxStorageKey(job),
+    ]);
+    return retryNow(ignoreBackoff: true);
+  }
+
   Future<void> clearJobsForStrategy(String strategyPublicId) async {
     final jobs = _readJobs()
         .where((job) => job.strategyPublicId == strategyPublicId)
@@ -621,6 +638,12 @@ class CloudMediaUploadQueueNotifier
       );
       _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
       return false;
+    }
+
+    // A check that cannot prove the image unreferenced lets the upload go on.
+    if (_referenceCheckDue.remove(durableCloudMediaOutboxStorageKey(job)) &&
+        await _deleteJobWhenReferenceIsGone(job)) {
+      return true;
     }
 
     if (!job.hasUploadedRemoteObject) {
@@ -1076,6 +1099,7 @@ class CloudMediaUploadQueueNotifier
         // Both jobs and op references may change while the server is read.
         // Never promote or delete using a stale copy of a media job.
         if (!identical(_getJob(job.jobId), job)) continue;
+        final key = durableCloudMediaOutboxStorageKey(job);
         final localReference = _hasLocalReference(job);
         if (_snapshotReferencesAsset(snapshot, job.assetPublicId) ||
             localReference == true) {
@@ -1089,9 +1113,8 @@ class CloudMediaUploadQueueNotifier
             replacing: job,
           );
         } else if (localReference == false &&
-            _restoredStagedJobIds.contains(
-              durableCloudMediaOutboxStorageKey(job),
-            )) {
+            (_restoredStagedJobIds.contains(key) ||
+                _referenceCheckDue.contains(key))) {
           await _deleteJob(job, onlyIfUnreferenced: true);
         }
       }
@@ -1343,6 +1366,7 @@ class CloudMediaUploadQueueNotifier
           await _store.remove(job);
           _jobsByStorageKey.remove(key);
           _restoredStagedJobIds.remove(key);
+          _referenceCheckDue.remove(key);
           _unverifiedByStorageKey.remove(key);
           _refreshState();
           return true;

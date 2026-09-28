@@ -22,6 +22,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -954,6 +955,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         state.deletedPage != deleted) {
       return false;
     }
+    // Images only that work placed have nothing left to show them.
+    unawaited(ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .recheckAfterDiscardedWork(strategyId));
     // A read that failed earlier would otherwise fail every retry.
     final remote = ref.read(remoteEditorSnapshotProvider.notifier);
     await remote.refresh();
