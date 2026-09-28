@@ -7,6 +7,7 @@ import {
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
 import { getStrategyByPublicId } from "./lib/entities";
+import { profileFromIdentity, UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 
 // Live presence runs outside Convex, in the icarus-presence Worker
 // (presence/). Convex's only part is deciding who may join a strategy's room:
@@ -17,7 +18,6 @@ import { getStrategyByPublicId } from "./lib/entities";
 export const ROOM_PASS_TTL_MS = 2 * 60 * 1000;
 const MAX_NAME_CHARS = 64;
 const MAX_AVATAR_URL_CHARS = 512;
-const UNKNOWN_DISCORD_NAME = "Discord user";
 
 export const issueRoomPass = mutation({
   args: {
@@ -43,18 +43,16 @@ export const issueRoomPass = mutation({
     const secret = process.env.PRESENCE_PASS_SECRET;
     if (!baseUrl || !secret) return null;
 
-    const identity = await ctx.auth.getUserIdentity();
-    const metadata = discordMetadata(identity);
-    // Email sign-ins have no Discord name; the part before the @ is what a
-    // teammate would recognize. "Discord user" is ensureCurrentUser's
-    // placeholder, never a name.
+    // Read the profile from this sign-in rather than the users row, so a
+    // name or avatar changed on Discord shows at the next renewal.
+    const profile = profileFromIdentity(await ctx.auth.getUserIdentity());
     const storedName =
-      user.displayName === UNKNOWN_DISCORD_NAME ? null : user.displayName;
+      user.displayName === UNKNOWN_DISPLAY_NAME ? null : user.displayName;
     const name = truncate(
-      metadata.name ?? storedName ?? emailName(identity?.email) ?? "Teammate",
+      profile.name ?? storedName ?? "Teammate",
       MAX_NAME_CHARS,
     );
-    const avatar = metadata.avatar ?? user.avatarUrl ?? null;
+    const avatar = profile.avatar ?? user.avatarUrl ?? null;
 
     const expiresAt = Date.now() + ROOM_PASS_TTL_MS;
     const pass = await signPass(
@@ -80,62 +78,6 @@ export const issueRoomPass = mutation({
     };
   },
 });
-
-/**
- * Supabase carries the Discord profile in the `user_metadata` claim, not in
- * the standard name/picture claims, so users.displayName is often the
- * "Discord user" fallback. Prefer what Discord says.
- */
-function discordMetadata(identity: Record<string, unknown> | null): {
-  name: string | null;
-  avatar: string | null;
-} {
-  const raw = identity?.["user_metadata"];
-  const metadata =
-    typeof raw === "object" && raw !== null
-      ? (raw as Record<string, unknown>)
-      : typeof raw === "string"
-        ? safeParseObject(raw)
-        : {};
-  const text = (key: string) => {
-    const value = metadata[key];
-    return typeof value === "string" && value.trim() !== ""
-      ? value.trim()
-      : null;
-  };
-  const customClaims = metadata["custom_claims"];
-  const globalName =
-    typeof customClaims === "object" && customClaims !== null
-      ? (customClaims as Record<string, unknown>)["global_name"]
-      : undefined;
-  return {
-    name:
-      (typeof globalName === "string" && globalName.trim() !== ""
-        ? globalName.trim()
-        : null) ??
-      text("full_name") ??
-      text("name") ??
-      text("user_name"),
-    avatar: text("avatar_url") ?? text("picture"),
-  };
-}
-
-function safeParseObject(text: string): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null
-      ? (value as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function emailName(email: unknown): string | null {
-  if (typeof email !== "string") return null;
-  const local = email.split("@")[0]?.trim();
-  return local ? local : null;
-}
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, max);
