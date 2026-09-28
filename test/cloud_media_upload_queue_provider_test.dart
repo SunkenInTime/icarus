@@ -1130,6 +1130,7 @@ void main() {
     }) setUp({
       required MemoryDurableCloudMediaOutboxStore mediaStore,
       required MemoryDurableStrategyOutboxStore strategyStore,
+      PendingMediaBytesStore? bytesStore,
     }) {
       var online = false;
       final repository = _UploadRecordingRepository();
@@ -1146,7 +1147,7 @@ void main() {
         strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
         imageFilesOnDeviceProvider.overrideWithValue(false),
         pendingMediaBytesStoreProvider
-            .overrideWithValue(MemoryPendingMediaBytesStore()),
+            .overrideWithValue(bytesStore ?? MemoryPendingMediaBytesStore()),
         cloudMediaReferenceSnapshotLoaderProvider.overrideWithValue(
           (_) async => _fullSnapshot(elements: [
             const RemoteElement(
@@ -1209,6 +1210,39 @@ void main() {
         {'queued-image', 'server-image'},
       );
       expect(bytes.bytesFor(key('page-image')), isNull);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('a restart before the server answers still checks', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(job('page-image'));
+      final bytesStore = MemoryPendingMediaBytesStore();
+      final first = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        bytesStore: bytesStore,
+      );
+      await first.container
+          .read(pendingMediaBytesProvider.notifier)
+          .put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      await first.container
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .recheckAfterDiscardedWork('strategy-a');
+      first.container.dispose();
+
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        bytesStore: bytesStore,
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(mediaStore.load().jobs, isEmpty);
+      expect(bytesStore.load(), isEmpty);
       expect(repository.uploadedAssetIds, isEmpty);
     });
 

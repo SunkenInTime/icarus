@@ -128,7 +128,10 @@ class CloudMediaUploadQueueNotifier
   final Map<String, _MediaOutboxMutation> _unverifiedByStorageKey = {};
 
   /// Jobs to drop, with their bytes, before their next attempt if nothing
-  /// references their image any more. See [recheckAfterDiscardedWork].
+  /// references their image any more: see [recheckAfterDiscardedWork]. Held
+  /// in memory only, so every job restored at launch with a durable
+  /// reference starts marked: the work that referenced it may have been
+  /// discarded before a restart. Restored staged jobs have their own check.
   final Set<String> _referenceCheckDue = {};
   Future<void> _writeTail = Future<void>.value();
   bool _disposed = false;
@@ -149,6 +152,11 @@ class CloudMediaUploadQueueNotifier
     _restoredStagedJobIds.addAll(
       loaded.jobs
           .where((job) => !job.referenceDurable)
+          .map(durableCloudMediaOutboxStorageKey),
+    );
+    _referenceCheckDue.addAll(
+      loaded.jobs
+          .where((job) => job.referenceDurable)
           .map(durableCloudMediaOutboxStorageKey),
     );
     // Unreadable records might name bytes, so only a clean load can prove
