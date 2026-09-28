@@ -101,6 +101,7 @@ abstract interface class IcarusConvexApi {
   OpsModule get ops;
   PageModule get page;
   PagesModule get pages;
+  PresenceModule get presence;
   SharesModule get shares;
   StrategiesModule get strategies;
   StrategyModule get strategy;
@@ -118,6 +119,7 @@ final class _IcarusConvexApi implements IcarusConvexApi {
       ops = _OpsModule(transport),
       page = _PageModule(transport),
       pages = _PagesModule(transport),
+      presence = _PresenceModule(transport),
       shares = _SharesModule(transport),
       strategies = _StrategiesModule(transport),
       strategy = _StrategyModule(transport),
@@ -140,6 +142,8 @@ final class _IcarusConvexApi implements IcarusConvexApi {
   final PageModule page;
   @override
   final PagesModule pages;
+  @override
+  final PresenceModule presence;
   @override
   final SharesModule shares;
   @override
@@ -677,6 +681,7 @@ final class _LineupsModule implements LineupsModule {
 
 abstract interface class OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
@@ -690,6 +695,7 @@ final class _OpsModule implements OpsModule {
   final ConvexTransport _transport;
   @override
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
@@ -697,6 +703,7 @@ final class _OpsModule implements OpsModule {
     required String strategyPublicId,
   }) {
     final args = encodeOpsApplyBatchArgs(
+      checkLineupEndDeletes: checkLineupEndDeletes,
       checkLineupLinkEnds: checkLineupLinkEnds,
       clientId: clientId,
       clientProtocolVersion: clientProtocolVersion,
@@ -882,6 +889,32 @@ final class _PagesModule implements PagesModule {
     return _invoke(
       () => _transport.mutation('pages:reorder', args),
       decodePagesReorderResult,
+    );
+  }
+}
+
+abstract interface class PresenceModule {
+  Future<PresenceIssueRoomPassResult?> issueRoomPass({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  });
+}
+
+final class _PresenceModule implements PresenceModule {
+  const _PresenceModule(this._transport);
+  final ConvexTransport _transport;
+  @override
+  Future<PresenceIssueRoomPassResult?> issueRoomPass({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  }) {
+    final args = encodePresenceIssueRoomPassArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      strategyPublicId: strategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('presence:issueRoomPass', args),
+      decodePresenceIssueRoomPassResult,
     );
   }
 }

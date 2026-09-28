@@ -1544,6 +1544,147 @@ void main() {
       };
     }
 
+    test('an acked edit the canvas never showed is still taken', () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      expect(container.read(textProvider).single.text, 'a');
+      // A patch restored from the outbox lands after the page was drawn.
+      final landed = _textElement(page.publicId, 'a', 'restored',
+          revision: 2, worldSized: true);
+      final op = ElementPatchOp(
+        opId: 'restored-patch',
+        pagePublicId: page.publicId,
+        elementPublicId: 'a',
+        expectedElementRevision: 1,
+        payload: landed.payload,
+        sortIndex: 0,
+      );
+      remote.setSnapshot(snapshot([landed], contentRevision: 2));
+      final ack = AckedEntityIntent(
+        entityKey: EntitySyncKey.element(page.publicId, 'a'),
+        op: op,
+        ack: const AppliedOpAck(opId: 'restored-patch', revision: 2),
+      );
+      queue.state = queue.state.copyWith(
+        lastAcks: [ack.ack],
+        lastAckBatch: [ack],
+      );
+      await _settle();
+      expect(container.read(textProvider).single.text, 'restored');
+      expect(elementOps(container), isEmpty);
+      await _settle();
+    });
+
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier)> openWithQueue(
+        _FakeRemoteEditorNotifier remote) async {
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return (container, queue);
+    }
+
+    void land(_FakeStrategyOpQueueNotifier queue, ElementPatchOp op, int rev) {
+      final ack = AckedEntityIntent(
+        entityKey: EntitySyncKey.element(page.publicId, op.elementPublicId),
+        op: op,
+        ack: AppliedOpAck(opId: op.opId, revision: rev),
+      );
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+        lastAcks: [ack.ack],
+        lastAckBatch: [ack],
+      );
+    }
+
+    test('grabbing an item again as its own edit lands is no conflict',
+        () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final (container, queue) = await openWithQueue(remote);
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'a');
+      await _settle();
+      final sent = queue
+          .state
+          .queuedByEntityKey[EntitySyncKey.element(page.publicId, 'a')]!
+          .pending
+          .op as ElementPatchOp;
+      container.read(editorPointersProvider.notifier)
+        ..holdEntity(1, 'a')
+        ..down(1);
+      land(queue, sent, 2);
+      container.read(strategySaveStateProvider.notifier).markPersisted();
+      remote.setSnapshot(snapshot([
+        RemoteElement(
+          publicId: 'a',
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: page.publicId,
+          elementType: 'text',
+          payload: sent.payload!,
+          sortIndex: 0,
+          revision: 2,
+          deleted: false,
+        ),
+      ], contentRevision: 2));
+      await _settle();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'a');
+      expect(elementOps(container)['a']!.expectedRevision, 2);
+      await _settle();
+    });
+
+    test('typing into an item before its own move lands is no conflict',
+        () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final (container, queue) = await openWithQueue(remote);
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'a');
+      await _settle();
+      final sent = queue
+          .state
+          .queuedByEntityKey[EntitySyncKey.element(page.publicId, 'a')]!
+          .pending
+          .op as ElementPatchOp;
+      // The user starts typing into it before the move is acked.
+      container.read(textDraftProvider.notifier).setDraft('a', 'typing');
+      land(queue, sent, 2);
+      container.read(strategySaveStateProvider.notifier).markPersisted();
+      remote.setSnapshot(snapshot([
+        RemoteElement(
+          publicId: 'a',
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: page.publicId,
+          elementType: 'text',
+          payload: sent.payload!,
+          sortIndex: 0,
+          revision: 2,
+          deleted: false,
+        ),
+      ], contentRevision: 2));
+      await _settle();
+      container.read(textDraftProvider.notifier).commitDraft('a');
+      await _settle();
+      // Against the user's own move (revision 2), not the version before it.
+      expect(elementOps(container)['a']!.expectedRevision, 2);
+      await _settle();
+    });
+
     test('moving past an element with the same sortIndex is sent', () async {
       final container = await open(
           _FakeRemoteEditorNotifier(snapshot([text('a', 3), text('b', 3)])));
@@ -3533,6 +3674,115 @@ void main() {
       expect(hydrated.linkById(a.id)!.notes, 'jump throw');
       expect(hydrated.linkById(b.id)!.notes, 'teammate notes');
       expect(desiredOps(container, page), isEmpty);
+      await _settle();
+    });
+
+    test(
+        "deleting a lineup whose origin a teammate's new lineup uses keeps "
+        'theirs', () async {
+      final (container, remote, page) = await openEmpty();
+      final first = place(container);
+      final landed = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      final originKey = keyOf(page, CloudLineupKind.origin, first.originId);
+
+      // A teammate's lineup from the same origin lands, but this canvas has
+      // not drawn it yet.
+      RemoteLineup teammateRow(String kind, Map<String, dynamic> data) =>
+          RemoteLineup(
+            publicId: cloudLineupRowId(kind, data['id'] as String),
+            strategyPublicId: 'cloud-strategy',
+            pagePublicId: page.publicId,
+            payload: cloudLineupPayload(kind: kind, data: data),
+            sortIndex: 10,
+            revision: 1,
+            deleted: false,
+          );
+      Map<String, dynamic> dataOf(String kind) => Map<String, dynamic>.from(
+          rowsOf(landed, kind).single.payload['data'] as Map);
+      final theirLanding = dataOf(CloudLineupKind.landing)
+        ..['id'] = 'their-landing'
+        ..['ability'] = {
+          ...(dataOf(CloudLineupKind.landing)['ability'] as Map),
+          'id': 'their-ability',
+          'lineUpID': 'their-landing',
+        };
+      final theirLink = dataOf(CloudLineupKind.link)
+        ..['id'] = 'their-link'
+        ..['landingId'] = 'their-landing';
+
+      // The user deletes their lineup, which takes its origin with it.
+      container.read(lineUpProvider.notifier).deleteLink(first.id);
+      await _settle();
+      final sent = queuedOps();
+      expect(sent[originKey], isA<LineupDeleteOp>());
+
+      // The server applies the link and landing deletes and refuses the
+      // origin's, since the teammate's link still names it.
+      final onServer = [
+        for (final row in landed)
+          if (row.payload['kind'] == CloudLineupKind.origin) row,
+        teammateRow(CloudLineupKind.landing, theirLanding),
+        teammateRow(CloudLineupKind.link, theirLink),
+      ];
+      remote.initialSnapshot = serverSnapshot(page, onServer, 3);
+      final acks = [
+        for (final entry in sent.entries)
+          AckedEntityIntent(
+            entityKey: entry.key,
+            op: entry.value,
+            ack: entry.key == originKey
+                ? FailedOpAck(
+                    opId: entry.value.opId,
+                    code: 'LINEUP_END_IN_USE',
+                    rawCode: 'LINEUP_END_IN_USE',
+                    message: lineupEndInUseMessage,
+                  )
+                : AppliedOpAck(opId: entry.value.opId, revision: 2),
+          ),
+      ];
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+        attentionByEntityKey: {
+          originKey: QueuedEntityIntent(
+            entityKey: originKey,
+            pending: PendingOp(op: sent[originKey]!, clientId: 'test-client'),
+          ),
+        },
+        lastError: 'Some saved work needs attention.',
+        lastAcks: [for (final intent in acks) intent.ack],
+        lastAckBatch: acks,
+      );
+      remote.setSnapshot(serverSnapshot(page, onServer, 3));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // Until the user chooses, their delete still shows, the teammate's
+      // lineup is not deleted behind their back, and the work needs
+      // attention.
+      expect(container.read(lineUpProvider).graph.links, isEmpty);
+      expect(
+        queuedOps().values.whereType<LineupDeleteOp>(),
+        isEmpty,
+      );
+      expect(queue.state.attentionByEntityKey.keys, [originKey]);
+
+      // Using theirs brings back the origin with the teammate's lineup.
+      final resolved = await container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      await _settle();
+
+      expect(resolved, isTrue);
+      final graph = container.read(lineUpProvider).graph;
+      expect(graph.links.map((link) => link.id), ['their-link']);
+      expect(graph.origins.map((origin) => origin.id), [first.originId]);
+      expect(queue.state.attentionByEntityKey, isEmpty);
+      expect(
+        queuedOps().keys.where((key) => key.kind == EntitySyncKeyKind.lineup),
+        isEmpty,
+      );
       await _settle();
     });
 

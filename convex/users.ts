@@ -4,6 +4,7 @@ import {
   getCanonicalExternalId,
 } from "./lib/auth";
 import { unauthenticatedError } from "./lib/errors";
+import { profileFromIdentity, UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -22,8 +23,9 @@ export const ensureCurrentUser = mutation({
     }
 
     const externalId = getCanonicalExternalId(identity);
-    const displayName = identity.name ?? identity.nickname ?? "Discord user";
-    const avatarUrl = identity.pictureUrl ?? undefined;
+    const profile = profileFromIdentity(identity);
+    const displayName = profile.name ?? UNKNOWN_DISPLAY_NAME;
+    const avatarUrl = profile.avatar ?? undefined;
 
     const existingUser = await findUserByIdentity(ctx, identity);
 

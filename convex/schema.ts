@@ -110,6 +110,13 @@ export default defineSchema({
     .index("by_pageId", ["pageId"])
     .index("by_strategyId", ["strategyId"])
     .index("by_strategyId_and_payloadKind", ["strategyId", "payloadKind"])
+    // Live links on a page, read when an origin or landing is deleted (see
+    // assertLineupEndUnused in ops.ts).
+    .index("by_pageId_and_payloadKind_and_deleted", [
+      "pageId",
+      "payloadKind",
+      "deleted",
+    ])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   // Which content rows show which images: one small row per (element or
   // lineup row, image id it shows), kept in step with every content write

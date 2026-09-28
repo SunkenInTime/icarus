@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -8,6 +9,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -17,6 +19,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 class _CloudStrategyProvider extends StrategyProvider {
   @override
@@ -332,7 +335,9 @@ void main() {
   test('a lineup live sync refused to send shows attention', () async {
     final container = _createContainer(
       liveSyncState: ActivePageLiveSyncState(
-        unsyncableLineupKeys: {const EntitySyncKey.lineup('page-1', 'lineup-1')},
+        unsyncableLineupKeys: {
+          const EntitySyncKey.lineup('page-1', 'lineup-1')
+        },
       ),
     );
     addTearDown(container.dispose);
@@ -748,6 +753,207 @@ void main() {
     expect(find.textContaining('Another edit reached'), findsNothing);
     expect(find.text('Use cloud'), findsOneWidget);
     expect(find.text('Keep mine'), findsOneWidget);
+  });
+
+  for (final (name, reason, expected) in [
+    (
+      'a missing origin or landing',
+      lineupLinkEndMissingMessage,
+      "origin or landing spot isn't on this page in the cloud",
+    ),
+    (
+      'another page',
+      lineupPageMismatchMessage,
+      'clashes with one on another page',
+    ),
+    (
+      'an origin or landing another lineup uses',
+      lineupEndInUseMessage,
+      'still uses this origin or landing spot, so it was not deleted',
+    ),
+  ]) {
+    testWidgets('a lineup refused for $name says why, not "another edit"',
+        (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final container = _createConflictContainer(
+        queue: queue,
+        session: _ConflictSession(),
+      );
+      addTearDown(container.dispose);
+      container
+          .read(strategySaveStateProvider.notifier)
+          .setCloudSyncError(reason);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+              body: CloudSyncButton(style: kEditorToolbarButtonStyle),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(_syncButton('attention'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining(expected), findsOneWidget);
+      expect(find.textContaining('Another edit reached'), findsNothing);
+      expect(find.textContaining('Choose which version'), findsNothing);
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep mine'), findsOneWidget);
+    });
+  }
+
+  testWidgets(
+      'a lineup refusal among several changes says the choice covers all '
+      'of them', (tester) async {
+    final queue = _AttentionOpQueue(2);
+    final container = _createConflictContainer(
+      queue: queue,
+      session: _ConflictSession(),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(strategySaveStateProvider.notifier)
+        .setCloudSyncError(lineupLinkEndMissingMessage);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(_syncButton('attention'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+    expect(
+      find.textContaining('applies to all 2 changes that need attention'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a lineup refusal beside other refused work mentions both',
+      (tester) async {
+    final queue = _AttentionOpQueue(2);
+    final container = _createConflictContainer(
+      queue: queue,
+      session: _ConflictSession(),
+    );
+    addTearDown(container.dispose);
+    container.read(strategySaveStateProvider.notifier).setCloudSyncError(
+          '$lineupLinkEndMissingMessage. $otherWorkNeedsAttentionNote',
+        );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(_syncButton('attention'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+    expect(
+      find.textContaining('Other changes here were not saved either'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Another edit reached'), findsNothing);
+    expect(
+      find.textContaining('applies to all 2 changes that need attention'),
+      findsOneWidget,
+    );
+  });
+
+  group('refusal toast', () {
+    Finder toast(String text) => find.byWidgetPredicate(
+          (widget) => widget is Text && widget.data == text,
+          skipOffstage: false,
+        );
+
+    Future<ProviderContainer> pumpButton(WidgetTester tester) async {
+      final container = _createConflictContainer(
+        queue: _AttentionOpQueue(1),
+        session: _ConflictSession(),
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ToastificationWrapper(
+            child: ShadApp(
+              home: Scaffold(
+                body: CloudSyncButton(style: kEditorToolbarButtonStyle),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return container;
+    }
+
+    Future<void> drainToasts(WidgetTester tester) async {
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a lineup refusal toasts its own reason', (tester) async {
+      final container = await pumpButton(tester);
+
+      container.read(strategyConflictProvider.notifier).push(
+            const ConflictResolution(
+              type: ConflictResolutionType.rebase,
+              opId: 'refused-link',
+              message: lineupLinkEndMissingMessage,
+            ),
+          );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        toast(friendlyCloudSyncError(lineupLinkEndMissingMessage)),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Another edit reached', skipOffstage: false),
+        findsNothing,
+      );
+      await drainToasts(tester);
+    });
+
+    testWidgets('an edit that lost a race still toasts as a conflict',
+        (tester) async {
+      final container = await pumpButton(tester);
+
+      container.read(strategyConflictProvider.notifier).push(
+            const ConflictResolution(
+              type: ConflictResolutionType.rebase,
+              opId: 'stale-edit',
+              message: 'revision_mismatch',
+            ),
+          );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.textContaining('Another edit reached', skipOffstage: false),
+        findsOneWidget,
+      );
+      await drainToasts(tester);
+    });
   });
 
   testWidgets('failed cloud load keeps attention and explains the failure',

@@ -7,6 +7,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -218,7 +219,7 @@ class CloudMigrationNotifier extends Notifier<bool> {
         continue;
       }
       final pages = [...strategy.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+        ..sortBySortIndex((item) => item.sortIndex);
       final firstPage = pages.isNotEmpty ? pages.first : null;
       final fallbackPageId = const Uuid().v4();
       try {

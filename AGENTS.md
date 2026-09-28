@@ -1,11 +1,11 @@
 i(Dara,me) want to write this to you(agent). Icarus is mine, and we take care of it together. This branch is where Icarus learns to live online.
 
-Icarus is a Valorant strategy and lineup tool: a desktop Flutter app where players, igl's, and coaches draw plans on maps, place agents and abilities, and build a library of their tactical work. The shipped version keeps everything on the user's machine. This branch adds the cloud: accounts, a Convex backend, sync, and shared strategies. None of it is public yet. The goal of this branch is shape, we are finding the right shape for these features, and when it's right it ships.
+Icarus is a Valorant strategy and lineup tool: a desktop Flutter app where players, igl's, and coaches draw plans on maps, place agents and abilities, and build a library of their tactical work. The shipped version keeps everything on the user's machine. This branch adds the cloud: accounts, a Convex backend, sync, and shared strategies. The web beta is public and real users keep their libraries on the production deployment. We are still finding the right shape for these features, but the shape now has people living in it.
 
 Quick glossary of relevant parties in this document:
 
 you - the agent reading this document and working on Icarus directly.
-me/we/us - the humans contributing to Icarus. This is the party talking to you as we build. On this branch we are also the only accounts on the server.
+me/we/us - the humans contributing to Icarus. This is the party talking to you as we build.
 users - Valorant players and coaches. They are not developers. They will never read an error log, they will only feel whether the app worked.
 
 And the words we use when we work:
@@ -32,8 +32,8 @@ Corrupted or dropped library data is unrecoverable. In local mode nothing here c
 ## Sync status is a promise
 The chip that says synced is the app promising the work is on the server. A conflict resolved in silence makes the app lie. So does an op dropped after retries, and so do offline edits with no badge. A user who catches the app lying once stops trusting it with their library. Every state the user's work can be in has a face on screen, and when the true state is uncertain, show uncertainty.
 
-## The server is still clay
-No user data lives on the Convex deployment, only ours. So reshape freely: when a schema change would want a server-side migration, wipe the deployment and rebuild it in the new shape instead. Clay hardens the day this ships, which is exactly why we reshape now while it's cheap. This freedom covers server data only; the local library and round-trip keep every guarantee above.
+## The server has users now
+The clay hardened: production Convex holds real users' libraries, and a cloud library is as sacred as a local one. Never wipe a deployment that users write to. A schema change ships as a migration: widen the schema so old and new rows both validate, backfill in pages that reschedule themselves and record when they finish (`backfillAssetReferences` in `convex/maintenance.ts` is the pattern), and only narrow the schema once the backfill is done everywhere. Merging `convex/` changes deploys to production, so every server change must keep working with the web build that is live and every desktop build we shipped; gate new server strictness behind something new clients opt into. The dev deployment still holds only our data and can be reshaped freely.
 
 ## Everything exported must come home
 Every .ica file and library backup from every version we ever shipped must round-trip. When you change what a strategy contains, export and import change with it in the same commit.

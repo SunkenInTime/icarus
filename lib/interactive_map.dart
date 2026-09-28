@@ -27,6 +27,7 @@ import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
+import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
@@ -418,6 +419,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                         child: const LineupPositionWidget(),
                                       ),
                                     ),
+                                  // Teammates' cursors ride above everything
+                                  // they point at.
+                                  Positioned.fill(
+                                    child: RemoteCursorsLayer(
+                                      coordinateSystem: coordinateSystem,
+                                      isAttack: isAttack,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -444,6 +453,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                         child: IgnorePointer(
                           ignoring: !canEditPages,
                           child: const LineupControlButtons(),
+                        ),
+                      ),
+                      // Watches the pointer without taking it from anything.
+                      Positioned.fill(
+                        child: PresenceCursorReporter(
+                          transformationController: controller,
+                          coordinateSystem: coordinateSystem,
+                          isAttack: isAttack,
                         ),
                       ),
                     ],

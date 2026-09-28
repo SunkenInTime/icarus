@@ -4,6 +4,7 @@ import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
 import 'package:icarus/const/agents.dart';
@@ -26,6 +27,21 @@ class ConvexStrategyRepository {
       );
 
   final IcarusConvexApi _api;
+
+  /// Permission to join [strategyPublicId]'s presence room, or null when this
+  /// deployment has no presence service.
+  Future<RoomPass?> issueRoomPass(String strategyPublicId) async {
+    final result = await _api.presence.issueRoomPass(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+    );
+    if (result == null) return null;
+    return RoomPass(
+      url: Uri.parse(result.url),
+      pass: result.pass,
+      expiresAt: _dateTime(result.expiresAt),
+    );
+  }
 
   Future<void> ensureCurrentUser() async {
     await _api.users.ensureCurrentUser(
@@ -243,6 +259,9 @@ class ConvexStrategyRepository {
       // Links are sent only with or after their origin and landing (see
       // the outbox's batch claim), so the server may refuse an orphan.
       checkLineupLinkEnds: const ConvexOptional.present(true),
+      // An origin or landing delete is sent only with or after the link
+      // deletes on its page, so the server may refuse one a live link names.
+      checkLineupEndDeletes: const ConvexOptional.present(true),
     );
     return result.results.map(_opAck).toList(growable: false);
   }

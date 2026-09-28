@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:icarus/const/sort_index_order.dart';
+
 const currentCloudProtocolVersion = 3;
 const currentCloudPayloadVersion = 1;
 const maxCloudOperationBytes = 900 * 1024;
@@ -20,6 +22,17 @@ const cloudStrategyDeletedMessage =
 /// re-sends such a link as it was.
 const lineupLinkEndMissingMessage =
     "This lineup's origin or landing spot is no longer on the page";
+
+/// The server's message when it refuses a lineup whose row already lives on
+/// another page (LINEUP_PAGE_MISMATCH).
+const lineupPageMismatchMessage =
+    'This lineup belongs to another page and cannot be moved';
+
+/// The server's message when it refuses to delete an origin or landing that
+/// a live link on its page still names (LINEUP_END_IN_USE), such as a
+/// teammate's lineup this device has not drawn yet.
+const lineupEndInUseMessage =
+    'Another lineup still uses this origin or landing spot';
 
 typedef CloudPayload = Map<String, dynamic>;
 
@@ -1423,7 +1436,7 @@ class RemoteFullStrategySnapshot {
       (grouped[element.pagePublicId] ??= <RemoteElement>[]).add(element);
     }
     for (final elements in grouped.values) {
-      elements.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      elements.sortBySortIndex((item) => item.sortIndex);
     }
     return grouped;
   }
@@ -1436,7 +1449,7 @@ class RemoteFullStrategySnapshot {
       (grouped[lineup.pagePublicId] ??= <RemoteLineup>[]).add(lineup);
     }
     for (final lineups in grouped.values) {
-      lineups.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      lineups.sortBySortIndex((item) => item.sortIndex);
     }
     return grouped;
   }

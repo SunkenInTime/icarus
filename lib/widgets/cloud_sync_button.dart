@@ -106,9 +106,17 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
 
   void _showConflictToast() {
     _lastConflictToast = DateTime.now();
+    final specificReason = ref
+        .read(strategyConflictProvider)
+        .map((conflict) => conflict.message)
+        .whereType<String>()
+        .where(isSpecificAttentionReason)
+        .firstOrNull;
     Settings.showToast(
-      message: 'Another edit reached the cloud first. Your version is still on '
-          'this device and needs attention.',
+      message: specificReason != null
+          ? friendlyCloudSyncError(specificReason)
+          : 'Another edit reached the cloud first. Your version is still on '
+              'this device and needs attention.',
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     ref.read(strategyConflictProvider.notifier).clearAll();
@@ -495,9 +503,8 @@ class _SyncStatusPopover extends StatelessWidget {
     final mediaErrors = saveState.mediaSyncErrorCount;
     final parts = <String>[];
     final error = saveState.cloudSyncError;
-    final hasOversizedWork =
-        error?.toLowerCase().contains('too large for cloud sync') ?? false;
-    if (hasRejectedWork && !hasOversizedWork) {
+    final hasSpecificReason = error != null && isSpecificAttentionReason(error);
+    if (hasRejectedWork && !hasSpecificReason) {
       parts.add(
         'Another edit reached the cloud first. Your version remains saved '
         'on this device.',
@@ -512,16 +519,19 @@ class _SyncStatusPopover extends StatelessWidget {
         error?.toLowerCase().contains('cannot be retried automatically') ??
             false;
     if (error != null &&
-        (!hasRejectedWork || retryUnavailable || hasOversizedWork)) {
+        (!hasRejectedWork || retryUnavailable || hasSpecificReason)) {
       parts.add(friendlyCloudSyncError(error));
     }
-    if (hasRejectedWork && hasOversizedWork) {
+    if (error?.contains(otherWorkNeedsAttentionNote) ?? false) {
       parts.add(
-        rejectedCount == 1
-            ? 'Choose whether to keep this local change or use the cloud '
-                'version.'
-            : 'Your choice applies to all $rejectedCount changes that need '
-                'attention.',
+        'Other changes here were not saved either. They remain on this '
+        'device.',
+      );
+    }
+    if (hasRejectedWork && hasSpecificReason && rejectedCount > 1) {
+      parts.add(
+        'Your choice applies to all $rejectedCount changes that need '
+        'attention.',
       );
     }
     if (mediaErrors > 0) {
