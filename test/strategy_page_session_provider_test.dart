@@ -3213,6 +3213,115 @@ void main() {
       await _settle();
     });
 
+    test(
+        "deleting a lineup whose origin a teammate's new lineup uses keeps "
+        'theirs', () async {
+      final (container, remote, page) = await openEmpty();
+      final first = place(container);
+      final landed = await land(container, remote, page,
+          previous: const [], revision: 1, contentRevision: 2);
+      final originKey = keyOf(page, CloudLineupKind.origin, first.originId);
+
+      // A teammate's lineup from the same origin lands, but this canvas has
+      // not drawn it yet.
+      RemoteLineup teammateRow(String kind, Map<String, dynamic> data) =>
+          RemoteLineup(
+            publicId: cloudLineupRowId(kind, data['id'] as String),
+            strategyPublicId: 'cloud-strategy',
+            pagePublicId: page.publicId,
+            payload: cloudLineupPayload(kind: kind, data: data),
+            sortIndex: 10,
+            revision: 1,
+            deleted: false,
+          );
+      Map<String, dynamic> dataOf(String kind) => Map<String, dynamic>.from(
+          rowsOf(landed, kind).single.payload['data'] as Map);
+      final theirLanding = dataOf(CloudLineupKind.landing)
+        ..['id'] = 'their-landing'
+        ..['ability'] = {
+          ...(dataOf(CloudLineupKind.landing)['ability'] as Map),
+          'id': 'their-ability',
+          'lineUpID': 'their-landing',
+        };
+      final theirLink = dataOf(CloudLineupKind.link)
+        ..['id'] = 'their-link'
+        ..['landingId'] = 'their-landing';
+
+      // The user deletes their lineup, which takes its origin with it.
+      container.read(lineUpProvider.notifier).deleteLink(first.id);
+      await _settle();
+      final sent = queuedOps();
+      expect(sent[originKey], isA<LineupDeleteOp>());
+
+      // The server applies the link and landing deletes and refuses the
+      // origin's, since the teammate's link still names it.
+      final onServer = [
+        for (final row in landed)
+          if (row.payload['kind'] == CloudLineupKind.origin) row,
+        teammateRow(CloudLineupKind.landing, theirLanding),
+        teammateRow(CloudLineupKind.link, theirLink),
+      ];
+      remote.initialSnapshot = serverSnapshot(page, onServer, 3);
+      final acks = [
+        for (final entry in sent.entries)
+          AckedEntityIntent(
+            entityKey: entry.key,
+            op: entry.value,
+            ack: entry.key == originKey
+                ? FailedOpAck(
+                    opId: entry.value.opId,
+                    code: 'LINEUP_END_IN_USE',
+                    rawCode: 'LINEUP_END_IN_USE',
+                    message: lineupEndInUseMessage,
+                  )
+                : AppliedOpAck(opId: entry.value.opId, revision: 2),
+          ),
+      ];
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+        attentionByEntityKey: {
+          originKey: QueuedEntityIntent(
+            entityKey: originKey,
+            pending: PendingOp(op: sent[originKey]!, clientId: 'test-client'),
+          ),
+        },
+        lastError: 'Some saved work needs attention.',
+        lastAcks: [for (final intent in acks) intent.ack],
+        lastAckBatch: acks,
+      );
+      remote.setSnapshot(serverSnapshot(page, onServer, 3));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // Until the user chooses, their delete still shows, the teammate's
+      // lineup is not deleted behind their back, and the work needs
+      // attention.
+      expect(container.read(lineUpProvider).graph.links, isEmpty);
+      expect(
+        queuedOps().values.whereType<LineupDeleteOp>(),
+        isEmpty,
+      );
+      expect(queue.state.attentionByEntityKey.keys, [originKey]);
+
+      // Using theirs brings back the origin with the teammate's lineup.
+      final resolved = await container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      await _settle();
+
+      expect(resolved, isTrue);
+      final graph = container.read(lineUpProvider).graph;
+      expect(graph.links.map((link) => link.id), ['their-link']);
+      expect(graph.origins.map((origin) => origin.id), [first.originId]);
+      expect(queue.state.attentionByEntityKey, isEmpty);
+      expect(
+        queuedOps().keys.where((key) => key.kind == EntitySyncKeyKind.lineup),
+        isEmpty,
+      );
+      await _settle();
+    });
+
     test('a lineup placed from an origin a teammate deleted re-adds it',
         () async {
       final (container, remote, page) = await openEmpty();

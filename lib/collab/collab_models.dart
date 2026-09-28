@@ -28,6 +28,12 @@ const lineupLinkEndMissingMessage =
 const lineupPageMismatchMessage =
     'This lineup belongs to another page and cannot be moved';
 
+/// The server's message when it refuses to delete an origin or landing that
+/// a live link on its page still names (LINEUP_END_IN_USE), such as a
+/// teammate's lineup this device has not drawn yet.
+const lineupEndInUseMessage =
+    'Another lineup still uses this origin or landing spot';
+
 typedef CloudPayload = Map<String, dynamic>;
 
 int serializedConvexValueUtf8Bytes(Object? value) =>
