@@ -326,13 +326,17 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       if (accepted == null) continue;
 
       _hydratedBaseByEntityKey[key] = accepted;
-      // The canvas drew this version only if it shows what landed: the
-      // user's own edit. An op restored from the outbox may have landed
-      // under older content still on screen.
+      // The user has seen this version if this session authored it (it has
+      // an overlay; they may have kept editing since) or the canvas shows
+      // exactly what landed. An op restored from the outbox has no overlay
+      // and may have landed under older content still on screen.
       final hydratedPage = state.hydratedPageId;
       if (key.pageId != null && key.pageId == hydratedPage) {
-        onScreen ??= _normalizedLocalEntities(hydratedPage!);
-        if (_entitiesEquivalent(onScreen[key], accepted)) {
+        final authoredHere = state.overlayByEntityKey.containsKey(key);
+        if (!authoredHere) {
+          onScreen ??= _normalizedLocalEntities(hydratedPage!);
+        }
+        if (authoredHere || _entitiesEquivalent(onScreen![key], accepted)) {
           _drawnByEntityKey[key] = accepted;
         }
       }

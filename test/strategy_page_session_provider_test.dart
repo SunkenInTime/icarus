@@ -1229,6 +1229,43 @@ void main() {
       await _settle();
     });
 
+    test('typing into an item before its own move lands is no conflict',
+        () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final (container, queue) = await openWithQueue(remote);
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'a');
+      await _settle();
+      final sent = queue
+          .state
+          .queuedByEntityKey[EntitySyncKey.element(page.publicId, 'a')]!
+          .pending
+          .op as ElementPatchOp;
+      // The user starts typing into it before the move is acked.
+      container.read(textDraftProvider.notifier).setDraft('a', 'typing');
+      land(queue, sent, 2);
+      container.read(strategySaveStateProvider.notifier).markPersisted();
+      remote.setSnapshot(snapshot([
+        RemoteElement(
+          publicId: 'a',
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: page.publicId,
+          elementType: 'text',
+          payload: sent.payload!,
+          sortIndex: 0,
+          revision: 2,
+          deleted: false,
+        ),
+      ], contentRevision: 2));
+      await _settle();
+      container.read(textDraftProvider.notifier).commitDraft('a');
+      await _settle();
+      // Against the user's own move (revision 2), not the version before it.
+      expect(elementOps(container)['a']!.expectedRevision, 2);
+      await _settle();
+    });
+
     test('moving past an element with the same sortIndex is sent', () async {
       final container = await open(
           _FakeRemoteEditorNotifier(snapshot([text('a', 3), text('b', 3)])));
