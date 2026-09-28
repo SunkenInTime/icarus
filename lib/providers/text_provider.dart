@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -273,6 +274,18 @@ class TextProvider extends Notifier<List<PlacedText>> {
     final List<Map<String, dynamic>> jsonList =
         texts.map((text) => text.toJson()).toList();
     return jsonEncode(jsonList);
+  }
+
+  /// Takes the server's copy of every item but those [keep] names; see
+  /// [mergeRemoteItems].
+  /// Open drafts stay open.
+  void mergeRemote(List<PlacedText> incoming, bool Function(String id) keep) {
+    state = mergeRemoteItems(
+      current: state,
+      incoming: incoming.map(_migrateLoadedText).toList(),
+      idOf: (text) => text.id,
+      keep: keep,
+    );
   }
 
   void clearAll() {

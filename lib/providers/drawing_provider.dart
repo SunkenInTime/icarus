@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -916,6 +917,27 @@ class DrawingProvider extends Notifier<DrawingState> {
     }
 
     state = state.copyWith(elements: listOfElements);
+    _triggerRepaint();
+  }
+
+  /// Takes the server's copy of every item but those [keep] names; see
+  /// [mergeRemoteItems].
+  /// A drawing still being drawn is not on the page yet and is left alone.
+  void mergeRemote(
+      List<DrawingElement> incoming, bool Function(String id) keep) {
+    final coordinateSystem = CoordinateSystem.instance;
+    final merged = mergeRemoteItems(
+      current: state.elements,
+      incoming: incoming,
+      idOf: (drawing) => drawing.id,
+      keep: keep,
+    );
+    for (final drawing in incoming) {
+      if (drawing is FreeDrawing && !keep(drawing.id)) {
+        drawing.rebuildPath(coordinateSystem);
+      }
+    }
+    state = state.copyWith(elements: merged);
     _triggerRepaint();
   }
 

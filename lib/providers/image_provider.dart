@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'dart:async' show Completer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/collab/pending_media_bytes_store.dart';
@@ -544,6 +545,19 @@ class PlacedImageProvider extends Notifier<ImageState> {
     poppedImages = [];
     state = state.copyWith(
       images: hiveImages.map(_migrateLoadedImage).toList(),
+    );
+  }
+
+  /// Takes the server's copy of every item but those [keep] names; see
+  /// [mergeRemoteItems].
+  void mergeRemote(List<PlacedImage> incoming, bool Function(String id) keep) {
+    state = state.copyWith(
+      images: mergeRemoteItems(
+        current: state.images,
+        incoming: incoming.map(_migrateLoadedImage).toList(),
+        idOf: (image) => image.id,
+        keep: keep,
+      ),
     );
   }
 

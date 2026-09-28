@@ -91,6 +91,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   final Map<EntitySyncKey, _NormalizedEntity> _hydratedBaseByEntityKey = {};
   final Set<EntitySyncKey> _remoteAdoptionPending = {};
 
+  /// Each element's place in its canvas list right after the page was last
+  /// hydrated, to tell a local restack from the order hydration drew.
+  final Map<EntitySyncKey, int> _hydratedPositionByKey = {};
+
+  /// Items the user holds that the server deleted: still on screen until the
+  /// hold ends, but no longer ordered against anything on the server.
+  final Set<EntitySyncKey> _heldDeletedKeys = {};
+
   @override
   ActivePageLiveSyncState build() {
     return const ActivePageLiveSyncState();
@@ -99,6 +107,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   void reset() {
     _hydratedBaseByEntityKey.clear();
     _remoteAdoptionPending.clear();
+    _hydratedPositionByKey.clear();
+    _heldDeletedKeys.clear();
     state = const ActivePageLiveSyncState();
   }
 
@@ -116,6 +126,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     if (strategyChanged) {
       _hydratedBaseByEntityKey.clear();
       _remoteAdoptionPending.clear();
+      _hydratedPositionByKey.clear();
+      _heldDeletedKeys.clear();
     }
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
@@ -144,10 +156,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
   }
 
+  /// [keepBaseFor] names entities the canvas did not take from [snapshot]
+  /// (the user is holding them). They keep the base they were drawn from, so
+  /// an edit the user commits to one is checked against the version they saw.
   void markPageHydrated({
     required String strategyPublicId,
     required String pageId,
     required RemoteEditorSnapshot snapshot,
+    Set<EntitySyncKey> keepBaseFor = const {},
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
     final matchesPage = snapshot.header.publicId == strategyPublicId &&
@@ -162,6 +178,30 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         for (final entry in _normalizedRemoteEntities(snapshot, pageId).entries)
           if (!undrawnLineups.contains(entry.key)) entry.key: entry.value,
     };
+    _heldDeletedKeys
+      ..removeWhere((key) => key.pageId == pageId)
+      ..addAll({
+        for (final key in keepBaseFor)
+          if (remoteEntities[key]?.deleted ?? true) key,
+      });
+    for (final key in keepBaseFor) {
+      final drawnBase = _hydratedBaseByEntityKey[key];
+      if (drawnBase == null) {
+        remoteEntities.remove(key);
+        continue;
+      }
+      // Its content and revision stay as drawn; its place is where the
+      // merge put it on screen, the server's.
+      final serverSortIndex = remoteEntities[key]?.sortIndex;
+      remoteEntities[key] = _NormalizedEntity(
+        key: key,
+        overlayEntityType: drawnBase.overlayEntityType,
+        payload: drawnBase.payload,
+        sortIndex: serverSortIndex ?? drawnBase.sortIndex,
+        revision: drawnBase.revision,
+        deleted: drawnBase.deleted,
+      );
+    }
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
     _hydratedBaseByEntityKey.addAll(remoteEntities);
     _remoteAdoptionPending.removeWhere((key) => key.pageId == pageId);
@@ -171,12 +211,46 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final entry in remoteEntities.entries) {
       remoteRevisions[entry.key] = entry.value.revision;
     }
+    _hydratedPositionByKey
+      ..removeWhere((key, _) => key.pageId == pageId)
+      ..addAll({
+        for (final (position, envelope)
+            in _collectLocalElementEnvelopes().indexed)
+          EntitySyncKey.element(pageId, envelope.publicId): position,
+      });
     state = state.copyWith(
       hydratedPageId: pageId,
       hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
       remoteBaseRevisionByEntity: remoteRevisions,
     );
   }
+
+  /// The entities of [pageId] whose server copy in [snapshot] differs from the
+  /// one the canvas last drew.
+  Set<EntitySyncKey> remoteChangesSinceHydration(
+    RemoteEditorSnapshot snapshot,
+    String pageId,
+  ) {
+    final undrawn = _undrawnRemoteLineups(snapshot, pageId);
+    _NormalizedEntity? live(_NormalizedEntity? entity) =>
+        entity == null || entity.deleted ? null : entity;
+    final remote = _normalizedRemoteEntities(snapshot, pageId);
+    final keys = {
+      ...remote.keys,
+      ..._hydratedBaseByEntityKey.keys.where((key) => key.pageId == pageId),
+    };
+    return {
+      for (final key in keys)
+        // A row the canvas cannot draw counts as gone on the server side
+        // only: the base is what the canvas did draw.
+        if (undrawn.contains(key) ? null : live(remote[key]) case final now
+            when !_sameLiveEntity(now, live(_hydratedBaseByEntityKey[key])))
+          key,
+    };
+  }
+
+  bool _sameLiveEntity(_NormalizedEntity? a, _NormalizedEntity? b) =>
+      a == null ? b == null : b != null && _entitiesEquivalent(a, b);
 
   /// Drops [pageId]'s overlays that no op in the queue carries any more.
   ///
@@ -845,44 +919,77 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       deleted: false,
     );
 
-    final elementEnvelopes = _collectLocalElementEnvelopes();
-    for (var index = 0; index < elementEnvelopes.length; index++) {
-      final envelope = elementEnvelopes[index];
+    // A row keeps the sortIndex it was first sent with and new rows go after
+    // the page's highest. Removing an element or lineup (here or by a
+    // teammate) then rewrites no row after it, which would collide with a
+    // teammate editing one of them; the server never renumbers either.
+    int? knownSortIndex(EntitySyncKey key) =>
+        state.overlayByEntityKey[key]?.desiredSortIndex ??
+        _hydratedBaseByEntityKey[key]?.sortIndex;
+
+    /// Hands out sortIndexes after the page's highest for [kind].
+    int Function() freshSortIndexes(EntitySyncKeyKind kind) {
+      bool onPage(EntitySyncKey key) =>
+          key.pageId == pageId && key.kind == kind;
+      var next = 1 +
+          [
+            for (final key in _hydratedBaseByEntityKey.keys)
+              if (onPage(key)) knownSortIndex(key) ?? 0,
+            for (final key in state.overlayByEntityKey.keys)
+              if (onPage(key)) knownSortIndex(key) ?? 0,
+          ].fold<int>(-1, max);
+      return () => next++;
+    }
+
+    // Elements stack in list order within each kind (each kind is its own
+    // canvas layer), and moving or restoring one brings it to the front of its
+    // list. A known sortIndex is kept while it still sorts after the one
+    // before it in the same list (a tie only while the two are still in the
+    // order hydration drew them); an element that moved ahead goes after the
+    // page's highest.
+    final freshElementSortIndex = freshSortIndexes(EntitySyncKeyKind.element);
+    final previousByKind = <_CollabElementKind, (EntitySyncKey, int)>{};
+    bool drawnInThisOrder(EntitySyncKey first, EntitySyncKey second) {
+      final a = _hydratedPositionByKey[first];
+      final b = _hydratedPositionByKey[second];
+      return a != null && b != null && a < b;
+    }
+
+    int stackedSortIndex(EntitySyncKey key, _CollabElementKind kind) {
+      final known = knownSortIndex(key);
+      if (_heldDeletedKeys.contains(key) && known != null) return known;
+      final previous = previousByKind[kind];
+      final keep = known != null &&
+          (previous == null ||
+              known > previous.$2 ||
+              (known == previous.$2 && drawnInThisOrder(previous.$1, key)));
+      final sortIndex = keep ? known : freshElementSortIndex();
+      previousByKind[kind] = (key, sortIndex);
+      return sortIndex;
+    }
+
+    for (final envelope in _collectLocalElementEnvelopes()) {
       final key = EntitySyncKey.element(pageId, envelope.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.element,
         payload: cloudElementPayload(
             kind: envelope.kind.name, data: envelope.payload),
-        sortIndex: index,
+        sortIndex: stackedSortIndex(key, envelope.kind),
         revision: 0,
         deleted: false,
       );
     }
 
-    // One row per origin, landing and link. A row keeps the sortIndex it was
-    // first sent with and new rows go after the page's highest: order is
-    // never re-sent, so removing one lineup does not rewrite every row after
-    // it and collide with a teammate editing one of them.
-    bool isPageLineup(EntitySyncKey key) =>
-        key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup;
-    int? knownSortIndex(EntitySyncKey key) =>
-        state.overlayByEntityKey[key]?.desiredSortIndex ??
-        _hydratedBaseByEntityKey[key]?.sortIndex;
-    var nextSortIndex = 1 +
-        [
-          for (final key in _hydratedBaseByEntityKey.keys)
-            if (isPageLineup(key)) knownSortIndex(key) ?? 0,
-          for (final key in state.overlayByEntityKey.keys)
-            if (isPageLineup(key)) knownSortIndex(key) ?? 0,
-        ].fold<int>(-1, max);
+    // One row per origin, landing and link.
+    final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
     for (final row in cloudLineupRows(ref.read(lineUpProvider).graph)) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
         payload: row.payload,
-        sortIndex: knownSortIndex(key) ?? nextSortIndex++,
+        sortIndex: knownSortIndex(key) ?? freshLineupSortIndex(),
         revision: 0,
         deleted: false,
       );

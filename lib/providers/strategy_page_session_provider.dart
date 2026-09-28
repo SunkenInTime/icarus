@@ -117,6 +117,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _pendingRemoteReapply = false;
   bool _isResolvingConflicts = false;
   bool _remoteReapplyInFlight = false;
+
+  /// A remote change is waiting for the user to finish what it touches.
+  /// Retried when the editor's holds change, not before: they may last a
+  /// while, and retrying sooner would only hold the change back again.
+  bool _remoteChangeWaitsForEditor = false;
   bool _disposed = false;
   int _pageSessionGeneration = 0;
 
@@ -166,13 +171,19 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       _resumePendingRemoteReapplyIfPossible();
     });
 
-    ref.listen<bool>(editorOperationActiveProvider, (previous, next) {
-      if (!next && previous == true) {
-        // Draft completion publishes its saved value and history in the same
-        // call stack. Let those writes finish before inspecting save state.
-        scheduleMicrotask(_resumePendingRemoteReapplyIfPossible);
+    void editorChanged() {
+      if (_remoteChangeWaitsForEditor) {
+        _remoteChangeWaitsForEditor = false;
+        _pendingRemoteReapply = true;
       }
-    });
+      // Draft completion publishes its saved value and history in the same
+      // call stack. Let those writes finish before inspecting save state.
+      scheduleMicrotask(_resumePendingRemoteReapplyIfPossible);
+    }
+
+    ref.listen<bool>(editorBusyProvider, (_, __) => editorChanged());
+    ref.listen<Set<String>?>(
+        editorHeldEntitiesProvider, (_, __) => editorChanged());
 
     ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
       final previousAckBatch =
@@ -582,6 +593,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   void reset() {
+    _remoteChangeWaitsForEditor = false;
     _pageSessionGeneration++;
     state = const StrategyPageSessionState(
       activePageId: null,
@@ -815,7 +827,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return !_isResolvingConflicts &&
         !state.isApplyingPage &&
         state.transitionState == PageTransitionState.idle &&
-        !ref.read(editorOperationActiveProvider) &&
+        ref.read(editorHeldEntitiesProvider) != null &&
         !saveState.isDirty &&
         !saveState.isSaving &&
         !saveState.hasPendingCloudSync;
@@ -850,36 +862,104 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final source = _resolvePageSource(strategyId, StrategySource.cloud);
       final pageData = await source.loadPage(pageId);
       if (_disposed || generation != _pageSessionGeneration) return;
+      bool canApply() {
+        if (_disposed || generation != _pageSessionGeneration) return false;
+        final current = ref.read(strategyProvider);
+        if (!current.isOpen ||
+            current.strategyId != strategyId ||
+            current.source != StrategySource.cloud ||
+            state.activePageId != startingPageId) return false;
+        // Loading yields. A new gesture, local commit, or newer remote
+        // snapshot may have arrived since the request started.
+        final loadedKey = _buildRemotePageHydrationKey(
+          source.loadedRemoteSnapshot!,
+          pageId,
+        );
+        if (!_canSafelyReapplyRemotePage() ||
+            loadedKey != _currentRemotePageHydrationKey(pageId)) {
+          _pendingRemoteReapply = true;
+          return false;
+        }
+        return true;
+      }
+
+      final loadedSnapshot = source.loadedRemoteSnapshot!;
+      final alreadyOnScreen =
+          _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
+              _lastHydratedRemotePageKey?.pageId == pageId &&
+              ref.read(activePageLiveSyncProvider).hydratedPageId == pageId;
+      if (alreadyOnScreen) {
+        if (canApply()) {
+          _mergeRemotePage(
+            pageData,
+            strategyId: strategyId,
+            snapshot: loadedSnapshot,
+          );
+        }
+        return;
+      }
       await _applyLoadedPageData(
         pageData,
         strategyId: strategyId,
         source: StrategySource.cloud,
-        loadedRemoteSnapshot: source.loadedRemoteSnapshot,
+        loadedRemoteSnapshot: loadedSnapshot,
+        // Replacing the page (say a teammate deleted the one on screen)
+        // clears everything, so it waits until nothing is mid-way.
         canApply: () {
-          if (_disposed || generation != _pageSessionGeneration) return false;
-          final current = ref.read(strategyProvider);
-          if (!current.isOpen ||
-              current.strategyId != strategyId ||
-              current.source != StrategySource.cloud ||
-              state.activePageId != startingPageId) return false;
-          // Loading yields. A new gesture, local commit, or newer remote
-          // snapshot may have arrived since the request started.
-          final loadedKey = _buildRemotePageHydrationKey(
-            source.loadedRemoteSnapshot!,
-            pageId,
-          );
-          if (!_canSafelyReapplyRemotePage() ||
-              loadedKey != _currentRemotePageHydrationKey(pageId)) {
-            _pendingRemoteReapply = true;
+          if (ref.read(editorBusyProvider)) {
+            _remoteChangeWaitsForEditor = true;
             return false;
           }
-          return true;
+          return canApply();
         },
       );
     } finally {
       _remoteReapplyInFlight = false;
       if (!_disposed) _resumePendingRemoteReapplyIfPossible();
     }
+  }
+
+  /// Brings the page on screen up to [snapshot] item by item, leaving what
+  /// the user is in the middle of changing. A held item's change applies once
+  /// the hold ends.
+  void _mergeRemotePage(
+    StrategyEditorPageData pageData, {
+    required String strategyId,
+    required RemoteEditorSnapshot snapshot,
+  }) {
+    final pageId = pageData.pageId;
+    final liveSync = ref.read(activePageLiveSyncProvider.notifier);
+    // Marks these writes as the server's, not edits to send back.
+    state = state.copyWith(isApplyingPage: true);
+    final Set<EntitySyncKey> heldBack;
+    try {
+      heldBack = mergeRemoteStrategyEditorPageData(
+        ref,
+        pageData,
+        changed: liveSync.remoteChangesSinceHydration(snapshot, pageId),
+        holding: ref.read(editorHeldEntitiesProvider)!,
+        themeProfileId:
+            _resolveThemeProfileId(StrategySource.cloud, strategyId),
+        themeOverridePalette: _resolveThemeOverridePalette(
+          StrategySource.cloud,
+          strategyId,
+        ),
+      );
+    } finally {
+      state = state.copyWith(isApplyingPage: false);
+    }
+    liveSync.markPageHydrated(
+      strategyPublicId: strategyId,
+      pageId: pageId,
+      snapshot: snapshot,
+      keepBaseFor: heldBack,
+    );
+    _lastAppliedRemoteSnapshot = snapshot;
+    _updateHydrationBookkeeping(
+      pageId,
+      hydrationKey: _buildRemotePageHydrationKey(snapshot, pageId),
+    );
+    if (heldBack.isNotEmpty) _remoteChangeWaitsForEditor = true;
   }
 
   String? _resolveHydrationTargetPage(RemoteEditorSnapshot snapshot) {
