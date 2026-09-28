@@ -76,7 +76,8 @@ jobs:
               echo "$1: skipped, no matching files"
             fi
           }
-          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config)'
+          # The contract scripts in tool/ run in this lane, against its preview.
+          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$)'
           lane presence '^presence/'
           lane contract '^(convex/|tool/|lib/collab/)'
           lane rust '^third_party/'
