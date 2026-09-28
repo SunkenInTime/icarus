@@ -649,9 +649,16 @@ class CloudMediaUploadQueueNotifier
     }
 
     // A check that cannot prove the image unreferenced lets the upload go on.
-    if (_referenceCheckDue.remove(durableCloudMediaOutboxStorageKey(job)) &&
-        await _deleteJobWhenReferenceIsGone(job)) {
-      return true;
+    // A removal that fails (already reported) keeps the check for next time.
+    final key = durableCloudMediaOutboxStorageKey(job);
+    if (_referenceCheckDue.contains(key)) {
+      try {
+        if (await _deleteJobWhenReferenceIsGone(job)) return true;
+      } catch (_) {
+        _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
+        return false;
+      }
+      _referenceCheckDue.remove(key);
     }
 
     if (!job.hasUploadedRemoteObject) {

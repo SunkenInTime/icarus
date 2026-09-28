@@ -1246,6 +1246,48 @@ void main() {
       expect(repository.uploadedAssetIds, isEmpty);
     });
 
+    test('a failed removal is checked again, never uploaded', () async {
+      final mediaStore = _FailingBatchStore()..failRemove = true;
+      await mediaStore.put(job('page-image'));
+      await mediaStore.put(job('queued-image'));
+      final strategyStore = MemoryDurableStrategyOutboxStore();
+      await strategyStore.put(_durableRecord(const ElementAddOp(
+        opId: 'other-page',
+        elementPublicId: 'queued-image',
+        pagePublicId: 'page-b',
+        sortIndex: 0,
+        payload: {'id': 'queued-image'},
+      )));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: strategyStore,
+      );
+      addTearDown(container.dispose);
+      final bytes = container.read(pendingMediaBytesProvider.notifier);
+      await bytes.put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      goOnline();
+
+      // Restored at launch, so already marked for the check.
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId),
+        contains('page-image'),
+      );
+
+      mediaStore.failRemove = false;
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId),
+        ['queued-image'],
+      );
+      expect(bytes.bytesFor(key('page-image')), isNull);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
     test('drops an image placed after the delete that never got a change',
         () async {
       // Nothing can send a change for a page the server no longer has, so
