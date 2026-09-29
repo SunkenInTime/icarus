@@ -17,6 +17,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -31,6 +32,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:image/image.dart' as img;
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthState, Session;
 
 const _strategyId = 'cloud-strategy';
 const _pageId = 'page-1';
@@ -100,6 +102,45 @@ class _CloudSnapshot extends RemoteEditorSnapshotNotifier {
       ),
     );
   }
+}
+
+/// Records every call a capture makes to the app's one Convex client.
+class _RecordingConvexAuth extends Fake implements AuthProviderConvexApi {
+  final calls = <String>[];
+
+  @override
+  Stream<bool> get authState => const Stream.empty();
+
+  @override
+  bool get isAuthenticated => true;
+
+  @override
+  Future<AuthProviderAuthHandle> setAuthWithRefresh({
+    required Future<String?> Function() fetchToken,
+    void Function(bool isAuthenticated)? onAuthChange,
+  }) async {
+    calls.add('setAuthWithRefresh');
+    return _RecordingHandle(calls);
+  }
+
+  @override
+  Future<void> clearAuth() async => calls.add('clearAuth');
+}
+
+class _RecordingHandle implements AuthProviderAuthHandle {
+  _RecordingHandle(this.calls);
+  final List<String> calls;
+
+  @override
+  void dispose() => calls.add('dispose');
+}
+
+class _NoSupabase extends Fake implements AuthProviderSupabaseApi {
+  @override
+  Session? get currentSession => null;
+
+  @override
+  Stream<AuthState> get onAuthStateChange => const Stream.empty();
 }
 
 class _IdleOpQueue extends StrategyOpQueueNotifier {
@@ -253,6 +294,32 @@ void main() {
     expect(_magentaPixels(png as Uint8List), greaterThan(500));
     // The capture leaves the editor's coordinate mode as it found it.
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
+  });
+
+  testWidgets('a capture never touches the app\'s cloud session',
+      (tester) async {
+    // A capture's own container builds a strategy provider, which listens
+    // to auth. A real auth provider there would set, and on dispose tear
+    // down, auth on the one Convex client the editor syncs through.
+    final convex = _RecordingConvexAuth();
+    AuthProvider.debugConvexApi = convex;
+    AuthProvider.debugSupabaseApi = _NoSupabase();
+    addTearDown(AuthProvider.resetTestOverrides);
+    final ref = await openCloudPage(tester, imageUrl: _imageUrl);
+
+    final png = await captureWithFrames(
+      tester,
+      () => http.runWithClient(
+        () => captureEditorPage(ref),
+        () => MockClient((_) async => http.Response.bytes(_magentaPng, 200)),
+      ),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+
+    expect(png, isA<Uint8List>());
+    expect(convex.calls, isEmpty);
   });
 
   testWidgets('an image whose URL has not arrived stops the capture',

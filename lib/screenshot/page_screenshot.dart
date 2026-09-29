@@ -89,11 +89,7 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
     themeOverridePalette: theme.overridePalette,
   );
 
-  final container = ProviderContainer(
-    overrides: [
-      captureImageSourcesProvider.overrideWithValue(images.sources),
-    ],
-  );
+  final container = createCaptureContainer(images: images.sources);
   CaptureGeometryLease? geometry;
   try {
     // The sightline models load asynchronously; the capture waits for the
