@@ -368,8 +368,10 @@ void main() {
         }
       });
 
+      // Downloads start together; the cancel stops the export before the
+      // next image is decoded and held.
       expect(error, isA<VideoExportCancelled>());
-      expect(requested, hasLength(1));
+      expect(requested, isNotEmpty);
     });
 
     testWidgets('refuses a selection naming a page that no longer exists',
