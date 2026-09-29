@@ -155,9 +155,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _disposed = false;
   int _pageSessionGeneration = 0;
 
-  /// Pages whose delete from this device the server accepted. Their
-  /// disappearing is the user's own doing, whatever work is left on them.
-  final Set<String> _pagesDeletedHere = {};
+  /// Pages whose delete from this device the server accepted, with the
+  /// strategy revision it left. Their disappearing is the user's own doing,
+  /// whatever work is left on them. A page listed again at a later revision
+  /// is back (restored from the trash) and leaves the map: a later delete is
+  /// someone's new one. A read from before the delete still lists it at an
+  /// earlier revision, and changes nothing.
+  final Map<String, int> _pagesDeletedHere = {};
+
+  /// The ack batch [_pagesDeletedHere] last took deletes from, so an old
+  /// batch never marks a page restored since as deleted here again.
+  List<AckedEntityIntent>? _notedAckBatch;
 
   @override
   StrategyPageSessionState build() {
@@ -174,6 +182,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         final snapshot = next.valueOrNull;
         if (snapshot == null || snapshot.pages.isEmpty) {
           return;
+        }
+        if (snapshot.header.publicId == strategyState.strategyId) {
+          _pagesDeletedHere.removeWhere(
+            (pageId, deletedAtRevision) =>
+                snapshot.header.revision > deletedAtRevision &&
+                snapshot.pages.any((page) => page.publicId == pageId),
+          );
         }
 
         final pageIds = [...snapshot.pages]
@@ -933,7 +948,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // Work on it the server paused or refused stays in the sync status.
     final queue = ref.read(strategyOpQueueProvider);
     _notePagesDeletedHere(queue);
-    if (_pagesDeletedHere.contains(pageId)) return false;
+    if (_pagesDeletedHere.containsKey(pageId)) return false;
     final descriptor = EntitySyncKey.pageDescriptor(pageId);
     if ([
       queue.queuedByEntityKey[descriptor]?.pending.op,
@@ -959,10 +974,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// Called from the check as well as the queue listener: a listener
   /// registered earlier (save state) can run the check first.
   void _notePagesDeletedHere(StrategyOpQueueState queue) {
+    if (identical(queue.lastAckBatch, _notedAckBatch)) return;
+    _notedAckBatch = queue.lastAckBatch;
     for (final acked in queue.lastAckBatch) {
       if (acked.op case PageDeleteOp(:final pagePublicId)
           when acked.ack.isAck) {
-        _pagesDeletedHere.add(pagePublicId);
+        // Without a revision the delete never expires, as before restores.
+        _pagesDeletedHere[pagePublicId] =
+            acked.ack.appliedRevision ?? (1 << 52);
       }
     }
   }
@@ -989,14 +1008,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     final target =
         snapshot == null ? null : _resolveHydrationTargetPage(snapshot);
-    if (target == null ||
-        target == deleted.pageId ||
-        state.deletedPage != deleted) {
-      return false;
-    }
+    if (target == null || state.deletedPage != deleted) return false;
     // Loaded here, not through the reapply that waits for pending cloud
     // work: work queued for other pages is not on this canvas, and the
-    // deleted page must not stay editable while it waits.
+    // deleted page must not stay editable while it waits. If the page is
+    // back (restored meanwhile), this is its server copy, without the
+    // discarded work.
     try {
       await remote.setActivePage(target);
       final source = _resolvePageSource(strategyId, StrategySource.cloud);
@@ -1053,8 +1070,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
     // A change still on its way when the page came back may yet be refused;
     // its answer comes before the refused changes are sent again.
-    await _queueSettles((queue) => !queue.inFlightByEntityKey.keys
+    final settled = await _queueSettles((queue) => !queue
+        .inFlightByEntityKey.keys
         .any((key) => key.pageId == deleted.pageId));
+    // Its answer never came: a refusal still on its way would miss the
+    // retry below. Restoring again is safe once it has.
+    if (!settled) return DeletedPageRestore.failed;
     await ref
         .read(remoteEditorSnapshotProvider.notifier)
         .showRestoredPage(deleted.pageId);
@@ -1074,7 +1095,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         .read(strategyOpQueueProvider.notifier)
         .retryRestoredPage(deleted.pageId);
     await flushCurrentPage(flushImmediately: true);
-    return DeletedPageRestore.restored;
+    // A later read may have shown the page gone again.
+    return state.deletedPage == null && state.activePageId == deleted.pageId
+        ? DeletedPageRestore.restored
+        : DeletedPageRestore.failed;
   }
 
   Future<void> _reapplyRemotePage(String pageId) async {
@@ -1420,11 +1444,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   /// Waits, at most [pageWorkSettleTimeout], for the op queue to satisfy
-  /// [settled].
-  Future<void> _queueSettles(
+  /// [settled]. Returns whether it did.
+  Future<bool> _queueSettles(
     bool Function(StrategyOpQueueState queue) settled,
   ) async {
-    if (settled(ref.read(strategyOpQueueProvider))) return;
+    if (settled(ref.read(strategyOpQueueProvider))) return true;
     final done = Completer<void>();
     final subscription = ref.listen<StrategyOpQueueState>(
       strategyOpQueueProvider,
@@ -1437,6 +1461,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     } finally {
       subscription.close();
     }
+    return done.isCompleted;
   }
 
   void _resumePendingRemoteReapplyIfPossible() {

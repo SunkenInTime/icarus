@@ -24,6 +24,10 @@ class RemoteEditorSnapshotNotifier
   String? _subscribedPagePublicId;
   Timer? _refreshDebounce;
   int _pageEpoch = 0;
+
+  /// Bumped by every read of the shell and page, and by a page selection:
+  /// a read that finishes after a newer one started changes nothing.
+  int _readEpoch = 0;
   Map<String, RemoteImageAsset>? _lastReconciledAssetsById;
 
   @override
@@ -64,6 +68,7 @@ class RemoteEditorSnapshotNotifier
     }
 
     _activePagePublicId = pagePublicId;
+    _readEpoch += 1;
     final epoch = ++_pageEpoch;
     await _pageSubscription?.cancel();
     _pageSubscription = null;
@@ -141,9 +146,11 @@ class RemoteEditorSnapshotNotifier
       return;
     }
 
+    final epoch = ++_readEpoch;
     try {
       final repository = ref.read(convexStrategyRepositoryProvider);
       final shell = await repository.fetchShell(strategyPublicId);
+      if (epoch != _readEpoch) return;
       var pageId = _activePagePublicId;
       if (pageId == null ||
           !shell.pages.any((page) => page.publicId == pageId)) {
@@ -156,9 +163,11 @@ class RemoteEditorSnapshotNotifier
               strategyPublicId: strategyPublicId,
               pagePublicId: pageId,
             );
+      if (epoch != _readEpoch) return;
       state = AsyncData(RemoteEditorSnapshot(shell: shell, activePage: page));
       if (page != null) _reconcilePageMedia(page);
     } catch (error, stackTrace) {
+      if (epoch != _readEpoch) return;
       _handleReadError(
         source: 'remote_editor:refresh',
         error: error,
@@ -177,6 +186,13 @@ class RemoteEditorSnapshotNotifier
         if (_activeStrategyPublicId != strategyPublicId ||
             ref.read(authProvider).hasActiveAuthIncident) return;
         final current = state.valueOrNull;
+        // A read may already hold a newer shell (say, with a page just
+        // restored); an older one arriving late must not undo it.
+        if (current != null &&
+            current.header.publicId == shell.header.publicId &&
+            shell.header.revision < current.header.revision) {
+          return;
+        }
         state = AsyncData(RemoteEditorSnapshot(
           shell: shell,
           activePage: current?.activePage,

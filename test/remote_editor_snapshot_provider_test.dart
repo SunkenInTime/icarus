@@ -101,6 +101,42 @@ void main() {
       2,
     );
   });
+
+  test('a read from before a restore finishing late changes nothing', () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+    repository.shells.add(_shell(['b'], revision: 2));
+    await _settle();
+
+    // Restoring bumped the strategy's revision.
+    repository.shellRevision = 3;
+    // A refresh starts while the page is still deleted...
+    final gate = Completer<void>();
+    repository.staleShellGate = gate;
+    final stale = remote.refresh();
+    // ...and the page is restored and shown before it answers.
+    await remote.showRestoredPage('a');
+    gate.complete();
+    await stale;
+    // The watched shell's last push, from before the restore, arrives late.
+    repository.shells.add(_shell(['b'], revision: 2));
+    await _settle();
+
+    final snapshot = container.read(remoteEditorSnapshotProvider).valueOrNull;
+    expect(snapshot?.activePage?.page.publicId, 'a');
+    expect(snapshot?.pages.map((page) => page.publicId), ['a', 'b']);
+    expect(remote.activePagePublicId, 'a');
+  });
 }
 
 Future<void> _settle() async {
@@ -120,12 +156,13 @@ RemotePage _remotePage(String id, {int revision = 1}) => RemotePage(
       updatedAt: DateTime.utc(2026),
     );
 
-RemoteStrategyShell _shell(List<String> pageIds) => RemoteStrategyShell(
+RemoteStrategyShell _shell(List<String> pageIds, {int revision = 1}) =>
+    RemoteStrategyShell(
       header: RemoteStrategyHeader(
         publicId: 'strategy',
         name: 'Strategy',
         mapData: 'ascent',
-        revision: 1,
+        revision: revision,
         createdAt: DateTime.utc(2026),
         updatedAt: DateTime.utc(2026),
         role: 'owner',
@@ -153,9 +190,23 @@ class _Repository extends ConvexStrategyRepository {
   final watchedPages = <String>[];
   bool failPageReads = false;
 
+  /// While set, a shell read answers from before page a was restored, once
+  /// the gate opens.
+  Completer<void>? staleShellGate;
+
+  /// The revision of the shell reads answer.
+  int shellRevision = 1;
+
   @override
-  Future<RemoteStrategyShell> fetchShell(String strategyPublicId) async =>
-      _shell(failPageReads ? ['b'] : ['a', 'b']);
+  Future<RemoteStrategyShell> fetchShell(String strategyPublicId) async {
+    final gate = staleShellGate;
+    if (gate != null) {
+      staleShellGate = null;
+      await gate.future;
+      return _shell(['b'], revision: 2);
+    }
+    return _shell(failPageReads ? ['b'] : ['a', 'b'], revision: shellRevision);
+  }
 
   @override
   Stream<RemoteStrategyShell> watchShell(String strategyPublicId) =>

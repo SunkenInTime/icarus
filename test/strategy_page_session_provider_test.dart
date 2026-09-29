@@ -1735,6 +1735,144 @@ void main() {
         queue.restoredPageRetries, [(pageId: one.publicId, inFlight: false)]);
   });
 
+  test('a restore whose earlier sends never answer keeps the notice', () async {
+    late _FakeRemoteEditorNotifier server;
+    late RemotePage pageOne;
+    late RemotePage pageTwo;
+    final repository = _RestoringRepository(
+        (_) => serverRestoresPageOne(server, pageOne, pageTwo));
+    final (:container, :remote, :queue, :one, :two, strokeId: _) =
+        await strokeOnDeletedPage(repository: repository);
+    (server, pageOne, pageTwo) = (remote, one, two);
+    // Sent before the delete landed; its refusal may still be on its way.
+    queue.holdInFlight(
+      EntitySyncKey.element(one.publicId, 'sent'),
+      ElementDeleteOp(
+        opId: 'sent-op',
+        pagePublicId: one.publicId,
+        elementPublicId: 'sent',
+        expectedElementRevision: 1,
+      ),
+    );
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(outcome, DeletedPageRestore.failed);
+    expect(queue.restoredPageRetries, isEmpty);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+  });
+
+  test('discarding once the page is back shows its server copy', () async {
+    final (:container, :remote, :one, :two, queue: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    // Restored meanwhile: by this device's restore whose read then failed,
+    // or by a teammate.
+    serverRestoresPageOne(remote, one, two);
+
+    final left = await container
+        .read(strategyPageSessionProvider.notifier)
+        .leaveDeletedPage();
+    await _settle();
+
+    expect(left, isTrue);
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, one.publicId);
+    expect(container.read(drawingProvider).elements, isEmpty);
+    expect(container.read(textProvider).single.text, 'one');
+  });
+
+  test(
+      "a page this device deleted, restored, then deleted by a teammate "
+      'still tells the user', () async {
+    final one = _page('page-1', 0, name: 'A exec');
+    final two = _page('page-2', 1);
+    final loadedOne = _pageSnapshot(
+      one,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    final loadedTwo = _pageSnapshot(
+      two,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    RemoteEditorSnapshot shell(
+      List<RemotePage> pages,
+      RemotePageSnapshot on, {
+      int revision = 1,
+    }) =>
+        _editorSnapshot(
+          pages: pages,
+          activePage: on,
+          shellRevision: revision,
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        );
+    final remote = _FakeRemoteEditorNotifier(shell([one, two], loadedOne),
+        pageCatalog: {one.publicId: loadedOne, two.publicId: loadedTwo});
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+
+    // This device deletes page one; the server accepts it.
+    await queue.syncDesiredGenericOp(
+      entityKey: EntitySyncKey.pageDescriptor(one.publicId),
+      desiredOp: PageDeleteOp(
+        opId: 'delete-one',
+        pagePublicId: one.publicId,
+        expectedStrategyRevision: 1,
+      ),
+    );
+    queue.ackQueued();
+    remote.setSnapshot(shell([two], loadedTwo));
+    await _settle();
+    await _settle();
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, two.publicId);
+
+    // A teammate restores it, and the user goes back to it.
+    remote.setSnapshot(shell([one, two], loadedTwo, revision: 2));
+    await _settle();
+    await session.setActivePage(one.publicId);
+    await _settle();
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, one.publicId);
+
+    // A teammate deletes it mid-stroke.
+    container.read(editorPointersProvider.notifier)
+      ..markCanvas(1)
+      ..down(1);
+    container.read(drawingProvider.notifier).startFreeDrawing(
+        const Offset(10, 20),
+        CoordinateSystem.instance,
+        Colors.white,
+        2,
+        false,
+        false,
+        false,
+        TraversalSpeedProfile.values.first);
+    remote.setSnapshot(shell([two], loadedTwo, revision: 3));
+    await _settle();
+    container
+        .read(drawingProvider.notifier)
+        .finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    container.read(editorPointersProvider.notifier).release(1);
+    await _settle();
+
+    // Before, the old delete still counted as this device's and the stroke
+    // could be dropped unseen.
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+  });
+
   test('a deleted page with nothing unsent gives way to one that exists',
       () async {
     final one = _page('page-1', 0);
