@@ -67,6 +67,11 @@ export const getFullSnapshot = query({
   args: {
     strategyPublicId: v.string(),
     shareToken: v.optional(v.string()),
+    // Set by clients that ask images:listReferencedAssetIds, not this
+    // snapshot, whether an upload is still wanted: a snapshot that leaves
+    // deleted pages out cannot make them drop one. Ignored until pages can
+    // be deleted into a trash.
+    acceptsTrashedPagesLeftOut: v.optional(v.boolean()),
   },
   returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {

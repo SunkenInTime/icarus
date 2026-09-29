@@ -182695,6 +182695,12 @@
       "args": {
         "type": "object",
         "value": {
+          "acceptsTrashedPagesLeftOut": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "shareToken": {
             "fieldType": {
               "type": "string"

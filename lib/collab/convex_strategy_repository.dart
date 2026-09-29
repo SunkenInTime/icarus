@@ -197,6 +197,9 @@ class ConvexStrategyRepository {
           .getFullSnapshot(
             strategyPublicId: strategyPublicId,
             shareToken: _optional(shareToken),
+            // This client checks image references apart, so it can take a
+            // snapshot without the pages in the server's trash.
+            acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
           )
           .fetch(),
     );

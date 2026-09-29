@@ -1391,6 +1391,8 @@ final class _StrategiesModule implements StrategiesModule {
 
 abstract interface class StrategyModule {
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<bool> acceptsTrashedPagesLeftOut =
+        const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
@@ -1405,10 +1407,13 @@ final class _StrategyModule implements StrategyModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<bool> acceptsTrashedPagesLeftOut =
+        const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetFullSnapshotArgs(
+      acceptsTrashedPagesLeftOut: acceptsTrashedPagesLeftOut,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );

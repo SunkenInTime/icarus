@@ -5976,9 +5976,15 @@ ConvexValue decodeStrategiesUpdateResult(ConvexValue value) =>
     _decodeRaw(value, 'strategies.js:update.returns', _validatePagesAddResult);
 
 ConvexObject encodeStrategyGetFullSnapshotArgs({
+  ConvexOptional<bool> acceptsTrashedPagesLeftOut =
+      const ConvexOptional.absent(),
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  if (acceptsTrashedPagesLeftOut.isPresent)
+    'acceptsTrashedPagesLeftOut': ConvexBoolean(
+      acceptsTrashedPagesLeftOut.value,
+    ),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
