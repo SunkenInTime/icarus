@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -5,6 +6,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/screenshot/capture_images.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 
@@ -16,6 +18,26 @@ Uint8List _png(int red) => Uint8List.fromList(
         ),
       ),
     );
+
+/// Answers only when closed, which is what aborting looks like to a caller.
+class _SlowClient extends http.BaseClient {
+  final requested = <String>[];
+  var closed = false;
+  final _closing = Completer<void>();
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    requested.add(request.url.toString());
+    await _closing.future;
+    throw http.ClientException('Client closed', request.url);
+  }
+
+  @override
+  void close() {
+    closed = true;
+    if (!_closing.isCompleted) _closing.complete();
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -106,6 +128,29 @@ void main() {
     // Four 200 ms downloads in series would take 800 ms.
     expect(watch.elapsedMilliseconds, lessThan(600));
     expect(images.sources.values, everyElement(isA<ImageBytes>()));
+  });
+
+  test('a capture that fails aborts the downloads it no longer needs',
+      () async {
+    final client = _SlowClient();
+    await expectLater(
+      http.runWithClient(
+        () => resolveCaptureImages(
+          {
+            'broken': const RemoteImageUrl('https://media.example.com/x.png'),
+            'slow': const RemoteImageUrl('https://media.example.com/s.png'),
+          },
+          fetch: (imageId, url) async {
+            if (imageId == 'broken') throw Exception('offline');
+            return (await http.get(Uri.parse(url))).bodyBytes;
+          },
+        ),
+        () => client,
+      ),
+      throwsA(isA<CaptureImagesUnavailable>()),
+    );
+    expect(client.requested, ['https://media.example.com/s.png']);
+    expect(client.closed, isTrue);
   });
 
   test('an image still loading stops the capture before any download',

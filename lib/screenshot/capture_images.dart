@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
+import 'package:http/http.dart' as http;
 import 'package:icarus/providers/strategy_image_source.dart';
 
 /// An image a capture would paint is not ready: its cloud copy is still
@@ -68,12 +69,17 @@ Future<CaptureImages> resolveCaptureImages(
     throw const CaptureImagesUnavailable.stillLoading();
   }
   // Downloads run together, so a page's wait is its slowest image rather
-  // than the sum of them. A download nobody awaits (the capture stopped
-  // first) must not surface as an unhandled error.
+  // than the sum of them. They share one client, closed when this returns,
+  // so a capture that stops early aborts the downloads it no longer needs;
+  // a download nobody awaits must not surface as an unhandled error.
+  final client = http.Client();
   final downloads = {
     for (final MapEntry(key: imageId, value: source) in sources.entries)
       if (source case RemoteImageUrl(:final url))
-        imageId: _guard(() => fetch(imageId, url))..ignore(),
+        imageId: http.runWithClient(
+          () => _guard(() => fetch(imageId, url)),
+          () => client,
+        )..ignore(),
   };
   final resolved = <String, StrategyImageSource>{};
   final holds = <_HeldImage>[];
@@ -94,6 +100,8 @@ Future<CaptureImages> resolveCaptureImages(
       hold.release();
     }
     rethrow;
+  } finally {
+    client.close();
   }
   return CaptureImages._(resolved, holds);
 }
