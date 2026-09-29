@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
 import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
+import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _FixedPresence extends StrategyPresenceNotifier {
@@ -105,6 +106,45 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  testWidgets('each name is bold, in its cursor colour on the map',
+      (tester) async {
+    final room = _room([
+      _peer('alex', 'Alex', 'page-1'),
+      _peer('sam', 'Sam', 'page-1'),
+    ]);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        strategyPresenceProvider.overrideWith(() => _FixedPresence(room)),
+      ],
+      child: ShadApp(
+        home: Scaffold(
+          body: Consumer(
+            builder: (context, ref, _) => Center(
+              child: ShadButton(
+                onPressed: () => confirmDeletePage(context, ref,
+                    pageId: 'page-1', pageName: 'A exec'),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final text = tester.widget<Text>(find.textContaining('on this page'));
+    final spans = <String, TextStyle?>{};
+    text.textSpan!.visitChildren((span) {
+      if (span is TextSpan && span.text != null) spans[span.text!] = span.style;
+      return true;
+    });
+    for (final (uid, name) in [('alex', 'Alex'), ('sam', 'Sam')]) {
+      expect(spans[name]?.fontWeight, FontWeight.bold);
+      expect(spans[name]?.color, presenceColorFor(uid));
+    }
+    expect(spans[' and ']?.fontWeight, isNull);
   });
 
   testWidgets('cancelling a warned delete keeps the page', (tester) async {

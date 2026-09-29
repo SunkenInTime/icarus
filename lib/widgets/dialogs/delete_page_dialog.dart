@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/strategy_presence.dart';
 
 /// Asks before the page [pageId] is deleted. If teammates are on it right
 /// now, as far as presence knows, it says who first: the page goes from
@@ -13,23 +14,57 @@ Future<bool> confirmDeletePage(
   required String pageId,
   required String pageName,
 }) {
-  final names = [
-    for (final peer in ref.read(strategyPresenceProvider).peopleOn(pageId))
-      peer.name,
-  ];
+  final peers = ref.read(strategyPresenceProvider).peopleOn(pageId).toList();
+  const warning = " on this page right now. Delete it anyway? "
+      "This action cannot be undone.";
   return ConfirmAlertDialog.show(
     context: context,
     title: "Delete '$pageName'?",
-    content: names.isEmpty
+    content: peers.isEmpty
         ? "Are you sure you want to delete this page? This action cannot be "
             "undone."
-        : "${_peopleHere(names)} on this page right now. Delete it anyway? "
-            "This action cannot be undone.",
-    confirmText: names.isEmpty ? "Delete" : "Delete anyway",
+        : "${_peopleHere([for (final peer in peers) peer.name])}$warning",
+    // Each name in bold, in the colour their cursor has on the map.
+    body: peers.isEmpty
+        ? null
+        : Text.rich(TextSpan(children: [
+            ..._peopleHereSpans(peers),
+            const TextSpan(text: warning),
+          ])),
+    confirmText: peers.isEmpty ? "Delete" : "Delete anyway",
     cancelText: "Cancel",
     isDestructive: true,
   );
 }
+
+TextSpan _name(PresencePeer peer) => TextSpan(
+      text: peer.name,
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: presenceColorFor(peer.uid),
+      ),
+    );
+
+/// [_peopleHere] with each named teammate styled by [_name].
+List<InlineSpan> _peopleHereSpans(List<PresencePeer> peers) => switch (peers) {
+      [final only] => [_name(only), const TextSpan(text: ' is')],
+      [final first, final second] => [
+          _name(first),
+          const TextSpan(text: ' and '),
+          _name(second),
+          const TextSpan(text: ' are'),
+        ],
+      [final first, final second, ...final rest] => [
+          _name(first),
+          const TextSpan(text: ', '),
+          _name(second),
+          TextSpan(
+            text: ' and ${rest.length} '
+                '${rest.length == 1 ? 'other' : 'others'} are',
+          ),
+        ],
+      [] => const [],
+    };
 
 /// "Alex is", "Alex and Sam are", "Alex, Sam and 2 others are".
 String _peopleHere(List<String> names) => switch (names) {
