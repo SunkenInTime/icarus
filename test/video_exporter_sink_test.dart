@@ -12,6 +12,7 @@ import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -24,6 +25,7 @@ import 'package:icarus/services/video_export/video_exporter.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:image/image.dart' as img;
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthState, Session;
 
 /// Pure magenta, a colour no map or marker draws.
 final _magentaPng = Uint8List.fromList(
@@ -34,6 +36,37 @@ final _magentaPng = Uint8List.fromList(
     ),
   ),
 );
+
+/// Records every call an export makes to the app's one Convex client.
+class _RecordingConvexAuth extends Fake implements AuthProviderConvexApi {
+  final calls = <String>[];
+
+  @override
+  Stream<bool> get authState => const Stream.empty();
+
+  @override
+  bool get isAuthenticated => true;
+
+  @override
+  Future<AuthProviderAuthHandle> setAuthWithRefresh({
+    required Future<String?> Function() fetchToken,
+    void Function(bool isAuthenticated)? onAuthChange,
+  }) async {
+    calls.add('setAuthWithRefresh');
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> clearAuth() async => calls.add('clearAuth');
+}
+
+class _NoSupabase extends Fake implements AuthProviderSupabaseApi {
+  @override
+  Session? get currentSession => null;
+
+  @override
+  Stream<AuthState> get onAuthStateChange => const Stream.empty();
+}
 
 class _RecordingSink implements VideoFrameSink {
   final video = Uint8List.fromList([7, 7, 7]);
@@ -239,6 +272,32 @@ void main() {
     expect(_magentaPixels(sink.frames.last.$1), greaterThan(500));
     expect(sink.closed, 1);
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
+  });
+
+  testWidgets('an export never touches the app\'s cloud session',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    final convex = _RecordingConvexAuth();
+    AuthProvider.debugConvexApi = convex;
+    AuthProvider.debugSupabaseApi = _NoSupabase();
+    addTearDown(AuthProvider.resetTestOverrides);
+    final pages = [
+      _page('one', 0, const Offset(400, 400)),
+      _page('two', 1, const Offset(700, 600)),
+    ];
+
+    final outcome = await _exportWithFrames(
+      tester,
+      _exporter(pages),
+      pages,
+      _RecordingSink(),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+
+    expect(outcome, isA<Uint8List>());
+    expect(convex.calls, isEmpty);
   });
 
   testWidgets('desktop encodes the frames into a playable .mp4 with ffmpeg',

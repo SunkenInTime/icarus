@@ -156,11 +156,7 @@ class VideoExporter {
     PersistentOffscreenRenderer? renderer;
     _sink = sink;
     try {
-      final offscreenContainer = ProviderContainer(
-        overrides: [
-          captureImageSourcesProvider.overrideWithValue(imageSources),
-        ],
-      );
+      final offscreenContainer = createCaptureContainer(images: imageSources);
       captureContainer = offscreenContainer;
       onProgress?.call(0, 'Preparing map');
       captureGeometry = await prepareCaptureGeometry(
