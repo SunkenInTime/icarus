@@ -161,11 +161,16 @@ class TextProvider extends Notifier<List<PlacedText>> {
     state = newState;
   }
 
-  void updateSize(int index, double size) {
-    final newState = [...state];
-    if (index < 0 || index >= newState.length) return;
+  /// Sets a text's width and position together: on defense a resize moves
+  /// the stored position so the box's on-screen top-left stays put.
+  void resize(String id, {required double size, required Offset position}) {
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
 
-    newState[index].size = size;
+    final newState = [...state];
+    newState[index]
+      ..size = size
+      ..position = position;
     state = newState;
   }
 

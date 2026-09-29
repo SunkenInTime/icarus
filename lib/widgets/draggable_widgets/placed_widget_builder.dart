@@ -33,7 +33,6 @@ import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
-import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
@@ -702,46 +701,41 @@ class _TextList extends ConsumerWidget {
       clipBehavior: Clip.none,
       children: [
         for (final placedText in placedTexts)
-          CanonicalPositionedBox(
+          PlacedTextBuilder(
             key: ValueKey(placedText.id),
-            attackScreenPosition: coordinateSystem.coordinateToScreen(
-              placedText.position,
-            ),
+            size: placedText.size,
+            placedText: placedText,
             isAttack: isAttack,
-            child: PlacedTextBuilder(
-              size: placedText.size,
-              placedText: placedText,
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final renderedSize = ref
-                    .read(textWidgetHeightProvider.notifier)
-                    .getOffset(placedText.id);
-                final attackScreenOffset =
-                    coordinateSystem.screenPositionFromSide(
-                  sideScreenPosition: localOffset,
-                  reflectionOffset: renderedSize,
-                  isAttack: isAttack,
-                );
-                final virtualOffset = coordinateSystem.screenToCoordinate(
-                  attackScreenOffset,
-                );
-                final safeArea = agentSize / 2;
+            onDragEnd: (details) {
+              final renderBox = context.findRenderObject() as RenderBox;
+              final localOffset = renderBox.globalToLocal(details.offset);
+              final renderedSize = ref
+                  .read(textWidgetHeightProvider.notifier)
+                  .getOffset(placedText.id);
+              final attackScreenOffset =
+                  coordinateSystem.screenPositionFromSide(
+                sideScreenPosition: localOffset,
+                reflectionOffset: renderedSize,
+                isAttack: isAttack,
+              );
+              final virtualOffset = coordinateSystem.screenToCoordinate(
+                attackScreenOffset,
+              );
+              final safeArea = agentSize / 2;
 
-                if (coordinateSystem.isOutOfBounds(
-                  virtualOffset.translate(safeArea, safeArea),
-                )) {
-                  ref
-                      .read(textProvider.notifier)
-                      .removeTextAsAction(placedText.id);
-                  return;
-                }
-
+              if (coordinateSystem.isOutOfBounds(
+                virtualOffset.translate(safeArea, safeArea),
+              )) {
                 ref
                     .read(textProvider.notifier)
-                    .updatePosition(virtualOffset, placedText.id);
-              },
-            ),
+                    .removeTextAsAction(placedText.id);
+                return;
+              }
+
+              ref
+                  .read(textProvider.notifier)
+                  .updatePosition(virtualOffset, placedText.id);
+            },
           ),
       ],
     );
@@ -766,46 +760,41 @@ class _PlacedImageList extends ConsumerWidget {
       clipBehavior: Clip.none,
       children: [
         for (final placedImage in images)
-          CanonicalPositionedBox(
+          PlacedImageBuilder(
             key: ValueKey(placedImage.id),
-            attackScreenPosition: coordinateSystem.coordinateToScreen(
-              placedImage.position,
-            ),
+            placedImage: placedImage,
             isAttack: isAttack,
-            child: PlacedImageBuilder(
-              placedImage: placedImage,
-              scale: placedImage.scale,
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final renderedSize = ref
-                    .read(imageWidgetSizeProvider.notifier)
-                    .getSize(placedImage.id);
-                final attackScreenOffset =
-                    coordinateSystem.screenPositionFromSide(
-                  sideScreenPosition: localOffset,
-                  reflectionOffset: renderedSize,
-                  isAttack: isAttack,
-                );
-                final virtualOffset = coordinateSystem.screenToCoordinate(
-                  attackScreenOffset,
-                );
-                final safeArea = agentSize / 2;
+            scale: placedImage.scale,
+            onDragEnd: (details) {
+              final renderBox = context.findRenderObject() as RenderBox;
+              final localOffset = renderBox.globalToLocal(details.offset);
+              final renderedSize = ref
+                  .read(imageWidgetSizeProvider.notifier)
+                  .getSize(placedImage.id);
+              final attackScreenOffset =
+                  coordinateSystem.screenPositionFromSide(
+                sideScreenPosition: localOffset,
+                reflectionOffset: renderedSize,
+                isAttack: isAttack,
+              );
+              final virtualOffset = coordinateSystem.screenToCoordinate(
+                attackScreenOffset,
+              );
+              final safeArea = agentSize / 2;
 
-                if (coordinateSystem.isOutOfBounds(
-                  virtualOffset.translate(safeArea, safeArea),
-                )) {
-                  ref
-                      .read(placedImageProvider.notifier)
-                      .removeImageAsAction(placedImage.id);
-                  return;
-                }
-
+              if (coordinateSystem.isOutOfBounds(
+                virtualOffset.translate(safeArea, safeArea),
+              )) {
                 ref
                     .read(placedImageProvider.notifier)
-                    .updatePosition(virtualOffset, placedImage.id);
-              },
-            ),
+                    .removeImageAsAction(placedImage.id);
+                return;
+              }
+
+              ref
+                  .read(placedImageProvider.notifier)
+                  .updatePosition(virtualOffset, placedImage.id);
+            },
           ),
       ],
     );
