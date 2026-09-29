@@ -26,10 +26,13 @@ class CaptureImagesUnavailable implements Exception {
       : 'CaptureImagesUnavailable: $cause';
 }
 
-/// Fetches the bytes behind a cloud image's [url].
+/// Fetches the bytes behind a cloud image's [url] through [client], the
+/// capture's own. Call `client.get`, never package:http's top-level `get`:
+/// that one closes whatever client it picked up when it finishes.
 typedef CaptureImageFetcher = Future<Uint8List> Function(
   String imageId,
   String url,
+  http.Client client,
 );
 
 /// What each image in a capture paints, by image id, decoded and held in
@@ -69,17 +72,15 @@ Future<CaptureImages> resolveCaptureImages(
     throw const CaptureImagesUnavailable.stillLoading();
   }
   // Downloads run together, so a page's wait is its slowest image rather
-  // than the sum of them. They share one client, closed when this returns,
-  // so a capture that stops early aborts the downloads it no longer needs;
-  // a download nobody awaits must not surface as an unhandled error.
+  // than the sum of them. They share one client, closed only when this
+  // returns, so a capture that stops early aborts the downloads it no
+  // longer needs; a download nobody awaits must not surface as an
+  // unhandled error.
   final client = http.Client();
   final downloads = {
     for (final MapEntry(key: imageId, value: source) in sources.entries)
       if (source case RemoteImageUrl(:final url))
-        imageId: http.runWithClient(
-          () => _guard(() => fetch(imageId, url)),
-          () => client,
-        )..ignore(),
+        imageId: _guard(() => fetch(imageId, url, client))..ignore(),
   };
   final resolved = <String, StrategyImageSource>{};
   final holds = <_HeldImage>[];
