@@ -48,18 +48,24 @@ class CloudImageDownloadException implements Exception {
   String toString() => 'Failed to download image ($statusCode).';
 }
 
+/// How long one image download may take before it counts as failed.
+const cloudImageDownloadTimeout = Duration(seconds: 60);
+
 /// Downloads a cloud image's bytes from [url]. A signed URL the host refuses
 /// (401, 403, or 404: it expired) is swapped once for [freshUrl] from the
-/// server. Throws [CloudImageDownloadException] when the bytes don't come.
+/// server. Throws [CloudImageDownloadException] when the bytes don't come,
+/// and a [TimeoutException] when a request stalls.
 Future<Uint8List> downloadCloudImageBytes(
   String url, {
   required Future<String?> Function() freshUrl,
 }) async {
-  var response = await http.get(Uri.parse(url));
+  Future<http.Response> get(String url) =>
+      http.get(Uri.parse(url)).timeout(cloudImageDownloadTimeout);
+  var response = await get(url);
   if (const {401, 403, 404}.contains(response.statusCode)) {
     final refreshed = await freshUrl();
     if (refreshed != null && refreshed.isNotEmpty) {
-      response = await http.get(Uri.parse(refreshed));
+      response = await get(refreshed);
     }
   }
   if (response.statusCode < 200 || response.statusCode >= 300) {

@@ -73,8 +73,10 @@ void main() {
       for (final source in images.sources.values)
         await source.imageProvider!.obtainKey(ImageConfiguration.empty),
     ];
+    // Live, so no amount of cache pressure evicts them before the capture.
+    cache.clear();
     for (final key in keys) {
-      expect(cache.statusForKey(key).keepAlive, isTrue);
+      expect(cache.statusForKey(key).live, isTrue);
     }
 
     images.release();

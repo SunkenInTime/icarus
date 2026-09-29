@@ -35,17 +35,17 @@ typedef CaptureImageFetcher = Future<Uint8List> Function(
 /// the image cache so the capture's first frame already has every picture.
 /// Call [release] once the capture is done.
 class CaptureImages {
-  CaptureImages._(this.sources, this._handles);
+  CaptureImages._(this.sources, this._holds);
 
   /// Feeds [captureImageSourcesProvider] in the capture's container.
   final Map<String, StrategyImageSource> sources;
-  final List<ImageStreamCompleterHandle> _handles;
+  final List<_HeldImage> _holds;
 
   void release() {
-    for (final handle in _handles) {
-      handle.dispose();
+    for (final hold in _holds) {
+      hold.release();
     }
-    _handles.clear();
+    _holds.clear();
   }
 }
 
@@ -57,15 +57,18 @@ class CaptureImages {
 /// are, and an image the editor shows as unavailable is captured that way
 /// too. Every image that paints is decoded before this returns. Throws
 /// [CaptureImagesUnavailable] while an image is still loading, or when a
-/// fetch or a decode fails.
+/// fetch or a decode fails. [checkpoint] runs before each image; whatever it
+/// throws stops the work and releases what was held.
 Future<CaptureImages> resolveCaptureImages(
   Map<String, StrategyImageSource> sources, {
   required CaptureImageFetcher fetch,
+  void Function()? checkpoint,
 }) async {
   final resolved = <String, StrategyImageSource>{};
-  final handles = <ImageStreamCompleterHandle>[];
+  final holds = <_HeldImage>[];
   try {
     for (final MapEntry(key: imageId, value: source) in sources.entries) {
+      checkpoint?.call();
       final paintable = switch (source) {
         RemoteImageUrl(:final url) => ImageBytes(
             await _guard(() => fetch(imageId, url)),
@@ -74,16 +77,18 @@ Future<CaptureImages> resolveCaptureImages(
         LocalImageFile() || ImageBytes() || ImageFailed() => source,
       };
       final image = paintable.imageProvider;
-      if (image != null) handles.add(await _guard(() => _decode(image)));
+      if (image != null)
+        holds.add(await _guard(() => _HeldImage.decode(image)));
       resolved[imageId] = paintable;
     }
+    checkpoint?.call();
   } catch (_) {
-    for (final handle in handles) {
-      handle.dispose();
+    for (final hold in holds) {
+      hold.release();
     }
     rethrow;
   }
-  return CaptureImages._(resolved, handles);
+  return CaptureImages._(resolved, holds);
 }
 
 Future<T> _guard<T>(Future<T> Function() load) async {
@@ -94,25 +99,35 @@ Future<T> _guard<T>(Future<T> Function() load) async {
   }
 }
 
-/// Decodes [image]'s first frame into the image cache and keeps it there
-/// until the returned handle is disposed.
-Future<ImageStreamCompleterHandle> _decode(ImageProvider image) {
-  final decoded = Completer<ImageStreamCompleterHandle>();
-  final stream = image.resolve(ImageConfiguration.empty);
-  late final ImageStreamListener listener;
-  listener = ImageStreamListener(
-    (info, _) {
-      info.dispose();
-      if (!decoded.isCompleted) {
-        decoded.complete(stream.completer!.keepAlive());
-      }
-      stream.removeListener(listener);
-    },
-    onError: (Object error, StackTrace? stackTrace) {
-      if (!decoded.isCompleted) decoded.completeError(error, stackTrace);
-      stream.removeListener(listener);
-    },
-  );
-  stream.addListener(listener);
-  return decoded.future;
+/// A decoded image kept listened to, which keeps it among the image cache's
+/// live images: a widget asking for the same image finds it decoded, however
+/// full the cache gets, until [release].
+class _HeldImage {
+  _HeldImage._(this._stream, this._listener);
+
+  final ImageStream _stream;
+  final ImageStreamListener _listener;
+
+  /// Completes once [image]'s first frame is decoded.
+  static Future<_HeldImage> decode(ImageProvider image) {
+    final decoded = Completer<_HeldImage>();
+    final stream = image.resolve(ImageConfiguration.empty);
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        info.dispose();
+        if (!decoded.isCompleted) {
+          decoded.complete(_HeldImage._(stream, listener));
+        }
+      },
+      onError: (Object error, StackTrace? stackTrace) {
+        stream.removeListener(listener);
+        if (!decoded.isCompleted) decoded.completeError(error, stackTrace);
+      },
+    );
+    stream.addListener(listener);
+    return decoded.future;
+  }
+
+  void release() => _stream.removeListener(_listener);
 }
