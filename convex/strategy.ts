@@ -1,7 +1,7 @@
 import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { assertStrategyRole } from "./lib/auth";
+import { assertStrategyReadable } from "./lib/auth";
 import { getStrategyByPublicId, sortByNumberField } from "./lib/entities";
 import {
   collectReferencedAssetIds,
@@ -38,11 +38,14 @@ async function getPageContent(
 export const getShell = query({
   args: {
     strategyPublicId: v.string(),
+    // A share link the reader holds (see assertStrategyReadable): lets
+    // someone without an account view a strategy shared with them.
+    shareToken: v.optional(v.string()),
   },
   returns: strategyShellValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    const { role } = await assertStrategyRole(ctx, strategy, "viewer");
+    const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
     const pages = await ctx.db
       .query("pages")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
@@ -60,11 +63,12 @@ export const getShell = query({
 export const getFullSnapshot = query({
   args: {
     strategyPublicId: v.string(),
+    shareToken: v.optional(v.string()),
   },
   returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    const { role } = await assertStrategyRole(ctx, strategy, "viewer");
+    const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
     const [pages, elements, lineups] = await Promise.all([
       ctx.db
         .query("pages")

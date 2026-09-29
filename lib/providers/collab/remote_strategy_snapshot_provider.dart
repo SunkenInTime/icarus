@@ -8,6 +8,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 
 final remoteEditorSnapshotProvider =
     AsyncNotifierProvider<RemoteEditorSnapshotNotifier, RemoteEditorSnapshot?>(
@@ -19,6 +20,10 @@ class RemoteEditorSnapshotNotifier
     extends AsyncNotifier<RemoteEditorSnapshot?> {
   String? _activeStrategyPublicId;
   String? _activePagePublicId;
+
+  /// The share link the open strategy is read through, when the reader has
+  /// no access of their own (see [shareLinkViewProvider]).
+  String? _shareToken;
   StreamSubscription<RemoteStrategyShell>? _shellSubscription;
   StreamSubscription<RemotePageSnapshot>? _pageSubscription;
   String? _subscribedPagePublicId;
@@ -42,6 +47,9 @@ class RemoteEditorSnapshotNotifier
     _disposeSubscriptions();
     _activeStrategyPublicId = strategyPublicId;
     _activePagePublicId = activePagePublicId;
+    final linkView = ref.read(shareLinkViewProvider);
+    _shareToken =
+        linkView?.strategyPublicId == strategyPublicId ? linkView!.token : null;
     _lastReconciledAssetsById = null;
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
           strategyPublicId,
@@ -80,6 +88,7 @@ class RemoteEditorSnapshotNotifier
           await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
                 strategyPublicId: strategyPublicId,
                 pagePublicId: pagePublicId,
+                shareToken: _shareToken,
               );
       if (epoch != _pageEpoch || pagePublicId != _activePagePublicId) {
         return null;
@@ -115,6 +124,7 @@ class RemoteEditorSnapshotNotifier
   void clear() {
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
+    _shareToken = null;
     _lastReconciledAssetsById = null;
     _disposeSubscriptions();
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
@@ -134,7 +144,10 @@ class RemoteEditorSnapshotNotifier
 
     try {
       final repository = ref.read(convexStrategyRepositoryProvider);
-      final shell = await repository.fetchShell(strategyPublicId);
+      final shell = await repository.fetchShell(
+        strategyPublicId,
+        shareToken: _shareToken,
+      );
       var pageId = _activePagePublicId;
       if (pageId == null ||
           !shell.pages.any((page) => page.publicId == pageId)) {
@@ -146,6 +159,7 @@ class RemoteEditorSnapshotNotifier
           : await repository.fetchPageSnapshot(
               strategyPublicId: strategyPublicId,
               pagePublicId: pageId,
+              shareToken: _shareToken,
             );
       state = AsyncData(RemoteEditorSnapshot(shell: shell, activePage: page));
       if (page != null) _reconcilePageMedia(page);
@@ -162,7 +176,7 @@ class RemoteEditorSnapshotNotifier
     await _shellSubscription?.cancel();
     _shellSubscription = ref
         .read(convexStrategyRepositoryProvider)
-        .watchShell(strategyPublicId)
+        .watchShell(strategyPublicId, shareToken: _shareToken)
         .listen(
       (shell) {
         if (_activeStrategyPublicId != strategyPublicId ||
@@ -206,6 +220,7 @@ class RemoteEditorSnapshotNotifier
         .watchPageSnapshot(
           strategyPublicId: strategyPublicId,
           pagePublicId: pagePublicId,
+          shareToken: _shareToken,
         )
         .listen(
       (page) {
@@ -269,7 +284,7 @@ class RemoteEditorSnapshotNotifier
     required Object error,
     required StackTrace stackTrace,
   }) {
-    if (isConvexUnauthenticatedError(error)) {
+    if (_readsAsSignedIn && isConvexUnauthenticatedError(error)) {
       unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
             source: source,
             error: error,
@@ -288,7 +303,7 @@ class RemoteEditorSnapshotNotifier
     required Object error,
     StackTrace? stackTrace,
   }) {
-    if (isConvexUnauthenticatedError(error)) {
+    if (_readsAsSignedIn && isConvexUnauthenticatedError(error)) {
       unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
             source: source,
             error: error,
@@ -304,6 +319,12 @@ class RemoteEditorSnapshotNotifier
       () => unawaited(_refreshFromServer()),
     );
   }
+
+  /// Whether a refused read means the session broke. A signed-out reader on
+  /// a share link has no session to repair: their refusals are the link's
+  /// (disabled, or never theirs), and the editor shows those itself.
+  bool get _readsAsSignedIn =>
+      _shareToken == null || ref.read(authProvider).isAuthenticated;
 
   void _disposeSubscriptions() {
     _refreshDebounce?.cancel();

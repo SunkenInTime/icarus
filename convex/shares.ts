@@ -171,6 +171,55 @@ export const revoke = mutation({
   },
 });
 
+/**
+ * What a share link opens, for someone who holds it but has not redeemed it
+ * (usually because they are signed out). Needs no account: the token is the
+ * credential, and a strategy link lets its holder view that strategy by
+ * passing the token to the read queries. Folders still need an account.
+ */
+export const resolve = query({
+  args: {
+    token: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      targetType: v.literal("strategy"),
+      strategyPublicId: v.string(),
+      role: collaboratorRoleValidator,
+    }),
+    v.object({
+      targetType: v.literal("folder"),
+      role: collaboratorRoleValidator,
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const link = await ctx.db
+      .query("shareLinks")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .first();
+    if (link === null) {
+      throw notFoundError("Share link", args.token);
+    }
+    if (link.revokedAt !== undefined) {
+      throw errorWithCode("SHARE_LINK_REVOKED", "Share link revoked");
+    }
+
+    if (link.targetType === "folder") {
+      return { targetType: "folder", role: link.role } as const;
+    }
+    const strategy =
+      link.strategyId === undefined ? null : await ctx.db.get(link.strategyId);
+    if (strategy === null) {
+      throw notFoundError("Share link", args.token);
+    }
+    return {
+      targetType: "strategy",
+      strategyPublicId: strategy.publicId,
+      role: link.role,
+    } as const;
+  },
+});
+
 export const redeem = mutation({
   args: {
     ...cloudProtocolArgs,

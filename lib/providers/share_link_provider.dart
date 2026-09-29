@@ -28,6 +28,14 @@ final replaceBrowserUrlProvider =
 /// clears this back to null.
 final sharedStrategyToOpenProvider = StateProvider<String?>((ref) => null);
 
+/// A strategy open through a share link nobody has redeemed on this device:
+/// the reader is signed out, and the link is their only access. The editor
+/// reads with [token] and shows the reader how to sign in. Cleared once the
+/// link is redeemed.
+typedef ShareLinkView = ({String strategyPublicId, String token});
+
+final shareLinkViewProvider = StateProvider<ShareLinkView?>((ref) => null);
+
 final shareLinkControllerProvider =
     NotifierProvider<ShareLinkController, String?>(ShareLinkController.new);
 
@@ -68,18 +76,14 @@ class ShareLinkController extends Notifier<String?> {
     }
 
     final auth = ref.read(authProvider);
+    if (!auth.isAuthenticated && !auth.isLoading) {
+      return _viewWithoutAccount(token, generation);
+    }
     if (!auth.isAuthenticated || !auth.isConvexUserReady) {
       // The code stays held in the pending store; the app redeems it once
-      // the cloud is ready. Only a user with no session at all needs telling:
-      // right after a page load a saved session is restored but its cloud
-      // setup is still running, and an auth incident has its own prompt.
-      final signedOut = !auth.isAuthenticated && !auth.isLoading;
-      if (signedOut && showFailureToasts) {
-        Settings.showToast(
-          message: 'Sign in to redeem shared links.',
-          backgroundColor: Settings.tacticalVioletTheme.primary,
-        );
-      }
+      // the cloud is ready: right after a page load a saved session is
+      // restored but its cloud setup is still running, and an auth incident
+      // has its own prompt.
       return false;
     }
 
@@ -88,6 +92,7 @@ class ShareLinkController extends Notifier<String?> {
           .read(convexStrategyRepositoryProvider)
           .redeemShareLink(token);
       _release(generation);
+      ref.read(shareLinkViewProvider.notifier).state = null;
 
       // The library lands where the target now lives: the owner's own
       // library, or Shared for anyone the link was shared with.
@@ -139,6 +144,69 @@ class ShareLinkController extends Notifier<String?> {
         );
       }
       return false;
+    }
+  }
+
+  /// Opens a strategy link for a reader with no account, read-only. The code
+  /// stays held, and the page keeps its /share/<code> URL, so a reload opens
+  /// it again and signing in redeems it into the reader's library.
+  Future<bool> _viewWithoutAccount(String token, int generation) async {
+    if (ref.read(shareLinkViewProvider)?.token == token) {
+      return true; // Already open; an auth update asked again.
+    }
+
+    try {
+      final strategyPublicId = await ref
+          .read(convexStrategyRepositoryProvider)
+          .resolveSharedStrategy(token);
+      if (_superseded(token, generation)) return false;
+      if (strategyPublicId == null) {
+        // Browsing a folder needs the cloud library, which needs an account.
+        Settings.showToast(
+          message: 'Sign in to open this shared folder.',
+          backgroundColor: Settings.tacticalVioletTheme.primary,
+        );
+        return false;
+      }
+      ref.read(shareLinkViewProvider.notifier).state =
+          (strategyPublicId: strategyPublicId, token: token);
+      ref.read(sharedStrategyToOpenProvider.notifier).state = strategyPublicId;
+      return true;
+    } catch (error) {
+      if (_superseded(token, generation)) return false;
+      final revoked = isShareLinkRevokedError(error);
+      if (revoked || isTypedConvexNotFoundError(error)) {
+        _release(generation);
+        Settings.showToast(
+          message: revoked
+              ? 'This share link was disabled by its owner.'
+              : 'This share link does not exist.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return false;
+      }
+      // Most likely offline. The code stays held for a reload to retry.
+      Settings.showToast(
+        message: 'Could not open the shared strategy. Check your connection '
+            'and reload.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return false;
+    }
+  }
+
+  /// Whether [token]'s attempt is stale: a newer code arrived, or sign-in
+  /// redeemed this one while the attempt was waiting on the server.
+  bool _superseded(String token, int generation) =>
+      generation != _generation || state != token;
+
+  /// Drops the link a signed-out reader was viewing through, once it stopped
+  /// working: there is nothing left to open or to redeem.
+  void forgetViewedLink() {
+    final view = ref.read(shareLinkViewProvider);
+    ref.read(shareLinkViewProvider.notifier).state = null;
+    if (view != null && state == view.token) {
+      _release(_generation);
     }
   }
 
