@@ -116,6 +116,7 @@ Future<VideoExportSource> loadVideoExportSource(
       await ref
           .read(strategyPageSessionProvider.notifier)
           .flushCurrentPage(flushImmediately: true);
+      checkCancelled();
       await _waitUntilSent(ref, strategyId, isCancelled: isCancelled);
       final snapshot = await ref
           .read(convexStrategyRepositoryProvider)
@@ -172,11 +173,8 @@ Future<VideoExportSource> loadVideoExportSource(
                 shareToken: shareToken,
               ),
     ),
+    checkpoint: checkCancelled,
   );
-  if (isCancelled()) {
-    images.release();
-    throw VideoExportCancelled();
-  }
   return (strategy: strategy, images: images);
 }
 
@@ -194,7 +192,9 @@ Future<void> _waitUntilSent(
   bool sent() {
     final ops = ref.read(strategyOpQueueProvider);
     final media = ref.read(cloudMediaUploadQueueProvider);
+    // An outbox with records it could not read cannot say they landed.
     return ops.outboxIsReliable &&
+        media.outboxIsReliable &&
         ops.pending.isEmpty &&
         !ops.isFlushing &&
         media.jobsForStrategy(strategyId).isEmpty;

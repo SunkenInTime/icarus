@@ -335,6 +335,43 @@ void main() {
       expect(repository.fetches, 0);
     });
 
+    testWidgets('stops between images when the export is cancelled',
+        (tester) async {
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(durableLoaded: true)),
+          _Repository(),
+        ),
+      );
+      var cancelled = false;
+      final requested = <String>[];
+
+      Object? error;
+      await tester.runAsync(() async {
+        try {
+          await http.runWithClient(
+            () => loadVideoExportSource(
+              ref,
+              pageIds: {'a', 'b'},
+              isCancelled: () => cancelled,
+            ),
+            () => MockClient((request) async {
+              requested.add(request.url.query);
+              // The user cancels while the first image downloads.
+              cancelled = true;
+              return http.Response.bytes(_png, 200);
+            }),
+          );
+        } catch (caught) {
+          error = caught;
+        }
+      });
+
+      expect(error, isA<VideoExportCancelled>());
+      expect(requested, hasLength(1));
+    });
+
     testWidgets('refuses a selection naming a page that no longer exists',
         (tester) async {
       final repository = _Repository();
