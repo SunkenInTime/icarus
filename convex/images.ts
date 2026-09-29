@@ -747,6 +747,22 @@ export const listForStrategy = query({
   },
 });
 
+/// Every image the strategy's content shows, deleted content left out. A
+/// client asks before it drops an upload it holds. Null until the reference
+/// backfill has finished, when it cannot be told.
+export const listReferencedAssetIds = query({
+  args: {
+    strategyPublicId: v.string(),
+  },
+  returns: v.union(v.array(v.string()), v.null()),
+  handler: async (ctx, args) => {
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    await assertStrategyRole(ctx, strategy, "viewer");
+    if (!(await assetReferencesReady(ctx))) return null;
+    return [...(await collectLiveAssetIds(ctx, strategy._id))].sort();
+  },
+});
+
 export const getAssetUrl = query({
   args: {
     strategyPublicId: v.string(),

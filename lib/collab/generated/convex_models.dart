@@ -5244,6 +5244,24 @@ List<ImagesListForStrategyResultItem> decodeImagesListForStrategyResult(
     )
     .toList(growable: false);
 
+ConvexObject encodeImagesListReferencedAssetIdsArgs({
+  required String strategyPublicId,
+}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+
+List<String>? decodeImagesListReferencedAssetIdsResult(ConvexValue value) =>
+    (value) is ConvexNull
+    ? null
+    : _decodeArray(value, 'images.js:listReferencedAssetIds.returns')
+          .value
+          .indexed
+          .map(
+            (entry) => _decodeString(
+              entry.$2,
+              _indexPath('images.js:listReferencedAssetIds.returns', entry.$1),
+            ),
+          )
+          .toList(growable: false);
+
 ConvexObject encodeInvitesCreateArgs({
   required double clientProtocolVersion,
   ConvexOptional<double> expiresAt = const ConvexOptional.absent(),

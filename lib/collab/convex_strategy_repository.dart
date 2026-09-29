@@ -157,6 +157,15 @@ class ConvexStrategyRepository {
         .map(_pageSnapshot);
   }
 
+  /// Every image the strategy's content shows on the server, or null while
+  /// the server cannot tell yet.
+  Future<Set<String>?> fetchReferencedAssetIds(String strategyPublicId) async {
+    final ids = await _api.images
+        .listReferencedAssetIds(strategyPublicId: strategyPublicId)
+        .fetch();
+    return ids?.toSet();
+  }
+
   /// [shareToken]: see [fetchShell].
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {

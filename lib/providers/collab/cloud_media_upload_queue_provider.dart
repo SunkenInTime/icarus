@@ -97,12 +97,14 @@ final cloudMediaUploadQueueProvider =
   CloudMediaUploadQueueNotifier.new,
 );
 
-typedef CloudMediaReferenceSnapshotLoader = Future<RemoteFullStrategySnapshot>
-    Function(String strategyPublicId);
+/// Every image a strategy's content shows on the server, on any of its pages,
+/// or null while the server cannot tell. Asked before a pending upload is
+/// dropped as no longer wanted.
+typedef CloudMediaReferenceLoader = Future<Set<String>?> Function(
+    String strategyPublicId);
 
-final cloudMediaReferenceSnapshotLoaderProvider =
-    Provider<CloudMediaReferenceSnapshotLoader>(
-  (ref) => ref.watch(convexStrategyRepositoryProvider).fetchFullSnapshot,
+final cloudMediaReferenceLoaderProvider = Provider<CloudMediaReferenceLoader>(
+  (ref) => ref.watch(convexStrategyRepositoryProvider).fetchReferencedAssetIds,
 );
 
 final cloudMediaAccountIdProvider = Provider<String?>(
@@ -370,22 +372,20 @@ class CloudMediaUploadQueueNotifier
         )
         .toList(growable: false);
     if (missingReferences.isNotEmpty) {
-      RemoteFullStrategySnapshot? serverSnapshot;
+      Set<String>? serverReferences;
       if (ref.read(authProvider).isConvexUserReady &&
           ref.read(convexConnectionSnapshotProvider)) {
         try {
-          serverSnapshot =
-              await ref.read(cloudMediaReferenceSnapshotLoaderProvider)(
+          serverReferences = await ref.read(cloudMediaReferenceLoaderProvider)(
             strategyPublicId,
           );
         } catch (_) {
-          serverSnapshot = null;
+          serverReferences = null;
         }
       }
-      if (serverSnapshot == null ||
+      if (serverReferences == null ||
           missingReferences.any(
-            (job) =>
-                !_snapshotReferencesAsset(serverSnapshot!, job.assetPublicId),
+            (job) => !serverReferences!.contains(job.assetPublicId),
           )) {
         _scheduleRetryForNextEligibleJob(
           minimumDelay: _blockedRetryDelay,
@@ -845,9 +845,9 @@ class CloudMediaUploadQueueNotifier
       return null;
     }
 
-    late final RemoteFullStrategySnapshot snapshot;
+    final Set<String>? serverReferences;
     try {
-      snapshot = await ref.read(cloudMediaReferenceSnapshotLoaderProvider)(
+      serverReferences = await ref.read(cloudMediaReferenceLoaderProvider)(
         job.strategyPublicId,
       );
     } catch (error) {
@@ -858,12 +858,13 @@ class CloudMediaUploadQueueNotifier
       return null;
     }
     final current = _getJob(job.jobId);
-    if (!_belongsToActiveAccount(job) ||
+    if (serverReferences == null ||
+        !_belongsToActiveAccount(job) ||
         current == null ||
         current.updatedAt != job.updatedAt) {
       return null;
     }
-    if (_snapshotReferencesAsset(snapshot, job.assetPublicId)) return false;
+    if (serverReferences.contains(job.assetPublicId)) return false;
 
     final deleted = await _deleteJob(job, onlyIfUnreferenced: true);
     if (!deleted) return null;
@@ -1136,16 +1137,17 @@ class CloudMediaUploadQueueNotifier
       (byStrategy[job.strategyPublicId] ??= []).add(job);
     }
     for (final entry in byStrategy.entries) {
-      late final RemoteFullStrategySnapshot snapshot;
+      final Set<String>? serverReferences;
       try {
-        snapshot = await ref
-            .read(cloudMediaReferenceSnapshotLoaderProvider)(entry.key);
+        serverReferences =
+            await ref.read(cloudMediaReferenceLoaderProvider)(entry.key);
       } catch (error) {
         _logMedia(
           'reference_reconcile.deferred strategy=${entry.key} error=$error',
         );
         continue;
       }
+      if (serverReferences == null) continue;
 
       if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
 
@@ -1156,7 +1158,7 @@ class CloudMediaUploadQueueNotifier
         if (!identical(_getJob(job.jobId), job)) continue;
         final key = durableCloudMediaOutboxStorageKey(job);
         final localReference = _hasLocalReference(job);
-        if (_snapshotReferencesAsset(snapshot, job.assetPublicId) ||
+        if (serverReferences.contains(job.assetPublicId) ||
             localReference == true) {
           final promoted = job.copyWith(
             referenceDurable: true,
@@ -1174,32 +1176,6 @@ class CloudMediaUploadQueueNotifier
       }
       _refreshState();
     }
-  }
-
-  bool _snapshotReferencesAsset(
-    RemoteFullStrategySnapshot snapshot,
-    String assetPublicId,
-  ) {
-    for (final elements in snapshot.elementsByPage.values) {
-      if (elements.any(
-        (element) =>
-            !element.deleted &&
-            element.elementType == 'image' &&
-            element.publicId == assetPublicId,
-      )) {
-        return true;
-      }
-    }
-    for (final lineups in snapshot.lineupsByPage.values) {
-      if (lineups.any(
-        (lineup) =>
-            !lineup.deleted &&
-            _jsonContainsAssetId(lineup.payload, assetPublicId),
-      )) {
-        return true;
-      }
-    }
-    return false;
   }
 
   bool _opReferencesAsset(StrategyOp op, String assetPublicId) {

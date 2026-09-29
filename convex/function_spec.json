@@ -40664,6 +40664,38 @@
       "args": {
         "type": "object",
         "value": {
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "images.js:listReferencedAssetIds",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "array",
+            "value": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "assetIds": {
             "fieldType": {
               "type": "array",
