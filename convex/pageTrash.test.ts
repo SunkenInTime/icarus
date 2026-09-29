@@ -9,6 +9,7 @@ import type { DataModel, Id } from "./_generated/dataModel";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
+import { UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -37,6 +38,7 @@ const deletePageLegacy = makeFunctionReference<"mutation">("pages:delete");
 const renamePageLegacy = makeFunctionReference<"mutation">("pages:rename");
 const reorderPagesLegacy = makeFunctionReference<"mutation">("pages:reorder");
 const restorePage = makeFunctionReference<"mutation">("pages:restore");
+const listTrashed = makeFunctionReference<"query">("pages:listTrashed");
 const listElementsForPage = makeFunctionReference<"query">(
   "elements:listForPage",
 );
@@ -998,5 +1000,129 @@ describe("page trash", () => {
       contents: [],
       references: [],
     });
+  });
+});
+
+describe("Recently deleted", () => {
+  test("lists the strategy's restorable pages, newest first, with who deleted each", async () => {
+    vi.useFakeTimers();
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    const editor = await member(t, owner, "editor", "editor");
+    await deleteB(owner);
+    const deletedB = Date.now();
+    vi.setSystemTime(deletedB + day);
+    // An old client's delete records its deleter too.
+    await editor.mutation(deletePageLegacy, {
+      ...protocol,
+      strategyPublicId,
+      pagePublicId: pageC,
+      expectedRevision: await strategyRevision(editor),
+    });
+
+    const trashed = await owner.query(listTrashed, { strategyPublicId });
+    expect(trashed).toEqual([
+      {
+        publicId: pageC,
+        name: "Retake",
+        deletedAt: deletedB + day,
+        restorableUntil: deletedB + day + PAGE_TRASH_RETENTION_MS,
+        deletedByName: "editor",
+        deletedByYou: false,
+      },
+      {
+        publicId: pageB,
+        name: "Page 2",
+        deletedAt: deletedB,
+        restorableUntil: deletedB + PAGE_TRASH_RETENTION_MS,
+        deletedByName: "owner",
+        deletedByYou: true,
+      },
+    ]);
+    expect((await pageRow(t, pageB))?.deletedBy).toEqual(expect.any(String));
+
+    // Restored, a page leaves the list and forgets who deleted it.
+    await owner.mutation(restorePage, {
+      ...protocol,
+      strategyPublicId,
+      pagePublicId: pageB,
+    });
+    expect(
+      (await owner.query(listTrashed, { strategyPublicId })).map(
+        (page: { publicId: string }) => page.publicId,
+      ),
+    ).toEqual([pageC]);
+    expect((await pageRow(t, pageB))?.deletedBy).toBeUndefined();
+  });
+
+  test("a deleter who is not known shows no name", async () => {
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    const editor = await member(t, owner, "editor", "editor");
+    await deleteB(editor);
+    await apply(owner, [
+      {
+        type: "page.delete",
+        pagePublicId: pageC,
+        expectedStrategyRevision: await strategyRevision(owner),
+      },
+    ]);
+    // B as trashed before deleters were recorded; C's deleter has no name.
+    const b = await pageRow(t, pageB);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(b!._id, { deletedBy: undefined });
+      const owners = await ctx.db.query("users").collect();
+      for (const user of owners) {
+        if (user.displayName === "owner") {
+          await ctx.db.patch(user._id, { displayName: UNKNOWN_DISPLAY_NAME });
+        }
+      }
+    });
+
+    expect(
+      (await editor.query(listTrashed, { strategyPublicId })).map(
+        (page: { publicId: string; deletedByName: string | null }) => [
+          page.publicId,
+          page.deletedByName,
+        ],
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        [pageB, null],
+        [pageC, null],
+      ]),
+    );
+  });
+
+  test("a page past its time in the trash is not listed", async () => {
+    vi.useFakeTimers();
+    const { owner } = await createHarness();
+    await seed(owner);
+    await deleteB(owner);
+
+    vi.setSystemTime(Date.now() + PAGE_TRASH_RETENTION_MS - 1);
+    expect(await owner.query(listTrashed, { strategyPublicId })).toHaveLength(
+      1,
+    );
+    vi.setSystemTime(Date.now() + 2);
+    expect(await owner.query(listTrashed, { strategyPublicId })).toEqual([]);
+  });
+
+  test("only those who can restore a page see the list", async () => {
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    const viewer = await member(t, owner, "viewer", "viewer");
+    const stranger = t.withIdentity(identity("stranger"));
+    await stranger.mutation(ensureCurrentUser, protocol);
+    await deleteB(owner);
+
+    await expectCode(
+      viewer.query(listTrashed, { strategyPublicId }),
+      "FORBIDDEN",
+    );
+    await expectCode(
+      stranger.query(listTrashed, { strategyPublicId }),
+      "FORBIDDEN",
+    );
   });
 });

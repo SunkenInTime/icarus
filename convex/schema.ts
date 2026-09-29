@@ -65,6 +65,9 @@ export default defineSchema({
     // restored. Purged once PAGE_TRASH_RETENTION_MS has passed (see
     // lib/entities.ts). Absent on every live page.
     deletedAt: v.optional(v.number()),
+    // Who deleted it, while it is in the trash; shown in Recently deleted.
+    // Absent on live pages and on pages trashed before it was recorded.
+    deletedBy: v.optional(v.id("users")),
   })
     .index("by_publicId", ["publicId"])
     .index("by_strategyId", ["strategyId"])

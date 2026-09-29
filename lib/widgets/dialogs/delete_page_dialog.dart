@@ -1,5 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
@@ -7,7 +10,9 @@ import 'package:icarus/widgets/strategy_presence.dart';
 /// Asks before the page [pageId] is deleted. If teammates are on it right
 /// now, as far as presence knows, it says who first: the page goes from
 /// under them. Presence is best-effort, so this only warns; confirming
-/// always deletes. Returns whether the user confirmed.
+/// always deletes. A cloud strategy's page can be restored from Recently
+/// deleted for a while, and the dialog says so; a local one is gone for
+/// good. Returns whether the user confirmed.
 Future<bool> confirmDeletePage(
   BuildContext context,
   WidgetRef ref, {
@@ -15,21 +20,23 @@ Future<bool> confirmDeletePage(
   required String pageName,
 }) {
   final peers = ref.read(strategyPresenceProvider).peopleOn(pageId).toList();
-  const warning = " on this page right now. Delete it anyway? "
-      "This action cannot be undone.";
+  final afterwards = ref.read(strategyProvider).source == StrategySource.cloud
+      ? "You can restore it from Recently deleted for "
+          "$pageTrashRetentionDays days."
+      : "This action cannot be undone.";
+  final warning = " on this page right now. Delete it anyway? $afterwards";
   return ConfirmAlertDialog.show(
     context: context,
     title: "Delete '$pageName'?",
     content: peers.isEmpty
-        ? "Are you sure you want to delete this page? This action cannot be "
-            "undone."
+        ? "Are you sure you want to delete this page? $afterwards"
         : "${_peopleHere([for (final peer in peers) peer.name])}$warning",
     // Each name in bold, in the colour their cursor has on the map.
     body: peers.isEmpty
         ? null
         : Text.rich(TextSpan(children: [
             ..._peopleHereSpans(peers),
-            const TextSpan(text: warning),
+            TextSpan(text: warning),
           ])),
     confirmText: peers.isEmpty ? "Delete" : "Delete anyway",
     cancelText: "Cancel",

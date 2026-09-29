@@ -1787,6 +1787,121 @@ void main() {
     ]);
   });
 
+  /// Page two on screen; page one, deleted earlier, is in the server's
+  /// trash.
+  Future<
+      ({
+        ProviderContainer container,
+        _FakeStrategyOpQueueNotifier queue,
+      })> pageInTrash(_RestoringRepository repository) async {
+    final one = _page('page-1', 0, name: 'A exec');
+    final two = _page('page-2', 1);
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [two],
+          activePage: _pageSnapshot(two, text: 'two'),
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {two.publicId: _pageSnapshot(two, text: 'two')});
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: queue,
+      repository: repository,
+    );
+    container.read(strategyPageSessionProvider.notifier).pageWorkSettleTimeout =
+        const Duration(milliseconds: 100);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, two.publicId);
+    expect(one.publicId, 'page-1');
+    return (container: container, queue: queue);
+  }
+
+  test(
+      'restoring from Recently deleted sends again what the server refused '
+      'while the page was in the trash, once its sends have answered',
+      () async {
+    final repository = _RestoringRepository((_) {});
+    final (:container, :queue) = await pageInTrash(repository);
+    queue.holdInFlight(
+      EntitySyncKey.element('page-1', 'sent'),
+      ElementDeleteOp(
+        opId: 'sent-op',
+        pagePublicId: 'page-1',
+        elementPublicId: 'sent',
+        expectedElementRevision: 1,
+      ),
+    );
+    Future<void>.delayed(
+        const Duration(milliseconds: 10), () => queue.clearInFlight());
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restorePageFromTrash('page-1');
+
+    expect(outcome, DeletedPageRestore.restored);
+    expect(repository.restoredPageIds, ['page-1']);
+    expect(queue.restoredPageRetries,
+        [(pageId: 'page-1', inFlight: false, refused: false)]);
+    // The page on screen stays; the restored one comes back in the list.
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+  });
+
+  test(
+      'a page restored from Recently deleted whose sends never answer is '
+      'restored, its refusals left to Keep mine', () async {
+    final repository = _RestoringRepository((_) {});
+    final (:container, :queue) = await pageInTrash(repository);
+    queue.holdInFlight(
+      EntitySyncKey.element('page-1', 'sent'),
+      ElementDeleteOp(
+        opId: 'sent-op',
+        pagePublicId: 'page-1',
+        elementPublicId: 'sent',
+        expectedElementRevision: 1,
+      ),
+    );
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restorePageFromTrash('page-1');
+
+    expect(outcome, DeletedPageRestore.restored);
+    expect(queue.restoredPageRetries, isEmpty);
+  });
+
+  test(
+      'restoring from Recently deleted says when the page is gone, and when '
+      'it failed', () async {
+    var gone = true;
+    final repository = _RestoringRepository((_) {
+      if (gone) {
+        throw const ConvexFunctionException(
+          code: ConvexErrorCode.notFound,
+          rawCode: 'NOT_FOUND',
+          message: 'Page not found: page-1',
+        );
+      }
+      throw StateError('Cloud connection is offline.');
+    });
+    final (:container, :queue) = await pageInTrash(repository);
+    final session = container.read(strategyPageSessionProvider.notifier);
+
+    expect(
+        await session.restorePageFromTrash('page-1'), DeletedPageRestore.gone);
+    gone = false;
+    expect(await session.restorePageFromTrash('page-1'),
+        DeletedPageRestore.failed);
+    expect(queue.restoredPageRetries, isEmpty);
+  });
+
   test('a restore whose earlier sends never answer keeps the notice', () async {
     late _FakeRemoteEditorNotifier server;
     late RemotePage pageOne;

@@ -515,6 +515,25 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// The strategy's deleted pages that can still be restored, most
+  /// recently deleted first.
+  Future<List<TrashedPage>> listTrashedPages(String strategyPublicId) async {
+    final pages = await _api.pages
+        .listTrashed(strategyPublicId: strategyPublicId)
+        .fetch();
+    return [
+      for (final page in pages)
+        TrashedPage(
+          pageId: page.publicId,
+          name: page.name,
+          deletedAt: _dateTime(page.deletedAt),
+          restorableUntil: _dateTime(page.restorableUntil),
+          deletedByName: page.deletedByName,
+          deletedByYou: page.deletedByYou,
+        ),
+    ];
+  }
+
   Future<List<ShareLinkSummary>> listShareLinks({
     required String targetType,
     required String targetPublicId,

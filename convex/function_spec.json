@@ -180770,6 +180770,76 @@
       "args": {
         "type": "object",
         "value": {
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "pages.js:listTrashed",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "deletedAt": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "deletedByName": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "optional": false
+            },
+            "deletedByYou": {
+              "fieldType": {
+                "type": "boolean"
+              },
+              "optional": false
+            },
+            "name": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "publicId": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "restorableUntil": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"

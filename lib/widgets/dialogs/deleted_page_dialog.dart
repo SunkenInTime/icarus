@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Tells the user that a teammate deleted the page on screen while it held
-/// their unsaved work, and lets them restore the page, which saves that
-/// work, or discard the work. The canvas stays on the page until they
+/// Tells the user that the page on screen was deleted (by a teammate,
+/// almost always) while it held their unsaved work, and lets them restore
+/// the page, which saves that work, or discard the work. The canvas stays on the page until they
 /// choose, so the dialog cannot be dismissed any other way.
 class DeletedPageDialog extends ConsumerStatefulWidget {
   const DeletedPageDialog({super.key, required this.page});
@@ -88,7 +88,7 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
     final name = widget.page.name;
 
     return ShadDialog.alert(
-      title: const Text('A teammate deleted this page'),
+      title: const Text('This page was deleted'),
       description: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

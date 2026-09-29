@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -13,6 +15,20 @@ class _FixedPresence extends StrategyPresenceNotifier {
 
   @override
   PresenceRoomState build() => _state;
+}
+
+class _Strategy extends StrategyProvider {
+  _Strategy(this.source);
+
+  final StrategySource source;
+
+  @override
+  StrategyState build() => StrategyState(
+        strategyId: 'strategy-a',
+        strategyName: 'Strategy A',
+        source: source,
+        isOpen: true,
+      );
 }
 
 PresencePeer _peer(String uid, String name, String? pageId) => PresencePeer(
@@ -39,11 +55,13 @@ void main() {
     PresenceRoomState room, {
     required String expectContent,
     required String answer,
+    StrategySource source = StrategySource.cloud,
   }) async {
     bool? confirmed;
     await tester.pumpWidget(ProviderScope(
       overrides: [
         strategyPresenceProvider.overrideWith(() => _FixedPresence(room)),
+        strategyProvider.overrideWith(() => _Strategy(source)),
       ],
       child: ShadApp(
         home: Scaffold(
@@ -72,12 +90,28 @@ void main() {
     return confirmed;
   }
 
-  const plain =
-      'Are you sure you want to delete this page? This action cannot be '
-      'undone.';
+  const plain = 'Are you sure you want to delete this page? You can restore '
+      'it from Recently deleted for 30 days.';
 
-  testWidgets('with nobody else on the page, asks as it always has',
+  testWidgets(
+      'a local page is gone for good, and the dialog says so, as it always has',
       (tester) async {
+    expect(
+      await confirm(
+        tester,
+        _room(const []),
+        expectContent: 'Are you sure you want to delete this page? This '
+            'action cannot be undone.',
+        answer: 'Delete',
+        source: StrategySource.local,
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets(
+      'with nobody else on the page, asks plainly and says where to restore '
+      'it', (tester) async {
     final room = _room([
       _peer('alex', 'Alex', 'page-2'),
       _peer('sam', 'Sam', null),
@@ -101,7 +135,7 @@ void main() {
         tester,
         room,
         expectContent: 'Alex is on this page right now. Delete it anyway? '
-            'This action cannot be undone.',
+            'You can restore it from Recently deleted for 30 days.',
         answer: 'Delete anyway',
       ),
       isTrue,
@@ -117,6 +151,7 @@ void main() {
     await tester.pumpWidget(ProviderScope(
       overrides: [
         strategyPresenceProvider.overrideWith(() => _FixedPresence(room)),
+        strategyProvider.overrideWith(() => _Strategy(StrategySource.cloud)),
       ],
       child: ShadApp(
         home: Scaffold(
@@ -158,7 +193,7 @@ void main() {
         tester,
         room,
         expectContent: 'Alex and Sam are on this page right now. Delete it '
-            'anyway? This action cannot be undone.',
+            'anyway? You can restore it from Recently deleted for 30 days.',
         answer: 'Cancel',
       ),
       isFalse,
@@ -177,7 +212,8 @@ void main() {
       tester,
       room,
       expectContent: 'Alex, Sam and 2 others are on this page right now. '
-          'Delete it anyway? This action cannot be undone.',
+          'Delete it anyway? You can restore it from Recently deleted for 30 '
+          'days.',
       answer: 'Cancel',
     );
   });

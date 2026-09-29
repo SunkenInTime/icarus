@@ -75,6 +75,23 @@ export function isPastTrashRetention(
   );
 }
 
+/// The strategy's pages in the trash that can still be restored, most
+/// recently deleted first.
+export async function listRestorablePages(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  now: number,
+): Promise<Doc<"pages">[]> {
+  const trashed = await ctx.db
+    .query("pages")
+    .withIndex("by_strategyId_and_deletedAt", (q) =>
+      q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+    )
+    .order("desc")
+    .collect();
+  return trashed.filter((page) => !isPastTrashRetention(page, now));
+}
+
 /// The strategy's pages, leaving out those in the trash. Read through an
 /// index, so pages in the trash cost nothing here.
 export function livePagesQuery(ctx: AnyCtx, strategyId: Id<"strategies">) {
@@ -148,16 +165,18 @@ export async function writePageOrder(
   }
 }
 
-/// Moves [page] to the trash. Its rows stay, so it can be restored with
-/// everything on it; it keeps its sortIndex, the place it goes back to. The
-/// live pages left close the gap. [livePages] includes [page].
+/// Moves [page] to the trash, deleted by [deletedBy]. Its rows stay, so it
+/// can be restored with everything on it; it keeps its sortIndex, the place
+/// it goes back to. The live pages left close the gap. [livePages] includes
+/// [page].
 export async function trashPage(
   ctx: MutationCtx,
   page: Doc<"pages">,
   livePages: Doc<"pages">[],
+  deletedBy: Id<"users">,
   now: number,
 ): Promise<void> {
-  await ctx.db.patch(page._id, { deletedAt: now });
+  await ctx.db.patch(page._id, { deletedAt: now, deletedBy });
   await writePageOrder(
     ctx,
     sortByNumberField(
@@ -178,7 +197,7 @@ export async function restoreTrashedPage(
 ): Promise<void> {
   const ordered = sortByNumberField(livePages, "sortIndex");
   ordered.splice(clampPageIndex(page.sortIndex, ordered.length), 0, page);
-  await ctx.db.patch(page._id, { deletedAt: undefined });
+  await ctx.db.patch(page._id, { deletedAt: undefined, deletedBy: undefined });
   await writePageOrder(ctx, ordered, now);
 }
 

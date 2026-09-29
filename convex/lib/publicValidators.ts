@@ -86,6 +86,17 @@ export const folderSummaryValidator = v.object({
   agentTypes: v.array(v.string()),
 });
 
+/// A page in the trash, as Recently deleted lists it. [deletedByName] is null
+/// when who deleted it is not known.
+export const trashedPageValidator = v.object({
+  publicId: v.string(),
+  name: v.string(),
+  deletedAt: v.number(),
+  restorableUntil: v.number(),
+  deletedByName: v.union(v.string(), v.null()),
+  deletedByYou: v.boolean(),
+});
+
 export const pageDescriptorValidator = v.object({
   publicId: v.string(),
   strategyPublicId: v.string(),

@@ -1101,7 +1101,7 @@ void main() {
     testWidgets('says so until the user has read it', (tester) async {
       final session = await pumpButton(tester, leaves: true);
 
-      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(find.text('This page was deleted'), findsOneWidget);
       expect(
         find.textContaining('“A exec” was deleted while you were editing it'),
         findsOneWidget,
@@ -1109,13 +1109,13 @@ void main() {
       // Only reading it closes it.
       await tester.tapAt(const Offset(5, 5));
       await tester.pumpAndSettle();
-      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(find.text('This page was deleted'), findsOneWidget);
 
       await tester.tap(find.text('Discard changes'));
       await tester.pumpAndSettle();
       expect(session.leaveCount, 1);
       expect(session.restoreCount, 0);
-      expect(find.text('A teammate deleted this page'), findsNothing);
+      expect(find.text('This page was deleted'), findsNothing);
     });
 
     testWidgets('restoring the page keeps the work and closes the notice',
@@ -1128,7 +1128,7 @@ void main() {
 
       expect(session.restoreCount, 1);
       expect(session.leaveCount, 0);
-      expect(find.text('A teammate deleted this page'), findsNothing);
+      expect(find.text('This page was deleted'), findsNothing);
     });
 
     testWidgets(
@@ -1152,7 +1152,7 @@ void main() {
       await tester.tap(find.text('Discard changes'));
       await tester.pumpAndSettle();
       expect(session.leaveCount, 1);
-      expect(find.text('A teammate deleted this page'), findsNothing);
+      expect(find.text('This page was deleted'), findsNothing);
     });
 
     testWidgets('a restore that fails says so and keeps both choices',
@@ -1167,19 +1167,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Could not restore the page'), findsOneWidget);
-      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(find.text('This page was deleted'), findsOneWidget);
       expect(find.text('Restore page'), findsOneWidget);
       await tester.tap(find.text('Discard changes'));
       await tester.pumpAndSettle();
       expect(session.leaveCount, 1);
-      expect(find.text('A teammate deleted this page'), findsNothing);
+      expect(find.text('This page was deleted'), findsNothing);
     });
 
     testWidgets('shows when the button mounts after the page was deleted',
         (tester) async {
       await pumpButton(tester, leaves: true, deletedBeforeMount: true);
 
-      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(find.text('This page was deleted'), findsOneWidget);
     });
 
     testWidgets('stays while changes are still being sent', (tester) async {
@@ -1193,7 +1193,7 @@ void main() {
         find.textContaining('Could not leave this page yet'),
         findsOneWidget,
       );
-      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(find.text('This page was deleted'), findsOneWidget);
     });
   });
 }

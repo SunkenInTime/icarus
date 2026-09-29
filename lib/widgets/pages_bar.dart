@@ -14,6 +14,7 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
+import 'package:icarus/widgets/dialogs/recently_deleted_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _pagesBarCornerRadius = 12;
@@ -272,6 +273,12 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     await ref.read(strategyProvider.notifier).deletePage(page.id);
   }
 
+  Future<void> _openRecentlyDeleted() async {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (strategyId == null) return;
+    await RecentlyDeletedDialog.show(context, strategyId);
+  }
+
   @override
   Widget build(BuildContext context) {
     final activePageId = ref.watch(
@@ -305,6 +312,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
           return _buildPageBar(
             data: data,
             caps: caps,
+            hasTrash: false,
             persistedExpandedHeight: persistedExpandedHeight,
             persistedWidth: persistedWidth,
           );
@@ -319,14 +327,18 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     return _buildPageBar(
       data: data,
       caps: caps,
+      hasTrash: true,
       persistedExpandedHeight: persistedExpandedHeight,
       persistedWidth: persistedWidth,
     );
   }
 
+  /// [hasTrash]: deleted pages go to a trash they can be restored from (a
+  /// cloud strategy's server keeps one).
   Widget _buildPageBar({
     required _PageBarData data,
     required StrategyCapabilities caps,
+    required bool hasTrash,
     required double persistedExpandedHeight,
     required double persistedWidth,
   }) {
@@ -363,6 +375,9 @@ class _PagesBarState extends ConsumerState<PagesBar> {
                     onRename: caps.canRenamePage ? _renamePage : null,
                     onDelete: caps.canDeletePage ? _deletePage : null,
                     onAdd: _addPage,
+                    onOpenRecentlyDeleted: hasTrash && caps.canDeletePage
+                        ? _openRecentlyDeleted
+                        : null,
                     onCollapse: _collapsePanel,
                     onReorder: caps.canReorderPages
                         ? (oldIndex, newIndex) => ref
@@ -544,6 +559,7 @@ class _ExpandedPanel extends ConsumerWidget {
     required this.onRename,
     required this.onDelete,
     required this.onAdd,
+    required this.onOpenRecentlyDeleted,
     required this.onCollapse,
     required this.onResizeStart,
     required this.onResizeUpdate,
@@ -565,6 +581,9 @@ class _ExpandedPanel extends ConsumerWidget {
   final Future<void> Function(PageListItemViewModel page, int pageCount)?
       onDelete;
   final VoidCallback onAdd;
+
+  /// Opens Recently deleted; null where there is no trash to open.
+  final VoidCallback? onOpenRecentlyDeleted;
   final VoidCallback onCollapse;
   final VoidCallback onResizeStart;
   final ValueChanged<Offset> onResizeUpdate;
@@ -719,6 +738,27 @@ class _ExpandedPanel extends ConsumerWidget {
                   shortcutLabel: 'C',
                 ),
                 const Spacer(),
+                if (onOpenRecentlyDeleted != null)
+                  ShadTooltip(
+                    builder: (context) => const Text('Recently deleted'),
+                    child: ShadIconButton.ghost(
+                      width: _pagesBarControlSize,
+                      height: _pagesBarControlSize,
+                      padding: EdgeInsets.zero,
+                      foregroundColor:
+                          Settings.tacticalVioletTheme.mutedForeground,
+                      hoverForegroundColor: Colors.white,
+                      onPressed: onOpenRecentlyDeleted,
+                      icon: const Icon(LucideIcons.archiveRestore, size: 18),
+                      decoration: ShadDecoration(
+                        border: ShadBorder(
+                          radius: BorderRadius.circular(
+                            _pagesBarInnerButtonRadius,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ShadIconButton.ghost(
                   width: _pagesBarControlSize,
                   height: _pagesBarControlSize,

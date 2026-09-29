@@ -3393,6 +3393,81 @@ final class PageGetSnapshotResultPage {
   }
 }
 
+final class PagesListTrashedResultItem {
+  const PagesListTrashedResultItem({
+    required this.deletedAt,
+    required this.deletedByName,
+    required this.deletedByYou,
+    required this.name,
+    required this.publicId,
+    required this.restorableUntil,
+  });
+  final double deletedAt;
+  final String? deletedByName;
+  final bool deletedByYou;
+  final String name;
+  final String publicId;
+  final double restorableUntil;
+
+  factory PagesListTrashedResultItem.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'deletedAt',
+      'deletedByName',
+      'deletedByYou',
+      'name',
+      'publicId',
+      'restorableUntil',
+    });
+    return PagesListTrashedResultItem(
+      deletedAt: _decodeNumber(
+        object.value['deletedAt'] ?? _missing(path, 'deletedAt'),
+        '$path.deletedAt',
+      ),
+      deletedByName:
+          (object.value['deletedByName'] ?? _missing(path, 'deletedByName'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['deletedByName'] ?? _missing(path, 'deletedByName'),
+              '$path.deletedByName',
+            ),
+      deletedByYou: _decodeBoolean(
+        object.value['deletedByYou'] ?? _missing(path, 'deletedByYou'),
+        '$path.deletedByYou',
+      ),
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+      restorableUntil: _decodeNumber(
+        object.value['restorableUntil'] ?? _missing(path, 'restorableUntil'),
+        '$path.restorableUntil',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'deletedAt': _encodeNumber(deletedAt, '$path.deletedAt'),
+      'deletedByName': deletedByName == null
+          ? const ConvexNull()
+          : ConvexString(deletedByName!),
+      'deletedByYou': ConvexBoolean(deletedByYou),
+      'name': ConvexString(name),
+      'publicId': ConvexString(publicId),
+      'restorableUntil': _encodeNumber(
+        restorableUntil,
+        '$path.restorableUntil',
+      ),
+    });
+  }
+}
+
 final class PresenceIssueRoomPassResult {
   const PresenceIssueRoomPassResult({
     required this.expiresAt,
@@ -5475,6 +5550,20 @@ List<PageGetSnapshotResultPage> decodePagesListForStrategyResult(
       (entry) => PageGetSnapshotResultPage.decode(
         entry.$2,
         _indexPath('pages.js:listForStrategy.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodePagesListTrashedArgs({required String strategyPublicId}) =>
+    ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+
+List<PagesListTrashedResultItem> decodePagesListTrashedResult(
+  ConvexValue value,
+) => _decodeArray(value, 'pages.js:listTrashed.returns').value.indexed
+    .map(
+      (entry) => PagesListTrashedResultItem.decode(
+        entry.$2,
+        _indexPath('pages.js:listTrashed.returns', entry.$1),
       ),
     )
     .toList(growable: false);

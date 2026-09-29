@@ -796,6 +796,9 @@ abstract interface class PagesModule {
   ConvexQuery<List<PageGetSnapshotResultPage>> listForStrategy({
     required String strategyPublicId,
   });
+  ConvexQuery<List<PagesListTrashedResultItem>> listTrashed({
+    required String strategyPublicId,
+  });
   Future<ConvexValue> rename({
     required double clientProtocolVersion,
     required double expectedRevision,
@@ -881,6 +884,19 @@ final class _PagesModule implements PagesModule {
       name: 'pages:listForStrategy',
       args: args,
       decode: decodePagesListForStrategyResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<PagesListTrashedResultItem>> listTrashed({
+    required String strategyPublicId,
+  }) {
+    final args = encodePagesListTrashedArgs(strategyPublicId: strategyPublicId);
+    return ConvexQuery(
+      transport: _transport,
+      name: 'pages:listTrashed',
+      args: args,
+      decode: decodePagesListTrashedResult,
     );
   }
 

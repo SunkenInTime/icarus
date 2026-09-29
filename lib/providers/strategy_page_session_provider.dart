@@ -57,14 +57,14 @@ enum PageSwitchDirection { next, previous }
 /// never got. [name] is its name when it was last loaded.
 typedef DeletedPage = ({String pageId, String name});
 
-/// How an attempt to restore the deleted page on screen ended.
+/// How an attempt to restore a deleted page ended.
 enum DeletedPageRestore {
-  /// The page is back on the server and on screen, and the work on it is
-  /// saving as usual.
+  /// The page is back on the server, and the work on it is saving as usual.
+  /// The deleted page on screen is back on screen too.
   restored,
 
   /// The server can no longer restore the page: its time in the trash is
-  /// over. The work on it cannot be saved.
+  /// over. Work on it cannot be saved.
   gone,
 
   /// The page could not be restored, or not loaded once it was. Nothing on
@@ -1062,22 +1062,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (deleted == null || strategyId == null) {
       return DeletedPageRestore.failed;
     }
-    try {
-      await ref.read(convexStrategyRepositoryProvider).restorePage(
-            strategyPublicId: strategyId,
-            pagePublicId: deleted.pageId,
-          );
-    } catch (error, stackTrace) {
-      if (isTypedConvexNotFoundError(error)) return DeletedPageRestore.gone;
-      AppErrorReporter.reportError(
-        'Could not restore a deleted page.',
-        error: error,
-        stackTrace: stackTrace,
-        source: 'strategy_page_session:restore_deleted_page',
-        promptUser: false,
-      );
-      return DeletedPageRestore.failed;
-    }
+    final outcome = await _restoreOnServer(strategyId, deleted.pageId);
+    if (outcome != DeletedPageRestore.restored) return outcome;
     // A change still on its way when the page came back may yet be refused;
     // its answer comes before the refused changes are sent again.
     final settled = await _queueSettles((queue) => !queue
@@ -1124,6 +1110,50 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return state.deletedPage == null && state.activePageId == deleted.pageId
         ? DeletedPageRestore.restored
         : DeletedPageRestore.failed;
+  }
+
+  /// Brings [pageId] back from the server's trash, from Recently deleted: at
+  /// the place it was deleted from, with everything on it. Changes to it the
+  /// server refused while it was in the trash are sent again, once any
+  /// still on their way have been answered; if they are not answered in
+  /// time, the refused ones stay in the sync status, where Keep mine sends
+  /// them.
+  Future<DeletedPageRestore> restorePageFromTrash(String pageId) async {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (strategyId == null) return DeletedPageRestore.failed;
+    final outcome = await _restoreOnServer(strategyId, pageId);
+    if (outcome != DeletedPageRestore.restored) return outcome;
+    if (await _queueSettles((queue) =>
+        !queue.inFlightByEntityKey.keys.any((key) => key.pageId == pageId))) {
+      await ref
+          .read(strategyOpQueueProvider.notifier)
+          .retryRestoredPage(pageId);
+    }
+    return DeletedPageRestore.restored;
+  }
+
+  /// Asks the server to take [pageId] out of its trash.
+  Future<DeletedPageRestore> _restoreOnServer(
+    String strategyId,
+    String pageId,
+  ) async {
+    try {
+      await ref.read(convexStrategyRepositoryProvider).restorePage(
+            strategyPublicId: strategyId,
+            pagePublicId: pageId,
+          );
+      return DeletedPageRestore.restored;
+    } catch (error, stackTrace) {
+      if (isTypedConvexNotFoundError(error)) return DeletedPageRestore.gone;
+      AppErrorReporter.reportError(
+        'Could not restore a deleted page.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'strategy_page_session:restore_page',
+        promptUser: false,
+      );
+      return DeletedPageRestore.failed;
+    }
   }
 
   Future<void> _reapplyRemotePage(String pageId) async {

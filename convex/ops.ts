@@ -884,6 +884,7 @@ async function applyPageOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
+  userId: Id<"users">,
 ): Promise<{ strategy: Doc<"strategies">; result: OperationResult }> {
   const publicId = op.entityPublicId ?? op.pagePublicId;
   if (publicId === undefined) {
@@ -1012,7 +1013,7 @@ async function applyPageOp(
       throw errorWithCode("INVALID_OP", "Cannot delete last page");
     }
     const now = Date.now();
-    await trashPage(ctx, existing, pages, now);
+    await trashPage(ctx, existing, pages, userId, now);
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
     return {
@@ -1659,7 +1660,7 @@ export const applyBatch = mutation({
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "editor");
+    const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
     let contentChanged = false;
@@ -1737,7 +1738,7 @@ export const applyBatch = mutation({
             strategy = applied.strategy;
             result = applied.result;
           } else if (op.entityType === "page") {
-            const applied = await applyPageOp(ctx, strategy, op);
+            const applied = await applyPageOp(ctx, strategy, op, user._id);
             strategy = applied.strategy;
             result = applied.result;
           } else if (op.entityType === "pageContent") {

@@ -12,6 +12,8 @@ import {
   isPastTrashRetention,
   isTrashed,
   listLivePages,
+  listRestorablePages,
+  PAGE_TRASH_RETENTION_MS,
   restoreTrashedPage,
   sortByNumberField,
   trashPage,
@@ -31,7 +33,9 @@ import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
   pageDescriptorValidator,
   revisionResultValidator,
+  trashedPageValidator,
 } from "./lib/publicValidators";
+import { UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 
 export const listForStrategy = query({
   args: { strategyPublicId: v.string() },
@@ -205,7 +209,7 @@ const deletePage = mutation({
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "editor");
+    const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const pages = await listLivePages(ctx, strategy._id);
     const page = pages.find(
       (candidate) => candidate.publicId === args.pagePublicId,
@@ -221,7 +225,7 @@ const deletePage = mutation({
     }
 
     const now = Date.now();
-    await trashPage(ctx, page, pages, now);
+    await trashPage(ctx, page, pages, user._id, now);
     await refreshStrategyAgentSummary(ctx, strategy._id);
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
@@ -270,6 +274,37 @@ export const restore = mutation({
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
     return { ok: true, revision } as const;
+  },
+});
+
+/// The strategy's pages in the trash that can still be restored, most
+/// recently deleted first, each with who deleted it, if known. Only those
+/// who can delete and restore a page see them.
+export const listTrashed = query({
+  args: { strategyPublicId: v.string() },
+  returns: v.array(trashedPageValidator),
+  handler: async (ctx, args) => {
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    const { user } = await assertStrategyRole(ctx, strategy, "editor");
+    const pages = await listRestorablePages(ctx, strategy._id, Date.now());
+    return await Promise.all(
+      pages.map(async (page) => {
+        const deletedAt = page.deletedAt!;
+        const deleter =
+          page.deletedBy === undefined ? null : await ctx.db.get(page.deletedBy);
+        return {
+          publicId: page.publicId,
+          name: page.name,
+          deletedAt,
+          restorableUntil: deletedAt + PAGE_TRASH_RETENTION_MS,
+          deletedByName:
+            deleter === null || deleter.displayName === UNKNOWN_DISPLAY_NAME
+              ? null
+              : deleter.displayName,
+          deletedByYou: page.deletedBy === user._id,
+        };
+      }),
+    );
   },
 });
 
