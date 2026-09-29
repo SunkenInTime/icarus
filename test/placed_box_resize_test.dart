@@ -275,7 +275,7 @@ void main() {
     expect(tester.getRect(box).width, closeTo(shown.width + 40, 1));
   });
 
-  testWidgets('a page switch before the resize is stored leaves the copy alone',
+  testWidgets('a page switch right after release keeps the resize on its page',
       (tester) async {
     final container = await pumpBox(
       tester,
@@ -310,9 +310,12 @@ void main() {
       await gesture.moveBy(const Offset(20, 0));
       await tester.pump();
     }
+    final resized = container.read(textProvider).single;
     await gesture.up();
 
-    // Before the frame, the next page loads its copy of the text.
+    // Before the frame, the page is saved and the next page loads its copy
+    // of the text. The save must already see the new width.
+    expect(resized.size, greaterThan(200));
     final copy = PlacedText(
       id: 'text-1',
       position: const Offset(100, 100),

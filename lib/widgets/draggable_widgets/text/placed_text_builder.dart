@@ -85,43 +85,52 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     pinnedScreenPosition = nextPinned;
   }
 
-  /// Stores the new width, and the position that keeps the box's top-left
-  /// where the resize pinned it. On defense the box hangs from its
-  /// bottom-right corner, so that position moves with the size.
+  /// Stores the new width at once, so a page save right after release keeps
+  /// it, with the position that keeps the box's top-left where the resize
+  /// pinned it. On defense the box hangs from its bottom-right corner, so
+  /// that position moves with the size.
   ///
-  /// Waits for the frame that lays out the last drag update, because the
-  /// text's height, and so its defense position, follows from its width.
-  /// Writes only if the text it resized is still loaded: a page switch in
-  /// that frame loads the next page's copy, which keeps the same id.
+  /// The text's height, and so its defense position, follows from its width,
+  /// and the last drag update may not be laid out yet. So the pin holds for
+  /// one more frame, then the position is stored again if it moved, unless a
+  /// page switch loaded another page's copy of the text, which keeps its id.
   Future<void> _finishResize() async {
     final resizedText = widget.placedText;
+    final pinned = pinnedScreenPosition;
+    if (pinned != null) _storeResize(resizedText, pinned);
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
-    final pinned = pinnedScreenPosition;
-    final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
     final stillLoaded =
         ref.read(textProvider).any((text) => identical(text, resizedText));
-    if (pinned != null && renderBox != null && stillLoaded) {
-      final coordinateSystem = CoordinateSystem.instance;
-      final position = coordinateSystem.screenToCoordinate(
-        coordinateSystem.screenPositionFromSide(
-          sideScreenPosition: pinned,
-          reflectionOffset: renderBox.size.bottomRight(Offset.zero),
-          isAttack: widget.isAttack,
-        ),
-      );
-      ref
-          .read(textProvider.notifier)
-          .resize(widget.placedText.id, size: localSize!, position: position);
-      ref.read(strategyProvider.notifier).setUnsaved();
-    }
+    if (pinned != null && stillLoaded) _storeResize(resizedText, pinned);
     setState(() {
       isPanning = false;
       isDragging = false;
       pinnedScreenPosition = null;
       pointerShift = 0;
     });
+  }
+
+  /// Writes [text]'s new width and the position that puts its top-left at
+  /// [pinned] as laid out now, unless both are already stored.
+  void _storeResize(PlacedText text, Offset pinned) {
+    final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final position = coordinateSystem.screenToCoordinate(
+      coordinateSystem.screenPositionFromSide(
+        sideScreenPosition: pinned,
+        reflectionOffset: renderBox.size.bottomRight(Offset.zero),
+        isAttack: widget.isAttack,
+      ),
+    );
+    if (text.size == localSize && text.position == position) return;
+    ref
+        .read(textProvider.notifier)
+        .resize(text.id, size: localSize!, position: position);
+    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   @override
