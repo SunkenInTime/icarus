@@ -1837,11 +1837,13 @@ void main() {
     expect(container.read(textProvider).single.text, 'one');
   });
 
-  for (final replayed in [false, true]) {
+  // How the server answers this device's delete: applied at once; on a
+  // replay after its first answer was lost, before the restore; or on that
+  // replay only after the teammate's second delete.
+  for (final answer in ['applied', 'replayed', 'replayed last']) {
     test(
         "a page this device deleted, restored, then deleted by a teammate "
-        'still tells the user (delete answered on replay: $replayed)',
-        () async {
+        'still tells the user (delete $answer)', () async {
       final one = _page('page-1', 0, name: 'A exec');
       final two = _page('page-2', 1);
       final loadedOne = _pageSnapshot(
@@ -1885,23 +1887,25 @@ void main() {
           expectedStrategyRevision: 1,
         ),
       );
-      // A delete whose first answer was lost is answered on replay with the
-      // strategy's revision by then: the teammate's restore, below.
-      queue.ackQueued(
-        ack: replayed
-            ? (opId) => NoopOpAck(opId: opId, currentRevision: 2)
-            : null,
-      );
-      remote.setSnapshot(shell([two], loadedTwo));
+      // A delete whose first answer was lost is answered on replay with a
+      // no-op at the strategy's revision by then.
+      if (answer == 'applied') {
+        queue.ackQueued(ack: (opId) => AppliedOpAck(opId: opId, revision: 2));
+      } else if (answer == 'replayed') {
+        queue.ackQueued(
+            ack: (opId) => NoopOpAck(opId: opId, currentRevision: 3));
+      }
+      remote.setSnapshot(shell([two], loadedTwo, revision: 2));
       await _settle();
       await _settle();
+      // With its delete unanswered, the canvas waits on page one; otherwise
+      // it moves on, and comes back once a teammate restores the page.
+      final waiting = answer == 'replayed last';
       expect(container.read(strategyPageSessionProvider).activePageId,
-          two.publicId);
-
-      // A teammate restores it, and the user goes back to it.
-      remote.setSnapshot(shell([one, two], loadedTwo, revision: 2));
+          waiting ? one.publicId : two.publicId);
+      remote.setSnapshot(shell([one, two], loadedTwo, revision: 3));
       await _settle();
-      await session.setActivePage(one.publicId);
+      if (!waiting) await session.setActivePage(one.publicId);
       await _settle();
       expect(container.read(strategyPageSessionProvider).activePageId,
           one.publicId);
@@ -1919,18 +1923,29 @@ void main() {
           false,
           false,
           TraversalSpeedProfile.values.first);
-      remote.setSnapshot(shell([two], loadedTwo, revision: 3));
+      remote.setSnapshot(shell([two], loadedTwo, revision: 4));
       await _settle();
       container
           .read(drawingProvider.notifier)
           .finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
       container.read(editorPointersProvider.notifier).release(1);
       await _settle();
+      final stroke = container.read(drawingProvider).elements.single.id;
+      if (answer == 'replayed last') {
+        queue.ackQueued(
+            ack: (opId) => NoopOpAck(opId: opId, currentRevision: 4));
+        await _settle();
+      }
 
       // Before, the old delete still counted as this device's and the stroke
       // could be dropped unseen.
       expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
           one.publicId);
+      await session.setActivePage(two.publicId);
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          one.publicId);
+      expect(
+          container.read(drawingProvider).elements.map((d) => d.id), [stroke]);
     });
   }
 

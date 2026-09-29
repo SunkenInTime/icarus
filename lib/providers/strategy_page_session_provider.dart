@@ -156,13 +156,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   int _pageSessionGeneration = 0;
 
   /// Pages whose delete from this device the server accepted, with the
-  /// strategy revision the server answered with. Their disappearing is the
-  /// user's own doing, whatever work is left on them. A page listed at that
-  /// revision or later is back (restored from the trash) and leaves the map:
-  /// a later delete is someone's new one. An applied delete's own revision
-  /// never lists the page, and a replayed one answers with the current
-  /// revision. A read from before the delete lists it at an earlier
-  /// revision, and changes nothing.
+  /// strategy revision the delete made. Their disappearing is the user's own
+  /// doing, whatever work is left on them. A page listed at that revision or
+  /// later is back (restored from the trash) and leaves the map: a later
+  /// delete is someone's new one. The delete's own revision never lists the
+  /// page, and a read from before it lists the page at an earlier revision,
+  /// which changes nothing.
   final Map<String, int> _pagesDeletedHere = {};
 
   /// The ack batch [_pagesDeletedHere] last took deletes from, so an old
@@ -979,11 +978,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (identical(queue.lastAckBatch, _notedAckBatch)) return;
     _notedAckBatch = queue.lastAckBatch;
     for (final acked in queue.lastAckBatch) {
-      if (acked.op case PageDeleteOp(:final pagePublicId)
-          when acked.ack.isAck) {
-        // Without a revision the delete never expires, as before restores.
-        _pagesDeletedHere[pagePublicId] =
-            acked.ack.appliedRevision ?? (1 << 52);
+      // Only a delete the server applied took the page away. A no-op says
+      // it was already gone, not by whom: a teammate may have deleted it
+      // since, and their delete must still show the notice.
+      if ((acked.op, acked.ack)
+          case (
+            PageDeleteOp(:final pagePublicId),
+            AppliedOpAck(:final revision),
+          )) {
+        _pagesDeletedHere[pagePublicId] = revision;
       }
     }
   }
@@ -1106,7 +1109,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (await _queueSettles((queue) => ![
           queue.queuedByEntityKey,
           queue.inFlightByEntityKey,
-        ].any((sends) => sends.keys.any((key) => key.pageId == deleted.pageId)))) {
+        ].any((sends) =>
+            sends.keys.any((key) => key.pageId == deleted.pageId)))) {
       await ref
           .read(strategyOpQueueProvider.notifier)
           .retryRestoredPage(deleted.pageId);
