@@ -116,7 +116,15 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     // a browser that cannot encode video costs nothing.
     final VideoFrameSink sink;
     if (kIsWeb) {
-      if (!await browserCanEncodeVideo(quality)) {
+      final totalSeconds = VideoExporter.plannedDurationSeconds(
+        pageCount: pageIds.length,
+        stepSeconds: stepDuration.inMilliseconds / 1000,
+        fps: quality.fps,
+      );
+      if (!await browserCanEncodeVideo(
+        quality,
+        totalSeconds: totalSeconds,
+      )) {
         Settings.showToast(
           message: 'This browser cannot export video. Try the latest Chrome '
               'or Edge, or the desktop app.',

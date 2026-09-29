@@ -5,19 +5,35 @@ import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/services/video_export/web_codecs_video_encoder.dart';
 
-/// Whether this browser can encode [quality]'s video, checked at its
-/// largest size before anything renders.
-Future<bool> browserCanEncodeVideo(VideoExportQuality quality) {
-  const size = CoordinateSystem.screenShotSize;
+/// Whether this browser can encode a [totalSeconds] video at [quality],
+/// checked with the exact size and bitrate the export will use, before
+/// anything renders.
+Future<bool> browserCanEncodeVideo(
+  VideoExportQuality quality, {
+  required double totalSeconds,
+}) {
+  final output = _outputFor(quality, totalSeconds);
   return WebCodecsMp4Encoder.isSupported(
-    width: size.width.round(),
-    height: size.height.round(),
+    width: output.width,
+    height: output.height,
     fps: quality.fps,
-    // The sized presets hold a constant bitrate, which not every encoder
-    // offers; check that mode too.
-    bitrate: quality.sizePolicy == null
-        ? null
-        : VideoExportSizePolicy.maxVideoBitrate,
+    bitrate: output.bitrate,
+  );
+}
+
+/// The size and bitrate [quality] encodes a [totalSeconds] video at: the
+/// desktop presets' (Potato drops to 720p at its bitrate floor; Max has no
+/// fixed bitrate).
+({int width, int height, int? bitrate}) _outputFor(
+  VideoExportQuality quality,
+  double totalSeconds,
+) {
+  const frame = CoordinateSystem.screenShotSize;
+  final height = quality.outputHeightForDuration(totalSeconds);
+  return (
+    width: (frame.width * height / frame.height).round(),
+    height: height,
+    bitrate: quality.sizePolicy?.initialVideoBitrate(totalSeconds),
   );
 }
 
@@ -44,14 +60,14 @@ class _WebCodecsVideoSink implements VideoFrameSink {
     required int totalFrames,
     required double totalSeconds,
   }) {
-    final outputHeight = quality.outputHeightForDuration(totalSeconds);
+    final output = _outputFor(quality, totalSeconds);
     return _encoder.start(
       inputWidth: width,
       inputHeight: height,
-      outputWidth: (width * outputHeight / height).round(),
-      outputHeight: outputHeight,
+      outputWidth: output.width,
+      outputHeight: output.height,
       fps: quality.fps,
-      bitrate: quality.sizePolicy?.initialVideoBitrate(totalSeconds),
+      bitrate: output.bitrate,
     );
   }
 
