@@ -1,6 +1,7 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
+  errorWithCode,
   forbiddenError,
   internalError,
   unauthenticatedError,
@@ -197,6 +198,48 @@ export async function assertStrategyRole(
   }
 
   return { user, role: role as StrategyRole };
+}
+
+/**
+ * The role a reader holds on [strategy]: their own when they have one,
+ * otherwise viewer when [shareToken] is a live link to this strategy. A link
+ * lets anyone holding it look without an account; it never grants a write,
+ * and it stops working the moment its owner disables it.
+ */
+export async function assertStrategyReadable(
+  ctx: AnyCtx,
+  strategy: Doc<"strategies">,
+  shareToken: string | undefined,
+): Promise<StrategyRole> {
+  if (shareToken === undefined) {
+    return (await assertStrategyRole(ctx, strategy, "viewer")).role;
+  }
+
+  const identity = await ctx.auth.getUserIdentity();
+  const user =
+    identity === null ? null : await findUserByIdentity(ctx, identity);
+  if (user !== null) {
+    const role = await getEffectiveStrategyRoleForUser(ctx, strategy, user._id);
+    if (role !== null) {
+      return role;
+    }
+  }
+
+  const link = await ctx.db
+    .query("shareLinks")
+    .withIndex("by_token", (q) => q.eq("token", shareToken))
+    .first();
+  if (link !== null && link.strategyId === strategy._id) {
+    if (link.revokedAt !== undefined) {
+      throw errorWithCode("SHARE_LINK_REVOKED", "Share link revoked");
+    }
+    return "viewer";
+  }
+
+  if (identity === null) {
+    throw unauthenticatedError();
+  }
+  throw forbiddenError();
 }
 
 export async function assertFolderRole(

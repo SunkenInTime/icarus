@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/services/local_image_file.dart';
 
 class CloudMediaCacheState {
@@ -36,6 +38,43 @@ class CloudMediaCacheState {
       lastErrorByAssetId: lastErrorByAssetId ?? this.lastErrorByAssetId,
     );
   }
+}
+
+class CloudImageDownloadException implements Exception {
+  const CloudImageDownloadException(this.statusCode);
+  final int statusCode;
+
+  @override
+  String toString() => 'Failed to download image ($statusCode).';
+}
+
+/// How long one image download may take before it counts as failed.
+const cloudImageDownloadTimeout = Duration(seconds: 60);
+
+/// Downloads a cloud image's bytes from [url], through [client] when given
+/// (the caller owns it and closes it). A signed URL the host refuses (401,
+/// 403, or 404: it expired) is swapped once for [freshUrl] from the server.
+/// Throws [CloudImageDownloadException] when the bytes don't come, and a
+/// [TimeoutException] when a request stalls.
+Future<Uint8List> downloadCloudImageBytes(
+  String url, {
+  required Future<String?> Function() freshUrl,
+  http.Client? client,
+}) async {
+  Future<http.Response> get(String url) =>
+      (client?.get(Uri.parse(url)) ?? http.get(Uri.parse(url)))
+          .timeout(cloudImageDownloadTimeout);
+  var response = await get(url);
+  if (const {401, 403, 404}.contains(response.statusCode)) {
+    final refreshed = await freshUrl();
+    if (refreshed != null && refreshed.isNotEmpty) {
+      response = await get(refreshed);
+    }
+  }
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw CloudImageDownloadException(response.statusCode);
+  }
+  return response.bodyBytes;
 }
 
 final cloudMediaCacheProvider =
@@ -121,27 +160,20 @@ class CloudMediaCacheNotifier extends Notifier<CloudMediaCacheState> {
 
     _markInFlight(asset.publicId, strategyPublicId);
     try {
-      var response = await http.get(Uri.parse(asset.url!));
-      if (_shouldRefreshSignedUrl(response.statusCode)) {
-        final refreshed = await ref
-            .read(convexStrategyRepositoryProvider)
-            .getImageAssetUrl(
-              strategyPublicId: strategyPublicId,
-              assetPublicId: asset.publicId,
-            );
-        if (refreshed != null && refreshed.isNotEmpty) {
-          response = await http.get(Uri.parse(refreshed));
-        }
-      }
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        _recordError(
-          asset.publicId,
-          'Failed to cache asset (${response.statusCode}).',
-        );
-        return null;
-      }
-
+      final bytes = await downloadCloudImageBytes(
+        asset.url!,
+        freshUrl: () {
+          final linkView = ref.read(shareLinkViewProvider);
+          return ref.read(convexStrategyRepositoryProvider).getImageAssetUrl(
+                strategyPublicId: strategyPublicId,
+                assetPublicId: asset.publicId,
+                // A signed-out reader's only access is the link they opened.
+                shareToken: linkView?.strategyPublicId == strategyPublicId
+                    ? linkView!.token
+                    : null,
+              );
+        },
+      );
       final output = File(
         await localAssetPath(
           strategyId: strategyId,
@@ -150,7 +182,7 @@ class CloudMediaCacheNotifier extends Notifier<CloudMediaCacheState> {
         ),
       );
       await output.parent.create(recursive: true);
-      await output.writeAsBytes(response.bodyBytes, flush: true);
+      await output.writeAsBytes(bytes, flush: true);
       _markCached(asset.publicId);
       return output;
     } catch (error) {
@@ -182,10 +214,6 @@ class CloudMediaCacheNotifier extends Notifier<CloudMediaCacheState> {
       }
     }
     return true;
-  }
-
-  bool _shouldRefreshSignedUrl(int statusCode) {
-    return statusCode == 401 || statusCode == 403 || statusCode == 404;
   }
 
   void resetStrategy(String? strategyPublicId) {

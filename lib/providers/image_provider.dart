@@ -471,11 +471,16 @@ class PlacedImageProvider extends Notifier<ImageState> {
     return images.map(_migrateLoadedImage).toList();
   }
 
-  void updateScale(int index, double scale) {
+  /// Sets an image's scale and position together: on defense a resize moves
+  /// the stored position so the image's on-screen top-left stays put.
+  void resize(String id, {required double scale, required Offset position}) {
     final newState = state.copyWith();
+    final index = PlacedWidget.getIndexByID(id, newState.images);
+    if (index < 0) return;
 
-    newState.images[index].scale = ImageScalePolicy.clamp(scale);
-
+    newState.images[index]
+      ..scale = ImageScalePolicy.clamp(scale)
+      ..position = position;
     state = newState;
   }
 

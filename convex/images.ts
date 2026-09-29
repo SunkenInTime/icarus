@@ -28,7 +28,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
-import { assertStrategyRole } from "./lib/auth";
+import { assertStrategyReadable, assertStrategyRole } from "./lib/auth";
 import { getStrategyByPublicId } from "./lib/entities";
 import {
   createR2ObjectKey,
@@ -768,11 +768,12 @@ export const getAssetUrl = query({
   args: {
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
+    shareToken: v.optional(v.string()),
   },
   returns: v.object({ url: v.union(v.string(), v.null()) }),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "viewer");
+    await assertStrategyReadable(ctx, strategy, args.shareToken);
 
     if (
       !(await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId))

@@ -2427,7 +2427,7 @@ class StrategyImportExportService {
         .read(convexStrategyRepositoryProvider)
         .fetchFullSnapshot(strategyId);
     await _ensureRemoteAssetsCached(snapshot);
-    final strategy = _strategyDataFromRemoteSnapshot(snapshot);
+    final strategy = strategyDataFromRemoteSnapshot(snapshot);
     final outputFile = await FilePicker.platform.saveFile(
       type: FileType.custom,
       dialogTitle: 'Please select an output file:',
@@ -2454,13 +2454,8 @@ class StrategyImportExportService {
     await zipStrategy(id: id, outputFilePath: outputFile);
   }
 
-  @visibleForTesting
-  static StrategyData strategyDataFromRemoteSnapshotForTest(
-    RemoteFullStrategySnapshot snapshot,
-  ) =>
-      _strategyDataFromRemoteSnapshot(snapshot);
-
-  static StrategyData _strategyDataFromRemoteSnapshot(
+  /// A cloud strategy as the library models it, from the server's full copy.
+  static StrategyData strategyDataFromRemoteSnapshot(
     RemoteFullStrategySnapshot snapshot,
   ) {
     final pages = <StrategyPage>[];

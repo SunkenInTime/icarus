@@ -1,7 +1,7 @@
 import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { assertStrategyRole } from "./lib/auth";
+import { assertStrategyReadable } from "./lib/auth";
 import {
   elementsOnPages,
   getStrategyByPublicId,
@@ -44,11 +44,14 @@ async function getPageContent(
 export const getShell = query({
   args: {
     strategyPublicId: v.string(),
+    // A share link the reader holds (see assertStrategyReadable): lets
+    // someone without an account view a strategy shared with them.
+    shareToken: v.optional(v.string()),
   },
   returns: strategyShellValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    const { role } = await assertStrategyRole(ctx, strategy, "viewer");
+    const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
     const pages = await listLivePages(ctx, strategy._id);
 
     return {
@@ -63,11 +66,12 @@ export const getShell = query({
 export const getFullSnapshot = query({
   args: {
     strategyPublicId: v.string(),
+    shareToken: v.optional(v.string()),
   },
   returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    const { role } = await assertStrategyRole(ctx, strategy, "viewer");
+    const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
     // Content on a page in the trash is left out with its page.
     const pages = await listLivePages(ctx, strategy._id);
     const [elements, lineups] = await Promise.all([

@@ -19,6 +19,16 @@ final currentStrategyCapabilitiesProvider =
   return StrategyCapabilities.fromCloudRole(role);
 });
 
+/// Whether the open strategy is view-only for this reader, by the last role
+/// the server reported. The editor leaves out its editing panels then, since
+/// none of their controls would respond. Layout reads the last known role so
+/// a refresh that briefly fails cannot drop an editor's panels mid-session.
+final isViewOnlyStrategyProvider = Provider<bool>((ref) {
+  final source = ref.watch(strategyProvider.select((value) => value.source));
+  return source == StrategySource.cloud &&
+      ref.watch(lastKnownCloudRoleProvider) == 'viewer';
+});
+
 /// Last non-null cloud role reported for the currently open strategy.
 ///
 /// [remoteEditorSnapshotProvider] transiently loses its value during

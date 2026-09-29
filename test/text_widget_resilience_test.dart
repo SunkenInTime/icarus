@@ -108,14 +108,11 @@ void main() {
               final placedText = ref.watch(textProvider).first;
               return Stack(
                 children: [
-                  Positioned(
-                    left: 20,
-                    top: 20,
-                    child: PlacedTextBuilder(
-                      size: placedText.size,
-                      placedText: placedText,
-                      onDragEnd: (_) {},
-                    ),
+                  PlacedTextBuilder(
+                    size: placedText.size,
+                    placedText: placedText,
+                    isAttack: true,
+                    onDragEnd: (_) {},
                   ),
                 ],
               );

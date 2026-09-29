@@ -1095,9 +1095,10 @@ void main() {
       required MemoryDurableStrategyOutboxStore strategyStore,
       PendingMediaBytesStore? bytesStore,
       CloudMediaReferenceLoader? referenceLoader,
+      _UploadRecordingRepository? serverRepository,
     }) {
       var online = false;
-      final repository = _UploadRecordingRepository();
+      final repository = serverRepository ?? _UploadRecordingRepository();
       final container = ProviderContainer(overrides: [
         durableCloudMediaOutboxStoreProvider.overrideWithValue(mediaStore),
         convexStrategyRepositoryProvider.overrideWithValue(repository),
@@ -1112,9 +1113,11 @@ void main() {
         imageFilesOnDeviceProvider.overrideWithValue(false),
         pendingMediaBytesStoreProvider
             .overrideWithValue(bytesStore ?? MemoryPendingMediaBytesStore()),
-        cloudMediaReferenceLoaderProvider.overrideWithValue(
-          referenceLoader ?? (_) async => {'server-image'},
-        ),
+        // With [serverRepository], its answers are the server's.
+        if (serverRepository == null)
+          cloudMediaReferenceLoaderProvider.overrideWithValue(
+            referenceLoader ?? (_) async => {'server-image'},
+          ),
       ]);
       return (
         container: container,
@@ -1163,6 +1166,62 @@ void main() {
         {'queued-image', 'server-image'},
       );
       expect(bytes.bytesFor(key('page-image')), isNull);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test(
+        'keeps an upload whose image the server still names, whatever the '
+        'full snapshot shows', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(job('page-image'));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        // The full snapshot shows only the pages on screen; the reference
+        // list counts every image the server's content still shows.
+        serverRepository: _ReferencingRepository({'page-image'}),
+      );
+      addTearDown(container.dispose);
+      final bytes = container.read(pendingMediaBytesProvider.notifier);
+      await bytes.put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId),
+        ['page-image'],
+      );
+      expect(bytes.bytesFor(key('page-image')), [1, 2, 3]);
+    });
+
+    test('keeps an upload and its bytes while the server cannot tell',
+        () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(job('page-image'));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        serverRepository: _ReferencingRepository(null),
+      );
+      addTearDown(container.dispose);
+      final bytes = container.read(pendingMediaBytesProvider.notifier);
+      await bytes.put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId),
+        ['page-image'],
+      );
+      expect(bytes.bytesFor(key('page-image')), [1, 2, 3]);
       expect(repository.uploadedAssetIds, isEmpty);
     });
 
@@ -1383,4 +1442,38 @@ class _UploadRecordingRepository implements ConvexStrategyRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A server whose content shows [referenced] images (null: it cannot tell
+/// yet) and whose full snapshot shows none.
+class _ReferencingRepository extends _UploadRecordingRepository {
+  _ReferencingRepository(this.referenced);
+
+  final Set<String>? referenced;
+
+  @override
+  Future<Set<String>?> fetchReferencedAssetIds(String strategyPublicId) async =>
+      referenced;
+
+  @override
+  Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
+    final now = DateTime.utc(2026, 9, 3);
+    return RemoteFullStrategySnapshot(
+      header: RemoteStrategyHeader(
+        publicId: strategyPublicId,
+        name: 'Strategy A',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      pages: const [],
+      elementsByPage: const {},
+      lineupsByPage: const {},
+      assetsById: const {},
+    );
+  }
 }

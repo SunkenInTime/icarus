@@ -169,7 +169,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
           // Gapless, keyed by asset: this image's pending bytes keep painting
           // while its cloud URL loads, and no other image's frame carries
           // over.
-          LocalImageFile() || RemoteImageUrl() || PendingImageBytes() => Image(
+          LocalImageFile() || RemoteImageUrl() || ImageBytes() => Image(
               key: ValueKey(widget.id),
               image: image!,
               fit: BoxFit.contain,

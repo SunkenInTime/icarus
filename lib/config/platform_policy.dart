@@ -47,8 +47,6 @@ class PlatformPolicy {
     desktopOnly: {
       PlatformFeature.exportFiles,
       PlatformFeature.importFiles,
-      PlatformFeature.screenshot,
-      PlatformFeature.videoExport,
       PlatformFeature.fileDrop,
     },
     // Empty for now; the Beta dialog hides its "Coming" list when it is.

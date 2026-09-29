@@ -40369,6 +40369,12 @@
             },
             "optional": false
           },
+          "shareToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -150648,6 +150654,12 @@
             },
             "optional": false
           },
+          "shareToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -181377,6 +181389,91 @@
       "args": {
         "type": "object",
         "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "shares.js:resolve",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "role": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "literal",
+                      "value": "viewer"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "editor"
+                    }
+                  ]
+                },
+                "optional": false
+              },
+              "strategyPublicId": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              },
+              "targetType": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "strategy"
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "role": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "literal",
+                      "value": "viewer"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "editor"
+                    }
+                  ]
+                },
+                "optional": false
+              },
+              "targetType": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": "folder"
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"
@@ -182519,6 +182616,12 @@
       "args": {
         "type": "object",
         "value": {
+          "shareToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -212438,6 +212541,12 @@
       "args": {
         "type": "object",
         "value": {
+          "shareToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
