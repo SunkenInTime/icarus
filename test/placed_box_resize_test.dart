@@ -17,7 +17,8 @@ void main() {
 
   Future<ProviderContainer> pumpBox(
     WidgetTester tester, {
-    required Widget Function(WidgetRef ref) builder,
+    required Widget Function(WidgetRef ref, bool isAttack) builder,
+    required ValueNotifier<bool> side,
     required void Function(ProviderContainer container) seed,
   }) async {
     tester.view.physicalSize = playArea;
@@ -34,7 +35,11 @@ void main() {
         container: container,
         child: ShadApp(
           home: Consumer(
-            builder: (context, ref, _) => Stack(children: [builder(ref)]),
+            builder: (context, ref, _) => ValueListenableBuilder<bool>(
+              valueListenable: side,
+              builder: (context, isAttack, _) =>
+                  Stack(children: [builder(ref, isAttack)]),
+            ),
           ),
         ),
       ),
@@ -80,7 +85,8 @@ void main() {
             sizeVersion: PlacedText.currentSizeVersion,
           )..text = 'Yo text boxes resize properly on both sides now',
         ]),
-        builder: (ref) {
+        side: ValueNotifier(isAttack),
+        builder: (ref, isAttack) {
           final placedText = ref.watch(textProvider).single;
           return PlacedTextBuilder(
             key: ValueKey(placedText.id),
@@ -129,7 +135,8 @@ void main() {
             sizeVersion: worldSizedMediaVersion,
           ),
         ]),
-        builder: (ref) {
+        side: ValueNotifier(isAttack),
+        builder: (ref, isAttack) {
           final placedImage = ref.watch(placedImageProvider).images.single;
           return PlacedImageBuilder(
             key: ValueKey(placedImage.id),
@@ -161,4 +168,55 @@ void main() {
       }
     });
   }
+
+  testWidgets('switching sides mid-resize keeps the pinned side placement',
+      (tester) async {
+    final side = ValueNotifier(false);
+    final container = await pumpBox(
+      tester,
+      seed: (container) => container.read(textProvider.notifier).fromHive([
+        PlacedText(
+          id: 'text-1',
+          position: originalPosition,
+          size: 200,
+          sizeVersion: PlacedText.currentSizeVersion,
+        )..text = 'Yo text boxes resize properly on both sides now',
+      ]),
+      side: side,
+      builder: (ref, isAttack) {
+        final placedText = ref.watch(textProvider).single;
+        return PlacedTextBuilder(
+          key: ValueKey(placedText.id),
+          size: placedText.size,
+          placedText: placedText,
+          isAttack: isAttack,
+          onDragEnd: (_) {},
+        );
+      },
+    );
+    final box = find.byType(TextScaleController);
+    final handle = find.byWidgetPredicate(
+      (widget) =>
+          widget is MouseRegion &&
+          widget.cursor == SystemMouseCursors.resizeLeftRight,
+    );
+
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    for (var i = 0; i < 3; i++) {
+      await gesture.moveBy(const Offset(20, 0));
+      await tester.pump();
+    }
+    final onDefense = tester.getRect(box);
+
+    side.value = true;
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    side.value = false;
+    await tester.pumpAndSettle();
+    expect(
+        tester.getRect(box).topLeft, offsetMoreOrLessEquals(onDefense.topLeft));
+    expect(container.read(textProvider).single.size, greaterThan(200));
+  });
 }

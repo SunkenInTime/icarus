@@ -52,6 +52,31 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     super.initState();
   }
 
+  /// A side switch mid-resize moves the pin to where the box now shows,
+  /// so the position stored on release is read on the side it was pinned on.
+  @override
+  void didUpdateWidget(covariant PlacedTextBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final pinned = pinnedScreenPosition;
+    final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (pinned == null ||
+        renderBox == null ||
+        oldWidget.isAttack == widget.isAttack) {
+      return;
+    }
+    final coordinateSystem = CoordinateSystem.instance;
+    final boxSize = renderBox.size.bottomRight(Offset.zero);
+    pinnedScreenPosition = coordinateSystem.screenPositionForSide(
+      attackScreenPosition: coordinateSystem.screenPositionFromSide(
+        sideScreenPosition: pinned,
+        reflectionOffset: boxSize,
+        isAttack: oldWidget.isAttack,
+      ),
+      reflectionOffset: boxSize,
+      isAttack: widget.isAttack,
+    );
+  }
+
   /// Stores the new width, and the position that keeps the box's top-left
   /// where the resize pinned it. On defense the box hangs from its
   /// bottom-right corner, so that position moves with the size.
