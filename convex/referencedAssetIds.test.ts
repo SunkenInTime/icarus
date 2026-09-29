@@ -20,6 +20,9 @@ const createStrategy = makeFunctionReference<"mutation">(
 const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 const createShare = makeFunctionReference<"mutation">("shares:create");
 const redeemShare = makeFunctionReference<"mutation">("shares:redeem");
+const getFullSnapshot = makeFunctionReference<"query">(
+  "strategy:getFullSnapshot",
+);
 const listReferencedAssetIds = makeFunctionReference<"query">(
   "images:listReferencedAssetIds",
 );
@@ -190,5 +193,19 @@ describe("images:listReferencedAssetIds", () => {
     await expect(
       stranger.query(listReferencedAssetIds, asked),
     ).rejects.toThrow();
+  });
+
+  test("a client that checks references apart says so when it reads a full snapshot", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(markAssetReferencesReady);
+    const owner = await seed(t);
+
+    const snapshot = (await owner.query(getFullSnapshot, {
+      strategyPublicId,
+      acceptsTrashedPagesLeftOut: true,
+    })) as { pages: Array<{ publicId: string }> };
+    expect(snapshot.pages.map((page) => page.publicId)).toEqual([
+      pagePublicId,
+    ]);
   });
 });
