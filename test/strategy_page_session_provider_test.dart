@@ -1831,8 +1831,8 @@ void main() {
     final repository = _RestoringRepository((_) {});
     final (:container, :queue) = await pageInTrash(repository);
     queue.holdInFlight(
-      EntitySyncKey.element('page-1', 'sent'),
-      ElementDeleteOp(
+      const EntitySyncKey.element('page-1', 'sent'),
+      const ElementDeleteOp(
         opId: 'sent-op',
         pagePublicId: 'page-1',
         elementPublicId: 'sent',
@@ -1860,8 +1860,8 @@ void main() {
     final repository = _RestoringRepository((_) {});
     final (:container, :queue) = await pageInTrash(repository);
     queue.holdInFlight(
-      EntitySyncKey.element('page-1', 'sent'),
-      ElementDeleteOp(
+      const EntitySyncKey.element('page-1', 'sent'),
+      const ElementDeleteOp(
         opId: 'sent-op',
         pagePublicId: 'page-1',
         elementPublicId: 'sent',
