@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
@@ -155,18 +156,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _disposed = false;
   int _pageSessionGeneration = 0;
 
-  /// Pages whose delete from this device the server accepted, with the
-  /// strategy revision the delete made. Their disappearing is the user's own
-  /// doing, whatever work is left on them. A page listed at that revision or
-  /// later is back (restored from the trash) and leaves the map: a later
-  /// delete is someone's new one. The delete's own revision never lists the
-  /// page, and a read from before it lists the page at an earlier revision,
-  /// which changes nothing.
+  /// Pages whose delete from this device the server applied, with the
+  /// strategy revision the delete made. See [_deletedHere].
   final Map<String, int> _pagesDeletedHere = {};
 
-  /// The ack batch [_pagesDeletedHere] last took deletes from, so an old
-  /// batch never marks a page restored since as deleted here again.
-  List<AckedEntityIntent>? _notedAckBatch;
+  /// The latest strategy revision at which each page was seen live.
+  final Map<String, int> _pagesSeenLiveAt = {};
 
   @override
   StrategyPageSessionState build() {
@@ -185,11 +180,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           return;
         }
         if (snapshot.header.publicId == strategyState.strategyId) {
-          _pagesDeletedHere.removeWhere(
-            (pageId, deletedAtRevision) =>
-                snapshot.header.revision >= deletedAtRevision &&
-                snapshot.pages.any((page) => page.publicId == pageId),
-          );
+          for (final page in snapshot.pages) {
+            _pagesSeenLiveAt.update(
+              page.publicId,
+              (seen) => max(seen, snapshot.header.revision),
+              ifAbsent: () => snapshot.header.revision,
+            );
+          }
         }
 
         final pageIds = [...snapshot.pages]
@@ -949,7 +946,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // Work on it the server paused or refused stays in the sync status.
     final queue = ref.read(strategyOpQueueProvider);
     _notePagesDeletedHere(queue);
-    if (_pagesDeletedHere.containsKey(pageId)) return false;
+    if (_deletedHere(pageId)) return false;
     final descriptor = EntitySyncKey.pageDescriptor(pageId);
     if ([
       queue.queuedByEntityKey[descriptor]?.pending.op,
@@ -975,8 +972,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// Called from the check as well as the queue listener: a listener
   /// registered earlier (save state) can run the check first.
   void _notePagesDeletedHere(StrategyOpQueueState queue) {
-    if (identical(queue.lastAckBatch, _notedAckBatch)) return;
-    _notedAckBatch = queue.lastAckBatch;
     for (final acked in queue.lastAckBatch) {
       // Only a delete the server applied took the page away. A no-op says
       // it was already gone, not by whom: a teammate may have deleted it
@@ -989,6 +984,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         _pagesDeletedHere[pagePublicId] = revision;
       }
     }
+  }
+
+  /// Whether [pageId]'s disappearing is this device's delete: one the server
+  /// applied that is newer than the page was last seen live. Seen live at
+  /// the delete's revision or later, the page was restored after it (the
+  /// delete's own revision never lists it), and a later delete is someone's
+  /// new one, whichever order the ack and the reads arrive in.
+  bool _deletedHere(String pageId) {
+    final deletedAt = _pagesDeletedHere[pageId];
+    return deletedAt != null && (_pagesSeenLiveAt[pageId] ?? -1) < deletedAt;
   }
 
   /// Lets the deleted page on screen go, with the unsaved work on it, and

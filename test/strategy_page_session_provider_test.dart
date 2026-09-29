@@ -1838,9 +1838,15 @@ void main() {
   });
 
   // How the server answers this device's delete: applied at once; on a
-  // replay after its first answer was lost, before the restore; or on that
-  // replay only after the teammate's second delete.
-  for (final answer in ['applied', 'replayed', 'replayed last']) {
+  // replay after its first answer was lost, before the restore; or only
+  // after the teammate's second delete, applied (published late) or on the
+  // replay.
+  for (final answer in [
+    'applied',
+    'replayed',
+    'applied last',
+    'replayed last',
+  ]) {
     test(
         "a page this device deleted, restored, then deleted by a teammate "
         'still tells the user (delete $answer)', () async {
@@ -1900,7 +1906,7 @@ void main() {
       await _settle();
       // With its delete unanswered, the canvas waits on page one; otherwise
       // it moves on, and comes back once a teammate restores the page.
-      final waiting = answer == 'replayed last';
+      final waiting = answer.endsWith('last');
       expect(container.read(strategyPageSessionProvider).activePageId,
           waiting ? one.publicId : two.publicId);
       remote.setSnapshot(shell([one, two], loadedTwo, revision: 3));
@@ -1931,9 +1937,12 @@ void main() {
       container.read(editorPointersProvider.notifier).release(1);
       await _settle();
       final stroke = container.read(drawingProvider).elements.single.id;
-      if (answer == 'replayed last') {
+      if (waiting) {
         queue.ackQueued(
-            ack: (opId) => NoopOpAck(opId: opId, currentRevision: 4));
+          ack: (opId) => answer == 'applied last'
+              ? AppliedOpAck(opId: opId, revision: 2)
+              : NoopOpAck(opId: opId, currentRevision: 4),
+        );
         await _settle();
       }
 
