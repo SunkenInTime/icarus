@@ -318,15 +318,17 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   }
 
   /// Pages [retryRestoredPage] was asked for, with whether any of the
-  /// page's work was still in flight then.
-  final List<({String pageId, bool inFlight})> restoredPageRetries = [];
+  /// page's work was still in flight then, and whether any was refused.
+  final List<({String pageId, bool inFlight, bool refused})>
+      restoredPageRetries = [];
 
   @override
   Future<void> retryRestoredPage(String pageId) async {
+    bool onPage(EntitySyncKey key) => key.pageId == pageId;
     restoredPageRetries.add((
       pageId: pageId,
-      inFlight:
-          state.inFlightByEntityKey.keys.any((key) => key.pageId == pageId),
+      inFlight: state.inFlightByEntityKey.keys.any(onPage),
+      refused: state.attentionByEntityKey.keys.any(onPage),
     ));
   }
 
@@ -1607,8 +1609,8 @@ void main() {
     // the changes the server refused while the page was in its trash.
     expect(strokeIsQueued(container, one.publicId, strokeId), isTrue);
     expect(queue.flushNowCount, greaterThan(flushesBefore));
-    expect(
-        queue.restoredPageRetries, [(pageId: one.publicId, inFlight: false)]);
+    expect(queue.restoredPageRetries,
+        [(pageId: one.publicId, inFlight: false, refused: false)]);
     // The live read is back on the page on screen.
     expect(
       container
@@ -1735,8 +1737,54 @@ void main() {
         .restoreDeletedPage();
 
     expect(outcome, DeletedPageRestore.restored);
-    expect(
-        queue.restoredPageRetries, [(pageId: one.publicId, inFlight: false)]);
+    expect(queue.restoredPageRetries,
+        [(pageId: one.publicId, inFlight: false, refused: false)]);
+  });
+
+  test(
+      'a send whose answer was lost, refused on replay after the restore, '
+      'is sent again', () async {
+    late _FakeRemoteEditorNotifier server;
+    late RemotePage pageOne;
+    late RemotePage pageTwo;
+    final repository = _RestoringRepository(
+        (_) => serverRestoresPageOne(server, pageOne, pageTwo));
+    final (:container, :remote, :queue, :one, :two, strokeId: _) =
+        await strokeOnDeletedPage(repository: repository);
+    (server, pageOne, pageTwo) = (remote, one, two);
+    // Sent while the page was in the trash; the server refused it, but the
+    // answer was lost, so it waits to be replayed under its own op id.
+    final lost = EntitySyncKey.element(one.publicId, 'lost');
+    await queue.syncDesiredGenericOp(
+      entityKey: lost,
+      desiredOp: ElementDeleteOp(
+        opId: 'lost-op',
+        pagePublicId: one.publicId,
+        elementPublicId: 'lost',
+        expectedElementRevision: 1,
+      ),
+    );
+    // The flush replays it and gets the recorded refusal; the rest lands.
+    queue.onFlush = () {
+      final replayed = queue.state.queuedByEntityKey[lost];
+      if (replayed == null) return;
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: {...queue.state.queuedByEntityKey}..remove(lost),
+        attentionByEntityKey: {lost: replayed},
+      );
+      queue.ackQueued();
+    };
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(outcome, DeletedPageRestore.restored);
+    // Once before the flush, and again for the refusal the replay brought.
+    expect(queue.restoredPageRetries, [
+      (pageId: one.publicId, inFlight: false, refused: false),
+      (pageId: one.publicId, inFlight: false, refused: true),
+    ]);
   });
 
   test('a restore whose earlier sends never answer keeps the notice', () async {

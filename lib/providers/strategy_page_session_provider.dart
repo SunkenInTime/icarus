@@ -1097,6 +1097,20 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         .read(strategyOpQueueProvider.notifier)
         .retryRestoredPage(deleted.pageId);
     await flushCurrentPage(flushImmediately: true);
+    // A send whose answer was lost replays under its own op id, and may be
+    // answered with the refusal the server recorded while the page was in
+    // the trash: once the page's sends are answered, those go again too.
+    // Sends still unanswered after the wait stay queued, saving as usual;
+    // a late refusal among them shows in the sync status, where Keep mine
+    // sends it again.
+    if (await _queueSettles((queue) => ![
+          queue.queuedByEntityKey,
+          queue.inFlightByEntityKey,
+        ].any((sends) => sends.keys.any((key) => key.pageId == deleted.pageId)))) {
+      await ref
+          .read(strategyOpQueueProvider.notifier)
+          .retryRestoredPage(deleted.pageId);
+    }
     // A later read may have shown the page gone again.
     return state.deletedPage == null && state.activePageId == deleted.pageId
         ? DeletedPageRestore.restored
