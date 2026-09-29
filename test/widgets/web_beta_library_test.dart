@@ -272,7 +272,7 @@ void main() {
       expect(find.text('Desktop-only for now'), findsOneWidget);
       expect(
         find.text(
-          'Export · Import · Video export · Drag and drop',
+          'Export · Import · Drag and drop',
         ),
         findsOneWidget,
       );

@@ -485,7 +485,7 @@ void main() {
     );
 
     expect(
-      () => StrategyImportExportService.strategyDataFromRemoteSnapshotForTest(
+      () => StrategyImportExportService.strategyDataFromRemoteSnapshot(
           snapshot),
       throwsA(
         isA<FormatException>().having(
