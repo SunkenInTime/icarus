@@ -30,6 +30,11 @@ type RootHarness = TestConvexForDataModelAndIdentity<DataModel>;
 const protocol = { clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION };
 const strategyPublicId = "referenced-assets-strategy";
 const pagePublicId = "referenced-assets-page";
+// Every image the tests' content ever showed, and one it never did.
+const asked = {
+  strategyPublicId,
+  assetPublicIds: ["removed", "shown", "shot", "never-placed"],
+};
 
 function identity(subject: string) {
   return {
@@ -125,14 +130,34 @@ async function seed(t: RootHarness): Promise<Harness> {
 }
 
 describe("images:listReferencedAssetIds", () => {
-  test("lists every image the strategy's content shows, deleted content left out", async () => {
+  test("answers which of the images asked about the strategy's content shows, deleted content left out", async () => {
     const t = convexTest(schema, modules);
     await t.run(markAssetReferencesReady);
     const owner = await seed(t);
 
     expect(
-      await owner.query(listReferencedAssetIds, { strategyPublicId }),
+      await owner.query(listReferencedAssetIds, asked),
     ).toEqual(["shot", "shown"]);
+  });
+
+  test("reads a bounded number of rows: it answers at most 100 images at once", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(markAssetReferencesReady);
+    const owner = await seed(t);
+    const many = Array.from({ length: 100 }, (_, index) => `image-${index}`);
+
+    expect(
+      await owner.query(listReferencedAssetIds, {
+        strategyPublicId,
+        assetPublicIds: [...many.slice(1), "shown"],
+      }),
+    ).toEqual(["shown"]);
+    await expect(
+      owner.query(listReferencedAssetIds, {
+        strategyPublicId,
+        assetPublicIds: [...many, "shown"],
+      }),
+    ).rejects.toThrow(/at most 100/);
   });
 
   test("is null until the reference backfill has finished", async () => {
@@ -140,7 +165,7 @@ describe("images:listReferencedAssetIds", () => {
     const owner = await seed(t);
 
     expect(
-      await owner.query(listReferencedAssetIds, { strategyPublicId }),
+      await owner.query(listReferencedAssetIds, asked),
     ).toBeNull();
   });
 
@@ -160,10 +185,10 @@ describe("images:listReferencedAssetIds", () => {
     const stranger = await user(t, "stranger");
 
     expect(
-      await viewer.query(listReferencedAssetIds, { strategyPublicId }),
+      await viewer.query(listReferencedAssetIds, asked),
     ).toEqual(["shot", "shown"]);
     await expect(
-      stranger.query(listReferencedAssetIds, { strategyPublicId }),
+      stranger.query(listReferencedAssetIds, asked),
     ).rejects.toThrow();
   });
 });

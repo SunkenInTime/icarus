@@ -455,7 +455,7 @@ void main() {
         store,
         strategyStore: ops,
         cloudReady: true,
-        referenceLoader: (_) {
+        referenceLoader: (_, __) {
           if (!started.isCompleted) started.complete();
           return snapshot.future;
         },
@@ -522,7 +522,7 @@ void main() {
     final container = _container(
       store,
       cloudReady: true,
-      referenceLoader: (_) async {
+      referenceLoader: (_, __) async {
         if (!snapshotAvailable) throw StateError('offline');
         return <String>{};
       },
@@ -587,7 +587,7 @@ void main() {
       store,
       accountId: 'account-b',
       cloudReady: true,
-      referenceLoader: (_) async {
+      referenceLoader: (_, __) async {
         snapshotReads += 1;
         return <String>{};
       },
@@ -715,7 +715,7 @@ void main() {
       strategyStore: MemoryDurableStrategyOutboxStore(),
       cloudReady: true,
       cloudEnabled: true,
-      referenceLoader: (_) async => <String>{},
+      referenceLoader: (_, __) async => <String>{},
     );
     addTearDown(container.dispose);
 
@@ -868,7 +868,7 @@ void main() {
       strategyStore: MemoryDurableStrategyOutboxStore(),
       strategyOpen: false,
       cloudReady: true,
-      referenceLoader: (strategyId) async {
+      referenceLoader: (strategyId, _) async {
         snapshotReads += 1;
         expect(strategyId, 'strategy-a');
         return snapshot;
@@ -924,7 +924,7 @@ void main() {
       strategyStore: MemoryDurableStrategyOutboxStore(),
       strategyOpen: false,
       cloudReady: true,
-      referenceLoader: (_) async => <String>{},
+      referenceLoader: (_, __) async => <String>{},
     );
     addTearDown(container.dispose);
 
@@ -960,7 +960,7 @@ void main() {
       strategyStore: MemoryDurableStrategyOutboxStore(),
       cloudReady: true,
       cloudEnabled: true,
-      referenceLoader: (_) async => <String>{},
+      referenceLoader: (_, __) async => <String>{},
     );
     addTearDown(container.dispose);
 
@@ -980,7 +980,7 @@ void main() {
       mediaStore,
       strategyStore: MemoryDurableStrategyOutboxStore(),
       cloudReady: true,
-      referenceLoader: (_) async => <String>{},
+      referenceLoader: (_, __) async => <String>{},
     );
     addTearDown(container.dispose);
     final queue = container.read(cloudMediaUploadQueueProvider.notifier);
@@ -1116,7 +1116,7 @@ void main() {
         // With [serverRepository], its answers are the server's.
         if (serverRepository == null)
           cloudMediaReferenceLoaderProvider.overrideWithValue(
-            referenceLoader ?? (_) async => {'server-image'},
+            referenceLoader ?? (_, __) async => {'server-image'},
           ),
       ]);
       return (
@@ -1338,7 +1338,7 @@ void main() {
       final (:container, :repository, :goOnline) = setUp(
         mediaStore: mediaStore,
         strategyStore: MemoryDurableStrategyOutboxStore(),
-        referenceLoader: (_) async {
+        referenceLoader: (_, __) async {
           reads += 1;
           if (reads == 1) throw StateError('read failed');
           return <String>{};
@@ -1368,7 +1368,7 @@ void main() {
       final (:container, :repository, :goOnline) = setUp(
         mediaStore: mediaStore,
         strategyStore: MemoryDurableStrategyOutboxStore(),
-        referenceLoader: (_) {
+        referenceLoader: (_, __) {
           reads += 1;
           // A second, overlapping check could not tell and let it upload.
           if (reads > 1) throw StateError('read failed');
@@ -1455,8 +1455,11 @@ class _ReferencingRepository extends _UploadRecordingRepository {
   final Set<String>? referenced;
 
   @override
-  Future<Set<String>?> fetchReferencedAssetIds(String strategyPublicId) async =>
-      referenced;
+  Future<Set<String>?> fetchReferencedAssetIds(
+    String strategyPublicId,
+    Iterable<String> assetPublicIds,
+  ) async =>
+      referenced?.intersection(assetPublicIds.toSet());
 
   @override
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(

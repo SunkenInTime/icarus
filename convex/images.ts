@@ -747,19 +747,42 @@ export const listForStrategy = query({
   },
 });
 
-/// Every image the strategy's content shows, deleted content left out. A
-/// client asks before it drops an upload it holds. Null until the reference
-/// backfill has finished, when it cannot be told.
+/// At most this many images are asked about at once, so the answer reads a
+/// bounded number of rows however much content the strategy has.
+export const MAX_REFERENCED_ASSET_IDS_PER_QUERY = 100;
+
+/// Which of [assetPublicIds] the strategy's content shows, deleted content
+/// left out. A client asks before it drops an upload it holds. Null until
+/// the reference backfill has finished, when it cannot be told.
 export const listReferencedAssetIds = query({
   args: {
     strategyPublicId: v.string(),
+    assetPublicIds: v.array(v.string()),
   },
   returns: v.union(v.array(v.string()), v.null()),
   handler: async (ctx, args) => {
+    if (args.assetPublicIds.length > MAX_REFERENCED_ASSET_IDS_PER_QUERY) {
+      throw invalidPayloadError(
+        `Ask about at most ${MAX_REFERENCED_ASSET_IDS_PER_QUERY} images at once.`,
+      );
+    }
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
     if (!(await assetReferencesReady(ctx))) return null;
-    return [...(await collectLiveAssetIds(ctx, strategy._id))].sort();
+    const referenced: string[] = [];
+    for (const assetPublicId of new Set(args.assetPublicIds)) {
+      const reference = await ctx.db
+        .query("assetReferences")
+        .withIndex("by_strategyId_and_assetPublicId_and_deleted", (q) =>
+          q
+            .eq("strategyId", strategy._id)
+            .eq("assetPublicId", assetPublicId)
+            .eq("deleted", false),
+        )
+        .first();
+      if (reference !== null) referenced.push(assetPublicId);
+    }
+    return referenced.sort();
   },
 });
 

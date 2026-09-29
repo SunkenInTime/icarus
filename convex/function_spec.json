@@ -40664,6 +40664,15 @@
       "args": {
         "type": "object",
         "value": {
+          "assetPublicIds": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"

@@ -418,6 +418,7 @@ abstract interface class ImagesModule {
     required String strategyPublicId,
   });
   ConvexQuery<List<String>?> listReferencedAssetIds({
+    required List<String> assetPublicIds,
     required String strategyPublicId,
   });
 }
@@ -543,9 +544,11 @@ final class _ImagesModule implements ImagesModule {
 
   @override
   ConvexQuery<List<String>?> listReferencedAssetIds({
+    required List<String> assetPublicIds,
     required String strategyPublicId,
   }) {
     final args = encodeImagesListReferencedAssetIdsArgs(
+      assetPublicIds: assetPublicIds,
       strategyPublicId: strategyPublicId,
     );
     return ConvexQuery(

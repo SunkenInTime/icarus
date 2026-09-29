@@ -97,11 +97,13 @@ final cloudMediaUploadQueueProvider =
   CloudMediaUploadQueueNotifier.new,
 );
 
-/// Every image a strategy's content shows on the server, on any of its pages,
-/// or null while the server cannot tell. Asked before a pending upload is
-/// dropped as no longer wanted.
+/// Which of the images asked about a strategy's content shows on the
+/// server, on any of its pages, or null while the server cannot tell. Asked
+/// before a pending upload is dropped as no longer wanted.
 typedef CloudMediaReferenceLoader = Future<Set<String>?> Function(
-    String strategyPublicId);
+  String strategyPublicId,
+  Iterable<String> assetPublicIds,
+);
 
 final cloudMediaReferenceLoaderProvider = Provider<CloudMediaReferenceLoader>(
   (ref) => ref.watch(convexStrategyRepositoryProvider).fetchReferencedAssetIds,
@@ -378,6 +380,7 @@ class CloudMediaUploadQueueNotifier
         try {
           serverReferences = await ref.read(cloudMediaReferenceLoaderProvider)(
             strategyPublicId,
+            [for (final job in missingReferences) job.assetPublicId],
           );
         } catch (_) {
           serverReferences = null;
@@ -849,6 +852,7 @@ class CloudMediaUploadQueueNotifier
     try {
       serverReferences = await ref.read(cloudMediaReferenceLoaderProvider)(
         job.strategyPublicId,
+        [job.assetPublicId],
       );
     } catch (error) {
       _logMedia(
@@ -1139,8 +1143,10 @@ class CloudMediaUploadQueueNotifier
     for (final entry in byStrategy.entries) {
       final Set<String>? serverReferences;
       try {
-        serverReferences =
-            await ref.read(cloudMediaReferenceLoaderProvider)(entry.key);
+        serverReferences = await ref.read(cloudMediaReferenceLoaderProvider)(
+          entry.key,
+          [for (final job in entry.value) job.assetPublicId],
+        );
       } catch (error) {
         _logMedia(
           'reference_reconcile.deferred strategy=${entry.key} error=$error',
