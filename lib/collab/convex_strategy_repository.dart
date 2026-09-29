@@ -233,11 +233,13 @@ class ConvexStrategyRepository {
   Future<String?> getImageAssetUrl({
     required String strategyPublicId,
     required String assetPublicId,
+    String? shareToken,
   }) async {
     final result = await _api.images
         .getAssetUrl(
           strategyPublicId: strategyPublicId,
           assetPublicId: assetPublicId,
+          shareToken: _optional(shareToken),
         )
         .fetch();
     return result.url;

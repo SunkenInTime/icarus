@@ -47,21 +47,26 @@ final openCloudStrategyStoreProvider = Provider<OpenCloudStrategyStore>(
 /// reopens it through the link.
 final openCloudStrategyRecorderProvider = Provider.autoDispose<void>((ref) {
   final store = ref.watch(openCloudStrategyStoreProvider);
+  void record() {
+    final open = ref.read(strategyProvider);
+    final id = open.strategyId;
+    final throughLink = ref.read(shareLinkViewProvider)?.strategyPublicId == id;
+    if (open.source == StrategySource.cloud && id != null && !throughLink) {
+      store.write(id);
+    } else {
+      store.clear();
+    }
+  }
+
   ref.listen(
     strategyProvider.select(
       (strategy) => (id: strategy.strategyId, source: strategy.source),
     ),
-    (_, open) {
-      final id = open.id;
-      final throughLink =
-          ref.read(shareLinkViewProvider)?.strategyPublicId == id;
-      if (open.source == StrategySource.cloud && id != null && !throughLink) {
-        store.write(id);
-      } else {
-        store.clear();
-      }
-    },
+    (_, __) => record(),
     fireImmediately: true,
   );
+  // Redeeming the link of the strategy already open changes neither its id
+  // nor its source, but it is now the reader's own and reloads like one.
+  ref.listen(shareLinkViewProvider, (_, __) => record());
   ref.onDispose(store.clear);
 });

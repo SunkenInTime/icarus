@@ -266,6 +266,33 @@ void main() {
       await clearToasts(tester);
     });
 
+    testWidgets(
+        'a lookup that lands after sign-in redeemed the link is dropped',
+        (tester) async {
+      final repository = _LinkRepository(resolvesTo: 'strategy-1')
+        ..holdResolve = Completer<void>();
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: false, cloudReady: false),
+        repository: repository,
+      );
+      final controller = container.read(shareLinkControllerProvider.notifier);
+
+      // The signed-out lookup is still on the wire when sign-in finishes.
+      final lookup = controller.handleIncomingUri(link, source: 'test');
+      (container.read(authProvider.notifier) as _SettableAuthProvider)
+          .set(_auth(session: true, cloudReady: true));
+      await controller.redeemPendingIfPossible();
+      expect(repository.redeemed, [_code]);
+
+      repository.holdResolve!.complete();
+      await lookup;
+      await settleToasts(tester);
+      expect(container.read(shareLinkViewProvider), isNull,
+          reason: "the redeemed strategy is now the reader's own");
+      await clearToasts(tester);
+    });
+
     testWidgets('while signed out, a folder link asks the user to sign in',
         (tester) async {
       final store = MemoryPendingShareCodeStore();
@@ -437,8 +464,12 @@ class _LinkRepository extends Fake implements ConvexStrategyRepository {
   final Object? resolveError;
   final List<String> redeemed = [];
 
+  /// When set, lookups wait for it to complete.
+  Completer<void>? holdResolve;
+
   @override
   Future<String?> resolveSharedStrategy(String token) async {
+    await holdResolve?.future;
     if (resolveError case final error?) throw error;
     return resolvesTo;
   }

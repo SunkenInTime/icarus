@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -162,7 +163,13 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         _shareDialogHeadline(widget.title),
         softWrap: true,
       ),
-      description: Text(ShareLinkCopy.dialogDescription(widget.targetType)),
+      description: Text(
+        ShareLinkCopy.dialogDescription(
+          widget.targetType,
+          // Links made on web point at the web app (see currentShareOrigin).
+          opensInBrowser: kIsWeb,
+        ),
+      ),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),

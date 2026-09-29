@@ -11,17 +11,28 @@ void main() {
       contains('viewing through it without an account'),
     );
     for (final targetType in ['strategy', 'folder']) {
-      expect(
-        ShareLinkCopy.dialogDescription(targetType),
-        contains('until you disable them'),
-      );
+      for (final opensInBrowser in [true, false]) {
+        expect(
+          ShareLinkCopy.dialogDescription(
+            targetType,
+            opensInBrowser: opensInBrowser,
+          ),
+          contains('until you disable them'),
+        );
+      }
     }
+    // Only a strategy link that opens in a browser promises a view without
+    // an account; a desktop link hands off to an app the reader may lack.
     expect(
-      ShareLinkCopy.dialogDescription('strategy'),
+      ShareLinkCopy.dialogDescription('strategy', opensInBrowser: true),
       contains('no account needed'),
     );
     expect(
-      ShareLinkCopy.dialogDescription('folder'),
+      ShareLinkCopy.dialogDescription('strategy', opensInBrowser: false),
+      isNot(contains('no account')),
+    );
+    expect(
+      ShareLinkCopy.dialogDescription('folder', opensInBrowser: true),
       isNot(contains('no account')),
     );
   });

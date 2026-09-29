@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/services/local_image_file.dart';
 
 class CloudMediaCacheState {
@@ -123,11 +124,16 @@ class CloudMediaCacheNotifier extends Notifier<CloudMediaCacheState> {
     try {
       var response = await http.get(Uri.parse(asset.url!));
       if (_shouldRefreshSignedUrl(response.statusCode)) {
+        final linkView = ref.read(shareLinkViewProvider);
         final refreshed = await ref
             .read(convexStrategyRepositoryProvider)
             .getImageAssetUrl(
               strategyPublicId: strategyPublicId,
               assetPublicId: asset.publicId,
+              // A signed-out reader's only access is the link they opened.
+              shareToken: linkView?.strategyPublicId == strategyPublicId
+                  ? linkView!.token
+                  : null,
             );
         if (refreshed != null && refreshed.isNotEmpty) {
           response = await http.get(Uri.parse(refreshed));

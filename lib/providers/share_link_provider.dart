@@ -159,7 +159,7 @@ class ShareLinkController extends Notifier<String?> {
       final strategyPublicId = await ref
           .read(convexStrategyRepositoryProvider)
           .resolveSharedStrategy(token);
-      if (generation != _generation) return false;
+      if (_superseded(token, generation)) return false;
       if (strategyPublicId == null) {
         // Browsing a folder needs the cloud library, which needs an account.
         Settings.showToast(
@@ -173,7 +173,7 @@ class ShareLinkController extends Notifier<String?> {
       ref.read(sharedStrategyToOpenProvider.notifier).state = strategyPublicId;
       return true;
     } catch (error) {
-      if (generation != _generation) return false;
+      if (_superseded(token, generation)) return false;
       final revoked = isShareLinkRevokedError(error);
       if (revoked || isTypedConvexNotFoundError(error)) {
         _release(generation);
@@ -194,6 +194,11 @@ class ShareLinkController extends Notifier<String?> {
       return false;
     }
   }
+
+  /// Whether [token]'s attempt is stale: a newer code arrived, or sign-in
+  /// redeemed this one while the attempt was waiting on the server.
+  bool _superseded(String token, int generation) =>
+      generation != _generation || state != token;
 
   /// Drops the link a signed-out reader was viewing through, once it stopped
   /// working: there is nothing left to open or to redeem.
