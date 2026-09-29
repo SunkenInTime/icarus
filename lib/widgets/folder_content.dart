@@ -365,22 +365,6 @@ class FolderContent extends ConsumerWidget {
                                               childCount: strategies.length,
                                             ),
                                           ),
-                                        )
-                                      else if (folders.isNotEmpty)
-                                        // Show placeholder when only folders exist
-                                        const SliverFillRemaining(
-                                          hasScrollBody: false,
-                                          child: Center(
-                                            child: Padding(
-                                              padding: EdgeInsets.only(top: 48),
-                                              child: Text(
-                                                'No strategies in this folder',
-                                                style: TextStyle(
-                                                  color: Colors.grey,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
                                         ),
                                     ],
                                   );
