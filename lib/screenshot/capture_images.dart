@@ -103,31 +103,36 @@ Future<T> _guard<T>(Future<T> Function() load) async {
 /// live images: a widget asking for the same image finds it decoded, however
 /// full the cache gets, until [release].
 class _HeldImage {
-  _HeldImage._(this._stream, this._listener);
+  _HeldImage._(this._stream);
 
   final ImageStream _stream;
-  final ImageStreamListener _listener;
+  late final ImageStreamListener _listener;
+  bool _attached = false;
 
   /// Completes once [image]'s first frame is decoded.
   static Future<_HeldImage> decode(ImageProvider image) {
+    final hold = _HeldImage._(image.resolve(ImageConfiguration.empty));
     final decoded = Completer<_HeldImage>();
-    final stream = image.resolve(ImageConfiguration.empty);
-    late final ImageStreamListener listener;
-    listener = ImageStreamListener(
+    hold._listener = ImageStreamListener(
       (info, _) {
         info.dispose();
-        if (!decoded.isCompleted) {
-          decoded.complete(_HeldImage._(stream, listener));
-        }
+        if (!decoded.isCompleted) decoded.complete(hold);
       },
       onError: (Object error, StackTrace? stackTrace) {
-        stream.removeListener(listener);
+        hold.release();
         if (!decoded.isCompleted) decoded.completeError(error, stackTrace);
       },
     );
-    stream.addListener(listener);
+    hold._attached = true;
+    hold._stream.addListener(hold._listener);
     return decoded.future;
   }
 
-  void release() => _stream.removeListener(_listener);
+  /// Lets go of the image. Safe to call again: a later frame that fails to
+  /// decode lets go first, and the stream may be gone by the second call.
+  void release() {
+    if (!_attached) return;
+    _attached = false;
+    _stream.removeListener(_listener);
+  }
 }
