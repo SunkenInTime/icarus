@@ -46,6 +46,10 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   bool isPanning = false;
   bool isDragging = false;
   Offset? pinnedScreenPosition;
+
+  /// How far a mid-resize side switch moved the box away from the held
+  /// pointer, so the width keeps following the pointer's movement.
+  double pointerShift = 0;
   @override
   void initState() {
     localSize ??= widget.size;
@@ -54,6 +58,8 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
 
   /// A side switch mid-resize moves the pin to where the box now shows,
   /// so the position stored on release is read on the side it was pinned on.
+  /// The box leaves the held pointer behind, so later drag updates measure
+  /// from where the left edge was.
   @override
   void didUpdateWidget(covariant PlacedTextBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -66,7 +72,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     }
     final coordinateSystem = CoordinateSystem.instance;
     final boxSize = renderBox.size.bottomRight(Offset.zero);
-    pinnedScreenPosition = coordinateSystem.screenPositionForSide(
+    final nextPinned = coordinateSystem.screenPositionForSide(
       attackScreenPosition: coordinateSystem.screenPositionFromSide(
         sideScreenPosition: pinned,
         reflectionOffset: boxSize,
@@ -75,6 +81,8 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       reflectionOffset: boxSize,
       isAttack: widget.isAttack,
     );
+    pointerShift += nextPinned.dx - pinned.dx;
+    pinnedScreenPosition = nextPinned;
   }
 
   /// Stores the new width, and the position that keeps the box's top-left
@@ -107,6 +115,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       isPanning = false;
       isDragging = false;
       pinnedScreenPosition = null;
+      pointerShift = 0;
     });
   }
 
@@ -147,7 +156,8 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           final scale = ref.read(screenZoomProvider);
           final widthInScreenPixels =
               details.globalPosition.dx - leftEdgeGlobal.dx;
-          final widthInContentSpace = widthInScreenPixels / scale;
+          final widthInContentSpace =
+              widthInScreenPixels / scale + pointerShift;
           final widthInWorldSpace =
               coordinateSystem.screenWidthToWorld(widthInContentSpace);
 

@@ -210,6 +210,14 @@ void main() {
 
     side.value = true;
     await tester.pump();
+    // The box mirrors away from the held pointer, but keeps tracking its
+    // movement rather than jumping to it.
+    final widthAfterSwitch = tester.getRect(box).width;
+    await gesture.moveBy(const Offset(10, 0));
+    await tester.pump();
+    expect(tester.getRect(box).width, closeTo(widthAfterSwitch + 10, 1));
+    await gesture.moveBy(const Offset(-10, 0));
+    await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
 
