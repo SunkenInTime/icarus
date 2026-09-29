@@ -25,7 +25,7 @@ import type { StrategyRole } from "./lib/auth";
 import {
   getFolderByPublicId,
   getStrategyByPublicId,
-  isTrashed,
+  livePagesQuery,
 } from "./lib/entities";
 import {
   assertSupportedCloudProtocol,
@@ -168,11 +168,7 @@ async function summarizeStrategies(
       | NonNullable<Doc<"strategies">["themeOverridePalette"]>
       | null;
   }> => {
-    const pagesPromise = ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .take(100)
-      .then((pages) => pages.filter((page) => !isTrashed(page)));
+    const pagesPromise = livePagesQuery(ctx, strategy._id).take(100);
     const folderPromise =
       strategy.folderId === undefined
         ? Promise.resolve(null)
@@ -729,14 +725,8 @@ export const duplicate = mutation({
     // so no part of a copy is ever left behind.
     const budget = new DuplicateBudget();
     const pageIdMap = new Map<Id<"pages">, Id<"pages">>();
-    // Pages in the trash are not copied.
-    const sourcePages = (
-      await budget.read(
-        ctx.db
-          .query("pages")
-          .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
-      )
-    ).filter((page) => !isTrashed(page));
+    // Pages in the trash are not copied, nor read.
+    const sourcePages = await budget.read(livePagesQuery(ctx, source._id));
     for (const page of sourcePages) {
       const pageId = await ctx.db.insert("pages", {
         publicId: createPublicId(),
@@ -1008,10 +998,11 @@ const deleteStrategy = mutation({
       throw conflictError("Strategy revision mismatch");
     }
 
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    // Pages in the trash are left to their purge (purgeTrashedPages), which
+    // needs no strategy: one purge scheduled per page must stay within
+    // Convex's scheduling limit however many pages the trash holds. Nothing
+    // can reach or restore them once the strategy is gone.
+    const pages = await livePagesQuery(ctx, strategy._id).collect();
 
     for (const page of pages) {
       const pageContents = await ctx.db

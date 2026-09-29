@@ -5274,6 +5274,7 @@ List<LineupsListForPageResultItem> decodeLineupsListForStrategyResult(
 ConvexObject encodeOpsApplyBatchArgs({
   ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
   ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
+  ConvexOptional<bool> checkTrashedPageDeletes = const ConvexOptional.absent(),
   required String clientId,
   required double clientProtocolVersion,
   required List<OpsApplyBatchArgsOpsItem> ops,
@@ -5283,6 +5284,8 @@ ConvexObject encodeOpsApplyBatchArgs({
     'checkLineupEndDeletes': ConvexBoolean(checkLineupEndDeletes.value),
   if (checkLineupLinkEnds.isPresent)
     'checkLineupLinkEnds': ConvexBoolean(checkLineupLinkEnds.value),
+  if (checkTrashedPageDeletes.isPresent)
+    'checkTrashedPageDeletes': ConvexBoolean(checkTrashedPageDeletes.value),
   'clientId': ConvexString(clientId),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,

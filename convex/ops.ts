@@ -450,15 +450,38 @@ async function getPageByPublicIdOrNull(
     .first();
 }
 
-/// Refuses a change to content on a page in the trash, or on one an older
-/// delete removed whose rows wait to be purged. A change refused while its
-/// page is in the trash lands if the page is restored and it is sent again.
+/// Whether content on [pageId] can change: not on a page in the trash, nor
+/// on one an older delete removed whose rows wait to be purged.
+async function contentPageIsLive(
+  ctx: MutationCtx,
+  pageId: Id<"pages">,
+): Promise<boolean> {
+  const page = await ctx.db.get(pageId);
+  return page !== null && !isTrashed(page);
+}
+
+/// Refuses a change to content that is not on a live page. A change refused
+/// while its page is in the trash lands if the page is restored and it is
+/// sent again.
 async function assertContentPageLive(
   ctx: MutationCtx,
   pageId: Id<"pages">,
 ): Promise<void> {
-  const page = await ctx.db.get(pageId);
-  if (page === null || isTrashed(page)) throw pageDeletedError();
+  if (!(await contentPageIsLive(ctx, pageId))) throw pageDeletedError();
+}
+
+/// A delete of content on a page that is not live. A client that can
+/// restore pages is refused, so the delete is sent again once the page is
+/// back. Older clients get the no-op they got when a deleted page's content
+/// was purged: they cannot restore it, and have nothing left to delete.
+async function refuseDeleteOffLivePage(
+  ctx: MutationCtx,
+  row: Doc<"elements"> | Doc<"lineups">,
+  checkTrashedPageDeletes: boolean,
+): Promise<OperationResult | null> {
+  if (await contentPageIsLive(ctx, row.pageId)) return null;
+  if (checkTrashedPageDeletes) throw pageDeletedError();
+  return noop(row.revision, row.pageId);
 }
 
 /// The page a content op names to add to or move to: refused if it is not
@@ -666,13 +689,22 @@ async function getTargetSnapshot(
       payload: { settings: content.settings ?? null },
     };
   }
+  // Content on a page in the trash is not the server's current copy.
   if (op.entityType === "element") {
     const element = await getElementByPublicIdOrNull(ctx, publicId);
-    if (element === null || element.strategyId !== strategy._id) return null;
+    if (
+      element === null ||
+      element.strategyId !== strategy._id ||
+      !(await contentPageIsLive(ctx, element.pageId))
+    ) {
+      return null;
+    }
     return { revision: element.revision, payload: element.payload };
   }
   const lineup = await getLineupByPublicIdOrNull(ctx, strategy._id, publicId);
-  if (lineup === null) return null;
+  if (lineup === null || !(await contentPageIsLive(ctx, lineup.pageId))) {
+    return null;
+  }
   return { revision: lineup.revision, payload: lineup.payload };
 }
 
@@ -1160,6 +1192,7 @@ async function applyElementOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
+  checkTrashedPageDeletes: boolean,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
@@ -1240,7 +1273,12 @@ async function applyElementOp(
     if (existing === null || existing.strategyId !== strategy._id)
       return noop();
     if (existing.deleted) return noop(existing.revision, existing.pageId);
-    await assertContentPageLive(ctx, existing.pageId);
+    const offLivePage = await refuseDeleteOffLivePage(
+      ctx,
+      existing,
+      checkTrashedPageDeletes,
+    );
+    if (offLivePage !== null) return offLivePage;
     const mismatch = requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
       return rejected(
@@ -1330,6 +1368,7 @@ async function applyLineupOp(
   op: StrategyOp,
   checkLinkEnds: boolean,
   checkEndDeletes: boolean,
+  checkTrashedPageDeletes: boolean,
   liveLinkEnds: LiveLinkEnds,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
@@ -1416,7 +1455,12 @@ async function applyLineupOp(
     if (existing === null || existing.strategyId !== strategy._id)
       return noop();
     if (existing.deleted) return noop(existing.revision, existing.pageId);
-    await assertContentPageLive(ctx, existing.pageId);
+    const offLivePage = await refuseDeleteOffLivePage(
+      ctx,
+      existing,
+      checkTrashedPageDeletes,
+    );
+    if (offLivePage !== null) return offLivePage;
     const mismatch = requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
       return rejected(
@@ -1605,6 +1649,11 @@ export const applyBatch = mutation({
     // link deletes on its page (see assertLineupEndUnused). Older clients
     // may send them in any order, so their deletes are not checked.
     checkLineupEndDeletes: v.optional(v.boolean()),
+    // Set by clients that can restore a deleted page (pages:restore): a
+    // delete of content on a page in the trash is refused, to be sent again
+    // once the page is back. Older clients get the no-op a deleted page's
+    // purged content gave them (see refuseDeleteOffLivePage).
+    checkTrashedPageDeletes: v.optional(v.boolean()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
@@ -1694,7 +1743,12 @@ export const applyBatch = mutation({
           } else if (op.entityType === "pageContent") {
             result = await applyPageContentOp(ctx, strategy, op);
           } else if (op.entityType === "element") {
-            result = await applyElementOp(ctx, strategy, op);
+            result = await applyElementOp(
+              ctx,
+              strategy,
+              op,
+              args.checkTrashedPageDeletes === true,
+            );
           } else {
             result = await applyLineupOp(
               ctx,
@@ -1702,6 +1756,7 @@ export const applyBatch = mutation({
               op,
               args.checkLineupLinkEnds === true,
               args.checkLineupEndDeletes === true,
+              args.checkTrashedPageDeletes === true,
               liveLinkEnds,
             );
             if (result.status === "ack") {

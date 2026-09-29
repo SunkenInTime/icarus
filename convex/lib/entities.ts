@@ -75,16 +75,49 @@ export function isPastTrashRetention(
   );
 }
 
-/// The strategy's pages, leaving out those in the trash.
+/// The strategy's pages, leaving out those in the trash. Read through an
+/// index, so pages in the trash cost nothing here.
+export function livePagesQuery(ctx: AnyCtx, strategyId: Id<"strategies">) {
+  return ctx.db
+    .query("pages")
+    .withIndex("by_strategyId_and_deletedAt", (q) =>
+      q.eq("strategyId", strategyId).eq("deletedAt", undefined),
+    );
+}
+
 export async function listLivePages(
   ctx: AnyCtx,
   strategyId: Id<"strategies">,
 ): Promise<Doc<"pages">[]> {
-  const pages = await ctx.db
-    .query("pages")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
-    .collect();
-  return pages.filter((page) => !isTrashed(page));
+  return await livePagesQuery(ctx, strategyId).collect();
+}
+
+/// The elements and lineup rows, tombstones included, on [pages]. Read page
+/// by page, so content in the trash is never read, however much of it the
+/// strategy keeps.
+export async function contentOnPages(
+  ctx: AnyCtx,
+  pages: Doc<"pages">[],
+): Promise<{ elements: Doc<"elements">[]; lineups: Doc<"lineups">[] }> {
+  const [elements, lineups] = await Promise.all([
+    Promise.all(
+      pages.map((page) =>
+        ctx.db
+          .query("elements")
+          .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+          .collect(),
+      ),
+    ),
+    Promise.all(
+      pages.map((page) =>
+        ctx.db
+          .query("lineups")
+          .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+          .collect(),
+      ),
+    ),
+  ]);
+  return { elements: elements.flat(), lineups: lineups.flat() };
 }
 
 /// Stores [ordered] as the strategy's page order: each page's sortIndex

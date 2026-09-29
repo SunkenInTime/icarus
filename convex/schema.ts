@@ -68,6 +68,8 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_strategyId", ["strategyId"])
+    // Live pages only: `.eq("deletedAt", undefined)` matches a missing field.
+    .index("by_strategyId_and_deletedAt", ["strategyId", "deletedAt"])
     .index("by_deletedAt", ["deletedAt"]),
   pageContents: defineTable({
     pageId: v.id("pages"),

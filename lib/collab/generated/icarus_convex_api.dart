@@ -701,6 +701,8 @@ abstract interface class OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkTrashedPageDeletes =
+        const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
     required List<OpsApplyBatchArgsOpsItem> ops,
@@ -715,6 +717,8 @@ final class _OpsModule implements OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkTrashedPageDeletes =
+        const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
     required List<OpsApplyBatchArgsOpsItem> ops,
@@ -723,6 +727,7 @@ final class _OpsModule implements OpsModule {
     final args = encodeOpsApplyBatchArgs(
       checkLineupEndDeletes: checkLineupEndDeletes,
       checkLineupLinkEnds: checkLineupLinkEnds,
+      checkTrashedPageDeletes: checkTrashedPageDeletes,
       clientId: clientId,
       clientProtocolVersion: clientProtocolVersion,
       ops: ops,

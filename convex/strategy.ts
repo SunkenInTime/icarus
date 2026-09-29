@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import {
+  contentOnPages,
   getStrategyByPublicId,
   listLivePages,
   sortByNumberField,
@@ -67,17 +68,8 @@ export const getFullSnapshot = query({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "viewer");
     // Content on a page in the trash is left out with its page.
-    const [pages, elements, lineups] = await Promise.all([
-      listLivePages(ctx, strategy._id),
-      ctx.db
-        .query("elements")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-        .collect(),
-      ctx.db
-        .query("lineups")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-        .collect(),
-    ]);
+    const pages = await listLivePages(ctx, strategy._id);
+    const { elements, lineups } = await contentOnPages(ctx, pages);
     const orderedPages = sortByNumberField(pages, "sortIndex");
     const pagePublicIds = new Map(
       orderedPages.map((page) => [page._id, page.publicId]),

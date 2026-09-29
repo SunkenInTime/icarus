@@ -180,16 +180,19 @@ async function member(
 
 let opCounter = 0;
 
+/// Sends [ops] as a client that restores deleted pages does, or, with
+/// [oldClient], as one from before the trash.
 async function apply(
   user: Harness,
   ops: Array<Record<string, unknown>>,
-  clientId = "client",
+  { oldClient = false }: { oldClient?: boolean } = {},
 ): Promise<OpResult[]> {
   const result = (await user.mutation(applyBatch, {
     ...protocol,
     strategyPublicId,
-    clientId,
+    clientId: "client",
     ops: ops.map((op) => ({ opId: `op-${++opCounter}`, ...op })),
+    ...(oldClient ? {} : { checkTrashedPageDeletes: true }),
   })) as { results: OpResult[] };
   return result.results;
 }
@@ -703,6 +706,71 @@ describe("page trash", () => {
     );
   });
 
+  test("an old client's delete of content on a trashed page gets the no-op it got when the content was purged", async () => {
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    await deleteB(owner);
+    const trashed = await pageRow(t, pageB);
+    const before = await rowsOnPage(t, trashed!._id);
+
+    const results = await apply(
+      owner,
+      [
+        {
+          type: "element.delete",
+          elementPublicId: "b-agent",
+          pagePublicId: pageB,
+          expectedElementRevision: 1,
+        },
+        {
+          type: "lineup.delete",
+          lineupPublicId: "lineupLink:k",
+          pagePublicId: pageB,
+          expectedLineupRevision: 1,
+        },
+        // Anything that adds or changes content is still refused.
+        {
+          type: "element.patch",
+          elementPublicId: "b-text",
+          pagePublicId: pageB,
+          payload: textPayload("edited"),
+          expectedElementRevision: 1,
+        },
+      ],
+      { oldClient: true },
+    );
+
+    expect(results).toMatchObject([
+      { status: "noop" },
+      { status: "noop" },
+      { status: "failed", code: "PAGE_DELETED" },
+    ]);
+    // Nothing on the page changed: restoring it brings it back whole.
+    expect(await rowsOnPage(t, trashed!._id)).toEqual(before);
+  });
+
+  test("a replayed rejection shows no current copy of content in the trash", async () => {
+    const { owner } = await createHarness();
+    await seed(owner);
+    const stale = {
+      opId: "stale-edit",
+      type: "element.patch",
+      elementPublicId: "b-text",
+      pagePublicId: pageB,
+      payload: textPayload("stale"),
+      expectedElementRevision: 7,
+    };
+    expect(await apply(owner, [stale])).toMatchObject([
+      { status: "rejected", current: { revision: 1 } },
+    ]);
+    await deleteB(owner);
+
+    // The answer was lost; the same op is sent again.
+    const [replayed] = await apply(owner, [stale]);
+    expect(replayed).toMatchObject({ status: "rejected" });
+    expect(replayed).not.toHaveProperty("current");
+  });
+
   test("a trashed page is kept for the whole retention, then cannot be restored and is purged with everything on it", async () => {
     vi.useFakeTimers();
     const { t, owner } = await createHarness();
@@ -902,7 +970,7 @@ describe("page trash", () => {
     expect(copyPageCount).toBe(2);
   });
 
-  test("deleting the strategy removes its trashed pages with everything else", async () => {
+  test("deleting the strategy leaves its trashed pages to the trash purge", async () => {
     vi.useFakeTimers();
     const { t, owner } = await createHarness();
     await seed(owner);
@@ -914,6 +982,13 @@ describe("page trash", () => {
       strategyPublicId,
       expectedRevision: await strategyRevision(owner),
     });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // Live pages go now, one scheduled purge each; the trash waits.
+    expect(await pageRow(t, pageA)).toBeNull();
+    expect(await pageRow(t, pageB)).not.toBeNull();
+
+    vi.setSystemTime(Date.now() + PAGE_TRASH_RETENTION_MS + 1);
+    await t.mutation(purgeTrashedPages, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     expect(await pageRow(t, pageB)).toBeNull();

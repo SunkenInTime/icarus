@@ -1,6 +1,5 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { isTrashed } from "./entities";
 
 /// Reads the agent type of one agent element or lineup payload. The client
 /// stores the agent enum name under `type` (an element) or under
@@ -47,11 +46,11 @@ export async function refreshStrategyAgentSummary(
     (
       await ctx.db
         .query("pages")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+        .withIndex("by_strategyId_and_deletedAt", (q) =>
+          q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+        )
         .collect()
-    )
-      .filter(isTrashed)
-      .map((page) => page._id),
+    ).map((page) => page._id),
   );
   const onLivePage = (row: { pageId: Id<"pages"> }) =>
     !trashedPageIds.has(row.pageId);

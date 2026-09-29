@@ -271,6 +271,8 @@ class ConvexStrategyRepository {
       // An origin or landing delete is sent only with or after the link
       // deletes on its page, so the server may refuse one a live link names.
       checkLineupEndDeletes: const ConvexOptional.present(true),
+      // This client restores deleted pages, so it sends such a delete again.
+      checkTrashedPageDeletes: const ConvexOptional.present(true),
     );
     return result.results.map(_opAck).toList(growable: false);
   }

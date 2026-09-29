@@ -61423,6 +61423,12 @@
             },
             "optional": true
           },
+          "checkTrashedPageDeletes": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "clientId": {
             "fieldType": {
               "type": "string"
