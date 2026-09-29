@@ -156,11 +156,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   int _pageSessionGeneration = 0;
 
   /// Pages whose delete from this device the server accepted, with the
-  /// strategy revision it left. Their disappearing is the user's own doing,
-  /// whatever work is left on them. A page listed again at a later revision
-  /// is back (restored from the trash) and leaves the map: a later delete is
-  /// someone's new one. A read from before the delete still lists it at an
-  /// earlier revision, and changes nothing.
+  /// strategy revision the server answered with. Their disappearing is the
+  /// user's own doing, whatever work is left on them. A page listed at that
+  /// revision or later is back (restored from the trash) and leaves the map:
+  /// a later delete is someone's new one. An applied delete's own revision
+  /// never lists the page, and a replayed one answers with the current
+  /// revision. A read from before the delete lists it at an earlier
+  /// revision, and changes nothing.
   final Map<String, int> _pagesDeletedHere = {};
 
   /// The ack batch [_pagesDeletedHere] last took deletes from, so an old
@@ -186,7 +188,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         if (snapshot.header.publicId == strategyState.strategyId) {
           _pagesDeletedHere.removeWhere(
             (pageId, deletedAtRevision) =>
-                snapshot.header.revision > deletedAtRevision &&
+                snapshot.header.revision >= deletedAtRevision &&
                 snapshot.pages.any((page) => page.publicId == pageId),
           );
         }

@@ -92,32 +92,38 @@ export async function listLivePages(
   return await livePagesQuery(ctx, strategyId).collect();
 }
 
-/// The elements and lineup rows, tombstones included, on [pages]. Read page
-/// by page, so content in the trash is never read, however much of it the
-/// strategy keeps.
-export async function contentOnPages(
+/// The element rows, tombstones included, on [pages]. Read page by page,
+/// so content in the trash is never read, however much of it the strategy
+/// keeps.
+export async function elementsOnPages(
   ctx: AnyCtx,
   pages: Doc<"pages">[],
-): Promise<{ elements: Doc<"elements">[]; lineups: Doc<"lineups">[] }> {
-  const [elements, lineups] = await Promise.all([
-    Promise.all(
-      pages.map((page) =>
-        ctx.db
-          .query("elements")
-          .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-          .collect(),
-      ),
+): Promise<Doc<"elements">[]> {
+  const byPage = await Promise.all(
+    pages.map((page) =>
+      ctx.db
+        .query("elements")
+        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+        .collect(),
     ),
-    Promise.all(
-      pages.map((page) =>
-        ctx.db
-          .query("lineups")
-          .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-          .collect(),
-      ),
+  );
+  return byPage.flat();
+}
+
+/// The lineup rows on [pages]; see [elementsOnPages].
+export async function lineupsOnPages(
+  ctx: AnyCtx,
+  pages: Doc<"pages">[],
+): Promise<Doc<"lineups">[]> {
+  const byPage = await Promise.all(
+    pages.map((page) =>
+      ctx.db
+        .query("lineups")
+        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+        .collect(),
     ),
-  ]);
-  return { elements: elements.flat(), lineups: lineups.flat() };
+  );
+  return byPage.flat();
 }
 
 /// Stores [ordered] as the strategy's page order: each page's sortIndex

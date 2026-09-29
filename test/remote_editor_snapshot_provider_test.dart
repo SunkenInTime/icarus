@@ -137,6 +137,80 @@ void main() {
     expect(snapshot?.pages.map((page) => page.publicId), ['a', 'b']);
     expect(remote.activePagePublicId, 'a');
   });
+
+  test('a refresh never replaces a newer shell the live read brought',
+      () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'b');
+
+    // A refresh reads the shell from while a was deleted, then waits on b.
+    repository.shellRevision = 2;
+    repository.failPageReads = false;
+    final gate = Completer<void>();
+    repository.pageReadGate = gate;
+    final refresh = remote.refresh();
+    await _settle();
+    // Meanwhile a teammate restores a; the live read brings it.
+    repository.shells.add(_shell(['a', 'b'], revision: 3));
+    await _settle();
+    gate.complete();
+    await refresh;
+
+    final snapshot = container.read(remoteEditorSnapshotProvider).valueOrNull;
+    expect(snapshot?.header.revision, 3);
+    expect(snapshot?.pages.map((page) => page.publicId), ['a', 'b']);
+  });
+
+  test('a page read a restore overtook failing late changes nothing', () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+
+    // A is deleted: the editor starts reading b, slowly, and it will fail.
+    final gate = Completer<void>();
+    repository.pageReadGate = gate;
+    repository.failNextRead.add('b');
+    final selectB = remote.setActivePage('b');
+    await _settle();
+    // A is restored and shown before b's read answers.
+    await remote.showRestoredPage('a');
+    gate.complete();
+    await selectB;
+
+    final state = container.read(remoteEditorSnapshotProvider);
+    expect(state.hasError, isFalse);
+    expect(state.valueOrNull?.activePage?.page.publicId, 'a');
+    repository.pageStreams['a']!.add(_page('a', revision: 2));
+    await _settle();
+    expect(
+      container
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.page
+          .revision,
+      2,
+    );
+  });
 }
 
 Future<void> _settle() async {
@@ -197,6 +271,12 @@ class _Repository extends ConvexStrategyRepository {
   /// The revision of the shell reads answer.
   int shellRevision = 1;
 
+  /// While set, the next page read waits for it, then answers as usual.
+  Completer<void>? pageReadGate;
+
+  /// Pages whose next read fails.
+  final failNextRead = <String>{};
+
   @override
   Future<RemoteStrategyShell> fetchShell(String strategyPublicId) async {
     final gate = staleShellGate;
@@ -217,7 +297,14 @@ class _Repository extends ConvexStrategyRepository {
     required String strategyPublicId,
     required String pagePublicId,
   }) async {
-    if (failPageReads) throw StateError('offline');
+    final gate = pageReadGate;
+    if (gate != null) {
+      pageReadGate = null;
+      await gate.future;
+    }
+    if (failPageReads || failNextRead.remove(pagePublicId)) {
+      throw StateError('offline');
+    }
     return _page(pagePublicId);
   }
 

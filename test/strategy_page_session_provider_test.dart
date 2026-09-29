@@ -219,15 +219,17 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     await onFlush?.call();
   }
 
-  /// Lands every queued op, as the server accepting them all.
-  void ackQueued() {
+  /// Lands every queued op, as the server accepting them all, each with
+  /// [ack] if given.
+  void ackQueued({OpAck Function(String opId)? ack}) {
     final landed = state.queuedByEntityKey.values.toList();
     final acks = [
       for (final intent in landed)
         AckedEntityIntent(
           entityKey: intent.entityKey,
           op: intent.pending.op,
-          ack: AppliedOpAck(opId: intent.pending.op.opId, revision: 1),
+          ack: ack?.call(intent.pending.op.opId) ??
+              AppliedOpAck(opId: intent.pending.op.opId, revision: 1),
         ),
     ];
     state = state.copyWith(
@@ -1292,18 +1294,20 @@ void main() {
             .values
             .any((intent) => intent.pending.op is PageDeleteOp);
         if (!deleting) return;
+        // The delete moves the strategy from revision 1 to 2.
         void dropPage() => remote.setSnapshot(_editorSnapshot(
               pages: [two],
               activePage: _pageSnapshot(two, text: 'two'),
+              shellRevision: 2,
               themeProfileId:
                   MapThemeProfilesProvider.immutableDefaultProfileId,
             ));
         if (snapshotFirst) {
           dropPage();
           await _settle();
-          queue.ackQueued();
+          queue.ackQueued(ack: (opId) => AppliedOpAck(opId: opId, revision: 2));
         } else {
-          queue.ackQueued();
+          queue.ackQueued(ack: (opId) => AppliedOpAck(opId: opId, revision: 2));
           dropPage();
         }
       };
@@ -1785,93 +1789,102 @@ void main() {
     expect(container.read(textProvider).single.text, 'one');
   });
 
-  test(
-      "a page this device deleted, restored, then deleted by a teammate "
-      'still tells the user', () async {
-    final one = _page('page-1', 0, name: 'A exec');
-    final two = _page('page-2', 1);
-    final loadedOne = _pageSnapshot(
-      one,
-      settings: StrategySettings().toJson(),
-      elements: const [],
-    );
-    final loadedTwo = _pageSnapshot(
-      two,
-      settings: StrategySettings().toJson(),
-      elements: const [],
-    );
-    RemoteEditorSnapshot shell(
-      List<RemotePage> pages,
-      RemotePageSnapshot on, {
-      int revision = 1,
-    }) =>
-        _editorSnapshot(
-          pages: pages,
-          activePage: on,
-          shellRevision: revision,
-          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
-        );
-    final remote = _FakeRemoteEditorNotifier(shell([one, two], loadedOne),
-        pageCatalog: {one.publicId: loadedOne, two.publicId: loadedTwo});
-    final queue = _FakeStrategyOpQueueNotifier();
-    final container = await _cloudContainer(remote: remote, queue: queue);
-    final session = container.read(strategyPageSessionProvider.notifier);
-    await session.initializeForStrategy(
-      strategyId: 'cloud-strategy',
-      source: StrategySource.cloud,
-      selectFirstPageIfNeeded: true,
-    );
+  for (final replayed in [false, true]) {
+    test(
+        "a page this device deleted, restored, then deleted by a teammate "
+        'still tells the user (delete answered on replay: $replayed)',
+        () async {
+      final one = _page('page-1', 0, name: 'A exec');
+      final two = _page('page-2', 1);
+      final loadedOne = _pageSnapshot(
+        one,
+        settings: StrategySettings().toJson(),
+        elements: const [],
+      );
+      final loadedTwo = _pageSnapshot(
+        two,
+        settings: StrategySettings().toJson(),
+        elements: const [],
+      );
+      RemoteEditorSnapshot shell(
+        List<RemotePage> pages,
+        RemotePageSnapshot on, {
+        int revision = 1,
+      }) =>
+          _editorSnapshot(
+            pages: pages,
+            activePage: on,
+            shellRevision: revision,
+            themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+          );
+      final remote = _FakeRemoteEditorNotifier(shell([one, two], loadedOne),
+          pageCatalog: {one.publicId: loadedOne, two.publicId: loadedTwo});
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      final session = container.read(strategyPageSessionProvider.notifier);
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+      );
 
-    // This device deletes page one; the server accepts it.
-    await queue.syncDesiredGenericOp(
-      entityKey: EntitySyncKey.pageDescriptor(one.publicId),
-      desiredOp: PageDeleteOp(
-        opId: 'delete-one',
-        pagePublicId: one.publicId,
-        expectedStrategyRevision: 1,
-      ),
-    );
-    queue.ackQueued();
-    remote.setSnapshot(shell([two], loadedTwo));
-    await _settle();
-    await _settle();
-    expect(
-        container.read(strategyPageSessionProvider).activePageId, two.publicId);
+      // This device deletes page one; the server accepts it.
+      await queue.syncDesiredGenericOp(
+        entityKey: EntitySyncKey.pageDescriptor(one.publicId),
+        desiredOp: PageDeleteOp(
+          opId: 'delete-one',
+          pagePublicId: one.publicId,
+          expectedStrategyRevision: 1,
+        ),
+      );
+      // A delete whose first answer was lost is answered on replay with the
+      // strategy's revision by then: the teammate's restore, below.
+      queue.ackQueued(
+        ack: replayed
+            ? (opId) => NoopOpAck(opId: opId, currentRevision: 2)
+            : null,
+      );
+      remote.setSnapshot(shell([two], loadedTwo));
+      await _settle();
+      await _settle();
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          two.publicId);
 
-    // A teammate restores it, and the user goes back to it.
-    remote.setSnapshot(shell([one, two], loadedTwo, revision: 2));
-    await _settle();
-    await session.setActivePage(one.publicId);
-    await _settle();
-    expect(
-        container.read(strategyPageSessionProvider).activePageId, one.publicId);
+      // A teammate restores it, and the user goes back to it.
+      remote.setSnapshot(shell([one, two], loadedTwo, revision: 2));
+      await _settle();
+      await session.setActivePage(one.publicId);
+      await _settle();
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          one.publicId);
 
-    // A teammate deletes it mid-stroke.
-    container.read(editorPointersProvider.notifier)
-      ..markCanvas(1)
-      ..down(1);
-    container.read(drawingProvider.notifier).startFreeDrawing(
-        const Offset(10, 20),
-        CoordinateSystem.instance,
-        Colors.white,
-        2,
-        false,
-        false,
-        false,
-        TraversalSpeedProfile.values.first);
-    remote.setSnapshot(shell([two], loadedTwo, revision: 3));
-    await _settle();
-    container
-        .read(drawingProvider.notifier)
-        .finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
-    container.read(editorPointersProvider.notifier).release(1);
-    await _settle();
+      // A teammate deletes it mid-stroke.
+      container.read(editorPointersProvider.notifier)
+        ..markCanvas(1)
+        ..down(1);
+      container.read(drawingProvider.notifier).startFreeDrawing(
+          const Offset(10, 20),
+          CoordinateSystem.instance,
+          Colors.white,
+          2,
+          false,
+          false,
+          false,
+          TraversalSpeedProfile.values.first);
+      remote.setSnapshot(shell([two], loadedTwo, revision: 3));
+      await _settle();
+      container
+          .read(drawingProvider.notifier)
+          .finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
 
-    // Before, the old delete still counted as this device's and the stroke
-    // could be dropped unseen.
-    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
-        one.publicId);
-  });
+      // Before, the old delete still counted as this device's and the stroke
+      // could be dropped unseen.
+      expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+          one.publicId);
+    });
+  }
 
   test('a deleted page with nothing unsent gives way to one that exists',
       () async {

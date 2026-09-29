@@ -2,9 +2,9 @@ import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
 import {
-  contentOnPages,
   getPageByPublicId,
   getStrategyByPublicId,
+  lineupsOnPages,
   listLivePages,
 } from "./lib/entities";
 import { errorWithCode } from "./lib/errors";
@@ -61,7 +61,7 @@ export const listForStrategy = query({
     );
 
     // Page by page: content in the trash is never read.
-    const { lineups } = await contentOnPages(ctx, pages);
+    const lineups = await lineupsOnPages(ctx, pages);
 
     return lineups
       .sort((a, b) => a.sortIndex - b.sortIndex)

@@ -93,6 +93,10 @@ class RemoteEditorSnapshotNotifier
       await _startPageSubscription(strategyPublicId, pagePublicId);
       return page;
     } catch (error, stackTrace) {
+      // A newer selection or read took over; its outcome stands.
+      if (epoch != _pageEpoch || pagePublicId != _activePagePublicId) {
+        return null;
+      }
       _handleReadError(
         source: 'remote_editor:page_refresh',
         error: error,
@@ -150,7 +154,7 @@ class RemoteEditorSnapshotNotifier
     try {
       final repository = ref.read(convexStrategyRepositoryProvider);
       final shell = await repository.fetchShell(strategyPublicId);
-      if (epoch != _readEpoch) return;
+      if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       var pageId = _activePagePublicId;
       if (pageId == null ||
           !shell.pages.any((page) => page.publicId == pageId)) {
@@ -163,7 +167,7 @@ class RemoteEditorSnapshotNotifier
               strategyPublicId: strategyPublicId,
               pagePublicId: pageId,
             );
-      if (epoch != _readEpoch) return;
+      if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       state = AsyncData(RemoteEditorSnapshot(shell: shell, activePage: page));
       if (page != null) _reconcilePageMedia(page);
     } catch (error, stackTrace) {
@@ -176,6 +180,16 @@ class RemoteEditorSnapshotNotifier
     }
   }
 
+  /// Whether the shell held is newer than [shell]: a page just restored, say.
+  /// An older shell arriving late, from a read or the live one, must not
+  /// undo it.
+  bool _holdsNewerShell(RemoteStrategyShell shell) {
+    final current = state.valueOrNull;
+    return current != null &&
+        current.header.publicId == shell.header.publicId &&
+        shell.header.revision < current.header.revision;
+  }
+
   Future<void> _startShellSubscription(String strategyPublicId) async {
     await _shellSubscription?.cancel();
     _shellSubscription = ref
@@ -186,13 +200,7 @@ class RemoteEditorSnapshotNotifier
         if (_activeStrategyPublicId != strategyPublicId ||
             ref.read(authProvider).hasActiveAuthIncident) return;
         final current = state.valueOrNull;
-        // A read may already hold a newer shell (say, with a page just
-        // restored); an older one arriving late must not undo it.
-        if (current != null &&
-            current.header.publicId == shell.header.publicId &&
-            shell.header.revision < current.header.revision) {
-          return;
-        }
+        if (_holdsNewerShell(shell)) return;
         state = AsyncData(RemoteEditorSnapshot(
           shell: shell,
           activePage: current?.activePage,
