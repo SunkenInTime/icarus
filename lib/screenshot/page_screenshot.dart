@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -7,6 +6,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -40,11 +40,11 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
   if (strategyId == null) {
     throw StateError('No strategy is open to capture.');
   }
-  final page = _editorPage(ref);
+  final page = editorPageSnapshot(ref);
   final mapState = ref.read(mapProvider);
   final theme = ref.read(strategyThemeProvider);
 
-  final images = await resolveCaptureImageSources(
+  final images = await resolveCaptureImages(
     {
       for (final image in page.imageData)
         image.id: readStrategyImageSource(
@@ -83,7 +83,9 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
   );
 
   final container = ProviderContainer(
-    overrides: [captureImageSourcesProvider.overrideWithValue(images)],
+    overrides: [
+      captureImageSourcesProvider.overrideWithValue(images.sources),
+    ],
   );
   CaptureGeometryLease? geometry;
   try {
@@ -116,25 +118,33 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
   } finally {
     geometry?.close();
     container.dispose();
+    images.release();
   }
 }
 
-/// The page on the canvas right now. Drawings are copied: a capture
-/// rebuilds their paths in screenshot coordinates, and the editor's own
-/// strokes must keep theirs.
-StrategyPage _editorPage(WidgetRef ref) {
-  final lineUps = ref.read(lineUpProvider).graph;
+/// A copy of the page on the canvas right now. The editor keeps editing
+/// its own objects in place while the capture fetches images, and a capture
+/// rebuilds drawing paths in screenshot coordinates; neither may reach the
+/// other.
+@visibleForTesting
+StrategyPage editorPageSnapshot(WidgetRef ref) {
+  final lineUps = ref.read(lineUpProvider).graph.deepCopy();
   return StrategyPage(
     id: ref.read(strategyPageSessionProvider).activePageId ?? '',
     name: _activePageName(ref) ?? '',
     drawingData: DrawingProvider.fromJson(
       DrawingProvider.objectToJson(ref.read(drawingProvider).elements),
     ),
-    agentData: ref.read(agentProvider),
-    abilityData: ref.read(abilityProvider),
-    textData: ref.read(textProvider.notifier).snapshotForPersistence(),
-    imageData: ref.read(placedImageProvider).images,
-    utilityData: ref.read(utilityProvider),
+    agentData: ref.read(agentProvider).map(clonePlacedAgentNode).toList(),
+    abilityData: ref.read(abilityProvider).map(clonePlacedAbility).toList(),
+    textData: ref
+        .read(textProvider.notifier)
+        .snapshotForPersistence()
+        .map(clonePlacedText)
+        .toList(),
+    imageData:
+        ref.read(placedImageProvider).images.map(clonePlacedImage).toList(),
+    utilityData: ref.read(utilityProvider).map(clonePlacedUtility).toList(),
     sortIndex: 0,
     isAttack: ref.read(mapProvider).isAttack,
     settings: ref.read(strategySettingsProvider),

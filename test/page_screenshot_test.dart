@@ -251,7 +251,7 @@ void main() {
     expect(decoded.width, CoordinateSystem.screenShotSize.width);
     expect(decoded.height, CoordinateSystem.screenShotSize.height);
     expect(_magentaPixels(png as Uint8List), greaterThan(500));
-    // The capture never touches the editor's own coordinate mode.
+    // The capture leaves the editor's coordinate mode as it found it.
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
   });
 
@@ -290,8 +290,40 @@ void main() {
     );
   });
 
-  testWidgets(
-      'a failed screenshot clears the spinner and restores canvas coordinates',
+  testWidgets('bytes that are not an image stop the capture', (tester) async {
+    final ref = await openCloudPage(tester, imageUrl: _imageUrl);
+
+    final error = await captureWithFrames(
+      tester,
+      () => http.runWithClient(
+        () => captureEditorPage(ref),
+        () => MockClient(
+          (_) async => http.Response.bytes([1, 2, 3, 4], 200),
+        ),
+      ),
+    );
+
+    expect(
+      error,
+      isA<CaptureImagesUnavailable>()
+          .having((error) => error.cause, 'cause', isNotNull),
+    );
+  });
+
+  testWidgets('edits made while a capture waits never reach its copy',
+      (tester) async {
+    final ref = await openCloudPage(tester, imageUrl: _imageUrl);
+    final live = ref.read(placedImageProvider).images.single;
+
+    final snapshot = editorPageSnapshot(ref);
+    live.scale = live.scale * 2;
+
+    expect(snapshot.imageData.single, isNot(same(live)));
+    expect(snapshot.imageData.single.scale, live.scale / 2);
+    expect(snapshot.name, 'Retake B');
+  });
+
+  testWidgets('a screenshot that fails while fetching clears the spinner',
       (tester) async {
     await openCloudPage(tester, imageUrl: _imageUrl);
     final container = ProviderScope.containerOf(
