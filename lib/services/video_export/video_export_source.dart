@@ -164,8 +164,9 @@ Future<VideoExportSource> loadVideoExportSource(
             uploadMayBeQueuedHere: false,
           ),
     },
-    fetch: (imageId, url) => downloadCloudImageBytes(
+    fetch: (imageId, url, client) => downloadCloudImageBytes(
       url,
+      client: client,
       freshUrl: () =>
           ref.read(convexStrategyRepositoryProvider).getImageAssetUrl(
                 strategyPublicId: strategyId,
