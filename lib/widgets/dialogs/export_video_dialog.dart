@@ -158,7 +158,11 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     });
     CaptureImages? images;
     try {
-      final source = await loadVideoExportSource(ref, pageIds: pageIds);
+      final source = await loadVideoExportSource(
+        ref,
+        pageIds: pageIds,
+        isCancelled: () => _cancelRequested,
+      );
       images = source.images;
       if (_cancelRequested) throw VideoExportCancelled();
       final selectedPages = ([...source.strategy.pages]
@@ -213,6 +217,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           });
         },
       );
+      // A cancel that arrived while the export was wrapping up still wins.
+      if (_cancelRequested) throw VideoExportCancelled();
       // The browser sink hands the finished video back to be downloaded;
       // the desktop one has already written it where the user chose.
       if (video != null) {
@@ -252,6 +258,17 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         message: error.userMessage,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
+    } on VideoExportPagesChanged catch (error) {
+      Settings.showToast(
+        message: error.userMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      if (mounted) {
+        setState(() {
+          _pages = videoExportPageChoices(ref);
+          _selectedPageIds.retainAll({for (final page in _pages) page.id});
+        });
+      }
     } on CaptureImagesUnavailable catch (error) {
       Settings.showToast(
         message: error.userMessage,

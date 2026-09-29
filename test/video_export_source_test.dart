@@ -19,7 +19,10 @@ import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -63,26 +66,27 @@ class _OpenStrategy extends StrategyProvider {
   Future<void> forceSaveNow(String id) async => saves++;
 }
 
-/// The save chip's state, set by the test instead of the op queue.
-class _SaveState extends StrategySaveStateNotifier {
-  _SaveState({required this.synced});
+/// This device's op queue, set by the test.
+class _Queue extends StrategyOpQueueNotifier {
+  _Queue(this.initial);
 
-  final bool synced;
+  final StrategyOpQueueState initial;
+  var flushes = 0;
 
   @override
-  StrategySaveState build() => _state(synced: synced);
+  StrategyOpQueueState build() => initial;
 
-  void markSynced() => state = _state(synced: true);
+  @override
+  Future<void> flushNow() async => flushes++;
 
-  static StrategySaveState _state({required bool synced}) => StrategySaveState(
-        isDirty: !synced,
-        isSaving: false,
-        hasPendingCloudSync: !synced,
-        cloudSyncError: null,
-        hasPendingMediaSync: false,
-        mediaSyncErrorCount: 0,
-        lastPersistedAt: null,
-      );
+  /// Everything this device queued has landed.
+  void settle() => state = const StrategyOpQueueState(durableLoaded: true);
+}
+
+class _NoUploads extends CloudMediaUploadQueueNotifier {
+  @override
+  CloudMediaUploadQueueState build() =>
+      const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
 }
 
 class _Repository extends Fake implements ConvexStrategyRepository {
@@ -172,27 +176,39 @@ Future<WidgetRef> _pumpRef(
 
 void main() {
   group('a cloud strategy', () {
-    testWidgets('waits for sync, then reads the whole strategy from the server',
+    List<Override> cloud(
+      _Queue queue,
+      _Repository repository, {
+      List<Override> more = const [],
+    }) =>
+        [
+          strategyProvider
+              .overrideWith(() => _OpenStrategy(StrategySource.cloud)),
+          strategyOpQueueProvider.overrideWith(() => queue),
+          cloudMediaUploadQueueProvider.overrideWith(_NoUploads.new),
+          convexStrategyRepositoryProvider.overrideWithValue(repository),
+          ...more,
+        ];
+
+    testWidgets('waits for queued work, then reads the whole strategy',
         (tester) async {
-      final strategy = _OpenStrategy(StrategySource.cloud);
-      final saveState = _SaveState(synced: false);
+      final queue = _Queue(const StrategyOpQueueState(
+        durableLoaded: true,
+        isFlushing: true,
+      ));
       final repository = _Repository();
-      final ref = await _pumpRef(tester, [
-        strategyProvider.overrideWith(() => strategy),
-        strategySaveStateProvider.overrideWith(() => saveState),
-        convexStrategyRepositoryProvider.overrideWithValue(repository),
-      ]);
+      final ref = await _pumpRef(tester, cloud(queue, repository));
       final requested = <String>[];
 
       final source = await tester.runAsync(
         () => http.runWithClient(
           () async {
             final loading = loadVideoExportSource(ref, pageIds: {'a'});
-            await Future<void>.delayed(const Duration(milliseconds: 50));
-            // Saved, but nothing is read until this device's work lands.
-            expect(strategy.saves, 1);
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            // The edits were pushed, but nothing is read until they land.
+            expect(queue.flushes, 1);
             expect(repository.fetches, 0);
-            saveState.markSynced();
+            queue.settle();
             return loading;
           },
           () => MockClient((request) async {
@@ -216,15 +232,46 @@ void main() {
       expect(source.images.sources['image-a'], isA<ImageBytes>());
     });
 
+    testWidgets(
+        'with nothing to send, reads at once and leaves the save chip alone',
+        (tester) async {
+      final repository = _Repository();
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(durableLoaded: true)),
+          repository,
+        ),
+      );
+
+      final source = await tester.runAsync(
+        () => http.runWithClient(
+          () => loadVideoExportSource(ref, pageIds: {'a'}),
+          () => MockClient((_) async => http.Response.bytes(_png, 200)),
+        ),
+      );
+      addTearDown(source!.images.release);
+
+      expect(repository.fetches, 1);
+      // A save that sends nothing must not leave the chip saying syncing.
+      final saveState = ref.read(strategySaveStateProvider);
+      expect(saveState.hasPendingCloudSync, isFalse);
+      expect(saveState.isDirty, isFalse);
+    });
+
     testWidgets('stops when this device has not synced in time',
         (tester) async {
       final repository = _Repository();
-      final ref = await _pumpRef(tester, [
-        strategyProvider
-            .overrideWith(() => _OpenStrategy(StrategySource.cloud)),
-        strategySaveStateProvider.overrideWith(() => _SaveState(synced: false)),
-        convexStrategyRepositoryProvider.overrideWithValue(repository),
-      ]);
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(
+            durableLoaded: true,
+            isFlushing: true,
+          )),
+          repository,
+        ),
+      );
 
       Object? error;
       loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
@@ -237,18 +284,95 @@ void main() {
       expect(repository.fetches, 0);
     });
 
+    testWidgets('stops at once when work waits for review', (tester) async {
+      final repository = _Repository();
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(
+            durableLoaded: true,
+            hasDurabilityFailure: true,
+          )),
+          repository,
+        ),
+      );
+
+      Object? error;
+      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+        (_) {},
+        onError: (Object caught) => error = caught,
+      );
+      await tester.pump(const Duration(milliseconds: 1));
+
+      expect(error, isA<VideoExportNotSynced>());
+    });
+
+    testWidgets('stops waiting when the export is cancelled', (tester) async {
+      final repository = _Repository();
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(
+            durableLoaded: true,
+            isFlushing: true,
+          )),
+          repository,
+        ),
+      );
+      var cancelled = false;
+
+      Object? error;
+      loadVideoExportSource(
+        ref,
+        pageIds: {'a'},
+        isCancelled: () => cancelled,
+      ).then<void>((_) {}, onError: (Object caught) => error = caught);
+      await tester.pump(const Duration(seconds: 1));
+      cancelled = true;
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(error, isA<VideoExportCancelled>());
+      expect(repository.fetches, 0);
+    });
+
+    testWidgets('refuses a selection naming a page that no longer exists',
+        (tester) async {
+      final repository = _Repository();
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(durableLoaded: true)),
+          repository,
+        ),
+      );
+
+      Object? error;
+      await tester.runAsync(() async {
+        try {
+          await loadVideoExportSource(ref, pageIds: {'a', 'deleted'});
+        } catch (caught) {
+          error = caught;
+        }
+      });
+
+      expect(error, isA<VideoExportPagesChanged>());
+    });
+
     testWidgets('reads through the link a signed-out reader opened',
         (tester) async {
       final repository = _Repository();
-      final ref = await _pumpRef(tester, [
-        strategyProvider
-            .overrideWith(() => _OpenStrategy(StrategySource.cloud)),
-        strategySaveStateProvider.overrideWith(() => _SaveState(synced: true)),
-        convexStrategyRepositoryProvider.overrideWithValue(repository),
-        shareLinkViewProvider.overrideWith(
-          (ref) => (strategyPublicId: _strategyId, token: 'link-token'),
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(durableLoaded: true)),
+          repository,
+          more: [
+            shareLinkViewProvider.overrideWith(
+              (ref) => (strategyPublicId: _strategyId, token: 'link-token'),
+            ),
+          ],
         ),
-      ]);
+      );
 
       final source = await tester.runAsync(
         () => http.runWithClient(

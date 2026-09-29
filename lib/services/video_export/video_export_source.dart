@@ -7,13 +7,16 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/local_image_file.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -55,6 +58,18 @@ class VideoExportNotSynced implements Exception {
   String toString() => 'VideoExportNotSynced';
 }
 
+/// A selected page is gone from the strategy (a teammate deleted it), so
+/// the video would not be the one the user asked for.
+class VideoExportPagesChanged implements Exception {
+  const VideoExportPagesChanged();
+
+  String get userMessage =>
+      'A page you selected was deleted. Check the pages and export again.';
+
+  @override
+  String toString() => 'VideoExportPagesChanged';
+}
+
 /// The strategy a video export renders, saved and whole, with its images
 /// decoded. Release [images] once the export is done.
 typedef VideoExportSource = ({StrategyData strategy, CaptureImages images});
@@ -64,22 +79,30 @@ const videoExportSyncTimeout = Duration(seconds: 20);
 
 /// Saves the open strategy and reads it back whole for [pageIds].
 ///
-/// A local strategy is read back from the library. A cloud strategy's other
-/// pages live only on the server, so the export waits for this device's
-/// changes to land (the strategy shows as synced), then reads the whole
-/// strategy from the server. Throws [VideoExportNotSynced] when they don't
-/// land within [videoExportSyncTimeout], and [CaptureImagesUnavailable] when
-/// an image on the exported pages cannot be fetched.
+/// A local strategy is saved and read back from the library. A cloud
+/// strategy's other pages live only on the server, so the export sends the
+/// open page's edits, waits for everything this device still has to send
+/// for the strategy to land, then reads the whole strategy from the server.
+///
+/// Throws [VideoExportNotSynced] when this device's work does not land
+/// within [videoExportSyncTimeout], [VideoExportPagesChanged] when a page in
+/// [pageIds] no longer exists, [CaptureImagesUnavailable] when an image on
+/// the exported pages cannot be loaded, and [VideoExportCancelled] once
+/// [isCancelled] turns true.
 Future<VideoExportSource> loadVideoExportSource(
   WidgetRef ref, {
   required Set<String> pageIds,
+  bool Function() isCancelled = _never,
 }) async {
+  void checkCancelled() {
+    if (isCancelled()) throw VideoExportCancelled();
+  }
+
   final state = ref.read(strategyProvider);
   final strategyId = state.strategyId;
   if (strategyId == null) {
     throw StateError('No strategy is open to export.');
   }
-  await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
   // A signed-out reader's only access is the link they opened.
   final linkView = ref.read(shareLinkViewProvider);
   final shareToken =
@@ -89,14 +112,21 @@ Future<VideoExportSource> loadVideoExportSource(
   final Map<String, RemoteImageAsset> assets;
   switch (state.source) {
     case StrategySource.cloud:
-      await _waitUntilSynced(ref);
+      // Queues the open page's edits and sends them.
+      await ref
+          .read(strategyPageSessionProvider.notifier)
+          .flushCurrentPage(flushImmediately: true);
+      await _waitUntilSent(ref, strategyId, isCancelled: isCancelled);
       final snapshot = await ref
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId, shareToken: shareToken);
+      checkCancelled();
       strategy =
           StrategyImportExportService.strategyDataFromRemoteSnapshot(snapshot);
       assets = snapshot.assetsById;
     case StrategySource.local || null:
+      await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+      checkCancelled();
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
       if (saved == null) {
@@ -106,25 +136,32 @@ Future<VideoExportSource> loadVideoExportSource(
       assets = const {};
   }
 
+  final pages = [
+    for (final page in strategy.pages)
+      if (pageIds.contains(page.id)) page,
+  ];
+  if (pages.length != pageIds.length) {
+    throw const VideoExportPagesChanged();
+  }
+
   final isCloud = state.source == StrategySource.cloud;
   final images = await resolveCaptureImages(
     {
-      for (final page in strategy.pages)
-        if (pageIds.contains(page.id))
-          for (final image in page.imageData)
-            image.id: resolveStrategyImageSource(
-              localFilePath: findLocalImageFile(
-                storageDirectory: state.storageDirectory,
-                imageId: image.id,
-                fileExtension: image.fileExtension,
-              ),
-              isCloudStrategy: isCloud,
-              // The whole strategy was just read, and this device has
-              // nothing left to upload.
-              assetsLoaded: true,
-              remoteAsset: assets[image.id],
-              uploadMayBeQueuedHere: false,
+      for (final page in pages)
+        for (final image in page.imageData)
+          image.id: resolveStrategyImageSource(
+            localFilePath: findLocalImageFile(
+              storageDirectory: state.storageDirectory,
+              imageId: image.id,
+              fileExtension: image.fileExtension,
             ),
+            isCloudStrategy: isCloud,
+            // The whole strategy was just read, and this device has
+            // nothing left to upload.
+            assetsLoaded: true,
+            remoteAsset: assets[image.id],
+            uploadMayBeQueuedHere: false,
+          ),
     },
     fetch: (imageId, url) => downloadCloudImageBytes(
       url,
@@ -136,23 +173,43 @@ Future<VideoExportSource> loadVideoExportSource(
               ),
     ),
   );
+  if (isCancelled()) {
+    images.release();
+    throw VideoExportCancelled();
+  }
   return (strategy: strategy, images: images);
 }
 
-Future<void> _waitUntilSynced(WidgetRef ref) async {
-  if (ref.read(strategySaveStateProvider).canLeaveSafely) return;
-  final synced = Completer<void>();
-  final subscription = ref.listenManual(
-    strategySaveStateProvider.select((state) => state.canLeaveSafely),
-    (_, canLeaveSafely) {
-      if (canLeaveSafely && !synced.isCompleted) synced.complete();
-    },
-  );
-  try {
-    await synced.future.timeout(videoExportSyncTimeout);
-  } on TimeoutException {
-    throw const VideoExportNotSynced();
-  } finally {
-    subscription.close();
+bool _never() => false;
+
+/// Waits until this device has nothing left to send for [strategyId]: no
+/// op queued, in flight, or held for review, and no image uploading. Read
+/// from the queues at each check: a save with nothing to send changes no
+/// queue state, so nothing listening would hear it finish.
+Future<void> _waitUntilSent(
+  WidgetRef ref,
+  String strategyId, {
+  required bool Function() isCancelled,
+}) async {
+  bool sent() {
+    final ops = ref.read(strategyOpQueueProvider);
+    final media = ref.read(cloudMediaUploadQueueProvider);
+    return ops.outboxIsReliable &&
+        ops.pending.isEmpty &&
+        !ops.isFlushing &&
+        media.jobsForStrategy(strategyId).isEmpty;
+  }
+
+  const step = Duration(milliseconds: 100);
+  var waited = Duration.zero;
+  while (!sent()) {
+    if (isCancelled()) throw VideoExportCancelled();
+    // Work held for the user's review never lands by waiting.
+    if (ref.read(strategyOpQueueProvider).needsAttention) {
+      throw const VideoExportNotSynced();
+    }
+    if (waited >= videoExportSyncTimeout) throw const VideoExportNotSynced();
+    await Future<void>.delayed(step);
+    waited += step;
   }
 }

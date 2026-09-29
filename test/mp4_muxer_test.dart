@@ -76,6 +76,43 @@ void main() {
       expect(avcCBox.payload(file), avcC);
     });
 
+    test('describes the samples\' colour after avcC when told it', () {
+      final muxer = Mp4H264Muxer(width: 640, height: 360)
+        ..addSample(sample(1, 10), duration: 1000, isKeyFrame: true);
+      final file = muxer.finish(
+        avcDecoderConfig: avcC,
+        color: const Mp4ColorInfo(
+          primaries: 1,
+          transfer: 13,
+          matrix: 1,
+          fullRange: true,
+        ),
+      );
+      final mp4 = Mp4Boxes(file);
+      final children = mp4.childrenOf(mp4.sampleEntry(), entryHeaderSize: 78);
+      expect([for (final box in children) box.type], ['avcC', 'colr']);
+      expect(
+        children.last.payload(file),
+        [...'nclx'.codeUnits, 0, 1, 0, 13, 0, 1, 0x80],
+      );
+
+      final undescribed = Mp4Boxes(
+        (Mp4H264Muxer(width: 640, height: 360)
+              ..addSample(sample(1, 10), duration: 1000, isKeyFrame: true))
+            .finish(avcDecoderConfig: avcC),
+      );
+      expect(
+        [
+          for (final box in undescribed.childrenOf(
+            undescribed.sampleEntry(),
+            entryHeaderSize: 78,
+          ))
+            box.type,
+        ],
+        ['avcC'],
+      );
+    });
+
     test('omits stss when every sample is a keyframe', () {
       final muxer = Mp4H264Muxer(width: 640, height: 360, timescale: 30000)
         ..addSample(sample(1, 10), duration: 1000, isKeyFrame: true)
@@ -146,7 +183,17 @@ void main() {
             isKeyFrame: unit.isKeyFrame,
           );
         }
-        final bytes = muxer.finish(avcDecoderConfig: stream.avcDecoderConfig);
+        // libx264 writes no colour description; the container says the
+        // samples are full range, and players must believe it.
+        final bytes = muxer.finish(
+          avcDecoderConfig: stream.avcDecoderConfig,
+          color: const Mp4ColorInfo(
+            primaries: 1,
+            transfer: 1,
+            matrix: 1,
+            fullRange: true,
+          ),
+        );
         await File(outPath).writeAsBytes(bytes);
 
         expect(Mp4Boxes(bytes).syncSamples(), [1, 6, 11, 16]);
@@ -160,6 +207,8 @@ void main() {
         expect(probe.exitCode, 0, reason: '${probe.stderr}');
         final fields = _probeFields(probe.stdout as String);
         expect(fields['codec_name'], 'h264');
+        expect(fields['color_range'], 'pc');
+        expect(fields['color_space'], 'bt709');
         expect(fields['width'], '320');
         expect(fields['height'], '240');
         expect(fields['nb_read_frames'], '20');
@@ -179,7 +228,8 @@ void main() {
   });
 }
 
-/// Null when ffmpeg and ffprobe both run, otherwise why the test is skipped.
+/// Null when ffmpeg (with libx264) and ffprobe both run, otherwise why the
+/// test is skipped.
 String? _ffmpegMissingReason() {
   for (final tool in ['ffmpeg', 'ffprobe']) {
     try {
@@ -188,6 +238,10 @@ String? _ffmpegMissingReason() {
     } on ProcessException {
       return '$tool is not on PATH';
     }
+  }
+  final encoders = Process.runSync('ffmpeg', ['-hide_banner', '-encoders']);
+  if (!'${encoders.stdout}'.contains('libx264')) {
+    return 'ffmpeg has no libx264 encoder';
   }
   return null;
 }

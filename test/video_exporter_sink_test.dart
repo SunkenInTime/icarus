@@ -159,8 +159,15 @@ int _magentaPixels(Uint8List rgba) {
   return count;
 }
 
-/// A PATH ffmpeg, the development fallback of FfmpegVideoEncoder.
-final String? _ffmpeg = _onPath('ffmpeg');
+/// A PATH ffmpeg, the development fallback of FfmpegVideoEncoder, with the
+/// H.264 encoder the export asks for on this platform.
+final String? _ffmpeg = () {
+  final ffmpeg = _onPath('ffmpeg');
+  if (ffmpeg == null) return null;
+  final encoders = Process.runSync(ffmpeg, ['-hide_banner', '-encoders']);
+  final h264 = Platform.isWindows ? 'h264_mf' : 'libx264';
+  return '${encoders.stdout}'.contains(h264) ? ffmpeg : null;
+}();
 final String? _ffprobe = _onPath('ffprobe');
 
 String? _onPath(String tool) {

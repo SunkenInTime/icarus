@@ -56,6 +56,7 @@ class WebCodecsMp4Encoder {
 
   final List<_EncodedSample> _samples = [];
   Uint8List? _avcDecoderConfig;
+  Mp4ColorInfo? _color;
   Completer<void>? _dequeued;
 
   /// Why the encoder failed, reported by the next call.
@@ -226,7 +227,7 @@ class WebCodecsMp4Encoder {
         isKeyFrame: sample.isKeyFrame,
       );
     }
-    return muxer.finish(avcDecoderConfig: config);
+    return muxer.finish(avcDecoderConfig: config, color: _color);
   }
 
   /// Stops encoding and releases the encoder. Safe to call at any time and
@@ -292,6 +293,9 @@ class WebCodecsMp4Encoder {
           throw StateError('The encoder changed its H.264 parameter sets.');
         }
         _avcDecoderConfig = config;
+      }
+      if (metadata?.decoderConfig?.colorSpace case final colorSpace?) {
+        _color = _mp4Color(colorSpace);
       }
       final bytes = _Uint8Array(chunk.byteLength);
       chunk.copyTo(bytes);
@@ -526,7 +530,48 @@ extension type _ChunkMetadata._(JSObject _) implements JSObject {
 
 extension type _DecoderConfig._(JSObject _) implements JSObject {
   external JSObject? get description;
+  external _VideoColorSpace? get colorSpace;
 }
+
+extension type _VideoColorSpace._(JSObject _) implements JSObject {
+  external String? get primaries;
+  external String? get transfer;
+  external String? get matrix;
+  external bool? get fullRange;
+}
+
+/// The colour the encoder says its samples carry, as MP4 code points. Hardware
+/// encoders can write full-range samples without a colour description in the
+/// bitstream; the container then carries it (see [Mp4ColorInfo]). Names the
+/// table does not know are "unspecified" (2).
+Mp4ColorInfo _mp4Color(_VideoColorSpace colorSpace) => Mp4ColorInfo(
+      primaries: switch (colorSpace.primaries) {
+        'bt709' => 1,
+        'bt470bg' => 5,
+        'smpte170m' => 6,
+        'bt2020' => 9,
+        'smpte432' => 12,
+        _ => 2,
+      },
+      transfer: switch (colorSpace.transfer) {
+        'bt709' => 1,
+        'smpte170m' => 6,
+        'linear' => 8,
+        'iec61966-2-1' => 13,
+        'pq' => 16,
+        'hlg' => 18,
+        _ => 2,
+      },
+      matrix: switch (colorSpace.matrix) {
+        'rgb' => 0,
+        'bt709' => 1,
+        'bt470bg' => 5,
+        'smpte170m' => 6,
+        'bt2020-ncl' => 9,
+        _ => 2,
+      },
+      fullRange: colorSpace.fullRange ?? false,
+    );
 
 @JS('OffscreenCanvas')
 extension type _OffscreenCanvas._(JSObject _) implements JSObject {

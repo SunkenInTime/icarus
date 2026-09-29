@@ -1,5 +1,25 @@
 import 'dart:typed_data';
 
+/// How a track's decoded samples map to colour, as ISO/IEC 23091-2 code
+/// points (the H.264 VUI's): written as the sample entry's `colr` box.
+///
+/// Players that find no colour description assume limited range. An
+/// encoder that writes full-range samples without saying so in its
+/// bitstream gets its darks crushed to black unless the container says so.
+class Mp4ColorInfo {
+  const Mp4ColorInfo({
+    required this.primaries,
+    required this.transfer,
+    required this.matrix,
+    required this.fullRange,
+  });
+
+  final int primaries;
+  final int transfer;
+  final int matrix;
+  final bool fullRange;
+}
+
 /// Builds an MP4 file holding one H.264 video track, entirely in memory.
 ///
 /// The layout is faststart (ftyp, moov, mdat) so browsers and chat apps can
@@ -38,6 +58,7 @@ class Mp4H264Muxer {
   int _payloadBytes = 0;
   int _totalDuration = 0;
   bool _finished = false;
+  Mp4ColorInfo? _color;
 
   int get sampleCount => _samples.length;
 
@@ -75,8 +96,12 @@ class Mp4H264Muxer {
 
   /// Returns the finished file. [avcDecoderConfig] is the
   /// AVCDecoderConfigurationRecord (the `description` WebCodecs reports in the
-  /// first chunk's `metadata.decoderConfig`).
-  Uint8List finish({required Uint8List avcDecoderConfig}) {
+  /// first chunk's `metadata.decoderConfig`); [color] is how its samples map
+  /// to colour, when known.
+  Uint8List finish({
+    required Uint8List avcDecoderConfig,
+    Mp4ColorInfo? color,
+  }) {
     if (_finished) throw StateError('The MP4 has already been finished.');
     if (_samples.isEmpty) {
       throw StateError('Cannot build an MP4 without any video samples.');
@@ -88,6 +113,7 @@ class Mp4H264Muxer {
       );
     }
     _finished = true;
+    _color = color;
 
     final ftyp = _box('ftyp', [
       _fourCc('isom'),
@@ -268,6 +294,14 @@ class Mp4H264Muxer {
         _u16(0x0018), // depth
         _u16(0xFFFF), // pre_defined = -1
         _box('avcC', [avcC]),
+        if (_color case final color?)
+          _box('colr', [
+            _fourCc('nclx'),
+            _u16(color.primaries),
+            _u16(color.transfer),
+            _u16(color.matrix),
+            Uint8List.fromList([color.fullRange ? 0x80 : 0]),
+          ]),
       ]);
 
   static Uint8List _identityMatrix() => Uint8List.fromList([
