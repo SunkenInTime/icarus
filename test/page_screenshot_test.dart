@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -141,6 +142,26 @@ class _NoSupabase extends Fake implements AuthProviderSupabaseApi {
 
   @override
   Stream<AuthState> get onAuthStateChange => const Stream.empty();
+}
+
+/// A save dialog the test closes when it chooses.
+class _PendingPicker extends FilePicker {
+  final saves = <Uint8List?>[];
+  final closed = Completer<String?>();
+
+  @override
+  Future<String?> saveFile({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    bool lockParentWindow = false,
+  }) {
+    saves.add(bytes);
+    return closed.future;
+  }
 }
 
 class _IdleOpQueue extends StrategyOpQueueNotifier {
@@ -388,6 +409,57 @@ void main() {
     expect(snapshot.imageData.single, isNot(same(live)));
     expect(snapshot.imageData.single.scale, live.scale / 2);
     expect(snapshot.name, 'Retake B');
+  });
+
+  testWidgets('a second click while the save dialog is open does nothing',
+      (tester) async {
+    final ref = await openCloudPage(tester, imageUrl: _imageUrl);
+    final picker = _PendingPicker();
+    FilePicker.platform = picker;
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(Consumer)),
+    );
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const ShadApp(home: Scaffold(body: EditorToolbar())),
+    ));
+    expect(ref, isNotNull);
+
+    Future<void> clickCamera() => tester.runAsync(
+          () => http.runWithClient(
+            () => tester.tap(find.byIcon(LucideIcons.camera200)),
+            () => MockClient(
+              (_) async => http.Response.bytes(_magentaPng, 200),
+            ),
+          ),
+        );
+
+    await clickCamera();
+    // Real time with the app's frames coming, until the dialog opens.
+    for (var i = 0; i < 400 && picker.saves.isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+    expect(picker.saves, hasLength(1));
+    expect(picker.saves.single, isNotEmpty);
+
+    // The spinner is gone while the dialog is open, but the button waits.
+    expect(find.byIcon(LucideIcons.camera200), findsOneWidget);
+    await clickCamera();
+    for (var i = 0; i < 30; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+    expect(picker.saves, hasLength(1));
+    expect(find.byIcon(LucideIcons.camera200), findsOneWidget);
+
+    picker.closed.complete(null);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a screenshot that fails while fetching clears the spinner',

@@ -86,6 +86,47 @@ void main() {
     }
   });
 
+  test('cloud images download together, not one after another', () async {
+    final started = <String>[];
+    final watch = Stopwatch()..start();
+    final images = await resolveCaptureImages(
+      {
+        for (final id in ['a', 'b', 'c', 'd'])
+          id: RemoteImageUrl('https://media.example.com/$id.png'),
+      },
+      fetch: (imageId, _) async {
+        started.add(imageId);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        return _png(imageId.codeUnitAt(0));
+      },
+    );
+    addTearDown(images.release);
+
+    expect(started, ['a', 'b', 'c', 'd']);
+    // Four 200 ms downloads in series would take 800 ms.
+    expect(watch.elapsedMilliseconds, lessThan(600));
+    expect(images.sources.values, everyElement(isA<ImageBytes>()));
+  });
+
+  test('an image still loading stops the capture before any download',
+      () async {
+    final started = <String>[];
+    await expectLater(
+      resolveCaptureImages(
+        {
+          'remote': const RemoteImageUrl('https://media.example.com/r.png'),
+          'loading': const ImageLoading(),
+        },
+        fetch: (imageId, _) async {
+          started.add(imageId);
+          return fetched;
+        },
+      ),
+      throwsA(isA<CaptureImagesUnavailable>()),
+    );
+    expect(started, isEmpty);
+  });
+
   test('an image still loading stops the capture', () async {
     await expectLater(
       resolveCaptureImages(

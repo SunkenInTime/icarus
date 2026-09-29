@@ -48,6 +48,10 @@ class EditorToolbar extends ConsumerStatefulWidget {
 class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   bool _isCapturingScreenshot = false;
 
+  /// From the click until the PNG is saved or the save dialog closes: a
+  /// second click meanwhile would capture again and open a second dialog.
+  bool _screenshotInProgress = false;
+
   @override
   Widget build(BuildContext context) {
     const style = kEditorToolbarButtonStyle;
@@ -168,9 +172,10 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
 
   Future<void> _captureScreenshot() async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.screenshot)) return;
-    if (_isCapturingScreenshot) return;
+    if (_screenshotInProgress) return;
     final strategy = ref.read(strategyProvider);
     if (strategy.strategyId == null) return;
+    _screenshotInProgress = true;
     setState(() => _isCapturingScreenshot = true);
     try {
       late final Uint8List image;
@@ -211,6 +216,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         stackTrace: stackTrace,
         source: 'EditorToolbar.screenshot',
       );
+    } finally {
+      _screenshotInProgress = false;
     }
   }
 }

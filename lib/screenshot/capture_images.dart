@@ -64,21 +64,28 @@ Future<CaptureImages> resolveCaptureImages(
   required CaptureImageFetcher fetch,
   void Function()? checkpoint,
 }) async {
+  if (sources.values.any((source) => source is ImageLoading)) {
+    throw const CaptureImagesUnavailable.stillLoading();
+  }
+  // Downloads run together, so a page's wait is its slowest image rather
+  // than the sum of them. A download nobody awaits (the capture stopped
+  // first) must not surface as an unhandled error.
+  final downloads = {
+    for (final MapEntry(key: imageId, value: source) in sources.entries)
+      if (source case RemoteImageUrl(:final url))
+        imageId: _guard(() => fetch(imageId, url))..ignore(),
+  };
   final resolved = <String, StrategyImageSource>{};
   final holds = <_HeldImage>[];
   try {
     for (final MapEntry(key: imageId, value: source) in sources.entries) {
       checkpoint?.call();
-      final paintable = switch (source) {
-        RemoteImageUrl(:final url) => ImageBytes(
-            await _guard(() => fetch(imageId, url)),
-          ),
-        ImageLoading() => throw const CaptureImagesUnavailable.stillLoading(),
-        LocalImageFile() || ImageBytes() || ImageFailed() => source,
-      };
+      final download = downloads[imageId];
+      final paintable = download == null ? source : ImageBytes(await download);
       final image = paintable.imageProvider;
-      if (image != null)
+      if (image != null) {
         holds.add(await _guard(() => _HeldImage.decode(image)));
+      }
       resolved[imageId] = paintable;
     }
     checkpoint?.call();
