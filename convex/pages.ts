@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import {
   assertSupportedCloudProtocol,
@@ -288,13 +289,12 @@ export const listTrashed = query({
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const pages = await listRestorablePages(ctx, strategy._id, Date.now());
     // One read per deleter, however many pages each deleted.
-    const deleters = new Map(
-      pages.flatMap((page) =>
-        page.deletedBy === undefined
-          ? []
-          : [[page.deletedBy, ctx.db.get(page.deletedBy)] as const],
-      ),
-    );
+    const deleters = new Map<Id<"users">, Promise<Doc<"users"> | null>>();
+    for (const page of pages) {
+      if (page.deletedBy !== undefined && !deleters.has(page.deletedBy)) {
+        deleters.set(page.deletedBy, ctx.db.get(page.deletedBy));
+      }
+    }
     return await Promise.all(
       pages.map(async (page) => {
         const deletedAt = page.deletedAt!;

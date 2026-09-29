@@ -764,7 +764,8 @@ void main() {
 
     final queue = container.read(strategyOpQueueProvider);
     final retried = queue
-        .queuedByEntityKey[EntitySyncKey.element('page-one', 'element-one')]!
+        .queuedByEntityKey[
+            const EntitySyncKey.element('page-one', 'element-one')]!
         .pending
         .op as ElementAddOp;
     // The server answers a known op id as it did before.
@@ -773,8 +774,8 @@ void main() {
     expect(retried.sortIndex, 3);
     // A conflict on the page, and work for another page, still wait.
     expect(queue.attentionByEntityKey.keys, {
-      EntitySyncKey.element('page-one', 'element-two'),
-      EntitySyncKey.element('page-two', 'element-three'),
+      const EntitySyncKey.element('page-one', 'element-two'),
+      const EntitySyncKey.element('page-two', 'element-three'),
     });
     final record = store
         .load()

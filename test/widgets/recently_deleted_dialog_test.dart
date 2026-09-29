@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -254,5 +255,30 @@ void main() {
     expect(find.text('It can no longer be restored.'), findsOneWidget);
     expect(find.text('Deleted 30 days ago'), findsOneWidget);
     expect(find.text('Restore'), findsNothing);
+  });
+
+  testWidgets("Restore goes away when a page's time runs out while it is open",
+      (tester) async {
+    final deletedAt = clock.now().subtract(const Duration(days: 30));
+    await _open(
+      tester,
+      _TrashRepository([
+        TrashedPage(
+          pageId: 'page-1',
+          name: 'A exec',
+          deletedAt: deletedAt,
+          restorableUntil: clock.now().add(const Duration(seconds: 30)),
+          deletedByName: null,
+          deletedByYou: false,
+        ),
+      ]),
+      _Session([]),
+    );
+    expect(find.text('Restore'), findsOneWidget);
+
+    await tester.pump(const Duration(minutes: 1));
+
+    expect(find.text('Restore'), findsNothing);
+    expect(find.text('It can no longer be restored.'), findsOneWidget);
   });
 }

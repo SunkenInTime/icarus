@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -193,7 +194,7 @@ class _TrashedPageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final now = DateTime.now();
+    final now = clock.now();
     // Past its time here too, as when the server says so.
     final gone = state == _RowState.gone || !page.restorableUntil.isAfter(now);
     final error = gone
