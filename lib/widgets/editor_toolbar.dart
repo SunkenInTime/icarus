@@ -1,25 +1,17 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/drawing_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/screenshot/capture_geometry.dart';
-import 'package:icarus/screenshot/offscreen_capture.dart';
-import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
+import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
-import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
@@ -177,96 +169,41 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   Future<void> _captureScreenshot() async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.screenshot)) return;
     if (_isCapturingScreenshot) return;
+    final strategy = ref.read(strategyProvider);
+    if (strategy.strategyId == null) return;
     setState(() => _isCapturingScreenshot = true);
-    ProviderContainer? screenshotContainer;
-    CaptureGeometryLease? captureGeometry;
     try {
-      final id = ref.read(strategyProvider).strategyId;
-      if (id == null) return;
-
-      await ref.read(strategyProvider.notifier).forceSaveNow(id);
-      if (!mounted) return;
-
-      final newStrat = Hive.box<StrategyData>(
-        HiveBoxNames.strategiesBox,
-      ).values.where((StrategyData strategy) => strategy.id == id).firstOrNull;
-      if (newStrat == null) return;
-
-      final currentPageID = ref.read(strategyPageSessionProvider).activePageId;
-      final mapState = ref.read(mapProvider);
-      if (currentPageID == null) return;
-
-      final activePage = newStrat.pages.firstWhere(
-        (p) => p.id == currentPageID,
-        orElse: () => newStrat.pages.first,
-      );
-      final captureContainer = ProviderContainer();
-      screenshotContainer = captureContainer;
-
-      final screenshotView = ScreenshotView(
-        isAttack: activePage.isAttack,
-        mapValue: newStrat.mapData,
-        showSpawnBarrier: mapState.showSpawnBarrier,
-        showRegionNames: mapState.showRegionNames,
-        showUltOrbs: mapState.showUltOrbs,
-        agents: activePage.agentData,
-        abilities: activePage.abilityData,
-        text: activePage.textData,
-        images: activePage.imageData,
-        drawings: activePage.drawingData,
-        utilities: activePage.utilityData,
-        strategySettings: activePage.settings,
-        strategyState: ref.read(strategyProvider),
-        pageName: activePage.name,
-        lineUpGraph: activePage.lineUpGraph,
-        themeProfileId: newStrat.themeProfileId,
-        themeOverridePalette: newStrat.themeOverridePalette,
-      );
-      // The sightline models load asynchronously; the capture waits for the
-      // page's geometry before the first frame is taken.
-      captureGeometry = await prepareCaptureGeometry(
-        captureContainer,
-        newStrat.mapData,
-        [activePage],
-      );
-      late Uint8List image;
+      late final Uint8List image;
       try {
-        image = await withScreenshotCoordinates(() async {
-          screenshotView.hydrateProviders(captureContainer);
-          final renderer = PersistentOffscreenRenderer(
-              targetSize: CoordinateSystem.screenShotSize,
-              waitForFrameData: captureGeometry?.waitForFrame,
-              wrapWidget: (child) =>
-                  wrapForOffscreenCapture(child, container: captureContainer));
-          try {
-            await renderer.prepare(screenshotView,
-                settleDuration: const Duration(milliseconds: 800));
-            return await renderer.capture(screenshotView);
-          } finally {
-            await renderer.dispose();
-          }
-        });
+        image = await captureEditorPage(ref);
       } finally {
         if (mounted) {
           ref.read(screenshotProvider.notifier).setIsScreenShot(false);
           ref
               .read(drawingProvider.notifier)
               .rebuildAllPaths(CoordinateSystem.instance);
+          setState(() => _isCapturingScreenshot = false);
         }
       }
       if (!mounted) return;
-      setState(() => _isCapturingScreenshot = false);
-      String? outputFile = await FilePicker.platform.saveFile(
+      // Desktop asks where to save and writes the bytes there; the browser
+      // downloads them.
+      await FilePicker.platform.saveFile(
         type: FileType.custom,
         dialogTitle: 'Please select an output file:',
         fileName:
-            "${ref.read(strategyProvider).strategyName ?? "new image"}.png",
+            '${sanitizeStrategyFileName(strategy.strategyName ?? 'new image')}.png',
         allowedExtensions: ['png'],
+        bytes: image,
       );
-      if (outputFile != null) {
-        final file = File(outputFile);
-        await file.writeAsBytes(image);
-      }
+    } on CaptureImagesUnavailable catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        error.userMessage,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'EditorToolbar.screenshot',
+        promptUser: true,
+      );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Could not export the screenshot. Please try again.',
@@ -274,12 +211,6 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         stackTrace: stackTrace,
         source: 'EditorToolbar.screenshot',
       );
-    } finally {
-      captureGeometry?.close();
-      screenshotContainer?.dispose();
-      if (mounted && _isCapturingScreenshot) {
-        setState(() => _isCapturingScreenshot = false);
-      }
     }
   }
 }

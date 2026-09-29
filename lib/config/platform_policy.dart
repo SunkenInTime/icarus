@@ -47,7 +47,6 @@ class PlatformPolicy {
     desktopOnly: {
       PlatformFeature.exportFiles,
       PlatformFeature.importFiles,
-      PlatformFeature.screenshot,
       PlatformFeature.videoExport,
       PlatformFeature.fileDrop,
     },

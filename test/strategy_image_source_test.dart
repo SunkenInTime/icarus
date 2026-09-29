@@ -334,7 +334,7 @@ void main() {
         remoteAsset: _asset(url: null, status: 'pending'),
         pendingBytes: _pendingPng,
       );
-      expect((uploading as PendingImageBytes).bytes, _pendingPng);
+      expect((uploading as ImageBytes).bytes, _pendingPng);
       expect(uploading.imageProvider, isA<MemoryImage>());
 
       // A failed attempt is retried from the same bytes; keep showing them.
@@ -347,7 +347,7 @@ void main() {
           remoteAsset: _asset(url: null, status: 'failed'),
           pendingBytes: _pendingPng,
         ),
-        isA<PendingImageBytes>(),
+        isA<ImageBytes>(),
       );
 
       expect(

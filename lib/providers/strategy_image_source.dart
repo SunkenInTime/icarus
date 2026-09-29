@@ -25,7 +25,7 @@ sealed class StrategyImageSource {
             // browser fetch the bytes.
             webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
           ),
-        PendingImageBytes(:final bytes) => MemoryImage(bytes),
+        ImageBytes(:final bytes) => MemoryImage(bytes),
         ImageLoading() || ImageFailed() => null,
       };
 }
@@ -42,10 +42,11 @@ final class RemoteImageUrl extends StrategyImageSource {
   final String url;
 }
 
-/// Bytes this device is still uploading, painted until the cloud URL
-/// arrives. Only where images are not files (web).
-final class PendingImageBytes extends StrategyImageSource {
-  const PendingImageBytes(this.bytes);
+/// Bytes in memory: an image this device is still uploading, painted until
+/// the cloud URL arrives (only where images are not files, on web), or one
+/// fetched ahead of an offscreen capture.
+final class ImageBytes extends StrategyImageSource {
+  const ImageBytes(this.bytes);
   final Uint8List bytes;
 }
 
@@ -63,6 +64,16 @@ final class ImageFailed extends StrategyImageSource {
 
 typedef StrategyImageKey = ({String id, String? fileExtension});
 
+/// What each image paints in an offscreen capture, by image id, and null
+/// everywhere else.
+///
+/// A capture renders in its own provider container, which has no live cloud
+/// page, upload queue, or pending bytes to resolve an image from. The
+/// capture resolves every image it paints before it starts and overrides
+/// this provider with the result.
+final captureImageSourcesProvider =
+    Provider<Map<String, StrategyImageSource>?>((ref) => null);
+
 /// Where the bytes for [image] come from, read from a widget's build.
 ///
 /// The file check runs on every build, so a file written or removed while
@@ -71,12 +82,29 @@ typedef StrategyImageKey = ({String id, String? fileExtension});
 StrategyImageSource watchStrategyImageSource(
   WidgetRef ref,
   StrategyImageKey image,
+) =>
+    _strategyImageSource(ref.watch, image);
+
+/// Where the bytes for [image] come from right now, read once, as the
+/// editor would paint it.
+StrategyImageSource readStrategyImageSource(
+  WidgetRef ref,
+  StrategyImageKey image,
+) =>
+    _strategyImageSource(ref.read, image);
+
+StrategyImageSource _strategyImageSource(
+  T Function<T>(ProviderListenable<T> provider) watch,
+  StrategyImageKey image,
 ) {
-  final (storageDirectory, source, strategyId) = ref.watch(
+  final captured = watch(captureImageSourcesProvider);
+  if (captured != null) return captured[image.id] ?? const ImageFailed();
+
+  final (storageDirectory, source, strategyId) = watch(
     strategyProvider
         .select((s) => (s.storageDirectory, s.source, s.strategyId)),
   );
-  final (assetsLoaded, remoteAsset) = ref.watch(
+  final (assetsLoaded, remoteAsset) = watch(
     remoteEditorSnapshotProvider.select((snapshot) {
       final page = snapshot.valueOrNull?.activePage;
       return (page != null, page?.assetsById[image.id]);
@@ -87,8 +115,8 @@ StrategyImageSource watchStrategyImageSource(
   // account is known, or while the outbox holds records it could not read,
   // the queue cannot rule a queued upload out.
   final uploadMayBeQueuedHere = isCloudStrategy &&
-      (ref.watch(cloudMediaAccountIdProvider) == null ||
-          ref.watch(
+      (watch(cloudMediaAccountIdProvider) == null ||
+          watch(
             cloudMediaUploadQueueProvider.select(
               (queue) =>
                   !queue.outboxIsReliable ||
@@ -97,21 +125,21 @@ StrategyImageSource watchStrategyImageSource(
                       ),
             ),
           ));
-  ref.watch(cloudMediaCacheProvider);
+  watch(cloudMediaCacheProvider);
   // Bytes this browser is still uploading for the signed-in account. They
   // only paint when neither the file check below nor the cloud URL has
   // anything. Where images are files there are never pending bytes.
   Uint8List? pendingBytes;
-  if (!ref.watch(imageFilesOnDeviceProvider)) {
-    final accountId = ref.watch(cloudMediaAccountIdProvider);
+  if (!watch(imageFilesOnDeviceProvider)) {
+    final accountId = watch(cloudMediaAccountIdProvider);
     if (accountId != null && strategyId != null) {
       final key = pendingMediaStorageKey((
         accountId: accountId,
         strategyPublicId: strategyId,
         assetPublicId: image.id,
       ));
-      pendingBytes = ref
-          .watch(pendingMediaBytesProvider.select((pending) => pending[key]));
+      pendingBytes =
+          watch(pendingMediaBytesProvider.select((pending) => pending[key]));
     }
   }
 
@@ -148,7 +176,7 @@ StrategyImageSource resolveStrategyImageSource({
   if (localFilePath != null) return LocalImageFile(localFilePath);
   final url = remoteAsset?.url;
   if (url != null && url.isNotEmpty) return RemoteImageUrl(url);
-  if (pendingBytes != null) return PendingImageBytes(pendingBytes);
+  if (pendingBytes != null) return ImageBytes(pendingBytes);
   if (!isCloudStrategy) return const ImageFailed();
   if (remoteAsset != null) {
     return remoteAsset.uploadStatus == 'failed'
