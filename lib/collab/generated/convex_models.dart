@@ -5320,8 +5320,16 @@ List<ImagesListForStrategyResultItem> decodeImagesListForStrategyResult(
     .toList(growable: false);
 
 ConvexObject encodeImagesListReferencedAssetIdsArgs({
+  required List<String> assetPublicIds,
   required String strategyPublicId,
-}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({
+  'assetPublicIds': ConvexArray(
+    assetPublicIds.indexed
+        .map((entry) => ConvexString(entry.$2))
+        .toList(growable: false),
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<String>? decodeImagesListReferencedAssetIdsResult(ConvexValue value) =>
     (value) is ConvexNull

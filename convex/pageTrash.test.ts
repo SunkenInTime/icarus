@@ -795,7 +795,10 @@ describe("page trash", () => {
     // A client holding an upload for one of the page's images keeps it
     // while the page can be restored.
     expect(
-      await owner.query(listReferencedAssetIds, { strategyPublicId }),
+      await owner.query(listReferencedAssetIds, {
+        strategyPublicId,
+        assetPublicIds: ["b-image", "k-shot"],
+      }),
     ).toEqual(["b-image", "k-shot"]);
 
     vi.setSystemTime(Date.now() + PAGE_TRASH_RETENTION_MS - day);
@@ -826,7 +829,10 @@ describe("page trash", () => {
     expect(await rowsOnPage(t, liveA!._id)).toEqual(aRows);
     expect(await livePageIds(owner)).toEqual([pageA, pageC]);
     expect(
-      await owner.query(listReferencedAssetIds, { strategyPublicId }),
+      await owner.query(listReferencedAssetIds, {
+        strategyPublicId,
+        assetPublicIds: ["b-image", "k-shot"],
+      }),
     ).toEqual([]);
   });
 
