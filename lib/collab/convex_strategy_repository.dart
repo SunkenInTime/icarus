@@ -157,12 +157,17 @@ class ConvexStrategyRepository {
         .map(_pageSnapshot);
   }
 
+  /// [shareToken]: see [fetchShell].
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
-    String strategyPublicId,
-  ) async {
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
     return _fullSnapshot(
       await _api.strategy
-          .getFullSnapshot(strategyPublicId: strategyPublicId)
+          .getFullSnapshot(
+            strategyPublicId: strategyPublicId,
+            shareToken: _optional(shareToken),
+          )
           .fetch(),
     );
   }

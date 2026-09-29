@@ -1,26 +1,29 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
-import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/services/video_export/browser_video_sink.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
+import 'package:icarus/services/video_export/ffmpeg_video_sink.dart';
+import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_exporter.dart';
+import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -42,23 +45,31 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   /// descendant (same idiom as UploadImageDialog).
   static const double _contentWidth = _dialogWidth - 48;
 
-  List<StrategyPage> _pages = const [];
+  List<VideoExportPageChoice> _pages = const [];
   final Set<String> _selectedPageIds = {};
   double _stepDurationSeconds = 3.0;
   VideoExportQuality _quality = VideoExportQuality.social;
 
+  /// Saving, syncing, and loading images, before any frame renders.
+  bool _preparing = false;
+  bool _cancelRequested = false;
   VideoExporter? _exporter;
   double _progress = 0;
   String _progressLabel = '';
   bool _exportRunning = false;
-  bool get _isExporting => _exporter != null;
+  bool get _isExporting => _preparing || _exporter != null;
 
   @override
   void dispose() {
     // Closing the dialog mid-export must not leave frames rendering and
-    // ffmpeg encoding in the background.
-    _exporter?.cancel();
+    // the encoder running in the background.
+    _cancel();
     super.dispose();
+  }
+
+  void _cancel() {
+    _cancelRequested = true;
+    _exporter?.cancel();
   }
 
   @override
@@ -68,10 +79,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         .read(appPreferencesProvider)
         .videoExportStepDurationSeconds
         .clamp(1.0, 15.0);
-    final doc = Hive.box<StrategyData>(
-      HiveBoxNames.strategiesBox,
-    ).get(ref.read(strategyProvider).id);
-    _pages = [...?doc?.pages]..sortBySortIndex((item) => item.sortIndex);
+    _pages = videoExportPageChoices(ref);
     _selectedPageIds.addAll(_pages.map((p) => p.id));
   }
 
@@ -91,7 +99,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     // The root container outlives this dialog, so cleanup after a
     // mid-export dismissal can still reach the live providers.
     final container = ProviderScope.containerOf(context, listen: false);
-
+    final quality = _quality;
+    final pageIds = {..._selectedPageIds};
     final stepDuration = Duration(
       milliseconds: (_stepDurationSeconds * 1000).round(),
     );
@@ -100,83 +109,102 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           .read(appPreferencesProvider.notifier)
           .setVideoExportStepDurationSeconds(_stepDurationSeconds),
     );
+    final fileName =
+        "${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? "new video")}.mp4";
 
-    final ffmpegBinary = await FfmpegVideoEncoder.resolveBinary();
-    if (ffmpegBinary == null) {
-      Settings.showToast(
-        message:
-            'Video encoder not found. Reinstalling Icarus should fix this.',
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
-      return;
-    }
-
-    final selectedOutputPath = await FilePicker.platform.saveFile(
-      type: FileType.custom,
-      dialogTitle: 'Please select an output file:',
-      fileName:
-          "${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? "new video")}.mp4",
-      allowedExtensions: ['mp4'],
-    );
-    if (selectedOutputPath == null || !mounted) return;
-    final outputPath = ensureMp4Extension(selectedOutputPath);
-
-    final strategyId = ref.read(strategyProvider).id;
-    await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
-    final doc = Hive.box<StrategyData>(
-      HiveBoxNames.strategiesBox,
-    ).get(strategyId);
-    if (doc == null || !mounted) return;
-
-    // Resolve pages from the freshly saved document — the dialog's initial
-    // snapshot may predate unsaved edits on the active page.
-    final selectedPages = ([...doc.pages]
-          ..sortBySortIndex((item) => item.sortIndex))
-        .where((p) => _selectedPageIds.contains(p.id))
-        .toList();
-    if (selectedPages.isEmpty) return;
-
-    final mapState = ref.read(mapProvider);
-    final requireNavigation =
-        ref.read(worldGeometryEnabledProvider(mapState.currentMap));
-    VisionGeometryMap? geometry;
-    NavigationGeometryMap? navigation;
-    try {
-      if (requireNavigation) {
-        navigation = await ref
-            .read(navigationGeometryProvider(mapState.currentMap).future);
-      } else {
-        geometry = await ref
-            .read(viewConeGeometryProvider(mapState.currentMap).future);
+    // Where the video goes is settled first, so a dismissed save dialog or
+    // a browser that cannot encode video costs nothing.
+    final VideoFrameSink sink;
+    if (kIsWeb) {
+      if (!await browserCanEncodeVideo(quality)) {
+        Settings.showToast(
+          message: 'This browser cannot export video. Try the latest Chrome '
+              'or Edge, or the desktop app.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
       }
-    } on Object {
-      // The provider reports the failure. The exporter rejects movement on
-      // enabled maps when their required navigation data is unavailable.
+      sink = createBrowserVideoSink(quality);
+    } else {
+      final ffmpegBinary = await FfmpegVideoEncoder.resolveBinary();
+      if (ffmpegBinary == null) {
+        Settings.showToast(
+          message:
+              'Video encoder not found. Reinstalling Icarus should fix this.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
+      }
+      final selectedOutputPath = await FilePicker.platform.saveFile(
+        type: FileType.custom,
+        dialogTitle: 'Please select an output file:',
+        fileName: fileName,
+        allowedExtensions: ['mp4'],
+      );
+      if (selectedOutputPath == null) return;
+      sink = FfmpegVideoSink(
+        binary: ffmpegBinary,
+        outputPath: ensureMp4Extension(selectedOutputPath),
+        quality: quality,
+      );
     }
     if (!mounted) return;
 
-    final exporter = VideoExporter(
-      strategy: doc,
-      strategyState: ref.read(strategyProvider),
-      mapState: mapState,
-      geometry: geometry,
-      navigation: navigation,
-      requireNavigation: requireNavigation,
-    );
     setState(() {
-      _exporter = exporter;
+      _preparing = true;
+      _cancelRequested = false;
       _progress = 0;
-      _progressLabel = 'Preparing';
+      _progressLabel = 'Saving your changes';
     });
-
-    CoordinateSystem.instance.setIsScreenshot(true);
+    CaptureImages? images;
     try {
-      await exporter.export(
+      final source = await loadVideoExportSource(ref, pageIds: pageIds);
+      images = source.images;
+      if (_cancelRequested) throw VideoExportCancelled();
+      final selectedPages = ([...source.strategy.pages]
+            ..sortBySortIndex((item) => item.sortIndex))
+          .where((p) => pageIds.contains(p.id))
+          .toList();
+
+      final mapState = ref.read(mapProvider);
+      final requireNavigation =
+          ref.read(worldGeometryEnabledProvider(mapState.currentMap));
+      VisionGeometryMap? geometry;
+      NavigationGeometryMap? navigation;
+      try {
+        if (requireNavigation) {
+          navigation = await ref
+              .read(navigationGeometryProvider(mapState.currentMap).future);
+        } else {
+          geometry = await ref
+              .read(viewConeGeometryProvider(mapState.currentMap).future);
+        }
+      } on Object {
+        // The provider reports the failure. The exporter rejects movement on
+        // enabled maps when their required navigation data is unavailable.
+      }
+      if (_cancelRequested) throw VideoExportCancelled();
+
+      final exporter = VideoExporter(
+        strategy: source.strategy,
+        strategyState: ref.read(strategyProvider),
+        mapState: mapState,
+        geometry: geometry,
+        imageSources: images.sources,
+        navigation: navigation,
+        requireNavigation: requireNavigation,
+      );
+      setState(() {
+        _exporter = exporter;
+        _progressLabel = 'Preparing';
+      });
+
+      CoordinateSystem.instance.setIsScreenshot(true);
+      final video = await exporter.export(
         pages: selectedPages,
         stepDuration: stepDuration,
-        ffmpegBinary: ffmpegBinary,
-        outputPath: outputPath,
-        quality: _quality,
+        sink: sink,
+        quality: quality,
         onProgress: (fraction, label) {
           if (!mounted) return;
           setState(() {
@@ -185,6 +213,16 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           });
         },
       );
+      // The browser sink hands the finished video back to be downloaded;
+      // the desktop one has already written it where the user chose.
+      if (video != null) {
+        await FilePicker.platform.saveFile(
+          type: FileType.custom,
+          fileName: fileName,
+          allowedExtensions: ['mp4'],
+          bytes: video,
+        );
+      }
       unawaited(
         AnalyticsService.instance.capture(
           'content_exported',
@@ -192,8 +230,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
             'content_type': 'video',
             'page_count': selectedPages.length,
             'step_duration_seconds': _stepDurationSeconds,
-            'quality': _quality.name,
-            'fps': _quality.fps,
+            'quality': quality.name,
+            'fps': quality.fps,
           },
         ),
       );
@@ -209,12 +247,30 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         message: 'Video export cancelled.',
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
-    } on Object catch (error) {
+    } on VideoExportNotSynced catch (error) {
       Settings.showToast(
-        message: 'Video export failed: $error',
+        message: error.userMessage,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
+    } on CaptureImagesUnavailable catch (error) {
+      Settings.showToast(
+        message: error.userMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    } on Object catch (error) {
+      Settings.showToast(
+        // Closing the dialog mid-preparation can fail the work it cut
+        // short; the user asked to stop, so that is what they hear.
+        message: _cancelRequested
+            ? 'Video export cancelled.'
+            : 'Video export failed: $error',
+        backgroundColor: _cancelRequested
+            ? Settings.tacticalVioletTheme.primary
+            : Settings.tacticalVioletTheme.destructive,
+      );
     } finally {
+      await sink.close();
+      images?.release();
       CoordinateSystem.instance.setIsScreenshot(false);
       container.read(screenshotProvider.notifier).setIsScreenShot(false);
       container
@@ -222,6 +278,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           .rebuildAllPaths(CoordinateSystem.instance);
       if (mounted) {
         setState(() {
+          _preparing = false;
           _exporter = null;
         });
       }
@@ -271,7 +328,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       title: const Text('Exporting video'),
       actions: [
         ShadButton.destructive(
-          onPressed: () => _exporter?.cancel(),
+          onPressed: _cancel,
           child: const Text('Cancel export'),
         ),
       ],
@@ -300,6 +357,17 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 ),
                 const SizedBox(height: 12),
                 ShadProgress(value: _progress, minHeight: 8),
+                // A hidden tab stops painting frames, which stalls the render.
+                if (kIsWeb) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Keep this tab open until the video downloads.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.mutedForeground,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -579,7 +647,7 @@ class _PagesPanel extends StatelessWidget {
     required this.onToggle,
   });
 
-  final List<StrategyPage> pages;
+  final List<VideoExportPageChoice> pages;
   final Set<String> selectedPageIds;
   final ValueChanged<String> onToggle;
 
