@@ -37,6 +37,11 @@ class PlacedImageBuilder extends StatefulWidget {
 class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   final _boxKey = GlobalKey();
   double? localScale; // Make localScale nullable to check if it's initialized
+
+  /// The scale the image was last built, and so laid out, at. Pointer events
+  /// arrive between frames, so the rendered image always matches this scale
+  /// even when a drag update since has not been drawn yet.
+  double? shownScale;
   bool isPanning = false;
   bool isDragging = false;
   Offset? pinnedScreenPosition;
@@ -80,16 +85,13 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
     pinnedScreenPosition = nextPinned;
   }
 
-  /// Stores the new scale, and the position that keeps the image's top-left
-  /// where the resize pinned it. On defense the image hangs from its
-  /// bottom-right corner, so that position moves with the size.
+  /// Stores the scale the user last saw, and the position that keeps the
+  /// image's top-left where the resize pinned it. On defense the image hangs
+  /// from its bottom-right corner, so that position moves with the size.
   ///
-  /// Waits for the frame that lays out the last drag update, so the stored
-  /// position matches the size the user let go at.
-  Future<void> _finishResize(WidgetRef ref) async {
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-
+  /// Stores [shownScale] with the image laid out at it, so the position
+  /// matches the size on screen rather than a drag update not drawn yet.
+  void _finishResize(WidgetRef ref) {
     final pinned = pinnedScreenPosition;
     final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
     if (pinned != null && renderBox != null) {
@@ -103,10 +105,11 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
       );
       ref
           .read(placedImageProvider.notifier)
-          .resize(widget.placedImage.id, scale: localScale!, position: position);
+          .resize(widget.placedImage.id, scale: shownScale!, position: position);
       ref.read(strategyProvider.notifier).setUnsaved();
     }
     setState(() {
+      localScale = shownScale;
       isPanning = false;
       pinnedScreenPosition = null;
       pointerShift = 0;
@@ -129,6 +132,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
             ref.read(placedImageProvider).images[index].scale);
       }
 
+      shownScale = localScale;
       final coordinateSystem = CoordinateSystem.instance;
       final attackScreenPosition =
           coordinateSystem.coordinateToScreen(widget.placedImage.position);

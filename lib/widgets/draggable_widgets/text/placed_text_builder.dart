@@ -43,6 +43,11 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   ];
   final _boxKey = GlobalKey();
   double? localSize; // Make localScale nullable to check if it's initialized
+
+  /// The width the box was last built, and so laid out, at. Pointer events
+  /// arrive between frames, so the rendered box always matches this width
+  /// even when a drag update since has not been drawn yet.
+  double? shownSize;
   bool isPanning = false;
   bool isDragging = false;
   Offset? pinnedScreenPosition;
@@ -85,16 +90,14 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     pinnedScreenPosition = nextPinned;
   }
 
-  /// Stores the new width, and the position that keeps the box's top-left
-  /// where the resize pinned it. On defense the box hangs from its
-  /// bottom-right corner, so that position moves with the size.
+  /// Stores the width the user last saw, and the position that keeps the
+  /// box's top-left where the resize pinned it. On defense the box hangs from
+  /// its bottom-right corner, so that position moves with the size.
   ///
-  /// Waits for the frame that lays out the last drag update, because the
-  /// text's height, and so its defense position, follows from its width.
-  Future<void> _finishResize() async {
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-
+  /// The text's height, and so its defense position, follows from its width,
+  /// so this stores [shownSize] with the box laid out at it rather than a
+  /// drag update not drawn yet.
+  void _finishResize() {
     final pinned = pinnedScreenPosition;
     final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
     if (pinned != null && renderBox != null) {
@@ -108,10 +111,11 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       );
       ref
           .read(textProvider.notifier)
-          .resize(widget.placedText.id, size: localSize!, position: position);
+          .resize(widget.placedText.id, size: shownSize!, position: position);
       ref.read(strategyProvider.notifier).setUnsaved();
     }
     setState(() {
+      localSize = shownSize;
       isPanning = false;
       isDragging = false;
       pinnedScreenPosition = null;
@@ -137,6 +141,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     if (texts[index].size != localSize && !isPanning) {
       localSize = texts[index].size;
     }
+    shownSize = localSize;
     final coordinateSystem = CoordinateSystem.instance;
     final attackScreenPosition =
         coordinateSystem.coordinateToScreen(widget.placedText.position);

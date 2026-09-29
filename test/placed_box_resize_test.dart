@@ -227,4 +227,52 @@ void main() {
         tester.getRect(box).topLeft, offsetMoreOrLessEquals(onDefense.topLeft));
     expect(container.read(textProvider).single.size, greaterThan(200));
   });
+
+  testWidgets('release stores what is on screen before the next frame',
+      (tester) async {
+    final container = await pumpBox(
+      tester,
+      seed: (container) => container.read(textProvider.notifier).fromHive([
+        PlacedText(
+          id: 'text-1',
+          position: originalPosition,
+          size: 200,
+          sizeVersion: PlacedText.currentSizeVersion,
+        )..text = 'Yo text boxes resize properly on both sides now',
+      ]),
+      side: ValueNotifier(false),
+      builder: (ref, isAttack) {
+        final placedText = ref.watch(textProvider).single;
+        return PlacedTextBuilder(
+          key: ValueKey(placedText.id),
+          size: placedText.size,
+          placedText: placedText,
+          isAttack: isAttack,
+          onDragEnd: (_) {},
+        );
+      },
+    );
+    final box = find.byType(TextScaleController);
+    final handle = find.byWidgetPredicate(
+      (widget) =>
+          widget is MouseRegion &&
+          widget.cursor == SystemMouseCursors.resizeLeftRight,
+    );
+
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    for (var i = 0; i < 3; i++) {
+      await gesture.moveBy(const Offset(20, 0));
+      await tester.pump();
+    }
+    final shown = tester.getRect(box);
+
+    // A last move and the release arrive before the next frame draws it.
+    await gesture.moveBy(const Offset(40, 0));
+    await gesture.up();
+    expect(container.read(textProvider).single.size, greaterThan(200));
+
+    await tester.pumpAndSettle();
+    expect(tester.getRect(box).topLeft, offsetMoreOrLessEquals(shown.topLeft));
+    expect(tester.getRect(box).width, closeTo(shown.width, 0.01));
+  });
 }
