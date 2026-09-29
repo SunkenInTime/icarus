@@ -6,10 +6,12 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -32,14 +34,48 @@ class PlacedImageBuilder extends StatefulWidget {
 }
 
 class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
+  final _boxKey = GlobalKey();
   double? localScale; // Make localScale nullable to check if it's initialized
   bool isPanning = false;
   bool isDragging = false;
+  Offset? pinnedScreenPosition;
 
   @override
   void initState() {
     super.initState();
     localScale ??= ImageScalePolicy.clamp(widget.scale);
+  }
+
+  /// Stores the new scale, and the position that keeps the image's top-left
+  /// where the resize pinned it. On defense the image hangs from its
+  /// bottom-right corner, so that position moves with the size.
+  ///
+  /// Waits for the frame that lays out the last drag update, so the stored
+  /// position matches the size the user let go at.
+  Future<void> _finishResize(WidgetRef ref) async {
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    final pinned = pinnedScreenPosition;
+    final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (pinned != null && renderBox != null) {
+      final coordinateSystem = CoordinateSystem.instance;
+      final position = coordinateSystem.screenToCoordinate(
+        coordinateSystem.screenPositionFromSide(
+          sideScreenPosition: pinned,
+          reflectionOffset: renderBox.size.bottomRight(Offset.zero),
+          isAttack: ref.read(mapProvider).isAttack,
+        ),
+      );
+      ref
+          .read(placedImageProvider.notifier)
+          .resize(widget.placedImage.id, scale: localScale!, position: position);
+      ref.read(strategyProvider.notifier).setUnsaved();
+    }
+    setState(() {
+      isPanning = false;
+      pinnedScreenPosition = null;
+    });
   }
 
   @override
@@ -58,81 +94,84 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
             ref.read(placedImageProvider).images[index].scale);
       }
 
-      return ImageScaleController(
-        isDragging: isDragging,
-        onPanUpdate: (details) {
-          final renderBox = context.findRenderObject() as RenderBox?;
-          if (renderBox == null) return;
+      final coordinateSystem = CoordinateSystem.instance;
+      final isAttack = ref.watch(mapProvider.select((map) => map.isAttack));
+      final attackScreenPosition =
+          coordinateSystem.coordinateToScreen(widget.placedImage.position);
+      return CanonicalPositionedBox(
+        attackScreenPosition: attackScreenPosition,
+        isAttack: isAttack,
+        pinnedScreenPosition: pinnedScreenPosition,
+        child: ImageScaleController(
+          key: _boxKey,
+          isDragging: isDragging,
+          onPanUpdate: (details) {
+            final renderBox =
+                _boxKey.currentContext?.findRenderObject() as RenderBox?;
+            if (renderBox == null) return;
 
-          final topLeftGlobal = renderBox.localToGlobal(Offset.zero);
-          final screenZoom = ref.read(screenZoomProvider);
-          final widthInScreenPixels =
-              details.globalPosition.dx - topLeftGlobal.dx;
-          final widthInContentSpace = widthInScreenPixels / screenZoom;
-          final widthInWorldSpace =
-              CoordinateSystem.instance.screenWidthToWorld(widthInContentSpace);
+            final topLeftGlobal = renderBox.localToGlobal(Offset.zero);
+            final screenZoom = ref.read(screenZoomProvider);
+            final widthInScreenPixels =
+                details.globalPosition.dx - topLeftGlobal.dx;
+            final widthInContentSpace = widthInScreenPixels / screenZoom;
+            final widthInWorldSpace =
+                coordinateSystem.screenWidthToWorld(widthInContentSpace);
 
-          setState(() {
-            isPanning = true;
-            localScale = ImageScalePolicy.clamp(widthInWorldSpace);
-          });
-        },
-        onPanEnd: (details) {
-          final index = PlacedWidget.getIndexByID(
-            widget.placedImage.id,
-            ref.read(placedImageProvider).images,
-          );
-          ref
-              .read(placedImageProvider.notifier)
-              .updateScale(index, localScale!);
-          ref.read(strategyProvider.notifier).setUnsaved();
-
-          setState(() {
-            isPanning = false;
-          });
-        },
-        child: Draggable<PlacedWidget>(
-          data: widget.placedImage,
-          feedback: ZoomTransform(
-            child: IgnorePointer(
-              child: ImageWidget(
-                isFeedback: true,
-                aspectRatio: widget.placedImage.aspectRatio,
-                scale: localScale!,
-                fileExtension: widget.placedImage.fileExtension,
-                id: widget.placedImage.id,
-                tagColorValue: widget.placedImage.tagColorValue,
+            setState(() {
+              isPanning = true;
+              pinnedScreenPosition ??= coordinateSystem.screenPositionForSide(
+                attackScreenPosition: attackScreenPosition,
+                reflectionOffset: renderBox.size.bottomRight(Offset.zero),
+                isAttack: isAttack,
+              );
+              localScale = ImageScalePolicy.clamp(widthInWorldSpace);
+            });
+          },
+          onPanEnd: (_) => _finishResize(ref),
+          child: Draggable<PlacedWidget>(
+            data: widget.placedImage,
+            feedback: ZoomTransform(
+              child: IgnorePointer(
+                child: ImageWidget(
+                  isFeedback: true,
+                  aspectRatio: widget.placedImage.aspectRatio,
+                  scale: localScale!,
+                  fileExtension: widget.placedImage.fileExtension,
+                  id: widget.placedImage.id,
+                  tagColorValue: widget.placedImage.tagColorValue,
+                ),
               ),
             ),
-          ),
-          childWhenDragging: const SizedBox.shrink(),
-          dragAnchorStrategy:
-              ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
-          onDragStarted: () {
-            setState(() {
-              isDragging = true;
-            });
-          },
-          onDragEnd: (details) {
-            widget.onDragEnd(details);
-            setState(() {
-              isDragging = false;
-            });
-          },
-          child: ShadContextMenuRegion(
-            items: _buildTagColorItems(ref),
-            child: MouseWatch(
-              cursor: SystemMouseCursors.click,
-              deleteTarget: HoveredDeleteTarget.image(
-                id: widget.placedImage.id,
-                ownerToken: Object(),
-              ),
-              child: ImageWidget(
-                fileExtension: widget.placedImage.fileExtension,
-                aspectRatio: widget.placedImage.aspectRatio,
-                scale: localScale!,
-                id: widget.placedImage.id,
-                tagColorValue: widget.placedImage.tagColorValue,
+            childWhenDragging: const SizedBox.shrink(),
+            dragAnchorStrategy:
+                ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+            onDragStarted: () {
+              setState(() {
+                isDragging = true;
+              });
+            },
+            onDragEnd: (details) {
+              widget.onDragEnd(details);
+              setState(() {
+                isDragging = false;
+              });
+            },
+            child: ShadContextMenuRegion(
+              items: _buildTagColorItems(ref),
+              child: MouseWatch(
+                cursor: SystemMouseCursors.click,
+                deleteTarget: HoveredDeleteTarget.image(
+                  id: widget.placedImage.id,
+                  ownerToken: Object(),
+                ),
+                child: ImageWidget(
+                  fileExtension: widget.placedImage.fileExtension,
+                  aspectRatio: widget.placedImage.aspectRatio,
+                  scale: localScale!,
+                  id: widget.placedImage.id,
+                  tagColorValue: widget.placedImage.tagColorValue,
+                ),
               ),
             ),
           ),

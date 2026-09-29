@@ -1,0 +1,167 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+void main() {
+  const playArea = Size(1600, 900);
+  const originalPosition = Offset(500, 400);
+
+  Future<ProviderContainer> pumpBox(
+    WidgetTester tester, {
+    required bool isAttack,
+    required Widget Function(WidgetRef ref) builder,
+    required void Function(ProviderContainer container) seed,
+  }) async {
+    tester.view.physicalSize = playArea;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    CoordinateSystem(playAreaSize: playArea);
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(mapProvider.notifier).setAttack(isAttack);
+    seed(container);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          home: Consumer(
+            builder: (context, ref, _) => Stack(children: [builder(ref)]),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return container;
+  }
+
+  /// Drags the resize handle right by [dx], checking at every step that the
+  /// box's top-left stays where the user sees it.
+  Future<void> dragHandleBy(
+    WidgetTester tester, {
+    required Finder box,
+    required MouseCursor handleCursor,
+    required double dx,
+  }) async {
+    final handle = find.byWidgetPredicate(
+      (widget) => widget is MouseRegion && widget.cursor == handleCursor,
+    );
+    final start = tester.getRect(box);
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    for (var moved = 0.0; moved < dx; moved += 20) {
+      await gesture.moveBy(const Offset(20, 0));
+      await tester.pump();
+      expect(tester.getRect(box).topLeft, start.topLeft);
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
+
+  for (final isAttack in [true, false]) {
+    final side = isAttack ? 'attack' : 'defense';
+
+    testWidgets('resizing text on $side moves only its right edge',
+        (tester) async {
+      final container = await pumpBox(
+        tester,
+        isAttack: isAttack,
+        seed: (container) => container.read(textProvider.notifier).fromHive([
+          PlacedText(
+            id: 'text-1',
+            position: originalPosition,
+            size: 200,
+            sizeVersion: PlacedText.currentSizeVersion,
+          )..text = 'Yo text boxes resize properly on both sides now',
+        ]),
+        builder: (ref) {
+          final placedText = ref.watch(textProvider).single;
+          return PlacedTextBuilder(
+            key: ValueKey(placedText.id),
+            size: placedText.size,
+            placedText: placedText,
+            onDragEnd: (_) {},
+          );
+        },
+      );
+      final box = find.byType(TextScaleController);
+      final before = tester.getRect(box);
+
+      await dragHandleBy(
+        tester,
+        box: box,
+        handleCursor: SystemMouseCursors.resizeLeftRight,
+        dx: 120,
+      );
+
+      // Once released, the stored position alone keeps the box in place.
+      final after = tester.getRect(box);
+      expect(after.topLeft, offsetMoreOrLessEquals(before.topLeft));
+      expect(after.width, closeTo(before.width + 120, 10));
+      expect(after.height, lessThan(before.height));
+
+      final stored = container.read(textProvider).single;
+      expect(stored.size, greaterThan(200));
+      if (isAttack) {
+        expect(stored.position, offsetMoreOrLessEquals(originalPosition));
+      }
+    });
+
+    testWidgets('resizing an image on $side keeps its top-left in place',
+        (tester) async {
+      final container = await pumpBox(
+        tester,
+        isAttack: isAttack,
+        seed: (container) =>
+            container.read(placedImageProvider.notifier).fromHive([
+          PlacedImage(
+            id: 'image-1',
+            position: originalPosition,
+            aspectRatio: 16 / 9,
+            scale: 200,
+            fileExtension: null,
+            sizeVersion: worldSizedMediaVersion,
+          ),
+        ]),
+        builder: (ref) {
+          final placedImage = ref.watch(placedImageProvider).images.single;
+          return PlacedImageBuilder(
+            key: ValueKey(placedImage.id),
+            placedImage: placedImage,
+            scale: placedImage.scale,
+            onDragEnd: (_) {},
+          );
+        },
+      );
+      final box = find.byType(ImageScaleController);
+      final before = tester.getRect(box);
+
+      await dragHandleBy(
+        tester,
+        box: box,
+        handleCursor: SystemMouseCursors.resizeDownRight,
+        dx: 120,
+      );
+
+      final after = tester.getRect(box);
+      expect(after.topLeft, offsetMoreOrLessEquals(before.topLeft));
+      expect(after.width, greaterThan(before.width + 100));
+
+      final stored = container.read(placedImageProvider).images.single;
+      expect(stored.scale, greaterThan(200));
+      if (isAttack) {
+        expect(stored.position, offsetMoreOrLessEquals(originalPosition));
+      }
+    });
+  }
+}
