@@ -1198,10 +1198,13 @@ void main() {
       expect(bytes.bytesFor(key('page-image')), [1, 2, 3]);
     });
 
-    test('keeps an upload and its bytes while the server cannot tell',
-        () async {
+    test(
+        'a staged upload keeps its check, and its bytes, while the server '
+        'cannot tell', () async {
       final mediaStore = MemoryDurableCloudMediaOutboxStore();
-      await mediaStore.put(job('page-image'));
+      // Staged: the change placing its image has not landed, so only the
+      // server can say whether anything still shows it.
+      await mediaStore.put(job('page-image', referenceDurable: false));
       final (:container, :repository, :goOnline) = setUp(
         mediaStore: mediaStore,
         strategyStore: MemoryDurableStrategyOutboxStore(),
