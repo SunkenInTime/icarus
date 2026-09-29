@@ -287,11 +287,21 @@ export const listTrashed = query({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const pages = await listRestorablePages(ctx, strategy._id, Date.now());
+    // One read per deleter, however many pages each deleted.
+    const deleters = new Map(
+      pages.flatMap((page) =>
+        page.deletedBy === undefined
+          ? []
+          : [[page.deletedBy, ctx.db.get(page.deletedBy)] as const],
+      ),
+    );
     return await Promise.all(
       pages.map(async (page) => {
         const deletedAt = page.deletedAt!;
         const deleter =
-          page.deletedBy === undefined ? null : await ctx.db.get(page.deletedBy);
+          page.deletedBy === undefined
+            ? null
+            : await deleters.get(page.deletedBy)!;
         return {
           publicId: page.publicId,
           name: page.name,

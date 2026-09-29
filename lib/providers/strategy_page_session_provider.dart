@@ -1115,19 +1115,26 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// Brings [pageId] back from the server's trash, from Recently deleted: at
   /// the place it was deleted from, with everything on it. Changes to it the
   /// server refused while it was in the trash are sent again, once any
-  /// still on their way have been answered; if they are not answered in
-  /// time, the refused ones stay in the sync status, where Keep mine sends
-  /// them.
+  /// still on their way have been answered, and again once the page's
+  /// queued sends have gone: a send whose answer was lost replays under its
+  /// own op id, and may bring back the refusal. Refusals not answered in
+  /// time stay in the sync status, where Keep mine sends them.
   Future<DeletedPageRestore> restorePageFromTrash(String pageId) async {
     final strategyId = ref.read(strategyProvider).strategyId;
     if (strategyId == null) return DeletedPageRestore.failed;
     final outcome = await _restoreOnServer(strategyId, pageId);
     if (outcome != DeletedPageRestore.restored) return outcome;
-    if (await _queueSettles((queue) =>
-        !queue.inFlightByEntityKey.keys.any((key) => key.pageId == pageId))) {
-      await ref
-          .read(strategyOpQueueProvider.notifier)
-          .retryRestoredPage(pageId);
+    final queue = ref.read(strategyOpQueueProvider.notifier);
+    bool onPage(EntitySyncKey key) => key.pageId == pageId;
+    if (await _queueSettles(
+        (state) => !state.inFlightByEntityKey.keys.any(onPage))) {
+      await queue.retryRestoredPage(pageId);
+    }
+    if (await _queueSettles((state) => ![
+          state.queuedByEntityKey,
+          state.inFlightByEntityKey,
+        ].any((sends) => sends.keys.any(onPage)))) {
+      await queue.retryRestoredPage(pageId);
     }
     return DeletedPageRestore.restored;
   }

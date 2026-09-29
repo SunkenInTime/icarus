@@ -238,4 +238,21 @@ void main() {
     expect(find.text('It can no longer be restored.'), findsOneWidget);
     expect(find.text('Restore'), findsNothing);
   });
+
+  testWidgets(
+      'a page whose time ran out while the list was open offers no Restore',
+      (tester) async {
+    final session = _Session([]);
+    await _open(
+      tester,
+      _TrashRepository([
+        _trashed('page-1', 'A exec', ago: const Duration(days: 30, minutes: 1)),
+      ]),
+      session,
+    );
+
+    expect(find.text('It can no longer be restored.'), findsOneWidget);
+    expect(find.text('Deleted 30 days ago'), findsOneWidget);
+    expect(find.text('Restore'), findsNothing);
+  });
 }

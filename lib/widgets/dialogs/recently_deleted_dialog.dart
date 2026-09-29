@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -33,10 +35,24 @@ class _RecentlyDeletedDialogState extends ConsumerState<RecentlyDeletedDialog> {
   bool _loadFailed = false;
   final Map<String, _RowState> _rows = {};
 
+  /// Keeps the times shown current while the dialog stays open, and takes
+  /// Restore away from a page whose time runs out meanwhile.
+  late final Timer _clock;
+
   @override
   void initState() {
     super.initState();
+    _clock = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => setState(() {}),
+    );
     _load();
+  }
+
+  @override
+  void dispose() {
+    _clock.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -178,12 +194,18 @@ class _TrashedPageRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final now = DateTime.now();
-    final error = switch (state) {
-      _RowState.failed =>
-        'Could not restore it. Check your connection and try again.',
-      _RowState.gone => 'It can no longer be restored.',
-      _ => null,
-    };
+    // Past its time here too, as when the server says so.
+    final gone = state == _RowState.gone || !page.restorableUntil.isAfter(now);
+    final error = gone
+        ? 'It can no longer be restored.'
+        : state == _RowState.failed
+            ? 'Could not restore it. Check your connection and try again.'
+            : null;
+    // Type roles from DESIGN.md: body for the name, label for the rest.
+    final label = theme.textTheme.small.copyWith(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -204,33 +226,31 @@ class _TrashedPageRow extends StatelessWidget {
                   style: theme.textTheme.small.copyWith(
                     color: theme.colorScheme.foreground,
                     fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${deletedLabel(page, now)} · ${timeLeftLabel(page, now)}',
-                  style: theme.textTheme.small.copyWith(
-                    color: theme.colorScheme.mutedForeground,
-                    fontSize: 12,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
+                Text(
+                  gone
+                      ? deletedLabel(page, now)
+                      : '${deletedLabel(page, now)} · '
+                          '${timeLeftLabel(page, now)}',
+                  style: label.copyWith(
+                    color: theme.colorScheme.mutedForeground,
+                  ),
+                ),
                 if (error != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     error,
-                    style: theme.textTheme.small.copyWith(
+                    style: label.copyWith(
                       color: theme.colorScheme.destructive,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          if (state != _RowState.gone) ...[
+          if (!gone) ...[
             const SizedBox(width: 12),
             ShadButton.secondary(
               size: ShadButtonSize.sm,

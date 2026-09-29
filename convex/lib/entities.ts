@@ -75,6 +75,20 @@ export function isPastTrashRetention(
   );
 }
 
+/// Whether the strategy has pages in the trash, restorable or not yet purged.
+export async function hasTrashedPages(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+): Promise<boolean> {
+  const trashed = await ctx.db
+    .query("pages")
+    .withIndex("by_strategyId_and_deletedAt", (q) =>
+      q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+    )
+    .first();
+  return trashed !== null;
+}
+
 /// The strategy's pages in the trash that can still be restored, most
 /// recently deleted first.
 export async function listRestorablePages(
@@ -82,14 +96,16 @@ export async function listRestorablePages(
   strategyId: Id<"strategies">,
   now: number,
 ): Promise<Doc<"pages">[]> {
-  const trashed = await ctx.db
+  // Past the retention a page is due for purging (isPastTrashRetention).
+  return await ctx.db
     .query("pages")
     .withIndex("by_strategyId_and_deletedAt", (q) =>
-      q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+      q
+        .eq("strategyId", strategyId)
+        .gt("deletedAt", now - PAGE_TRASH_RETENTION_MS),
     )
     .order("desc")
     .collect();
-  return trashed.filter((page) => !isPastTrashRetention(page, now));
 }
 
 /// The strategy's pages, leaving out those in the trash. Read through an

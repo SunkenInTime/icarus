@@ -1848,10 +1848,50 @@ void main() {
 
     expect(outcome, DeletedPageRestore.restored);
     expect(repository.restoredPageIds, ['page-1']);
-    expect(queue.restoredPageRetries,
-        [(pageId: 'page-1', inFlight: false, refused: false)]);
+    // Once its sends answered, and again once nothing of it is queued.
+    expect(queue.restoredPageRetries, [
+      (pageId: 'page-1', inFlight: false, refused: false),
+      (pageId: 'page-1', inFlight: false, refused: false),
+    ]);
     // The page on screen stays; the restored one comes back in the list.
     expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+  });
+
+  test(
+      'a send whose answer was lost, refused on replay after a restore from '
+      'Recently deleted, is sent again', () async {
+    final repository = _RestoringRepository((_) {});
+    final (:container, :queue) = await pageInTrash(repository);
+    // Sent while the page was in the trash; the server refused it, but the
+    // answer was lost, so it waits to be replayed under its own op id.
+    const lost = EntitySyncKey.element('page-1', 'lost');
+    await queue.syncDesiredGenericOp(
+      entityKey: lost,
+      desiredOp: const ElementDeleteOp(
+        opId: 'lost-op',
+        pagePublicId: 'page-1',
+        elementPublicId: 'lost',
+        expectedElementRevision: 1,
+      ),
+    );
+    // The replay brings back the refusal the server recorded.
+    Future<void>.delayed(const Duration(milliseconds: 10), () {
+      final replayed = queue.state.queuedByEntityKey[lost]!;
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: {...queue.state.queuedByEntityKey}..remove(lost),
+        attentionByEntityKey: {lost: replayed},
+      );
+    });
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restorePageFromTrash('page-1');
+
+    expect(outcome, DeletedPageRestore.restored);
+    expect(queue.restoredPageRetries, [
+      (pageId: 'page-1', inFlight: false, refused: false),
+      (pageId: 'page-1', inFlight: false, refused: true),
+    ]);
   });
 
   test(

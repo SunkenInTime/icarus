@@ -381,6 +381,7 @@ describe("page trash", () => {
     ).toEqual([pageA, pageC]);
     const full = (await owner.query(getFullSnapshot, {
       strategyPublicId,
+      acceptsTrashedPagesLeftOut: true,
     })) as {
       pages: Array<{ publicId: string }>;
       elements: Array<{ publicId: string }>;
@@ -409,6 +410,40 @@ describe("page trash", () => {
     // The library and folder tree read only live pages.
     expect(await library()).toBe("Attack");
     expect(await agentSummary(t)).toEqual(["sova"]);
+  });
+
+  test("a full snapshot is refused to a client that would read the trash's pages as gone, while the strategy has some", async () => {
+    const { owner } = await createHarness();
+    await seed(owner);
+    // Before anything is trashed, every client reads it as always.
+    await expect(
+      owner.query(getFullSnapshot, { strategyPublicId }),
+    ).resolves.toMatchObject({ pages: expect.any(Array) });
+
+    await deleteB(owner);
+
+    // An older client decides from the snapshot whether an upload is still
+    // wanted: without B it would drop B's image. It is told to upgrade.
+    await expectCode(
+      owner.query(getFullSnapshot, { strategyPublicId }),
+      "CLIENT_UPGRADE_REQUIRED",
+    );
+    await expect(
+      owner.query(getFullSnapshot, {
+        strategyPublicId,
+        acceptsTrashedPagesLeftOut: true,
+      }),
+    ).resolves.toMatchObject({ pages: expect.any(Array) });
+
+    // Restored, the strategy has no trash left, and older clients read it.
+    await owner.mutation(restorePage, {
+      ...protocol,
+      strategyPublicId,
+      pagePublicId: pageB,
+    });
+    await expect(
+      owner.query(getFullSnapshot, { strategyPublicId }),
+    ).resolves.toMatchObject({ pages: expect.any(Array) });
   });
 
   test("an old client's pages:delete trashes the page the same way", async () => {

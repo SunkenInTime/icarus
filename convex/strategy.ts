@@ -2,8 +2,10 @@ import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyReadable } from "./lib/auth";
+import { clientUpgradeRequiredError } from "./lib/errors";
 import {
   elementsOnPages,
+  hasTrashedPages,
   getStrategyByPublicId,
   lineupsOnPages,
   listLivePages,
@@ -69,14 +71,25 @@ export const getFullSnapshot = query({
     shareToken: v.optional(v.string()),
     // Set by clients that ask images:listReferencedAssetIds, not this
     // snapshot, whether an upload is still wanted: a snapshot that leaves
-    // deleted pages out cannot make them drop one. Ignored until pages can
-    // be deleted into a trash.
+    // the trash's pages out cannot make them drop one. Older clients are
+    // refused while the strategy holds trashed pages (see below).
     acceptsTrashedPagesLeftOut: v.optional(v.boolean()),
   },
   returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
+    // An older client decides from this snapshot whether an upload is still
+    // wanted. Without the trash's pages it would drop the bytes of an image
+    // on a page that can be restored, so it is told to upgrade instead; its
+    // upload check keeps the bytes when the read fails. A reload of the web
+    // app is the upgrade.
+    if (
+      args.acceptsTrashedPagesLeftOut !== true &&
+      (await hasTrashedPages(ctx, strategy._id))
+    ) {
+      throw clientUpgradeRequiredError();
+    }
     // Content on a page in the trash is left out with its page.
     const pages = await listLivePages(ctx, strategy._id);
     const [elements, lineups] = await Promise.all([
