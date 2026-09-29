@@ -228,9 +228,9 @@ void main() {
     expect(container.read(textProvider).single.size, greaterThan(200));
   });
 
-  testWidgets('release stores what is on screen before the next frame',
+  testWidgets('a release before the next frame keeps its last movement',
       (tester) async {
-    final container = await pumpBox(
+    await pumpBox(
       tester,
       seed: (container) => container.read(textProvider.notifier).fromHive([
         PlacedText(
@@ -269,10 +269,61 @@ void main() {
     // A last move and the release arrive before the next frame draws it.
     await gesture.moveBy(const Offset(40, 0));
     await gesture.up();
-    expect(container.read(textProvider).single.size, greaterThan(200));
-
     await tester.pumpAndSettle();
+
     expect(tester.getRect(box).topLeft, offsetMoreOrLessEquals(shown.topLeft));
-    expect(tester.getRect(box).width, closeTo(shown.width, 0.01));
+    expect(tester.getRect(box).width, closeTo(shown.width + 40, 1));
+  });
+
+  testWidgets('a page switch before the resize is stored leaves the copy alone',
+      (tester) async {
+    final container = await pumpBox(
+      tester,
+      seed: (container) => container.read(textProvider.notifier).fromHive([
+        PlacedText(
+          id: 'text-1',
+          position: originalPosition,
+          size: 200,
+          sizeVersion: PlacedText.currentSizeVersion,
+        )..text = 'Yo text boxes resize properly on both sides now',
+      ]),
+      side: ValueNotifier(false),
+      builder: (ref, isAttack) {
+        final placedText = ref.watch(textProvider).single;
+        return PlacedTextBuilder(
+          key: ValueKey(placedText.id),
+          size: placedText.size,
+          placedText: placedText,
+          isAttack: isAttack,
+          onDragEnd: (_) {},
+        );
+      },
+    );
+    final handle = find.byWidgetPredicate(
+      (widget) =>
+          widget is MouseRegion &&
+          widget.cursor == SystemMouseCursors.resizeLeftRight,
+    );
+
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    for (var i = 0; i < 3; i++) {
+      await gesture.moveBy(const Offset(20, 0));
+      await tester.pump();
+    }
+    await gesture.up();
+
+    // Before the frame, the next page loads its copy of the text.
+    final copy = PlacedText(
+      id: 'text-1',
+      position: const Offset(100, 100),
+      size: 200,
+      sizeVersion: PlacedText.currentSizeVersion,
+    )..text = 'Yo text boxes resize properly on both sides now';
+    container.read(textProvider.notifier).fromHive([copy]);
+    await tester.pumpAndSettle();
+
+    final loaded = container.read(textProvider).single;
+    expect(loaded.size, 200);
+    expect(loaded.position, const Offset(100, 100));
   });
 }
