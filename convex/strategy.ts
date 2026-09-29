@@ -2,7 +2,11 @@ import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
-import { getStrategyByPublicId, sortByNumberField } from "./lib/entities";
+import {
+  getStrategyByPublicId,
+  listLivePages,
+  sortByNumberField,
+} from "./lib/entities";
 import {
   collectReferencedAssetIds,
   getViewerAssetForStrategy,
@@ -43,10 +47,7 @@ export const getShell = query({
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "viewer");
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
 
     return {
       header: serializeStrategyHeader(strategy, role),
@@ -65,11 +66,9 @@ export const getFullSnapshot = query({
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "viewer");
+    // Content on a page in the trash is left out with its page.
     const [pages, elements, lineups] = await Promise.all([
-      ctx.db
-        .query("pages")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-        .collect(),
+      listLivePages(ctx, strategy._id),
       ctx.db
         .query("elements")
         .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))

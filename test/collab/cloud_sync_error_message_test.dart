@@ -44,6 +44,7 @@ void main() {
     expect(isSpecificAttentionReason(lineupLinkEndMissingMessage), isTrue);
     expect(isSpecificAttentionReason(lineupPageMismatchMessage), isTrue);
     expect(isSpecificAttentionReason(lineupEndInUseMessage), isTrue);
+    expect(isSpecificAttentionReason(pageDeletedMessage), isTrue);
     expect(isSpecificAttentionReason(cloudOperationTooLargeMessage), isTrue);
     for (final reason in [
       'Some saved work needs attention.',

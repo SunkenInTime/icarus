@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -54,6 +55,21 @@ enum PageSwitchDirection { next, previous }
 /// The page on screen, which a teammate deleted while it held work the server
 /// never got. [name] is its name when it was last loaded.
 typedef DeletedPage = ({String pageId, String name});
+
+/// How an attempt to restore the deleted page on screen ended.
+enum DeletedPageRestore {
+  /// The page is back on the server and on screen, and the work on it is
+  /// saving as usual.
+  restored,
+
+  /// The server can no longer restore the page: its time in the trash is
+  /// over. The work on it cannot be saved.
+  gone,
+
+  /// The page could not be restored, or not loaded once it was. Nothing on
+  /// this device changed; trying again is safe.
+  failed,
+}
 
 class StrategyPageSessionState {
   const StrategyPageSessionState({
@@ -1006,6 +1022,59 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
     state = state.copyWith(clearDeletedPage: true);
     return true;
+  }
+
+  /// Brings the deleted page on screen back from the server's trash, with
+  /// everything it had there, so the unsaved work on it saves as usual: the
+  /// changes the server refused while it was in the trash are sent again,
+  /// and the canvas's other edits are queued against the restored copy. The
+  /// notice stays until the page is back on screen, read live.
+  Future<DeletedPageRestore> restoreDeletedPage() async {
+    final deleted = state.deletedPage;
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (deleted == null || strategyId == null) {
+      return DeletedPageRestore.failed;
+    }
+    try {
+      await ref.read(convexStrategyRepositoryProvider).restorePage(
+            strategyPublicId: strategyId,
+            pagePublicId: deleted.pageId,
+          );
+    } catch (error, stackTrace) {
+      if (isTypedConvexNotFoundError(error)) return DeletedPageRestore.gone;
+      AppErrorReporter.reportError(
+        'Could not restore a deleted page.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'strategy_page_session:restore_deleted_page',
+        promptUser: false,
+      );
+      return DeletedPageRestore.failed;
+    }
+    // A change still on its way when the page came back may yet be refused;
+    // its answer comes before the refused changes are sent again.
+    await _queueSettles((queue) => !queue.inFlightByEntityKey.keys
+        .any((key) => key.pageId == deleted.pageId));
+    await ref
+        .read(remoteEditorSnapshotProvider.notifier)
+        .showRestoredPage(deleted.pageId);
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (state.deletedPage != deleted ||
+        snapshot == null ||
+        snapshot.activePage?.page.publicId != deleted.pageId ||
+        !snapshot.pages.any((page) => page.publicId == deleted.pageId)) {
+      return DeletedPageRestore.failed;
+    }
+    // Loading the page that was to replace it moved live sync off it.
+    ref
+        .read(activePageLiveSyncProvider.notifier)
+        .resumePage(strategyPublicId: strategyId, pageId: deleted.pageId);
+    state = state.copyWith(clearDeletedPage: true);
+    await ref
+        .read(strategyOpQueueProvider.notifier)
+        .retryRestoredPage(deleted.pageId);
+    await flushCurrentPage(flushImmediately: true);
+    return DeletedPageRestore.restored;
   }
 
   Future<void> _reapplyRemotePage(String pageId) async {

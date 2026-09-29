@@ -2,6 +2,7 @@ import { cronJobs } from "convex/server";
 import {
   purgeOldOperationEventsRef,
   purgeOldTombstonesRef,
+  purgeTrashedPagesRef,
 } from "./maintenance";
 import {
   markStaleImageUploadsDeletedRef,
@@ -21,6 +22,12 @@ crons.interval(
   "purge-tombstones",
   { hours: 24 },
   purgeOldTombstonesRef,
+  {},
+);
+crons.interval(
+  "purge-trashed-pages",
+  { hours: 24 },
+  purgeTrashedPagesRef,
   {},
 );
 crons.interval(

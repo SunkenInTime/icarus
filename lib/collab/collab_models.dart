@@ -34,6 +34,11 @@ const lineupPageMismatchMessage =
 const lineupEndInUseMessage =
     'Another lineup still uses this origin or landing spot';
 
+/// The server's message when it refuses a change to a page in its trash
+/// (PAGE_DELETED). Such a change lands if the page is restored and it is
+/// sent again.
+const pageDeletedMessage = 'This page was deleted';
+
 typedef CloudPayload = Map<String, dynamic>;
 
 int serializedConvexValueUtf8Bytes(Object? value) =>

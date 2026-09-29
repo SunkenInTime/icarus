@@ -34,6 +34,7 @@ enum ConvexErrorCode {
   missingPageId('MISSING_PAGE_ID'),
   missingPagePublicId('MISSING_PAGE_PUBLIC_ID'),
   notFound('NOT_FOUND'),
+  pageDeleted('PAGE_DELETED'),
   pageDescriptorRequiresPageOp('PAGE_DESCRIPTOR_REQUIRES_PAGE_OP'),
   pageSettingsRequirePageContent('PAGE_SETTINGS_REQUIRE_PAGE_CONTENT'),
   pageStrategyMismatch('PAGE_STRATEGY_MISMATCH'),

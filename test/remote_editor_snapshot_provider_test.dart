@@ -62,6 +62,45 @@ void main() {
       2,
     );
   });
+
+  test('a restored page is read fresh with the shell and watched again',
+      () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+    // A teammate deletes page a; the editor's live read moves to b.
+    repository.shells.add(_shell(['b']));
+    await _settle();
+    expect(remote.activePagePublicId, 'b');
+
+    // Restored on the server; the shell watched has not caught up yet.
+    await remote.showRestoredPage('a');
+
+    final snapshot = container.read(remoteEditorSnapshotProvider).valueOrNull;
+    expect(snapshot?.activePage?.page.publicId, 'a');
+    expect(snapshot?.pages.map((page) => page.publicId), ['a', 'b']);
+    expect(repository.watchedPages.last, 'a');
+    repository.pageStreams['a']!.add(_page('a', revision: 2));
+    await _settle();
+    expect(
+      container
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.page
+          .revision,
+      2,
+    );
+  });
 }
 
 Future<void> _settle() async {

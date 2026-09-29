@@ -112,6 +112,15 @@ class RemoteEditorSnapshotNotifier
     }
   }
 
+  /// Shows [pagePublicId], which the server has just restored from its
+  /// trash, and watches it: read fresh along with the shell, since the shell
+  /// last watched may not list it yet.
+  Future<void> showRestoredPage(String pagePublicId) async {
+    if (_activeStrategyPublicId == null) return;
+    _activePagePublicId = pagePublicId;
+    await refresh();
+  }
+
   void clear() {
     _activeStrategyPublicId = null;
     _activePagePublicId = null;

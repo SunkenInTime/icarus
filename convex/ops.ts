@@ -16,7 +16,10 @@ import {
 import {
   clampPageIndex,
   getStrategyByPublicId,
+  isTrashed,
+  listLivePages,
   sortByNumberField,
+  trashPage,
 } from "./lib/entities";
 import {
   applyBatchResultValidator,
@@ -32,8 +35,11 @@ import {
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
 import { valuesEqual } from "./lib/canonicalValues";
-import { errorWithCode, invalidPayloadError } from "./lib/errors";
-import { purgeDeletedPageOrphansRef } from "./maintenance";
+import {
+  errorWithCode,
+  invalidPayloadError,
+  pageDeletedError,
+} from "./lib/errors";
 
 type ElementPayload = Doc<"elements">["payload"];
 type LineupPayload = Doc<"lineups">["payload"];
@@ -444,6 +450,32 @@ async function getPageByPublicIdOrNull(
     .first();
 }
 
+/// Refuses a change to content on a page in the trash, or on one an older
+/// delete removed whose rows wait to be purged. A change refused while its
+/// page is in the trash lands if the page is restored and it is sent again.
+async function assertContentPageLive(
+  ctx: MutationCtx,
+  pageId: Id<"pages">,
+): Promise<void> {
+  const page = await ctx.db.get(pageId);
+  if (page === null || isTrashed(page)) throw pageDeletedError();
+}
+
+/// The page a content op names to add to or move to: refused if it is not
+/// this strategy's, or is in the trash.
+async function requireTargetPage(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  pagePublicId: string,
+): Promise<Doc<"pages">> {
+  const page = await getPageByPublicIdOrNull(ctx, pagePublicId);
+  if (page === null || page.strategyId !== strategy._id) {
+    throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
+  }
+  if (isTrashed(page)) throw pageDeletedError();
+  return page;
+}
+
 async function getElementByPublicIdOrNull(
   ctx: MutationCtx,
   publicId: string,
@@ -618,12 +650,16 @@ async function getTargetSnapshot(
   if (publicId === undefined) return null;
   if (op.entityType === "page") {
     const page = await getPageByPublicIdOrNull(ctx, publicId);
-    if (page === null || page.strategyId !== strategy._id) return null;
+    if (page === null || page.strategyId !== strategy._id || isTrashed(page)) {
+      return null;
+    }
     return { revision: page.revision, payload: pagePayload(page) };
   }
   if (op.entityType === "pageContent") {
     const page = await getPageByPublicIdOrNull(ctx, publicId);
-    if (page === null || page.strategyId !== strategy._id) return null;
+    if (page === null || page.strategyId !== strategy._id || isTrashed(page)) {
+      return null;
+    }
     const content = await getPageContent(ctx, page._id);
     return {
       revision: content.revision,
@@ -829,11 +865,9 @@ async function applyPageOp(
       if (existing.strategyId !== strategy._id) {
         return { strategy, result: rejected("page_strategy_mismatch") };
       }
+      if (isTrashed(existing)) throw pageDeletedError();
       const content = await getPageContent(ctx, existing._id);
-      const pages = await ctx.db
-        .query("pages")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-        .collect();
+      const pages = await listLivePages(ctx, strategy._id);
       const desiredSortIndex = clampPageIndex(
         op.sortIndex ?? 0,
         Math.max(0, pages.length - 1),
@@ -868,10 +902,7 @@ async function applyPageOp(
     }
 
     const now = Date.now();
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
     const orderedPages = sortByNumberField(pages, "sortIndex");
     const desiredSortIndex = clampPageIndex(
       op.sortIndex ?? 0,
@@ -925,7 +956,12 @@ async function applyPageOp(
   }
 
   if (op.kind === "delete") {
-    if (existing === null || existing.strategyId !== strategy._id) {
+    // Already in the trash counts as deleted.
+    if (
+      existing === null ||
+      existing.strategyId !== strategy._id ||
+      isTrashed(existing)
+    ) {
       return { strategy, result: noop(strategy.revision) };
     }
     const mismatch = requireExpectedRevision(op, strategy.revision);
@@ -939,41 +975,12 @@ async function applyPageOp(
         ),
       };
     }
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
     if (pages.length <= 1) {
       throw errorWithCode("INVALID_OP", "Cannot delete last page");
     }
-    const contentRows = await ctx.db
-      .query("pageContents")
-      .withIndex("by_pageId", (q) => q.eq("pageId", existing._id))
-      .collect();
-    for (const content of contentRows) await ctx.db.delete(content._id);
-    await ctx.db.delete(existing._id);
-    await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
-      pageId: existing._id,
-      strategyId: strategy._id,
-    });
     const now = Date.now();
-    const remaining = sortByNumberField(
-      pages.filter((page) => page._id !== existing._id),
-      "sortIndex",
-    );
-    for (let index = 0; index < remaining.length; index += 1) {
-      const page = remaining[index]!;
-      const normalizedName =
-        page.isAutoNamed === true ? `Page ${index + 1}` : page.name;
-      if (page.sortIndex !== index || page.name !== normalizedName) {
-        await ctx.db.patch(page._id, {
-          name: normalizedName,
-          sortIndex: index,
-          revision: page.revision + 1,
-          updatedAt: now,
-        });
-      }
-    }
+    await trashPage(ctx, existing, pages, now);
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
     return {
@@ -989,11 +996,9 @@ async function applyPageOp(
   if (existing === null || existing.strategyId !== strategy._id) {
     return { strategy, result: rejected("not_found") };
   }
+  if (isTrashed(existing)) throw pageDeletedError();
   if (op.kind === "reorder") {
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
     const orderedPages = sortByNumberField(pages, "sortIndex");
     const currentIndex = orderedPages.findIndex(
       (page) => page._id === existing._id,
@@ -1119,6 +1124,7 @@ async function applyPageContentOp(
   if (page === null || page.strategyId !== strategy._id) {
     return rejected("not_found");
   }
+  if (isTrashed(page)) throw pageDeletedError();
   const payload = assertPagePayload(op.payload);
   if (payload.name !== undefined || payload.isAttack !== undefined) {
     throw errorWithCode(
@@ -1165,15 +1171,13 @@ async function applyElementOp(
     if (op.pagePublicId === undefined) {
       throw errorWithCode("MISSING_PAGE_PUBLIC_ID", "Missing pagePublicId");
     }
-    const page = await getPageByPublicIdOrNull(ctx, op.pagePublicId);
-    if (page === null || page.strategyId !== strategy._id) {
-      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-    }
+    const page = await requireTargetPage(ctx, strategy, op.pagePublicId);
     const payload = assertElementPayload(op.payload);
     if (existing !== null) {
       if (existing.strategyId !== strategy._id) {
         return rejected("element_strategy_mismatch");
       }
+      await assertContentPageLive(ctx, existing.pageId);
       if (existing.deleted) {
         const mismatch = requireExpectedRevision(op, existing.revision);
         if (mismatch !== null) {
@@ -1236,6 +1240,7 @@ async function applyElementOp(
     if (existing === null || existing.strategyId !== strategy._id)
       return noop();
     if (existing.deleted) return noop(existing.revision, existing.pageId);
+    await assertContentPageLive(ctx, existing.pageId);
     const mismatch = requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
       return rejected(
@@ -1260,6 +1265,7 @@ async function applyElementOp(
   if (existing === null || existing.strategyId !== strategy._id) {
     return rejected("not_found");
   }
+  await assertContentPageLive(ctx, existing.pageId);
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
   if (op.kind === "patch") {
@@ -1284,10 +1290,7 @@ async function applyElementOp(
       setIfChanged(patch, "sortIndex", existing.sortIndex, op.sortIndex);
     }
     if (op.pagePublicId !== undefined) {
-      const page = await getPageByPublicIdOrNull(ctx, op.pagePublicId);
-      if (page === null || page.strategyId !== strategy._id) {
-        throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-      }
+      const page = await requireTargetPage(ctx, strategy, op.pagePublicId);
       setIfChanged(patch, "pageId", existing.pageId, page._id);
       eventPageId = page._id;
     }
@@ -1343,12 +1346,10 @@ async function applyLineupOp(
     if (op.pagePublicId === undefined) {
       throw errorWithCode("MISSING_PAGE_PUBLIC_ID", "Missing pagePublicId");
     }
-    const page = await getPageByPublicIdOrNull(ctx, op.pagePublicId);
-    if (page === null || page.strategyId !== strategy._id) {
-      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-    }
+    const page = await requireTargetPage(ctx, strategy, op.pagePublicId);
     const payload = assertLineupPayload(op.payload, publicId);
     if (existing !== null) {
+      await assertContentPageLive(ctx, existing.pageId);
       if (existing.deleted) {
         const mismatch = requireExpectedRevision(op, existing.revision);
         if (mismatch !== null) {
@@ -1415,6 +1416,7 @@ async function applyLineupOp(
     if (existing === null || existing.strategyId !== strategy._id)
       return noop();
     if (existing.deleted) return noop(existing.revision, existing.pageId);
+    await assertContentPageLive(ctx, existing.pageId);
     const mismatch = requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
       return rejected(
@@ -1442,6 +1444,7 @@ async function applyLineupOp(
   if (existing === null || existing.strategyId !== strategy._id) {
     return rejected("not_found");
   }
+  await assertContentPageLive(ctx, existing.pageId);
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
   if (op.kind === "patch") {

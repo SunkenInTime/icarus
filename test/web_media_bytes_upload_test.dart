@@ -272,7 +272,7 @@ ProviderContainer _webSession({
       convexConnectionProvider.overrideWith((ref) => Stream.value(online)),
       strategyProvider.overrideWith(_CloudStrategy.new),
       strategyOpQueueProvider.overrideWith(_OpQueue.new),
-      cloudMediaReferenceSnapshotLoaderProvider.overrideWithValue(
+      cloudMediaReferenceLoaderProvider.overrideWithValue(
         (_) async => throw StateError('no server reads in this test'),
       ),
     ],

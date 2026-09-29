@@ -137,6 +137,15 @@ class ConvexStrategyRepository {
         .map(_pageSnapshot);
   }
 
+  /// Every image the strategy's content shows, pages in the server's trash
+  /// included, or null while the server cannot tell yet.
+  Future<Set<String>?> fetchReferencedAssetIds(String strategyPublicId) async {
+    final ids = await _api.images
+        .listReferencedAssetIds(strategyPublicId: strategyPublicId)
+        .fetch();
+    return ids?.toSet();
+  }
+
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId,
   ) async {
@@ -461,6 +470,19 @@ class ConvexStrategyRepository {
       isAttack: isAttack,
       expectedRevision: expectedRevision.toDouble(),
       settings: _pageSettings(settings),
+    );
+  }
+
+  /// Brings a deleted page back from the server's trash. Throws NOT_FOUND
+  /// (see [isTypedConvexNotFoundError]) once it can no longer be restored.
+  Future<void> restorePage({
+    required String strategyPublicId,
+    required String pagePublicId,
+  }) async {
+    await _api.pages.restore(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+      pagePublicId: pagePublicId,
     );
   }
 

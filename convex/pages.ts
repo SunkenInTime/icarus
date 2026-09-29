@@ -5,12 +5,16 @@ import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
-import { purgeDeletedPageOrphansRef } from "./maintenance";
 import {
   clampPageIndex,
   getPageByPublicId,
   getStrategyByPublicId,
+  isPastTrashRetention,
+  isTrashed,
+  listLivePages,
+  restoreTrashedPage,
   sortByNumberField,
+  trashPage,
 } from "./lib/entities";
 import { strategySettingsValidator } from "./lib/payloadValidators";
 import {
@@ -19,9 +23,11 @@ import {
   notFoundError,
   errorWithCode,
   internalError,
+  pageDeletedError,
 } from "./lib/errors";
 import { serializePageDescriptor } from "./lib/snapshotSerialization";
 import { valuesEqual } from "./lib/canonicalValues";
+import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
   pageDescriptorValidator,
   revisionResultValidator,
@@ -33,10 +39,7 @@ export const listForStrategy = query({
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
     return sortByNumberField(pages, "sortIndex").map((page) =>
       serializePageDescriptor(strategy.publicId, page),
     );
@@ -64,10 +67,7 @@ export const add = mutation({
       .query("pages")
       .withIndex("by_publicId", (q) => q.eq("publicId", args.pagePublicId))
       .first();
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
 
     if (existingPage !== null) {
       if (existingPage.strategyId !== strategy._id) {
@@ -75,6 +75,7 @@ export const add = mutation({
           `Page publicId already exists: ${args.pagePublicId}`,
         );
       }
+      if (isTrashed(existingPage)) throw pageDeletedError();
       const pageContents = await ctx.db
         .query("pageContents")
         .withIndex("by_pageId", (q) => q.eq("pageId", existingPage._id))
@@ -191,6 +192,8 @@ export const rename = mutation({
   },
 });
 
+/// Moves a page to the trash (see trashPage). Deleting a page already in
+/// the trash, or gone, changes nothing.
 const deletePage = mutation({
   args: {
     ...cloudProtocolArgs,
@@ -203,10 +206,7 @@ const deletePage = mutation({
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
     const page = pages.find(
       (candidate) => candidate.publicId === args.pagePublicId,
     );
@@ -220,38 +220,53 @@ const deletePage = mutation({
       throw conflictError("Strategy revision mismatch");
     }
 
-    const pageContents = await ctx.db
-      .query("pageContents")
-      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-      .collect();
-    for (const pageContent of pageContents) {
-      await ctx.db.delete(pageContent._id);
-    }
-    await ctx.db.delete(page._id);
-    await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
-      pageId: page._id,
-      strategyId: strategy._id,
-    });
-
-    const ordered = sortByNumberField(
-      pages.filter((candidate) => candidate._id !== page._id),
-      "sortIndex",
-    );
     const now = Date.now();
-    for (let index = 0; index < ordered.length; index += 1) {
-      const current = ordered[index]!;
-      const normalizedName =
-        current.isAutoNamed === true ? `Page ${index + 1}` : current.name;
-      if (current.sortIndex !== index || current.name !== normalizedName) {
-        await ctx.db.patch(current._id, {
-          name: normalizedName,
-          sortIndex: index,
-          revision: current.revision + 1,
-          updatedAt: now,
-        });
-      }
+    await trashPage(ctx, page, pages, now);
+    await refreshStrategyAgentSummary(ctx, strategy._id);
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+    return { ok: true, revision } as const;
+  },
+});
+
+/// Brings a page back from the trash with everything on it, at the place it
+/// was deleted from (see restoreTrashedPage). Anyone who can delete a page
+/// can restore it. A page past its time in the trash, purged, or never in
+/// this strategy is not found; restoring a live page changes nothing.
+export const restore = mutation({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicId: v.string(),
+    pagePublicId: v.string(),
+  },
+  returns: revisionResultValidator,
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    await assertStrategyRole(ctx, strategy, "editor");
+    const page = await ctx.db
+      .query("pages")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.pagePublicId))
+      .first();
+    const now = Date.now();
+    if (
+      page === null ||
+      page.strategyId !== strategy._id ||
+      isPastTrashRetention(page, now)
+    ) {
+      throw notFoundError("Page", args.pagePublicId);
+    }
+    if (!isTrashed(page)) {
+      return { ok: true, reused: true, revision: strategy.revision } as const;
     }
 
+    await restoreTrashedPage(
+      ctx,
+      page,
+      await listLivePages(ctx, strategy._id),
+      now,
+    );
+    await refreshStrategyAgentSummary(ctx, strategy._id);
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
     return { ok: true, revision } as const;
@@ -270,10 +285,7 @@ export const reorder = mutation({
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
     if (pages.length !== args.orderedPagePublicIds.length) {
       throw invalidOpError("Page count mismatch");
     }

@@ -416,6 +416,9 @@ abstract interface class ImagesModule {
   ConvexQuery<List<ImagesListForStrategyResultItem>> listForStrategy({
     required String strategyPublicId,
   });
+  ConvexQuery<List<String>?> listReferencedAssetIds({
+    required String strategyPublicId,
+  });
 }
 
 final class _ImagesModule implements ImagesModule {
@@ -532,6 +535,21 @@ final class _ImagesModule implements ImagesModule {
       name: 'images:listForStrategy',
       args: args,
       decode: decodeImagesListForStrategyResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<String>?> listReferencedAssetIds({
+    required String strategyPublicId,
+  }) {
+    final args = encodeImagesListReferencedAssetIdsArgs(
+      strategyPublicId: strategyPublicId,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'images:listReferencedAssetIds',
+      args: args,
+      decode: decodeImagesListReferencedAssetIdsResult,
     );
   }
 }
@@ -781,6 +799,11 @@ abstract interface class PagesModule {
     required List<String> orderedPagePublicIds,
     required String strategyPublicId,
   });
+  Future<ConvexValue> restore({
+    required double clientProtocolVersion,
+    required String pagePublicId,
+    required String strategyPublicId,
+  });
 }
 
 final class _PagesModule implements PagesModule {
@@ -889,6 +912,23 @@ final class _PagesModule implements PagesModule {
     return _invoke(
       () => _transport.mutation('pages:reorder', args),
       decodePagesReorderResult,
+    );
+  }
+
+  @override
+  Future<ConvexValue> restore({
+    required double clientProtocolVersion,
+    required String pagePublicId,
+    required String strategyPublicId,
+  }) {
+    final args = encodePagesRestoreArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      pagePublicId: pagePublicId,
+      strategyPublicId: strategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('pages:restore', args),
+      decodePagesRestoreResult,
     );
   }
 }

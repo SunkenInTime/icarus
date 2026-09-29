@@ -13,7 +13,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _pagesBarCornerRadius = 12;
@@ -261,14 +261,11 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canDeletePage || pageCount <= 1) return;
 
-    final confirm = await ConfirmAlertDialog.show(
-      context: context,
-      title: "Delete '${page.name}'?",
-      content:
-          "Are you sure you want to delete this page? This action cannot be undone.",
-      confirmText: "Delete",
-      cancelText: "Cancel",
-      isDestructive: true,
+    final confirm = await confirmDeletePage(
+      context,
+      ref,
+      pageId: page.id,
+      pageName: page.name,
     );
 
     if (confirm != true) return;

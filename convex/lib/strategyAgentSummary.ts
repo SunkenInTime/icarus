@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { isTrashed } from "./entities";
 
 /// Reads the agent type of one agent element or lineup payload. The client
 /// stores the agent enum name under `type` (an element) or under
@@ -19,7 +20,8 @@ function agentTypeOf(data: unknown): string | null {
 }
 
 /// Recomputes which agents a strategy uses, from its live agent elements and
-/// lineup origins, and stores the answer in its own row. Content ops never
+/// lineup origins on pages not in the trash, and stores the answer in its
+/// own row. Content ops never
 /// touch the strategy row itself; the summary is derived data that the
 /// folder tree reads without scanning elements.
 export async function refreshStrategyAgentSummary(
@@ -41,10 +43,22 @@ export async function refreshStrategyAgentSummary(
       q.eq("strategyId", strategyId).eq("payloadKind", "lineupOrigin"),
     )
     .collect();
+  const trashedPageIds = new Set(
+    (
+      await ctx.db
+        .query("pages")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+        .collect()
+    )
+      .filter(isTrashed)
+      .map((page) => page._id),
+  );
+  const onLivePage = (row: { pageId: Id<"pages"> }) =>
+    !trashedPageIds.has(row.pageId);
   await storeStrategyAgentSummary(
     ctx,
     strategyId,
-    agentTypesOf(agents, origins),
+    agentTypesOf(agents.filter(onLivePage), origins.filter(onLivePage)),
   );
 }
 

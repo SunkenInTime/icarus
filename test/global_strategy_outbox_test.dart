@@ -711,6 +711,79 @@ void main() {
     expect(await notifier.discardDeletedPage('page-one'), isTrue);
   });
 
+  test(
+      "a restored page sends again, under new op ids, only its changes "
+      'refused while it was deleted', () async {
+    final store = MemoryDurableStrategyOutboxStore();
+    // A new element, so no revision to rebase on: before, it could not be
+    // retried at all.
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'refused-add',
+      status: DurableOutboxStatus.attention,
+      lastError: pageDeletedMessage,
+      op: const ElementAddOp(
+        opId: 'refused-add',
+        elementPublicId: 'element-one',
+        pagePublicId: 'page-one',
+        payload: {'value': 'new'},
+        sortIndex: 3,
+      ),
+    ));
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'conflict',
+      elementId: 'element-two',
+      status: DurableOutboxStatus.attention,
+      lastError: 'revision_mismatch',
+    ));
+    await store.put(_record(
+      strategyId: 'active',
+      opId: 'other-page',
+      elementId: 'element-three',
+      status: DurableOutboxStatus.attention,
+      lastError: pageDeletedMessage,
+      op: const ElementPatchOp(
+        opId: 'other-page',
+        elementPublicId: 'element-three',
+        pagePublicId: 'page-two',
+        payload: {'value': 'kept'},
+        expectedElementRevision: 1,
+      ),
+    ));
+    final container = _container(
+      store: store,
+      repository: _RecordingRepository(),
+      connected: () => false,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('active', accountId: 'account-a');
+
+    await notifier.retryRestoredPage('page-one');
+
+    final queue = container.read(strategyOpQueueProvider);
+    final retried = queue
+        .queuedByEntityKey[EntitySyncKey.element('page-one', 'element-one')]!
+        .pending
+        .op as ElementAddOp;
+    // The server answers a known op id as it did before.
+    expect(retried.opId, isNot('refused-add'));
+    expect(retried.payload, {'value': 'new'});
+    expect(retried.sortIndex, 3);
+    // A conflict on the page, and work for another page, still wait.
+    expect(queue.attentionByEntityKey.keys, {
+      EntitySyncKey.element('page-one', 'element-two'),
+      EntitySyncKey.element('page-two', 'element-three'),
+    });
+    final record = store
+        .load()
+        .records
+        .singleWhere((record) => record.entityKey.entityId == 'element-one');
+    expect(record.status, DurableOutboxStatus.queued);
+    expect(record.pending.op.opId, retried.opId);
+  });
+
   test('auth readiness recovery resumes eligible closed-strategy work',
       () async {
     final store = MemoryDurableStrategyOutboxStore();

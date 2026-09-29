@@ -1,7 +1,11 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
-import { getPageByPublicId, getStrategyByPublicId } from "./lib/entities";
+import {
+  getPageByPublicId,
+  getStrategyByPublicId,
+  listLivePages,
+} from "./lib/entities";
 import { errorWithCode } from "./lib/errors";
 import { lineupValidator } from "./lib/publicValidators";
 
@@ -50,10 +54,7 @@ export const listForStrategy = query({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
 
-    const pages = await ctx.db
-      .query("pages")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
+    const pages = await listLivePages(ctx, strategy._id);
     const pagePublicIds = new Map(
       pages.map((page) => [page._id, page.publicId]),
     );

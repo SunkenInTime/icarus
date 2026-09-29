@@ -207,7 +207,7 @@ ProviderContainer _container(
   bool cloudReady = false,
   bool cloudEnabled = false,
   String? accountId = 'account-a',
-  CloudMediaReferenceSnapshotLoader? referenceSnapshotLoader,
+  CloudMediaReferenceLoader? referenceLoader,
   ConvexStrategyRepository? repository,
 }) {
   final resolvedOpQueueState = opQueueState ??
@@ -246,9 +246,9 @@ ProviderContainer _container(
       strategyOpQueueProvider.overrideWith(
         () => _FixedOpQueue(resolvedOpQueueState),
       ),
-      if (referenceSnapshotLoader != null)
-        cloudMediaReferenceSnapshotLoaderProvider.overrideWithValue(
-          referenceSnapshotLoader,
+      if (referenceLoader != null)
+        cloudMediaReferenceLoaderProvider.overrideWithValue(
+          referenceLoader,
         ),
     ],
   );
@@ -264,27 +264,6 @@ DurableOutboxRecord _durableRecord(StrategyOp op) {
     status: DurableOutboxStatus.queued,
     createdAt: DateTime.utc(2026, 9, 3),
     updatedAt: DateTime.utc(2026, 9, 3),
-  );
-}
-
-RemoteFullStrategySnapshot _fullSnapshot({
-  List<RemoteElement> elements = const [],
-  List<RemoteLineup> lineups = const [],
-}) {
-  final now = DateTime.utc(2026, 9, 3);
-  return RemoteFullStrategySnapshot(
-    header: RemoteStrategyHeader(
-      publicId: 'strategy-a',
-      name: 'Strategy A',
-      mapData: 'ascent',
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    ),
-    pages: const [],
-    elementsByPage: {'page-a': elements},
-    lineupsByPage: {'page-a': lineups},
-    assetsById: const {},
   );
 }
 
@@ -470,13 +449,13 @@ void main() {
         updatedAt: DateTime.utc(2026, 9, 4),
       );
       await store.put(job);
-      final snapshot = Completer<RemoteFullStrategySnapshot>();
+      final snapshot = Completer<Set<String>?>();
       final started = Completer<void>();
       final container = _container(
         store,
         strategyStore: ops,
         cloudReady: true,
-        referenceSnapshotLoader: (_) {
+        referenceLoader: (_) {
           if (!started.isCompleted) started.complete();
           return snapshot.future;
         },
@@ -510,7 +489,7 @@ void main() {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       ));
-      snapshot.complete(_fullSnapshot());
+      snapshot.complete(<String>{});
       await queue.retryNow();
       expect(store.load().jobs.single.referenceDurable, isTrue);
       expect(store.load().jobs.single.width, restage ? 42 : null);
@@ -543,9 +522,9 @@ void main() {
     final container = _container(
       store,
       cloudReady: true,
-      referenceSnapshotLoader: (_) async {
+      referenceLoader: (_) async {
         if (!snapshotAvailable) throw StateError('offline');
-        return _fullSnapshot();
+        return <String>{};
       },
     );
     addTearDown(container.dispose);
@@ -608,9 +587,9 @@ void main() {
       store,
       accountId: 'account-b',
       cloudReady: true,
-      referenceSnapshotLoader: (_) async {
+      referenceLoader: (_) async {
         snapshotReads += 1;
-        return _fullSnapshot();
+        return <String>{};
       },
     );
     addTearDown(accountB.dispose);
@@ -736,7 +715,7 @@ void main() {
       strategyStore: MemoryDurableStrategyOutboxStore(),
       cloudReady: true,
       cloudEnabled: true,
-      referenceSnapshotLoader: (_) async => _fullSnapshot(),
+      referenceLoader: (_) async => <String>{},
     );
     addTearDown(container.dispose);
 
@@ -883,29 +862,13 @@ void main() {
       ),
     );
     var snapshotReads = 0;
-    final snapshot = _fullSnapshot(
-      elements: [
-        RemoteElement(
-          publicId: 'acked-image',
-          strategyPublicId: 'strategy-a',
-          pagePublicId: 'page-a',
-          elementType: 'image',
-          payload: cloudElementPayload(
-            kind: 'image',
-            data: const {'id': 'acked-image', 'elementType': 'image'},
-          ),
-          sortIndex: 0,
-          revision: 1,
-          deleted: false,
-        ),
-      ],
-    );
+    final snapshot = {'acked-image'};
     final container = _container(
       mediaStore,
       strategyStore: MemoryDurableStrategyOutboxStore(),
       strategyOpen: false,
       cloudReady: true,
-      referenceSnapshotLoader: (strategyId) async {
+      referenceLoader: (strategyId) async {
         snapshotReads += 1;
         expect(strategyId, 'strategy-a');
         return snapshot;
@@ -961,7 +924,7 @@ void main() {
       strategyStore: MemoryDurableStrategyOutboxStore(),
       strategyOpen: false,
       cloudReady: true,
-      referenceSnapshotLoader: (_) async => _fullSnapshot(),
+      referenceLoader: (_) async => <String>{},
     );
     addTearDown(container.dispose);
 
@@ -997,7 +960,7 @@ void main() {
       strategyStore: MemoryDurableStrategyOutboxStore(),
       cloudReady: true,
       cloudEnabled: true,
-      referenceSnapshotLoader: (_) async => _fullSnapshot(),
+      referenceLoader: (_) async => <String>{},
     );
     addTearDown(container.dispose);
 
@@ -1017,7 +980,7 @@ void main() {
       mediaStore,
       strategyStore: MemoryDurableStrategyOutboxStore(),
       cloudReady: true,
-      referenceSnapshotLoader: (_) async => _fullSnapshot(),
+      referenceLoader: (_) async => <String>{},
     );
     addTearDown(container.dispose);
     final queue = container.read(cloudMediaUploadQueueProvider.notifier);
@@ -1131,7 +1094,7 @@ void main() {
       required MemoryDurableCloudMediaOutboxStore mediaStore,
       required MemoryDurableStrategyOutboxStore strategyStore,
       PendingMediaBytesStore? bytesStore,
-      CloudMediaReferenceSnapshotLoader? referenceSnapshotLoader,
+      CloudMediaReferenceLoader? referenceLoader,
     }) {
       var online = false;
       final repository = _UploadRecordingRepository();
@@ -1149,20 +1112,8 @@ void main() {
         imageFilesOnDeviceProvider.overrideWithValue(false),
         pendingMediaBytesStoreProvider
             .overrideWithValue(bytesStore ?? MemoryPendingMediaBytesStore()),
-        cloudMediaReferenceSnapshotLoaderProvider.overrideWithValue(
-          referenceSnapshotLoader ??
-              (_) async => _fullSnapshot(elements: [
-                    const RemoteElement(
-                      publicId: 'server-image',
-                      strategyPublicId: 'strategy-a',
-                      pagePublicId: 'page-a',
-                      elementType: 'image',
-                      payload: {'id': 'server-image'},
-                      sortIndex: 0,
-                      revision: 1,
-                      deleted: false,
-                    ),
-                  ]),
+        cloudMediaReferenceLoaderProvider.overrideWithValue(
+          referenceLoader ?? (_) async => {'server-image'},
         ),
       ]);
       return (
@@ -1325,10 +1276,10 @@ void main() {
       final (:container, :repository, :goOnline) = setUp(
         mediaStore: mediaStore,
         strategyStore: MemoryDurableStrategyOutboxStore(),
-        referenceSnapshotLoader: (_) async {
+        referenceLoader: (_) async {
           reads += 1;
           if (reads == 1) throw StateError('read failed');
-          return _fullSnapshot();
+          return <String>{};
         },
       );
       addTearDown(container.dispose);
@@ -1348,14 +1299,14 @@ void main() {
     });
 
     test('a retry during a check waits for it, uploading nothing', () async {
-      final snapshot = Completer<RemoteFullStrategySnapshot>();
+      final snapshot = Completer<Set<String>?>();
       var reads = 0;
       final mediaStore = MemoryDurableCloudMediaOutboxStore();
       await mediaStore.put(job('page-image'));
       final (:container, :repository, :goOnline) = setUp(
         mediaStore: mediaStore,
         strategyStore: MemoryDurableStrategyOutboxStore(),
-        referenceSnapshotLoader: (_) {
+        referenceLoader: (_) {
           reads += 1;
           // A second, overlapping check could not tell and let it upload.
           if (reads > 1) throw StateError('read failed');
@@ -1375,7 +1326,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(repository.uploadedAssetIds, isEmpty);
 
-      snapshot.complete(_fullSnapshot());
+      snapshot.complete(<String>{});
       await Future.wait([first, second]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
 

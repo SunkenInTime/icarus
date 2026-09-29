@@ -5153,6 +5153,24 @@ List<ImagesListForStrategyResultItem> decodeImagesListForStrategyResult(
     )
     .toList(growable: false);
 
+ConvexObject encodeImagesListReferencedAssetIdsArgs({
+  required String strategyPublicId,
+}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+
+List<String>? decodeImagesListReferencedAssetIdsResult(ConvexValue value) =>
+    (value) is ConvexNull
+    ? null
+    : _decodeArray(value, 'images.js:listReferencedAssetIds.returns')
+          .value
+          .indexed
+          .map(
+            (entry) => _decodeString(
+              entry.$2,
+              _indexPath('images.js:listReferencedAssetIds.returns', entry.$1),
+            ),
+          )
+          .toList(growable: false);
+
 ConvexObject encodeInvitesCreateArgs({
   required double clientProtocolVersion,
   ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
@@ -5414,6 +5432,22 @@ ConvexObject encodePagesReorderArgs({
 
 ConvexValue decodePagesReorderResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:reorder.returns', _validatePagesAddResult);
+
+ConvexObject encodePagesRestoreArgs({
+  required double clientProtocolVersion,
+  required String pagePublicId,
+  required String strategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:restore.args.clientProtocolVersion',
+  ),
+  'pagePublicId': ConvexString(pagePublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+ConvexValue decodePagesRestoreResult(ConvexValue value) =>
+    _decodeRaw(value, 'pages.js:restore.returns', _validatePagesAddResult);
 
 ConvexObject encodePresenceIssueRoomPassArgs({
   required double clientProtocolVersion,

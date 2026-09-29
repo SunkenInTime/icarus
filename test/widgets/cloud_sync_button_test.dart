@@ -180,10 +180,15 @@ class _ConflictSession extends StrategyPageSessionNotifier {
 }
 
 class _DeletedPageSession extends StrategyPageSessionNotifier {
-  _DeletedPageSession({required this.leaves});
+  _DeletedPageSession({
+    required this.leaves,
+    this.restore = DeletedPageRestore.restored,
+  });
 
   final bool leaves;
+  final DeletedPageRestore restore;
   int leaveCount = 0;
+  int restoreCount = 0;
 
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
@@ -202,6 +207,15 @@ class _DeletedPageSession extends StrategyPageSessionNotifier {
     leaveCount += 1;
     if (leaves) setStateForTest(state.copyWith(clearDeletedPage: true));
     return leaves;
+  }
+
+  @override
+  Future<DeletedPageRestore> restoreDeletedPage() async {
+    restoreCount += 1;
+    if (restore == DeletedPageRestore.restored) {
+      setStateForTest(state.copyWith(clearDeletedPage: true));
+    }
+    return restore;
   }
 }
 
@@ -1054,8 +1068,9 @@ void main() {
       WidgetTester tester, {
       required bool leaves,
       bool deletedBeforeMount = false,
+      DeletedPageRestore restore = DeletedPageRestore.restored,
     }) async {
-      final session = _DeletedPageSession(leaves: leaves);
+      final session = _DeletedPageSession(leaves: leaves, restore: restore);
       final container = ProviderContainer(overrides: [
         strategyProvider.overrideWith(_CloudStrategyProvider.new),
         strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
@@ -1096,7 +1111,65 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('A teammate deleted this page'), findsOneWidget);
 
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Discard changes'));
+      await tester.pumpAndSettle();
+      expect(session.leaveCount, 1);
+      expect(session.restoreCount, 0);
+      expect(find.text('A teammate deleted this page'), findsNothing);
+    });
+
+    testWidgets('restoring the page keeps the work and closes the notice',
+        (tester) async {
+      final session = await pumpButton(tester, leaves: true);
+      expect(find.text('Restore page'), findsOneWidget);
+
+      await tester.tap(find.text('Restore page'));
+      await tester.pumpAndSettle();
+
+      expect(session.restoreCount, 1);
+      expect(session.leaveCount, 0);
+      expect(find.text('A teammate deleted this page'), findsNothing);
+    });
+
+    testWidgets(
+        'a page that can no longer be restored says so and leaves discard',
+        (tester) async {
+      final session = await pumpButton(
+        tester,
+        leaves: true,
+        restore: DeletedPageRestore.gone,
+      );
+
+      await tester.tap(find.text('Restore page'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining(
+            '“A exec” can no longer be restored, so your latest changes'),
+        findsOneWidget,
+      );
+      expect(find.text('Restore page'), findsNothing);
+      await tester.tap(find.text('Discard changes'));
+      await tester.pumpAndSettle();
+      expect(session.leaveCount, 1);
+      expect(find.text('A teammate deleted this page'), findsNothing);
+    });
+
+    testWidgets('a restore that fails says so and keeps both choices',
+        (tester) async {
+      final session = await pumpButton(
+        tester,
+        leaves: true,
+        restore: DeletedPageRestore.failed,
+      );
+
+      await tester.tap(find.text('Restore page'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not restore the page'), findsOneWidget);
+      expect(find.text('A teammate deleted this page'), findsOneWidget);
+      expect(find.text('Restore page'), findsOneWidget);
+      await tester.tap(find.text('Discard changes'));
       await tester.pumpAndSettle();
       expect(session.leaveCount, 1);
       expect(find.text('A teammate deleted this page'), findsNothing);
@@ -1112,7 +1185,7 @@ void main() {
     testWidgets('stays while changes are still being sent', (tester) async {
       final session = await pumpButton(tester, leaves: false);
 
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Discard changes'));
       await tester.pumpAndSettle();
 
       expect(session.leaveCount, 1);

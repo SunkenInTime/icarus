@@ -30,6 +30,7 @@ export const errorCodes = [
   "MISSING_PAGE_ID",
   "MISSING_PAGE_PUBLIC_ID",
   "NOT_FOUND",
+  "PAGE_DELETED",
   "PAGE_DESCRIPTOR_REQUIRES_PAGE_OP",
   "PAGE_SETTINGS_REQUIRE_PAGE_CONTENT",
   "PAGE_STRATEGY_MISMATCH",
@@ -62,6 +63,13 @@ export function forbiddenError(): ConvexError<ErrorData> {
 
 export function notFoundError(entity: string, id: string): ConvexError<ErrorData> {
   return makeError("NOT_FOUND", `${entity} not found: ${id}`);
+}
+
+/// A change to a page in the trash, refused until the page is restored. The
+/// client matches this text (pageDeletedMessage) to send the change again
+/// once it is.
+export function pageDeletedError(): ConvexError<ErrorData> {
+  return makeError("PAGE_DELETED", "This page was deleted");
 }
 
 export function clientUpgradeRequiredError(): ConvexError<ErrorData> {

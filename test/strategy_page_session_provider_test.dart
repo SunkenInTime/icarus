@@ -9,6 +9,8 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/traversal_speed.dart';
@@ -98,6 +100,12 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   Future<void> refresh() async {
     refreshCount += 1;
     state = AsyncData(initialSnapshot);
+  }
+
+  @override
+  Future<void> showRestoredPage(String pagePublicId) async {
+    selectedPageIds.add(pagePublicId);
+    await refresh();
   }
 
   /// A live read refused for auth: no snapshot until a later read works.
@@ -307,6 +315,19 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     );
   }
 
+  /// Pages [retryRestoredPage] was asked for, with whether any of the
+  /// page's work was still in flight then.
+  final List<({String pageId, bool inFlight})> restoredPageRetries = [];
+
+  @override
+  Future<void> retryRestoredPage(String pageId) async {
+    restoredPageRetries.add((
+      pageId: pageId,
+      inFlight:
+          state.inFlightByEntityKey.keys.any((key) => key.pageId == pageId),
+    ));
+  }
+
   void holdInFlight(EntitySyncKey key, StrategyOp op) {
     state = state.copyWith(
       inFlightByEntityKey: {
@@ -324,6 +345,27 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
     );
   }
+}
+
+/// Plays the server's page restore: [onRestore] runs for each call, and
+/// may throw as the server would.
+class _RestoringRepository implements ConvexStrategyRepository {
+  _RestoringRepository(this.onRestore);
+
+  FutureOr<void> Function(String pagePublicId) onRestore;
+  final List<String> restoredPageIds = [];
+
+  @override
+  Future<void> restorePage({
+    required String strategyPublicId,
+    required String pagePublicId,
+  }) async {
+    restoredPageIds.add(pagePublicId);
+    await onRestore(pagePublicId);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _RecordingMediaQueue extends CloudMediaUploadQueueNotifier {
@@ -543,6 +585,7 @@ Future<ProviderContainer> _cloudContainer({
   required _FakeRemoteEditorNotifier remote,
   required _FakeStrategyOpQueueNotifier queue,
   _RecordingMediaQueue? mediaQueue,
+  ConvexStrategyRepository? repository,
 }) async {
   final container = ProviderContainer(overrides: [
     remoteEditorSnapshotProvider.overrideWith(() => remote),
@@ -550,6 +593,8 @@ Future<ProviderContainer> _cloudContainer({
     cloudMediaAccountIdProvider.overrideWithValue('account-a'),
     cloudMediaUploadQueueProvider
         .overrideWith(() => mediaQueue ?? _RecordingMediaQueue()),
+    if (repository != null)
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
   ]);
   addTearDown(container.dispose);
   container.read(strategyProvider.notifier).setFromState(const StrategyState(
@@ -1009,6 +1054,7 @@ void main() {
     /// landing does.
     bool unrelatedAckFirst = false,
     _RecordingMediaQueue? mediaQueue,
+    ConvexStrategyRepository? repository,
   }) async {
     final one = _page('page-1', 0, name: 'A exec');
     final two = _page('page-2', 1);
@@ -1027,6 +1073,7 @@ void main() {
       remote: remote,
       queue: queue,
       mediaQueue: mediaQueue,
+      repository: repository,
     );
     container.read(strategyPageSessionProvider.notifier).pageWorkSettleTimeout =
         const Duration(milliseconds: 100);
@@ -1504,6 +1551,188 @@ void main() {
         one.publicId);
     expect(
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+  });
+
+  /// The server's copy once page one is restored: back in the shell, and
+  /// what fresh reads return.
+  void serverRestoresPageOne(
+    _FakeRemoteEditorNotifier remote,
+    RemotePage one,
+    RemotePage two,
+  ) {
+    final restored = _pageSnapshot(one, text: 'one');
+    remote.pageCatalog[one.publicId] = restored;
+    remote.initialSnapshot = _editorSnapshot(
+      pages: [one, two],
+      activePage: restored,
+      themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+    );
+  }
+
+  bool strokeIsQueued(ProviderContainer container, String pageId, String id) =>
+      container
+          .read(strategyOpQueueProvider)
+          .queuedByEntityKey[EntitySyncKey.element(pageId, id)]
+          ?.pending
+          .op is ElementAddOp;
+
+  test('restoring the deleted page saves the unsent stroke on it', () async {
+    late _FakeRemoteEditorNotifier server;
+    late RemotePage pageOne;
+    late RemotePage pageTwo;
+    final repository = _RestoringRepository(
+        (_) => serverRestoresPageOne(server, pageOne, pageTwo));
+    final (:container, :remote, :queue, :one, :two, :strokeId) =
+        await strokeOnDeletedPage(repository: repository);
+    (server, pageOne, pageTwo) = (remote, one, two);
+    final flushesBefore = queue.flushNowCount;
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+    await _settle();
+
+    expect(outcome, DeletedPageRestore.restored);
+    expect(repository.restoredPageIds, [one.publicId]);
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, isNull);
+    expect(session.activePageId, one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+    // The stroke is queued against the restored page and sent now, with
+    // the changes the server refused while the page was in its trash.
+    expect(strokeIsQueued(container, one.publicId, strokeId), isTrue);
+    expect(queue.flushNowCount, greaterThan(flushesBefore));
+    expect(
+        queue.restoredPageRetries, [(pageId: one.publicId, inFlight: false)]);
+    // The live read is back on the page on screen.
+    expect(
+      container
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.page
+          .publicId,
+      one.publicId,
+    );
+  });
+
+  test(
+      'a page that can no longer be restored says so, saves nothing, and '
+      'discarding still works', () async {
+    final repository = _RestoringRepository(
+      (_) => throw const ConvexFunctionException(
+        code: ConvexErrorCode.notFound,
+        rawCode: 'NOT_FOUND',
+        message: 'Page not found: page-1',
+      ),
+    );
+    final (:container, :queue, :one, :two, :strokeId, remote: _) =
+        await strokeOnDeletedPage(repository: repository);
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(outcome, DeletedPageRestore.gone);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+    expect(strokeIsQueued(container, one.publicId, strokeId), isFalse);
+    expect(queue.restoredPageRetries, isEmpty);
+
+    final left = await container
+        .read(strategyPageSessionProvider.notifier)
+        .leaveDeletedPage();
+    await _settle();
+    expect(left, isTrue);
+    expect(
+        container.read(strategyPageSessionProvider).activePageId, two.publicId);
+    expect(container.read(drawingProvider).elements, isEmpty);
+  });
+
+  test('a restore that fails changes nothing and can be tried again', () async {
+    late _FakeRemoteEditorNotifier server;
+    late RemotePage pageOne;
+    late RemotePage pageTwo;
+    var offline = true;
+    final repository = _RestoringRepository((_) {
+      if (offline) throw StateError('Cloud connection is offline.');
+      serverRestoresPageOne(server, pageOne, pageTwo);
+    });
+    final (:container, :remote, :queue, :one, :two, :strokeId) =
+        await strokeOnDeletedPage(repository: repository);
+    (server, pageOne, pageTwo) = (remote, one, two);
+
+    final failed = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(failed, DeletedPageRestore.failed);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+    expect(
+        container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
+    expect(strokeIsQueued(container, one.publicId, strokeId), isFalse);
+    expect(queue.restoredPageRetries, isEmpty);
+
+    offline = false;
+    final restored = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+    await _settle();
+    expect(restored, DeletedPageRestore.restored);
+    expect(strokeIsQueued(container, one.publicId, strokeId), isTrue);
+  });
+
+  test('a restored page that cannot be read yet keeps the notice', () async {
+    // The server restores it, but the read that follows still lacks it.
+    final repository = _RestoringRepository((_) {});
+    final (:container, :queue, :one, :strokeId, remote: _, two: _) =
+        await strokeOnDeletedPage(repository: repository);
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(outcome, DeletedPageRestore.failed);
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
+    expect(strokeIsQueued(container, one.publicId, strokeId), isFalse);
+    expect(queue.restoredPageRetries, isEmpty);
+  });
+
+  test(
+      'a change still on its way when the page is restored is answered '
+      'before refused changes are sent again', () async {
+    late _FakeRemoteEditorNotifier server;
+    late RemotePage pageOne;
+    late RemotePage pageTwo;
+    final repository = _RestoringRepository(
+        (_) => serverRestoresPageOne(server, pageOne, pageTwo));
+    final (:container, :remote, :queue, :one, :two, strokeId: _) =
+        await strokeOnDeletedPage(repository: repository);
+    (server, pageOne, pageTwo) = (remote, one, two);
+    queue.holdInFlight(
+      EntitySyncKey.element(one.publicId, 'sent'),
+      ElementDeleteOp(
+        opId: 'sent-op',
+        pagePublicId: one.publicId,
+        elementPublicId: 'sent',
+        expectedElementRevision: 1,
+      ),
+    );
+    Future<void>.delayed(
+        const Duration(milliseconds: 10), () => queue.clearInFlight());
+
+    final outcome = await container
+        .read(strategyPageSessionProvider.notifier)
+        .restoreDeletedPage();
+
+    expect(outcome, DeletedPageRestore.restored);
+    expect(
+        queue.restoredPageRetries, [(pageId: one.publicId, inFlight: false)]);
   });
 
   test('a deleted page with nothing unsent gives way to one that exists',

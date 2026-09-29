@@ -294,11 +294,12 @@ PresenceRoomState applyPresenceMessage(
     case 'join':
       final peer = _peerFrom(message['peer']);
       if (peer == null) return state;
-      // A repeat join is a profile refresh; keep the cursor we already have.
+      // A repeat join is a profile refresh; keep the cursor and page we
+      // already have.
       final existing = state.peers[peer.sid];
       return state.copyWith(peers: {
         ...state.peers,
-        peer.sid: existing == null ? peer : peer.withCursor(existing.cursor),
+        peer.sid: existing == null ? peer : peer.at(existing),
       });
     case 'leave':
       final sid = message['sid'];

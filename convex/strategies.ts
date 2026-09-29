@@ -22,7 +22,11 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import type { StrategyRole } from "./lib/auth";
-import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
+import {
+  getFolderByPublicId,
+  getStrategyByPublicId,
+  isTrashed,
+} from "./lib/entities";
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -167,7 +171,8 @@ async function summarizeStrategies(
     const pagesPromise = ctx.db
       .query("pages")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .take(100);
+      .take(100)
+      .then((pages) => pages.filter((page) => !isTrashed(page)));
     const folderPromise =
       strategy.folderId === undefined
         ? Promise.resolve(null)
@@ -724,11 +729,14 @@ export const duplicate = mutation({
     // so no part of a copy is ever left behind.
     const budget = new DuplicateBudget();
     const pageIdMap = new Map<Id<"pages">, Id<"pages">>();
-    const sourcePages = await budget.read(
-      ctx.db
-        .query("pages")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
-    );
+    // Pages in the trash are not copied.
+    const sourcePages = (
+      await budget.read(
+        ctx.db
+          .query("pages")
+          .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
+      )
+    ).filter((page) => !isTrashed(page));
     for (const page of sourcePages) {
       const pageId = await ctx.db.insert("pages", {
         publicId: createPublicId(),
@@ -773,16 +781,26 @@ export const duplicate = mutation({
       budget.spend({ bytes: duplicateImageReadBytes });
       sourceAssetIdByCopyId.set(copyAssetId, sourceAssetId);
     };
-    const sourceElements = await budget.read(
-      ctx.db
-        .query("elements")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
-    );
-    const sourceLineups = await budget.read(
-      ctx.db
-        .query("lineups")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", source._id)),
-    );
+    // Read page by page, so content in the trash, which is not copied, is
+    // not read either and cannot push the copy over its budget.
+    const sourceElements: Doc<"elements">[] = [];
+    const sourceLineups: Doc<"lineups">[] = [];
+    for (const page of sourcePages) {
+      sourceElements.push(
+        ...(await budget.read(
+          ctx.db
+            .query("elements")
+            .withIndex("by_pageId", (q) => q.eq("pageId", page._id)),
+        )),
+      );
+      sourceLineups.push(
+        ...(await budget.read(
+          ctx.db
+            .query("lineups")
+            .withIndex("by_pageId", (q) => q.eq("pageId", page._id)),
+        )),
+      );
+    }
     const copiedElements: ReferencingElement[] = [];
     const copiedLineups: (ReferencingLineup &
       Pick<Doc<"lineups">, "payloadKind">)[] = [];
