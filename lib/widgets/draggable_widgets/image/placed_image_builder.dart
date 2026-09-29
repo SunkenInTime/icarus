@@ -80,37 +80,52 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
     pinnedScreenPosition = nextPinned;
   }
 
-  /// Stores the new scale, and the position that keeps the image's top-left
-  /// where the resize pinned it. On defense the image hangs from its
-  /// bottom-right corner, so that position moves with the size.
+  /// Stores the new scale at once, so a page save right after release keeps
+  /// it, with the position that keeps the image's top-left where the resize
+  /// pinned it. On defense the image hangs from its bottom-right corner, so
+  /// that position moves with the size.
   ///
-  /// Waits for the frame that lays out the last drag update, so the stored
-  /// position matches the size the user let go at.
+  /// The last drag update may not be laid out yet, so the pin holds for one
+  /// more frame, then the position is stored again if it moved, unless a
+  /// page switch loaded another page's copy of the image, which keeps its id.
   Future<void> _finishResize(WidgetRef ref) async {
+    final resizedImage = widget.placedImage;
+    final pinned = pinnedScreenPosition;
+    if (pinned != null) _storeResize(ref, resizedImage, pinned);
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
-    final pinned = pinnedScreenPosition;
-    final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
-    if (pinned != null && renderBox != null) {
-      final coordinateSystem = CoordinateSystem.instance;
-      final position = coordinateSystem.screenToCoordinate(
-        coordinateSystem.screenPositionFromSide(
-          sideScreenPosition: pinned,
-          reflectionOffset: renderBox.size.bottomRight(Offset.zero),
-          isAttack: widget.isAttack,
-        ),
-      );
-      ref
-          .read(placedImageProvider.notifier)
-          .resize(widget.placedImage.id, scale: localScale!, position: position);
-      ref.read(strategyProvider.notifier).setUnsaved();
-    }
+    final stillLoaded = ref
+        .read(placedImageProvider)
+        .images
+        .any((image) => identical(image, resizedImage));
+    if (pinned != null && stillLoaded) _storeResize(ref, resizedImage, pinned);
     setState(() {
       isPanning = false;
       pinnedScreenPosition = null;
       pointerShift = 0;
     });
+  }
+
+  /// Writes [image]'s new scale and the position that puts its top-left at
+  /// [pinned] as laid out now, unless both are already stored.
+  void _storeResize(WidgetRef ref, PlacedImage image, Offset pinned) {
+    final renderBox = _boxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final position = coordinateSystem.screenToCoordinate(
+      coordinateSystem.screenPositionFromSide(
+        sideScreenPosition: pinned,
+        reflectionOffset: renderBox.size.bottomRight(Offset.zero),
+        isAttack: widget.isAttack,
+      ),
+    );
+    if (image.scale == localScale && image.position == position) return;
+    ref
+        .read(placedImageProvider.notifier)
+        .resize(image.id, scale: localScale!, position: position);
+    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   @override
