@@ -11,6 +11,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
@@ -22,6 +23,7 @@ import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/export_video_dialog.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
@@ -59,6 +61,12 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     const style = kEditorToolbarButtonStyle;
     final source = ref.watch(strategyProvider.select((value) => value.source));
     final isCloud = source == StrategySource.cloud;
+    final strategyId =
+        ref.watch(strategyProvider.select((value) => value.strategyId));
+    // Read through a share link, with no account: nothing here saves, and
+    // signing in is what adds the strategy to the reader's library.
+    final viewingThroughLink = isCloud &&
+        ref.watch(shareLinkViewProvider)?.strategyPublicId == strategyId;
     // Local saving exists only where the local library does; the web beta
     // never offers it, even if an editor somehow opens with no cloud strategy.
     final allowsLocalSave =
@@ -78,7 +86,17 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isCloud)
+              if (viewingThroughLink)
+                EditorToolbarButton(
+                  style: style,
+                  tooltip: 'View only · Sign in to add it to your library',
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => const AuthDialog(),
+                  ),
+                  icon: const Icon(LucideIcons.logIn200),
+                )
+              else if (isCloud)
                 const CloudSyncButton(style: style)
               else if (allowsLocalSave)
                 const AutoSaveButton(style: style),

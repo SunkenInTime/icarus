@@ -162,7 +162,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         _shareDialogHeadline(widget.title),
         softWrap: true,
       ),
-      description: const Text(ShareLinkCopy.dialogDescription),
+      description: Text(ShareLinkCopy.dialogDescription(widget.targetType)),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),

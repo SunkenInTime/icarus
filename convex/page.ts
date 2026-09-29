@@ -1,7 +1,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { assertStrategyRole } from "./lib/auth";
+import { assertStrategyReadable } from "./lib/auth";
 import { getPageByPublicId, getStrategyByPublicId } from "./lib/entities";
 import { errorWithCode, internalError } from "./lib/errors";
 import {
@@ -21,11 +21,12 @@ export const getSnapshot = query({
   args: {
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
+    shareToken: v.optional(v.string()),
   },
   returns: pageSnapshotValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "viewer");
+    await assertStrategyReadable(ctx, strategy, args.shareToken);
     const page = await getPageByPublicId(ctx, args.pagePublicId);
     if (page.strategyId !== strategy._id) {
       throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");

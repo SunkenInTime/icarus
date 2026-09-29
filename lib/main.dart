@@ -562,8 +562,13 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(authProvider, (_, next) {
-      if (next.isAuthenticated && next.isConvexUserReady) {
+    ref.listen(authProvider, (previous, next) {
+      bool settledSignedOut(AppAuthState? auth) =>
+          auth != null && !auth.isAuthenticated && !auth.isLoading;
+      // A held code is redeemed once the cloud is ready, or, once it is
+      // clear nobody is signed in, opened read-only through the link.
+      if ((next.isAuthenticated && next.isConvexUserReady) ||
+          (settledSignedOut(next) && !settledSignedOut(previous))) {
         unawaited(
           ref
               .read(shareLinkControllerProvider.notifier)

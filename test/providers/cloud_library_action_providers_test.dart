@@ -465,7 +465,10 @@ class _ActionRepository extends ConvexStrategyRepository {
   }
 
   @override
-  Future<RemoteStrategyShell> fetchShell(String strategyPublicId) async {
+  Future<RemoteStrategyShell> fetchShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
     final now = DateTime.utc(2026);
     return RemoteStrategyShell(
       header: RemoteStrategyHeader(

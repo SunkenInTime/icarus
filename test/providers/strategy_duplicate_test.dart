@@ -237,7 +237,10 @@ class _ShellRepository extends ConvexStrategyRepository {
       : super(IcarusConvexApi(transport));
 
   @override
-  Future<RemoteStrategyShell> fetchShell(String strategyPublicId) async =>
+  Future<RemoteStrategyShell> fetchShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async =>
       RemoteStrategyShell(
         header: RemoteStrategyHeader(
           publicId: strategyPublicId,

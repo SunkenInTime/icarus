@@ -520,6 +520,28 @@ sealed class SharesRedeemResult {
   ConvexObject encode(String path);
 }
 
+sealed class SharesResolveResult {
+  const SharesResolveResult();
+
+  factory SharesResolveResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    final discriminator = _decodeString(
+      object.value['targetType'] ?? _missing(path, 'targetType'),
+      '$path.targetType',
+    );
+    return switch (discriminator) {
+      'strategy' => SharesResolveResultStrategy.decode(value, path),
+      'folder' => SharesResolveResultFolder.decode(value, path),
+      _ => throw ConvexDecodingException(
+        path,
+        'unknown discriminator $discriminator',
+      ),
+    };
+  }
+
+  ConvexObject encode(String path);
+}
+
 final class ElementsListForPageResultItem {
   const ElementsListForPageResultItem({
     required this.createdAt,
@@ -3607,6 +3629,73 @@ final class SharesRedeemResultStrategy extends SharesRedeemResult {
   }
 }
 
+final class SharesResolveResultFolder extends SharesResolveResult {
+  const SharesResolveResultFolder({required this.role});
+  final InvitesCreateArgsRole role;
+
+  factory SharesResolveResultFolder.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'targetType', 'role'});
+    return SharesResolveResultFolder(
+      role: InvitesCreateArgsRole.fromWireName(
+        _decodeString(
+          object.value['role'] ?? _missing(path, 'role'),
+          '$path.role',
+        ),
+        '$path.role',
+      ),
+    );
+  }
+
+  @override
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'targetType': ConvexString('folder'),
+      'role': ConvexString(role.wireName),
+    });
+  }
+}
+
+final class SharesResolveResultStrategy extends SharesResolveResult {
+  const SharesResolveResultStrategy({
+    required this.role,
+    required this.strategyPublicId,
+  });
+  final InvitesCreateArgsRole role;
+  final String strategyPublicId;
+
+  factory SharesResolveResultStrategy.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'targetType',
+      'role',
+      'strategyPublicId',
+    });
+    return SharesResolveResultStrategy(
+      role: InvitesCreateArgsRole.fromWireName(
+        _decodeString(
+          object.value['role'] ?? _missing(path, 'role'),
+          '$path.role',
+        ),
+        '$path.role',
+      ),
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+    );
+  }
+
+  @override
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'targetType': ConvexString('strategy'),
+      'role': ConvexString(role.wireName),
+      'strategyPublicId': ConvexString(strategyPublicId),
+    });
+  }
+}
+
 final class StrategiesGetHeaderResult {
   const StrategiesGetHeaderResult({
     required this.createdAt,
@@ -5129,9 +5218,11 @@ ImagesGenerateUploadUrlResult decodeImagesGenerateUploadUrlResult(
 
 ConvexObject encodeImagesGetAssetUrlArgs({
   required String assetPublicId,
+  ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
   'assetPublicId': ConvexString(assetPublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 
@@ -5287,9 +5378,11 @@ OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
 
 ConvexObject encodePageGetSnapshotArgs({
   required String pagePublicId,
+  ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
   'pagePublicId': ConvexString(pagePublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 
@@ -5486,6 +5579,12 @@ ConvexObject encodeSharesRedeemArgs({
 
 SharesRedeemResult decodeSharesRedeemResult(ConvexValue value) =>
     SharesRedeemResult.decode(value, 'shares.js:redeem.returns');
+
+ConvexObject encodeSharesResolveArgs({required String token}) =>
+    ConvexObject({'token': ConvexString(token)});
+
+SharesResolveResult decodeSharesResolveResult(ConvexValue value) =>
+    SharesResolveResult.decode(value, 'shares.js:resolve.returns');
 
 ConvexObject encodeSharesRevokeArgs({
   required double clientProtocolVersion,
@@ -5743,8 +5842,12 @@ ConvexValue decodeStrategiesUpdateResult(ConvexValue value) =>
     _decodeRaw(value, 'strategies.js:update.returns', _validatePagesAddResult);
 
 ConvexObject encodeStrategyGetFullSnapshotArgs({
+  ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 StrategyGetFullSnapshotResult decodeStrategyGetFullSnapshotResult(
   ConvexValue value,
@@ -5753,8 +5856,13 @@ StrategyGetFullSnapshotResult decodeStrategyGetFullSnapshotResult(
   'strategy.js:getFullSnapshot.returns',
 );
 
-ConvexObject encodeStrategyGetShellArgs({required String strategyPublicId}) =>
-    ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+ConvexObject encodeStrategyGetShellArgs({
+  ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+  required String strategyPublicId,
+}) => ConvexObject({
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 StrategyGetShellResult decodeStrategyGetShellResult(ConvexValue value) =>
     StrategyGetShellResult.decode(value, 'strategy.js:getShell.returns');

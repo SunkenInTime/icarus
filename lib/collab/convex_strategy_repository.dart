@@ -83,9 +83,19 @@ class ConvexStrategyRepository {
         );
   }
 
-  Future<RemoteStrategyShell> fetchShell(String strategyPublicId) async {
+  /// [shareToken] is a share link the reader holds but has not redeemed
+  /// (see [resolveSharedStrategy]); with it, a signed-out reader can view.
+  Future<RemoteStrategyShell> fetchShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
     return _strategyShell(
-      await _api.strategy.getShell(strategyPublicId: strategyPublicId).fetch(),
+      await _api.strategy
+          .getShell(
+            strategyPublicId: strategyPublicId,
+            shareToken: _optional(shareToken),
+          )
+          .fetch(),
     );
   }
 
@@ -103,9 +113,15 @@ class ConvexStrategyRepository {
     }
   }
 
-  Stream<RemoteStrategyShell> watchShell(String strategyPublicId) {
+  Stream<RemoteStrategyShell> watchShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) {
     return _api.strategy
-        .getShell(strategyPublicId: strategyPublicId)
+        .getShell(
+          strategyPublicId: strategyPublicId,
+          shareToken: _optional(shareToken),
+        )
         .watch()
         .map(_strategyShell);
   }
@@ -113,12 +129,14 @@ class ConvexStrategyRepository {
   Future<RemotePageSnapshot> fetchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
+    String? shareToken,
   }) async {
     return _pageSnapshot(
       await _api.page
           .getSnapshot(
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
+            shareToken: _optional(shareToken),
           )
           .fetch(),
     );
@@ -127,11 +145,13 @@ class ConvexStrategyRepository {
   Stream<RemotePageSnapshot> watchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
+    String? shareToken,
   }) {
     return _api.page
         .getSnapshot(
           strategyPublicId: strategyPublicId,
           pagePublicId: pagePublicId,
+          shareToken: _optional(shareToken),
         )
         .watch()
         .map(_pageSnapshot);
@@ -515,6 +535,16 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// The strategy [token] shares, or null when it shares a folder. Needs no
+  /// account. Throws NOT_FOUND for a link that never existed and
+  /// SHARE_LINK_REVOKED for one its owner disabled.
+  Future<String?> resolveSharedStrategy(String token) async {
+    return switch (await _api.shares.resolve(token: token).fetch()) {
+      SharesResolveResultStrategy(:final strategyPublicId) => strategyPublicId,
+      SharesResolveResultFolder() => null,
+    };
+  }
+
   Future<ShareRedemption> redeemShareLink(String token) async {
     final result = await _api.shares.redeem(
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
@@ -567,6 +597,13 @@ bool isTypedConvexNotFoundError(Object error) {
           error.code == ConvexErrorCode.notFound) ||
       (error is ConvexClientFunctionError &&
           error.rawCode == ConvexErrorCode.notFound.wireName);
+}
+
+bool isShareLinkRevokedError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.shareLinkRevoked) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.shareLinkRevoked.wireName);
 }
 
 bool isTypedConvexForbiddenError(Object error) {

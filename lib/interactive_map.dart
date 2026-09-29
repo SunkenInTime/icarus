@@ -141,6 +141,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         ),
       ),
     );
+    // A view-only reader has no sidebar, so the map takes its width.
+    final viewOnly = ref.watch(isViewOnlyStrategyProvider);
+    final double sideBarWidth = viewOnly ? 0 : Settings.sideBarReservedWidth;
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
     final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
 
@@ -160,9 +163,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         final Size playAreaSize = Size(worldWidth, height);
         CoordinateSystem(playAreaSize: playAreaSize);
         final coordinateSystem = CoordinateSystem.instance;
-        final double viewportWidth =
-            (constraints.maxWidth - Settings.sideBarReservedWidth)
-                .clamp(0.0, constraints.maxWidth);
+        final double viewportWidth = (constraints.maxWidth - sideBarWidth)
+            .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
         final dimensionsChanged = _lastViewportSize != viewportSize ||
             _lastPlayAreaSize != playAreaSize;
@@ -441,10 +443,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const HoveredMapItemNameCard(),
-                            IgnorePointer(
-                              ignoring: !canEditPages,
-                              child: const DeleteArea(),
-                            ),
+                            if (!viewOnly)
+                              IgnorePointer(
+                                ignoring: !canEditPages,
+                                child: const DeleteArea(),
+                              ),
                           ],
                         ),
                       ),
@@ -469,7 +472,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
               ),
             ),
             SizedBox(
-              width: Settings.sideBarReservedWidth,
+              width: sideBarWidth,
               height: height,
             ),
           ],

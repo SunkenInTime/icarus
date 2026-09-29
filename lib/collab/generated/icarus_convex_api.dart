@@ -411,6 +411,7 @@ abstract interface class ImagesModule {
   });
   ConvexQuery<ImagesGetAssetUrlResult> getAssetUrl({
     required String assetPublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
   ConvexQuery<List<ImagesListForStrategyResultItem>> listForStrategy({
@@ -506,10 +507,12 @@ final class _ImagesModule implements ImagesModule {
   @override
   ConvexQuery<ImagesGetAssetUrlResult> getAssetUrl({
     required String assetPublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeImagesGetAssetUrlArgs(
       assetPublicId: assetPublicId,
+      shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );
     return ConvexQuery(
@@ -720,6 +723,7 @@ final class _OpsModule implements OpsModule {
 abstract interface class PageModule {
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     required String pagePublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
 }
@@ -730,10 +734,12 @@ final class _PageModule implements PageModule {
   @override
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     required String pagePublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodePageGetSnapshotArgs(
       pagePublicId: pagePublicId,
+      shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );
     return ConvexQuery(
@@ -935,6 +941,7 @@ abstract interface class SharesModule {
     required double clientProtocolVersion,
     required String token,
   });
+  ConvexQuery<SharesResolveResult> resolve({required String token});
   Future<FoldersDeleteResult> revoke({
     required double clientProtocolVersion,
     required String targetPublicId,
@@ -996,6 +1003,17 @@ final class _SharesModule implements SharesModule {
     return _invoke(
       () => _transport.mutation('shares:redeem', args),
       decodeSharesRedeemResult,
+    );
+  }
+
+  @override
+  ConvexQuery<SharesResolveResult> resolve({required String token}) {
+    final args = encodeSharesResolveArgs(token: token);
+    return ConvexQuery(
+      transport: _transport,
+      name: 'shares:resolve',
+      args: args,
+      decode: decodeSharesResolveResult,
     );
   }
 
@@ -1309,9 +1327,11 @@ final class _StrategiesModule implements StrategiesModule {
 
 abstract interface class StrategyModule {
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
   ConvexQuery<StrategyGetShellResult> getShell({
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
 }
@@ -1321,9 +1341,11 @@ final class _StrategyModule implements StrategyModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetFullSnapshotArgs(
+      shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );
     return ConvexQuery(
@@ -1336,9 +1358,13 @@ final class _StrategyModule implements StrategyModule {
 
   @override
   ConvexQuery<StrategyGetShellResult> getShell({
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
-    final args = encodeStrategyGetShellArgs(strategyPublicId: strategyPublicId);
+    final args = encodeStrategyGetShellArgs(
+      shareToken: shareToken,
+      strategyPublicId: strategyPublicId,
+    );
     return ConvexQuery(
       transport: _transport,
       name: 'strategy:getShell',
