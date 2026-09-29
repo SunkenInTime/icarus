@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:http/http.dart' as http;
@@ -39,6 +40,30 @@ class _SlowClient extends http.BaseClient {
   }
 }
 
+/// Like a browser client: once closed it refuses every request. Answers
+/// each URL with its status after its delay in milliseconds.
+class _RefusingAfterCloseClient extends http.BaseClient {
+  _RefusingAfterCloseClient(this.answers, this.body);
+
+  final Map<String, (int, int)> answers;
+  final Uint8List body;
+  final requested = <String>[];
+  var closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (closed) throw http.ClientException('Client is closed', request.url);
+    requested.add(request.url.toString());
+    final (status, delay) = answers[request.url.toString()]!;
+    await Future<void>.delayed(Duration(milliseconds: delay));
+    if (closed) throw http.ClientException('Request aborted', request.url);
+    return http.StreamedResponse(Stream.value(body), status);
+  }
+
+  @override
+  void close() => closed = true;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -65,7 +90,7 @@ void main() {
         'uploading': ImageBytes(pending),
         'failed': const ImageFailed(),
       },
-      fetch: (imageId, url) async {
+      fetch: (imageId, url, _) async {
         requests.add((imageId, url));
         return fetched;
       },
@@ -87,7 +112,7 @@ void main() {
         'remote': const RemoteImageUrl('https://media.example.com/remote.png'),
         'file': LocalImageFile(filePath),
       },
-      fetch: (_, __) async => fetched,
+      fetch: (_, __, ___) async => fetched,
     );
 
     // The capture's widgets ask for the same keys and find them decoded.
@@ -116,7 +141,7 @@ void main() {
         for (final id in ['a', 'b', 'c', 'd'])
           id: RemoteImageUrl('https://media.example.com/$id.png'),
       },
-      fetch: (imageId, _) async {
+      fetch: (imageId, _, __) async {
         started.add(imageId);
         await Future<void>.delayed(const Duration(milliseconds: 200));
         return _png(imageId.codeUnitAt(0));
@@ -140,9 +165,9 @@ void main() {
             'broken': const RemoteImageUrl('https://media.example.com/x.png'),
             'slow': const RemoteImageUrl('https://media.example.com/s.png'),
           },
-          fetch: (imageId, url) async {
+          fetch: (imageId, url, client) async {
             if (imageId == 'broken') throw Exception('offline');
-            return (await http.get(Uri.parse(url))).bodyBytes;
+            return (await client.get(Uri.parse(url))).bodyBytes;
           },
         ),
         () => client,
@@ -150,6 +175,38 @@ void main() {
       throwsA(isA<CaptureImagesUnavailable>()),
     );
     expect(client.requested, ['https://media.example.com/s.png']);
+    expect(client.closed, isTrue);
+  });
+
+  test('downloads and URL refreshes share a client nothing closes early',
+      () async {
+    // A browser client refuses every request once closed, and aborts the
+    // ones in flight. One download finishing must not close it for the
+    // others, or for a refresh after an expired URL.
+    final client = _RefusingAfterCloseClient({
+      'https://media.example.com/fast.png': (200, 10),
+      'https://media.example.com/slow.png': (200, 150),
+      'https://media.example.com/expired.png': (403, 20),
+      'https://media.example.com/fresh.png': (200, 20),
+    }, _png(40));
+    final images = await http.runWithClient(
+      () => resolveCaptureImages(
+        {
+          for (final id in ['fast', 'slow', 'expired'])
+            id: RemoteImageUrl('https://media.example.com/$id.png'),
+        },
+        fetch: (imageId, url, client) => downloadCloudImageBytes(
+          url,
+          client: client,
+          freshUrl: () async => 'https://media.example.com/fresh.png',
+        ),
+      ),
+      () => client,
+    );
+    addTearDown(images.release);
+
+    expect(images.sources.values, everyElement(isA<ImageBytes>()));
+    expect(client.requested, hasLength(4));
     expect(client.closed, isTrue);
   });
 
@@ -162,7 +219,7 @@ void main() {
           'remote': const RemoteImageUrl('https://media.example.com/r.png'),
           'loading': const ImageLoading(),
         },
-        fetch: (imageId, _) async {
+        fetch: (imageId, _, __) async {
           started.add(imageId);
           return fetched;
         },
@@ -176,7 +233,7 @@ void main() {
     await expectLater(
       resolveCaptureImages(
         {'loading': const ImageLoading()},
-        fetch: (_, __) async => fetched,
+        fetch: (_, __, ___) async => fetched,
       ),
       throwsA(
         isA<CaptureImagesUnavailable>()
@@ -195,7 +252,7 @@ void main() {
     await expectLater(
       resolveCaptureImages(
         {'remote': const RemoteImageUrl('https://media.example.com/r.png')},
-        fetch: (_, __) async => throw failure,
+        fetch: (_, __, ___) async => throw failure,
       ),
       throwsA(
         isA<CaptureImagesUnavailable>()
@@ -213,7 +270,7 @@ void main() {
     await expectLater(
       resolveCaptureImages(
         {'remote': const RemoteImageUrl('https://media.example.com/r.png')},
-        fetch: (_, __) async => Uint8List.fromList([1, 2, 3, 4]),
+        fetch: (_, __, ___) async => Uint8List.fromList([1, 2, 3, 4]),
       ),
       throwsA(
         isA<CaptureImagesUnavailable>()

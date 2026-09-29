@@ -53,8 +53,9 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
           (id: image.id, fileExtension: image.fileExtension),
         ),
     },
-    fetch: (imageId, url) => downloadCloudImageBytes(
+    fetch: (imageId, url, client) => downloadCloudImageBytes(
       url,
+      client: client,
       freshUrl: () {
         final linkView = ref.read(shareLinkViewProvider);
         return ref.read(convexStrategyRepositoryProvider).getImageAssetUrl(
