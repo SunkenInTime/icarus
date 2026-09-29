@@ -13,6 +13,7 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -54,11 +55,17 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
     },
     fetch: (imageId, url) => downloadCloudImageBytes(
       url,
-      freshUrl: () =>
-          ref.read(convexStrategyRepositoryProvider).getImageAssetUrl(
-                strategyPublicId: strategyId,
-                assetPublicId: imageId,
-              ),
+      freshUrl: () {
+        final linkView = ref.read(shareLinkViewProvider);
+        return ref.read(convexStrategyRepositoryProvider).getImageAssetUrl(
+              strategyPublicId: strategyId,
+              assetPublicId: imageId,
+              // A signed-out reader's only access is the link they opened.
+              shareToken: linkView?.strategyPublicId == strategyId
+                  ? linkView!.token
+                  : null,
+            );
+      },
     ),
   );
 
