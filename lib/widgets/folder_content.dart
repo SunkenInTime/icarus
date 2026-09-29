@@ -286,48 +286,53 @@ class FolderContent extends ConsumerWidget {
 
                                   return CustomScrollView(
                                     slivers: [
-                                      // Folder cards section (wrap row)
+                                      // Folder cards, on the same columns as
+                                      // the strategies below.
                                       if (folders.isNotEmpty)
-                                        SliverToBoxAdapter(
-                                          child: Padding(
-                                            // Horizontal padding is reduced by the
-                                            // gutter baked into each FolderCard so
-                                            // the cards still align at x=16.
-                                            padding: const EdgeInsets.fromLTRB(
-                                                16 - folderCardGutterOutset,
-                                                16,
-                                                16 - folderCardGutterOutset,
-                                                8),
-                                            child: Wrap(
+                                        SliverPadding(
+                                          // Horizontal padding is reduced by the
+                                          // gutter baked into each FolderCard so
+                                          // the cards still align at x=16.
+                                          padding: const EdgeInsets.fromLTRB(
+                                              16 - folderCardGutterOutset,
+                                              16,
+                                              16 - folderCardGutterOutset,
+                                              8),
+                                          sliver: SliverGrid(
+                                            gridDelegate:
+                                                SliverGridDelegateWithFixedCrossAxisCount(
+                                              crossAxisCount: crossAxisCount,
+                                              mainAxisExtent: folderCardHeight,
                                               // Zero spacing: each card carries
-                                              // half the 14px gutter as drop hit
+                                              // half the gutter as drop hit
                                               // area on both sides.
-                                              spacing: 0,
-                                              runSpacing: 14,
-                                              children: folders
-                                                  .map(
-                                                    (f) => FolderCard(
-                                                      key: ValueKey(f.id),
-                                                      data: FolderCardViewData(
-                                                        folder: f,
-                                                        strategies:
-                                                            strategiesInFolderTree(
-                                                          folder: f,
-                                                          allFolders:
-                                                              allFolders,
-                                                          allStrategies:
-                                                              allStrategies,
-                                                        ),
-                                                        folderCount: allFolders
-                                                            .where((folder) =>
-                                                                folder
-                                                                    .parentID ==
-                                                                f.id)
-                                                            .length,
-                                                      ),
+                                              crossAxisSpacing: 0,
+                                              mainAxisSpacing: 14,
+                                            ),
+                                            delegate:
+                                                SliverChildBuilderDelegate(
+                                              (context, index) {
+                                                final f = folders[index];
+                                                return FolderCard(
+                                                  key: ValueKey(f.id),
+                                                  data: FolderCardViewData(
+                                                    folder: f,
+                                                    strategies:
+                                                        strategiesInFolderTree(
+                                                      folder: f,
+                                                      allFolders: allFolders,
+                                                      allStrategies:
+                                                          allStrategies,
                                                     ),
-                                                  )
-                                                  .toList(),
+                                                    folderCount: allFolders
+                                                        .where((folder) =>
+                                                            folder.parentID ==
+                                                            f.id)
+                                                        .length,
+                                                  ),
+                                                );
+                                              },
+                                              childCount: folders.length,
                                             ),
                                           ),
                                         ),
