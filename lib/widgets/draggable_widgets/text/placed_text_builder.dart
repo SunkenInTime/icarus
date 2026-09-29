@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -21,10 +20,12 @@ class PlacedTextBuilder extends ConsumerStatefulWidget {
     super.key,
     required this.size,
     required this.placedText,
+    required this.isAttack,
     required this.onDragEnd,
   });
   final double size;
   final PlacedText placedText;
+  final bool isAttack;
   final Function(DraggableDetails details) onDragEnd;
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
@@ -69,7 +70,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         coordinateSystem.screenPositionFromSide(
           sideScreenPosition: pinned,
           reflectionOffset: renderBox.size.bottomRight(Offset.zero),
-          isAttack: ref.read(mapProvider).isAttack,
+          isAttack: widget.isAttack,
         ),
       );
       ref
@@ -103,12 +104,11 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       localSize = texts[index].size;
     }
     final coordinateSystem = CoordinateSystem.instance;
-    final isAttack = ref.watch(mapProvider.select((map) => map.isAttack));
     final attackScreenPosition =
         coordinateSystem.coordinateToScreen(widget.placedText.position);
     return CanonicalPositionedBox(
       attackScreenPosition: attackScreenPosition,
-      isAttack: isAttack,
+      isAttack: widget.isAttack,
       pinnedScreenPosition: pinnedScreenPosition,
       child: TextScaleController(
         key: _boxKey,
@@ -131,7 +131,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
             pinnedScreenPosition ??= coordinateSystem.screenPositionForSide(
               attackScreenPosition: attackScreenPosition,
               reflectionOffset: renderBox.size.bottomRight(Offset.zero),
-              isAttack: isAttack,
+              isAttack: widget.isAttack,
             );
             localSize = widthInWorldSpace.clamp(minSize, double.infinity);
           });

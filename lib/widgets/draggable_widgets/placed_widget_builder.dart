@@ -725,6 +725,7 @@ class _TextList extends ConsumerWidget {
               key: ValueKey(placedText.id),
               size: placedText.size,
               placedText: placedText,
+              isAttack: isAttack,
               onDragEnd: (details) {
                 final renderBox = context.findRenderObject() as RenderBox;
                 final localOffset = renderBox.globalToLocal(details.offset);
@@ -786,6 +787,7 @@ class _PlacedImageList extends ConsumerWidget {
             child: PlacedImageBuilder(
               key: ValueKey(placedImage.id),
               placedImage: placedImage,
+              isAttack: isAttack,
               scale: placedImage.scale,
               onDragEnd: (details) {
                 final renderBox = context.findRenderObject() as RenderBox;

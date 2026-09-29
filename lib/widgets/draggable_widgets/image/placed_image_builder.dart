@@ -6,7 +6,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -21,6 +20,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class PlacedImageBuilder extends StatefulWidget {
   const PlacedImageBuilder({
     required this.placedImage,
+    required this.isAttack,
     required this.onDragEnd,
     required this.scale,
     super.key,
@@ -28,6 +28,7 @@ class PlacedImageBuilder extends StatefulWidget {
 
   final double scale;
   final PlacedImage placedImage;
+  final bool isAttack;
   final Function(DraggableDetails details) onDragEnd;
   @override
   State<PlacedImageBuilder> createState() => _PlacedImageBuilderState();
@@ -64,7 +65,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
         coordinateSystem.screenPositionFromSide(
           sideScreenPosition: pinned,
           reflectionOffset: renderBox.size.bottomRight(Offset.zero),
-          isAttack: ref.read(mapProvider).isAttack,
+          isAttack: widget.isAttack,
         ),
       );
       ref
@@ -95,12 +96,11 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
       }
 
       final coordinateSystem = CoordinateSystem.instance;
-      final isAttack = ref.watch(mapProvider.select((map) => map.isAttack));
       final attackScreenPosition =
           coordinateSystem.coordinateToScreen(widget.placedImage.position);
       return CanonicalPositionedBox(
         attackScreenPosition: attackScreenPosition,
-        isAttack: isAttack,
+        isAttack: widget.isAttack,
         pinnedScreenPosition: pinnedScreenPosition,
         child: ImageScaleController(
           key: _boxKey,
@@ -123,7 +123,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               pinnedScreenPosition ??= coordinateSystem.screenPositionForSide(
                 attackScreenPosition: attackScreenPosition,
                 reflectionOffset: renderBox.size.bottomRight(Offset.zero),
-                isAttack: isAttack,
+                isAttack: widget.isAttack,
               );
               localScale = ImageScalePolicy.clamp(widthInWorldSpace);
             });

@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
@@ -18,7 +17,6 @@ void main() {
 
   Future<ProviderContainer> pumpBox(
     WidgetTester tester, {
-    required bool isAttack,
     required Widget Function(WidgetRef ref) builder,
     required void Function(ProviderContainer container) seed,
   }) async {
@@ -29,7 +27,6 @@ void main() {
 
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    container.read(mapProvider.notifier).setAttack(isAttack);
     seed(container);
 
     await tester.pumpWidget(
@@ -75,7 +72,6 @@ void main() {
         (tester) async {
       final container = await pumpBox(
         tester,
-        isAttack: isAttack,
         seed: (container) => container.read(textProvider.notifier).fromHive([
           PlacedText(
             id: 'text-1',
@@ -90,6 +86,7 @@ void main() {
             key: ValueKey(placedText.id),
             size: placedText.size,
             placedText: placedText,
+            isAttack: isAttack,
             onDragEnd: (_) {},
           );
         },
@@ -121,7 +118,6 @@ void main() {
         (tester) async {
       final container = await pumpBox(
         tester,
-        isAttack: isAttack,
         seed: (container) =>
             container.read(placedImageProvider.notifier).fromHive([
           PlacedImage(
@@ -138,6 +134,7 @@ void main() {
           return PlacedImageBuilder(
             key: ValueKey(placedImage.id),
             placedImage: placedImage,
+            isAttack: isAttack,
             scale: placedImage.scale,
             onDragEnd: (_) {},
           );

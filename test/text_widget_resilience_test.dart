@@ -111,6 +111,7 @@ void main() {
                   PlacedTextBuilder(
                     size: placedText.size,
                     placedText: placedText,
+                    isAttack: true,
                     onDragEnd: (_) {},
                   ),
                 ],
