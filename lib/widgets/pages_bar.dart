@@ -4,6 +4,7 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
@@ -278,6 +279,8 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         await ref.read(strategyProvider.notifier).deletePage(page.id);
     // Only a cloud page goes to the trash, so only it can be undone.
     if (!deleted || !isCloud || !mounted) return;
+    final strategyId = ref.read(strategyProvider).strategyId;
+    _dismissUndo();
     late final ToastificationItem toast;
     toast = Settings.showToast(
       message: "Deleted '${page.name}'",
@@ -285,17 +288,48 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       autoCloseDuration: const Duration(seconds: 6),
       actionLabel: 'Undo',
       onActionPressed: () {
-        toastification.dismiss(toast);
-        _undoDelete(page, wasActive: wasActive);
+        // Taken once: a second tap finds nothing to undo.
+        if (!identical(_undoToast, toast)) return;
+        _dismissUndo();
+        _undoDelete(page, strategyId: strategyId, wasActive: wasActive);
       },
     );
+    _undoToast = toast;
   }
 
-  /// Takes [page] back out of the trash; the delete was just made here.
+  /// The Undo offer for the last delete here. It goes when this bar does
+  /// (the strategy closed); the page stays in Recently deleted.
+  ToastificationItem? _undoToast;
+
+  void _dismissUndo() {
+    final toast = _undoToast;
+    _undoToast = null;
+    if (toast != null) toastification.dismiss(toast);
+  }
+
+  @override
+  void dispose() {
+    // The toast list rebuilds on dismiss, which a tree being torn down
+    // cannot take: dismiss after this frame.
+    final toast = _undoToast;
+    _undoToast = null;
+    if (toast != null) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => toastification.dismiss(toast));
+    }
+    super.dispose();
+  }
+
+  /// Takes [page] back out of the trash; the delete was just made here, in
+  /// the strategy [strategyId].
   Future<void> _undoDelete(
     PageListItemViewModel page, {
+    required String? strategyId,
     required bool wasActive,
   }) async {
+    bool stillHere() =>
+        mounted && ref.read(strategyProvider).strategyId == strategyId;
+    if (!stillHere()) return;
     final session = ref.read(strategyPageSessionProvider.notifier);
     final outcome = await session.restorePageFromTrash(page.id);
     if (outcome != DeletedPageRestore.restored) {
@@ -306,9 +340,28 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       );
       return;
     }
-    if (wasActive && mounted) {
-      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-      await session.setActivePage(page.id);
+    if (!wasActive || !stillHere()) return;
+    // Back to the page the delete moved you off, once the list has it.
+    await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+    final listed = ref
+            .read(remoteEditorSnapshotProvider)
+            .valueOrNull
+            ?.pages
+            .any((listedPage) => listedPage.publicId == page.id) ??
+        false;
+    if (!stillHere()) return;
+    try {
+      if (!listed) throw StateError('Restored page is not listed yet.');
+      await session.setActivePageAnimated(
+        page.id,
+        direction: PageTransitionDirection.backward,
+      );
+    } catch (_) {
+      Settings.showToast(
+        message: "Restored '${page.name}', but could not open it. It is in "
+            'the pages list.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
     }
   }
 
