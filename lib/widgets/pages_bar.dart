@@ -275,11 +275,13 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     final wasActive =
         ref.read(strategyPageSessionProvider).activePageId == page.id;
     final isCloud = ref.read(strategyProvider).source == StrategySource.cloud;
+    // The page belongs to the strategy open now, whatever opens meanwhile.
+    final strategyId = ref.read(strategyProvider).strategyId;
     final deleted =
         await ref.read(strategyProvider.notifier).deletePage(page.id);
-    // Only a cloud page goes to the trash, so only it can be undone.
-    if (!deleted || !isCloud || !mounted) return;
-    final strategyId = ref.read(strategyProvider).strategyId;
+    // Only a cloud page goes to the trash, so only it can be undone, and only
+    // from the strategy it was deleted in.
+    if (!deleted || !isCloud || !_showing(strategyId)) return;
     _dismissUndo();
     late final ToastificationItem toast;
     toast = Settings.showToast(
@@ -320,6 +322,11 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     super.dispose();
   }
 
+  /// Whether this bar is still up, showing the strategy [strategyId]. Checked
+  /// after every wait before anything is read.
+  bool _showing(String? strategyId) =>
+      mounted && ref.read(strategyProvider).strategyId == strategyId;
+
   /// Takes [page] back out of the trash; the delete was just made here, in
   /// the strategy [strategyId].
   Future<void> _undoDelete(
@@ -327,8 +334,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     required String? strategyId,
     required bool wasActive,
   }) async {
-    bool stillHere() =>
-        mounted && ref.read(strategyProvider).strategyId == strategyId;
+    bool stillHere() => _showing(strategyId);
     if (!stillHere()) return;
     final session = ref.read(strategyPageSessionProvider.notifier);
     final outcome = await session.restorePageFromTrash(page.id);
@@ -343,15 +349,22 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     if (!wasActive || !stillHere()) return;
     // Back to the page the delete moved you off, once the list has it.
     await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+    if (!stillHere()) return;
     final listed = ref
             .read(remoteEditorSnapshotProvider)
             .valueOrNull
             ?.pages
             .any((listedPage) => listedPage.publicId == page.id) ??
         false;
-    if (!stillHere()) return;
+    if (!listed) {
+      // The server has it back; the list shows it when it next loads.
+      Settings.showToast(
+        message: "Restored '${page.name}'.",
+        backgroundColor: Settings.tacticalVioletTheme.secondary,
+      );
+      return;
+    }
     try {
-      if (!listed) throw StateError('Restored page is not listed yet.');
       await session.setActivePageAnimated(
         page.id,
         direction: PageTransitionDirection.backward,

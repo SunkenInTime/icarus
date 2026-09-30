@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
-import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -26,30 +28,42 @@ RemotePage _page(String id, int sortIndex) => RemotePage(
       updatedAt: _at,
     );
 
-class _Remote extends RemoteEditorSnapshotNotifier {
-  @override
-  Future<RemoteEditorSnapshot?> build() async => RemoteEditorSnapshot(
-        shell: RemoteStrategyShell(
-          header: RemoteStrategyHeader(
-            publicId: 'strategy-a',
-            name: 'Strategy A',
-            mapData: 'ascent',
-            revision: 3,
-            createdAt: _at,
-            updatedAt: _at,
-          ),
-          pages: [_page('page-1', 0), _page('page-2', 1)],
+RemoteEditorSnapshot _snapshot(List<RemotePage> pages) => RemoteEditorSnapshot(
+      shell: RemoteStrategyShell(
+        header: RemoteStrategyHeader(
+          publicId: 'strategy-a',
+          name: 'Strategy A',
+          mapData: 'ascent',
+          revision: 3,
+          createdAt: _at,
+          updatedAt: _at,
         ),
-        activePage: null,
-      );
+        pages: pages,
+      ),
+      activePage: null,
+    );
+
+/// The server's pages. A refresh waits on [refreshGate] and then lists
+/// [afterRefresh].
+class _Remote extends RemoteEditorSnapshotNotifier {
+  Completer<void>? refreshGate;
+  List<RemotePage> afterRefresh = [_page('page-1', 0), _page('page-2', 1)];
 
   @override
-  Future<void> refresh() async {}
+  Future<RemoteEditorSnapshot?> build() async =>
+      _snapshot([_page('page-1', 0), _page('page-2', 1)]);
+
+  @override
+  Future<void> refresh() async {
+    await refreshGate?.future;
+    state = AsyncData(_snapshot(afterRefresh));
+  }
 }
 
-/// A cloud strategy whose deletes the server accepts.
+/// A cloud strategy whose deletes the server accepts, after [deleteGate].
 class _CloudStrategy extends StrategyProvider {
   final List<String> deleted = [];
+  Completer<void>? deleteGate;
 
   @override
   StrategyState build() => const StrategyState(
@@ -62,6 +76,7 @@ class _CloudStrategy extends StrategyProvider {
   @override
   Future<bool> deletePage(String pageId) async {
     deleted.add(pageId);
+    await deleteGate?.future;
     return true;
   }
 
@@ -71,6 +86,8 @@ class _CloudStrategy extends StrategyProvider {
 
 class _Session extends StrategyPageSessionNotifier {
   final List<String> restored = [];
+  final List<String> opened = [];
+  bool openFails = false;
 
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
@@ -79,8 +96,6 @@ class _Session extends StrategyPageSessionNotifier {
         transitionState: PageTransitionState.idle,
         isApplyingPage: false,
       );
-
-  final List<String> opened = [];
 
   @override
   Future<DeletedPageRestore> restorePageFromTrash(String pageId) async {
@@ -93,8 +108,10 @@ class _Session extends StrategyPageSessionNotifier {
     String pageId, {
     required PageTransitionDirection direction,
     Duration duration = Duration.zero,
-  }) async =>
-      opened.add(pageId);
+  }) async {
+    if (openFails) throw StateError('Could not load the page.');
+    opened.add(pageId);
+  }
 }
 
 class _Preferences extends AppPreferencesNotifier {
@@ -119,80 +136,161 @@ const _caps = StrategyCapabilities(
   canMoveFolder: false,
 );
 
-/// Deletes Page 2 from the expanded bar; returns the providers it used.
-Future<(_CloudStrategy, _Session, ValueNotifier<bool>)> _deletePage2(
-  WidgetTester tester,
-) async {
+class _Harness {
   final strategy = _CloudStrategy();
   final session = _Session();
+  final remote = _Remote();
   final showBar = ValueNotifier(true);
-  await tester.pumpWidget(ProviderScope(
-    overrides: [
-      remoteEditorSnapshotProvider.overrideWith(_Remote.new),
-      strategyProvider.overrideWith(() => strategy),
-      strategyPageSessionProvider.overrideWith(() => session),
-      appPreferencesProvider.overrideWith(_Preferences.new),
-      currentStrategyCapabilitiesProvider.overrideWithValue(_caps),
-    ],
-    child: ToastificationWrapper(
-      child: ShadApp(
-        home: Scaffold(
-          body: Center(
-            child: ValueListenableBuilder(
-              valueListenable: showBar,
-              builder: (_, show, __) =>
-                  show ? const PagesBar() : const SizedBox.shrink(),
+
+  Future<void> pump(WidgetTester tester) async {
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        remoteEditorSnapshotProvider.overrideWith(() => remote),
+        strategyProvider.overrideWith(() => strategy),
+        strategyPageSessionProvider.overrideWith(() => session),
+        appPreferencesProvider.overrideWith(_Preferences.new),
+        currentStrategyCapabilitiesProvider.overrideWithValue(_caps),
+      ],
+      child: ToastificationWrapper(
+        child: ShadApp(
+          home: Scaffold(
+            body: Center(
+              child: ValueListenableBuilder(
+                valueListenable: showBar,
+                builder: (_, show, __) =>
+                    show ? const PagesBar() : const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
       ),
-    ),
-  ));
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(LucideIcons.chevronDown));
+    await tester.pumpAndSettle();
+  }
+
+  /// Opens Page 2's delete confirmation (the page you are on) and confirms.
+  Future<void> confirmDelete(WidgetTester tester) async {
+    await tester.tap(find.byIcon(LucideIcons.trash));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('confirm-alert-confirm')));
+  }
+}
+
+Future<_Harness> _deleted(WidgetTester tester) async {
+  final harness = _Harness();
+  await harness.pump(tester);
+  await harness.confirmDelete(tester);
   await tester.pumpAndSettle();
-  await tester.tap(find.byIcon(LucideIcons.chevronDown));
+  expect(harness.strategy.deleted, ['page-2']);
+  expect(find.text("Deleted 'Page 2'"), findsOneWidget);
+  return harness;
+}
+
+/// Result toasts close on a timer, which must not outlive the test.
+Future<void> _letToastsClose(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 5));
   await tester.pumpAndSettle();
-  // The active page's row carries its delete button.
-  await tester.tap(find.byIcon(LucideIcons.trash));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const ValueKey('confirm-alert-confirm')));
-  await tester.pumpAndSettle();
-  expect(strategy.deleted, ['page-2']);
-  return (strategy, session, showBar);
 }
 
 void main() {
   tearDown(() => toastification.dismissAll(delayForAnimation: false));
 
-  testWidgets('Undo after a cloud delete restores the page, once',
+  testWidgets('Undo after a cloud delete restores the page and goes back to it',
       (tester) async {
-    final (_, session, _) = await _deletePage2(tester);
-    expect(find.text("Deleted 'Page 2'"), findsOneWidget);
+    final harness = await _deleted(tester);
 
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
-    expect(session.restored, ['page-2']);
-    // It was the page you were on: Undo takes you back.
-    expect(session.opened, ['page-2']);
+    expect(harness.session.restored, ['page-2']);
+    expect(harness.session.opened, ['page-2']);
     expect(find.text('Undo'), findsNothing);
   });
 
-  testWidgets('leaving the strategy takes the Undo offer away', (tester) async {
-    final (_, session, showBar) = await _deletePage2(tester);
-    expect(find.text('Undo'), findsOneWidget);
+  testWidgets('a second tap on Undo restores nothing more', (tester) async {
+    final harness = await _deleted(tester);
 
-    showBar.value = false;
+    await tester.tap(find.text('Undo'));
+    await tester.tap(find.text('Undo'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(harness.session.restored, ['page-2']);
+  });
+
+  testWidgets('leaving the strategy takes the Undo offer away', (tester) async {
+    final harness = await _deleted(tester);
+
+    harness.showBar.value = false;
     await tester.pumpAndSettle();
     expect(find.text('Undo'), findsNothing);
-    expect(session.restored, isEmpty);
+    expect(harness.session.restored, isEmpty);
   });
 
   testWidgets('Undo does nothing once another strategy is open',
       (tester) async {
-    final (strategy, session, _) = await _deletePage2(tester);
+    final harness = await _deleted(tester);
 
-    strategy.switchTo('strategy-b');
+    harness.strategy.switchTo('strategy-b');
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
-    expect(session.restored, isEmpty);
+    expect(harness.session.restored, isEmpty);
+  });
+
+  testWidgets('switching strategies while the delete lands offers no Undo',
+      (tester) async {
+    final harness = _Harness();
+    harness.strategy.deleteGate = Completer();
+    await harness.pump(tester);
+    await harness.confirmDelete(tester);
+    await tester.pump();
+
+    harness.strategy.switchTo('strategy-b');
+    harness.strategy.deleteGate!.complete();
+    await tester.pumpAndSettle();
+    expect(harness.strategy.deleted, ['page-2']);
+    expect(find.text('Undo'), findsNothing);
+  });
+
+  testWidgets('leaving while Undo is refreshing the list is safe',
+      (tester) async {
+    final harness = await _deleted(tester);
+    harness.remote.refreshGate = Completer();
+
+    await tester.tap(find.text('Undo'));
+    await tester.pump();
+    expect(harness.session.restored, ['page-2']);
+    harness.showBar.value = false;
+    await tester.pumpAndSettle();
+    harness.remote.refreshGate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(harness.session.opened, isEmpty);
+  });
+
+  testWidgets('a restore the list does not show yet says only that',
+      (tester) async {
+    final harness = await _deleted(tester);
+    harness.remote.afterRefresh = [_page('page-1', 0)];
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(find.text("Restored 'Page 2'."), findsOneWidget);
+    expect(harness.session.opened, isEmpty);
+    await _letToastsClose(tester);
+  });
+
+  testWidgets('a restored page that will not open says so', (tester) async {
+    final harness = await _deleted(tester);
+    harness.session.openFails = true;
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text("Restored 'Page 2', but could not open it. It is in the "
+          'pages list.'),
+      findsOneWidget,
+    );
+    await _letToastsClose(tester);
   });
 }
