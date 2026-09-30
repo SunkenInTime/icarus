@@ -1166,7 +1166,10 @@ void main() {
       await tester.tap(find.text('Restore page'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Could not restore the page'), findsOneWidget);
+      expect(
+        find.textContaining('Could not confirm the page was restored'),
+        findsOneWidget,
+      );
       expect(find.text('This page was deleted'), findsOneWidget);
       expect(find.text('Restore page'), findsOneWidget);
       await tester.tap(find.text('Discard changes'));

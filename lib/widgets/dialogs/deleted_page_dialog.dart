@@ -53,8 +53,8 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
       _isGone = outcome == DeletedPageRestore.gone;
       _error = _isGone
           ? null
-          : 'Could not restore the page. Check your connection and try '
-              'again, or discard your changes.';
+          : 'Could not confirm the page was restored. Check your '
+              'connection and try again, or discard your changes.';
     });
   }
 

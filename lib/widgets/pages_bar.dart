@@ -1296,9 +1296,10 @@ class _SquareIconButton extends StatelessWidget {
   }
 }
 
-/// Why Undo left [pageName] deleted. [strategyName] is null while the user
-/// is still in the page's strategy, and names it (or is empty when unknown)
-/// once they have left.
+/// What Undo can say about [pageName] when it did not confirm a restore.
+/// [strategyName] is null while the user is still in the page's strategy,
+/// and names it (or is empty when unknown) once they have left. A failure
+/// may be a reply that never arrived, so it says what it does not know.
 @visibleForTesting
 String undoFailedMessage(
   String pageName,
@@ -1308,12 +1309,11 @@ String undoFailedMessage(
   if (outcome == DeletedPageRestore.gone) {
     return "'$pageName' can no longer be restored.";
   }
-  return switch (strategyName) {
-    null => "Could not restore '$pageName'. It is in Recently deleted for "
-        '30 days.',
-    '' => "Could not restore '$pageName'. It is in its strategy's Recently "
-        'deleted for 30 days.',
-    final name => "Could not restore '$pageName' in $name. It is in that "
-        "strategy's Recently deleted for 30 days.",
+  final (where, trash) = switch (strategyName) {
+    null => ('', 'Recently deleted'),
+    '' => ('', "its strategy's Recently deleted"),
+    final name => (' in $name', "that strategy's Recently deleted"),
   };
+  return "Could not confirm that '$pageName' was restored$where. If it "
+      "doesn't come back, it is in $trash for 30 days.";
 }

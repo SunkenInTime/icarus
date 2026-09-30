@@ -217,7 +217,9 @@ void main() {
     await tester.tap(find.text('Restore'));
     await tester.pumpAndSettle();
     expect(
-      find.text('Could not restore it. Check your connection and try again.'),
+      find.text(
+        'Could not confirm the restore. Check your connection and try again.',
+      ),
       findsOneWidget,
     );
 

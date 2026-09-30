@@ -200,7 +200,8 @@ class _TrashedPageRow extends StatelessWidget {
     final error = gone
         ? 'It can no longer be restored.'
         : state == _RowState.failed
-            ? 'Could not restore it. Check your connection and try again.'
+            ? 'Could not confirm the restore. Check your connection and try '
+                'again.'
             : null;
     // Type roles from DESIGN.md: title for the name, label for the rest.
     final label = theme.textTheme.small.copyWith(

@@ -345,8 +345,9 @@ void main() {
     harness.session.restoreGate!.complete();
     await tester.pumpAndSettle();
     expect(
-      find.text("Could not restore 'Page 2' in Strategy A. It is in that "
-          "strategy's Recently deleted for 30 days."),
+      find.text("Could not confirm that 'Page 2' was restored in Strategy A. "
+          "If it doesn't come back, it is in that strategy's Recently deleted "
+          'for 30 days.'),
       findsOneWidget,
     );
     await _letToastsClose(tester);
@@ -366,12 +367,13 @@ void main() {
     expect(
       undoFailedMessage('Page 2', DeletedPageRestore.failed,
           strategyName: null),
-      "Could not restore 'Page 2'. It is in Recently deleted for 30 days.",
+      "Could not confirm that 'Page 2' was restored. If it doesn't come "
+      'back, it is in Recently deleted for 30 days.',
     );
     expect(
       undoFailedMessage('Page 2', DeletedPageRestore.failed, strategyName: ''),
-      "Could not restore 'Page 2'. It is in its strategy's Recently deleted "
-      'for 30 days.',
+      "Could not confirm that 'Page 2' was restored. If it doesn't come "
+      "back, it is in its strategy's Recently deleted for 30 days.",
     );
     expect(
       undoFailedMessage('Page 2', DeletedPageRestore.gone,
