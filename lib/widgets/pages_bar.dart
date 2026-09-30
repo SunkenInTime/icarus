@@ -263,6 +263,8 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   Future<void> _deletePage(PageListItemViewModel page, int pageCount) async {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canDeletePage || pageCount <= 1) return;
+    // The page belongs to the strategy open now, whatever opens meanwhile.
+    final strategyId = ref.read(strategyProvider).strategyId;
 
     final confirm = await confirmDeletePage(
       context,
@@ -271,12 +273,10 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       pageName: page.name,
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !_showing(strategyId)) return;
     final wasActive =
         ref.read(strategyPageSessionProvider).activePageId == page.id;
     final isCloud = ref.read(strategyProvider).source == StrategySource.cloud;
-    // The page belongs to the strategy open now, whatever opens meanwhile.
-    final strategyId = ref.read(strategyProvider).strategyId;
     final deleted =
         await ref.read(strategyProvider.notifier).deletePage(page.id);
     // Only a cloud page goes to the trash, so only it can be undone, and only
@@ -350,13 +350,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     // Back to the page the delete moved you off, once the list has it.
     await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
     if (!stillHere()) return;
-    final listed = ref
-            .read(remoteEditorSnapshotProvider)
-            .valueOrNull
-            ?.pages
-            .any((listedPage) => listedPage.publicId == page.id) ??
-        false;
-    if (!listed) {
+    if (!_lists(page.id)) {
       // The server has it back; the list shows it when it next loads.
       Settings.showToast(
         message: "Restored '${page.name}'.",
@@ -370,13 +364,25 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         direction: PageTransitionDirection.backward,
       );
     } catch (_) {
+      if (!stillHere()) return;
       Settings.showToast(
-        message: "Restored '${page.name}', but could not open it. It is in "
-            'the pages list.',
+        message: _lists(page.id)
+            ? "Restored '${page.name}', but could not open it. It is in the "
+                'pages list.'
+            : "Restored '${page.name}', but could not open it.",
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
   }
+
+  /// Whether the last snapshot lists the page [pageId].
+  bool _lists(String pageId) =>
+      ref
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.pages
+          .any((page) => page.publicId == pageId) ??
+      false;
 
   Future<void> _openRecentlyDeleted() async {
     final strategyId = ref.read(strategyProvider).strategyId;

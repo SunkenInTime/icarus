@@ -89,6 +89,9 @@ class _Session extends StrategyPageSessionNotifier {
   final List<String> opened = [];
   bool openFails = false;
 
+  /// Runs while a page is opening, before it fails or lands.
+  void Function()? duringOpen;
+
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
         activePageId: 'page-2',
@@ -109,6 +112,7 @@ class _Session extends StrategyPageSessionNotifier {
     required PageTransitionDirection direction,
     Duration duration = Duration.zero,
   }) async {
+    duringOpen?.call();
     if (openFails) throw StateError('Could not load the page.');
     opened.add(pageId);
   }
@@ -291,6 +295,35 @@ void main() {
           'pages list.'),
       findsOneWidget,
     );
+    await _letToastsClose(tester);
+  });
+
+  testWidgets('switching strategies with the confirmation open deletes nothing',
+      (tester) async {
+    final harness = _Harness();
+    await harness.pump(tester);
+    await tester.tap(find.byIcon(LucideIcons.trash));
+    await tester.pumpAndSettle();
+
+    harness.strategy.switchTo('strategy-b');
+    await tester.tap(find.byKey(const ValueKey('confirm-alert-confirm')));
+    await tester.pumpAndSettle();
+    expect(harness.strategy.deleted, isEmpty);
+    expect(find.text('Undo'), findsNothing);
+  });
+
+  testWidgets('a page deleted again while opening is not claimed as listed',
+      (tester) async {
+    final harness = await _deleted(tester);
+    harness.session
+      ..openFails = true
+      ..duringOpen = () =>
+          harness.remote.state = AsyncData(_snapshot([_page('page-1', 0)]));
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(
+        find.text("Restored 'Page 2', but could not open it."), findsOneWidget);
     await _letToastsClose(tester);
   });
 }
