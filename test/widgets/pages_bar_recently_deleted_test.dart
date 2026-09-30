@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/trashed_pages_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -92,9 +93,13 @@ class _Trash implements ConvexStrategyRepository {
   List<TrashedPage> pages;
   final List<String> listed = [];
 
+  /// Reads fail while set, as offline.
+  bool offline = false;
+
   @override
   Future<List<TrashedPage>> listTrashedPages(String strategyPublicId) async {
     listed.add(strategyPublicId);
+    if (offline) throw StateError('Cloud connection is offline.');
     return pages;
   }
 
@@ -211,5 +216,28 @@ void main() {
     remote.moveRevision(5);
     await tester.pumpAndSettle();
     expect(find.byIcon(LucideIcons.archiveRestore), findsNothing);
+  });
+
+  testWidgets('a failed read is tried again, so the button comes back online',
+      (tester) async {
+    final repository = _Trash([
+      TrashedPage(
+        pageId: 'page-3',
+        name: 'Retake B',
+        deletedAt: _at,
+        restorableUntil: _at.add(const Duration(days: 30)),
+        deletedByName: 'Sam',
+        deletedByYou: false,
+      ),
+    ])
+      ..offline = true;
+    await _expandedBar(tester, canDeletePage: true, repository: repository);
+    expect(find.byIcon(LucideIcons.archiveRestore), findsNothing);
+
+    // Back online; nothing about the strategy changed.
+    repository.offline = false;
+    await tester.pump(trashRecheckDelay);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(LucideIcons.archiveRestore), findsOneWidget);
   });
 }
