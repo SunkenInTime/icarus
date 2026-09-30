@@ -820,6 +820,75 @@ void main() {
     );
   });
 
+  QueuedEntityIntent refusedOnPage2() => QueuedEntityIntent(
+        entityKey: const EntitySyncKey.element('page-2', 'text-2'),
+        pending: PendingOp(
+          op: const ElementDeleteOp(
+            opId: 'refused-op',
+            pagePublicId: 'page-2',
+            elementPublicId: 'text-2',
+            expectedElementRevision: 1,
+          ),
+          clientId: 'test-client',
+        ),
+      );
+
+  test('opening a strategy re-sends edits for pages that came back meanwhile',
+      () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    // Restored while the strategy was closed: already live on first load.
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [first, second],
+      activePage: _pageSnapshot(first),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    queue.state = queue.state.copyWith(attentionByEntityKey: {
+      const EntitySyncKey.element('page-2', 'text-2'): refusedOnPage2(),
+    });
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    await _settle();
+    expect(queue.livePageRetries.last, contains('page-2'));
+  });
+
+  test('"Use cloud" is not overridden when its refresh finds the page back',
+      () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [first],
+      activePage: _pageSnapshot(first),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    queue.state = queue.state.copyWith(attentionByEntityKey: {
+      const EntitySyncKey.element('page-2', 'text-2'): refusedOnPage2(),
+    });
+    // A teammate restored page-2; "Use cloud"'s refresh is what shows it.
+    remote.initialSnapshot = _editorSnapshot(
+      pages: [first, second],
+      activePage: _pageSnapshot(first, contentRevision: 2),
+    );
+
+    await session.useCloudVersionsForRejected();
+    await _settle();
+    expect(queue.livePageRetries, isEmpty);
+  });
+
   test('edits refused for a deleted page go out again once it is live',
       () async {
     final first = _page('page-1', 0);
