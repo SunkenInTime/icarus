@@ -257,7 +257,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// strategy was closed. A refusal refreshes the snapshot, which then no
   /// longer lists the page, so this cannot loop.
   void _resendEditsForPagesBack(RemoteEditorSnapshot snapshot) {
-    // A "Use cloud" or "Keep mine" in progress decides this work's fate.
+    // A "Use cloud" in progress decides this work's fate. ("Keep mine" goes
+    // through the same serialized retry, which only takes what is still in
+    // attention, so the two cannot send it twice.)
     if (_isResolvingConflicts) return;
     final live = {for (final page in snapshot.pages) page.publicId};
     final waiting = ref
