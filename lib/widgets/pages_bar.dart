@@ -340,14 +340,13 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     final strategyName = ref.read(strategyProvider).strategyName;
     final outcome = await session.restorePageFromTrash(page.id);
     if (outcome != DeletedPageRestore.restored) {
-      // Still said after leaving, so no one thinks Undo worked, but then
-      // naming the strategy the page belongs to.
+      // Said even after leaving, so no one thinks Undo worked.
       Settings.showToast(
-        message: stillHere() || strategyName == null
-            ? "Could not restore '${page.name}'. It is in Recently deleted "
-                'for 30 days.'
-            : "Could not restore '${page.name}' in $strategyName. It is in "
-                "that strategy's Recently deleted for 30 days.",
+        message: undoFailedMessage(
+          page.name,
+          outcome,
+          strategyName: stillHere() ? null : (strategyName ?? ''),
+        ),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -1295,4 +1294,26 @@ class _SquareIconButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Why Undo left [pageName] deleted. [strategyName] is null while the user
+/// is still in the page's strategy, and names it (or is empty when unknown)
+/// once they have left.
+@visibleForTesting
+String undoFailedMessage(
+  String pageName,
+  DeletedPageRestore outcome, {
+  required String? strategyName,
+}) {
+  if (outcome == DeletedPageRestore.gone) {
+    return "'$pageName' can no longer be restored.";
+  }
+  return switch (strategyName) {
+    null => "Could not restore '$pageName'. It is in Recently deleted for "
+        '30 days.',
+    '' => "Could not restore '$pageName'. It is in its strategy's Recently "
+        'deleted for 30 days.',
+    final name => "Could not restore '$pageName' in $name. It is in that "
+        "strategy's Recently deleted for 30 days.",
+  };
 }

@@ -351,4 +351,32 @@ void main() {
     );
     await _letToastsClose(tester);
   });
+
+  testWidgets('a page that can no longer come back says so', (tester) async {
+    final harness = await _deleted(tester);
+    harness.session.restoreOutcome = DeletedPageRestore.gone;
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(find.text("'Page 2' can no longer be restored."), findsOneWidget);
+    await _letToastsClose(tester);
+  });
+
+  test('Undo failure messages', () {
+    expect(
+      undoFailedMessage('Page 2', DeletedPageRestore.failed,
+          strategyName: null),
+      "Could not restore 'Page 2'. It is in Recently deleted for 30 days.",
+    );
+    expect(
+      undoFailedMessage('Page 2', DeletedPageRestore.failed, strategyName: ''),
+      "Could not restore 'Page 2'. It is in its strategy's Recently deleted "
+      'for 30 days.',
+    );
+    expect(
+      undoFailedMessage('Page 2', DeletedPageRestore.gone,
+          strategyName: 'Strategy A'),
+      "'Page 2' can no longer be restored.",
+    );
+  });
 }
