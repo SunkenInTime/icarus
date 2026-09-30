@@ -16,6 +16,7 @@ import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
 import 'package:icarus/widgets/dialogs/recently_deleted_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 const double _pagesBarCornerRadius = 12;
 const double _pagesBarFooterHeight = 48;
@@ -270,7 +271,45 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     );
 
     if (confirm != true) return;
-    await ref.read(strategyProvider.notifier).deletePage(page.id);
+    final wasActive =
+        ref.read(strategyPageSessionProvider).activePageId == page.id;
+    final isCloud = ref.read(strategyProvider).source == StrategySource.cloud;
+    final deleted =
+        await ref.read(strategyProvider.notifier).deletePage(page.id);
+    // Only a cloud page goes to the trash, so only it can be undone.
+    if (!deleted || !isCloud || !mounted) return;
+    late final ToastificationItem toast;
+    toast = Settings.showToast(
+      message: "Deleted '${page.name}'",
+      backgroundColor: Settings.tacticalVioletTheme.secondary,
+      autoCloseDuration: const Duration(seconds: 6),
+      actionLabel: 'Undo',
+      onActionPressed: () {
+        toastification.dismiss(toast);
+        _undoDelete(page, wasActive: wasActive);
+      },
+    );
+  }
+
+  /// Takes [page] back out of the trash; the delete was just made here.
+  Future<void> _undoDelete(
+    PageListItemViewModel page, {
+    required bool wasActive,
+  }) async {
+    final session = ref.read(strategyPageSessionProvider.notifier);
+    final outcome = await session.restorePageFromTrash(page.id);
+    if (outcome != DeletedPageRestore.restored) {
+      Settings.showToast(
+        message: "Could not restore '${page.name}'. It is in Recently "
+            'deleted for 30 days.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    if (wasActive && mounted) {
+      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+      await session.setActivePage(page.id);
+    }
   }
 
   Future<void> _openRecentlyDeleted() async {

@@ -1031,12 +1031,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  Future<void> deletePage(String pageId) async {
-    if (!_currentStrategyCanEditPages()) return;
+  /// Whether the page was deleted. A cloud page then sits in the server's
+  /// trash, restorable for 30 days.
+  Future<bool> deletePage(String pageId) async {
+    if (!_currentStrategyCanEditPages()) return false;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null || snapshot.pages.length <= 1) {
-        return;
+        return false;
       }
       final pages = [...snapshot.pages]
         ..sortBySortIndex((item) => item.sortIndex);
@@ -1071,14 +1073,14 @@ class StrategyProvider extends Notifier<StrategyState> {
               direction: PageTransitionDirection.forward,
             );
       }
-      return;
+      return ack?.isAck ?? false;
     }
 
     final strategyId = state.strategyId;
-    if (strategyId == null) return;
+    if (strategyId == null) return false;
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strat = box.get(strategyId);
-    if (strat == null || strat.pages.length <= 1) return;
+    if (strat == null || strat.pages.length <= 1) return false;
 
     final remaining = [...strat.pages]
       ..sortBySortIndex((item) => item.sortIndex)
@@ -1097,6 +1099,7 @@ class StrategyProvider extends Notifier<StrategyState> {
             nextActivePageId,
           );
     }
+    return true;
   }
 
   Future<void> loadFromHive(String id) async {

@@ -774,6 +774,34 @@ void main() {
     expect(queue.flushNowCount, 1);
   });
 
+  test('a cloud page delete reports whether the server took it', () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    Future<ProviderContainer> open(_FakeStrategyOpQueueNotifier queue) =>
+        _cloudContainer(
+          remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+            pages: [first, second],
+            activePage: _pageSnapshot(first),
+          )),
+          queue: queue,
+        );
+
+    // No answer from the server: nothing to undo, so no undo is offered.
+    final unanswered = await open(_FakeStrategyOpQueueNotifier());
+    expect(
+      await unanswered.read(strategyProvider.notifier).deletePage('page-2'),
+      isFalse,
+    );
+
+    final queue = _FakeStrategyOpQueueNotifier();
+    queue.onFlush = () async => queue.ackQueued();
+    final accepted = await open(queue);
+    expect(
+      await accepted.read(strategyProvider.notifier).deletePage('page-2'),
+      isTrue,
+    );
+  });
+
   test('cloud page delete is persisted with the shell revision', () async {
     final first = _page('page-1', 0);
     final second = _page('page-2', 1);

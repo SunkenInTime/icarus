@@ -202,7 +202,7 @@ class _TrashedPageRow extends StatelessWidget {
         : state == _RowState.failed
             ? 'Could not restore it. Check your connection and try again.'
             : null;
-    // Type roles from DESIGN.md: body for the name, label for the rest.
+    // Type roles from DESIGN.md: title for the name, label for the rest.
     final label = theme.textTheme.small.copyWith(
       fontSize: 12,
       fontWeight: FontWeight.w600,
@@ -226,10 +226,11 @@ class _TrashedPageRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.small.copyWith(
                     color: theme.colorScheme.foreground,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   gone
                       ? deletedLabel(page, now)
