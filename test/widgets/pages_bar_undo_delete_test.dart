@@ -89,6 +89,10 @@ class _Session extends StrategyPageSessionNotifier {
   final List<String> opened = [];
   bool openFails = false;
 
+  /// A restore waits on this, then answers [restoreOutcome].
+  Completer<void>? restoreGate;
+  DeletedPageRestore restoreOutcome = DeletedPageRestore.restored;
+
   /// Runs while a page is opening, before it fails or lands.
   void Function()? duringOpen;
 
@@ -103,7 +107,8 @@ class _Session extends StrategyPageSessionNotifier {
   @override
   Future<DeletedPageRestore> restorePageFromTrash(String pageId) async {
     restored.add(pageId);
-    return DeletedPageRestore.restored;
+    await restoreGate?.future;
+    return restoreOutcome;
   }
 
   @override
@@ -324,6 +329,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(
         find.text("Restored 'Page 2', but could not open it."), findsOneWidget);
+    await _letToastsClose(tester);
+  });
+
+  testWidgets('a failed restore after leaving names the strategy it was in',
+      (tester) async {
+    final harness = await _deleted(tester);
+    harness.session
+      ..restoreGate = Completer()
+      ..restoreOutcome = DeletedPageRestore.failed;
+
+    await tester.tap(find.text('Undo'));
+    await tester.pump();
+    harness.strategy.switchTo('strategy-b');
+    harness.session.restoreGate!.complete();
+    await tester.pumpAndSettle();
+    expect(
+      find.text("Could not restore 'Page 2' in Strategy A. It is in that "
+          "strategy's Recently deleted for 30 days."),
+      findsOneWidget,
+    );
     await _letToastsClose(tester);
   });
 }

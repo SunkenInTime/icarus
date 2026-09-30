@@ -337,11 +337,17 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     bool stillHere() => _showing(strategyId);
     if (!stillHere()) return;
     final session = ref.read(strategyPageSessionProvider.notifier);
+    final strategyName = ref.read(strategyProvider).strategyName;
     final outcome = await session.restorePageFromTrash(page.id);
     if (outcome != DeletedPageRestore.restored) {
+      // Still said after leaving, so no one thinks Undo worked, but then
+      // naming the strategy the page belongs to.
       Settings.showToast(
-        message: "Could not restore '${page.name}'. It is in Recently "
-            'deleted for 30 days.',
+        message: stillHere() || strategyName == null
+            ? "Could not restore '${page.name}'. It is in Recently deleted "
+                'for 30 days.'
+            : "Could not restore '${page.name}' in $strategyName. It is in "
+                "that strategy's Recently deleted for 30 days.",
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
