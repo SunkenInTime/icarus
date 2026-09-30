@@ -1031,8 +1031,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  /// Whether the page was deleted. A cloud page then sits in the server's
-  /// trash, restorable for 30 days.
+  /// Whether this call deleted the page. A cloud page then sits in the
+  /// server's trash, restorable for 30 days. A page someone else deleted
+  /// first lands as a no-op and returns false: this call did not delete it.
   Future<bool> deletePage(String pageId) async {
     if (!_currentStrategyCanEditPages()) return false;
     if (_currentStrategyIsCloud()) {
@@ -1073,7 +1074,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               direction: PageTransitionDirection.forward,
             );
       }
-      return ack?.isAck ?? false;
+      return ack is AppliedOpAck;
     }
 
     final strategyId = state.strategyId;

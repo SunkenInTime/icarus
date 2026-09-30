@@ -851,10 +851,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// while the page was in its trash: it has just been restored. Each goes
   /// under a new op id, since the server answers a known one as it did
   /// before.
-  Future<void> retryRestoredPage(String pageId) => _retryAttention(
+  Future<void> retryRestoredPage(String pageId) => retryRestoredPages({pageId});
+
+  /// Re-sends the edits refused because their page was deleted, for the pages
+  /// in [livePageIds], which are live again (restored here or by anyone).
+  Future<void> retryRestoredPages(Set<String> livePageIds) => _retryAttention(
         flushImmediately: true,
         only: (key, record) =>
-            key.pageId == pageId && record?.lastError == pageDeletedMessage,
+            livePageIds.contains(key.pageId) &&
+            record?.lastError == pageDeletedMessage,
       );
 
   /// Retries the attention records [only] accepts, or all of them.

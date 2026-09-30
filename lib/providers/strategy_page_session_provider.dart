@@ -187,6 +187,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
               ifAbsent: () => snapshot.header.revision,
             );
           }
+          _resendEditsForPagesBack(snapshot);
         }
 
         final pageIds = [...snapshot.pages]
@@ -248,6 +249,23 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       availablePageIds: [],
       transitionState: PageTransitionState.idle,
       isApplyingPage: false,
+    );
+  }
+
+  /// Edits the server refused because their page was deleted go out again
+  /// once the page is live: restored here, by a teammate, or while this
+  /// strategy was closed. A refusal refreshes the snapshot, which then no
+  /// longer lists the page, so this cannot loop.
+  void _resendEditsForPagesBack(RemoteEditorSnapshot snapshot) {
+    final live = {for (final page in snapshot.pages) page.publicId};
+    final waiting = ref
+        .read(strategyOpQueueProvider)
+        .attentionByEntityKey
+        .keys
+        .any((key) => live.contains(key.pageId));
+    if (!waiting) return;
+    unawaited(
+      ref.read(strategyOpQueueProvider.notifier).retryRestoredPages(live),
     );
   }
 

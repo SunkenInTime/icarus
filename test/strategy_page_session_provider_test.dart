@@ -332,6 +332,13 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     ));
   }
 
+  /// Live page sets [retryRestoredPages] was asked to re-send for.
+  final List<Set<String>> livePageRetries = [];
+
+  @override
+  Future<void> retryRestoredPages(Set<String> livePageIds) async =>
+      livePageRetries.add(livePageIds);
+
   void holdInFlight(EntitySyncKey key, StrategyOp op) {
     state = state.copyWith(
       inFlightByEntityKey: {
@@ -800,6 +807,66 @@ void main() {
       await accepted.read(strategyProvider.notifier).deletePage('page-2'),
       isTrue,
     );
+
+    // A teammate deleted it first: this delete lands as a no-op, so there is
+    // nothing of this user's to undo.
+    final noopQueue = _FakeStrategyOpQueueNotifier();
+    noopQueue.onFlush =
+        () async => noopQueue.ackQueued(ack: (opId) => NoopOpAck(opId: opId));
+    final alreadyGone = await open(noopQueue);
+    expect(
+      await alreadyGone.read(strategyProvider.notifier).deletePage('page-2'),
+      isFalse,
+    );
+  });
+
+  test('edits refused for a deleted page go out again once it is live',
+      () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [first],
+      activePage: _pageSnapshot(first),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    // An edit to page-2 was refused while page-2 was in the trash.
+    const refused = ElementDeleteOp(
+      opId: 'refused-op',
+      pagePublicId: 'page-2',
+      elementPublicId: 'text-2',
+      expectedElementRevision: 1,
+    );
+    const key = EntitySyncKey.element('page-2', 'text-2');
+    queue.state = queue.state.copyWith(attentionByEntityKey: {
+      key: QueuedEntityIntent(
+        entityKey: key,
+        pending: PendingOp(op: refused, clientId: 'test-client'),
+      ),
+    });
+
+    // Still deleted: nothing to re-send.
+    remote.setSnapshot(_editorSnapshot(
+      pages: [first],
+      activePage: _pageSnapshot(first, contentRevision: 2),
+    ));
+    await _settle();
+    expect(queue.livePageRetries, isEmpty);
+
+    // Restored, say by a teammate: its refused edits go out again.
+    remote.setSnapshot(_editorSnapshot(
+      pages: [first, second],
+      activePage: _pageSnapshot(first, contentRevision: 3),
+    ));
+    await _settle();
+    expect(queue.livePageRetries.single, contains('page-2'));
   });
 
   test('cloud page delete is persisted with the shell revision', () async {
