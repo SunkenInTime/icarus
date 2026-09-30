@@ -1314,6 +1314,6 @@ String undoFailedMessage(
     '' => ('', "its strategy's Recently deleted"),
     final name => (' in $name', "that strategy's Recently deleted"),
   };
-  return "Could not confirm that '$pageName' was restored$where. If it "
-      "doesn't come back, it is in $trash for 30 days.";
+  return "Could not confirm that '$pageName' was restored$where. Once "
+      "you're connected, check the pages list or $trash.";
 }

@@ -346,8 +346,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text("Could not confirm that 'Page 2' was restored in Strategy A. "
-          "If it doesn't come back, it is in that strategy's Recently deleted "
-          'for 30 days.'),
+          "Once you're connected, check the pages list or that strategy's "
+          'Recently deleted.'),
       findsOneWidget,
     );
     await _letToastsClose(tester);
@@ -367,13 +367,13 @@ void main() {
     expect(
       undoFailedMessage('Page 2', DeletedPageRestore.failed,
           strategyName: null),
-      "Could not confirm that 'Page 2' was restored. If it doesn't come "
-      'back, it is in Recently deleted for 30 days.',
+      "Could not confirm that 'Page 2' was restored. Once you're connected, "
+      'check the pages list or Recently deleted.',
     );
     expect(
       undoFailedMessage('Page 2', DeletedPageRestore.failed, strategyName: ''),
-      "Could not confirm that 'Page 2' was restored. If it doesn't come "
-      "back, it is in its strategy's Recently deleted for 30 days.",
+      "Could not confirm that 'Page 2' was restored. Once you're connected, "
+      "check the pages list or its strategy's Recently deleted.",
     );
     expect(
       undoFailedMessage('Page 2', DeletedPageRestore.gone,
