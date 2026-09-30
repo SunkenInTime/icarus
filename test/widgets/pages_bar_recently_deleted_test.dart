@@ -26,6 +26,22 @@ RemotePage _page(String id, int sortIndex) => RemotePage(
     );
 
 class _Remote extends RemoteEditorSnapshotNotifier {
+  /// The strategy's revision moves, as a delete or restore moves it.
+  void moveRevision(int revision) => state = AsyncData(RemoteEditorSnapshot(
+        shell: RemoteStrategyShell(
+          header: RemoteStrategyHeader(
+            publicId: 'strategy-a',
+            name: 'Strategy A',
+            mapData: 'ascent',
+            revision: revision,
+            createdAt: _at,
+            updatedAt: _at,
+          ),
+          pages: [_page('page-1', 0), _page('page-2', 1)],
+        ),
+        activePage: null,
+      ));
+
   @override
   Future<RemoteEditorSnapshot?> build() async => RemoteEditorSnapshot(
         shell: RemoteStrategyShell(
@@ -69,13 +85,17 @@ class _Preferences extends AppPreferencesNotifier {
       AppPreferences(defaultThemeProfileIdForNewStrategies: 'default');
 }
 
-class _EmptyTrash implements ConvexStrategyRepository {
+/// Serves [pages] as the strategy's trash.
+class _Trash implements ConvexStrategyRepository {
+  _Trash([this.pages = const []]);
+
+  List<TrashedPage> pages;
   final List<String> listed = [];
 
   @override
   Future<List<TrashedPage>> listTrashedPages(String strategyPublicId) async {
     listed.add(strategyPublicId);
-    return const [];
+    return pages;
   }
 
   @override
@@ -103,10 +123,11 @@ Future<void> _expandedBar(
   WidgetTester tester, {
   required bool canDeletePage,
   ConvexStrategyRepository? repository,
+  _Remote? remote,
 }) async {
   await tester.pumpWidget(ProviderScope(
     overrides: [
-      remoteEditorSnapshotProvider.overrideWith(_Remote.new),
+      remoteEditorSnapshotProvider.overrideWith(() => remote ?? _Remote()),
       strategyProvider.overrideWith(_CloudStrategy.new),
       strategyPageSessionProvider.overrideWith(_Session.new),
       appPreferencesProvider.overrideWith(_Preferences.new),
@@ -127,22 +148,68 @@ Future<void> _expandedBar(
 
 void main() {
   testWidgets(
-      'an editor of a cloud strategy opens Recently deleted from the pages '
-      'bar', (tester) async {
-    final repository = _EmptyTrash();
+      'an editor opens Recently deleted from the pages bar when it has pages',
+      (tester) async {
+    final repository = _Trash([
+      TrashedPage(
+        pageId: 'page-3',
+        name: 'Retake B',
+        deletedAt: _at,
+        restorableUntil: _at.add(const Duration(days: 30)),
+        deletedByName: 'Sam',
+        deletedByYou: false,
+      ),
+    ]);
     await _expandedBar(tester, canDeletePage: true, repository: repository);
 
     await tester.tap(find.byIcon(LucideIcons.archiveRestore));
     await tester.pumpAndSettle();
 
-    expect(find.text('No deleted pages.'), findsOneWidget);
+    expect(find.text('Retake B'), findsOneWidget);
+  });
+
+  testWidgets('an empty trash shows no Recently deleted button',
+      (tester) async {
+    final repository = _Trash();
+    await _expandedBar(tester, canDeletePage: true, repository: repository);
+
     expect(repository.listed, ['strategy-a']);
+    expect(find.byIcon(LucideIcons.archiveRestore), findsNothing);
   });
 
   testWidgets('someone who cannot delete pages has no Recently deleted',
       (tester) async {
     await _expandedBar(tester, canDeletePage: false);
 
+    expect(find.byIcon(LucideIcons.archiveRestore), findsNothing);
+  });
+
+  testWidgets(
+      'the button comes with the first deleted page and goes with the '
+      'last', (tester) async {
+    final repository = _Trash();
+    final remote = _Remote();
+    await _expandedBar(tester,
+        canDeletePage: true, repository: repository, remote: remote);
+    expect(find.byIcon(LucideIcons.archiveRestore), findsNothing);
+
+    repository.pages = [
+      TrashedPage(
+        pageId: 'page-3',
+        name: 'Retake B',
+        deletedAt: _at,
+        restorableUntil: _at.add(const Duration(days: 30)),
+        deletedByName: null,
+        deletedByYou: true,
+      ),
+    ];
+    remote.moveRevision(4);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(LucideIcons.archiveRestore), findsOneWidget);
+
+    repository.pages = [];
+    remote.moveRevision(5);
+    await tester.pumpAndSettle();
     expect(find.byIcon(LucideIcons.archiveRestore), findsNothing);
   });
 }

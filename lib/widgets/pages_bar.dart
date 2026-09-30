@@ -7,6 +7,7 @@ import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
+import 'package:icarus/providers/collab/trashed_pages_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -491,7 +492,12 @@ class _PagesBarState extends ConsumerState<PagesBar> {
                     onRename: caps.canRenamePage ? _renamePage : null,
                     onDelete: caps.canDeletePage ? _deletePage : null,
                     onAdd: _addPage,
-                    onOpenRecentlyDeleted: hasTrash && caps.canDeletePage
+                    // Only when there is something in it: an empty trash
+                    // is clutter.
+                    onOpenRecentlyDeleted: hasTrash &&
+                            caps.canDeletePage &&
+                            (ref.watch(hasTrashedPagesProvider).valueOrNull ??
+                                false)
                         ? _openRecentlyDeleted
                         : null,
                     onCollapse: _collapsePanel,
