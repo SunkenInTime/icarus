@@ -119,7 +119,7 @@ It runs against the **production** Convex deployment (`basic-dove-69`), because
 it is public. The development deployment (`majestic-eel-413`) stays the place
 to try server changes by hand; never test on production.
 
-- A push to `icarus-cloud` that changes `lib/`, `web/`, `assets/`, `shaders/`,
+- A push to `main` that changes `lib/`, `web/`, `assets/`, `shaders/`,
   `convex/`, a path package (`packages/`, `third_party/convex_flutter/`),
   `pubspec.yaml`, `pubspec.lock`, `package.json`, `package-lock.json`, or
   `.fvmrc` deploys automatically: first the Convex server to production, then
@@ -128,8 +128,7 @@ to try server changes by hand; never test on production.
   must stay compatible with the web build already live (additive first; see
   the deploy order in each server PR).
 - To redeploy by hand: `Actions` > `Deploy Web` > `Run workflow` on
-  `icarus-cloud`. GitHub only shows that button once the workflow is on the
-  default branch; until then, re-run the latest `Deploy Web` run.
+  `main`.
 - The run summary links the deployment. To roll back, promote an earlier
   deployment in the Cloudflare dashboard under the project's `Deployments`.
 

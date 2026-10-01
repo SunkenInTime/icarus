@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - icarus-cloud
   pull_request:
   workflow_dispatch:
 
@@ -12,7 +11,7 @@ permissions:
   contents: read
 
 # A newer push to a PR makes its older run pointless, so it is cancelled.
-# Pushes to main and icarus-cloud each get a full run of their own.
+# Each push to main gets a full run of its own.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -262,7 +261,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
-          # The contract gate records the merge base with origin/icarus-cloud.
+          # The contract gate records the merge base with origin/main.
           # Fetch all branch history so that ref exists on PR and push runs.
           fetch-depth: 0
 

@@ -204,6 +204,11 @@ local library or `.ica` data. `outboxRecordVersion`, `clientProtocolVersion`,
 and each payload's `payloadVersion` remain separate counters. Each changes only
 when its own format changes.
 
+Superseded in part (2026-09-27): cloud now has real users. A format change
+carries a converter or a migration, and nothing ever clears an outbox. Protocol
+version 4 (Paranoia rows at payload version 2) refuses older clients outright
+and leaves their outbox records alone, to send once they reload.
+
 An unknown server error code becomes a `ConvexFunctionException` with an
 `unknown` enum value while retaining the raw code and message. The affected
 work pauses with that diagnostic; parsing the error never drops the op.

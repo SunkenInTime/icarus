@@ -228,7 +228,7 @@ String _gitBaseCommit(Directory root) {
   final result = Process.runSync('git', <String>[
     'merge-base',
     'HEAD',
-    'origin/icarus-cloud',
+    'origin/main',
   ], workingDirectory: root.path);
   if (result.exitCode != 0) {
     throw StateError('Unable to resolve the Icarus base commit.');
