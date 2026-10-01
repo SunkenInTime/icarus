@@ -249,8 +249,10 @@ class AckedEntityIntent {
   final StrategyOp op;
   final OpAck ack;
 
-  /// Whether [op] was already in the outbox when the strategy was opened:
-  /// work recovered after a restart or a reopen. The canvas was drawn from
-  /// the server without it, so it never showed what landed.
+  /// Whether [op] is work the open canvas did not queue: work recovered from
+  /// the outbox after a restart, or queued before the canvas was last drawn
+  /// fresh (on a reopen, or a trip to another strategy, local ones
+  /// included). The canvas was drawn from the server without it, so it
+  /// never showed what landed.
   final bool restored;
 }

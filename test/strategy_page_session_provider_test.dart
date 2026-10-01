@@ -18,6 +18,8 @@ import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -53,6 +55,7 @@ import 'package:icarus/providers/transition_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   _FakeRemoteEditorNotifier(
@@ -379,6 +382,61 @@ class _RestoringRepository implements ConvexStrategyRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Plays the server for the real queue: holds its first batch until
+/// [landFirst], and accepts every later one at once.
+class _HeldFirstBatchRepository implements ConvexStrategyRepository {
+  final List<List<StrategyOp>> calls = [];
+  final firstSent = Completer<void>();
+  final _firstAnswer = Completer<void>();
+  final _sent = StreamController<StrategyOp>.broadcast();
+
+  void landFirst() => _firstAnswer.complete();
+
+  /// The next element op for [elementId] sent after this call.
+  Future<StrategyOp> nextEditOf(String elementId) => _sent.stream
+      .firstWhere((op) => op.entityPublicId == elementId)
+      .timeout(const Duration(seconds: 5));
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  }) async {
+    calls.add(ops);
+    if (calls.length == 1) {
+      firstSent.complete();
+      await _firstAnswer.future;
+    } else {
+      ops.forEach(_sent.add);
+    }
+    return [
+      for (final op in ops)
+        AppliedOpAck(opId: op.opId, revision: (op.expectedRevision ?? 0) + 1),
+    ];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CloudReadyAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: 'account-a',
+          appMetadata: <String, dynamic>{},
+          userMetadata: <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
 }
 
 class _RecordingMediaQueue extends CloudMediaUploadQueueNotifier {
@@ -2736,6 +2794,139 @@ void main() {
             .read(textProvider.notifier)
             .updatePosition(const Offset(320, 320), 'b');
         expect(elementOps(container)['a']?.opId, 'recovered-edit');
+        await _settle();
+      });
+
+      test(
+          'an edit still on its way when the user leaves for a local '
+          'strategy and comes back conflicts with a drop over it', () async {
+        final box = await _openStrategyBox();
+        await box.put(
+          'local-strategy',
+          StrategyData(
+            id: 'local-strategy',
+            name: 'Local',
+            mapData: MapValue.ascent,
+            versionNumber: 1,
+            lastEdited: DateTime.utc(2026),
+            folderID: null,
+            pages: [
+              StrategyPage(
+                id: 'local-page',
+                name: 'Page 1',
+                drawingData: const [],
+                agentData: const [],
+                abilityData: const [],
+                textData: const [],
+                imageData: const [],
+                utilityData: const [],
+                sortIndex: 0,
+                isAttack: true,
+                settings: StrategySettings(),
+              ),
+            ],
+          ),
+        );
+        final settings = StrategySettings().toJson();
+        RemoteEditorSnapshot withSettings(List<RemoteElement> elements,
+                {int contentRevision = 1}) =>
+            _editorSnapshot(
+              pages: [page],
+              activePage: _pageSnapshot(page,
+                  contentRevision: contentRevision,
+                  settings: settings,
+                  elements: elements),
+            );
+        final remote = _FakeRemoteEditorNotifier(withSettings([text('a', 0)]));
+        final repository = _HeldFirstBatchRepository();
+        final container = ProviderContainer(overrides: [
+          remoteEditorSnapshotProvider.overrideWith(() => remote),
+          durableStrategyOutboxStoreProvider
+              .overrideWithValue(MemoryDurableStrategyOutboxStore()),
+          convexStrategyRepositoryProvider.overrideWithValue(repository),
+          authProvider.overrideWith(_CloudReadyAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+          cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+          cloudMediaUploadQueueProvider
+              .overrideWith(() => _RecordingMediaQueue()),
+        ]);
+        addTearDown(container.dispose);
+        container.listen(strategyPageSessionProvider, (_, __) {});
+        await container.read(remoteEditorSnapshotProvider.future);
+        final strategy = container.read(strategyProvider.notifier);
+        final session = container.read(strategyPageSessionProvider.notifier);
+        Future<void> open(String id, StrategySource source) async {
+          // As openCloudStrategy and loadFromHive do. The queue stays on the
+          // cloud strategy throughout: leaving for a local one never
+          // switches it.
+          strategy.setFromState(StrategyState(
+            strategyId: id,
+            strategyName: id,
+            source: source,
+            storageDirectory: null,
+            isOpen: true,
+          ));
+          container.read(strategySaveStateProvider.notifier).reset();
+          await session.initializeForStrategy(
+            strategyId: id,
+            source: source,
+            selectFirstPageIfNeeded: true,
+          );
+        }
+
+        container
+            .read(strategyOpQueueProvider.notifier)
+            .setActiveStrategy('cloud-strategy', accountId: 'account-a');
+        await open('cloud-strategy', StrategySource.cloud);
+        final drawnAt = container.read(textProvider).single.position;
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(200, 200), 'a');
+        await repository.firstSent.future.timeout(const Duration(seconds: 5));
+        final move = repository.calls.first
+            .whereType<ElementPatchOp>()
+            .singleWhere((op) => op.elementPublicId == 'a');
+
+        await open('local-strategy', StrategySource.local);
+        await open('cloud-strategy', StrategySource.cloud);
+        // Drawn from the server, which has not applied the move yet.
+        expect(container.read(textProvider).single.position, drawnAt);
+
+        container.read(editorPointersProvider.notifier)
+          ..holdEntity(1, 'a')
+          ..down(1);
+        remote.setSnapshot(withSettings([
+          RemoteElement(
+            publicId: 'a',
+            strategyPublicId: 'cloud-strategy',
+            pagePublicId: page.publicId,
+            elementType: 'text',
+            payload: move.payload!,
+            sortIndex: 0,
+            revision: 2,
+            deleted: false,
+          ),
+        ], contentRevision: 2));
+        // The first op for it sent from here on.
+        final nextEdit = repository.nextEditOf('a');
+        repository.landFirst();
+        await _settle();
+        await _settle();
+        final landing = container
+            .read(strategyOpQueueProvider)
+            .lastAckBatch
+            .singleWhere((acked) => acked.entityKey == key);
+        expect(container.read(textProvider).single.position, drawnAt);
+
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(300, 300), 'a');
+        final sent = await nextEdit;
+        // Against the version the user saw: the server refuses it instead
+        // of replacing the move.
+        expect(sent.expectedRevision, 1);
+        // The queue said the move it accepted was not the canvas's work.
+        expect(landing.restored, isTrue);
         await _settle();
       });
     });

@@ -105,11 +105,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   void reset() {
+    _forgetDrawnState();
+    state = const ActivePageLiveSyncState();
+  }
+
+  /// Drops the bases and overlays: the canvas is drawn fresh next, from the
+  /// server, without any work still queued. The queue then marks that
+  /// work's acks restored.
+  void _forgetDrawnState() {
     _hydratedBaseByEntityKey.clear();
     _remoteAdoptionPending.clear();
     _hydratedPositionByKey.clear();
     _heldDeletedKeys.clear();
-    state = const ActivePageLiveSyncState();
+    if (ref.exists(strategyOpQueueProvider)) {
+      ref.read(strategyOpQueueProvider.notifier).forgetCanvasWork();
+    }
   }
 
   void setStateForTest(ActivePageLiveSyncState nextState) {
@@ -123,12 +133,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final strategyChanged = strategyPublicId != state.strategyPublicId;
     final contextChanged = strategyPublicId != state.strategyPublicId ||
         activePageId != state.activePageId;
-    if (strategyChanged) {
-      _hydratedBaseByEntityKey.clear();
-      _remoteAdoptionPending.clear();
-      _hydratedPositionByKey.clear();
-      _heldDeletedKeys.clear();
-    }
+    if (strategyChanged) _forgetDrawnState();
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
       activePageId: activePageId,

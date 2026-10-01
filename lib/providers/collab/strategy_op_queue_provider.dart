@@ -216,10 +216,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
   final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
 
-  /// Op IDs of the active strategy's work that was already in the outbox
-  /// when it became active, and of the ops resent in their place. The canvas
-  /// was drawn from the server without them; their acks say so.
-  final Set<String> _restoredOpIds = {};
+  /// Op IDs of the work the open canvas wrote: queued from its edits since
+  /// it was last drawn fresh, or resent in their place. Any other op's ack
+  /// is marked restored, since the canvas was drawn without it. Cleared by
+  /// [forgetCanvasWork].
+  final Set<String> _canvasOpIds = {};
+  int _canvasSession = 0;
   final Set<String> _uncertainOversizedParking = {};
   final Set<String> _uncertainDurableRecords = {};
   final Map<String, DurableOutboxRecord> _uncertainDurableIntents = {};
@@ -379,13 +381,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
       }
     }
-    _restoredOpIds
-      ..clear()
-      ..addAll([
-        for (final intents in [queued, successors, paused, attention])
-          for (final intent in intents.values) intent.pending.op.opId,
-        for (final intent in inFlight.values) intent.pending.op.opId,
-      ]);
     final clientId =
         matching.firstOrNull?.pending.clientId ?? const Uuid().v4();
     final hasDurabilityFailure = _hasDurabilityFailureForAccount(accountId);
@@ -418,6 +413,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     _scheduleBackgroundDrain(ignoreBackoff: true);
   }
+
+  /// The canvas dropped everything it drew and is drawn fresh from the
+  /// server (a strategy opened or left, local ones included): no work
+  /// already queued is on it any more, so every ack from here on is marked
+  /// restored until the canvas queues new work.
+  void forgetCanvasWork() {
+    _canvasSession++;
+    _canvasOpIds.clear();
+  }
+
+  /// How many op IDs are remembered as the canvas's work; for tests.
+  int get canvasWorkCount => _canvasOpIds.length;
 
   Future<void> enqueue(
     StrategyOp op, {
@@ -470,10 +477,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required StrategyOp? desiredOp,
     bool flushImmediately = false,
   }) {
+    final canvasSession = _canvasSession;
     return _serializeWrite(() => _syncDesiredLocked(
           keys: <EntitySyncKey>{entityKey},
           desiredOps: <EntitySyncKey, StrategyOp?>{entityKey: desiredOp},
           flushImmediately: flushImmediately,
+          canvasSession: canvasSession,
         ));
   }
 
@@ -483,6 +492,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     bool clearMissing = true,
     bool flushImmediately = false,
   }) {
+    final canvasSession = _canvasSession;
     return _serializeWrite(() async {
       final keys = clearMissing
           ? <EntitySyncKey>{
@@ -503,15 +513,26 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           for (final key in keys) key: desiredOpsByEntityKey[key],
         },
         flushImmediately: flushImmediately,
+        canvasSession: canvasSession,
       );
     });
   }
 
+  /// [canvasSession] is the canvas's session when the desired ops were
+  /// asked for: ops made from them are the canvas's work only if it has not
+  /// been drawn fresh since.
   Future<void> _syncDesiredLocked({
     required Set<EntitySyncKey> keys,
     required Map<EntitySyncKey, StrategyOp?> desiredOps,
     required bool flushImmediately,
+    required int canvasSession,
   }) async {
+    void writtenByCanvas(PendingOp pending) {
+      if (canvasSession == _canvasSession) {
+        _canvasOpIds.add(pending.op.opId);
+      }
+    }
+
     final accountId = state.accountId;
     final strategyPublicId = state.strategyPublicId;
     if (accountId == null || strategyPublicId == null) {
@@ -612,6 +633,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             clientId: successorIntent?.pending.clientId ??
                 attentionIntent.pending.clientId,
           );
+          writtenByCanvas(pending);
           final recoveredOversizedParking =
               _uncertainOversizedParking.contains(current.storageKey);
           await _putRecord(current.copyWith(
@@ -677,6 +699,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                     desired,
             clientId: successorIntent?.pending.clientId ?? state.clientId!,
           );
+          writtenByCanvas(pending);
           await _putRecord(_recordFor(
             key: key,
             pending: inFlightIntent.pending,
@@ -712,6 +735,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 desired,
             clientId: successorIntent.pending.clientId,
           );
+          writtenByCanvas(pending);
           await _putRecord(_recordFor(
             key: key,
             pending: existing.pending,
@@ -751,6 +775,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           attempts: base?.pending.attempts ?? 0,
           lastAttemptAt: base?.pending.lastAttemptAt,
         );
+        writtenByCanvas(pending);
         final record = _recordFor(
           key: key,
           pending: pending,
@@ -778,6 +803,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       return;
     }
     if (!changed) return;
+    _pruneCanvasOpIds();
     final attentionMessage = _loadedAttentionMessage(
       loadIssues: state.loadIssues,
       paused: paused,
@@ -924,7 +950,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                   retryRevision!,
                   preserveAdd: isTombstoneRestore,
                 );
-          _keepRestored(retryOp, rebasedOp);
+          _keepCanvasWritten(retryOp, rebasedOp);
           final pending = PendingOp(
             op: rebasedOp,
             clientId: successor?.clientId ?? rejected.clientId,
@@ -1483,7 +1509,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         entityKey: sent.entityKey,
         op: sent.pending.op,
         ack: ack,
-        restored: _restoredOpIds.contains(ack.opId),
+        restored: !_canvasOpIds.contains(ack.opId),
       ));
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
@@ -1502,7 +1528,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ),
           clientId: successor.clientId,
         );
-        _keepRestored(successor.op, promoted.op);
+        _keepCanvasWritten(successor.op, promoted.op);
         final isPromotedOversized = cloudOperationExceedsPolicy(promoted.op);
         await _putRecord(current.copyWith(
           pending: promoted,
@@ -1544,6 +1570,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         await _putRecord(rejected);
       }
     }
+    _pruneCanvasOpIds();
     if (_isDisposed) return;
     final first = batch.first;
     if (_isActive(first.accountId, first.strategyPublicId)) {
@@ -2448,12 +2475,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return desired.withOpId(replacementOpId);
   }
 
-  /// [resent] carries [original]'s work under a new op ID: restored work
-  /// stays restored.
-  void _keepRestored(StrategyOp original, StrategyOp resent) {
-    if (_restoredOpIds.contains(original.opId)) {
-      _restoredOpIds.add(resent.opId);
-    }
+  /// [resent] carries [original]'s work under a new op ID: the canvas's
+  /// work stays the canvas's.
+  void _keepCanvasWritten(StrategyOp original, StrategyOp resent) {
+    if (_canvasOpIds.contains(original.opId)) _canvasOpIds.add(resent.opId);
+  }
+
+  /// Forgets the IDs of canvas work that landed or was dropped. Runs only
+  /// inside a serialized write, so no op another write marked is still
+  /// waiting for its record to be stored.
+  void _pruneCanvasOpIds() {
+    _canvasOpIds.retainAll({
+      for (final record in [
+        ..._recordsByStorageKey.values,
+        ..._uncertainDurableIntents.values,
+      ]) ...[
+        record.pending.op.opId,
+        if (record.successorPending case final successor?) successor.op.opId,
+      ],
+    });
   }
 
   StrategyOp _rebaseRejectedOp(

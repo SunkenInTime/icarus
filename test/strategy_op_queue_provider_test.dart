@@ -2370,6 +2370,103 @@ void main() {
       });
     }
 
+    test('a final edit promoted while its strategy opens lands restored',
+        () async {
+      final store = _GatedPromotionStore();
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: const EntitySyncKey.element('page-1', 'element-1'),
+        pending: PendingOp(
+          op: _elementPatch(opId: 'first', value: 'first', expectedRevision: 4),
+          clientId: 'stable-client',
+        ),
+        successorPending: PendingOp(
+          op: _elementPatch(
+              opId: 'second', value: 'second', expectedRevision: 4),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      ));
+      final repository = _SequencedAckRepository();
+      final container =
+          _cloudQueueContainer(store: store, repository: repository);
+      addTearDown(container.dispose);
+      // Another strategy is open; this one's work replays in the background.
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-2', accountId: 'account-a');
+      await repository.firstStarted.future;
+      repository.completeFirst(const AppliedOpAck(opId: 'first', revision: 5));
+      // The user opens it while the promoted final edit is being stored.
+      await store.promotionStarted.future;
+      notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
+      store.releasePromotion.complete();
+
+      await repository.secondStarted.future;
+      final finalEdit = repository.calls[1].single;
+      expect(finalEdit.payload, {'value': 'second'});
+      repository.completeSecond(
+        AppliedOpAck(opId: finalEdit.opId, revision: 6),
+      );
+      await repository.secondCompleted.future;
+      await Future<void>.delayed(Duration.zero);
+      final acked = container.read(strategyOpQueueProvider).lastAckBatch;
+      expect(acked.single.op.opId, finalEdit.opId);
+      expect(acked.single.restored, isTrue);
+    });
+
+    test('work sent before the canvas was drawn fresh lands restored',
+        () async {
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: MemoryDurableStrategyOutboxStore(),
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(
+        _elementPatch(opId: 'first', value: 'first', expectedRevision: 4),
+      );
+      unawaited(notifier.flushNow());
+      await repository.firstStarted.future;
+      // The user leaves for a local strategy and comes back: the queue
+      // stays on this one while the canvas is drawn again from the server.
+      notifier.forgetCanvasWork();
+      expect(notifier.canvasWorkCount, 0);
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          const EntitySyncKey.element('page-1', 'element-1'): _elementPatch(
+              opId: 'second', value: 'second', expectedRevision: 4),
+        },
+      );
+      expect(notifier.canvasWorkCount, 1);
+      List<AckedEntityIntent> acked() =>
+          container.read(strategyOpQueueProvider).lastAckBatch;
+
+      repository.completeFirst(const AppliedOpAck(opId: 'first', revision: 5));
+      await repository.secondStarted.future;
+      expect(acked().single.op.opId, 'first');
+      expect(acked().single.restored, isTrue);
+      // The edit made since follows it onto the new revision, still the
+      // canvas's work.
+      expect(notifier.canvasWorkCount, 1);
+
+      final finalEdit = repository.calls[1].single;
+      repository.completeSecond(
+        AppliedOpAck(opId: finalEdit.opId, revision: 6),
+      );
+      await repository.secondCompleted.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(acked().single.op.opId, finalEdit.opId);
+      expect(acked().single.restored, isFalse);
+      // Nothing is remembered for work that has landed.
+      expect(notifier.canvasWorkCount, 0);
+    });
+
     test('rejected predecessor leaves its element successor in attention',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
@@ -2961,6 +3058,22 @@ class _SequencedAckRepository extends ConvexStrategyRepository {
     final result = await _secondResponse.future;
     secondCompleted.complete();
     return result;
+  }
+}
+
+/// Holds the write that promotes a successor (its record's pending op
+/// changes and the successor goes) until [releasePromotion].
+class _GatedPromotionStore extends MemoryDurableStrategyOutboxStore {
+  final promotionStarted = Completer<void>();
+  final releasePromotion = Completer<void>();
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    if (record.successorPending == null && !promotionStarted.isCompleted) {
+      promotionStarted.complete();
+      await releasePromotion.future;
+    }
+    await super.put(record);
   }
 }
 
