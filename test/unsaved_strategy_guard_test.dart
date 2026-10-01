@@ -107,6 +107,10 @@ class _GuardOpQueue extends StrategyOpQueueNotifier {
 
   StrategyOpQueueState get currentState => state;
 
+  void failDurability() {
+    state = state.copyWith(hasDurabilityFailure: true);
+  }
+
   void settle() {
     state = StrategyOpQueueState(
       accountId: initialState.accountId,
@@ -678,6 +682,63 @@ void main() {
       expect(await guardFuture, isTrue);
       expect(continueCalls, 1);
       expect(opQueue.currentState.pending, hasLength(1));
+    });
+
+    testWidgets('leave anyway checks again what changed while it was asked',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          lastError: 'Cloud connection is offline.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-leave-recheck',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Leave anyway'), findsOneWidget);
+
+      // The outbox stops being trustworthy while the dialog is open.
+      opQueue.failDurability();
+      await tester.tap(find.text('Leave anyway'));
+      await tester.pumpAndSettle();
+
+      expect(continueCalls, 0);
+      expect(find.text('Leave anyway'), findsNothing);
+      await tester.tap(find.text('Stay here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
     });
 
     testWidgets('paused viewer work has a leave-anyway path', (tester) async {

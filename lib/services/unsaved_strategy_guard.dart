@@ -173,6 +173,10 @@ Future<bool> _guardCloudStrategyExit({
     }
   }
 
+  // Set when the user chose Leave anyway. It is honoured only if the work
+  // is still all in the durable outboxes when the state is read again:
+  // something may have changed while the dialog was open.
+  var leaveIfDurable = false;
   while (true) {
     final strategyState = ref.read(strategyProvider);
     final saveState = ref.read(strategySaveStateProvider);
@@ -213,6 +217,14 @@ Future<bool> _guardCloudStrategyExit({
                 queueState.outboxIsReliable &&
                 mediaQueueState.outboxIsReliable) ||
             hasUnreadableSavedWork);
+    if (leaveIfDurable) {
+      leaveIfDurable = false;
+      if (canLeaveWithDurableWork) {
+        if (!context.mounted) return false;
+        await onContinue();
+        return true;
+      }
+    }
     final isConnected = ref.read(convexConnectionSnapshotProvider);
     AppErrorReporter.reportInfo(
       'Cloud exit guard check: strategy=${strategyState.strategyId} '
@@ -234,7 +246,9 @@ Future<bool> _guardCloudStrategyExit({
       'cloudError=${cloudError ?? 'none'}',
       source: 'cloud_media.exit_guard',
     );
-    if (!hasPendingSync && cloudError == null) {
+    // Nothing pending and nothing new since the save on entry: a draft or
+    // edit made during the wait would still be unstaged.
+    if (!hasPendingSync && cloudError == null && !hasUnstagedWork) {
       if (!context.mounted) {
         return false;
       }
@@ -306,11 +320,8 @@ Future<bool> _guardCloudStrategyExit({
           'Cloud exit guard leaving with work pending in durable outboxes.',
           source: 'cloud_media.exit_guard',
         );
-        if (!canLeaveWithDurableWork || !context.mounted) {
-          return false;
-        }
-        await onContinue();
-        return true;
+        leaveIfDurable = true;
+        break;
       case CloudExitDecision.retrySync:
         AppErrorReporter.reportInfo(
           'Cloud exit guard retrying sync.',
