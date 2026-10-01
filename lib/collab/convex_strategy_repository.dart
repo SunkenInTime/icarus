@@ -1,6 +1,7 @@
 import 'dart:math' show min;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -192,7 +193,7 @@ class ConvexStrategyRepository {
     String strategyPublicId, {
     String? shareToken,
   }) async {
-    return _fullSnapshot(
+    return upgradeRemoteFullSnapshot(_fullSnapshot(
       await _api.strategy
           .getFullSnapshot(
             strategyPublicId: strategyPublicId,
@@ -202,7 +203,7 @@ class ConvexStrategyRepository {
             acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
           )
           .fetch(),
-    );
+    ));
   }
 
   Future<CloudImageUploadIntent> generateImageUploadUrl({

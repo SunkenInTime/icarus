@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/sort_index_order.dart';
 
 const currentCloudProtocolVersion = 3;
@@ -52,10 +53,11 @@ CloudPayload cloudElementPayload({
   required String kind,
   required Map<String, dynamic> data,
 }) {
+  final normalized = _normalizeCloudPayloadData(data);
   return <String, dynamic>{
     'kind': kind,
-    'payloadVersion': currentCloudPayloadVersion,
-    'data': _normalizeCloudPayloadData(data),
+    'payloadVersion': cloudPayloadVersionFor(kind, normalized),
+    'data': normalized,
   };
 }
 
@@ -65,10 +67,11 @@ CloudPayload cloudLineupPayload({
   required String kind,
   required Map<String, dynamic> data,
 }) {
+  final normalized = _normalizeCloudPayloadData(data);
   return <String, dynamic>{
     'kind': kind,
-    'payloadVersion': currentCloudPayloadVersion,
-    'data': _normalizeCloudPayloadData(data),
+    'payloadVersion': cloudPayloadVersionFor(kind, normalized),
+    'data': normalized,
   };
 }
 

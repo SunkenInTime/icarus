@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -100,7 +101,7 @@ class RemoteEditorSnapshotNotifier
       }
       _replacePage(page);
       await _startPageSubscription(strategyPublicId, pagePublicId);
-      return page;
+      return state.valueOrNull?.activePage;
     } catch (error, stackTrace) {
       // A newer selection or read took over; its outcome stands.
       if (epoch != _pageEpoch || pagePublicId != _activePagePublicId) {
@@ -176,10 +177,13 @@ class RemoteEditorSnapshotNotifier
       }
       final page = pageId == null
           ? null
-          : await repository.fetchPageSnapshot(
-              strategyPublicId: strategyPublicId,
-              pagePublicId: pageId,
-              shareToken: _shareToken,
+          : upgradeRemotePageSnapshot(
+              await repository.fetchPageSnapshot(
+                strategyPublicId: strategyPublicId,
+                pagePublicId: pageId,
+                shareToken: _shareToken,
+              ),
+              shell.header.mapData,
             );
       if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       state = AsyncData(RemoteEditorSnapshot(shell: shell, activePage: page));
@@ -275,7 +279,9 @@ class RemoteEditorSnapshotNotifier
   void _replacePage(RemotePageSnapshot page) {
     final current = state.valueOrNull;
     if (current == null || page.page.publicId != _activePagePublicId) return;
-    state = AsyncData(current.copyWith(activePage: page));
+    state = AsyncData(current.copyWith(
+      activePage: upgradeRemotePageSnapshot(page, current.header.mapData),
+    ));
     _reconcilePageMedia(page);
   }
 
