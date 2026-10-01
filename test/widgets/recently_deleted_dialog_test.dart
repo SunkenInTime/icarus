@@ -143,21 +143,25 @@ void main() {
 
   testWidgets('lists the deleted pages with who deleted each and when',
       (tester) async {
-    final repository = _TrashRepository([
-      _trashed('page-3', 'Retake', ago: const Duration(hours: 3), by: 'Sam'),
-      // Off a day boundary, as the list reads the clock a moment later.
-      _trashed('page-1', 'A exec', ago: const Duration(hours: 47)),
-    ]);
-    await _open(tester, repository, _Session([]));
+    // The list reads the clock; pin it to the instant the fixtures were
+    // made from, or a slow run drifts across an "hours ago" boundary.
+    await withClock(Clock.fixed(_now), () async {
+      final repository = _TrashRepository([
+        _trashed('page-3', 'Retake', ago: const Duration(hours: 3), by: 'Sam'),
+        // Off a day boundary, as the list reads the clock a moment later.
+        _trashed('page-1', 'A exec', ago: const Duration(hours: 47)),
+      ]);
+      await _open(tester, repository, _Session([]));
 
-    expect(repository.listed, ['strategy-a']);
-    expect(find.text('Recently deleted'), findsOneWidget);
-    expect(find.text('Retake'), findsOneWidget);
-    expect(find.text('Deleted by Sam, 3 hours ago · 29 days left'),
-        findsOneWidget);
-    expect(find.text('A exec'), findsOneWidget);
-    expect(find.text('Deleted 1 day ago · 28 days left'), findsOneWidget);
-    expect(find.text('Restore'), findsNWidgets(2));
+      expect(repository.listed, ['strategy-a']);
+      expect(find.text('Recently deleted'), findsOneWidget);
+      expect(find.text('Retake'), findsOneWidget);
+      expect(find.text('Deleted by Sam, 3 hours ago · 29 days left'),
+          findsOneWidget);
+      expect(find.text('A exec'), findsOneWidget);
+      expect(find.text('Deleted 1 day ago · 28 days left'), findsOneWidget);
+      expect(find.text('Restore'), findsNWidgets(2));
+    });
   });
 
   testWidgets('says when nothing was deleted', (tester) async {
