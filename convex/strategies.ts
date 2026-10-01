@@ -536,11 +536,11 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 
 type LineupPayload = Doc<"lineups">["payload"];
 
-/// New entity ids for a copied strategy's lineups: one map across every
-/// kind, shared by every row. The source's lineups may share ids across
-/// kinds (a landing may take its link's id), and the copy keeps that shape,
-/// so a link still names its origin and landing whatever order the rows are
-/// copied in. Keys stay unique through the kind prefix.
+/// New ids for a copied strategy's lineups: one map shared by every row and
+/// every id in it. Lineups that share an origin or landing in the source
+/// carry the same id for it, so their copies do too, and the copy draws
+/// them as one spot again. Ids the source repeats across a lineup and its
+/// ends (a landing may take its lineup's id) repeat in the copy the same way.
 function lineupIdMap() {
   const ids = new Map<string, string>();
   return (id: string): string => {
@@ -550,63 +550,39 @@ function lineupIdMap() {
   };
 }
 
-/// A lineup row as the copy stores it: its `<kind>:<entity id>` key and
-/// payload under new ids, with every nested reference following its entity.
+/// A lineup row as the copy stores it: the lineup, its origin and its
+/// landing under new ids, each marker's `lineUpID` following its end.
 function copiedLineupRow(
   payload: LineupPayload,
   newId: (id: string) => string,
 ): { publicId: string; payload: LineupPayload } {
   const data = payload.data;
   const idOf = (value: unknown) => (typeof value === "string" ? value : "");
-  switch (payload.kind) {
-    case "lineupOrigin": {
-      const id = newId(idOf(data.id));
-      const agent = data.agent;
-      return {
-        publicId: `lineupOrigin:${id}`,
-        payload: {
-          ...payload,
-          data: {
-            ...data,
-            id,
-            ...(isJsonObject(agent) ? { agent: { ...agent, lineUpID: id } } : {}),
-          } as LineupData,
-        },
-      };
-    }
-    case "lineupLanding": {
-      const id = newId(idOf(data.id));
-      const ability = data.ability;
-      return {
-        publicId: `lineupLanding:${id}`,
-        payload: {
-          ...payload,
-          data: {
-            ...data,
-            id,
-            ...(isJsonObject(ability)
-              ? { ability: { ...ability, lineUpID: id } }
-              : {}),
-          } as LineupData,
-        },
-      };
-    }
-    case "lineupLink": {
-      const id = newId(idOf(data.id));
-      return {
-        publicId: `lineupLink:${id}`,
-        payload: {
-          ...payload,
-          data: {
-            ...data,
-            id,
-            originId: newId(idOf(data.originId)),
-            landingId: newId(idOf(data.landingId)),
-          } as LineupData,
-        },
-      };
-    }
-  }
+  const copiedEnd = (end: unknown, markerKey: "agent" | "ability") => {
+    if (!isJsonObject(end)) return end;
+    const id = newId(idOf(end.id));
+    const marker = end[markerKey];
+    return {
+      ...end,
+      id,
+      ...(isJsonObject(marker)
+        ? { [markerKey]: { ...marker, lineUpID: id } }
+        : {}),
+    };
+  };
+  const id = newId(idOf(data.id));
+  return {
+    publicId: id,
+    payload: {
+      ...payload,
+      data: {
+        ...data,
+        id,
+        origin: copiedEnd(data.origin, "agent"),
+        landing: copiedEnd(data.landing, "ability"),
+      } as LineupData,
+    },
+  };
 }
 
 // A duplicate is one transaction, and Convex refuses a transaction past
@@ -792,8 +768,7 @@ export const duplicate = mutation({
       );
     }
     const copiedElements: ReferencingElement[] = [];
-    const copiedLineups: (ReferencingLineup &
-      Pick<Doc<"lineups">, "payloadKind">)[] = [];
+    const copiedLineups: ReferencingLineup[] = [];
     for (const element of sourceElements) {
       const pageId = pageIdMap.get(element.pageId);
       if (element.deleted || pageId === undefined) continue;

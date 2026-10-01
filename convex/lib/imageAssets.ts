@@ -52,37 +52,23 @@ export function collectAssetIdFromElementPayload(
   return typeof payload.data.id === "string" ? payload.data.id : null;
 }
 
+/// The images a lineup shows: data.images[*].id. Its origin and landing
+/// hold none.
 export function collectAssetIdsFromLineupPayload(
   payload: Doc<"lineups">["payload"],
 ): Set<string> {
   const assetIds = new Set<string>();
-
-  const addImages = (rawImages: unknown) => {
-    if (!Array.isArray(rawImages)) {
-      return;
+  const images = payload.data.images;
+  if (!Array.isArray(images)) return assetIds;
+  for (const image of images) {
+    if (
+      typeof image === "object" &&
+      image !== null &&
+      typeof (image as { id?: unknown }).id === "string"
+    ) {
+      assetIds.add((image as { id: string }).id);
     }
-    for (const image of rawImages) {
-      if (
-        typeof image === "object" &&
-        image !== null &&
-        typeof (image as { id?: unknown }).id === "string"
-      ) {
-        assetIds.add((image as { id: string }).id);
-      }
-    }
-  };
-
-  switch (payload.kind) {
-    case "lineupLink":
-      // A link holds its images: data.images[*].id. Origins and landings
-      // hold none.
-      addImages(payload.data.images);
-      break;
-    case "lineupOrigin":
-    case "lineupLanding":
-      break;
   }
-
   return assetIds;
 }
 

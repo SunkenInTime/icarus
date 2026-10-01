@@ -11,6 +11,7 @@ import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import { UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 import schema from "./schema";
+import { lineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -107,30 +108,24 @@ function imagePayload(assetPublicId: string) {
   };
 }
 
+/// Two lineups thrown from one sova origin, the first showing an image.
 const lineupRows = [
   {
-    lineupPublicId: "lineupOrigin:o",
-    payload: {
-      kind: "lineupOrigin" as const,
-      payloadVersion: 1,
-      data: { id: "o", agent: { id: "agent-o", type: "sova", lineUpID: "o" } },
-    },
+    lineupPublicId: "k",
+    payload: lineupPayload("k", {
+      originId: "o",
+      landingId: "l",
+      agentType: "sova",
+      images: [{ id: "k-shot" }],
+    }),
   },
   {
-    lineupPublicId: "lineupLanding:l",
-    payload: {
-      kind: "lineupLanding" as const,
-      payloadVersion: 1,
-      data: { id: "l", ability: { id: "ability-l" } },
-    },
-  },
-  {
-    lineupPublicId: "lineupLink:k",
-    payload: {
-      kind: "lineupLink" as const,
-      payloadVersion: 1,
-      data: { id: "k", originId: "o", landingId: "l", images: [{ id: "k-shot" }] },
-    },
+    lineupPublicId: "k2",
+    payload: lineupPayload("k2", {
+      originId: "o",
+      landingId: "l2",
+      agentType: "sova",
+    }),
   },
 ];
 
@@ -368,7 +363,7 @@ describe("page trash", () => {
     expect(trashed?.deletedAt).toEqual(expect.any(Number));
     const kept = await rowsOnPage(t, trashed!._id);
     expect(kept.elements).toHaveLength(3);
-    expect(kept.lineups).toHaveLength(3);
+    expect(kept.lineups).toHaveLength(2);
     expect(kept.contents).toHaveLength(1);
     expect(kept.references.map((reference) => reference.assetPublicId).sort())
       .toEqual(["b-image", "k-shot"]);
@@ -543,28 +538,24 @@ describe("page trash", () => {
       },
       {
         type: "lineup.add",
-        lineupPublicId: "lineupLanding:l2",
+        lineupPublicId: "k3",
         pagePublicId: pageB,
-        payload: {
-          kind: "lineupLanding",
-          payloadVersion: 1,
-          data: { id: "l2", ability: { id: "ability-l2" } },
-        },
+        payload: lineupPayload("k3", { originId: "o", landingId: "l3" }),
         sortIndex: 3,
       },
       {
         type: "lineup.patch",
-        lineupPublicId: "lineupLink:k",
+        lineupPublicId: "k",
         pagePublicId: pageB,
         payload: {
-          ...lineupRows[2]!.payload,
-          data: { ...lineupRows[2]!.payload.data, name: "edited" },
+          ...lineupRows[0]!.payload,
+          data: { ...lineupRows[0]!.payload.data, name: "edited" },
         },
         expectedLineupRevision: 1,
       },
       {
         type: "lineup.delete",
-        lineupPublicId: "lineupLink:k",
+        lineupPublicId: "k",
         pagePublicId: pageB,
         expectedLineupRevision: 1,
       },
@@ -785,7 +776,7 @@ describe("page trash", () => {
         },
         {
           type: "lineup.delete",
-          lineupPublicId: "lineupLink:k",
+          lineupPublicId: "k",
           pagePublicId: pageB,
           expectedLineupRevision: 1,
         },

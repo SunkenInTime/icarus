@@ -335,20 +335,13 @@ function assertElementPayload(payload: unknown): ElementPayload {
   return payload as ElementPayload;
 }
 
-const lineupGraphKinds = new Set<unknown>([
-  "lineupOrigin",
-  "lineupLanding",
-  "lineupLink",
-]);
-
 function invalidLineupData(message: string) {
   return errorWithCode("INVALID_LINEUP_PAYLOAD_DATA", message);
 }
 
-/// Checks one lineup row before it is stored. A graph row (origin, landing
-/// or link) is keyed `<payloadKind>:<entity id>`: entity ids repeat across
-/// kinds (a landing made with a link shares the link's id), so the kind is
-/// part of the key, and the key must name the entity the payload holds.
+/// Checks one lineup row before it is stored. A row is one whole lineup,
+/// keyed by its id, holding its origin and landing: every row can be drawn
+/// on its own, whatever other rows exist.
 function assertLineupPayload(
   payload: unknown,
   lineupPublicId: string,
@@ -356,10 +349,9 @@ function assertLineupPayload(
   if (!isRecord(payload)) {
     throw errorWithCode("MISSING_LINEUP_PAYLOAD", "Missing lineup payload");
   }
-  // Lineups are stored only as graph rows. The legacy `lineupGroup` shape is
-  // not part of the contract (argument validation already refuses it); this
-  // check keeps the rule where the row is written.
-  if (!lineupGraphKinds.has(payload.kind)) {
+  // Argument validation already refuses any other kind; this check keeps
+  // the rule where the row is written.
+  if (payload.kind !== "lineup") {
     throw errorWithCode(
       "INVALID_LINEUP_PAYLOAD_KIND",
       "Invalid lineup payload kind",
@@ -381,24 +373,26 @@ function assertLineupPayload(
   if (typeof data.id !== "string" || data.id.length === 0) {
     throw invalidLineupData("Lineup payload has no id");
   }
-  if (lineupPublicId !== `${payload.kind}:${data.id}`) {
+  if (lineupPublicId !== data.id) {
     throw invalidLineupData("Lineup key does not match its payload");
   }
-  // Each entity must carry what hydration draws; a row without it would load
-  // as nothing and read as a deletion nobody made.
-  if (payload.kind === "lineupOrigin" && !isRecord(data.agent)) {
-    throw invalidLineupData("Lineup origin has no agent");
-  }
-  if (payload.kind === "lineupLanding" && !isRecord(data.ability)) {
-    throw invalidLineupData("Lineup landing has no ability");
-  }
-  if (
-    payload.kind === "lineupLink" &&
-    (typeof data.originId !== "string" || typeof data.landingId !== "string")
-  ) {
-    throw invalidLineupData("Lineup link does not name its origin and landing");
+  // The row must carry both ends hydration draws; a row without them would
+  // load as nothing and read as a deletion nobody made.
+  if (!hasEnd(data.origin, "agent") || !hasEnd(data.landing, "ability")) {
+    throw invalidLineupData("Lineup has no origin or landing");
   }
   return payload as LineupPayload;
+}
+
+/// Whether [end] is an origin or landing: an id and the marker it places
+/// under [markerKey].
+function hasEnd(end: unknown, markerKey: "agent" | "ability"): boolean {
+  return (
+    isRecord(end) &&
+    typeof end.id === "string" &&
+    end.id.length > 0 &&
+    isRecord(end[markerKey])
+  );
 }
 
 function setIfChanged(
@@ -510,8 +504,7 @@ async function getElementByPublicIdOrNull(
 }
 
 /// A lineup row key is unique within its strategy only: a strategy copied
-/// before the graph synced natively shares its original's item ids, so both
-/// convert to the same `lineupLanding:<id>` and `lineupLink:<id>` keys.
+/// on a device keeps its original's lineup ids, so both upload the same keys.
 async function getLineupByPublicIdOrNull(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
@@ -523,122 +516,6 @@ async function getLineupByPublicIdOrNull(
       q.eq("strategyId", strategyId).eq("publicId", publicId),
     )
     .unique();
-}
-
-/// A link is drawn only while its origin and landing are live rows on its
-/// page (see lineUpGraphFromCloudRows on the client). Storing a link whose
-/// end is gone, say one a teammate deleted while it was being placed, would
-/// make the lineup vanish on the next load with nothing on screen, so it is
-/// refused instead. Ends are read in this transaction: one added earlier in
-/// the same batch counts.
-async function assertLinkEndsLive(
-  ctx: MutationCtx,
-  strategyId: Id<"strategies">,
-  pageId: Id<"pages">,
-  payload: LineupPayload,
-): Promise<void> {
-  if (payload.kind !== "lineupLink") return;
-  const data = payload.data as { originId: string; landingId: string };
-  for (const endKey of [
-    `lineupOrigin:${data.originId}`,
-    `lineupLanding:${data.landingId}`,
-  ]) {
-    const end = await getLineupByPublicIdOrNull(ctx, strategyId, endKey);
-    if (end === null || end.deleted || end.pageId !== pageId) {
-      // The client matches this text (lineupLinkEndMissingMessage) to
-      // re-send the link as it was on "Keep mine".
-      throw errorWithCode(
-        "LINEUP_LINK_END_MISSING",
-        "This lineup's origin or landing spot is no longer on the page",
-      );
-    }
-  }
-}
-
-/// The origin and landing each live link names, per page, as this batch
-/// has left them. A page's links are read once, when an end on it is first
-/// deleted, and the batch's own link writes update that copy, so a batch
-/// deleting many lineups reads each page's links once rather than once per
-/// end.
-class LiveLinkEnds {
-  private readonly byPage = new Map<
-    Id<"pages">,
-    Map<string, { originId: unknown; landingId: unknown }>
-  >();
-
-  async of(ctx: MutationCtx, pageId: Id<"pages">) {
-    let links = this.byPage.get(pageId);
-    if (links === undefined) {
-      const rows = await ctx.db
-        .query("lineups")
-        .withIndex("by_pageId_and_payloadKind_and_deleted", (q) =>
-          q
-            .eq("pageId", pageId)
-            .eq("payloadKind", "lineupLink")
-            .eq("deleted", false),
-        )
-        .collect();
-      links = new Map(rows.map((row) => [row.publicId, linkEnds(row.payload)]));
-      this.byPage.set(pageId, links);
-    }
-    return links;
-  }
-
-  /// Follows an accepted lineup op. A page not read yet needs nothing: its
-  /// read will see the write.
-  recordAccepted(op: StrategyOp, pageId: Id<"pages"> | undefined): void {
-    const links = pageId === undefined ? undefined : this.byPage.get(pageId);
-    const publicId = op.entityPublicId;
-    if (links === undefined || publicId === undefined) return;
-    if (!publicId.startsWith("lineupLink:")) return;
-    if (op.kind === "delete") {
-      links.delete(publicId);
-    } else if (op.kind === "add") {
-      // An accepted add inserts the link or restores its tombstone.
-      links.set(publicId, linkEnds(op.payload as LineupPayload));
-    } else if (op.payload !== undefined && links.has(publicId)) {
-      // A patch never changes whether a link is live; one to a tombstone
-      // stays out.
-      links.set(publicId, linkEnds(op.payload as LineupPayload));
-    }
-  }
-}
-
-function linkEnds(payload: LineupPayload) {
-  const data = payload.data as Record<string, unknown>;
-  return { originId: data.originId, landingId: data.landingId };
-}
-
-/// The mirror of assertLinkEndsLive: deleting an origin or landing that a
-/// live link on its page still names would leave that link undrawable, so
-/// its lineup would vanish on the next load while every chip says synced.
-/// That happens when a teammate's new link lands first and this client
-/// never saw it. The delete is refused instead. A link deleted earlier in
-/// the same batch is already gone here, so a client deleting a whole
-/// lineup sends its link first.
-async function assertLineupEndUnused(
-  ctx: MutationCtx,
-  end: Doc<"lineups">,
-  liveLinkEnds: LiveLinkEnds,
-): Promise<void> {
-  const endField =
-    end.payloadKind === "lineupOrigin"
-      ? "originId"
-      : end.payloadKind === "lineupLanding"
-        ? "landingId"
-        : null;
-  if (endField === null) return;
-  const endId = (end.payload.data as { id: string }).id;
-  const links = await liveLinkEnds.of(ctx, end.pageId);
-  for (const ends of links.values()) {
-    if (ends[endField] === endId) {
-      // The client matches this text (lineupEndInUseMessage).
-      throw errorWithCode(
-        "LINEUP_END_IN_USE",
-        "Another lineup still uses this origin or landing spot",
-      );
-    }
-  }
 }
 
 async function getPageContent(
@@ -1367,10 +1244,7 @@ async function applyLineupOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
-  checkLinkEnds: boolean,
-  checkEndDeletes: boolean,
   checkTrashedPageDeletes: boolean,
-  liveLinkEnds: LiveLinkEnds,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
@@ -1399,9 +1273,6 @@ async function applyLineupOp(
             existing.pageId,
           );
         }
-        if (checkLinkEnds) {
-          await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
-        }
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
@@ -1419,9 +1290,9 @@ async function applyLineupOp(
           eventPageId: page._id,
         };
       }
-      // The row already holds exactly this entity: two clients converted the
-      // same legacy group, or a retry landed twice. Order is not part of a
-      // lineup's content (each client places new rows after the highest it
+      // The row already holds exactly this lineup: a retry landed twice, or
+      // two devices uploaded the same copied strategy. Order is not part of
+      // a lineup's content (each client places new rows after the highest it
       // knows), so a different sortIndex alone is still the same add.
       const identical =
         existing.pageId === page._id && valuesEqual(existing.payload, payload);
@@ -1431,9 +1302,6 @@ async function applyLineupOp(
         { revision: existing.revision, payload: existing.payload },
         existing.pageId,
       );
-    }
-    if (checkLinkEnds) {
-      await assertLinkEndsLive(ctx, strategy._id, page._id, payload);
     }
     const now = Date.now();
     await ctx.db.insert("lineups", {
@@ -1469,9 +1337,6 @@ async function applyLineupOp(
         { revision: existing.revision, payload: existing.payload },
         existing.pageId,
       );
-    }
-    if (checkEndDeletes) {
-      await assertLineupEndUnused(ctx, existing, liveLinkEnds);
     }
     const revision = existing.revision + 1;
     await ctx.db.patch(existing._id, {
@@ -1545,14 +1410,6 @@ async function applyLineupOp(
       mismatch.reason,
       { revision: existing.revision, payload: existing.payload },
       existing.pageId,
-    );
-  }
-  if (checkLinkEnds && op.kind === "patch" && op.payload !== undefined) {
-    await assertLinkEndsLive(
-      ctx,
-      strategy._id,
-      existing.pageId,
-      op.payload as LineupPayload,
     );
   }
   const revision = existing.revision + 1;
@@ -1642,14 +1499,6 @@ export const applyBatch = mutation({
     strategyPublicId: v.string(),
     clientId: v.string(),
     ops: v.array(strategyOpValidator),
-    // Set by clients that send a link only once its origin and landing are
-    // sent (see assertLinkEndsLive). Older clients may send a link a batch
-    // ahead of its ends, so their links are not checked.
-    checkLineupLinkEnds: v.optional(v.boolean()),
-    // Set by clients that send an origin or landing delete only after the
-    // link deletes on its page (see assertLineupEndUnused). Older clients
-    // may send them in any order, so their deletes are not checked.
-    checkLineupEndDeletes: v.optional(v.boolean()),
     // Set by clients that can restore a deleted page (pages:restore): a
     // delete of content on a page in the trash is refused, to be sent again
     // once the page is back. Older clients get the no-op a deleted page's
@@ -1677,7 +1526,6 @@ export const applyBatch = mutation({
     // Images deleted elements showed, whose upload placeholders may go once
     // the whole batch has applied and nothing shows them any more.
     const placeholderCandidates = new Set<string>();
-    const liveLinkEnds = new LiveLinkEnds();
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
@@ -1765,14 +1613,8 @@ export const applyBatch = mutation({
               ctx,
               strategy,
               op,
-              args.checkLineupLinkEnds === true,
-              args.checkLineupEndDeletes === true,
               args.checkTrashedPageDeletes === true,
-              liveLinkEnds,
             );
-            if (result.status === "ack") {
-              liveLinkEnds.recordAccepted(op, result.eventPageId);
-            }
           }
           if (result.status === "ack" && op.entityType !== "strategy") {
             contentChanged = true;

@@ -27,3 +27,52 @@ export async function insertLineup(
   await syncLineupAssetReferences(ctx, id, lineup);
   return id;
 }
+
+export type TestLineup = {
+  originId?: string;
+  landingId?: string;
+  agentType?: string;
+  originPosition?: { dx: number; dy: number };
+  landingPosition?: { dx: number; dy: number };
+  name?: string;
+  youtubeLink?: string;
+  notes?: string;
+  images?: Array<{ id: string; fileExtension?: string }>;
+};
+
+/// A lineup row's payload as a client writes it: the lineup's details and
+/// whole copies of its origin (the agent) and landing (the ability), each
+/// marker's `lineUpID` naming its end. Lineups that share a spot pass the
+/// same originId or landingId. The row's key is [id].
+export function lineupPayload(id: string, lineup: TestLineup = {}) {
+  const originId = lineup.originId ?? `${id}-origin`;
+  const landingId = lineup.landingId ?? `${id}-landing`;
+  return {
+    kind: "lineup" as const,
+    payloadVersion: 1,
+    data: {
+      id,
+      name: lineup.name ?? "",
+      youtubeLink: lineup.youtubeLink ?? "",
+      notes: lineup.notes ?? "",
+      images: lineup.images ?? [],
+      origin: {
+        id: originId,
+        agent: {
+          id: `agent-${originId}`,
+          type: lineup.agentType ?? "sova",
+          position: lineup.originPosition ?? { dx: 0, dy: 0 },
+          lineUpID: originId,
+        },
+      },
+      landing: {
+        id: landingId,
+        ability: {
+          id: `ability-${landingId}`,
+          position: lineup.landingPosition ?? { dx: 0, dy: 0 },
+          lineUpID: landingId,
+        },
+      },
+    },
+  };
+}

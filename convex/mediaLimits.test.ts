@@ -16,7 +16,11 @@ import * as maintenance from "./maintenance";
 import schema from "./schema";
 import * as strategies from "./strategies";
 import { modules } from "./test.setup";
-import { insertElement, insertLineup } from "./testContent.helpers";
+import {
+  insertElement,
+  insertLineup,
+  lineupPayload,
+} from "./testContent.helpers";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
   "users:ensureCurrentUser",
@@ -360,18 +364,9 @@ describe("media cleanup stays within transaction limits", () => {
         {
           opId: "link-shows-old-image",
           type: "lineup.add",
-          lineupPublicId: "lineupLink:link",
+          lineupPublicId: "link",
           pagePublicId,
-          payload: {
-            kind: "lineupLink",
-            payloadVersion: 1,
-            data: {
-              id: "link",
-              originId: "o",
-              landingId: "l",
-              images: [{ id: "old-image" }],
-            },
-          },
+          payload: lineupPayload("link", { images: [{ id: "old-image" }] }),
           sortIndex: 0,
         },
       ],
@@ -417,13 +412,9 @@ describe("asset references follow their content", () => {
         {
           opId: "add-link",
           type: "lineup.add",
-          lineupPublicId: "lineupLink:k",
+          lineupPublicId: "k",
           pagePublicId,
-          payload: {
-            kind: "lineupLink",
-            payloadVersion: 1,
-            data: { id: "k", originId: "o", landingId: "l", images: [{ id: "a" }, { id: "b" }] },
-          },
+          payload: lineupPayload("k", { images: [{ id: "a" }, { id: "b" }] }),
           sortIndex: 0,
         },
       ],
@@ -451,13 +442,9 @@ describe("asset references follow their content", () => {
         {
           opId: "drop-b",
           type: "lineup.patch",
-          lineupPublicId: "lineupLink:k",
+          lineupPublicId: "k",
           pagePublicId,
-          payload: {
-            kind: "lineupLink",
-            payloadVersion: 1,
-            data: { id: "k", originId: "o", landingId: "l", images: [{ id: "a" }] },
-          },
+          payload: lineupPayload("k", { images: [{ id: "a" }] }),
           expectedLineupRevision: 1,
         },
       ],
@@ -520,21 +507,14 @@ describe("asset references follow their content", () => {
       });
       for (let index = 0; index < 3; index++) {
         await ctx.db.insert("lineups", {
-          publicId: `lineupLink:before-${index}`,
+          publicId: `before-${index}`,
           strategyId,
           pageId,
-          payloadKind: "lineupLink",
+          payloadKind: "lineup",
           payloadVersion: 1,
-          payload: {
-            kind: "lineupLink",
-            payloadVersion: 1,
-            data: {
-              id: `before-${index}`,
-              originId: "o",
-              landingId: "l",
-              images: [{ id: `link-image-${index}` }],
-            },
-          },
+          payload: lineupPayload(`before-${index}`, {
+            images: [{ id: `link-image-${index}` }],
+          }),
           sortIndex: index,
           revision: 1,
           deleted: index === 2,
@@ -559,10 +539,10 @@ describe("asset references follow their content", () => {
       ).mismatched,
     ];
     expect((await mismatched()).sort()).toEqual([
+      "before-0",
+      "before-1",
+      "before-2",
       "before-image",
-      "lineupLink:before-0",
-      "lineupLink:before-1",
-      "lineupLink:before-2",
     ]);
 
     await t.mutation(backfillAssetReferences, {
@@ -632,21 +612,12 @@ describe("before the reference backfill", () => {
         });
       }
       await ctx.db.insert("lineups", {
-        publicId: "lineupLink:live",
+        publicId: "live",
         strategyId,
         pageId,
-        payloadKind: "lineupLink",
+        payloadKind: "lineup",
         payloadVersion: 1,
-        payload: {
-          kind: "lineupLink",
-          payloadVersion: 1,
-          data: {
-            id: "live",
-            originId: "o",
-            landingId: "l",
-            images: [{ id: "lineup-shown" }],
-          },
-        },
+        payload: lineupPayload("live", { images: [{ id: "lineup-shown" }] }),
         sortIndex: 0,
         revision: 1,
         deleted: false,
@@ -710,8 +681,8 @@ describe("before the reference backfill", () => {
 });
 
 describe("the backfill and its gate", () => {
-  /// A lineup link showing [images] images, inserted without reference
-  /// rows, as the previous version wrote it.
+  /// A lineup showing [images] images, inserted without reference rows, as
+  /// the previous version wrote it.
   async function insertOldLineup(
     t: RootHarness,
     linkId: string,
@@ -721,23 +692,16 @@ describe("the backfill and its gate", () => {
     await t.run(async (ctx) => {
       const now = Date.now();
       await ctx.db.insert("lineups", {
-        publicId: `lineupLink:${linkId}`,
+        publicId: linkId,
         strategyId,
         pageId,
-        payloadKind: "lineupLink",
+        payloadKind: "lineup",
         payloadVersion: 1,
-        payload: {
-          kind: "lineupLink",
-          payloadVersion: 1,
-          data: {
-            id: linkId,
-            originId: "o",
-            landingId: "l",
-            images: Array.from({ length: images }, (_, index) => ({
-              id: `${linkId}-${index}`,
-            })),
-          },
-        },
+        payload: lineupPayload(linkId, {
+          images: Array.from({ length: images }, (_, index) => ({
+            id: `${linkId}-${index}`,
+          })),
+        }),
         sortIndex: 0,
         revision: 1,
         deleted: false,
@@ -967,12 +931,12 @@ describe("the backfill and its gate", () => {
     });
     expect(result.unavailable).toEqual([
       {
-        content: "lineupLink:shown",
+        content: "shown",
         assetPublicId: "shown-1",
         statuses: ["deleted"],
       },
       {
-        content: "lineupLink:shown",
+        content: "shown",
         assetPublicId: "shown-2",
         statuses: ["pending"],
       },
@@ -989,23 +953,16 @@ describe("purges stay within transaction limits", () => {
     await t.run(async (ctx) => {
       for (let lineup = 0; lineup < 5; lineup++) {
         await insertLineup(ctx, {
-          publicId: `lineupLink:many-${lineup}`,
+          publicId: `many-${lineup}`,
           strategyId,
           pageId,
-          payloadKind: "lineupLink",
+          payloadKind: "lineup",
           payloadVersion: 1,
-          payload: {
-            kind: "lineupLink",
-            payloadVersion: 1,
-            data: {
-              id: `many-${lineup}`,
-              originId: "o",
-              landingId: "l",
-              images: Array.from({ length: 850 }, (_, image) => ({
-                id: `image-${lineup}-${image}`,
-              })),
-            },
-          },
+          payload: lineupPayload(`many-${lineup}`, {
+            images: Array.from({ length: 850 }, (_, image) => ({
+              id: `image-${lineup}-${image}`,
+            })),
+          }),
           sortIndex: lineup,
           revision: 2,
           deleted: true,
@@ -1236,23 +1193,16 @@ describe("duplicate stays within transaction limits", () => {
     await t.run(async (ctx) => {
       const now = Date.now();
       await insertLineup(ctx, {
-        publicId: "lineupLink:gallery",
+        publicId: "gallery",
         strategyId,
         pageId,
-        payloadKind: "lineupLink",
+        payloadKind: "lineup",
         payloadVersion: 1,
-        payload: {
-          kind: "lineupLink",
-          payloadVersion: 1,
-          data: {
-            id: "gallery",
-            originId: "o",
-            landingId: "l",
-            images: Array.from({ length: count }, (_, index) => ({
-              id: `gallery-${index}`,
-            })),
-          },
-        },
+        payload: lineupPayload("gallery", {
+          images: Array.from({ length: count }, (_, index) => ({
+            id: `gallery-${index}`,
+          })),
+        }),
         sortIndex: 0,
         revision: 1,
         deleted: false,

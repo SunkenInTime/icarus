@@ -114,29 +114,14 @@ export const elementPayloadValidator = v.union(
   }),
 );
 
-// A page's lineups are a graph, stored one row per entity: an origin (the
-// agent), a landing (the ability) and a link between them (name, video,
-// notes, images). Several links may share one landing.
-export const lineupPayloadKindValidator = v.union(
-  v.literal("lineupOrigin"),
-  v.literal("lineupLanding"),
-  v.literal("lineupLink"),
-);
+// A lineup is one row: its details (name, video, notes, images) and whole
+// copies of its origin (the agent) and landing (the ability). Lineups that
+// share a spot each carry their own copy of it, and the client draws those
+// copies as one spot again (see cloud_lineup_rows.dart).
+export const lineupPayloadKindValidator = v.literal("lineup");
 
-export const lineupPayloadValidator = v.union(
-  v.object({
-    kind: v.literal("lineupOrigin"),
-    payloadVersion: v.number(),
-    data: cloudJsonObjectValidator,
-  }),
-  v.object({
-    kind: v.literal("lineupLanding"),
-    payloadVersion: v.number(),
-    data: cloudJsonObjectValidator,
-  }),
-  v.object({
-    kind: v.literal("lineupLink"),
-    payloadVersion: v.number(),
-    data: cloudJsonObjectValidator,
-  }),
-);
+export const lineupPayloadValidator = v.object({
+  kind: v.literal("lineup"),
+  payloadVersion: v.number(),
+  data: cloudJsonObjectValidator,
+});

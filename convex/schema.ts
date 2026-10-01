@@ -105,9 +105,9 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    // Graph rows are keyed `<payloadKind>:<entity id>`; see ops.ts. A key is
-    // unique within its strategy, not across strategies: a copied strategy
-    // may reuse its original's entity ids.
+    // One row per lineup, keyed by the lineup's id (payload.data.id). A key
+    // is unique within its strategy, not across strategies: a strategy
+    // copied on a device keeps its original's lineup ids.
     payloadKind: lineupPayloadKindValidator,
     payloadVersion: v.number(),
     payload: lineupPayloadValidator,
@@ -119,15 +119,8 @@ export default defineSchema({
   })
     .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_pageId", ["pageId"])
-    .index("by_strategyId", ["strategyId"])
-    .index("by_strategyId_and_payloadKind", ["strategyId", "payloadKind"])
-    // Live links on a page, read when an origin or landing is deleted (see
-    // assertLineupEndUnused in ops.ts).
-    .index("by_pageId_and_payloadKind_and_deleted", [
-      "pageId",
-      "payloadKind",
-      "deleted",
-    ])
+    // Live lineups of a strategy, read for its agent summary.
+    .index("by_strategyId_and_deleted", ["strategyId", "deleted"])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   // Which content rows show which images: one small row per (element or
   // lineup row, image id it shows), kept in step with every content write

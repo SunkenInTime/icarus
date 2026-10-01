@@ -15,7 +15,11 @@ import {
   serializedConvexValueUtf8Bytes,
 } from "./lib/cloudProtocol";
 import schema from "./schema";
-import { insertElement, insertLineup } from "./testContent.helpers";
+import {
+  insertElement,
+  insertLineup,
+  lineupPayload,
+} from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -75,19 +79,14 @@ function imagePayload(assetPublicId: string) {
   };
 }
 
-/// A lineup link showing one image; its row key is `lineupLink:<linkId>`.
-function lineupPayload(assetPublicId: string, linkId = "restorable") {
-  return {
-    kind: "lineupLink" as const,
-    payloadVersion: 1,
-    data: {
-      id: linkId,
-      originId: "origin",
-      landingId: "landing",
-      name: "B lineup",
-      images: [{ id: assetPublicId }],
-    },
-  };
+/// A lineup showing one image; its row key is [lineupId].
+function lineupShowing(assetPublicId: string, lineupId = "restorable") {
+  return lineupPayload(lineupId, {
+    originId: "origin",
+    landingId: "landing",
+    name: "B lineup",
+    images: [{ id: assetPublicId }],
+  });
 }
 
 /** A ConvexError's code (convex-test passes its data as JSON text). */
@@ -353,12 +352,12 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       updatedAt: now,
     });
     await insertLineup(ctx, {
-      publicId: "lineupLink:lineup-b",
+      publicId: "lineup-b",
       strategyId: strategy._id,
       pageId: pageBId,
-      payloadKind: "lineupLink",
+      payloadKind: "lineup",
       payloadVersion: 1,
-      payload: lineupPayload(assetB, "lineup-b"),
+      payload: lineupShowing(assetB, "lineup-b"),
       sortIndex: 0,
       revision: 1,
       deleted: false,
@@ -437,7 +436,7 @@ describe("page-scoped read contract", () => {
       "element-b",
     ]);
     expect(snapshot.lineups.map((item) => item.publicId)).toEqual([
-      "lineupLink:lineup-b",
+      "lineup-b",
     ]);
     expect(snapshot.assets.map((item) => item.publicId).sort()).toEqual([
       "asset-a",
@@ -1064,7 +1063,7 @@ describe("record-scoped write contract", () => {
 
   test("soft-deleted elements and lineups can be restored with their ids", async () => {
     const elementId = "restorable-element";
-    const lineupId = "lineupLink:restorable";
+    const lineupId = "restorable";
     const restoredText = "restored";
     const restoredAsset = "restored-asset";
     const { owner } = await createHarness();
@@ -1084,7 +1083,7 @@ describe("record-scoped write contract", () => {
         entityType: "lineup",
         entityPublicId: lineupId,
         pagePublicId: pageA,
-        payload: lineupPayload("before-delete-asset"),
+        payload: lineupShowing("before-delete-asset"),
       },
     ]);
     await applyOps(owner, "undo-restore", [
@@ -1119,7 +1118,7 @@ describe("record-scoped write contract", () => {
         entityType: "lineup",
         entityPublicId: lineupId,
         pagePublicId: pageA,
-        payload: lineupPayload(restoredAsset),
+        payload: lineupShowing(restoredAsset),
       },
     ]);
     expect(missingRevision.results).toMatchObject([
@@ -1151,7 +1150,7 @@ describe("record-scoped write contract", () => {
         entityType: "lineup",
         entityPublicId: lineupId,
         pagePublicId: pageA,
-        payload: lineupPayload(restoredAsset),
+        payload: lineupShowing(restoredAsset),
         expectedRevision: 1,
       },
     ]);
@@ -1185,7 +1184,7 @@ describe("record-scoped write contract", () => {
         entityType: "lineup",
         entityPublicId: lineupId,
         pagePublicId: pageA,
-        payload: lineupPayload("before-delete-asset"),
+        payload: lineupShowing("before-delete-asset"),
         sortIndex: 0,
         expectedRevision: 2,
       },
@@ -1225,7 +1224,7 @@ describe("record-scoped write contract", () => {
         entityType: "lineup",
         entityPublicId: lineupId,
         pagePublicId: pageA,
-        payload: lineupPayload(restoredAsset),
+        payload: lineupShowing(restoredAsset),
         expectedRevision: 2,
       },
     ]);
@@ -1389,30 +1388,30 @@ describe("record-scoped write contract", () => {
     expect(replayed).toMatchObject({ revision: 2, reused: true });
   });
 
-  test("a lineup link without its landing is refused", async () => {
+  test("a lineup without its landing is refused", async () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
+    const { landing: _landing, ...withoutLanding } = lineupShowing(
+      "asset-empty",
+      "lineup-empty",
+    ).data;
 
     const response = await applyOps(owner, "empty-lineup", [
       {
         opId: "add-empty-lineup",
         kind: "add",
         entityType: "lineup",
-        entityPublicId: "lineupLink:lineup-empty",
+        entityPublicId: "lineup-empty",
         pagePublicId: pageA,
-        payload: {
-          kind: "lineupLink" as const,
-          payloadVersion: 1,
-          data: { id: "lineup-empty", originId: "origin" },
-        },
+        payload: { kind: "lineup", payloadVersion: 1, data: withoutLanding },
       },
       {
         opId: "add-lineup",
         kind: "add",
         entityType: "lineup",
-        entityPublicId: "lineupLink:lineup-full",
+        entityPublicId: "lineup-full",
         pagePublicId: pageA,
-        payload: lineupPayload("asset-full", "lineup-full"),
+        payload: lineupShowing("asset-full", "lineup-full"),
       },
     ]);
 
@@ -1427,26 +1426,43 @@ describe("record-scoped write contract", () => {
     });
   });
 
-  test("a legacy lineup group is no longer part of the contract", async () => {
+  test("old lineup shapes are no longer part of the contract", async () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
 
-    await expect(
-      applyOps(owner, "old-client", [
+    // A protocol 4 graph row (an origin, landing or link) and the legacy
+    // group before it are both refused whole by argument validation.
+    for (const [entityPublicId, payload] of [
+      [
+        "lineupLink:k",
         {
-          opId: "add-legacy-group",
-          kind: "add",
-          entityType: "lineup",
-          entityPublicId: "legacy-group",
-          pagePublicId: pageA,
-          payload: {
-            kind: "lineupGroup",
-            payloadVersion: 1,
-            data: { id: "legacy-group", items: [{ id: "item" }] },
-          },
+          kind: "lineupLink",
+          payloadVersion: 1,
+          data: { id: "k", originId: "o", landingId: "l", images: [] },
         },
-      ]),
-    ).rejects.toThrow(/lineupGroup|ArgumentValidationError|Validator/);
+      ],
+      [
+        "legacy-group",
+        {
+          kind: "lineupGroup",
+          payloadVersion: 1,
+          data: { id: "legacy-group", items: [{ id: "item" }] },
+        },
+      ],
+    ] as const) {
+      await expect(
+        applyOps(owner, "old-client", [
+          {
+            opId: `add-${entityPublicId}`,
+            kind: "add",
+            entityType: "lineup",
+            entityPublicId,
+            pagePublicId: pageA,
+            payload,
+          },
+        ]),
+      ).rejects.toThrow(/Validator error|ArgumentValidationError/);
+    }
     const snapshot = (await owner.query(getPageSnapshot, {
       clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,

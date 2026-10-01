@@ -1,45 +1,42 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
-/// Reads the agent type of one agent element or lineup payload. The client
-/// stores the agent enum name under `type` (an element) or under
-/// `agent.type` (a lineup origin); anything else,
-/// landings and links included, is not an agent.
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/// Reads the agent type the client stores as the enum name under `type`, as
+/// an agent element's data and a lineup origin's agent both do.
 function agentTypeOf(data: unknown): string | null {
-  if (typeof data !== "object" || data === null) return null;
-  const record = data as Record<string, unknown>;
-  const direct = record.type;
-  if (typeof direct === "string" && direct.length > 0) return direct;
-  const agent = record.agent;
-  if (typeof agent === "object" && agent !== null) {
-    const nested = (agent as Record<string, unknown>).type;
-    if (typeof nested === "string" && nested.length > 0) return nested;
-  }
-  return null;
+  const type = asRecord(data)?.type;
+  return typeof type === "string" && type.length > 0 ? type : null;
 }
 
 /// Recomputes which agents a strategy uses, from its live agent elements and
-/// lineup origins on pages not in the trash, and stores the answer in its
-/// own row. Content ops never
+/// the origins of its live lineups on pages not in the trash, and stores the
+/// answer in its own row. Content ops never
 /// touch the strategy row itself; the summary is derived data that the
 /// folder tree reads without scanning elements.
 export async function refreshStrategyAgentSummary(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
 ): Promise<void> {
-  // Only agent elements and lineup origins carry an agent; reading just
-  // those keeps this cheap however large the strategy's other content is
-  // (it runs after every batch of content ops).
+  // Only agent elements and live lineups carry an agent; reading just those
+  // keeps this cheap however large the strategy's other content is (it runs
+  // after every batch of content ops). A lineup row holds its images' ids,
+  // never their bytes.
   const agents = await ctx.db
     .query("elements")
     .withIndex("by_strategyId_and_elementType", (q) =>
       q.eq("strategyId", strategyId).eq("elementType", "agent"),
     )
     .collect();
-  const origins = await ctx.db
+  const lineups = await ctx.db
     .query("lineups")
-    .withIndex("by_strategyId_and_payloadKind", (q) =>
-      q.eq("strategyId", strategyId).eq("payloadKind", "lineupOrigin"),
+    .withIndex("by_strategyId_and_deleted", (q) =>
+      q.eq("strategyId", strategyId).eq("deleted", false),
     )
     .collect();
   const trashedPageIds = new Set(
@@ -57,15 +54,16 @@ export async function refreshStrategyAgentSummary(
   await storeStrategyAgentSummary(
     ctx,
     strategyId,
-    agentTypesOf(agents.filter(onLivePage), origins.filter(onLivePage)),
+    agentTypesOf(agents.filter(onLivePage), lineups.filter(onLivePage)),
   );
 }
 
 /// The agents that live content uses, most used first. Takes any elements
-/// and lineup rows; only live agent elements and lineup origins count.
+/// and lineup rows; live agent elements count, and each origin of a live
+/// lineup once per page, however many lineups share it.
 export function agentTypesOf(
   elements: Pick<Doc<"elements">, "deleted" | "elementType" | "payload">[],
-  lineups: Pick<Doc<"lineups">, "deleted" | "payloadKind" | "payload">[],
+  lineups: Pick<Doc<"lineups">, "deleted" | "pageId" | "payload">[],
 ): string[] {
   const counts = new Map<string, number>();
   const bump = (type: string | null) => {
@@ -76,9 +74,14 @@ export function agentTypesOf(
     if (element.deleted || element.elementType !== "agent") continue;
     bump(agentTypeOf(element.payload.data));
   }
+  const countedOrigins = new Set<string>();
   for (const lineup of lineups) {
-    if (lineup.deleted || lineup.payloadKind !== "lineupOrigin") continue;
-    bump(agentTypeOf(lineup.payload.data));
+    if (lineup.deleted) continue;
+    const origin = asRecord(lineup.payload.data.origin);
+    const originKey = `${lineup.pageId}:${String(origin?.id)}`;
+    if (origin === null || countedOrigins.has(originKey)) continue;
+    countedOrigins.add(originKey);
+    bump(agentTypeOf(origin.agent));
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))

@@ -11,7 +11,11 @@ import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import schema from "./schema";
-import { insertElement, insertLineup } from "./testContent.helpers";
+import {
+  insertElement,
+  insertLineup,
+  lineupPayload,
+} from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -102,19 +106,6 @@ function imagePayload(assetPublicId: string) {
     kind: "image" as const,
     payloadVersion: 1,
     data: { id: assetPublicId, elementType: "image" },
-  };
-}
-
-function lineupPayload(assetPublicId: string) {
-  return {
-    kind: "lineupLink" as const,
-    payloadVersion: 1,
-    data: {
-      id: "remaining-lineup",
-      originId: "origin",
-      landingId: "landing",
-      images: [{ id: assetPublicId }],
-    },
   };
 }
 
@@ -246,12 +237,14 @@ describe("image asset lifecycle", () => {
         });
       }
       await insertLineup(ctx, {
-        publicId: "lineupLink:remaining-lineup",
+        publicId: "remaining-lineup",
         strategyId: strategy._id,
         pageId: pageBId,
-        payloadKind: "lineupLink",
+        payloadKind: "lineup",
         payloadVersion: 1,
-        payload: lineupPayload("still-used"),
+        payload: lineupPayload("remaining-lineup", {
+          images: [{ id: "still-used" }],
+        }),
         sortIndex: 0,
         revision: 1,
         deleted: false,
@@ -259,21 +252,14 @@ describe("image asset lifecycle", () => {
         updatedAt: now,
       });
       await insertLineup(ctx, {
-        publicId: "lineupLink:remaining-link",
+        publicId: "remaining-link",
         strategyId: strategy._id,
         pageId: pageBId,
-        payloadKind: "lineupLink",
+        payloadKind: "lineup",
         payloadVersion: 1,
-        payload: {
-          kind: "lineupLink",
-          payloadVersion: 1,
-          data: {
-            id: "remaining-link",
-            originId: "origin",
-            landingId: "landing",
-            images: [{ id: "still-used-by-link", fileExtension: ".png" }],
-          },
-        },
+        payload: lineupPayload("remaining-link", {
+          images: [{ id: "still-used-by-link", fileExtension: ".png" }],
+        }),
         sortIndex: 1,
         revision: 1,
         deleted: false,
