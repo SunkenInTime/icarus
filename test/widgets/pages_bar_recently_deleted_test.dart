@@ -240,4 +240,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(LucideIcons.archiveRestore), findsOneWidget);
   });
+
+  testWidgets("the button goes when the last page's 30 days run out",
+      (tester) async {
+    final soon = DateTime.now().add(const Duration(minutes: 1));
+    final repository = _Trash([
+      TrashedPage(
+        pageId: 'page-3',
+        name: 'Retake B',
+        deletedAt: soon.subtract(const Duration(days: 30)),
+        restorableUntil: soon,
+        deletedByName: 'Sam',
+        deletedByYou: false,
+      ),
+    ]);
+    await _expandedBar(tester, canDeletePage: true, repository: repository);
+    expect(find.byIcon(LucideIcons.archiveRestore), findsOneWidget);
+
+    // The server lists only restorable pages; once past, it lists none.
+    repository.pages = [];
+    await tester.pump(const Duration(minutes: 1, seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(LucideIcons.archiveRestore), findsNothing);
+  });
 }
