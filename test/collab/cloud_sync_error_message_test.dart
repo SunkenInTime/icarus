@@ -84,4 +84,13 @@ void main() {
     expect(message, contains('Nothing was sent'));
     expect(message, isNot(contains('remains saved')));
   });
+
+  test('a failed outbox write is not called merely unsent', () {
+    final message = friendlyCloudSyncError(
+      'Cloud work could not be saved to the durable outbox: '
+      'Bad state: disk write failed',
+    );
+
+    expect(message, unverifiedCloudWorkMessage);
+  });
 }

@@ -33,6 +33,12 @@ bool isSpecificAttentionReason(String error) {
       lower.contains(pageDeletedMessage.toLowerCase());
 }
 
+/// A cloud change whose write to the durable outbox failed, or could not be
+/// confirmed: it may not be on this device, and it was not sent.
+const unverifiedCloudWorkMessage =
+    'Icarus could not verify that this change was saved on this device. '
+    'Nothing was sent. Keep this strategy open and retry.';
+
 String friendlyCloudSyncError(String raw) {
   final lower = raw.toLowerCase();
   if (lower.contains('strategy was deleted')) {
@@ -44,9 +50,9 @@ String friendlyCloudSyncError(String raw) {
         'device; keep this strategy open and recover the outbox before '
         'continuing.';
   }
-  if (lower.contains('could not be verified in the durable outbox')) {
-    return 'Icarus could not verify that this change was saved on this '
-        'device. Nothing was sent. Keep this strategy open and retry.';
+  if (lower.contains('could not be verified in the durable outbox') ||
+      lower.contains('could not be saved to the durable outbox')) {
+    return unverifiedCloudWorkMessage;
   }
   if (lower.contains('forbidden')) {
     return 'This account does not have permission to save these changes. '
