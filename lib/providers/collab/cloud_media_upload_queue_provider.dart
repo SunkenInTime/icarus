@@ -14,6 +14,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
@@ -1025,7 +1026,11 @@ class CloudMediaUploadQueueNotifier
     _refreshState();
     _logMedia(
         'job.failed showToast=$showToast ${_describeJob(_getJob(job.jobId))}');
-    if (showToast) {
+    // The sync button explains a refusal of this build; Save cannot fix it.
+    final upgradeRequired = ref
+        .read(clientUpgradeRequiredProvider.notifier)
+        .noteError(errorMessage);
+    if (showToast && !upgradeRequired) {
       Settings.showToast(
         message: 'Media upload failed. Tap Save to retry cloud sync.',
         backgroundColor: Settings.tacticalVioletTheme.destructive,

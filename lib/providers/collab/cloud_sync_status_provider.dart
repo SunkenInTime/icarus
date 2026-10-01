@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -25,6 +26,11 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   );
   final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
 
+  // The server refuses this build: nothing syncs until it is reloaded or
+  // updated, whatever the queue holds.
+  if (ref.watch(clientUpgradeRequiredProvider)) {
+    return CloudSyncStatus.attention;
+  }
   final hasDurabilityProblem = opQueueState.loadIssues.isNotEmpty ||
       opQueueState.hasDurabilityFailure ||
       mediaQueueState.loadIssues.isNotEmpty ||

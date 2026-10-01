@@ -5,17 +5,22 @@ import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
+import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -624,6 +629,103 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Retry sync'), findsOneWidget);
     expect(find.textContaining('safely stored'), findsNothing);
+  });
+
+  group('when the server needs a newer Icarus', () {
+    ProviderContainer upgradeContainer({required bool updateWaiting}) {
+      final container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(_CloudStrategyProvider.new),
+          strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+          cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
+          convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+          appUpdateStatusProvider.overrideWith(
+            (ref) async => UpdateCheckResult(
+              isSupported: true,
+              isUpdateAvailable: updateWaiting,
+              source: 'test',
+            ),
+          ),
+          desktopUpdateControllerProvider.overrideWithValue(null),
+        ],
+      );
+      container.read(clientUpgradeRequiredProvider.notifier).noteError(
+            'ConvexFunctionException(CLIENT_UPGRADE_REQUIRED, '
+            'Client upgrade required)',
+          );
+      return container;
+    }
+
+    Future<void> openPopover(
+      WidgetTester tester,
+      ProviderContainer container,
+    ) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+              body: CloudSyncButton(style: kEditorToolbarButtonStyle),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(_syncButton('attention'));
+      await tester.pumpAndSettle();
+    }
+
+    test('nothing appears synced, even with nothing queued', () async {
+      final container = upgradeContainer(updateWaiting: false);
+      addTearDown(container.dispose);
+      await container.read(convexConnectionProvider.future);
+
+      expect(
+        container.read(cloudSyncStatusProvider),
+        CloudSyncStatus.attention,
+      );
+    });
+
+    testWidgets('says so and offers the update in place of a retry',
+        (tester) async {
+      final container = upgradeContainer(updateWaiting: true);
+      addTearDown(container.dispose);
+
+      await openPopover(tester, container);
+
+      expect(
+        find.text('Icarus was updated. Install the update to keep syncing.'),
+        findsOneWidget,
+      );
+      expect(find.text('Update'), findsOneWidget);
+      expect(find.text('Retry sync'), findsNothing);
+      expect(find.text('Keep mine'), findsNothing);
+    });
+
+    testWidgets('offers no action it cannot take while no update is known',
+        (tester) async {
+      final container = upgradeContainer(updateWaiting: false);
+      addTearDown(container.dispose);
+
+      await openPopover(tester, container);
+
+      expect(
+        find.text('Icarus was updated. Install the update to keep syncing.'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('client-upgrade-button')), findsNothing);
+      expect(find.text('Retry sync'), findsNothing);
+    });
+
+    testWidgets('the web reloads', (tester) async {
+      await tester.pumpWidget(
+        const ShadApp(
+          home: Scaffold(body: ClientUpgradeButton(isWeb: true)),
+        ),
+      );
+
+      expect(find.text('Reload'), findsOneWidget);
+    });
   });
 
   testWidgets('conflict popover offers an explicit cloud choice',

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -12,6 +13,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -254,6 +256,26 @@ void main() {
         find.byKey(const ValueKey('library-cloud-unreachable')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('a server that needs a newer Icarus offers no retry',
+        (tester) async {
+      await _pumpLibrary(
+        tester,
+        policy: PlatformPolicy.webBeta,
+        auth: _unreachable.copyWith(
+          errorMessage: clientUpgradeRequiredMessage(),
+        ),
+      );
+      ProviderScope.containerOf(tester.element(find.byType(FolderNavigator)))
+          .read(clientUpgradeRequiredProvider.notifier)
+          .noteError(clientUpgradeRequiredQueueError);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your cloud library needs a newer Icarus'),
+          findsOneWidget);
+      expect(find.text(clientUpgradeRequiredMessage()), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-cloud-retry')), findsNothing);
     });
 
     testWidgets('Beta tag explains what is desktop-only',

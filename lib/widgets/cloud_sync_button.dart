@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -14,6 +15,7 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/dialogs/deleted_page_dialog.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
@@ -203,6 +205,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     }
 
     final saveState = ref.watch(strategySaveStateProvider);
+    final upgradeRequired = ref.watch(clientUpgradeRequiredProvider);
     final opQueueState = ref.watch(strategyOpQueueProvider);
     final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
     final activeStrategyId = ref.watch(
@@ -254,6 +257,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
       ),
       popover: (context) => _SyncStatusPopover(
         status: status,
+        upgradeRequired: upgradeRequired,
         saveState: saveState,
         rejectedCount: opQueueState.attentionByEntityKey.length,
         hasOtherStrategyWork: hasOtherStrategyWork,
@@ -351,6 +355,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
 class _SyncStatusPopover extends StatelessWidget {
   const _SyncStatusPopover({
     required this.status,
+    required this.upgradeRequired,
     required this.saveState,
     required this.rejectedCount,
     required this.hasOtherStrategyWork,
@@ -363,6 +368,10 @@ class _SyncStatusPopover extends StatelessWidget {
   });
 
   final _SyncStatus status;
+
+  /// The server refuses this build. Nothing here can fix that, so the
+  /// popover says so and offers only the reload or update that can.
+  final bool upgradeRequired;
   final StrategySaveState saveState;
   final int rejectedCount;
   final bool hasOtherStrategyWork;
@@ -424,7 +433,13 @@ class _SyncStatusPopover extends StatelessWidget {
                 ),
               ),
             ],
-            if (status == _SyncStatus.attention &&
+            if (upgradeRequired) ...[
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerRight,
+                child: ClientUpgradeButton(size: ShadButtonSize.sm),
+              ),
+            ] else if (status == _SyncStatus.attention &&
                 (!hasOtherStrategyAttention || hasActiveStrategyAttention)) ...[
               const SizedBox(height: 12),
               Wrap(
@@ -488,6 +503,7 @@ class _SyncStatusPopover extends StatelessWidget {
         return 'Changes are kept on this device and will sync automatically '
             'when your connection returns.';
       case _SyncStatus.attention:
+        if (upgradeRequired) return clientUpgradeRequiredMessage();
         const otherStrategyExplanation =
             'Saved work in another strategy also needs attention. Open it '
             'from the Cloud library to review the reason.';

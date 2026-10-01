@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -10,6 +11,7 @@ import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
@@ -1293,10 +1295,14 @@ class AuthProvider extends Notifier<AppAuthState> {
         return;
       }
 
+      final upgradeRequired =
+          ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
       state = state.copyWith(
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
-        errorMessage: "Couldn't connect to cloud sync. Please retry.",
+        errorMessage: upgradeRequired
+            ? clientUpgradeRequiredMessage()
+            : "Couldn't connect to cloud sync. Please retry.",
       );
     }
   }

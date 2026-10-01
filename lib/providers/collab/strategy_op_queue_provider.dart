@@ -11,6 +11,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -237,7 +238,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _store = ref.read(durableStrategyOutboxStoreProvider);
     final loaded = _store.load();
     _recordsByStorageKey = {
-      for (final record in loaded.records) record.storageKey: record,
+      for (final record in loaded.records)
+        record.storageKey: _resumedAfterUpgrade(record),
     };
     ref.onDispose(() {
       _isDisposed = true;
@@ -280,6 +282,27 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ? null
           : 'The cloud outbox contains unreadable saved work.',
       accountOutbox: _accountSummary(session.accountId),
+    );
+  }
+
+  /// [record] as this build sends it. Work a build the server refused kept
+  /// failing through no fault of its own, and may have been paused for it;
+  /// it goes back in the queue with no failures counted. Only the copy in
+  /// memory changes: the next write of the record saves it, and until then
+  /// every start resumes it again.
+  static DurableOutboxRecord _resumedAfterUpgrade(DurableOutboxRecord record) {
+    if (!isClientUpgradeRequiredError(record.lastError) ||
+        (record.status != DurableOutboxStatus.paused &&
+            record.status != DurableOutboxStatus.queued)) {
+      return record;
+    }
+    return record.copyWith(
+      status: DurableOutboxStatus.queued,
+      pending: PendingOp(
+        op: record.pending.op,
+        clientId: record.pending.clientId,
+      ),
+      clearError: true,
     );
   }
 
@@ -1248,6 +1271,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       return;
     }
+    // The server refuses this build, so nothing sent would land. The work
+    // waits, with no failure counted, for the reload or update that brings
+    // a build it accepts.
+    if (ref.read(clientUpgradeRequiredProvider)) {
+      if (!isBackground && _isActive(accountId, strategyPublicId)) {
+        state = state.copyWith(lastError: clientUpgradeRequiredQueueError);
+      }
+      return;
+    }
     if (auth.user?.id != accountId) {
       if (!isBackground && _isActive(accountId, strategyPublicId)) {
         state = state.copyWith(
@@ -1352,6 +1384,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           strategyPublicId: strategyPublicId,
         );
       } else {
+        final upgradeRequired =
+            ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
         if (isConvexUnauthenticatedError(error)) {
           unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
                 source: 'strategy_op_queue:flush',
@@ -1367,7 +1401,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             stackTrace: stackTrace,
           );
         }
-        await _restoreRecordsAfterFailure(batch, lastError: '$error');
+        await _restoreRecordsAfterFailure(
+          batch,
+          lastError:
+              upgradeRequired ? clientUpgradeRequiredQueueError : '$error',
+          countsAsFailure: !upgradeRequired,
+        );
       }
     } finally {
       _finishNetworkLane();
@@ -1842,18 +1881,27 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
+  /// Puts [batch] back in the queue after a send failed. Unless
+  /// [countsAsFailure] is false, each record counts a failure, and one that
+  /// has failed too often is paused until the user retries it.
   Future<void> _restoreRecordsAfterFailure(
     List<DurableOutboxRecord> batch, {
     required String lastError,
+    bool countsAsFailure = true,
   }) {
     return _serializeWrite(
-      () => _restoreRecordsAfterFailureLocked(batch, lastError: lastError),
+      () => _restoreRecordsAfterFailureLocked(
+        batch,
+        lastError: lastError,
+        countsAsFailure: countsAsFailure,
+      ),
     );
   }
 
   Future<void> _restoreRecordsAfterFailureLocked(
     List<DurableOutboxRecord> batch, {
     required String lastError,
+    required bool countsAsFailure,
   }) async {
     final retrying = <PendingOp>[];
     try {
@@ -1863,7 +1911,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             current.pending.op.opId != sent.pending.op.opId) {
           continue;
         }
-        final pending = current.pending.incrementAttempt();
+        final pending = countsAsFailure
+            ? current.pending.incrementAttempt()
+            : current.pending;
         final isPaused = pending.attempts >= _maxAttempts;
         await _putRecord(current.copyWith(
           pending: pending,

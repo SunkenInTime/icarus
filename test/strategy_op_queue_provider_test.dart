@@ -12,6 +12,7 @@ import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -2955,6 +2956,171 @@ void main() {
       await repository.secondCompleted.future;
     });
   });
+
+  group('a server that needs a newer Icarus', () {
+    const key = EntitySyncKey.element('page-1', 'element-1');
+
+    DurableOutboxRecord saved(
+      ElementPatchOp op, {
+      required DurableOutboxStatus status,
+      required int attempts,
+      required String lastError,
+    }) {
+      return DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: EntitySyncKey.forStrategyOp(op)!,
+        pending: PendingOp(
+          op: op,
+          clientId: 'old-client',
+          attempts: attempts,
+          lastAttemptAt: DateTime(2026),
+        ),
+        status: status,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        lastError: lastError,
+      );
+    }
+
+    test('holds the work, uncounted, however often it is refused', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _UpgradeRequiredRepository();
+      // Each start is a reload into a build the server still refuses; more
+      // starts than the pause limit allows failures.
+      for (var start = 0; start < 10; start++) {
+        final container = _cloudQueueContainer(
+          store: store,
+          repository: repository,
+        );
+        final notifier = container.read(strategyOpQueueProvider.notifier)
+          ..setActiveStrategy('strategy-1', accountId: 'account-a');
+        if (start == 0) await notifier.enqueue(_cloudElementOp());
+        await notifier.flushNow();
+        await _settle();
+        // Held after the refusal: no second send in this process.
+        await notifier.flushNow();
+        await _settle();
+
+        expect(container.read(clientUpgradeRequiredProvider), isTrue);
+        final current = container.read(strategyOpQueueProvider);
+        expect(current.pausedByEntityKey, isEmpty);
+        expect(current.attentionByEntityKey, isEmpty);
+        expect(current.needsAttention, isFalse);
+        expect(current.queuedByEntityKey[key]!.pending.op.opId, 'op-1');
+        expect(current.queuedByEntityKey[key]!.pending.attempts, 0);
+        expect(current.lastError, clientUpgradeRequiredQueueError);
+        container.dispose();
+      }
+
+      expect(repository.calls, 10);
+      final durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.queued);
+      expect(durable.pending.attempts, 0);
+      expect(
+        durable.pending.op.toConvexJson(),
+        _cloudElementOp().toConvexJson(),
+      );
+      expect(durable.pending.clientId, isNotEmpty);
+    });
+
+    test('resumes work an older build paused for it, and only that', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      const refused = ElementPatchOp(
+        opId: 'refused',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'kept'},
+        expectedElementRevision: 1,
+      );
+      const failing = ElementPatchOp(
+        opId: 'failing',
+        elementPublicId: 'element-2',
+        pagePublicId: 'page-1',
+        payload: {'value': 'other'},
+        expectedElementRevision: 1,
+      );
+      // As the protocol 3 web build kept them after eight refusals, and one
+      // paused for an ordinary failure.
+      await store.put(saved(
+        refused,
+        status: DurableOutboxStatus.paused,
+        attempts: 8,
+        lastError: 'ConvexFunctionException(CLIENT_UPGRADE_REQUIRED, '
+            'Client upgrade required)',
+      ));
+      await store.put(saved(
+        failing,
+        status: DurableOutboxStatus.paused,
+        attempts: 8,
+        lastError: 'ConvexFunctionException(INTERNAL_ERROR, boom)',
+      ));
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      final loaded = container.read(strategyOpQueueProvider);
+      expect(
+        loaded.queuedByEntityKey[key]!.pending.op.toConvexJson(),
+        refused.toConvexJson(),
+      );
+      expect(loaded.queuedByEntityKey[key]!.pending.clientId, 'old-client');
+      expect(loaded.queuedByEntityKey[key]!.pending.attempts, 0);
+      expect(
+        loaded.pausedByEntityKey.values.single.pending.op.opId,
+        'failing',
+      );
+
+      await notifier.flushNow();
+      await _settle();
+
+      expect(
+        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
+        [
+          ['refused'],
+        ],
+      );
+      final left = store.load().records.single;
+      expect(left.pending.op.toConvexJson(), failing.toConvexJson());
+      expect(left.status, DurableOutboxStatus.paused);
+      expect(left.pending.attempts, 8);
+    });
+  });
+}
+
+/// Lets sends already started, and the writes after them, finish.
+Future<void> _settle() async {
+  for (var i = 0; i < 20; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+/// The server refusing this build's protocol, as it refuses every batch from
+/// a client older than the current one.
+class _UpgradeRequiredRepository extends ConvexStrategyRepository {
+  _UpgradeRequiredRepository() : super(IcarusConvexApi(_UnusedTransport()));
+
+  int calls = 0;
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+    String? accountSubject,
+  }) async {
+    calls += 1;
+    throw const ConvexFunctionException(
+      code: ConvexErrorCode.clientUpgradeRequired,
+      rawCode: 'CLIENT_UPGRADE_REQUIRED',
+      message: 'Client upgrade required',
+    );
+  }
 }
 
 ProviderContainer _cloudQueueContainer({

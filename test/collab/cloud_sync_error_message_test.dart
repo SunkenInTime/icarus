@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/src/convex_client_types.dart';
 
 void main() {
   test('turns a forbidden Convex failure into a permission explanation', () {
@@ -92,5 +94,65 @@ void main() {
     );
 
     expect(message, unverifiedCloudWorkMessage);
+  });
+
+  group('a server that needs a newer Icarus', () {
+    test('is told on the web to reload', () {
+      expect(
+        clientUpgradeRequiredMessage(isWeb: true),
+        'Icarus was updated. Reload to keep syncing.',
+      );
+    });
+
+    test('is told on desktop to install the update', () {
+      expect(
+        clientUpgradeRequiredMessage(isWeb: false),
+        'Icarus was updated. Install the update to keep syncing.',
+      );
+    });
+
+    test('is known from the refusal, however it was kept', () {
+      for (final error in <Object>[
+        const ConvexFunctionException(
+          code: ConvexErrorCode.clientUpgradeRequired,
+          rawCode: 'CLIENT_UPGRADE_REQUIRED',
+          message: 'Client upgrade required',
+        ),
+        const ConvexClientFunctionError(
+          rawCode: 'CLIENT_UPGRADE_REQUIRED',
+          message: 'Client upgrade required',
+          data: null,
+        ),
+        // The text an older build's outbox kept, paused after retries.
+        'ConvexFunctionException(CLIENT_UPGRADE_REQUIRED, Client upgrade '
+            'required)',
+        clientUpgradeRequiredQueueError,
+      ]) {
+        expect(isClientUpgradeRequiredError(error), isTrue, reason: '$error');
+        expect(
+          friendlyCloudSyncError('$error'),
+          clientUpgradeRequiredMessage(),
+          reason: '$error',
+        );
+      }
+    });
+
+    test('is not any other refusal', () {
+      for (final error in <Object?>[
+        null,
+        'ConvexFunctionException(FORBIDDEN, Forbidden)',
+        'Cloud connection is offline.',
+        // How an argument validation failure reads: a client that sends a
+        // field the server no longer knows, or omits one it requires.
+        'ConvexClientFunctionError(CONVEX_ERROR, ArgumentValidationError: '
+            'Object is missing the required field `clientProtocolVersion`.)',
+      ]) {
+        expect(isClientUpgradeRequiredError(error), isFalse, reason: '$error');
+      }
+      expect(
+        friendlyCloudSyncError('ConvexFunctionException(FORBIDDEN, Forbidden)'),
+        isNot(clientUpgradeRequiredMessage()),
+      );
+    });
   });
 }

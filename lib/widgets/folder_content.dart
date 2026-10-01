@@ -9,6 +9,7 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -17,6 +18,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/widgets/library_breadcrumb.dart';
@@ -776,22 +778,30 @@ class FolderContent extends ConsumerWidget {
       return const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
     }
     if (auth.isAuthenticated) {
+      // The server refuses this build: a retry is refused like the first
+      // try, and only a reload or an update helps.
+      final upgradeRequired = ref.watch(clientUpgradeRequiredProvider);
       return KeyedSubtree(
         key: const ValueKey('library-cloud-unreachable'),
         child: _LibraryMessageState(
           icon: LucideIcons.cloudOff,
           iconColor: Settings.tacticalVioletTheme.destructive,
-          title: "Couldn't reach your cloud library",
+          title: upgradeRequired
+              ? 'Your cloud library needs a newer Icarus'
+              : "Couldn't reach your cloud library",
           subtitle: auth.errorMessage ?? 'Check your connection and try again.',
           actions: [
-            ShadButton(
-              key: const ValueKey('library-cloud-retry'),
-              leading: const Icon(LucideIcons.refreshCw, size: 14),
-              onPressed: () => ref
-                  .read(authProvider.notifier)
-                  .reinitializeConvexAuth(source: 'library_retry'),
-              child: const Text('Retry'),
-            ),
+            if (upgradeRequired)
+              const ClientUpgradeButton()
+            else
+              ShadButton(
+                key: const ValueKey('library-cloud-retry'),
+                leading: const Icon(LucideIcons.refreshCw, size: 14),
+                onPressed: () => ref
+                    .read(authProvider.notifier)
+                    .reinitializeConvexAuth(source: 'library_retry'),
+                child: const Text('Retry'),
+              ),
           ],
         ),
       );

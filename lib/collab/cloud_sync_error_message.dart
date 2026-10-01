@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:icarus/collab/collab_models.dart';
 
 final _urlQuery = RegExp(r'''(https?://[^\s?#"'<>]+)\?[^\s"'<>]*''');
@@ -39,7 +40,29 @@ const unverifiedCloudWorkMessage =
     'Icarus could not verify that this change was saved on this device. '
     'Nothing was sent. Keep this strategy open and retry.';
 
+/// The server's code for a build whose cloud protocol it no longer accepts.
+const clientUpgradeRequiredCode = 'CLIENT_UPGRADE_REQUIRED';
+
+/// The queue's error while the server refuses this build. It names the
+/// server's code, so [isClientUpgradeRequiredError] knows it.
+const clientUpgradeRequiredQueueError =
+    'Cloud sync is held until Icarus is updated ($clientUpgradeRequiredCode).';
+
+/// Whether [error], or the text kept of one, is the server refusing this
+/// build. Nothing the build sends or reads will be accepted until it is
+/// reloaded (web) or updated (desktop). It is never the user's fault, nor the
+/// fault of the work it refused.
+bool isClientUpgradeRequiredError(Object? error) =>
+    error != null && '$error'.contains(clientUpgradeRequiredCode);
+
+/// What the user is told when the server needs a newer Icarus, with the way
+/// out their platform has.
+String clientUpgradeRequiredMessage({bool isWeb = kIsWeb}) => isWeb
+    ? 'Icarus was updated. Reload to keep syncing.'
+    : 'Icarus was updated. Install the update to keep syncing.';
+
 String friendlyCloudSyncError(String raw) {
+  if (isClientUpgradeRequiredError(raw)) return clientUpgradeRequiredMessage();
   final lower = raw.toLowerCase();
   if (lower.contains('strategy was deleted')) {
     return 'This strategy was deleted, so its unsent changes cannot be '

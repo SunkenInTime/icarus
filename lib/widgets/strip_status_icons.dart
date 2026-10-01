@@ -61,29 +61,15 @@ class WhatsNewIcon extends StatelessWidget {
 /// Windows installs open the in-app updater; Store and web installs reopen
 /// the dialog the automatic check shows, so it is a second chance at the
 /// same thing, not a second design.
-class UpdateAvailableIcon extends ConsumerWidget {
+class UpdateAvailableIcon extends StatelessWidget {
   const UpdateAvailableIcon({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final desktopController = ref.watch(desktopUpdateControllerProvider);
-    if (desktopController != null) {
-      return ListenableBuilder(
-        listenable: desktopController,
-        builder: (context, _) {
-          if (!desktopController.needUpdate) return const SizedBox.shrink();
-          return _icon(
-            () => DesktopUpdateDialog.show(context, desktopController),
-          );
-        },
-      );
-    }
-
-    final status = ref.watch(appUpdateStatusProvider).valueOrNull;
-    if (status == null || !status.isUpdateAvailable) {
-      return const SizedBox.shrink();
-    }
-    return _icon(() => UpdateChecker.showUpdateDialog(context, status));
+  Widget build(BuildContext context) {
+    return WaitingUpdateBuilder(
+      builder: (context, openUpdate) =>
+          openUpdate == null ? const SizedBox.shrink() : _icon(openUpdate),
+    );
   }
 
   Widget _icon(VoidCallback onPressed) {
@@ -96,6 +82,39 @@ class UpdateAvailableIcon extends ConsumerWidget {
         foregroundColor: Settings.tacticalVioletTheme.primary,
         onPressed: onPressed,
       ),
+    );
+  }
+}
+
+/// Builds with what opens the waiting update, or null while none is known:
+/// the in-app updater for a direct Windows install, otherwise the dialog the
+/// automatic check shows.
+class WaitingUpdateBuilder extends ConsumerWidget {
+  const WaitingUpdateBuilder({super.key, required this.builder});
+
+  final Widget Function(BuildContext context, VoidCallback? openUpdate) builder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final desktopController = ref.watch(desktopUpdateControllerProvider);
+    if (desktopController != null) {
+      return ListenableBuilder(
+        listenable: desktopController,
+        builder: (context, _) => builder(
+          context,
+          desktopController.needUpdate
+              ? () => DesktopUpdateDialog.show(context, desktopController)
+              : null,
+        ),
+      );
+    }
+
+    final status = ref.watch(appUpdateStatusProvider).valueOrNull;
+    return builder(
+      context,
+      status != null && status.isUpdateAvailable
+          ? () => UpdateChecker.showUpdateDialog(context, status)
+          : null,
     );
   }
 }
