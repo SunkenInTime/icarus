@@ -54,6 +54,15 @@ Future<void> _pumpHarness(
       ),
     ),
   );
+  // A tile takes its size from its icon, so it has no area to tap until the
+  // image decodes.
+  await tester.runAsync(() async {
+    final context = tester.element(find.byType(Row));
+    for (final type in [AgentType.breach, AgentType.sova]) {
+      await precacheImage(
+          AssetImage(AgentData.agents[type]!.iconPath), context);
+    }
+  });
   await tester.pumpAndSettle();
 }
 
