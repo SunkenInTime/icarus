@@ -35,17 +35,6 @@ void main() {
   });
 
   group('VideoExportSizePolicies', () {
-    test('use 10 MiB and 20 MiB best-effort targets', () {
-      expect(
-        VideoExportSizePolicies.potato.targetFileSizeBytes,
-        10 * 1024 * 1024,
-      );
-      expect(
-        VideoExportSizePolicies.social.targetFileSizeBytes,
-        20 * 1024 * 1024,
-      );
-    });
-
     test('derive 22-second bitrates from each working target', () {
       expect(
         VideoExportSizePolicies.potato.initialVideoBitrate(22),

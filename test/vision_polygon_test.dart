@@ -376,6 +376,10 @@ void main() {
         (point) => (point.dx - 5).abs() < 0.01 && point.dy.abs() < 0.01,
       );
       expect(nearCorner.length, greaterThanOrEqualTo(2));
+      // The wall spans the whole cone, so nothing may reach past it.
+      for (final point in first) {
+        expect(point.dx, lessThanOrEqualTo(5 + 1e-6));
+      }
       expect(first, hasLength(second.length));
       for (var index = 0; index < first.length; index += 1) {
         expect(second[index].dx, closeTo(first[index].dx, 1e-8));

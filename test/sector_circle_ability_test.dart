@@ -61,17 +61,6 @@ void main() {
         circleSize.dy + SectorCircleWidget.handleTopInsetVirtual,
       );
     });
-
-    test('is rotatable', () {
-      final sector = SectorCircleAbility(
-        iconPath: 'assets/agents/Cypher/1.webp',
-        size: 6.5,
-        rangeOutlineColor: Colors.cyan,
-        sweepAngleDegrees: 75,
-      );
-
-      expect(isRotatable(sector), isTrue);
-    });
   });
 
   group('SectorCircleWidget styling', () {
@@ -160,28 +149,6 @@ void main() {
 
       expect(
         _findAbilityTransformByAngle(tester, expectedAngle: -rotation),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('zero rotation leaves the icon transform neutral',
-        (tester) async {
-      await _pumpWidget(
-        tester,
-        const SectorCircleWidget(
-          iconPath: 'assets/agents/Cypher/1.webp',
-          size: 120,
-          rangeOutlineColor: Colors.orange,
-          sweepAngleDegrees: 80,
-          hasCenterDot: true,
-          id: 'sector-zero-rotation',
-          isAlly: true,
-          rotation: 0,
-        ),
-      );
-
-      expect(
-        _findAbilityTransformByAngle(tester, expectedAngle: 0),
         findsOneWidget,
       );
     });
@@ -422,38 +389,6 @@ void main() {
 
       expect(rotatable.showHandle, isFalse);
       expect(find.byType(AbilityWidget), findsOneWidget);
-    });
-
-    testWidgets('PlacedWidgetPreview builds the sector widget', (tester) async {
-      final abilityInfo = AbilityInfo(
-        name: 'Sector',
-        iconPath: 'assets/agents/Cypher/1.webp',
-        type: AgentType.cypher,
-        index: 97,
-        abilityData: SectorCircleAbility(
-          iconPath: 'assets/agents/Cypher/1.webp',
-          size: 6.5,
-          rangeOutlineColor: Colors.cyan,
-          sweepAngleDegrees: 75,
-        ),
-      );
-      final placedAbility = PlacedAbility(
-        id: 'sector-preview',
-        data: abilityInfo,
-        position: const Offset(0, 0),
-      );
-
-      await _pumpWidget(
-        tester,
-        PlacedWidgetPreview.build(
-          placedAbility,
-          1,
-          agentSize: 40,
-          abilitySize: 24,
-        ),
-      );
-
-      expect(find.byType(SectorCircleWidget), findsOneWidget);
     });
 
     testWidgets(

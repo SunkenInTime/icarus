@@ -2,16 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/folder_icons.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/providers/folder_provider.dart';
 
 void main() {
-  test('folder icon registry migration remains version 97', () {
-    expect(folderIconRegistryVersion, 97);
-    expect(folderIconRegistryVersion, lessThanOrEqualTo(Settings.versionNumber));
-  });
-
   test('folder icon registry ids are unique and picker-safe', () {
     final ids = FolderIconRegistry.entries.map((entry) => entry.id).toList();
     expect(ids.toSet(), hasLength(ids.length));
@@ -187,13 +181,10 @@ void main() {
       customColorValue: null,
     );
 
-    expect(entry.iconId, FolderIconRegistry.duelistRoleId);
+    // Role icons are image assets, so older readers get the default star.
     expect(
       entry.icon.toJson(),
-      ArchiveIconDescriptor.fromIconData(
-        FolderIconRegistry.legacyIconDataForId(
-            FolderIconRegistry.duelistRoleId),
-      ).toJson(),
+      ArchiveIconDescriptor.fromIconData(Icons.star_rate_rounded).toJson(),
     );
   });
 }

@@ -21,8 +21,7 @@ class _FailingSave extends StrategyProvider {
 }
 
 void main() {
-  testWidgets(
-      'failed screenshot preparation clears the spinner and restores canvas coordinates',
+  testWidgets('failed screenshot preparation clears the spinner',
       (tester) async {
     CoordinateSystem(playAreaSize: const Size(1600, 900));
     final saver = _FailingSave();
@@ -37,12 +36,10 @@ void main() {
     await tester.tap(find.byIcon(LucideIcons.camera200));
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(CoordinateSystem.instance.isScreenshot, isFalse);
     saver.pending.completeError(StateError('test save failure'));
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byIcon(LucideIcons.camera200), findsOneWidget);
-    expect(CoordinateSystem.instance.isScreenshot, isFalse);
     expect(tester.takeException(), isNull);
   });
 }

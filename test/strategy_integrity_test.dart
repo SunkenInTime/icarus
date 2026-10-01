@@ -4,11 +4,13 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:hive_ce/src/binary/binary_reader_impl.dart';
 import 'package:hive_ce/src/binary/binary_writer_impl.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -20,17 +22,11 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/hive/hive_adapters.dart';
 import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/providers/ability_provider.dart';
-import 'package:icarus/providers/agent_provider.dart';
-import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/utility_provider.dart';
 import 'package:path/path.dart' as path;
 
 class _IcaFixture {
@@ -99,86 +95,72 @@ Future<Map<String, dynamic>> _readIcaJson(File file) async {
   return decoded;
 }
 
-Map<String, dynamic> _buildExportPayload(StrategyData strategy) {
-  return {
-    'versionNumber': '${Settings.versionNumber}',
-    'mapData': Maps.mapNames[strategy.mapData],
-    'themePalette': strategy.themeOverridePalette?.toJson(),
-    if (strategy.themeProfileId != null)
-      'themeProfileId': strategy.themeProfileId,
-    'pages': strategy.pages.map((page) => page.toJson(strategy.id)).toList(),
-  };
-}
+/// Drives the app's real .ica import and export against a throwaway Hive
+/// library, so these tests fail whenever production import or export does.
+class _IcaHarness {
+  _IcaHarness._(this.directory, this.container);
 
-Future<StrategyData> _importStrategyFromDecoded({
-  required Map<String, dynamic> decoded,
-  required String strategyName,
-  required String strategyId,
-  required bool isZip,
-}) async {
-  final drawingData =
-      DrawingProvider.fromJson(jsonEncode(decoded['drawingData'] ?? []));
-  final agentData =
-      AgentProvider.fromJson(jsonEncode(decoded['agentData'] ?? []))
-          .whereType<PlacedAgent>()
-          .toList(growable: false);
-  final abilityData =
-      AbilityProvider.fromJson(jsonEncode(decoded['abilityData'] ?? []));
-  final textData = TextProvider.fromJson(jsonEncode(decoded['textData'] ?? []));
-  final utilityData =
-      UtilityProvider.fromJson(jsonEncode(decoded['utilityData'] ?? []));
+  final Directory directory;
+  final ProviderContainer container;
 
-  final settingsData = decoded['settingsData'] is Map
-      ? StrategySettings.fromJson(
-          Map<String, dynamic>.from(decoded['settingsData'] as Map),
-        )
-      : StrategySettings();
+  static Future<_IcaHarness> open() async {
+    final directory =
+        await Directory.systemTemp.createTemp('icarus-strategy-integrity-');
+    Hive.init(directory.path);
+    _ensureAdaptersRegistered();
+    await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+    await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+    await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+    await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+    await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+    await MapThemeProfilesProvider.bootstrap();
+    return _IcaHarness._(directory, ProviderContainer());
+  }
 
-  final isAttack = decoded['isAttack'] == null
-      ? true
-      : decoded['isAttack'].toString().toLowerCase() == 'true';
+  Box<StrategyData> get strategies =>
+      Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
-  final pages = decoded['pages'] != null
-      ? await StrategyPage.listFromJson(
-          json: jsonEncode(decoded['pages']),
-          strategyID: strategyId,
-          isZip: isZip,
-        )
-      : <StrategyPage>[];
+  Future<void> close() async {
+    container.dispose();
+    await Hive.close();
+    await directory.delete(recursive: true);
+  }
 
-  final mapData = MapProvider.fromJson(jsonEncode(decoded['mapData']));
-  final versionNumber =
-      int.tryParse(decoded['versionNumber']?.toString() ?? '') ??
-          Settings.versionNumber;
+  /// Imports [file] the way opening an .ica does and returns what was saved.
+  Future<StrategyData> importIca(File file) async {
+    final before = strategies.keys.toSet();
+    await container.read(strategyProvider.notifier).loadFromFilePath(file.path);
+    final added = strategies.keys.where((key) => !before.contains(key));
+    expect(added, hasLength(1), reason: path.basename(file.path));
+    return strategies.get(added.single)!;
+  }
 
-  StrategyData strategy = StrategyData(
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    drawingData: drawingData,
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    agentData: agentData,
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    abilityData: abilityData,
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    textData: textData,
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    imageData: const <PlacedImage>[],
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    utilityData: utilityData,
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    isAttack: isAttack,
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    strategySettings: settingsData,
-    id: strategyId,
-    name: strategyName,
-    mapData: mapData,
-    versionNumber: versionNumber,
-    lastEdited: DateTime.utc(2026, 1, 1),
-    folderID: null,
-    pages: pages,
-  );
+  Future<StrategyData> importPayload(
+    String name,
+    Map<String, dynamic> payload,
+  ) async {
+    return importIca(await writeIca(name, payload));
+  }
 
-  strategy = await StrategyProvider.migrateLegacyData(strategy);
-  return strategy;
+  /// Exports [strategy] the way the app does and returns the archived JSON.
+  Future<Map<String, dynamic>> exportIca(StrategyData strategy) async {
+    if (!strategies.containsKey(strategy.id)) {
+      await strategies.put(strategy.id, strategy);
+    }
+    final exported = await container
+        .read(strategyProvider.notifier)
+        .zipStrategy(id: strategy.id, saveDir: directory);
+    return _readIcaJson(File(exported));
+  }
+
+  Future<File> writeIca(String name, Map<String, dynamic> payload) async {
+    final bytes = utf8.encode(jsonEncode(payload));
+    final archive = Archive()
+      ..addFile(ArchiveFile('$name.json', bytes.length, bytes));
+    final file = File(path.join(directory.path, '$name.ica'));
+    await file.writeAsBytes(ZipEncoder().encodeBytes(archive));
+    return file;
+  }
 }
 
 void _expectCustomShapes(StrategyData strategy, String fixtureName) {
@@ -271,6 +253,8 @@ void _ensureAdaptersRegistered() {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() => appProviderContainer = ProviderContainer());
+  tearDownAll(() => appProviderContainer.dispose());
 
   group('Strategy fixture matrix', () {
     test('loads historical fixtures including base-test.ica', () async {
@@ -300,27 +284,27 @@ void main() {
       }
     });
 
-    test('legacy fixture import migrates to current schema', () async {
+    test('every historical fixture imports to the current schema and round-trips',
+        () async {
+      final harness = await _IcaHarness.open();
+      addTearDown(harness.close);
       final fixtures = await _loadFixtureMatrix();
 
       for (final fixture in fixtures) {
-        final imported = await _importStrategyFromDecoded(
-          decoded: fixture.decodedJson,
-          strategyName: path.basenameWithoutExtension(fixture.name),
-          strategyId: 'legacy-${fixture.name}',
-          isZip: true,
-        );
+        final imported = await harness.importIca(fixture.file);
 
         expect(imported.pages, isNotEmpty, reason: fixture.name);
-        expect(
-          imported.versionNumber,
-          lessThanOrEqualTo(Settings.versionNumber),
-          reason: fixture.name,
-        );
+        expect(imported.versionNumber, Settings.versionNumber,
+            reason: fixture.name);
         _expectCustomShapes(imported, fixture.name);
 
-        final payload = _buildExportPayload(imported);
-        expect(payload['pages'], isA<List<dynamic>>(), reason: fixture.name);
+        final exported = await harness.exportIca(imported);
+        final reImported = await harness.importIca(
+          await harness.writeIca('reimport', exported),
+        );
+        _expectCustomShapes(reImported, fixture.name);
+        expect(await harness.exportIca(reImported), exported,
+            reason: fixture.name);
       }
     });
   });
@@ -353,6 +337,8 @@ void main() {
 
     test('vision cone visibility survives current .ica export and import',
         () async {
+      final harness = await _IcaHarness.open();
+      addTearDown(harness.close);
       final source = StrategyData(
         id: 'vision-cone-source',
         name: 'Vision cone source',
@@ -387,20 +373,15 @@ void main() {
           ),
         ],
       );
-      final exported = _buildExportPayload(source);
+      final exported = await harness.exportIca(source);
 
-      final imported = await _importStrategyFromDecoded(
-        decoded: exported,
-        strategyName: 'Vision cone imported',
-        strategyId: 'vision-cone-imported',
-        isZip: true,
-      );
+      final imported = await harness.importPayload('vision-cone', exported);
       final ability = imported.pages.single.abilityData.single;
 
       expect(ability.visualState.showVisionCone, isFalse);
       expect(ability.rotation, 0.75);
       expect(ability.length, 80);
-      expect(_buildExportPayload(imported)['pages'], exported['pages']);
+      expect((await harness.exportIca(imported))['pages'], exported['pages']);
     });
 
     test('legacy Hive field 11 lineUps still deserialize into lineUpGroups',
@@ -583,6 +564,8 @@ void main() {
 
     test('current schema export -> import preserves canonical structure',
         () async {
+      final harness = await _IcaHarness.open();
+      addTearDown(harness.close);
       final currentPayload = <String, dynamic>{
         'versionNumber': '${Settings.versionNumber}',
         'mapData': 'ascent',
@@ -693,14 +676,10 @@ void main() {
         ],
       };
 
-      final imported = await _importStrategyFromDecoded(
-        decoded: currentPayload,
-        strategyName: 'CurrentTest',
-        strategyId: 'current-test',
-        isZip: true,
-      );
+      final imported =
+          await harness.importPayload('CurrentTest', currentPayload);
 
-      final exported = _buildExportPayload(imported);
+      final exported = await harness.exportIca(imported);
       final exportedLine = ((exported['pages'] as List).single
           as Map<String, dynamic>)['drawingData'] as List<dynamic>;
       expect(exportedLine, hasLength(1));
@@ -716,74 +695,14 @@ void main() {
         exportedLine.single,
         containsPair('showTraversalTime', true),
       );
-      final reImported = await _importStrategyFromDecoded(
-        decoded: exported,
-        strategyName: 'CurrentTestAgain',
-        strategyId: 'current-test-2',
-        isZip: true,
-      );
-      final reExported = _buildExportPayload(reImported);
+      final reImported =
+          await harness.importPayload('CurrentTestAgain', exported);
+      final reExported = await harness.exportIca(reImported);
 
       _expectCustomShapes(
         reImported,
         'current schema export -> import preserves custom shapes',
       );
-      expect(reExported, equals(exported));
-    });
-
-    test('legacy import -> current export -> re-import remains consistent',
-        () async {
-      final fixture = File(path.join(_fixtureDirectory, 'base-test.ica'));
-      final decoded = await _readIcaJson(fixture);
-
-      final importedLegacy = await _importStrategyFromDecoded(
-        decoded: decoded,
-        strategyName: 'legacy-base-test',
-        strategyId: 'legacy-base-test',
-        isZip: true,
-      );
-
-      final exportedCurrent = _buildExportPayload(importedLegacy);
-
-      final reImported = await _importStrategyFromDecoded(
-        decoded: exportedCurrent,
-        strategyName: 'legacy-base-test-reimport',
-        strategyId: 'legacy-base-test-reimport',
-        isZip: true,
-      );
-
-      final reExportedCurrent = _buildExportPayload(reImported);
-
-      expect(reImported.versionNumber, Settings.versionNumber);
-      _expectCustomShapes(reImported, 'base-test.ica');
-      expect(reExportedCurrent, equals(exportedCurrent));
-    });
-
-    test('previous-version custom-shape fixture imports and re-exports cleanly',
-        () async {
-      final fixture = File(path.join(_fixtureDirectory, 'base-test-v43.ica'));
-      final decoded = await _readIcaJson(fixture);
-
-      final imported = await _importStrategyFromDecoded(
-        decoded: decoded,
-        strategyName: 'legacy-v43',
-        strategyId: 'legacy-v43',
-        isZip: true,
-      );
-
-      final exported = _buildExportPayload(imported);
-
-      final reImported = await _importStrategyFromDecoded(
-        decoded: exported,
-        strategyName: 'legacy-v43-reimport',
-        strategyId: 'legacy-v43-reimport',
-        isZip: true,
-      );
-
-      final reExported = _buildExportPayload(reImported);
-
-      expect(imported.versionNumber, Settings.versionNumber);
-      _expectCustomShapes(imported, 'base-test-v43.ica');
       expect(reExported, equals(exported));
     });
 
@@ -820,22 +739,9 @@ void main() {
       expect(circle.customDiameter, 14.0);
     });
 
-    test('imported custom shapes retain dimensions and styling fields',
-        () async {
-      final fixture = File(path.join(_fixtureDirectory, 'base-test.ica'));
-      final decoded = await _readIcaJson(fixture);
-
-      final imported = await _importStrategyFromDecoded(
-        decoded: decoded,
-        strategyName: 'custom-shape-assertions',
-        strategyId: 'custom-shape-assertions',
-        isZip: true,
-      );
-
-      _expectCustomShapes(imported, 'base-test.ica');
-    });
-
     test('derived fields are recomputed on import', () async {
+      final harness = await _IcaHarness.open();
+      addTearDown(harness.close);
       final payload = <String, dynamic>{
         'versionNumber': '${Settings.versionNumber}',
         'mapData': 'ascent',
@@ -867,12 +773,7 @@ void main() {
         ],
       };
 
-      final imported = await _importStrategyFromDecoded(
-        decoded: payload,
-        strategyName: 'DerivedFieldTest',
-        strategyId: 'derived-field-test',
-        isZip: true,
-      );
+      final imported = await harness.importPayload('DerivedFieldTest', payload);
 
       expect(imported.pages.single.sortIndex, 0);
       expect(
@@ -996,57 +897,39 @@ void main() {
   });
 
   group('Negative integrity handling', () {
-    test('missing required mapData fails deterministically', () async {
-      final payload = <String, dynamic>{
+    test('missing required mapData fails loudly without saving', () async {
+      final harness = await _IcaHarness.open();
+      addTearDown(harness.close);
+      final file = await harness.writeIca('MissingMapData', {
         'versionNumber': '${Settings.versionNumber}',
         'pages': <dynamic>[],
-      };
+      });
 
-      expect(
-        () => _importStrategyFromDecoded(
-          decoded: payload,
-          strategyName: 'MissingMapData',
-          strategyId: 'missing-mapdata',
-          isZip: true,
-        ),
+      await expectLater(
+        harness.container
+            .read(strategyProvider.notifier)
+            .loadFromFilePath(file.path),
         throwsA(isA<StateError>()),
       );
+      expect(harness.strategies.isEmpty, isTrue);
     });
 
-    test('corrupt pages shape fails deterministically', () async {
-      final payload = <String, dynamic>{
+    test('corrupt pages shape fails loudly without saving', () async {
+      final harness = await _IcaHarness.open();
+      addTearDown(harness.close);
+      final file = await harness.writeIca('CorruptPages', {
         'versionNumber': '${Settings.versionNumber}',
         'mapData': 'ascent',
         'pages': 'not-a-list',
-      };
+      });
 
-      expect(
-        () => _importStrategyFromDecoded(
-          decoded: payload,
-          strategyName: 'CorruptPages',
-          strategyId: 'corrupt-pages',
-          isZip: true,
-        ),
+      await expectLater(
+        harness.container
+            .read(strategyProvider.notifier)
+            .loadFromFilePath(file.path),
         throwsA(anyOf(isA<TypeError>(), isA<FormatException>())),
       );
-    });
-
-    test('archive without json payload fails deterministically', () async {
-      final tmpDir = await Directory.systemTemp.createTemp('icarus-integrity');
-      final badFixture = File(path.join(tmpDir.path, 'no-json.ica'));
-
-      final archive = Archive();
-      archive.addFile(ArchiveFile('only.txt', 3, utf8.encode('bad')));
-      await badFixture.writeAsBytes(ZipEncoder().encode(archive));
-
-      try {
-        await expectLater(
-          _readIcaJson(badFixture),
-          throwsA(isA<FormatException>()),
-        );
-      } finally {
-        await tmpDir.delete(recursive: true);
-      }
+      expect(harness.strategies.isEmpty, isTrue);
     });
   });
 
