@@ -14,6 +14,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/hive/hive_adapters.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -289,23 +290,21 @@ void main() {
   });
 
   group('StrategyPage adapter', () {
-    test('writes the graph into a JSON mirror and round-trips losslessly', () {
+    test('writes the desktop 4.6.3 layout and round-trips losslessly', () {
       final page = _page();
       final bytes = _write(StrategyPageAdapter(), page);
       final fields = _fields(bytes);
 
-      // Slots older readers decode must only hold types they know.
+      // Exactly the slots desktop 4.6.3 writes, so a rollback keeps the page.
       expect(fields.keys.toSet(), {
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 18, 19, 20, //
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, //
       });
-      expect(fields[13], isA<String>());
-      expect(fields[18], isA<String>());
-      expect(fields[19], isA<String>());
-      expect(fields[20], isA<String>());
+      List<String> ids(Object? slot, String Function(dynamic) id) =>
+          [for (final item in slot as List) id(item)];
+      expect(ids(fields[15], (o) => o.id), page.lineUpOrigins.map((o) => o.id));
       expect(
-        _json(jsonDecode(fields[19] as String)),
-        _json(page.lineUpGraph.toJson()),
-      );
+          ids(fields[16], (l) => l.id), page.lineUpLandings.map((l) => l.id));
+      expect(ids(fields[17], (l) => l.id), page.lineUpLinks.map((l) => l.id));
 
       final restored = _read(bytes);
       _expectSameContent(restored, page);
@@ -313,35 +312,20 @@ void main() {
           .where((link) => link.landingId == 'landing-shared')
           .map((link) => link.originId);
       expect(shared, ['origin-a', 'origin-b']);
-      expect(
-        restored.lineUpOrigins.map((origin) => origin.agent.weapon),
-        [WeaponType.vandal, WeaponType.operator],
-      );
       expect(restored.agentData[1], isA<PlacedViewConeAgent>());
       expect(restored.drawingData.last, isA<EllipseDrawing>());
     });
 
-    test('weapons survive a round trip through the agents mirror', () {
+    test('weapons stay in the agent and lineup slots', () {
       final page = _page();
-      final bytes = _write(StrategyPageAdapter(), page);
-      final fields = _fields(bytes);
+      final fields = _fields(_write(StrategyPageAdapter(), page));
 
-      // The legacy slots carry no firearm for 3.2.3; the mirror does.
       expect(
-        (fields[4] as List).cast<PlacedAgent>().map((agent) => agent.weapon),
-        [WeaponType.none],
-      );
-      for (final lineUp in (fields[11] as List).cast<LineUp>()) {
-        expect(lineUp.agent.weapon, WeaponType.none);
-      }
-
-      final restored = _read(bytes);
-      expect(
-        restored.agentData.map((agent) => agent.weapon),
+        (fields[4] as List).cast<PlacedAgentNode>().map((a) => a.weapon),
         [WeaponType.sheriff, WeaponType.phantom, WeaponType.judge],
       );
       expect(
-        restored.lineUpOrigins.map((origin) => origin.agent.weapon),
+        (fields[15] as List).cast<LineUpOrigin>().map((o) => o.agent.weapon),
         [WeaponType.vandal, WeaponType.operator],
       );
     });
@@ -377,6 +361,34 @@ void main() {
 
       // Saving it again through the merged adapter loses nothing either.
       _expectSameContent(_read(_write(StrategyPageAdapter(), restored)), page);
+    });
+
+    test('reads pages cloud builds wrote with JSON mirrors (13, 18-20)', () {
+      final page = _page();
+      // The 3.2.3-safe layout cloud builds wrote between the main merge and
+      // the move to desktop 4.6.3's layout: a subset in the legacy slots, the
+      // whole page in the mirrors.
+      final bytes = _encodeFields({
+        0: page.id,
+        1: page.sortIndex,
+        2: page.name,
+        3: const <DrawingElement>[],
+        4: const <PlacedAgent>[],
+        5: const <PlacedAbility>[],
+        6: page.textData,
+        7: page.imageData,
+        8: page.utilityData,
+        9: page.isAttack,
+        10: page.settings,
+        11: const <LineUp>[],
+        13: AgentProvider.objectToJson(page.agentData),
+        14: page.isAutoNamed,
+        18: DrawingProvider.objectToJson(page.drawingData),
+        19: LineUpProvider.objectToJson(page.lineUpGraph),
+        20: AbilityProvider.objectToJson(page.abilityData),
+      });
+
+      _expectSameContent(_read(bytes), page);
     });
 
     test('reads pages written by cloud builds before the main merge', () {

@@ -1,9 +1,11 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReleaseCandidateInstaller,
-    [string]$PublicInstallerUrl = "https://github.com/SunkenInTime/icarus/releases/download/3.2.3/icarus-setup-3.2.3.exe",
-    [string]$PublicInstallerSha256 = "58e489dbdc5f338747fbe0681137cd86052e1bda727dbfe2b938861043a57870",
-    [string]$PublicVersion = "3.2.3",
+    # The last stable desktop release: the build users upgrade from, and the
+    # one a rollback reinstalls.
+    [string]$PublicInstallerUrl = "https://github.com/SunkenInTime/icarus/releases/download/desktop-stable-v4.6.3%2B103/icarus-setup.exe",
+    [string]$PublicInstallerSha256 = "356196e515ccab61c547c065dbe8fc93003865ac90c15239d10b318a03055079",
+    [string]$PublicVersion = "4.6.3",
     [string]$ReleaseCandidateVersion = "",
     [string]$PublicFixtureUrl = "https://raw.githubusercontent.com/SunkenInTime/icarus/fddec2b0b6163cf3962863db18ab0f06ea467773/base-test.ica",
     [string]$PublicFixtureSha256 = "166eb3ad31a19aca418081dc3ba949aedbf12b5049cd007fda410814a03b0b1a",

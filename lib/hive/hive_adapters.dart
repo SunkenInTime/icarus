@@ -83,9 +83,9 @@ const int strategyPageAdapterTypeId = 20;
 const int rectangleDrawingAdapterTypeId = 24;
 const int ellipseDrawingAdapterTypeId = 31;
 
-/// Omits the firearm when there is none, so an agent without one is exactly
-/// the record 3.2.3 wrote; WeaponType (typeId 38) is unknown to that build.
-/// Desktop 4.6 always wrote field 7, so reading accepts it when present.
+/// Writes the record desktop 4.6.3 writes, so a library rolled back to that
+/// release keeps every agent and firearm. Cloud builds before the main merge
+/// left out field 7 when there was no firearm; reading defaults it.
 class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
   @override
   final typeId = placedAgentAdapterTypeId;
@@ -109,9 +109,8 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
 
   @override
   void write(BinaryWriter writer, PlacedAgent obj) {
-    final hasWeapon = obj.weapon != WeaponType.none;
     writer
-      ..writeByte(hasWeapon ? 8 : 7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -125,17 +124,15 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       ..writeByte(5)
       ..write(obj.lineUpID)
       ..writeByte(6)
-      ..write(obj.state);
-    if (hasWeapon) {
-      writer
-        ..writeByte(7)
-        ..write(obj.weapon);
-    }
+      ..write(obj.state)
+      ..writeByte(7)
+      ..write(obj.weapon);
   }
 }
 
-/// Keeps values added after 3.2.3 primitive on disk so the public build can
-/// still decode and ignore them during an emergency rollback.
+/// Writes the record desktop 4.6.3 writes, visual state in field 9. Cloud
+/// builds before the main merge kept it as primitives in fields 10-14 instead;
+/// reading prefers those when present.
 class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   @override
   final typeId = placedAbilityAdapterTypeId;
@@ -176,7 +173,7 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -195,75 +192,24 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       ..write(obj.lineUpID)
       ..writeByte(8)
       ..write(obj.armLengthsMeters)
-      ..writeByte(10)
-      ..write(obj.visualState.showRangeOutline)
-      ..writeByte(11)
-      ..write(obj.visualState.showRangeFill)
-      ..writeByte(12)
-      ..write(obj.visualState.showInnerOutline)
-      ..writeByte(13)
-      ..write(obj.visualState.showInnerFill)
-      ..writeByte(14)
-      ..write(obj.visualState.showVisionCone);
+      ..writeByte(9)
+      ..write(obj.visualState);
   }
 }
 
-/// StrategyPage slots. The legacy slots hold only types 3.2.3 can decode, so
-/// the public build can still open the library after an emergency rollback;
-/// everything newer rides in primitive JSON mirrors that older builds ignore.
+/// Writes the record desktop 4.6.3 writes, so a library rolled back to that
+/// release opens with every drawing, agent, ability and lineup, and keeps them
+/// when that release saves.
 ///
-/// Slots 12 and 15-17 are read but never written: 12 holds lineup groups and
-/// 15-17 the lineup graph as written by desktop 4.x, whose typeIds 3.2.3 cannot
-/// decode. Cloud builds before the main merge wrote JSON mirrors at 15
-/// (drawings) and 16 (lineup groups); a String at 15 identifies that layout.
+/// Cloud builds before the main merge wrote a 3.2.3-safe subset into the
+/// legacy slots and the full page into JSON mirrors: agents at 13, drawings
+/// at 18, the lineup graph at 19 and abilities at 20. Earlier still, drawings
+/// at 15 and lineup groups at 16, which a String at 15 identifies. Reading
+/// prefers any mirror present, so those pages load whole.
 const int _pageAgentsJsonField = 13;
 const int _pageDrawingsJsonField = 18;
 const int _pageLineUpGraphJsonField = 19;
 const int _pageAbilitiesJsonField = 20;
-
-/// Every agent the public 3.2.3 build knows, with its ability count. That
-/// build decodes an unknown AgentType as Jett and resolves an ability by
-/// `agents[type].abilities[index]`, so a newer agent would load as the wrong
-/// agent, or crash the whole strategy when the index is out of range. Frozen
-/// at 3.2.3: never add to it.
-const Map<AgentType, int> _publicBuildAbilityCounts = {
-  AgentType.jett: 4,
-  AgentType.raze: 4,
-  AgentType.pheonix: 4,
-  AgentType.astra: 5,
-  AgentType.clove: 4,
-  AgentType.breach: 4,
-  AgentType.iso: 4,
-  AgentType.viper: 4,
-  AgentType.deadlock: 4,
-  AgentType.yoru: 4,
-  AgentType.sova: 4,
-  AgentType.skye: 4,
-  AgentType.kayo: 4,
-  AgentType.killjoy: 4,
-  AgentType.brimstone: 4,
-  AgentType.cypher: 4,
-  AgentType.chamber: 4,
-  AgentType.fade: 4,
-  AgentType.gekko: 4,
-  AgentType.harbor: 4,
-  AgentType.neon: 4,
-  AgentType.omen: 4,
-  AgentType.reyna: 4,
-  AgentType.sage: 4,
-  AgentType.vyse: 4,
-  AgentType.tejo: 4,
-  AgentType.waylay: 4,
-  AgentType.veto: 4,
-};
-
-bool _publicBuildResolvesAgent(AgentType type) =>
-    _publicBuildAbilityCounts.containsKey(type);
-
-bool _publicBuildResolvesAbility(AbilityInfo ability) {
-  final count = _publicBuildAbilityCounts[ability.type];
-  return count != null && ability.index < count;
-}
 
 class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   @override
@@ -335,33 +281,6 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
 
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
-    final compatibilityDrawings = obj.drawingData
-        .where(
-          (drawing) =>
-              drawing is FreeDrawing ||
-              drawing is Line ||
-              drawing is RectangleDrawing,
-        )
-        .toList(growable: false);
-    // Legacy slots hold only what 3.2.3 resolves faithfully. Weapons ride in
-    // the agents mirror (13); agents and abilities newer than 3.2.3 ride in
-    // the agents (13), abilities (20) and lineup graph (19) mirrors.
-    final compatibilityAgents = obj.agentData
-        .whereType<PlacedAgent>()
-        .where((agent) => _publicBuildResolvesAgent(agent.type))
-        .map(_withoutWeapon)
-        .toList(growable: false);
-    final compatibilityAbilities = obj.abilityData
-        .where((ability) => _publicBuildResolvesAbility(ability.data))
-        .toList(growable: false);
-    final compatibilityLineUps = [
-      // ignore: deprecated_member_use_from_same_package
-      for (final lineUp in obj.lineUps)
-        if (_publicBuildResolvesAgent(lineUp.agent.type) &&
-            _publicBuildResolvesAbility(lineUp.ability.data))
-          lineUp.copyWith(agent: _withoutWeapon(lineUp.agent)),
-    ];
-
     writer
       ..writeByte(17)
       ..writeByte(0)
@@ -371,11 +290,11 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(2)
       ..write(obj.name)
       ..writeByte(3)
-      ..write(compatibilityDrawings)
+      ..write(obj.drawingData)
       ..writeByte(4)
-      ..write(compatibilityAgents)
+      ..write(obj.agentData)
       ..writeByte(5)
-      ..write(compatibilityAbilities)
+      ..write(obj.abilityData)
       ..writeByte(6)
       ..write(obj.textData)
       ..writeByte(7)
@@ -387,22 +306,19 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(10)
       ..write(obj.settings)
       ..writeByte(11)
-      ..write(compatibilityLineUps)
-      ..writeByte(_pageAgentsJsonField)
-      ..write(AgentProvider.objectToJson(obj.agentData))
+      // ignore: deprecated_member_use_from_same_package
+      ..write(obj.lineUps)
+      ..writeByte(12)
+      // ignore: deprecated_member_use_from_same_package
+      ..write(obj.lineUpGroups)
       ..writeByte(14)
       ..write(obj.isAutoNamed)
-      ..writeByte(_pageDrawingsJsonField)
-      ..write(DrawingProvider.objectToJson(obj.drawingData))
-      ..writeByte(_pageLineUpGraphJsonField)
-      ..write(LineUpProvider.objectToJson(obj.lineUpGraph))
-      ..writeByte(_pageAbilitiesJsonField)
-      ..write(AbilityProvider.objectToJson(obj.abilityData));
-  }
-
-  static PlacedAgent _withoutWeapon(PlacedAgent agent) {
-    if (agent.weapon == WeaponType.none) return agent;
-    return agent.copyWith(weapon: WeaponType.none)..isDeleted = agent.isDeleted;
+      ..writeByte(15)
+      ..write(obj.lineUpOrigins)
+      ..writeByte(16)
+      ..write(obj.lineUpLandings)
+      ..writeByte(17)
+      ..write(obj.lineUpLinks);
   }
 }
 
@@ -655,6 +571,9 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
   }
 }
 
+/// Writes the record desktop 4.6.3 writes: the icon id at 4, the custom color
+/// as ARGB at 6. Cloud builds before the main merge wrote a legacy icon and a
+/// Color there and the exact values at 7 and 8; reading prefers those.
 class FolderAdapter extends TypeAdapter<Folder> {
   @override
   final typeId = folderAdapterTypeId;
@@ -684,7 +603,7 @@ class FolderAdapter extends TypeAdapter<Folder> {
   @override
   void write(BinaryWriter writer, Folder obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -694,14 +613,10 @@ class FolderAdapter extends TypeAdapter<Folder> {
       ..writeByte(3)
       ..write(obj.dateCreated)
       ..writeByte(4)
-      ..write(obj.icon)
+      ..write(obj.iconId)
       ..writeByte(5)
       ..write(obj.color)
       ..writeByte(6)
-      ..write(obj.customColor)
-      ..writeByte(7)
-      ..write(obj.iconId)
-      ..writeByte(8)
       ..write(obj.customColor?.toARGB32());
   }
 }

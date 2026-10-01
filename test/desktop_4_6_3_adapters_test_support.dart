@@ -1,0 +1,273 @@
+// Desktop 4.6.3's adapters for the typeIds this build writes by hand, copied
+// verbatim from the desktop-stable-v4.6.3+103 tag (only the class names
+// changed). Every other adapter is unchanged since that release. Rollback
+// tests decode with these to prove 4.6.3 opens, and keeps, what this build
+// saves. Never edit them to match this build.
+
+// ignore_for_file: deprecated_member_use_from_same_package
+
+import 'package:flutter/material.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/folder_icons.dart';
+import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/weapons.dart';
+import 'package:icarus/domain/folder.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
+
+class Desktop463PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
+  @override
+  final typeId = 2;
+
+  @override
+  PlacedAgent read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedAgent(
+      type: fields[0] as AgentType,
+      position: fields[4] as Offset,
+      id: fields[2] as String,
+      isAlly: fields[1] == null ? true : fields[1] as bool,
+      lineUpID: fields[5] as String?,
+      state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
+      weapon: fields[7] == null ? WeaponType.none : fields[7] as WeaponType,
+    )..isDeleted = fields[3] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedAgent obj) {
+    writer
+      ..writeByte(8)
+      ..writeByte(0)
+      ..write(obj.type)
+      ..writeByte(1)
+      ..write(obj.isAlly)
+      ..writeByte(2)
+      ..write(obj.id)
+      ..writeByte(3)
+      ..write(obj.isDeleted)
+      ..writeByte(4)
+      ..write(obj.position)
+      ..writeByte(5)
+      ..write(obj.lineUpID)
+      ..writeByte(6)
+      ..write(obj.state)
+      ..writeByte(7)
+      ..write(obj.weapon);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Desktop463PlacedAgentAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class Desktop463PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
+  @override
+  final typeId = 3;
+
+  @override
+  PlacedAbility read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedAbility(
+      data: fields[0] as AbilityInfo,
+      position: fields[5] as Offset,
+      id: fields[3] as String,
+      isAlly: fields[1] == null ? true : fields[1] as bool,
+      length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
+      lineUpID: fields[7] as String?,
+      rotation: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+      visualState: fields[9] == null
+          ? const AbilityVisualState()
+          : fields[9] as AbilityVisualState,
+      armLengthsMeters: (fields[8] as List?)?.cast<double>(),
+    )..isDeleted = fields[4] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedAbility obj) {
+    writer
+      ..writeByte(10)
+      ..writeByte(0)
+      ..write(obj.data)
+      ..writeByte(1)
+      ..write(obj.isAlly)
+      ..writeByte(2)
+      ..write(obj.rotation)
+      ..writeByte(3)
+      ..write(obj.id)
+      ..writeByte(4)
+      ..write(obj.isDeleted)
+      ..writeByte(5)
+      ..write(obj.position)
+      ..writeByte(6)
+      ..write(obj.length)
+      ..writeByte(7)
+      ..write(obj.lineUpID)
+      ..writeByte(8)
+      ..write(obj.armLengthsMeters)
+      ..writeByte(9)
+      ..write(obj.visualState);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Desktop463PlacedAbilityAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class Desktop463StrategyPageAdapter extends TypeAdapter<StrategyPage> {
+  @override
+  final typeId = 20;
+
+  @override
+  StrategyPage read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return StrategyPage(
+      id: fields[0] as String,
+      name: fields[2] as String,
+      isAutoNamed: fields[14] as bool?,
+      drawingData: (fields[3] as List).cast<DrawingElement>(),
+      agentData: (fields[4] as List).cast<PlacedAgentNode>(),
+      abilityData: (fields[5] as List).cast<PlacedAbility>(),
+      textData: (fields[6] as List).cast<PlacedText>(),
+      imageData: (fields[7] as List).cast<PlacedImage>(),
+      utilityData: (fields[8] as List).cast<PlacedUtility>(),
+      sortIndex: (fields[1] as num).toInt(),
+      isAttack: fields[9] as bool,
+      settings: fields[10] as StrategySettings,
+      lineUpOrigins: fields[15] == null
+          ? const []
+          : (fields[15] as List).cast<LineUpOrigin>(),
+      lineUpLandings: fields[16] == null
+          ? const []
+          : (fields[16] as List).cast<LineUpLanding>(),
+      lineUpLinks: fields[17] == null
+          ? const []
+          : (fields[17] as List).cast<LineUpLink>(),
+      lineUpGroups: fields[12] == null
+          ? const []
+          : (fields[12] as List).cast<LineUpGroup>(),
+      lineUps:
+          fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, StrategyPage obj) {
+    writer
+      ..writeByte(17)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.sortIndex)
+      ..writeByte(2)
+      ..write(obj.name)
+      ..writeByte(3)
+      ..write(obj.drawingData)
+      ..writeByte(4)
+      ..write(obj.agentData)
+      ..writeByte(5)
+      ..write(obj.abilityData)
+      ..writeByte(6)
+      ..write(obj.textData)
+      ..writeByte(7)
+      ..write(obj.imageData)
+      ..writeByte(8)
+      ..write(obj.utilityData)
+      ..writeByte(9)
+      ..write(obj.isAttack)
+      ..writeByte(10)
+      ..write(obj.settings)
+      ..writeByte(11)
+      ..write(obj.lineUps)
+      ..writeByte(12)
+      ..write(obj.lineUpGroups)
+      ..writeByte(14)
+      ..write(obj.isAutoNamed)
+      ..writeByte(15)
+      ..write(obj.lineUpOrigins)
+      ..writeByte(16)
+      ..write(obj.lineUpLandings)
+      ..writeByte(17)
+      ..write(obj.lineUpLinks);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Desktop463StrategyPageAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class Desktop463FolderAdapter extends TypeAdapter<Folder> {
+  @override
+  final typeId = 17;
+
+  @override
+  Folder read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (var i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return Folder(
+      name: fields[0] as String,
+      id: fields[1] as String,
+      parentID: fields[2] as String?,
+      dateCreated: fields[3] as DateTime,
+      iconId: FolderIconRegistry.idForStoredValue(fields[4]),
+      color: fields[5] as FolderColor? ?? FolderColor.red,
+      customColor: switch (fields[6]) {
+        final int colorValue => Color(colorValue),
+        final Color color => color,
+        null => null,
+        _ => null,
+      },
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, Folder obj) {
+    writer
+      ..writeByte(7)
+      ..writeByte(0)
+      ..write(obj.name)
+      ..writeByte(1)
+      ..write(obj.id)
+      ..writeByte(2)
+      ..write(obj.parentID)
+      ..writeByte(3)
+      ..write(obj.dateCreated)
+      ..writeByte(4)
+      ..write(obj.iconId)
+      ..writeByte(5)
+      ..write(obj.color)
+      ..writeByte(6)
+      ..write(obj.customColor?.toARGB32());
+  }
+}
