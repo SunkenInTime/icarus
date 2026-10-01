@@ -513,6 +513,7 @@ void main() {
         jsonDecode(source) as Map<String, dynamic>,
       );
       const world = Offset(1000 * 16 / 9, 1000);
+      expect(geometry.attackLayers.first.segments, isNotEmpty);
       expect(geometry.defenseLayers, hasLength(geometry.attackLayers.length));
       for (var layer = 0; layer < geometry.attackLayers.length; layer++) {
         final attack = geometry.attackLayers[layer].segments;

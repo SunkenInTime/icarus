@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
@@ -163,6 +166,44 @@ void main() {
       closeTo(
           3 * AgentData.inGameMeters * Maps.mapScale[_map]! * _virtualToWorld,
           1e-7),
+    );
+  });
+
+  test('zip export/import does not shift Paranoia a second time', () async {
+    final migrated = await StrategyProvider.migrateLegacyData(_strategy());
+    final exportedPages =
+        migrated.pages.map((p) => p.toJson(migrated.id)).toList();
+    final bytes = utf8.encode(
+      jsonEncode({
+        'versionNumber': '${migrated.versionNumber}',
+        'pages': exportedPages,
+      }),
+    );
+    final archive = Archive()
+      ..addFile(ArchiveFile('strategy.json', bytes.length, bytes));
+    final decoded = jsonDecode(
+      utf8.decode(
+        ZipDecoder()
+            .decodeBytes(ZipEncoder().encode(archive))
+            .files
+            .single
+            .content as List<int>,
+      ),
+    ) as Map<String, dynamic>;
+    final pages = await StrategyPage.listFromJson(
+      json: jsonEncode(decoded['pages']),
+      strategyID: migrated.id,
+      isZip: true,
+    );
+    final restored = await StrategyProvider.migrateLegacyData(
+      migrated.copyWith(
+        versionNumber: int.parse(decoded['versionNumber'] as String),
+        pages: pages,
+      ),
+    );
+    expect(
+      restored.pages.map((p) => p.toJson(restored.id)).toList(),
+      exportedPages,
     );
   });
 }

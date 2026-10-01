@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -100,12 +100,18 @@ Future<Map<String, dynamic>> _readIcaJson(File file) async {
 class _IcaHarness {
   _IcaHarness._(this.directory, this.container);
 
+  static const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+
   final Directory directory;
   final ProviderContainer container;
 
   static Future<_IcaHarness> open() async {
     final directory =
         await Directory.systemTemp.createTemp('icarus-strategy-integrity-');
+    // Imported and exported images live under the app's support and temp
+    // folders; point both into this library so close() removes them.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, (_) async => directory.path);
     Hive.init(directory.path);
     _ensureAdaptersRegistered();
     await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
@@ -123,6 +129,8 @@ class _IcaHarness {
   Future<void> close() async {
     container.dispose();
     await Hive.close();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, null);
     await directory.delete(recursive: true);
   }
 
@@ -142,15 +150,15 @@ class _IcaHarness {
     return importIca(await writeIca(name, payload));
   }
 
-  /// Exports [strategy] the way the app does and returns the archived JSON.
-  Future<Map<String, dynamic>> exportIca(StrategyData strategy) async {
+  /// Exports [strategy] the way the app does and returns the .ica file.
+  Future<File> exportIca(StrategyData strategy) async {
     if (!strategies.containsKey(strategy.id)) {
       await strategies.put(strategy.id, strategy);
     }
     final exported = await container
         .read(strategyProvider.notifier)
         .zipStrategy(id: strategy.id, saveDir: directory);
-    return _readIcaJson(File(exported));
+    return File(exported);
   }
 
   Future<File> writeIca(String name, Map<String, dynamic> payload) async {
@@ -161,6 +169,16 @@ class _IcaHarness {
     await file.writeAsBytes(ZipEncoder().encodeBytes(archive));
     return file;
   }
+}
+
+/// Every non-JSON file in an .ica archive, by name.
+Future<Map<String, List<int>>> _icaAttachments(File file) async {
+  final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
+  return {
+    for (final entry in archive)
+      if (entry.isFile && path.extension(entry.name).toLowerCase() != '.json')
+        path.basename(entry.name): entry.content as List<int>,
+  };
 }
 
 void _expectCustomShapes(StrategyData strategy, String fixtureName) {
@@ -299,12 +317,18 @@ void main() {
         _expectCustomShapes(imported, fixture.name);
 
         final exported = await harness.exportIca(imported);
-        final reImported = await harness.importIca(
-          await harness.writeIca('reimport', exported),
-        );
+        expect(await _icaAttachments(exported),
+            await _icaAttachments(fixture.file),
+            reason: '${fixture.name} images');
+
+        final reImported = await harness.importIca(exported);
         _expectCustomShapes(reImported, fixture.name);
-        expect(await harness.exportIca(reImported), exported,
+        final reExported = await harness.exportIca(reImported);
+        expect(await _readIcaJson(reExported), await _readIcaJson(exported),
             reason: fixture.name);
+        expect(await _icaAttachments(reExported),
+            await _icaAttachments(exported),
+            reason: '${fixture.name} images');
       }
     });
   });
@@ -373,15 +397,19 @@ void main() {
           ),
         ],
       );
-      final exported = await harness.exportIca(source);
+      final exportedFile = await harness.exportIca(source);
+      final exported = await _readIcaJson(exportedFile);
 
-      final imported = await harness.importPayload('vision-cone', exported);
+      final imported = await harness.importIca(exportedFile);
       final ability = imported.pages.single.abilityData.single;
 
       expect(ability.visualState.showVisionCone, isFalse);
       expect(ability.rotation, 0.75);
       expect(ability.length, 80);
-      expect((await harness.exportIca(imported))['pages'], exported['pages']);
+      expect(
+        (await _readIcaJson(await harness.exportIca(imported)))['pages'],
+        exported['pages'],
+      );
     });
 
     test('legacy Hive field 11 lineUps still deserialize into lineUpGroups',
@@ -679,7 +707,8 @@ void main() {
       final imported =
           await harness.importPayload('CurrentTest', currentPayload);
 
-      final exported = await harness.exportIca(imported);
+      final exportedFile = await harness.exportIca(imported);
+      final exported = await _readIcaJson(exportedFile);
       final exportedLine = ((exported['pages'] as List).single
           as Map<String, dynamic>)['drawingData'] as List<dynamic>;
       expect(exportedLine, hasLength(1));
@@ -695,9 +724,8 @@ void main() {
         exportedLine.single,
         containsPair('showTraversalTime', true),
       );
-      final reImported =
-          await harness.importPayload('CurrentTestAgain', exported);
-      final reExported = await harness.exportIca(reImported);
+      final reImported = await harness.importIca(exportedFile);
+      final reExported = await _readIcaJson(await harness.exportIca(reImported));
 
       _expectCustomShapes(
         reImported,
@@ -934,8 +962,10 @@ void main() {
   });
 
   group('Strategy Hive round-trip', () {
+    late Directory tempDir;
+
     setUpAll(() async {
-      final tempDir = await Directory.systemTemp.createTemp(
+      tempDir = await Directory.systemTemp.createTemp(
         'icarus-strategy-integrity-hive',
       );
       Hive.init(tempDir.path);
@@ -953,6 +983,7 @@ void main() {
 
     tearDownAll(() async {
       await Hive.close();
+      await tempDir.delete(recursive: true);
     });
 
     test('grouped lineUps round-trip through Hive without losing sync',

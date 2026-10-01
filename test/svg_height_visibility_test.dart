@@ -412,6 +412,23 @@ void main() {
     }
   });
 
+  test('a dense cone query reports its ray and edge work', () {
+    final model = SvgHeightVisibility.fromJson(data([
+      for (var i = 0; i < 120; i++)
+        wall('$i', [
+          rectangle(
+              (i % 12) * 8, (i ~/ 12) * 8, (i % 12) * 8 + 1, (i ~/ 12) * 8 + 4)
+        ])
+    ]));
+    final result = model.cone(
+        origin: const Offset(3, 3),
+        directionRadians: .6,
+        range: 100,
+        apertureRadians: 1.8);
+    expect(result.stats.edgeTests, greaterThan(0));
+    expect(result.stats.rayCount, greaterThan(96));
+  });
+
   test('rejects missing confidence, invalid units and reversed intervals', () {
     final missing = wall('a', [rectangle(1, 1, 2, 2)])..remove('unknownHeight');
     expect(() => SvgHeightVisibility.fromJson(data([missing])),
