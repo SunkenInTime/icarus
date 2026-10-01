@@ -240,6 +240,7 @@ class _AckingRepository extends Fake implements ConvexStrategyRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     batches += 1;
     return [for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2)];

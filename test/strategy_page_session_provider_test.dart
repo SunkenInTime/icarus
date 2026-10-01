@@ -404,6 +404,7 @@ class _HeldFirstBatchRepository implements ConvexStrategyRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     calls.add(ops);
     if (calls.length == 1) {
