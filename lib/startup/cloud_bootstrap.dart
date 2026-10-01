@@ -51,26 +51,18 @@ CloudStartup _unavailable(String reason, Object error, StackTrace stackTrace) {
   return CloudStartup.unavailable(reason);
 }
 
-/// Opens the boxes that hold unsent cloud work. Hive's crash recovery is off:
-/// it truncates a box at its first unreadable frame, which would silently
-/// delete every change saved after it. A box that will not open is left on
-/// disk byte for byte, and the open fails.
+/// Opens the boxes that hold unsent cloud work. Hive's crash recovery stays
+/// on: a crash in the middle of a write leaves a torn last frame, and
+/// recovery trims only that write, which never completed and was never
+/// reported saved. Turning it off would leave cloud sync off after any such
+/// crash, with no way back.
 Future<void> openCloudOutboxes() async {
-  await Hive.openBox<dynamic>(
-    HiveBoxNames.strategyOutboxBox,
-    crashRecovery: false,
-  );
+  await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
   await prepareDurableStrategyOutbox();
-  await Hive.openBox<dynamic>(
-    HiveBoxNames.cloudMediaOutboxBox,
-    crashRecovery: false,
-  );
+  await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
   await prepareDurableCloudMediaOutbox();
   if (!deviceHasImageFiles) {
-    await Hive.openBox<dynamic>(
-      HiveBoxNames.pendingMediaBytesBox,
-      crashRecovery: false,
-    );
+    await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
   }
 }
 

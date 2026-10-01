@@ -78,33 +78,35 @@ void main() {
 
     tearDown(() async {
       await Hive.close();
-      try {
-        await tempDir.delete(recursive: true);
-      } on FileSystemException {
-        // A box that fails to open keeps its file handles until the process
-        // exits, and Windows will not delete an open file.
-      }
+      await tempDir.delete(recursive: true);
     });
 
-    test('a corrupt outbox is kept byte for byte, not recovered', () async {
-      // Two saved ops; the first one's bytes go bad on disk. Hive's crash
-      // recovery would truncate the file there and drop both.
+    test('a write torn by a crash is trimmed and earlier ops survive',
+        () async {
+      // Two saved ops, then a crash partway through writing a third.
       final box = await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
-      await box.put('first-op', 'x' * 200);
-      await box.put('second-op', 'still unsent');
+      await box.put('first-op', 'saved');
+      await box.put('second-op', 'also saved');
       await box.close();
       final file =
           File('${tempDir.path}/${HiveBoxNames.strategyOutboxBox}.hive');
-      final bytes = file.readAsBytesSync();
-      final firstValue = String.fromCharCodes(bytes).indexOf('x' * 200);
-      expect(firstValue, isNonNegative);
-      bytes[firstValue + 100] = 'y'.codeUnitAt(0);
-      file.writeAsBytesSync(bytes);
+      final saved = file.readAsBytesSync();
 
-      await expectLater(openCloudOutboxes(), throwsA(isA<HiveError>()));
+      final scratch = await Hive.openBox<dynamic>('scratch');
+      await scratch.put('torn-op', 'never finished writing');
+      await scratch.close();
+      final tornFrame = File('${tempDir.path}/scratch.hive').readAsBytesSync();
+      file.writeAsBytesSync([
+        ...saved,
+        ...tornFrame.sublist(0, tornFrame.length ~/ 2),
+      ]);
 
-      expect(file.readAsBytesSync(), bytes);
-      expect(Hive.isBoxOpen(HiveBoxNames.strategyOutboxBox), isFalse);
+      await openCloudOutboxes();
+
+      final outbox = Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox);
+      expect(outbox.get('first-op'), 'saved');
+      expect(outbox.get('second-op'), 'also saved');
+      expect(outbox.containsKey('torn-op'), isFalse);
     });
   });
 
