@@ -64,6 +64,155 @@ void main() {
     );
   });
 
+  test('a restored page is read fresh with the shell and watched again',
+      () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+    // A teammate deletes page a; the editor's live read moves to b.
+    repository.shells.add(_shell(['b']));
+    await _settle();
+    expect(remote.activePagePublicId, 'b');
+
+    // Restored on the server; the shell watched has not caught up yet.
+    await remote.showRestoredPage('a');
+
+    final snapshot = container.read(remoteEditorSnapshotProvider).valueOrNull;
+    expect(snapshot?.activePage?.page.publicId, 'a');
+    expect(snapshot?.pages.map((page) => page.publicId), ['a', 'b']);
+    expect(repository.watchedPages.last, 'a');
+    repository.pageStreams['a']!.add(_page('a', revision: 2));
+    await _settle();
+    expect(
+      container
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.page
+          .revision,
+      2,
+    );
+  });
+
+  test('a read from before a restore finishing late changes nothing', () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+    repository.shells.add(_shell(['b'], revision: 2));
+    await _settle();
+
+    // Restoring bumped the strategy's revision.
+    repository.shellRevision = 3;
+    // A refresh starts while the page is still deleted...
+    final gate = Completer<void>();
+    repository.staleShellGate = gate;
+    final stale = remote.refresh();
+    // ...and the page is restored and shown before it answers.
+    await remote.showRestoredPage('a');
+    gate.complete();
+    await stale;
+    // The watched shell's last push, from before the restore, arrives late.
+    repository.shells.add(_shell(['b'], revision: 2));
+    await _settle();
+
+    final snapshot = container.read(remoteEditorSnapshotProvider).valueOrNull;
+    expect(snapshot?.activePage?.page.publicId, 'a');
+    expect(snapshot?.pages.map((page) => page.publicId), ['a', 'b']);
+    expect(remote.activePagePublicId, 'a');
+  });
+
+  test('a refresh never replaces a newer shell the live read brought',
+      () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'b');
+
+    // A refresh reads the shell from while a was deleted, then waits on b.
+    repository.shellRevision = 2;
+    repository.failPageReads = false;
+    final gate = Completer<void>();
+    repository.pageReadGate = gate;
+    final refresh = remote.refresh();
+    await _settle();
+    // Meanwhile a teammate restores a; the live read brings it.
+    repository.shells.add(_shell(['a', 'b'], revision: 3));
+    await _settle();
+    gate.complete();
+    await refresh;
+
+    final snapshot = container.read(remoteEditorSnapshotProvider).valueOrNull;
+    expect(snapshot?.header.revision, 3);
+    expect(snapshot?.pages.map((page) => page.publicId), ['a', 'b']);
+  });
+
+  test('a page read a restore overtook failing late changes nothing', () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+
+    // A is deleted: the editor starts reading b, slowly, and it will fail.
+    final gate = Completer<void>();
+    repository.pageReadGate = gate;
+    repository.failNextRead.add('b');
+    final selectB = remote.setActivePage('b');
+    await _settle();
+    // A is restored and shown before b's read answers.
+    await remote.showRestoredPage('a');
+    gate.complete();
+    await selectB;
+
+    final state = container.read(remoteEditorSnapshotProvider);
+    expect(state.hasError, isFalse);
+    expect(state.valueOrNull?.activePage?.page.publicId, 'a');
+    repository.pageStreams['a']!.add(_page('a', revision: 2));
+    await _settle();
+    expect(
+      container
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.page
+          .revision,
+      2,
+    );
+  });
+
   test('a signed-out reader on a share link reads through the link', () async {
     final repository = _Repository();
     final auth = _SignedOutAuthProvider();
@@ -134,12 +283,13 @@ RemotePage _remotePage(String id, {int revision = 1}) => RemotePage(
       updatedAt: DateTime.utc(2026),
     );
 
-RemoteStrategyShell _shell(List<String> pageIds) => RemoteStrategyShell(
+RemoteStrategyShell _shell(List<String> pageIds, {int revision = 1}) =>
+    RemoteStrategyShell(
       header: RemoteStrategyHeader(
         publicId: 'strategy',
         name: 'Strategy',
         mapData: 'ascent',
-        revision: 1,
+        revision: revision,
         createdAt: DateTime.utc(2026),
         updatedAt: DateTime.utc(2026),
         role: 'owner',
@@ -171,6 +321,19 @@ class _Repository extends ConvexStrategyRepository {
   bool failPageReads = false;
   Object? shellError;
 
+  /// While set, a shell read answers from before page a was restored, once
+  /// the gate opens.
+  Completer<void>? staleShellGate;
+
+  /// The revision of the shell reads answer.
+  int shellRevision = 1;
+
+  /// While set, the next page read waits for it, then answers as usual.
+  Completer<void>? pageReadGate;
+
+  /// Pages whose next read fails.
+  final failNextRead = <String>{};
+
   @override
   Future<RemoteStrategyShell> fetchShell(
     String strategyPublicId, {
@@ -178,7 +341,13 @@ class _Repository extends ConvexStrategyRepository {
   }) async {
     readTokens.add(shareToken);
     if (shellError case final error?) throw error;
-    return _shell(failPageReads ? ['b'] : ['a', 'b']);
+    final gate = staleShellGate;
+    if (gate != null) {
+      staleShellGate = null;
+      await gate.future;
+      return _shell(['b'], revision: 2);
+    }
+    return _shell(failPageReads ? ['b'] : ['a', 'b'], revision: shellRevision);
   }
 
   @override
@@ -197,7 +366,14 @@ class _Repository extends ConvexStrategyRepository {
     String? shareToken,
   }) async {
     readTokens.add(shareToken);
-    if (failPageReads) throw StateError('offline');
+    final gate = pageReadGate;
+    if (gate != null) {
+      pageReadGate = null;
+      await gate.future;
+    }
+    if (failPageReads || failNextRead.remove(pagePublicId)) {
+      throw StateError('offline');
+    }
     return _page(pagePublicId);
   }
 

@@ -60,9 +60,20 @@ export default defineSchema({
     revision: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    // Set when the page is deleted: it is in the trash, hidden from every
+    // read and refusing changes, with its content kept so it can be
+    // restored. Purged once PAGE_TRASH_RETENTION_MS has passed (see
+    // lib/entities.ts). Absent on every live page.
+    deletedAt: v.optional(v.number()),
+    // Who deleted it, while it is in the trash; shown in Recently deleted.
+    // Absent on live pages and on pages trashed before it was recorded.
+    deletedBy: v.optional(v.id("users")),
   })
     .index("by_publicId", ["publicId"])
-    .index("by_strategyId", ["strategyId"]),
+    .index("by_strategyId", ["strategyId"])
+    // Live pages only: `.eq("deletedAt", undefined)` matches a missing field.
+    .index("by_strategyId_and_deletedAt", ["strategyId", "deletedAt"])
+    .index("by_deletedAt", ["deletedAt"]),
   pageContents: defineTable({
     pageId: v.id("pages"),
     settings: v.optional(strategySettingsValidator),

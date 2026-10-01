@@ -225,6 +225,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
   }
 
+  /// Takes [pageId] back as the hydrated page, with the base it was drawn
+  /// from and the acks recorded since: the canvas never left it, only the
+  /// live read did, as when a teammate deleted it and it was restored. Its
+  /// unsent work is diffed against that base again.
+  void resumePage({
+    required String strategyPublicId,
+    required String pageId,
+  }) {
+    setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
+    state = state.copyWith(hydratedPageId: pageId);
+  }
+
   /// The entities of [pageId] whose server copy in [snapshot] differs from the
   /// one the canvas last drew.
   Set<EntitySyncKey> remoteChangesSinceHydration(

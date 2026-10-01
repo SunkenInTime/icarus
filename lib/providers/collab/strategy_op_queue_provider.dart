@@ -844,7 +844,29 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// The server revision is stored with the durable attention record, so the
   /// same recovery remains available after an app restart. Ordinary page
   /// reconciliation never removes these records.
-  Future<void> retryRejected({bool flushImmediately = true}) {
+  Future<void> retryRejected({bool flushImmediately = true}) =>
+      _retryAttention(flushImmediately: flushImmediately);
+
+  /// Sends again, as they were, the changes to [pageId] the server refused
+  /// while the page was in its trash: it has just been restored. Each goes
+  /// under a new op id, since the server answers a known one as it did
+  /// before.
+  Future<void> retryRestoredPage(String pageId) => retryRestoredPages({pageId});
+
+  /// Re-sends the edits refused because their page was deleted, for the pages
+  /// in [livePageIds], which are live again (restored here or by anyone).
+  Future<void> retryRestoredPages(Set<String> livePageIds) => _retryAttention(
+        flushImmediately: true,
+        only: (key, record) =>
+            livePageIds.contains(key.pageId) &&
+            record?.lastError == pageDeletedMessage,
+      );
+
+  /// Retries the attention records [only] accepts, or all of them.
+  Future<void> _retryAttention({
+    required bool flushImmediately,
+    bool Function(EntitySyncKey key, DurableOutboxRecord? record)? only,
+  }) {
     return _serializeWrite(() async {
       if (state.attentionByEntityKey.isEmpty) return;
       final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
@@ -860,6 +882,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       try {
         for (final entry in state.attentionByEntityKey.entries) {
           final record = _recordForActiveKey(entry.key);
+          if (only != null && !only(entry.key, record)) continue;
           final rejected = entry.value.pending;
           final rejectedOp = rejected.op;
           final successor = record?.successorPending;
@@ -868,10 +891,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               record?.lastError == cloudOperationTooLargeMessage ||
                   cloudOperationExceedsPolicy(rejectedOp);
           // Nothing moved on the server: the link is re-sent as it was,
-          // add or patch, once its ends are back.
+          // add or patch, once its ends are back; a change to a page in the
+          // trash, once the page is restored.
           final isMissingLinkEnd =
               record?.lastError == lineupLinkEndMissingMessage;
-          final retriesAsSent = isPayloadPolicyAttention || isMissingLinkEnd;
+          final isOnDeletedPage = record?.lastError == pageDeletedMessage;
+          final retriesAsSent =
+              isPayloadPolicyAttention || isMissingLinkEnd || isOnDeletedPage;
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
           if (!retriesAsSent && retryRevision == null) continue;
@@ -926,6 +952,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         return;
       }
       if (!changed) {
+        if (only != null) return;
         state = state.copyWith(
           lastError: 'Some retained cloud work cannot be retried '
               'automatically because the server has no matching revision.',
@@ -2604,10 +2631,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             record?.lastError == cloudOperationTooLargeMessage;
       });
       if (hasOversizedWork) return cloudOperationTooLargeMessage;
-      // A lineup the server refused for its own reason keeps that reason,
-      // so the sync button does not call it a conflict. Other attention
-      // beside it is noted so it is not left unexplained.
-      String? lineupReason;
+      // A change the server refused for its own reason (a lineup, a page
+      // in the trash) keeps that reason, so the sync button does not call
+      // it a conflict. Other attention beside it is noted so it is not left
+      // unexplained.
+      String? specificReason;
       var hasOtherWork = false;
       for (final entry in attention.entries) {
         final record = recordFor(entry.key);
@@ -2616,16 +2644,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             : null;
         if (reason == lineupLinkEndMissingMessage ||
             reason == lineupPageMismatchMessage ||
-            reason == lineupEndInUseMessage) {
-          lineupReason ??= reason;
+            reason == lineupEndInUseMessage ||
+            reason == pageDeletedMessage) {
+          specificReason ??= reason;
         } else {
           hasOtherWork = true;
         }
       }
-      if (lineupReason != null) {
+      if (specificReason != null) {
         return hasOtherWork
-            ? '$lineupReason. $otherWorkNeedsAttentionNote'
-            : lineupReason;
+            ? '$specificReason. $otherWorkNeedsAttentionNote'
+            : specificReason;
       }
       return 'Some saved work needs attention.';
     }

@@ -34,6 +34,15 @@ const lineupPageMismatchMessage =
 const lineupEndInUseMessage =
     'Another lineup still uses this origin or landing spot';
 
+/// The server's message when it refuses a change to a page in its trash
+/// (PAGE_DELETED). Such a change lands if the page is restored and it is
+/// sent again.
+const pageDeletedMessage = 'This page was deleted';
+
+/// How long the server keeps a deleted page restorable (the server's
+/// PAGE_TRASH_RETENTION_MS), for copy that promises it.
+const pageTrashRetentionDays = 30;
+
 typedef CloudPayload = Map<String, dynamic>;
 
 int serializedConvexValueUtf8Bytes(Object? value) =>
@@ -1453,6 +1462,30 @@ class RemoteFullStrategySnapshot {
     }
     return grouped;
   }
+}
+
+/// A page in the server's trash that can still be restored, as Recently
+/// deleted lists it.
+class TrashedPage {
+  const TrashedPage({
+    required this.pageId,
+    required this.name,
+    required this.deletedAt,
+    required this.restorableUntil,
+    required this.deletedByName,
+    required this.deletedByYou,
+  });
+
+  final String pageId;
+  final String name;
+  final DateTime deletedAt;
+
+  /// When the page is purged for good.
+  final DateTime restorableUntil;
+
+  /// Who deleted it, or null when that is not known.
+  final String? deletedByName;
+  final bool deletedByYou;
 }
 
 class ShareLinkSummary {

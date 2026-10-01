@@ -20,6 +20,7 @@ import {
   sweepDeletedImageAssetsRef,
 } from "./images";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
+import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 
 const MAINTENANCE_BATCH_SIZE = 200;
 // Content rows can each hold up to ~900 KB (the op size cap), so passes
@@ -50,6 +51,9 @@ export const purgeOldTombstonesRef = makeFunctionReference<"mutation">(
 );
 export const backfillAssetReferencesRef = makeFunctionReference<"mutation">(
   "maintenance:backfillAssetReferences",
+);
+export const purgeTrashedPagesRef = makeFunctionReference<"mutation">(
+  "maintenance:purgeTrashedPages",
 );
 
 /// Hard-deletes content rows, and queues the images they showed for
@@ -114,12 +118,16 @@ async function purgeContentRows(
   return purgedAll;
 }
 
+/// Purges the content of a page whose row is gone: a page of a deleted
+/// strategy, or one deleted before pages went to the trash. A page that
+/// still has its row, in the trash or not, is left alone.
 export const purgeDeletedPageOrphans = internalMutation({
   args: {
     pageId: v.id("pages"),
     strategyId: v.id("strategies"),
   },
   handler: async (ctx, args) => {
+    if ((await ctx.db.get(args.pageId)) !== null) return;
     // A purge reclaims images through reference rows, which content from
     // before the reference table only has once the backfill has run.
     if (!(await assetReferencesReady(ctx))) {
@@ -157,6 +165,52 @@ export const purgeDeletedPageOrphans = internalMutation({
         { pageId: args.pageId, strategyId: args.strategyId },
       );
     }
+  },
+});
+
+/// Purges, for good, pages that have been in the trash for the whole
+/// PAGE_TRASH_RETENTION_MS: first their elements and lineups, a few per run
+/// (see purgeContentRows, which queues the images they showed for reclaim),
+/// then the page and its settings once nothing is left on it. One page at a
+/// time, rescheduling itself until no page is due. Restoring refuses a page
+/// this old (isPastTrashRetention), so a purge never races a restore.
+export const purgeTrashedPages = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Waits for the reference backfill, like purgeOldTombstones.
+    if (!(await assetReferencesReady(ctx))) return;
+    const cutoff = Date.now() - PAGE_TRASH_RETENTION_MS;
+    const page = await ctx.db
+      .query("pages")
+      .withIndex("by_deletedAt", (q) =>
+        q.gt("deletedAt", 0).lt("deletedAt", cutoff),
+      )
+      .first();
+    if (page === null) return;
+
+    const elements = await ctx.db
+      .query("elements")
+      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+      .take(CONTENT_BATCH_SIZE);
+    const remainingSlots = CONTENT_BATCH_SIZE - elements.length;
+    const lineups =
+      remainingSlots > 0
+        ? await ctx.db
+            .query("lineups")
+            .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+            .take(remainingSlots)
+        : [];
+    const purgedAll = await purgeContentRows(ctx, elements, lineups);
+    if (purgedAll && elements.length + lineups.length < CONTENT_BATCH_SIZE) {
+      const contents = await ctx.db
+        .query("pageContents")
+        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+        .collect();
+      for (const content of contents) await ctx.db.delete(content._id);
+      await ctx.db.delete(page._id);
+    }
+    // The next run continues this page, or finds the next one due.
+    await ctx.scheduler.runAfter(0, purgeTrashedPagesRef, {});
   },
 });
 

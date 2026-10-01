@@ -9,6 +9,7 @@ import type { DataModel } from "./_generated/dataModel";
 import cronDefinitions from "./crons";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import schema from "./schema";
 import { insertElement, insertLineup } from "./testContent.helpers";
 import { modules } from "./test.setup";
@@ -22,6 +23,9 @@ const createStrategy = makeFunctionReference<"mutation">(
 const addPage = makeFunctionReference<"mutation">("pages:add");
 const deletePage = makeFunctionReference<"mutation">("pages:delete");
 const deleteStrategy = makeFunctionReference<"mutation">("strategies:delete");
+const purgeTrashedPages = makeFunctionReference<"mutation">(
+  "maintenance:purgeTrashedPages",
+);
 const markStaleImageUploadsDeleted = makeFunctionReference<"mutation">(
   "images:markStaleImageUploadsDeleted",
 );
@@ -179,7 +183,7 @@ describe("image asset lifecycle", () => {
     })).rejects.toThrow(/Upload intent not found/);
   });
 
-  test("page deletion removes only assets unreferenced by remaining Pages and Lineups", async () => {
+  test("a deleted page keeps its images in the trash; its purge removes only assets unreferenced by remaining Pages and Lineups", async () => {
     vi.useFakeTimers();
     const fetchMock = mockR2Deletes();
     const { t, owner } = await createHarness();
@@ -298,6 +302,15 @@ describe("image asset lifecycle", () => {
       pagePublicId: pageA,
       expectedRevision: 1,
     });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // In the trash, the page can still be restored with its images.
+    expect(
+      (await allAssets(t)).map((asset) => asset.uploadStatus),
+    ).toEqual(["active", "active", "active", "active", "active"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    vi.setSystemTime(Date.now() + PAGE_TRASH_RETENTION_MS + 1);
+    await t.mutation(purgeTrashedPages, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     const assets = await allAssets(t);

@@ -19,7 +19,8 @@ function agentTypeOf(data: unknown): string | null {
 }
 
 /// Recomputes which agents a strategy uses, from its live agent elements and
-/// lineup origins, and stores the answer in its own row. Content ops never
+/// lineup origins on pages not in the trash, and stores the answer in its
+/// own row. Content ops never
 /// touch the strategy row itself; the summary is derived data that the
 /// folder tree reads without scanning elements.
 export async function refreshStrategyAgentSummary(
@@ -41,10 +42,22 @@ export async function refreshStrategyAgentSummary(
       q.eq("strategyId", strategyId).eq("payloadKind", "lineupOrigin"),
     )
     .collect();
+  const trashedPageIds = new Set(
+    (
+      await ctx.db
+        .query("pages")
+        .withIndex("by_strategyId_and_deletedAt", (q) =>
+          q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+        )
+        .collect()
+    ).map((page) => page._id),
+  );
+  const onLivePage = (row: { pageId: Id<"pages"> }) =>
+    !trashedPageIds.has(row.pageId);
   await storeStrategyAgentSummary(
     ctx,
     strategyId,
-    agentTypesOf(agents, origins),
+    agentTypesOf(agents.filter(onLivePage), origins.filter(onLivePage)),
   );
 }
 

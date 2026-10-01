@@ -160,7 +160,8 @@ class ConvexStrategyRepository {
   }
 
   /// Which of [assetPublicIds] the strategy's content shows on the server,
-  /// or null while the server cannot tell yet. Asked a batch at a time.
+  /// pages in its trash included, or null while the server cannot tell yet.
+  /// Asked a batch at a time.
   Future<Set<String>?> fetchReferencedAssetIds(
     String strategyPublicId,
     Iterable<String> assetPublicIds,
@@ -321,6 +322,8 @@ class ConvexStrategyRepository {
       // An origin or landing delete is sent only with or after the link
       // deletes on its page, so the server may refuse one a live link names.
       checkLineupEndDeletes: const ConvexOptional.present(true),
+      // This client restores deleted pages, so it sends such a delete again.
+      checkTrashedPageDeletes: const ConvexOptional.present(true),
     );
     return result.results.map(_opAck).toList(growable: false);
   }
@@ -521,6 +524,38 @@ class ConvexStrategyRepository {
       expectedRevision: expectedRevision.toDouble(),
       settings: _pageSettings(settings),
     );
+  }
+
+  /// Brings a deleted page back from the server's trash. Throws NOT_FOUND
+  /// (see [isTypedConvexNotFoundError]) once it can no longer be restored.
+  Future<void> restorePage({
+    required String strategyPublicId,
+    required String pagePublicId,
+  }) async {
+    await _api.pages.restore(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+      pagePublicId: pagePublicId,
+    );
+  }
+
+  /// The strategy's deleted pages that can still be restored, most
+  /// recently deleted first.
+  Future<List<TrashedPage>> listTrashedPages(String strategyPublicId) async {
+    final pages = await _api.pages
+        .listTrashed(strategyPublicId: strategyPublicId)
+        .fetch();
+    return [
+      for (final page in pages)
+        TrashedPage(
+          pageId: page.publicId,
+          name: page.name,
+          deletedAt: _dateTime(page.deletedAt),
+          restorableUntil: _dateTime(page.restorableUntil),
+          deletedByName: page.deletedByName,
+          deletedByYou: page.deletedByYou,
+        ),
+    ];
   }
 
   Future<List<ShareLinkSummary>> listShareLinks({

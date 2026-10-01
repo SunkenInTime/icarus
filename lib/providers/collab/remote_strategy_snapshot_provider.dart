@@ -29,6 +29,10 @@ class RemoteEditorSnapshotNotifier
   String? _subscribedPagePublicId;
   Timer? _refreshDebounce;
   int _pageEpoch = 0;
+
+  /// Bumped by every read of the shell and page, and by a page selection:
+  /// a read that finishes after a newer one started changes nothing.
+  int _readEpoch = 0;
   Map<String, RemoteImageAsset>? _lastReconciledAssetsById;
 
   @override
@@ -72,6 +76,7 @@ class RemoteEditorSnapshotNotifier
     }
 
     _activePagePublicId = pagePublicId;
+    _readEpoch += 1;
     final epoch = ++_pageEpoch;
     await _pageSubscription?.cancel();
     _pageSubscription = null;
@@ -97,6 +102,10 @@ class RemoteEditorSnapshotNotifier
       await _startPageSubscription(strategyPublicId, pagePublicId);
       return page;
     } catch (error, stackTrace) {
+      // A newer selection or read took over; its outcome stands.
+      if (epoch != _pageEpoch || pagePublicId != _activePagePublicId) {
+        return null;
+      }
       _handleReadError(
         source: 'remote_editor:page_refresh',
         error: error,
@@ -121,6 +130,15 @@ class RemoteEditorSnapshotNotifier
     }
   }
 
+  /// Shows [pagePublicId], which the server has just restored from its
+  /// trash, and watches it: read fresh along with the shell, since the shell
+  /// last watched may not list it yet.
+  Future<void> showRestoredPage(String pagePublicId) async {
+    if (_activeStrategyPublicId == null) return;
+    _activePagePublicId = pagePublicId;
+    await refresh();
+  }
+
   void clear() {
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
@@ -142,12 +160,14 @@ class RemoteEditorSnapshotNotifier
       return;
     }
 
+    final epoch = ++_readEpoch;
     try {
       final repository = ref.read(convexStrategyRepositoryProvider);
       final shell = await repository.fetchShell(
         strategyPublicId,
         shareToken: _shareToken,
       );
+      if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       var pageId = _activePagePublicId;
       if (pageId == null ||
           !shell.pages.any((page) => page.publicId == pageId)) {
@@ -161,15 +181,27 @@ class RemoteEditorSnapshotNotifier
               pagePublicId: pageId,
               shareToken: _shareToken,
             );
+      if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       state = AsyncData(RemoteEditorSnapshot(shell: shell, activePage: page));
       if (page != null) _reconcilePageMedia(page);
     } catch (error, stackTrace) {
+      if (epoch != _readEpoch) return;
       _handleReadError(
         source: 'remote_editor:refresh',
         error: error,
         stackTrace: stackTrace,
       );
     }
+  }
+
+  /// Whether the shell held is newer than [shell]: a page just restored, say.
+  /// An older shell arriving late, from a read or the live one, must not
+  /// undo it.
+  bool _holdsNewerShell(RemoteStrategyShell shell) {
+    final current = state.valueOrNull;
+    return current != null &&
+        current.header.publicId == shell.header.publicId &&
+        shell.header.revision < current.header.revision;
   }
 
   Future<void> _startShellSubscription(String strategyPublicId) async {
@@ -182,6 +214,7 @@ class RemoteEditorSnapshotNotifier
         if (_activeStrategyPublicId != strategyPublicId ||
             ref.read(authProvider).hasActiveAuthIncident) return;
         final current = state.valueOrNull;
+        if (_holdsNewerShell(shell)) return;
         state = AsyncData(RemoteEditorSnapshot(
           shell: shell,
           activePage: current?.activePage,

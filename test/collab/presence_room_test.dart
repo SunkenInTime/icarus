@@ -71,6 +71,39 @@ void main() {
       expect(state.peers, isEmpty);
     });
 
+    test('the page someone is on outlasts their cursor leaving the map', () {
+      var state = applyPresenceMessage(empty, {
+        't': 'welcome',
+        'uid': 'me',
+        'peers': [
+          peer('s1', 'ana', cursor: {'page': 'p1', 'x': 1, 'y': 1}),
+          peer('s2', 'ana', cursor: {'page': 'p2', 'x': 1, 'y': 1}),
+          peer('s3', 'ben'),
+          peer('s4', 'me', cursor: {'page': 'p1', 'x': 1, 'y': 1}),
+        ],
+      });
+      // Ana is on p1 in one window; Ben's cursor has not shown; you are not
+      // someone else.
+      expect(state.peopleOn('p1').map((peer) => peer.uid), ['ana']);
+      expect(state.peopleOn('p2').map((peer) => peer.uid), ['ana']);
+
+      state = applyPresenceMessage(state, {'t': 'hide', 'sid': 's1'});
+      expect(state.cursorsOn('p1'), isEmpty);
+      expect(state.peopleOn('p1').map((peer) => peer.uid), ['ana']);
+      // A repeat join (profile refresh) keeps it too.
+      state =
+          applyPresenceMessage(state, {'t': 'join', 'peer': peer('s1', 'ana')});
+      expect(state.peopleOn('p1').map((peer) => peer.uid), ['ana']);
+
+      state = applyPresenceMessage(
+        state,
+        {'t': 'cursor', 'sid': 's1', 'page': 'p3', 'x': 1, 'y': 1},
+      );
+      state = applyPresenceMessage(state, {'t': 'leave', 'sid': 's2'});
+      expect(state.peopleOn('p1'), isEmpty);
+      expect(state.peopleOn('p3').map((peer) => peer.uid), ['ana']);
+    });
+
     test('people are one per person and never yourself', () {
       final state = applyPresenceMessage(empty, {
         't': 'welcome',

@@ -98,8 +98,9 @@ final cloudMediaUploadQueueProvider =
 );
 
 /// Which of the images asked about a strategy's content shows on the
-/// server, on any of its pages, or null while the server cannot tell. Asked
-/// before a pending upload is dropped as no longer wanted.
+/// server, pages in its trash included (their images are wanted while the
+/// page can be restored), or null while the server cannot tell. Asked before
+/// a pending upload is dropped as no longer wanted.
 typedef CloudMediaReferenceLoader = Future<Set<String>?> Function(
   String strategyPublicId,
   Iterable<String> assetPublicIds,

@@ -45,14 +45,15 @@ class PresenceCursor {
 /// One connection to the room. The same person in two windows is two peers
 /// with one [uid].
 class PresencePeer {
-  const PresencePeer({
+  PresencePeer({
     required this.sid,
     required this.uid,
     required this.name,
     required this.avatarUrl,
     required this.role,
     required this.cursor,
-  });
+    String? pageId,
+  }) : pageId = pageId ?? cursor?.pageId;
 
   final String sid;
   final String uid;
@@ -63,6 +64,12 @@ class PresencePeer {
   final String role;
   final PresenceCursor? cursor;
 
+  /// The page their cursor was last on. It stays when the pointer leaves
+  /// the map, since they are most likely still on that page; unknown until
+  /// their cursor first shows.
+  final String? pageId;
+
+  /// With [cursor] in place of the last one; hiding it keeps [pageId].
   PresencePeer withCursor(PresenceCursor? cursor) => PresencePeer(
         sid: sid,
         uid: uid,
@@ -70,6 +77,18 @@ class PresencePeer {
         avatarUrl: avatarUrl,
         role: role,
         cursor: cursor,
+        pageId: cursor?.pageId ?? pageId,
+      );
+
+  /// This profile, where [earlier] was: its cursor and its page.
+  PresencePeer at(PresencePeer earlier) => PresencePeer(
+        sid: sid,
+        uid: uid,
+        name: name,
+        avatarUrl: avatarUrl,
+        role: role,
+        cursor: earlier.cursor,
+        pageId: earlier.pageId,
       );
 }
 
@@ -104,6 +123,17 @@ class PresenceRoomState {
     return [
       for (final peer in peers.values)
         if (peer.uid != selfUid && seen.add(peer.uid)) peer,
+    ];
+  }
+
+  /// Everyone else last seen on [pageId], one entry per person. Presence is
+  /// best-effort: someone whose cursor has not shown yet is not counted.
+  List<PresencePeer> peopleOn(String pageId) {
+    final seen = <String>{};
+    return [
+      for (final peer in peers.values)
+        if (peer.uid != selfUid && peer.pageId == pageId && seen.add(peer.uid))
+          peer,
     ];
   }
 

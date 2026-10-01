@@ -752,8 +752,10 @@ export const listForStrategy = query({
 export const MAX_REFERENCED_ASSET_IDS_PER_QUERY = 100;
 
 /// Which of [assetPublicIds] the strategy's content shows, deleted content
-/// left out. A client asks before it drops an upload it holds. Null until
-/// the reference backfill has finished, when it cannot be told.
+/// left out but pages in the trash included: their images are still
+/// wanted, since the page can be restored. A client asks before it drops an
+/// upload it holds. Null until the reference backfill has finished, when it
+/// cannot be told.
 export const listReferencedAssetIds = query({
   args: {
     strategyPublicId: v.string(),

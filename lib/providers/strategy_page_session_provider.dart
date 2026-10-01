@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -54,6 +56,21 @@ enum PageSwitchDirection { next, previous }
 /// The page on screen, which a teammate deleted while it held work the server
 /// never got. [name] is its name when it was last loaded.
 typedef DeletedPage = ({String pageId, String name});
+
+/// How an attempt to restore a deleted page ended.
+enum DeletedPageRestore {
+  /// The page is back on the server, and the work on it is saving as usual.
+  /// The deleted page on screen is back on screen too.
+  restored,
+
+  /// The server can no longer restore the page: its time in the trash is
+  /// over. Work on it cannot be saved.
+  gone,
+
+  /// The page could not be restored, or not loaded once it was. Nothing on
+  /// this device changed; trying again is safe.
+  failed,
+}
 
 class StrategyPageSessionState {
   const StrategyPageSessionState({
@@ -139,9 +156,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _disposed = false;
   int _pageSessionGeneration = 0;
 
-  /// Pages whose delete from this device the server accepted. Their
-  /// disappearing is the user's own doing, whatever work is left on them.
-  final Set<String> _pagesDeletedHere = {};
+  /// Pages whose delete from this device the server applied, with the
+  /// strategy revision the delete made. See [_deletedHere].
+  final Map<String, int> _pagesDeletedHere = {};
+
+  /// The latest strategy revision at which each page was seen live.
+  final Map<String, int> _pagesSeenLiveAt = {};
 
   @override
   StrategyPageSessionState build() {
@@ -158,6 +178,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         final snapshot = next.valueOrNull;
         if (snapshot == null || snapshot.pages.isEmpty) {
           return;
+        }
+        if (snapshot.header.publicId == strategyState.strategyId) {
+          for (final page in snapshot.pages) {
+            _pagesSeenLiveAt.update(
+              page.publicId,
+              (seen) => max(seen, snapshot.header.revision),
+              ifAbsent: () => snapshot.header.revision,
+            );
+          }
+          _resendEditsForPagesBack(snapshot);
         }
 
         final pageIds = [...snapshot.pages]
@@ -222,6 +252,27 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
   }
 
+  /// Edits the server refused because their page was deleted go out again
+  /// once the page is live: restored here, by a teammate, or while this
+  /// strategy was closed. A refusal refreshes the snapshot, which then no
+  /// longer lists the page, so this cannot loop.
+  void _resendEditsForPagesBack(RemoteEditorSnapshot snapshot) {
+    // A "Use cloud" in progress decides this work's fate. ("Keep mine" goes
+    // through the same serialized retry, which only takes what is still in
+    // attention, so the two cannot send it twice.)
+    if (_isResolvingConflicts) return;
+    final live = {for (final page in snapshot.pages) page.publicId};
+    final waiting = ref
+        .read(strategyOpQueueProvider)
+        .attentionByEntityKey
+        .keys
+        .any((key) => live.contains(key.pageId));
+    if (!waiting) return;
+    unawaited(
+      ref.read(strategyOpQueueProvider.notifier).retryRestoredPages(live),
+    );
+  }
+
   String? get activePageId => state.activePageId;
 
   Future<void> initializeForStrategy({
@@ -252,6 +303,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     if (selected != null) {
       await _rehydrateActivePageFromSource(selected);
+    }
+    // Snapshots that arrived while the strategy was opening went unheard:
+    // catch up on pages that came back while it was closed.
+    if (source == StrategySource.cloud) {
+      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+      if (snapshot != null && snapshot.header.publicId == strategyId) {
+        _resendEditsForPagesBack(snapshot);
+      }
     }
   }
 
@@ -917,7 +976,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // Work on it the server paused or refused stays in the sync status.
     final queue = ref.read(strategyOpQueueProvider);
     _notePagesDeletedHere(queue);
-    if (_pagesDeletedHere.contains(pageId)) return false;
+    if (_deletedHere(pageId)) return false;
     final descriptor = EntitySyncKey.pageDescriptor(pageId);
     if ([
       queue.queuedByEntityKey[descriptor]?.pending.op,
@@ -944,11 +1003,27 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// registered earlier (save state) can run the check first.
   void _notePagesDeletedHere(StrategyOpQueueState queue) {
     for (final acked in queue.lastAckBatch) {
-      if (acked.op case PageDeleteOp(:final pagePublicId)
-          when acked.ack.isAck) {
-        _pagesDeletedHere.add(pagePublicId);
+      // Only a delete the server applied took the page away. A no-op says
+      // it was already gone, not by whom: a teammate may have deleted it
+      // since, and their delete must still show the notice.
+      if ((acked.op, acked.ack)
+          case (
+            PageDeleteOp(:final pagePublicId),
+            AppliedOpAck(:final revision),
+          )) {
+        _pagesDeletedHere[pagePublicId] = revision;
       }
     }
+  }
+
+  /// Whether [pageId]'s disappearing is this device's delete: one the server
+  /// applied that is newer than the page was last seen live. Seen live at
+  /// the delete's revision or later, the page was restored after it (the
+  /// delete's own revision never lists it), and a later delete is someone's
+  /// new one, whichever order the ack and the reads arrive in.
+  bool _deletedHere(String pageId) {
+    final deletedAt = _pagesDeletedHere[pageId];
+    return deletedAt != null && (_pagesSeenLiveAt[pageId] ?? -1) < deletedAt;
   }
 
   /// Lets the deleted page on screen go, with the unsaved work on it, and
@@ -973,14 +1048,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     final target =
         snapshot == null ? null : _resolveHydrationTargetPage(snapshot);
-    if (target == null ||
-        target == deleted.pageId ||
-        state.deletedPage != deleted) {
-      return false;
-    }
+    if (target == null || state.deletedPage != deleted) return false;
     // Loaded here, not through the reapply that waits for pending cloud
     // work: work queued for other pages is not on this canvas, and the
-    // deleted page must not stay editable while it waits.
+    // deleted page must not stay editable while it waits. If the page is
+    // back (restored meanwhile), this is its server copy, without the
+    // discarded work.
     try {
       await remote.setActivePage(target);
       final source = _resolvePageSource(strategyId, StrategySource.cloud);
@@ -1006,6 +1079,118 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
     state = state.copyWith(clearDeletedPage: true);
     return true;
+  }
+
+  /// Brings the deleted page on screen back from the server's trash, with
+  /// everything it had there, so the unsaved work on it saves as usual: the
+  /// changes the server refused while it was in the trash are sent again,
+  /// and the canvas's other edits are queued against the restored copy. The
+  /// notice stays until the page is back on screen, read live.
+  Future<DeletedPageRestore> restoreDeletedPage() async {
+    final deleted = state.deletedPage;
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (deleted == null || strategyId == null) {
+      return DeletedPageRestore.failed;
+    }
+    final outcome = await _restoreOnServer(strategyId, deleted.pageId);
+    if (outcome != DeletedPageRestore.restored) return outcome;
+    // A change still on its way when the page came back may yet be refused;
+    // its answer comes before the refused changes are sent again.
+    final settled = await _queueSettles((queue) => !queue
+        .inFlightByEntityKey.keys
+        .any((key) => key.pageId == deleted.pageId));
+    // Its answer never came: a refusal still on its way would miss the
+    // retry below. Restoring again is safe once it has.
+    if (!settled) return DeletedPageRestore.failed;
+    await ref
+        .read(remoteEditorSnapshotProvider.notifier)
+        .showRestoredPage(deleted.pageId);
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (state.deletedPage != deleted ||
+        snapshot == null ||
+        snapshot.activePage?.page.publicId != deleted.pageId ||
+        !snapshot.pages.any((page) => page.publicId == deleted.pageId)) {
+      return DeletedPageRestore.failed;
+    }
+    // Loading the page that was to replace it moved live sync off it.
+    ref
+        .read(activePageLiveSyncProvider.notifier)
+        .resumePage(strategyPublicId: strategyId, pageId: deleted.pageId);
+    state = state.copyWith(clearDeletedPage: true);
+    await ref
+        .read(strategyOpQueueProvider.notifier)
+        .retryRestoredPage(deleted.pageId);
+    await flushCurrentPage(flushImmediately: true);
+    // A send whose answer was lost replays under its own op id, and may be
+    // answered with the refusal the server recorded while the page was in
+    // the trash: once the page's sends are answered, those go again too.
+    // Sends still unanswered after the wait stay queued, saving as usual;
+    // a late refusal among them shows in the sync status, where Keep mine
+    // sends it again.
+    if (await _queueSettles((queue) => ![
+          queue.queuedByEntityKey,
+          queue.inFlightByEntityKey,
+        ].any((sends) =>
+            sends.keys.any((key) => key.pageId == deleted.pageId)))) {
+      await ref
+          .read(strategyOpQueueProvider.notifier)
+          .retryRestoredPage(deleted.pageId);
+    }
+    // A later read may have shown the page gone again.
+    return state.deletedPage == null && state.activePageId == deleted.pageId
+        ? DeletedPageRestore.restored
+        : DeletedPageRestore.failed;
+  }
+
+  /// Brings [pageId] back from the server's trash, from Recently deleted: at
+  /// the place it was deleted from, with everything on it. Changes to it the
+  /// server refused while it was in the trash are sent again, once any
+  /// still on their way have been answered, and again once the page's
+  /// queued sends have gone: a send whose answer was lost replays under its
+  /// own op id, and may bring back the refusal. Refusals not answered in
+  /// time stay in the sync status, where Keep mine sends them.
+  Future<DeletedPageRestore> restorePageFromTrash(String pageId) async {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (strategyId == null) return DeletedPageRestore.failed;
+    final outcome = await _restoreOnServer(strategyId, pageId);
+    if (outcome != DeletedPageRestore.restored) return outcome;
+    final queue = ref.read(strategyOpQueueProvider.notifier);
+    bool onPage(EntitySyncKey key) => key.pageId == pageId;
+    if (await _queueSettles(
+        (state) => !state.inFlightByEntityKey.keys.any(onPage))) {
+      await queue.retryRestoredPage(pageId);
+    }
+    if (await _queueSettles((state) => ![
+          state.queuedByEntityKey,
+          state.inFlightByEntityKey,
+        ].any((sends) => sends.keys.any(onPage)))) {
+      await queue.retryRestoredPage(pageId);
+    }
+    return DeletedPageRestore.restored;
+  }
+
+  /// Asks the server to take [pageId] out of its trash.
+  Future<DeletedPageRestore> _restoreOnServer(
+    String strategyId,
+    String pageId,
+  ) async {
+    try {
+      await ref.read(convexStrategyRepositoryProvider).restorePage(
+            strategyPublicId: strategyId,
+            pagePublicId: pageId,
+          );
+      return DeletedPageRestore.restored;
+    } catch (error, stackTrace) {
+      if (isTypedConvexNotFoundError(error)) return DeletedPageRestore.gone;
+      AppErrorReporter.reportError(
+        'Could not restore a deleted page.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'strategy_page_session:restore_page',
+        promptUser: false,
+      );
+      return DeletedPageRestore.failed;
+    }
   }
 
   Future<void> _reapplyRemotePage(String pageId) async {
@@ -1351,11 +1536,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   /// Waits, at most [pageWorkSettleTimeout], for the op queue to satisfy
-  /// [settled].
-  Future<void> _queueSettles(
+  /// [settled]. Returns whether it did.
+  Future<bool> _queueSettles(
     bool Function(StrategyOpQueueState queue) settled,
   ) async {
-    if (settled(ref.read(strategyOpQueueProvider))) return;
+    if (settled(ref.read(strategyOpQueueProvider))) return true;
     final done = Completer<void>();
     final subscription = ref.listen<StrategyOpQueueState>(
       strategyOpQueueProvider,
@@ -1368,6 +1553,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     } finally {
       subscription.close();
     }
+    return done.isCompleted;
   }
 
   void _resumePendingRemoteReapplyIfPossible() {

@@ -4,8 +4,10 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
+import 'package:icarus/providers/collab/trashed_pages_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -13,8 +15,10 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
+import 'package:icarus/widgets/dialogs/recently_deleted_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 const double _pagesBarCornerRadius = 12;
 const double _pagesBarFooterHeight = 48;
@@ -260,19 +264,136 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   Future<void> _deletePage(PageListItemViewModel page, int pageCount) async {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canDeletePage || pageCount <= 1) return;
+    // The page belongs to the strategy open now, whatever opens meanwhile.
+    final strategyId = ref.read(strategyProvider).strategyId;
 
-    final confirm = await ConfirmAlertDialog.show(
-      context: context,
-      title: "Delete '${page.name}'?",
-      content:
-          "Are you sure you want to delete this page? This action cannot be undone.",
-      confirmText: "Delete",
-      cancelText: "Cancel",
-      isDestructive: true,
+    final confirm = await confirmDeletePage(
+      context,
+      ref,
+      pageId: page.id,
+      pageName: page.name,
     );
 
-    if (confirm != true) return;
-    await ref.read(strategyProvider.notifier).deletePage(page.id);
+    if (confirm != true || !_showing(strategyId)) return;
+    final wasActive =
+        ref.read(strategyPageSessionProvider).activePageId == page.id;
+    final isCloud = ref.read(strategyProvider).source == StrategySource.cloud;
+    final deleted =
+        await ref.read(strategyProvider.notifier).deletePage(page.id);
+    // Only a cloud page goes to the trash, so only it can be undone, and only
+    // from the strategy it was deleted in.
+    if (!deleted || !isCloud || !_showing(strategyId)) return;
+    _dismissUndo();
+    late final ToastificationItem toast;
+    toast = Settings.showToast(
+      message: "Deleted '${page.name}'",
+      backgroundColor: Settings.tacticalVioletTheme.secondary,
+      autoCloseDuration: const Duration(seconds: 6),
+      actionLabel: 'Undo',
+      onActionPressed: () {
+        // Taken once: a second tap finds nothing to undo.
+        if (!identical(_undoToast, toast)) return;
+        _dismissUndo();
+        _undoDelete(page, strategyId: strategyId, wasActive: wasActive);
+      },
+    );
+    _undoToast = toast;
+  }
+
+  /// The Undo offer for the last delete here. It goes when this bar does
+  /// (the strategy closed); the page stays in Recently deleted.
+  ToastificationItem? _undoToast;
+
+  void _dismissUndo() {
+    final toast = _undoToast;
+    _undoToast = null;
+    if (toast != null) toastification.dismiss(toast);
+  }
+
+  @override
+  void dispose() {
+    // The toast list rebuilds on dismiss, which a tree being torn down
+    // cannot take: dismiss after this frame.
+    final toast = _undoToast;
+    _undoToast = null;
+    if (toast != null) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => toastification.dismiss(toast));
+    }
+    super.dispose();
+  }
+
+  /// Whether this bar is still up, showing the strategy [strategyId]. Checked
+  /// after every wait before anything is read.
+  bool _showing(String? strategyId) =>
+      mounted && ref.read(strategyProvider).strategyId == strategyId;
+
+  /// Takes [page] back out of the trash; the delete was just made here, in
+  /// the strategy [strategyId].
+  Future<void> _undoDelete(
+    PageListItemViewModel page, {
+    required String? strategyId,
+    required bool wasActive,
+  }) async {
+    bool stillHere() => _showing(strategyId);
+    if (!stillHere()) return;
+    final session = ref.read(strategyPageSessionProvider.notifier);
+    final strategyName = ref.read(strategyProvider).strategyName;
+    final outcome = await session.restorePageFromTrash(page.id);
+    if (outcome != DeletedPageRestore.restored) {
+      // Said even after leaving, so no one thinks Undo worked.
+      Settings.showToast(
+        message: undoFailedMessage(
+          page.name,
+          outcome,
+          strategyName: stillHere() ? null : (strategyName ?? ''),
+        ),
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    if (!wasActive || !stillHere()) return;
+    // Back to the page the delete moved you off, once the list has it.
+    await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+    if (!stillHere()) return;
+    if (!_lists(page.id)) {
+      // The server has it back; the list shows it when it next loads.
+      Settings.showToast(
+        message: "Restored '${page.name}'.",
+        backgroundColor: Settings.tacticalVioletTheme.secondary,
+      );
+      return;
+    }
+    try {
+      await session.setActivePageAnimated(
+        page.id,
+        direction: PageTransitionDirection.backward,
+      );
+    } catch (_) {
+      if (!stillHere()) return;
+      Settings.showToast(
+        message: _lists(page.id)
+            ? "Restored '${page.name}', but could not open it. It is in the "
+                'pages list.'
+            : "Restored '${page.name}', but could not open it.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    }
+  }
+
+  /// Whether the last snapshot lists the page [pageId].
+  bool _lists(String pageId) =>
+      ref
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.pages
+          .any((page) => page.publicId == pageId) ??
+      false;
+
+  Future<void> _openRecentlyDeleted() async {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (strategyId == null) return;
+    await RecentlyDeletedDialog.show(context, strategyId);
   }
 
   @override
@@ -308,6 +429,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
           return _buildPageBar(
             data: data,
             caps: caps,
+            hasTrash: false,
             persistedExpandedHeight: persistedExpandedHeight,
             persistedWidth: persistedWidth,
           );
@@ -322,14 +444,18 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     return _buildPageBar(
       data: data,
       caps: caps,
+      hasTrash: true,
       persistedExpandedHeight: persistedExpandedHeight,
       persistedWidth: persistedWidth,
     );
   }
 
+  /// [hasTrash]: deleted pages go to a trash they can be restored from (a
+  /// cloud strategy's server keeps one).
   Widget _buildPageBar({
     required _PageBarData data,
     required StrategyCapabilities caps,
+    required bool hasTrash,
     required double persistedExpandedHeight,
     required double persistedWidth,
   }) {
@@ -366,6 +492,14 @@ class _PagesBarState extends ConsumerState<PagesBar> {
                     onRename: caps.canRenamePage ? _renamePage : null,
                     onDelete: caps.canDeletePage ? _deletePage : null,
                     onAdd: _addPage,
+                    // Only when there is something in it: an empty trash
+                    // is clutter.
+                    onOpenRecentlyDeleted: hasTrash &&
+                            caps.canDeletePage &&
+                            (ref.watch(hasTrashedPagesProvider).valueOrNull ??
+                                false)
+                        ? _openRecentlyDeleted
+                        : null,
                     onCollapse: _collapsePanel,
                     onReorder: caps.canReorderPages
                         ? (oldIndex, newIndex) => ref
@@ -547,6 +681,7 @@ class _ExpandedPanel extends ConsumerWidget {
     required this.onRename,
     required this.onDelete,
     required this.onAdd,
+    required this.onOpenRecentlyDeleted,
     required this.onCollapse,
     required this.onResizeStart,
     required this.onResizeUpdate,
@@ -568,6 +703,9 @@ class _ExpandedPanel extends ConsumerWidget {
   final Future<void> Function(PageListItemViewModel page, int pageCount)?
       onDelete;
   final VoidCallback onAdd;
+
+  /// Opens Recently deleted; null where there is no trash to open.
+  final VoidCallback? onOpenRecentlyDeleted;
   final VoidCallback onCollapse;
   final VoidCallback onResizeStart;
   final ValueChanged<Offset> onResizeUpdate;
@@ -722,6 +860,27 @@ class _ExpandedPanel extends ConsumerWidget {
                   shortcutLabel: 'C',
                 ),
                 const Spacer(),
+                if (onOpenRecentlyDeleted != null)
+                  ShadTooltip(
+                    builder: (context) => const Text('Recently deleted'),
+                    child: ShadIconButton.ghost(
+                      width: _pagesBarControlSize,
+                      height: _pagesBarControlSize,
+                      padding: EdgeInsets.zero,
+                      foregroundColor:
+                          Settings.tacticalVioletTheme.mutedForeground,
+                      hoverForegroundColor: Colors.white,
+                      onPressed: onOpenRecentlyDeleted,
+                      icon: const Icon(LucideIcons.archiveRestore, size: 18),
+                      decoration: ShadDecoration(
+                        border: ShadBorder(
+                          radius: BorderRadius.circular(
+                            _pagesBarInnerButtonRadius,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ShadIconButton.ghost(
                   width: _pagesBarControlSize,
                   height: _pagesBarControlSize,
@@ -1141,4 +1300,26 @@ class _SquareIconButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What Undo can say about [pageName] when it did not confirm a restore.
+/// [strategyName] is null while the user is still in the page's strategy,
+/// and names it (or is empty when unknown) once they have left. A failure
+/// may be a reply that never arrived, so it says what it does not know.
+@visibleForTesting
+String undoFailedMessage(
+  String pageName,
+  DeletedPageRestore outcome, {
+  required String? strategyName,
+}) {
+  if (outcome == DeletedPageRestore.gone) {
+    return "'$pageName' can no longer be restored.";
+  }
+  final (where, trash) = switch (strategyName) {
+    null => ('', 'Recently deleted'),
+    '' => ('', "its strategy's Recently deleted"),
+    final name => (' in $name', "that strategy's Recently deleted"),
+  };
+  return "Could not confirm that '$pageName' was restored$where. Once "
+      "you're connected, check the pages list or $trash.";
 }

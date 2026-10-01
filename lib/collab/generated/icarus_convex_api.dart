@@ -707,6 +707,8 @@ abstract interface class OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkTrashedPageDeletes =
+        const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
     required List<OpsApplyBatchArgsOpsItem> ops,
@@ -721,6 +723,8 @@ final class _OpsModule implements OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkTrashedPageDeletes =
+        const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
     required List<OpsApplyBatchArgsOpsItem> ops,
@@ -729,6 +733,7 @@ final class _OpsModule implements OpsModule {
     final args = encodeOpsApplyBatchArgs(
       checkLineupEndDeletes: checkLineupEndDeletes,
       checkLineupLinkEnds: checkLineupLinkEnds,
+      checkTrashedPageDeletes: checkTrashedPageDeletes,
       clientId: clientId,
       clientProtocolVersion: clientProtocolVersion,
       ops: ops,
@@ -794,6 +799,9 @@ abstract interface class PagesModule {
   ConvexQuery<List<PageGetSnapshotResultPage>> listForStrategy({
     required String strategyPublicId,
   });
+  ConvexQuery<List<PagesListTrashedResultItem>> listTrashed({
+    required String strategyPublicId,
+  });
   Future<ConvexValue> rename({
     required double clientProtocolVersion,
     required double expectedRevision,
@@ -806,6 +814,11 @@ abstract interface class PagesModule {
     required double clientProtocolVersion,
     required double expectedRevision,
     required List<String> orderedPagePublicIds,
+    required String strategyPublicId,
+  });
+  Future<ConvexValue> restore({
+    required double clientProtocolVersion,
+    required String pagePublicId,
     required String strategyPublicId,
   });
 }
@@ -878,6 +891,19 @@ final class _PagesModule implements PagesModule {
   }
 
   @override
+  ConvexQuery<List<PagesListTrashedResultItem>> listTrashed({
+    required String strategyPublicId,
+  }) {
+    final args = encodePagesListTrashedArgs(strategyPublicId: strategyPublicId);
+    return ConvexQuery(
+      transport: _transport,
+      name: 'pages:listTrashed',
+      args: args,
+      decode: decodePagesListTrashedResult,
+    );
+  }
+
+  @override
   Future<ConvexValue> rename({
     required double clientProtocolVersion,
     required double expectedRevision,
@@ -916,6 +942,23 @@ final class _PagesModule implements PagesModule {
     return _invoke(
       () => _transport.mutation('pages:reorder', args),
       decodePagesReorderResult,
+    );
+  }
+
+  @override
+  Future<ConvexValue> restore({
+    required double clientProtocolVersion,
+    required String pagePublicId,
+    required String strategyPublicId,
+  }) {
+    final args = encodePagesRestoreArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      pagePublicId: pagePublicId,
+      strategyPublicId: strategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('pages:restore', args),
+      decodePagesRestoreResult,
     );
   }
 }
