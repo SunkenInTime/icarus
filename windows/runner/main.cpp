@@ -1,5 +1,6 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <wchar.h>
 #include <windows.h>
 #include "app_links/app_links_plugin_c_api.h"
 #include "flutter_window.h"
@@ -19,6 +20,17 @@ bool WindowTitleContains(HWND hwnd, const std::wstring& needle) {
   std::wstring title(titleLength, L'\0');
   ::GetWindowTextW(hwnd, title.data(), titleLength + 1);
   return title.find(needle) != std::wstring::npos;
+}
+
+// True when the only argument is an icarus:// link, the way Windows launches
+// us for OAuth callbacks and share links.
+bool LaunchedWithAppLink() {
+  int argc = 0;
+  wchar_t** argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+  const bool is_app_link =
+      argv != nullptr && argc == 2 && ::_wcsnicmp(argv[1], L"icarus:", 7) == 0;
+  ::LocalFree(argv);
+  return is_app_link;
 }
 }  // namespace
 
@@ -80,8 +92,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   DebugLog(std::wstring(L"Raw command line: ") +
            (command_line ? command_line : L"<null>"));
 
-
-  if (SendAppLinkToInstance(L"icarus")) {
+  // Only an icarus:// link (OAuth callbacks, share links) is handed to a
+  // running window here, because app_links forwards nothing else: exiting on
+  // any other launch would drop it. Everything else (an .ica path,
+  // --hive-store-dir, no arguments) goes on to Dart, whose per-store
+  // single-instance check hands file opens to the window using that store.
+  if (LaunchedWithAppLink() && SendAppLinkToInstance(L"icarus")) {
     DebugLog(L"App link forwarded to existing instance. Exiting.");
     return EXIT_SUCCESS;
   }
