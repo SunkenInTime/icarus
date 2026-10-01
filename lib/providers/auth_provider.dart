@@ -485,6 +485,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   bool _convexMayHoldAuth = false;
   Future<void>? _inFlightConvexSetup;
   bool _queuedConvexSetup = false;
+  bool _disposed = false;
   String? _queuedConvexTrigger;
   bool _showingIncidentPrompt = false;
   int _incidentCounter = 0;
@@ -554,8 +555,10 @@ class AuthProvider extends Notifier<AppAuthState> {
     ref.onDispose(() {
       _supabaseAuthSub?.cancel();
       _convexAuthHandle?.dispose();
-      // A setup still running belongs to a provider that is gone: it must
-      // finish without reading or changing anything.
+      // A setup still running, or queued behind it, belongs to a provider
+      // that is gone: it must finish without reading or changing anything.
+      _disposed = true;
+      _queuedConvexSetup = false;
       _advanceAuthGeneration();
     });
     // The server accepts this build again (a rolled-back deploy): the
@@ -1055,6 +1058,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     String? sessionFingerprint,
   }) async {
     await Future<void>.value();
+    if (_disposed) return;
 
     final targetGeneration = generation ?? _authGeneration;
     final targetFingerprint =
@@ -1080,7 +1084,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       completer.complete();
       _inFlightConvexSetup = null;
 
-      if (_queuedConvexSetup) {
+      if (_queuedConvexSetup && !_disposed) {
         _queuedConvexSetup = false;
         final queuedTrigger = _queuedConvexTrigger ?? 'queued';
         _queuedConvexTrigger = null;

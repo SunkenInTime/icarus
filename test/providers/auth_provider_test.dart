@@ -717,6 +717,27 @@ void main() {
     await pumpMicrotasks();
   });
 
+  test('a setup queued behind one running when the provider goes never runs',
+      () async {
+    supabaseApi.currentSession = fakeSession();
+    convexApi.setAuthCompleter = Completer<AuthProviderAuthHandle>();
+    final container = ProviderContainer();
+    final notifier = container.read(authProvider.notifier);
+    await pumpMicrotasks();
+    expect(convexApi.setAuthCalls, 1);
+
+    // A second setup queues behind the first, then the provider goes.
+    unawaited(notifier.reinitializeConvexAuth(source: 'test'));
+    await pumpMicrotasks();
+    container.dispose();
+    convexApi.emitAuthState(true);
+    convexApi.setAuthCompleter!.complete(FakeAuthHandle());
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await pumpMicrotasks();
+
+    expect(convexApi.setAuthCalls, 1);
+  });
+
   test('a setup the server refuses says Icarus was updated', () async {
     supabaseApi.currentSession = fakeSession();
     convexApi.mutationError = _upgradeRequired;

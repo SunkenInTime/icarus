@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -673,6 +674,8 @@ void main() {
             queue == null ? _SettledOpQueue.new : () => _FixedOpQueue(queue),
           ),
           cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
+          authProvider.overrideWith(_ReadyAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
           convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
           appUpdateStatusProvider.overrideWith((ref) async {
             onUpdateCheck?.call();
@@ -790,7 +793,7 @@ void main() {
         find.textContaining("the update isn't available for this app yet"),
         findsOneWidget,
       );
-      expect(find.textContaining('Your work is safe on this device'),
+      expect(find.textContaining('Your saved work stays on this device'),
           findsOneWidget);
       expect(find.textContaining('Install the update'), findsNothing);
       expect(find.text('Retry sync'), findsNothing);
@@ -829,7 +832,7 @@ void main() {
       expect(find.byKey(const ValueKey('client-upgrade-button')), findsNothing);
     });
 
-    testWidgets('the web reloads once the work is safe on this device',
+    testWidgets('the web reloads when no work is waiting to be kept',
         (tester) async {
       final strategy = _SavingStrategyProvider();
       final container = upgradeContainer(strategy: strategy);
@@ -851,11 +854,10 @@ void main() {
       await tester.tap(find.text('Reload'));
       await tester.pumpAndSettle();
 
-      expect(strategy.saves, 1);
       expect(reloads, 1);
     });
 
-    testWidgets('the web does not reload while the outbox is uncertain',
+    testWidgets('reload asks first while the outbox is uncertain',
         (tester) async {
       final strategy = _SavingStrategyProvider();
       final container = upgradeContainer(
@@ -882,17 +884,14 @@ void main() {
         ),
       );
       await tester.tap(find.text('Reload'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
 
-      expect(strategy.saves, 1);
+      // The same guard as leaving the strategy: it can't confirm the work
+      // is kept on this device, so it offers to stay, never to leave.
       expect(reloads, 0);
-      expect(
-        find.textContaining("so it didn't reload", skipOffstage: false),
-        findsOneWidget,
-      );
-      toastification.dismissAll(delayForAnimation: false);
-      await tester.pump(const Duration(seconds: 4));
+      expect(find.text('Cloud sync pending'), findsOneWidget);
+      expect(find.text('Leave anyway'), findsNothing);
+      await tester.tap(find.text('Stay here'));
       await tester.pumpAndSettle();
     });
   });
@@ -1470,4 +1469,15 @@ void main() {
       expect(find.text('This page was deleted'), findsOneWidget);
     });
   });
+}
+
+class _ReadyAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: null,
+      );
 }

@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/browser_url.dart';
@@ -70,8 +69,9 @@ class ClientUpgradeNotice extends StatelessWidget {
   }
 }
 
-/// Reloads only once the work is known to be on this device; otherwise it
-/// keeps the page, and the work in its memory, and says why.
+/// Reloading throws the page away, as leaving the strategy does, so it goes
+/// through the same guard as Home: it saves what it can, and asks before
+/// leaving anything it could not confirm is kept on this device.
 class _ReloadButton extends ConsumerStatefulWidget {
   const _ReloadButton({required this.size, required this.onReload});
 
@@ -83,22 +83,17 @@ class _ReloadButton extends ConsumerStatefulWidget {
 }
 
 class _ReloadButtonState extends ConsumerState<_ReloadButton> {
-  bool _securing = false;
+  bool _leaving = false;
 
   Future<void> _reload() async {
-    setState(() => _securing = true);
-    final secured = await secureWorkBeforeReload(ref);
-    if (!mounted) return;
-    setState(() => _securing = false);
-    if (secured) {
-      widget.onReload();
-      return;
-    }
-    Settings.showToast(
-      message: "Icarus couldn't confirm your work is saved on this device, "
-          "so it didn't reload. Keep this tab open.",
-      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    setState(() => _leaving = true);
+    await guardUnsavedStrategyExit(
+      context: context,
+      ref: ref,
+      onContinue: () async => widget.onReload(),
+      source: 'client_upgrade.reload',
     );
+    if (mounted) setState(() => _leaving = false);
   }
 
   @override
@@ -107,7 +102,7 @@ class _ReloadButtonState extends ConsumerState<_ReloadButton> {
       icon: LucideIcons.refreshCw,
       label: 'Reload',
       size: widget.size,
-      onPressed: _securing ? null : _reload,
+      onPressed: _leaving ? null : _reload,
     );
   }
 }

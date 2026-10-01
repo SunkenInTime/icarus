@@ -116,7 +116,7 @@ void main() {
           update: ClientUpdateAvailability.unavailable,
         ),
         "Icarus was updated, but the update isn't available for this app "
-        'yet. Your work is safe on this device and syncs once the update is '
+        'yet. Your saved work stays on this device and syncs once the update is '
         'installed.',
       );
       expect(
