@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/hive_boxes.dart';
 
 const durableCloudMediaOutboxRecordVersion = 2;
@@ -191,9 +192,48 @@ class MemoryDurableCloudMediaOutboxStore
   }
 }
 
+/// The media outbox in a run where cloud sync did not start. It reads
+/// nothing and writes nothing, so the box file stays exactly as the last run
+/// left it. Its one load issue keeps pending image bytes from being pruned:
+/// only a clean load proves no job needs them.
+class UnavailableDurableCloudMediaOutboxStore
+    implements DurableCloudMediaOutboxStore {
+  const UnavailableDurableCloudMediaOutboxStore(this.reason);
+
+  final String reason;
+
+  @override
+  DurableCloudMediaOutboxLoadResult load() => DurableCloudMediaOutboxLoadResult(
+        jobs: const [],
+        issues: [
+          DurableCloudMediaOutboxLoadIssue(
+            storageKey: HiveBoxNames.cloudMediaOutboxBox,
+            error: reason,
+          ),
+        ],
+      );
+
+  @override
+  Future<void> put(CloudMediaUploadJob job) =>
+      Future.error(CloudUnavailableException(reason));
+
+  @override
+  Future<void> putAll(Iterable<CloudMediaUploadJob> jobs) =>
+      Future.error(CloudUnavailableException(reason));
+
+  @override
+  Future<void> remove(CloudMediaUploadJob job) =>
+      Future.error(CloudUnavailableException(reason));
+}
+
 final durableCloudMediaOutboxStoreProvider =
     Provider<DurableCloudMediaOutboxStore>(
-  (ref) => HiveDurableCloudMediaOutboxStore(),
+  (ref) {
+    final unavailableReason = ref.watch(cloudStartupProvider).unavailableReason;
+    return unavailableReason == null
+        ? HiveDurableCloudMediaOutboxStore()
+        : UnavailableDurableCloudMediaOutboxStore(unavailableReason);
+  },
 );
 
 Map<String, dynamic> _jobToJson(CloudMediaUploadJob job) {

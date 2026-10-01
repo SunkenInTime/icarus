@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 
@@ -336,6 +337,40 @@ class MemoryDurableStrategyOutboxStore implements DurableStrategyOutboxStore {
   }
 }
 
+/// The outbox in a run where cloud sync did not start. It reads nothing and
+/// writes nothing, so the box file stays exactly as the last run left it.
+/// Its one load issue keeps everything that waits on a clean load waiting.
+class UnavailableDurableStrategyOutboxStore
+    implements DurableStrategyOutboxStore {
+  const UnavailableDurableStrategyOutboxStore(this.reason);
+
+  final String reason;
+
+  @override
+  DurableOutboxLoadResult load() => DurableOutboxLoadResult(
+        records: const [],
+        issues: [
+          DurableOutboxLoadIssue(
+            storageKey: HiveBoxNames.strategyOutboxBox,
+            error: reason,
+          ),
+        ],
+      );
+
+  @override
+  Future<void> put(DurableOutboxRecord record) =>
+      Future.error(CloudUnavailableException(reason));
+
+  @override
+  Future<void> remove(String storageKey) =>
+      Future.error(CloudUnavailableException(reason));
+}
+
 final durableStrategyOutboxStoreProvider = Provider<DurableStrategyOutboxStore>(
-  (ref) => HiveDurableStrategyOutboxStore(),
+  (ref) {
+    final unavailableReason = ref.watch(cloudStartupProvider).unavailableReason;
+    return unavailableReason == null
+        ? HiveDurableStrategyOutboxStore()
+        : UnavailableDurableStrategyOutboxStore(unavailableReason);
+  },
 );

@@ -6,6 +6,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/settings.dart';
@@ -418,6 +419,54 @@ class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
   Future<AuthResponse> refreshSession() => _client.auth.refreshSession();
 }
 
+/// Supabase in a run where cloud sync did not start: nobody is signed in,
+/// and every sign-in fails with the reason, which the sign-in dialog shows.
+class _UnavailableAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
+  const _UnavailableAuthProviderSupabaseApi(this.reason);
+
+  final String reason;
+
+  Future<Never> _refuse() => Future.error(CloudUnavailableException(reason));
+
+  @override
+  Session? get currentSession => null;
+
+  @override
+  Stream<AuthState> get onAuthStateChange => const Stream.empty();
+
+  @override
+  Future<bool> signInWithOAuth(
+    OAuthProvider provider, {
+    required String redirectTo,
+    required LaunchMode authScreenLaunchMode,
+    required String scopes,
+  }) =>
+      _refuse();
+
+  @override
+  Future<AuthResponse> signInWithPassword({
+    required String email,
+    required String password,
+  }) =>
+      _refuse();
+
+  @override
+  Future<AuthResponse> signUp({
+    required String email,
+    required String password,
+  }) =>
+      _refuse();
+
+  @override
+  Future<void> signOut() => _refuse();
+
+  @override
+  Future<void> getSessionFromUrl(Uri uri) => _refuse();
+
+  @override
+  Future<AuthResponse> refreshSession() => _refuse();
+}
+
 /// The redirect this build asks Supabase to return to after Discord sign-in:
 /// the `icarus://` deep link on desktop, the page's own origin on web.
 Uri currentAuthRedirectUri() {
@@ -427,6 +476,11 @@ Uri currentAuthRedirectUri() {
 class AuthProvider extends Notifier<AppAuthState> {
   StreamSubscription<AuthState>? _supabaseAuthSub;
   AuthProviderAuthHandle? _convexAuthHandle;
+
+  /// Whether this run ever gave Convex a token. Until it has, there is no
+  /// auth to clear, and clearing it would open the Convex socket for a
+  /// signed-out user who never asked for the cloud.
+  bool _convexMayHoldAuth = false;
   Future<void>? _inFlightConvexSetup;
   bool _queuedConvexSetup = false;
   String? _queuedConvexTrigger;
@@ -479,7 +533,12 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   @override
   AppAuthState build() {
-    _supabaseApi = debugSupabaseApi ?? const _DefaultAuthProviderSupabaseApi();
+    final cloudUnavailableReason =
+        ref.read(cloudStartupProvider).unavailableReason;
+    _supabaseApi = debugSupabaseApi ??
+        (cloudUnavailableReason == null
+            ? const _DefaultAuthProviderSupabaseApi()
+            : _UnavailableAuthProviderSupabaseApi(cloudUnavailableReason));
     _convexApi = debugConvexApi ?? const _DefaultAuthProviderConvexApi();
     final session = _supabaseApi.currentSession;
     final initialGeneration = _advanceAuthGeneration();
@@ -592,7 +651,9 @@ class AuthProvider extends Notifier<AppAuthState> {
         isLoading: false,
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
-        errorMessage: 'Discord sign-in failed: $error',
+        errorMessage: error is CloudUnavailableException
+            ? error.message
+            : 'Discord sign-in failed: $error',
       );
       return;
     }
@@ -649,6 +710,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   static String _friendlySignInError(Object error) {
+    if (error is CloudUnavailableException) return error.message;
     final message = error.toString().toLowerCase();
     if (message.contains('invalid login credentials') ||
         message.contains('invalid_credentials')) {
@@ -671,6 +733,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   static String _friendlySignUpError(Object error) {
+    if (error is CloudUnavailableException) return error.message;
     final message = error.toString().toLowerCase();
     if (message.contains('already registered') ||
         message.contains('already exists')) {
@@ -1069,7 +1132,10 @@ class AuthProvider extends Notifier<AppAuthState> {
     if (session == null) {
       _convexAuthHandle?.dispose();
       _convexAuthHandle = null;
-      await _convexApi.clearAuth();
+      if (_convexMayHoldAuth) {
+        await _convexApi.clearAuth();
+        _convexMayHoldAuth = false;
+      }
       if (!_isAuthContextCurrent(
         generation: generation,
         sessionFingerprint: sessionFingerprint,
@@ -1098,6 +1164,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       _convexAuthHandle?.dispose();
       final wasAuthenticatedBeforeSetup = _convexApi.isAuthenticated;
       bool? reconnectResult;
+      _convexMayHoldAuth = true;
       final authHandle = await _convexApi.setAuthWithRefresh(
         fetchToken: _fetchSupabaseAccessToken,
         onAuthChange: (isAuthenticated) {

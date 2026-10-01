@@ -3,10 +3,8 @@ import 'dart:developer' as developer;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
+import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
-import 'package:icarus/collab/convex_client.dart';
-import 'package:icarus/collab/durable_cloud_media_outbox.dart';
-import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
@@ -16,7 +14,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/services/deep_link_registrar.dart';
 import 'package:icarus/services/desktop_runtime.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -50,9 +47,9 @@ import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
-import 'package:icarus/services/local_image_file.dart' show deviceHasImageFiles;
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -203,13 +200,6 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
-      await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
-      await prepareDurableStrategyOutbox();
-      await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
-      await prepareDurableCloudMediaOutbox();
-      if (!deviceHasImageFiles) {
-        await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
-      }
       await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
       await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);
 
@@ -217,19 +207,12 @@ Future<void> main(List<String> args) async {
 
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
 
-      await ConvexClient.initialize(
-        ConvexConfig(
-          deploymentUrl: cloudBuildConfig.deploymentUrl,
-          clientId: cloudBuildConfig.clientId,
-          operationTimeout: const Duration(seconds: 30),
-          healthCheckQuery: defaultConvexHealthCheckQuery,
-        ),
-      );
-
-      await Supabase.initialize(
-        url: 'https://gjdirtrtgnawqoruavqn.supabase.co',
-        anonKey: 'sb_publishable_6M0VCSZCvRFrcgNANWPVWw_U06T_rUo',
-        authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
+      // The cloud comes up degraded rather than not at all: a failure here
+      // must never keep anyone from the library on this device.
+      appProviderContainer.read(cloudStartupProvider.notifier).state =
+          await startCloud(
+        openOutboxes: openCloudOutboxes,
+        initializeClients: () => initializeCloudClients(cloudBuildConfig),
       );
 
       await AnalyticsService.instance.initialize();
@@ -479,6 +462,16 @@ class _MyAppState extends ConsumerState<MyApp> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(warmUpWebViewEnvironment());
+
+      final cloudUnavailableReason =
+          ref.read(cloudStartupProvider).unavailableReason;
+      if (cloudUnavailableReason != null) {
+        AppErrorReporter.reportWarning(
+          cloudUnavailableReason,
+          source: 'main.cloudStartup',
+          promptUser: true,
+        );
+      }
 
       if (widget.data.isEmpty) return;
 

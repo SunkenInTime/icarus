@@ -526,7 +526,9 @@ void main() {
     expect(state.convexAuthStatus, ConvexAuthStatus.signedOut);
   });
 
-  test('null session clears Convex auth cleanly', () async {
+  test('a signed-out startup leaves Convex alone', () async {
+    // Clearing auth that was never set would open the Convex socket for a
+    // user who never asked for the cloud.
     supabaseApi.currentSession = null;
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -537,9 +539,33 @@ void main() {
     await pumpMicrotasks();
 
     final state = container.read(authProvider);
-    expect(convexApi.clearAuthCalls, 1);
+    expect(convexApi.clearAuthCalls, 0);
+    expect(convexApi.setAuthCalls, 0);
     expect(state.isAuthenticated, isFalse);
     expect(state.convexAuthStatus, ConvexAuthStatus.signedOut);
+  });
+
+  test('a session that ends clears the Convex auth it set', () async {
+    supabaseApi.currentSession = fakeSession();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(convexApi.setAuthCalls, 1);
+    expect(convexApi.clearAuthCalls, 0);
+
+    // The session expires or is revoked: Supabase reports it gone without
+    // a sign-out through the app.
+    supabaseApi.currentSession = null;
+    supabaseApi.emit(AuthChangeEvent.signedOut, null);
+    await pumpMicrotasks();
+
+    expect(convexApi.clearAuthCalls, 1);
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.signedOut,
+    );
   });
 
   test('real unauthenticated error still creates auth incident', () async {
