@@ -21,18 +21,23 @@ import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
+import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-const double _cardWidth = 232;
-const double _cardHeight = 124;
+const double folderCardHeight = 124;
 
-/// Half the gutter between cards in the library Wrap. Baked into each
+/// Half the gutter between cards in the library grid. Baked into each
 /// card's drop hit area so hovering the gap itself targets a card and the
 /// insertion caret never has a dead zone between neighbors. FolderContent
-/// lays cards out with zero Wrap spacing to compensate.
-const double folderCardGutterOutset = 7;
+/// lays cards out with zero grid spacing to compensate. It matches the
+/// strategy tiles' gutter so folders and strategies share columns.
+const double folderCardGutterOutset = strategyTileGutterOutset;
+
+/// The card fills the width it is given, a column in the library grid.
+/// The edit dialog's preview has no column, so it uses this width.
+const double folderCardPreviewWidth = 232 + 2 * folderCardGutterOutset;
 const double _pocketTop = 52;
-const double _peekWidth = 208;
+const double _peekInset = 12;
 const double _peekHeight = 82;
 const double _agentIconSize = 22;
 const double _agentRowSpacing = 4;
@@ -408,9 +413,9 @@ class _FolderCardState extends ConsumerState<FolderCard>
                                 key: ValueKey(slotKey),
                                 slotKey: slotKey,
                                 side: dropSide,
-                                // Matches the Wrap spacing in FolderContent
-                                // so the caret sits centered in the gutter.
-                                gap: 14,
+                                // Matches the grid gutter in FolderContent
+                                // so the caret sits centered in it.
+                                gap: 2 * folderCardGutterOutset,
                                 // Aligns with the folder body below the tab.
                                 topInset: 14,
                               ),
@@ -452,8 +457,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
         : Colors.white.withValues(alpha: 0.10 + 0.15 * t);
 
     return SizedBox(
-      width: _cardWidth,
-      height: _cardHeight,
+      width: double.infinity,
+      height: folderCardHeight,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -521,11 +526,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
     final peeks = widget.data.mapPeeks;
     if (peeks.isEmpty) return const [];
 
-    const centerLeft = (_cardWidth - _peekWidth) / 2;
-
     Widget photo(String asset) {
       return Container(
-        width: _peekWidth,
         height: _peekHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(7),
@@ -546,7 +548,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
     if (peeks.length == 1) {
       return [
         Positioned(
-          left: centerLeft,
+          left: _peekInset,
+          right: _peekInset,
           top: 22 - 14 * t,
           child: Transform.rotate(
             angle: -0.02 - 0.03 * t,
@@ -568,7 +571,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
     return [
       for (var depth = peeks.length - 1; depth >= 0; depth--)
         Positioned(
-          left: centerLeft + lefts[depth],
+          left: _peekInset + lefts[depth],
+          right: _peekInset - lefts[depth],
           top: tops[depth] - lifts[depth] * t,
           child: Transform.rotate(
             angle: restAngles[depth] + openAngles[depth] * t,

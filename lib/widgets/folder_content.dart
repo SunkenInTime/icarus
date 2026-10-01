@@ -577,21 +577,25 @@ class FolderContent extends ConsumerWidget {
 
         return CustomScrollView(
           slivers: [
+            // Folder cards, on the same columns as the strategies below.
             if (folders.isNotEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  // Each card carries half the gutter as drop hit area, so
-                  // the row's padding shrinks by that much to keep x=16.
-                  padding: const EdgeInsets.fromLTRB(
-                    16 - folderCardGutterOutset,
-                    16,
-                    16 - folderCardGutterOutset,
-                    8,
+              SliverPadding(
+                // Each card carries half the gutter as drop hit area, so
+                // the row's padding shrinks by that much to keep x=16.
+                padding: const EdgeInsets.fromLTRB(
+                  16 - folderCardGutterOutset,
+                  16,
+                  16 - folderCardGutterOutset,
+                  8,
+                ),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    mainAxisExtent: folderCardHeight,
+                    mainAxisSpacing: 14,
                   ),
-                  child: Wrap(
-                    spacing: 0,
-                    runSpacing: 14,
-                    children: [
+                  delegate: SliverChildListDelegate.fixed(
+                    [
                       for (final row in folders)
                         FolderCard(
                           key: ValueKey(row.id),
@@ -623,21 +627,6 @@ class FolderContent extends ConsumerWidget {
                         else
                           _cloudTile(row.cloud!),
                     ],
-                  ),
-                ),
-              )
-            else if (folders.isNotEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 48),
-                    child: Text(
-                      'No strategies in this folder',
-                      style: TextStyle(
-                        color: Settings.tacticalVioletTheme.mutedForeground,
-                      ),
-                    ),
                   ),
                 ),
               ),

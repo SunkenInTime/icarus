@@ -198,22 +198,25 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         padding: const EdgeInsets.all(24.0),
                         child: Material(
                           color: Colors.transparent,
-                          child: FolderCard(
-                            data: FolderCardViewData(
-                              folder: Folder(
-                                iconId: _selectedIconId,
-                                name: _folderNameController.text.isEmpty
-                                    ? "New Folder"
-                                    : _folderNameController.text,
-                                id: "null",
-                                dateCreated: DateTime.now(),
-                                color: _selectedColor,
-                                customColor: _customColor,
+                          child: SizedBox(
+                            width: folderCardPreviewWidth,
+                            child: FolderCard(
+                              data: FolderCardViewData(
+                                folder: Folder(
+                                  iconId: _selectedIconId,
+                                  name: _folderNameController.text.isEmpty
+                                      ? "New Folder"
+                                      : _folderNameController.text,
+                                  id: "null",
+                                  dateCreated: DateTime.now(),
+                                  color: _selectedColor,
+                                  customColor: _customColor,
+                                ),
+                                strategies: const [],
+                                folderCount: 0,
                               ),
-                              strategies: const [],
-                              folderCount: 0,
+                              isDemo: true,
                             ),
-                            isDemo: true,
                           ),
                         ),
                       ),

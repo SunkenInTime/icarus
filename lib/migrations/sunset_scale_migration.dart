@@ -4,6 +4,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 abstract final class SunsetScaleMigration {
@@ -33,7 +34,7 @@ abstract final class SunsetScaleMigration {
   }
 
   static PlacedAbility _ability(PlacedAbility ability) {
-    final data = ability.data.abilityData;
+    final data = abilityDataBeforeVersion104(ability.data);
     if (data == null) return ability;
     final delta = (data.getAnchorPoint(
               mapScale: _oldScale,

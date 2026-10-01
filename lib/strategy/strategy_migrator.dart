@@ -14,6 +14,7 @@ import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_graph_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/migrations/page_name_provenance_migration.dart';
+import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/migrations/sunset_scale_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -199,7 +200,11 @@ class StrategyMigrator {
       canonicalMigrated,
       force: originalVersion < SunsetScaleMigration.version,
     );
-    final migrated = AgentWeaponMigration.migrate(sunsetMigrated);
+    final paranoiaMigrated = migrateParanoiaRange(
+      sunsetMigrated,
+      force: originalVersion < ParanoiaRangeMigration.version,
+    );
+    final migrated = AgentWeaponMigration.migrate(paranoiaMigrated);
     // Releases without a schema change still finish at the current version.
     // Never downgrade a strategy written by a newer release.
     return migrated.versionNumber < Settings.versionNumber
@@ -219,6 +224,25 @@ class StrategyMigrator {
         pages: strat.pages,
         map: strat.mapData,
       ),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateParanoiaRange(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force && strat.versionNumber >= ParanoiaRangeMigration.version) {
+      return strat;
+    }
+    final pages = ParanoiaRangeMigration.migratePages(
+      pages: strat.pages,
+      map: strat.mapData,
+    );
+    if (identical(pages, strat.pages)) return strat;
+    return strat.copyWith(
+      pages: pages,
       versionNumber: Settings.versionNumber,
       lastEdited: DateTime.now(),
     );
@@ -376,8 +400,10 @@ class StrategyMigrator {
       pageNameMigrated,
       force: originalVersion < CanonicalCoordinatesMigration.version,
     );
-    return migrateSunsetScale(canonicalMigrated,
+    final sunsetMigrated = migrateSunsetScale(canonicalMigrated,
         force: originalVersion < SunsetScaleMigration.version);
+    return migrateParanoiaRange(sunsetMigrated,
+        force: originalVersion < ParanoiaRangeMigration.version);
   }
 
   static StrategyData migrateToWorld16x9(StrategyData strat,
