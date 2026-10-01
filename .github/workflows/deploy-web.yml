@@ -34,10 +34,12 @@ on:
 permissions:
   contents: read
 
-# A newer push replaces an older deploy that is still running.
+# Deploys queue rather than cancel each other. A run cancelled after the
+# Convex deploy but before Pages would leave the live web build on a server
+# it may not speak to; the next run then publishes the newest build anyway.
 concurrency:
   group: deploy-web
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
