@@ -215,6 +215,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   late DurableStrategyOutboxStore _store;
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
   final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
+
+  /// Op IDs of the active strategy's work that was already in the outbox
+  /// when it became active, and of the ops resent in their place. The canvas
+  /// was drawn from the server without them; their acks say so.
+  final Set<String> _restoredOpIds = {};
   final Set<String> _uncertainOversizedParking = {};
   final Set<String> _uncertainDurableRecords = {};
   final Map<String, DurableOutboxRecord> _uncertainDurableIntents = {};
@@ -374,6 +379,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
       }
     }
+    _restoredOpIds
+      ..clear()
+      ..addAll([
+        for (final intents in [queued, successors, paused, attention])
+          for (final intent in intents.values) intent.pending.op.opId,
+        for (final intent in inFlight.values) intent.pending.op.opId,
+      ]);
     final clientId =
         matching.firstOrNull?.pending.clientId ?? const Uuid().v4();
     final hasDurabilityFailure = _hasDurabilityFailureForAccount(accountId);
@@ -912,6 +924,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                   retryRevision!,
                   preserveAdd: isTombstoneRestore,
                 );
+          _keepRestored(retryOp, rebasedOp);
           final pending = PendingOp(
             op: rebasedOp,
             clientId: successor?.clientId ?? rejected.clientId,
@@ -1470,6 +1483,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         entityKey: sent.entityKey,
         op: sent.pending.op,
         ack: ack,
+        restored: _restoredOpIds.contains(ack.opId),
       ));
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
@@ -1488,6 +1502,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ),
           clientId: successor.clientId,
         );
+        _keepRestored(successor.op, promoted.op);
         final isPromotedOversized = cloudOperationExceedsPolicy(promoted.op);
         await _putRecord(current.copyWith(
           pending: promoted,
@@ -2431,6 +2446,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
     }
     return desired.withOpId(replacementOpId);
+  }
+
+  /// [resent] carries [original]'s work under a new op ID: restored work
+  /// stays restored.
+  void _keepRestored(StrategyOp original, StrategyOp resent) {
+    if (_restoredOpIds.contains(original.opId)) {
+      _restoredOpIds.add(resent.opId);
+    }
   }
 
   StrategyOp _rebaseRejectedOp(

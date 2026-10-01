@@ -2572,6 +2572,172 @@ void main() {
       await _settle();
     });
 
+    test('typing into an item whose move the live read shows before its ack',
+        () async {
+      final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+      final (container, queue) = await openWithQueue(remote);
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(200, 200), 'a');
+      await _settle();
+      final sent = queue
+          .state
+          .queuedByEntityKey[EntitySyncKey.element(page.publicId, 'a')]!
+          .pending
+          .op as ElementPatchOp;
+      container.read(textDraftProvider.notifier).setDraft('a', 'typing');
+      remote.setSnapshot(snapshot([
+        RemoteElement(
+          publicId: 'a',
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: page.publicId,
+          elementType: 'text',
+          payload: sent.payload!,
+          sortIndex: 0,
+          revision: 2,
+          deleted: false,
+        ),
+      ], contentRevision: 2));
+      // The waiting reload starts as the queue empties, before the session
+      // hears the ack.
+      land(queue, sent, 2);
+      await _settle();
+      container.read(textDraftProvider.notifier).commitDraft('a');
+      await _settle();
+      expect(elementOps(container)['a']!.expectedRevision, 2);
+      await _settle();
+    });
+
+    group('an edit recovered from the outbox', () {
+      final key = EntitySyncKey.element(page.publicId, 'a');
+      final landed = _textElement(page.publicId, 'a', 'recovered',
+          revision: 2, worldSized: true);
+      final recovered = ElementPatchOp(
+        opId: 'recovered-edit',
+        pagePublicId: page.publicId,
+        elementPublicId: 'a',
+        expectedElementRevision: 1,
+        payload: landed.payload,
+        sortIndex: 0,
+      );
+
+      /// Opens the page while [recovered] waits in the outbox, as after a
+      /// restart: queued, or already sent if [inFlight].
+      Future<(ProviderContainer, _FakeStrategyOpQueueNotifier)> openRecovering(
+        _FakeRemoteEditorNotifier remote, {
+        bool inFlight = false,
+      }) async {
+        final queue = _FakeStrategyOpQueueNotifier();
+        final container = await _cloudContainer(remote: remote, queue: queue);
+        if (inFlight) {
+          queue.holdInFlight(key, recovered);
+        } else {
+          queue.state = queue.state.copyWith(queuedByEntityKey: {
+            key: QueuedEntityIntent(
+              entityKey: key,
+              pending: PendingOp(op: recovered, clientId: 'test-client'),
+            ),
+          });
+        }
+        await container
+            .read(strategyPageSessionProvider.notifier)
+            .initializeForStrategy(
+              strategyId: 'cloud-strategy',
+              source: StrategySource.cloud,
+              selectFirstPageIfNeeded: true,
+            );
+        return (container, queue);
+      }
+
+      void landRecovered(_FakeStrategyOpQueueNotifier queue) {
+        final ack = AckedEntityIntent(
+          entityKey: key,
+          op: recovered,
+          ack: const AppliedOpAck(opId: 'recovered-edit', revision: 2),
+          restored: true,
+        );
+        queue.state = queue.state.copyWith(
+          queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+          inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
+          lastAcks: [ack.ack],
+          lastAckBatch: [ack],
+        );
+      }
+
+      for (final ackFirst in [false, true]) {
+        test(
+            'landing under a held item makes the drop conflict '
+            '(${ackFirst ? 'ack' : 'live read'} first)', () async {
+          final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+          final (container, queue) = await openRecovering(remote);
+          expect(container.read(textProvider).single.text, 'a');
+          container.read(editorPointersProvider.notifier)
+            ..holdEntity(1, 'a')
+            ..down(1);
+          if (ackFirst) landRecovered(queue);
+          remote.setSnapshot(snapshot([landed], contentRevision: 2));
+          if (!ackFirst) landRecovered(queue);
+          await _settle();
+          // Nothing re-sends the version on screen over the recovered edit.
+          expect(queue.state.queuedByEntityKey[key], isNull);
+          expect(container.read(textProvider).single.text, 'a');
+          // The drag ends on the old text: sent against the version the user
+          // saw, so the server refuses it instead of replacing 'recovered'.
+          container
+              .read(textProvider.notifier)
+              .updatePosition(const Offset(300, 300), 'a');
+          expect(elementOps(container)['a']!.expectedRevision, 1);
+          await _settle();
+        });
+      }
+
+      test('an edit after it lands, before the page reloads, conflicts',
+          () async {
+        final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+        final (container, queue) = await openRecovering(remote);
+        // The live read has not caught up with the landed edit yet.
+        landRecovered(queue);
+        await _settle();
+        expect(queue.state.queuedByEntityKey[key], isNull);
+        expect(container.read(textProvider).single.text, 'a');
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(300, 300), 'a');
+        expect(elementOps(container)['a']!.expectedRevision, 1);
+        await _settle();
+      });
+
+      test('landing with nothing held is taken from the next read', () async {
+        final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+        final (container, queue) = await openRecovering(remote);
+        landRecovered(queue);
+        remote.setSnapshot(snapshot([landed], contentRevision: 2));
+        await _settle();
+        expect(container.read(textProvider).single.text, 'recovered');
+        expect(elementOps(container), isEmpty);
+        await _settle();
+      });
+
+      test('while it is in flight, other edits leave it as it is', () async {
+        final remote =
+            _FakeRemoteEditorNotifier(snapshot([text('a', 0), text('b', 1)]));
+        final (container, queue) = await openRecovering(remote, inFlight: true);
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(300, 300), 'b');
+        expect(elementOps(container)['a']?.opId, 'recovered-edit');
+        // The server applied it; its answer is still on the way.
+        remote
+            .setSnapshot(snapshot([landed, text('b', 1)], contentRevision: 2));
+        await _settle();
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(320, 320), 'b');
+        expect(elementOps(container)['a']?.opId, 'recovered-edit');
+        await _settle();
+      });
+    });
+
     test('moving past an element with the same sortIndex is sent', () async {
       final container = await open(
           _FakeRemoteEditorNotifier(snapshot([text('a', 3), text('b', 3)])));
@@ -3443,26 +3609,27 @@ void main() {
       queue: queue,
     );
     container.read(strategyOpQueueProvider);
-    queue.holdInFlight(
-      key,
-      const PagePatchOp(
-        opId: 'defense-in-flight',
-        pagePublicId: 'page-1',
-        payload: {'isAttack': false},
-        expectedPageRevision: 7,
-      ),
-    );
-    container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
-          strategyPublicId: 'cloud-strategy',
-          pageId: page.publicId,
-          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
-        );
+    final sync = container.read(activePageLiveSyncProvider.notifier)
+      ..markPageHydrated(
+        strategyPublicId: 'cloud-strategy',
+        pageId: page.publicId,
+        snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
+      );
+    // The user switches to defense, and that is sent.
+    container.read(mapProvider.notifier).setAttack(false);
+    final defense = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    )![key]!;
+    expect(defense.payload, {'isAttack': false});
+    queue.holdInFlight(key, defense);
+    // They switch back while it is on its way.
+    container.read(mapProvider.notifier).setAttack(true);
 
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
 
     final sideOp = desired![key] as PagePatchOp;
     expect(sideOp.payload, {'isAttack': true});

@@ -338,8 +338,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
       if (accepted == null) continue;
 
-      _hydratedBaseByEntityKey[key] = accepted;
-      remoteRevisions[key] = revision;
+      // The user's newer edit to it, if any, follows the op onto this
+      // revision, as the queue's successor does.
       final overlay = overlays[key];
       if (overlay != null) {
         overlays[key] = overlay.copyWith(
@@ -347,6 +347,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           baseDeleted: accepted.deleted,
         );
       }
+      // The canvas was drawn without an op recovered from the outbox and
+      // still shows the version before it. Its landing is a server change
+      // like a teammate's: the next merge draws it, and until then an edit
+      // to the item is checked against the version on screen, so it
+      // conflicts instead of replacing the recovered work.
+      if (intent.restored) continue;
+      _hydratedBaseByEntityKey[key] = accepted;
+      remoteRevisions[key] = revision;
     }
     state = state.copyWith(
       overlayByEntityKey: overlays,
@@ -586,16 +594,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final shouldPreserveTouched = hasQueued || hasInFlight || hasSuccessor;
       final matchesRemote = _entitiesEquivalent(local, remote);
       final matchesHydratedBase = _entitiesEquivalent(local, hydratedBase);
-      final shouldUseRetainedIntent = hasQueued ||
-          (!hasInFlight && hasSuccessor) ||
-          (local == null && hydratedBase == null);
-
       // A restored queue entry has no in-memory overlay. If the canvas still
       // matches its hydrated base, the durable op is the only local intent and
-      // must remain desired until it lands or the user changes that entity.
+      // must remain desired until it lands or the user changes that entity,
+      // whether it is queued or already sent: the version on screen is older
+      // than it, not a change to send after it.
       if (existingOverlay == null &&
           retainedOp != null &&
-          shouldUseRetainedIntent &&
           matchesHydratedBase) {
         retainedDesiredOps[key] = retainedOp;
         _debugLog('overlay.keep $key reason=durable_queue_only');

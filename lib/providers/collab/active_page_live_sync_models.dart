@@ -242,9 +242,15 @@ class AckedEntityIntent {
     required this.entityKey,
     required this.op,
     required this.ack,
+    this.restored = false,
   });
 
   final EntitySyncKey entityKey;
   final StrategyOp op;
   final OpAck ack;
+
+  /// Whether [op] was already in the outbox when the strategy was opened:
+  /// work recovered after a restart or a reopen. The canvas was drawn from
+  /// the server without it, so it never showed what landed.
+  final bool restored;
 }

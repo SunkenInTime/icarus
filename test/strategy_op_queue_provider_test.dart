@@ -2306,6 +2306,70 @@ void main() {
       await replayRepository.secondCompleted.future;
     });
 
+    for (final editedAfterRestart in [false, true]) {
+      test(
+          'acks say which work was in the outbox before the restart '
+          '(final edit made ${editedAfterRestart ? 'after' : 'before'} it)',
+          () async {
+        final store = MemoryDurableStrategyOutboxStore();
+        const key = EntitySyncKey.element('page-1', 'element-1');
+        final firstRepository = _SequencedAckRepository();
+        var container = _cloudQueueContainer(
+          store: store,
+          repository: firstRepository,
+        );
+        var notifier = container.read(strategyOpQueueProvider.notifier)
+          ..setActiveStrategy('strategy-1', accountId: 'account-a');
+        await notifier.enqueue(_elementPatch(
+          opId: 'first',
+          value: 'first',
+          expectedRevision: 4,
+        ));
+        Future<void> editAgain() => notifier.syncDesiredOpsForPage(
+              pageId: 'page-1',
+              desiredOpsByEntityKey: {
+                key: _elementPatch(
+                  opId: 'second',
+                  value: 'second',
+                  expectedRevision: 4,
+                ),
+              },
+            );
+        if (!editedAfterRestart) {
+          unawaited(notifier.flushNow());
+          await firstRepository.firstStarted.future;
+          await editAgain();
+        }
+        container.dispose();
+
+        final repository = _SequencedAckRepository();
+        container = _cloudQueueContainer(store: store, repository: repository);
+        addTearDown(container.dispose);
+        notifier = container.read(strategyOpQueueProvider.notifier)
+          ..setActiveStrategy('strategy-1', accountId: 'account-a');
+        await repository.firstStarted.future;
+        if (editedAfterRestart) await editAgain();
+        List<AckedEntityIntent> acked() =>
+            container.read(strategyOpQueueProvider).lastAckBatch;
+
+        repository
+            .completeFirst(const AppliedOpAck(opId: 'first', revision: 5));
+        await repository.secondStarted.future;
+        expect(acked().single.op.opId, 'first');
+        expect(acked().single.restored, isTrue);
+
+        final finalEdit = repository.calls[1].single;
+        expect(finalEdit.payload, {'value': 'second'});
+        repository.completeSecond(
+          AppliedOpAck(opId: finalEdit.opId, revision: 6),
+        );
+        await repository.secondCompleted.future;
+        await Future<void>.delayed(Duration.zero);
+        expect(acked().single.op.opId, finalEdit.opId);
+        expect(acked().single.restored, !editedAfterRestart);
+      });
+    }
+
     test('rejected predecessor leaves its element successor in attention',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
