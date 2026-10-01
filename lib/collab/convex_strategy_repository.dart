@@ -1,3 +1,5 @@
+import 'dart:math' show min;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
@@ -157,6 +159,33 @@ class ConvexStrategyRepository {
         .map(_pageSnapshot);
   }
 
+  /// Which of [assetPublicIds] the strategy's content shows on the server,
+  /// or null while the server cannot tell yet. Asked a batch at a time.
+  Future<Set<String>?> fetchReferencedAssetIds(
+    String strategyPublicId,
+    Iterable<String> assetPublicIds,
+  ) async {
+    final asked = assetPublicIds.toSet().toList(growable: false);
+    final referenced = <String>{};
+    for (var start = 0; start < asked.length; start += _referencedIdsBatch) {
+      final ids = await _api.images
+          .listReferencedAssetIds(
+            strategyPublicId: strategyPublicId,
+            assetPublicIds: asked.sublist(
+              start,
+              min(start + _referencedIdsBatch, asked.length),
+            ),
+          )
+          .fetch();
+      if (ids == null) return null;
+      referenced.addAll(ids);
+    }
+    return referenced;
+  }
+
+  /// The server's MAX_REFERENCED_ASSET_IDS_PER_QUERY.
+  static const _referencedIdsBatch = 100;
+
   /// [shareToken]: see [fetchShell].
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
@@ -167,6 +196,9 @@ class ConvexStrategyRepository {
           .getFullSnapshot(
             strategyPublicId: strategyPublicId,
             shareToken: _optional(shareToken),
+            // This client checks image references apart, so it can take a
+            // snapshot without the pages in the server's trash.
+            acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
           )
           .fetch(),
     );

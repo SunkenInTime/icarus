@@ -272,8 +272,8 @@ ProviderContainer _webSession({
       convexConnectionProvider.overrideWith((ref) => Stream.value(online)),
       strategyProvider.overrideWith(_CloudStrategy.new),
       strategyOpQueueProvider.overrideWith(_OpQueue.new),
-      cloudMediaReferenceSnapshotLoaderProvider.overrideWithValue(
-        (_) async => throw StateError('no server reads in this test'),
+      cloudMediaReferenceLoaderProvider.overrideWithValue(
+        (_, __) async => throw StateError('no server reads in this test'),
       ),
     ],
   );
@@ -313,7 +313,8 @@ RemoteImageAsset _activeAsset(String id) => RemoteImageAsset(
       uploadStatus: 'active',
     );
 
-Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 50));
+Future<void> _settle() =>
+    Future<void>.delayed(const Duration(milliseconds: 50));
 
 Future<void> _until(bool Function() done) async {
   for (var i = 0; i < 60 && !done(); i++) {
@@ -359,8 +360,7 @@ void main() {
 
     // Offline: the picked image is saved and queued, nothing is sent.
     await tester.runAsync(() async {
-      final first =
-          _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+      final first = _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
       await first.read(placedImageProvider.notifier).saveSecureImage(
             _imageBytes,
             _imageId,
@@ -730,8 +730,7 @@ void main() {
       expect(bytesStore.values, hasLength(1));
     });
 
-    test('drafts whose queuing failed go when the dialog has closed',
-        () async {
+    test('drafts whose queuing failed go when the dialog has closed', () async {
       await drafts.add(_imageBytes, '.png');
       final handedOver = drafts.handOver();
       await drafts.dismissed();

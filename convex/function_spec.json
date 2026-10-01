@@ -40664,6 +40664,47 @@
       "args": {
         "type": "object",
         "value": {
+          "assetPublicIds": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "images.js:listReferencedAssetIds",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "array",
+            "value": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "assetIds": {
             "fieldType": {
               "type": "array",
@@ -182488,6 +182529,12 @@
       "args": {
         "type": "object",
         "value": {
+          "acceptsTrashedPagesLeftOut": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "shareToken": {
             "fieldType": {
               "type": "string"

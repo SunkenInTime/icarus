@@ -417,6 +417,10 @@ abstract interface class ImagesModule {
   ConvexQuery<List<ImagesListForStrategyResultItem>> listForStrategy({
     required String strategyPublicId,
   });
+  ConvexQuery<List<String>?> listReferencedAssetIds({
+    required List<String> assetPublicIds,
+    required String strategyPublicId,
+  });
 }
 
 final class _ImagesModule implements ImagesModule {
@@ -535,6 +539,23 @@ final class _ImagesModule implements ImagesModule {
       name: 'images:listForStrategy',
       args: args,
       decode: decodeImagesListForStrategyResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<String>?> listReferencedAssetIds({
+    required List<String> assetPublicIds,
+    required String strategyPublicId,
+  }) {
+    final args = encodeImagesListReferencedAssetIdsArgs(
+      assetPublicIds: assetPublicIds,
+      strategyPublicId: strategyPublicId,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'images:listReferencedAssetIds',
+      args: args,
+      decode: decodeImagesListReferencedAssetIdsResult,
     );
   }
 }
@@ -1327,6 +1348,8 @@ final class _StrategiesModule implements StrategiesModule {
 
 abstract interface class StrategyModule {
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<bool> acceptsTrashedPagesLeftOut =
+        const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
@@ -1341,10 +1364,13 @@ final class _StrategyModule implements StrategyModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<bool> acceptsTrashedPagesLeftOut =
+        const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetFullSnapshotArgs(
+      acceptsTrashedPagesLeftOut: acceptsTrashedPagesLeftOut,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );

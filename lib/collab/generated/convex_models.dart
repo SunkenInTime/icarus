@@ -5244,6 +5244,32 @@ List<ImagesListForStrategyResultItem> decodeImagesListForStrategyResult(
     )
     .toList(growable: false);
 
+ConvexObject encodeImagesListReferencedAssetIdsArgs({
+  required List<String> assetPublicIds,
+  required String strategyPublicId,
+}) => ConvexObject({
+  'assetPublicIds': ConvexArray(
+    assetPublicIds.indexed
+        .map((entry) => ConvexString(entry.$2))
+        .toList(growable: false),
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+List<String>? decodeImagesListReferencedAssetIdsResult(ConvexValue value) =>
+    (value) is ConvexNull
+    ? null
+    : _decodeArray(value, 'images.js:listReferencedAssetIds.returns')
+          .value
+          .indexed
+          .map(
+            (entry) => _decodeString(
+              entry.$2,
+              _indexPath('images.js:listReferencedAssetIds.returns', entry.$1),
+            ),
+          )
+          .toList(growable: false);
+
 ConvexObject encodeInvitesCreateArgs({
   required double clientProtocolVersion,
   ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
@@ -5842,9 +5868,15 @@ ConvexValue decodeStrategiesUpdateResult(ConvexValue value) =>
     _decodeRaw(value, 'strategies.js:update.returns', _validatePagesAddResult);
 
 ConvexObject encodeStrategyGetFullSnapshotArgs({
+  ConvexOptional<bool> acceptsTrashedPagesLeftOut =
+      const ConvexOptional.absent(),
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  if (acceptsTrashedPagesLeftOut.isPresent)
+    'acceptsTrashedPagesLeftOut': ConvexBoolean(
+      acceptsTrashedPagesLeftOut.value,
+    ),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
