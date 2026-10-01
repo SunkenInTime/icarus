@@ -5186,7 +5186,15 @@ ConvexObject encodeFoldersUpdateArgs({
 FoldersDeleteResult decodeFoldersUpdateResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'folders.js:update.returns');
 
-ConvexObject encodeHealthPingArgs() => ConvexObject({});
+ConvexObject encodeHealthPingArgs({
+  ConvexOptional<double> clientProtocolVersion = const ConvexOptional.absent(),
+}) => ConvexObject({
+  if (clientProtocolVersion.isPresent)
+    'clientProtocolVersion': _encodeNumber(
+      clientProtocolVersion.value,
+      'health.js:ping.args.clientProtocolVersion',
+    ),
+});
 
 HealthPingResult decodeHealthPingResult(ConvexValue value) =>
     HealthPingResult.fromWireName(

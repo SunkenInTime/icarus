@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
@@ -35,6 +36,30 @@ class _CloudStrategyProvider extends StrategyProvider {
         storageDirectory: null,
         isOpen: true,
       );
+}
+
+/// Counts saves instead of writing; the outbox's state is the test's.
+class _SavingStrategyProvider extends _CloudStrategyProvider {
+  int saves = 0;
+
+  @override
+  Future<void> forceSaveNow(String id) async {
+    saves += 1;
+  }
+}
+
+/// Answers whether the server accepts this build's protocol.
+class _ProtocolRepository extends Fake implements ConvexStrategyRepository {
+  _ProtocolRepository({required this.accepts});
+
+  final bool accepts;
+  int asked = 0;
+
+  @override
+  Future<bool> serverAcceptsCloudProtocol() async {
+    asked += 1;
+    return accepts;
+  }
 }
 
 class _SettledOpQueue extends StrategyOpQueueNotifier {
@@ -632,51 +657,73 @@ void main() {
   });
 
   group('when the server needs a newer Icarus', () {
-    ProviderContainer upgradeContainer({required bool updateWaiting}) {
+    ProviderContainer upgradeContainer({
+      bool updateWaiting = false,
+      StrategyOpQueueState? queue,
+      _SavingStrategyProvider? strategy,
+      _ProtocolRepository? repository,
+      void Function()? onUpdateCheck,
+    }) {
       final container = ProviderContainer(
         overrides: [
-          strategyProvider.overrideWith(_CloudStrategyProvider.new),
-          strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+          strategyProvider.overrideWith(
+            strategy == null ? _CloudStrategyProvider.new : () => strategy,
+          ),
+          strategyOpQueueProvider.overrideWith(
+            queue == null ? _SettledOpQueue.new : () => _FixedOpQueue(queue),
+          ),
           cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
           convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
-          appUpdateStatusProvider.overrideWith(
-            (ref) async => UpdateCheckResult(
+          appUpdateStatusProvider.overrideWith((ref) async {
+            onUpdateCheck?.call();
+            return UpdateCheckResult(
               isSupported: true,
               isUpdateAvailable: updateWaiting,
               source: 'test',
-            ),
-          ),
+            );
+          }),
           desktopUpdateControllerProvider.overrideWithValue(null),
+          if (repository != null)
+            convexStrategyRepositoryProvider.overrideWithValue(repository),
         ],
       );
       container.read(clientUpgradeRequiredProvider.notifier).noteError(
-            'ConvexFunctionException(CLIENT_UPGRADE_REQUIRED, '
-            'Client upgrade required)',
+            clientUpgradeRequiredQueueError,
           );
       return container;
+    }
+
+    Future<void> pump(
+      WidgetTester tester,
+      ProviderContainer container,
+      Widget child,
+    ) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ToastificationWrapper(
+            child: ShadApp(home: Scaffold(body: child)),
+          ),
+        ),
+      );
+      await tester.pump();
     }
 
     Future<void> openPopover(
       WidgetTester tester,
       ProviderContainer container,
     ) async {
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const ShadApp(
-            home: Scaffold(
-              body: CloudSyncButton(style: kEditorToolbarButtonStyle),
-            ),
-          ),
-        ),
+      await pump(
+        tester,
+        container,
+        const CloudSyncButton(style: kEditorToolbarButtonStyle),
       );
-      await tester.pump();
       await tester.tap(_syncButton('attention'));
       await tester.pumpAndSettle();
     }
 
     test('nothing appears synced, even with nothing queued', () async {
-      final container = upgradeContainer(updateWaiting: false);
+      final container = upgradeContainer();
       addTearDown(container.dispose);
       await container.read(convexConnectionProvider.future);
 
@@ -702,29 +749,151 @@ void main() {
       expect(find.text('Keep mine'), findsNothing);
     });
 
-    testWidgets('offers no action it cannot take while no update is known',
+    test('looks for the update again once refused', () async {
+      var checks = 0;
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final previous = UpdateChecker.windowsStoreCheckOverride;
+      UpdateChecker.windowsStoreCheckOverride = () async {
+        checks += 1;
+        return <String, dynamic>{
+          'isSupported': true,
+          'isUpdateAvailable': false,
+        };
+      };
+      addTearDown(() => UpdateChecker.windowsStoreCheckOverride = previous);
+
+      await container.read(appUpdateStatusProvider.future);
+      expect(checks, 1);
+      container
+          .read(clientUpgradeRequiredProvider.notifier)
+          .noteError(clientUpgradeRequiredQueueError);
+      await container.read(appUpdateStatusProvider.future);
+
+      expect(checks, 2);
+    });
+
+    testWidgets(
+        'says honestly when no update is there yet, and can check again',
         (tester) async {
-      final container = upgradeContainer(updateWaiting: false);
+      var checks = 0;
+      final repository = _ProtocolRepository(accepts: true);
+      final container = upgradeContainer(
+        repository: repository,
+        onUpdateCheck: () => checks += 1,
+      );
       addTearDown(container.dispose);
 
       await openPopover(tester, container);
 
       expect(
-        find.text('Icarus was updated. Install the update to keep syncing.'),
+        find.textContaining("the update isn't available for this app yet"),
         findsOneWidget,
       );
-      expect(find.byKey(const ValueKey('client-upgrade-button')), findsNothing);
+      expect(find.textContaining('Your work is safe on this device'),
+          findsOneWidget);
+      expect(find.textContaining('Install the update'), findsNothing);
       expect(find.text('Retry sync'), findsNothing);
+      final checksBefore = checks;
+
+      await tester.tap(find.text('Check again'));
+      await tester.pumpAndSettle();
+
+      // The update is looked for again, and the server asked whether it
+      // accepts this build again (a rolled-back deploy), which it does.
+      expect(checks, greaterThan(checksBefore));
+      expect(repository.asked, 1);
+      expect(container.read(clientUpgradeRequiredProvider), isFalse);
     });
 
-    testWidgets('the web reloads', (tester) async {
-      await tester.pumpWidget(
-        const ShadApp(
-          home: Scaffold(body: ClientUpgradeButton(isWeb: true)),
+    testWidgets('unsaved work outranks the refusal and is never reloaded away',
+        (tester) async {
+      final container = upgradeContainer(
+        updateWaiting: true,
+        queue: const StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'client-a',
+          durableLoaded: true,
+          hasDurabilityFailure: true,
+          lastError: 'Cloud work could not be verified in the durable '
+              'outbox. Nothing was sent.',
         ),
       );
+      addTearDown(container.dispose);
 
-      expect(find.text('Reload'), findsOneWidget);
+      await openPopover(tester, container);
+
+      expect(find.text('Retry sync'), findsOneWidget);
+      expect(find.textContaining('Icarus was updated'), findsNothing);
+      expect(find.byKey(const ValueKey('client-upgrade-button')), findsNothing);
+    });
+
+    testWidgets('the web reloads once the work is safe on this device',
+        (tester) async {
+      final strategy = _SavingStrategyProvider();
+      final container = upgradeContainer(strategy: strategy);
+      addTearDown(container.dispose);
+      var reloads = 0;
+
+      await pump(
+        tester,
+        container,
+        ClientUpgradeNotice(
+          isWeb: true,
+          onReload: () => reloads += 1,
+          builder: (context, message, action) =>
+              Column(children: [Text(message), action!]),
+        ),
+      );
+      expect(find.text('Icarus was updated. Reload to keep syncing.'),
+          findsOneWidget);
+      await tester.tap(find.text('Reload'));
+      await tester.pumpAndSettle();
+
+      expect(strategy.saves, 1);
+      expect(reloads, 1);
+    });
+
+    testWidgets('the web does not reload while the outbox is uncertain',
+        (tester) async {
+      final strategy = _SavingStrategyProvider();
+      final container = upgradeContainer(
+        strategy: strategy,
+        queue: const StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'client-a',
+          durableLoaded: true,
+          hasDurabilityFailure: true,
+        ),
+      );
+      addTearDown(container.dispose);
+      var reloads = 0;
+
+      await pump(
+        tester,
+        container,
+        ClientUpgradeNotice(
+          isWeb: true,
+          onReload: () => reloads += 1,
+          builder: (context, message, action) =>
+              Column(children: [Text(message), action!]),
+        ),
+      );
+      await tester.tap(find.text('Reload'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(strategy.saves, 1);
+      expect(reloads, 0);
+      expect(
+        find.textContaining("so it didn't reload", skipOffstage: false),
+        findsOneWidget,
+      );
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
     });
   });
 

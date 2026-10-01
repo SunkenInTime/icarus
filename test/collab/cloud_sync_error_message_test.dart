@@ -3,6 +3,7 @@ import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/src/convex_client_types.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
 
 void main() {
   test('turns a forbidden Convex failure into a permission explanation', () {
@@ -104,14 +105,30 @@ void main() {
       );
     });
 
-    test('is told on desktop to install the update', () {
+    test('is told on desktop to install the update, once there is one', () {
       expect(
         clientUpgradeRequiredMessage(isWeb: false),
         'Icarus was updated. Install the update to keep syncing.',
       );
+      expect(
+        clientUpgradeRequiredMessage(
+          isWeb: false,
+          update: ClientUpdateAvailability.unavailable,
+        ),
+        "Icarus was updated, but the update isn't available for this app "
+        'yet. Your work is safe on this device and syncs once the update is '
+        'installed.',
+      );
+      expect(
+        clientUpgradeRequiredMessage(
+          isWeb: false,
+          update: ClientUpdateAvailability.checking,
+        ),
+        isNot(contains('Install')),
+      );
     });
 
-    test('is known from the refusal, however it was kept', () {
+    test('is known from the typed refusal', () {
       for (final error in <Object>[
         const ConvexFunctionException(
           code: ConvexErrorCode.clientUpgradeRequired,
@@ -123,21 +140,33 @@ void main() {
           message: 'Client upgrade required',
           data: null,
         ),
-        // The text an older build's outbox kept, paused after retries.
+        const ConvexTransportError(
+          rawCode: 'CLIENT_UPGRADE_REQUIRED',
+          message: 'Client upgrade required',
+        ),
+      ]) {
+        expect(isClientUpgradeRequiredError(error), isTrue, reason: '$error');
+      }
+    });
+
+    test('is known from exactly the text a refusal leaves behind', () {
+      for (final reason in [
+        // What the outbox kept, in this build and the protocol 3 web build.
         'ConvexFunctionException(CLIENT_UPGRADE_REQUIRED, Client upgrade '
             'required)',
         clientUpgradeRequiredQueueError,
       ]) {
-        expect(isClientUpgradeRequiredError(error), isTrue, reason: '$error');
+        expect(isClientUpgradeRequiredReason(reason), isTrue, reason: reason);
+        expect(isClientUpgradeRequiredError(reason), isTrue, reason: reason);
         expect(
-          friendlyCloudSyncError('$error'),
+          friendlyCloudSyncError(reason),
           clientUpgradeRequiredMessage(),
-          reason: '$error',
+          reason: reason,
         );
       }
     });
 
-    test('is not any other refusal', () {
+    test('is not any other error, even one that mentions the code', () {
       for (final error in <Object?>[
         null,
         'ConvexFunctionException(FORBIDDEN, Forbidden)',
@@ -146,11 +175,24 @@ void main() {
         // field the server no longer knows, or omits one it requires.
         'ConvexClientFunctionError(CONVEX_ERROR, ArgumentValidationError: '
             'Object is missing the required field `clientProtocolVersion`.)',
+        // Text that only mentions the code is no refusal.
+        'ConvexFunctionException(INVALID_PAYLOAD, name was '
+            'CLIENT_UPGRADE_REQUIRED)',
+        'CLIENT_UPGRADE_REQUIRED',
+        StateError('CLIENT_UPGRADE_REQUIRED'),
+        const ConvexFunctionException(
+          code: ConvexErrorCode.invalidPayload,
+          rawCode: 'INVALID_PAYLOAD',
+          message: 'CLIENT_UPGRADE_REQUIRED',
+        ),
       ]) {
         expect(isClientUpgradeRequiredError(error), isFalse, reason: '$error');
       }
       expect(
-        friendlyCloudSyncError('ConvexFunctionException(FORBIDDEN, Forbidden)'),
+        friendlyCloudSyncError(
+          'ConvexFunctionException(INVALID_PAYLOAD, name was '
+          'CLIENT_UPGRADE_REQUIRED)',
+        ),
         isNot(clientUpgradeRequiredMessage()),
       );
     });

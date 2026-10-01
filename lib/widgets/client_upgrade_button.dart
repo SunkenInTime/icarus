@@ -1,50 +1,148 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
+import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/browser_url.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// The way out when the server needs a newer Icarus. The web reloads into the
-/// build being served; a desktop install opens its waiting update, as the
-/// strip's update icon does, and shows nothing while no update is known.
-class ClientUpgradeButton extends StatelessWidget {
-  const ClientUpgradeButton({super.key, this.size, this.isWeb = kIsWeb});
+/// What the user is told while the server refuses this build, and the one
+/// action that can help, if there is one. The web reloads into the build
+/// being served. Desktop installs the waiting update (the one the strip's
+/// update icon opens); while none is known it says so and offers to check
+/// again, which also asks the server whether it accepts this build again.
+class ClientUpgradeNotice extends StatelessWidget {
+  const ClientUpgradeNotice({
+    super.key,
+    required this.builder,
+    this.buttonSize,
+    this.isWeb = kIsWeb,
+    this.onReload = reloadBrowserPage,
+  });
 
-  final ShadButtonSize? size;
+  final Widget Function(BuildContext context, String message, Widget? action)
+      builder;
+  final ShadButtonSize? buttonSize;
   final bool isWeb;
+
+  /// Loads the page again; replaced in tests.
+  final VoidCallback onReload;
 
   @override
   Widget build(BuildContext context) {
     if (isWeb) {
-      return _button(
-        icon: LucideIcons.refreshCw,
-        label: 'Reload',
-        onPressed: reloadBrowserPage,
+      return builder(
+        context,
+        clientUpgradeRequiredMessage(isWeb: true),
+        _ReloadButton(size: buttonSize, onReload: onReload),
       );
     }
     return WaitingUpdateBuilder(
-      builder: (context, openUpdate) => openUpdate == null
-          ? const SizedBox.shrink()
-          : _button(
+      builder: (context, openUpdate, isChecking) {
+        if (openUpdate != null) {
+          return builder(
+            context,
+            clientUpgradeRequiredMessage(isWeb: false),
+            _button(
               icon: LucideIcons.download,
               label: 'Update',
+              size: buttonSize,
               onPressed: openUpdate,
             ),
+          );
+        }
+        return builder(
+          context,
+          clientUpgradeRequiredMessage(
+            isWeb: false,
+            update: isChecking
+                ? ClientUpdateAvailability.checking
+                : ClientUpdateAvailability.unavailable,
+          ),
+          isChecking ? null : _CheckAgainButton(size: buttonSize),
+        );
+      },
+    );
+  }
+}
+
+/// Reloads only once the work is known to be on this device; otherwise it
+/// keeps the page, and the work in its memory, and says why.
+class _ReloadButton extends ConsumerStatefulWidget {
+  const _ReloadButton({required this.size, required this.onReload});
+
+  final ShadButtonSize? size;
+  final VoidCallback onReload;
+
+  @override
+  ConsumerState<_ReloadButton> createState() => _ReloadButtonState();
+}
+
+class _ReloadButtonState extends ConsumerState<_ReloadButton> {
+  bool _securing = false;
+
+  Future<void> _reload() async {
+    setState(() => _securing = true);
+    final secured = await secureWorkBeforeReload(ref);
+    if (!mounted) return;
+    setState(() => _securing = false);
+    if (secured) {
+      widget.onReload();
+      return;
+    }
+    Settings.showToast(
+      message: "Icarus couldn't confirm your work is saved on this device, "
+          "so it didn't reload. Keep this tab open.",
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   }
 
-  Widget _button({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return ShadButton(
-      key: const ValueKey('client-upgrade-button'),
-      size: size,
-      expands: false,
-      leading: Icon(icon, size: 14),
-      onPressed: onPressed,
-      child: Text(label),
+  @override
+  Widget build(BuildContext context) {
+    return _button(
+      icon: LucideIcons.refreshCw,
+      label: 'Reload',
+      size: widget.size,
+      onPressed: _securing ? null : _reload,
     );
   }
+}
+
+class _CheckAgainButton extends ConsumerWidget {
+  const _CheckAgainButton({required this.size});
+
+  final ShadButtonSize? size;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _button(
+      icon: LucideIcons.refreshCw,
+      label: 'Check again',
+      size: size,
+      onPressed: () {
+        ref.invalidate(appUpdateStatusProvider);
+        ref.read(clientUpgradeRequiredProvider.notifier).recheck();
+      },
+    );
+  }
+}
+
+Widget _button({
+  required IconData icon,
+  required String label,
+  required ShadButtonSize? size,
+  required VoidCallback? onPressed,
+}) {
+  return ShadButton(
+    key: const ValueKey('client-upgrade-button'),
+    size: size,
+    expands: false,
+    leading: Icon(icon, size: 16),
+    onPressed: onPressed,
+    child: Text(label),
+  );
 }

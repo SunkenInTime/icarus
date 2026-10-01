@@ -3,6 +3,7 @@ import 'dart:math' show min;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_client.dart';
@@ -44,6 +45,25 @@ class ConvexStrategyRepository {
       pass: result.pass,
       expiresAt: _dateTime(result.expiresAt),
     );
+  }
+
+  /// Whether the server accepts this build's cloud protocol: false while it
+  /// refuses it. Throws when it cannot tell, offline or from a deployment
+  /// that predates the question.
+  Future<bool> serverAcceptsCloudProtocol() async {
+    try {
+      await _api.health
+          .ping(
+            clientProtocolVersion: ConvexOptional.present(
+              currentCloudProtocolVersion.toDouble(),
+            ),
+          )
+          .fetch();
+      return true;
+    } catch (error) {
+      if (isClientUpgradeRequiredError(error)) return false;
+      rethrow;
+    }
   }
 
   Future<void> ensureCurrentUser() async {

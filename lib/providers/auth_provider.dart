@@ -554,6 +554,18 @@ class AuthProvider extends Notifier<AppAuthState> {
     ref.onDispose(() {
       _supabaseAuthSub?.cancel();
       _convexAuthHandle?.dispose();
+      // A setup still running belongs to a provider that is gone: it must
+      // finish without reading or changing anything.
+      _advanceAuthGeneration();
+    });
+    // The server accepts this build again (a rolled-back deploy): the
+    // setup it refused can now succeed.
+    ref.listen<bool>(clientUpgradeRequiredProvider, (previous, next) {
+      if (previous == true &&
+          !next &&
+          state.convexAuthStatus == ConvexAuthStatus.incident) {
+        unawaited(reinitializeConvexAuth(source: 'protocol_accepted'));
+      }
     });
 
     Future<void>.microtask(() async {

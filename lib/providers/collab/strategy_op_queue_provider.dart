@@ -259,6 +259,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         retryCurrentAccount();
       }
     });
+    // The server accepts this build again: the work it held goes out.
+    ref.listen<bool>(clientUpgradeRequiredProvider, (previous, next) {
+      if (previous == true && !next) retryCurrentAccount();
+    });
     ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
       if (previous?.valueOrNull != true && next.valueOrNull == true) {
         _scheduleBackgroundDrain(ignoreBackoff: true);
@@ -291,7 +295,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// memory changes: the next write of the record saves it, and until then
   /// every start resumes it again.
   static DurableOutboxRecord _resumedAfterUpgrade(DurableOutboxRecord record) {
-    if (!isClientUpgradeRequiredError(record.lastError) ||
+    if (!isClientUpgradeRequiredReason(record.lastError) ||
         (record.status != DurableOutboxStatus.paused &&
             record.status != DurableOutboxStatus.queued)) {
       return record;

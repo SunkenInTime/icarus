@@ -274,7 +274,14 @@ void main() {
 
       expect(find.text('Your cloud library needs a newer Icarus'),
           findsOneWidget);
-      expect(find.text(clientUpgradeRequiredMessage()), findsOneWidget);
+      // Tests run as desktop, where this harness knows of no update yet.
+      expect(
+        find.text(clientUpgradeRequiredMessage(
+          update: ClientUpdateAvailability.unavailable,
+        )),
+        findsOneWidget,
+      );
+      expect(find.text('Check again'), findsOneWidget);
       expect(find.byKey(const ValueKey('library-cloud-retry')), findsNothing);
     });
 

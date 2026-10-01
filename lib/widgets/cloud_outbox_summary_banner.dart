@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -9,6 +10,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CloudOutboxSummaryBanner extends ConsumerWidget {
@@ -55,8 +57,28 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         mediaQueue.loadIssues.isNotEmpty;
     final authBlocked = workCount > 0 &&
         (auth.hasActiveAuthIncident || !auth.isConvexUserReady);
+    // The server refuses this build, so none of the work is being sent. Work
+    // that may not be on this device still outranks it.
+    final heldForUpgrade = workCount > 0 &&
+        !hasDurabilityProblem &&
+        ref.watch(clientUpgradeRequiredProvider);
     if (workCount == 0 && !hasDurabilityProblem && deletedStrategies.isEmpty) {
       return const SizedBox.shrink();
+    }
+    if (heldForUpgrade) {
+      return ClientUpgradeNotice(
+        buttonSize: ShadButtonSize.sm,
+        builder: (context, message, action) => _card(
+          context,
+          needsAttention: true,
+          connected: connected,
+          title: 'Cloud work is waiting for a newer Icarus',
+          detail: '$workCount saved '
+              '${workCount == 1 ? 'change is' : 'changes are'} kept on this '
+              'device. $message',
+          actions: [if (action != null) action],
+        ),
+      );
     }
 
     final needsAttention = hasDurabilityProblem ||
@@ -89,10 +111,59 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                         : '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
                             'waiting on this device and will resume when the '
                             'connection returns.';
+    return _card(
+      context,
+      needsAttention: needsAttention,
+      connected: connected,
+      title: title,
+      detail: detail,
+      actions: [
+        for (final strategyId in attentionIds)
+          ShadButton.secondary(
+            size: ShadButtonSize.sm,
+            onPressed: () => _openStrategy(context, strategyId),
+            child: Flexible(
+              child: Text(
+                _attentionLabel(
+                  strategyId,
+                  strategyNames[strategyId],
+                  opQueue.accountOutbox.strategies[strategyId]?.reason,
+                  failedMediaByStrategy[strategyId] ?? 0,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        for (final strategyId in deletedStrategies.keys)
+          ShadButton.outline(
+            size: ShadButtonSize.sm,
+            onPressed: () => _discardDeleted(ref, strategyId),
+            child: Flexible(
+              child: Text(
+                'Discard changes to '
+                '${strategyNames[strategyId]?.trim().isNotEmpty == true ? strategyNames[strategyId]!.trim() : 'the deleted strategy'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// A floating status card, not a banner: it sits over the library's
+  /// corner like a floating menu and never moves the grid. The parent
+  /// positions it.
+  Widget _card(
+    BuildContext context, {
+    required bool needsAttention,
+    required bool connected,
+    required String title,
+    required String detail,
+    required List<Widget> actions,
+  }) {
     final theme = ShadTheme.of(context);
-    // A floating status card, not a banner: it sits over the library's
-    // corner like a floating menu and never moves the grid. The parent
-    // positions it.
     return Container(
       key: const ValueKey('cloud-outbox-summary'),
       constraints: const BoxConstraints(maxWidth: 360),
@@ -143,46 +214,9 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                     color: theme.colorScheme.mutedForeground,
                   ),
                 ),
-                if (attentionIds.isNotEmpty ||
-                    deletedStrategies.isNotEmpty) ...[
+                if (actions.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final strategyId in attentionIds)
-                        ShadButton.secondary(
-                          size: ShadButtonSize.sm,
-                          onPressed: () => _openStrategy(context, strategyId),
-                          child: Flexible(
-                            child: Text(
-                              _attentionLabel(
-                                strategyId,
-                                strategyNames[strategyId],
-                                opQueue.accountOutbox.strategies[strategyId]
-                                    ?.reason,
-                                failedMediaByStrategy[strategyId] ?? 0,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      for (final strategyId in deletedStrategies.keys)
-                        ShadButton.outline(
-                          size: ShadButtonSize.sm,
-                          onPressed: () => _discardDeleted(ref, strategyId),
-                          child: Flexible(
-                            child: Text(
-                              'Discard changes to '
-                              '${strategyNames[strategyId]?.trim().isNotEmpty == true ? strategyNames[strategyId]!.trim() : 'the deleted strategy'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                  Wrap(spacing: 8, runSpacing: 8, children: actions),
                 ],
               ],
             ),

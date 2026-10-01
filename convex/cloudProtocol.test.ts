@@ -296,6 +296,33 @@ describe("public payload query protocol gate", () => {
   });
 });
 
+describe("the protocol check a refused client asks", () => {
+  const ping = makeFunctionReference<"query">("health:ping");
+
+  test("the connection health check sends no protocol and is answered", async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.query(ping, {})).resolves.toBe("ok");
+  });
+
+  test("the current protocol is accepted", async () => {
+    const t = convexTest(schema, modules);
+    await expect(
+      t.query(ping, { clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION }),
+    ).resolves.toBe("ok");
+  });
+
+  test("an old protocol is refused canonically", async () => {
+    const t = convexTest(schema, modules);
+    expectUpgradeRequired(
+      await captureError(
+        t.query(ping, {
+          clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION - 1,
+        }),
+      ),
+    );
+  });
+});
+
 describe("public cloud write action protocol gate", () => {
   test.each(publicWriteActions)("%s rejects a missing protocol", async (
     identifier,

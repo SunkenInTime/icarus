@@ -205,7 +205,10 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     }
 
     final saveState = ref.watch(strategySaveStateProvider);
-    final upgradeRequired = ref.watch(clientUpgradeRequiredProvider);
+    // Work that may not be on this device outranks the refusal: its own
+    // recovery shows, and nothing offers to throw the session away.
+    final upgradeRequired = ref.watch(clientUpgradeRequiredProvider) &&
+        !ref.watch(cloudWorkDurabilityUncertainProvider);
     final opQueueState = ref.watch(strategyOpQueueProvider);
     final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
     final activeStrategyId = ref.watch(
@@ -386,6 +389,54 @@ class _SyncStatusPopover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (upgradeRequired) {
+      return ClientUpgradeNotice(
+        buttonSize: ShadButtonSize.sm,
+        builder: (context, message, action) => _layout(
+          context,
+          explanation: message,
+          actions: action == null
+              ? null
+              : Align(alignment: Alignment.centerRight, child: action),
+        ),
+      );
+    }
+    return _layout(
+      context,
+      explanation: _explanation,
+      actions: status == _SyncStatus.attention &&
+              (!hasOtherStrategyAttention || hasActiveStrategyAttention)
+          ? Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (hasRejectedWork)
+                  ShadButton.secondary(
+                    size: ShadButtonSize.sm,
+                    expands: false,
+                    onPressed: isResolving ? null : onUseCloudVersions,
+                    child: const Text('Use cloud'),
+                  ),
+                ShadButton(
+                  size: ShadButtonSize.sm,
+                  expands: false,
+                  onPressed: isResolving ? null : onRetry,
+                  child: Text(
+                    hasRejectedWork ? 'Keep mine' : 'Retry sync',
+                  ),
+                ),
+              ],
+            )
+          : null,
+    );
+  }
+
+  Widget _layout(
+    BuildContext context, {
+    required String explanation,
+    required Widget? actions,
+  }) {
     final theme = ShadTheme.of(context);
     final lastSynced = saveState.lastPersistedAt;
 
@@ -407,7 +458,7 @@ class _SyncStatusPopover extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              _explanation,
+              explanation,
               style: theme.textTheme.small.copyWith(
                 color: theme.colorScheme.mutedForeground,
                 height: 1.35,
@@ -433,37 +484,9 @@ class _SyncStatusPopover extends StatelessWidget {
                 ),
               ),
             ],
-            if (upgradeRequired) ...[
+            if (actions != null) ...[
               const SizedBox(height: 12),
-              const Align(
-                alignment: Alignment.centerRight,
-                child: ClientUpgradeButton(size: ShadButtonSize.sm),
-              ),
-            ] else if (status == _SyncStatus.attention &&
-                (!hasOtherStrategyAttention || hasActiveStrategyAttention)) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (hasRejectedWork)
-                    ShadButton.secondary(
-                      size: ShadButtonSize.sm,
-                      expands: false,
-                      onPressed: isResolving ? null : onUseCloudVersions,
-                      child: const Text('Use cloud'),
-                    ),
-                  ShadButton(
-                    size: ShadButtonSize.sm,
-                    expands: false,
-                    onPressed: isResolving ? null : onRetry,
-                    child: Text(
-                      hasRejectedWork ? 'Keep mine' : 'Retry sync',
-                    ),
-                  ),
-                ],
-              ),
+              actions,
             ],
           ],
         ),
@@ -503,7 +526,6 @@ class _SyncStatusPopover extends StatelessWidget {
         return 'Changes are kept on this device and will sync automatically '
             'when your connection returns.';
       case _SyncStatus.attention:
-        if (upgradeRequired) return clientUpgradeRequiredMessage();
         const otherStrategyExplanation =
             'Saved work in another strategy also needs attention. Open it '
             'from the Cloud library to review the reason.';

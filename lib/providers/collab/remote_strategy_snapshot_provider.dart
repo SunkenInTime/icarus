@@ -40,6 +40,10 @@ class RemoteEditorSnapshotNotifier
   @override
   Future<RemoteEditorSnapshot?> build() async {
     ref.onDispose(_disposeSubscriptions);
+    // The server accepts this build again: read what it refused.
+    ref.listen<bool>(clientUpgradeRequiredProvider, (previous, next) {
+      if (previous == true && !next) unawaited(refresh());
+    });
     return null;
   }
 

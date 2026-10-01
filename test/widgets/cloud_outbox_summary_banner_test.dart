@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/widgets/cloud_outbox_summary_banner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -232,6 +237,60 @@ void main() {
     expect(find.textContaining('Reconnect this account'), findsOneWidget);
     expect(find.text('Syncing cloud work'), findsNothing);
   });
+
+  group('when the server needs a newer Icarus', () {
+    const queued = StrategyOpQueueState(
+      accountId: 'account-a',
+      durableLoaded: true,
+      accountOutbox: AccountStrategyOutboxSummary(
+        accountId: 'account-a',
+        strategies: {
+          'closed': StrategyOutboxSummary(
+            strategyPublicId: 'closed',
+            queuedCount: 2,
+            inFlightCount: 0,
+            pausedCount: 0,
+            attentionCount: 0,
+            successorCount: 0,
+          ),
+        },
+      ),
+    );
+
+    testWidgets('held work never claims to be syncing', (tester) async {
+      final container = _container(queue: queued);
+      addTearDown(container.dispose);
+      container
+          .read(clientUpgradeRequiredProvider.notifier)
+          .noteError(clientUpgradeRequiredQueueError);
+      await _pump(tester, container, const CloudOutboxSummaryBanner());
+
+      expect(find.text('Syncing cloud work'), findsNothing);
+      expect(find.textContaining('being sent'), findsNothing);
+      expect(
+        find.text('Cloud work is waiting for a newer Icarus'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('2 saved changes are kept on this device'),
+          findsOneWidget);
+    });
+
+    testWidgets('unreadable work outranks the refusal', (tester) async {
+      final container = _container(
+        queue: queued.copyWith(hasDurabilityFailure: true),
+      );
+      addTearDown(container.dispose);
+      container
+          .read(clientUpgradeRequiredProvider.notifier)
+          .noteError(clientUpgradeRequiredQueueError);
+      await _pump(tester, container, const CloudOutboxSummaryBanner());
+
+      expect(find.text('Cloud work needs attention'), findsOneWidget);
+      expect(
+          find.text('Cloud work is waiting for a newer Icarus'), findsNothing);
+      expect(find.byKey(const ValueKey('client-upgrade-button')), findsNothing);
+    });
+  });
 }
 
 ProviderContainer _container({
@@ -251,6 +310,14 @@ ProviderContainer _container({
     cloudStrategyNamesProvider.overrideWithValue(const {
       'strategy-needs-review': 'Haven retake',
     }),
+    appUpdateStatusProvider.overrideWith(
+      (ref) async => const UpdateCheckResult(
+        isSupported: true,
+        isUpdateAvailable: true,
+        source: 'test',
+      ),
+    ),
+    desktopUpdateControllerProvider.overrideWithValue(null),
   ]);
 }
 

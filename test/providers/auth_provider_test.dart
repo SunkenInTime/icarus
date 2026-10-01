@@ -3,10 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
@@ -692,6 +696,79 @@ void main() {
       "Couldn't connect to cloud sync. Please retry.",
     );
   });
+
+  test('a setup that ends after its provider is gone touches nothing',
+      () async {
+    supabaseApi.currentSession = fakeSession();
+    convexApi.setAuthCompleter = Completer<AuthProviderAuthHandle>();
+    final container = ProviderContainer();
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(convexApi.setAuthCalls, 1);
+
+    // The provider goes while setup waits on Convex, which then refuses it.
+    container.dispose();
+    convexApi.mutationError = _upgradeRequired;
+    convexApi.emitAuthState(true);
+    convexApi.setAuthCompleter!.complete(FakeAuthHandle());
+    // Readiness times out after 50 ms; the setup fails after that. Any read
+    // of a provider from the disposed container fails this test.
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await pumpMicrotasks();
+  });
+
+  test('a setup the server refuses says Icarus was updated', () async {
+    supabaseApi.currentSession = fakeSession();
+    convexApi.mutationError = _upgradeRequired;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.incident);
+    expect(state.errorMessage, clientUpgradeRequiredMessage());
+    expect(container.read(clientUpgradeRequiredProvider), isTrue);
+  });
+
+  test('a refused setup runs again once the server accepts this build',
+      () async {
+    supabaseApi.currentSession = fakeSession();
+    convexApi.mutationError = _upgradeRequired;
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider
+          .overrideWithValue(_AcceptingRepository()),
+    ]);
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.incident);
+
+    // A rolled-back deploy accepts this protocol again.
+    convexApi.mutationError = null;
+    await container.read(clientUpgradeRequiredProvider.notifier).recheck();
+    await pumpMicrotasks();
+    await pumpMicrotasks();
+
+    expect(container.read(clientUpgradeRequiredProvider), isFalse);
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.ready,
+    );
+  });
+}
+
+const _upgradeRequired = ConvexFunctionException(
+  code: ConvexErrorCode.clientUpgradeRequired,
+  rawCode: 'CLIENT_UPGRADE_REQUIRED',
+  message: 'Client upgrade required',
+);
+
+class _AcceptingRepository extends Fake implements ConvexStrategyRepository {
+  @override
+  Future<bool> serverAcceptsCloudProtocol() async => true;
 }
 
 Future<void> pumpMicrotasks() async {

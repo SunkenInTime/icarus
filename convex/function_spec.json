@@ -39857,7 +39857,14 @@
     {
       "args": {
         "type": "object",
-        "value": {}
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          }
+        }
       },
       "functionType": "Query",
       "identifier": "health.js:ping",

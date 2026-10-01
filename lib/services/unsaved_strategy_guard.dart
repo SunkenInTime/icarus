@@ -148,6 +148,36 @@ Future<bool> _waitForCloudSync(
   return false;
 }
 
+/// Puts everything the user did on this device before the page is thrown
+/// away for a reload: drafts committed, the open strategy saved into the
+/// outbox, and both outboxes known to hold what they were given. Returns
+/// false when any of that is uncertain; the page must not reload then, since
+/// work the outbox could not keep lives only in this page's memory.
+Future<bool> secureWorkBeforeReload(WidgetRef ref) async {
+  final strategyId = ref.read(strategyProvider).strategyId;
+  ref.read(textDraftProvider.notifier).commitAllDrafts();
+  if (strategyId != null) {
+    try {
+      await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to save the open strategy before reloading.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'client_upgrade.reload',
+        promptUser: false,
+      );
+      return false;
+    }
+  }
+  final queue = ref.read(strategyOpQueueProvider);
+  final media = ref.read(cloudMediaUploadQueueProvider);
+  return ref.read(textDraftProvider).isEmpty &&
+      queue.outboxIsReliable &&
+      media.outboxIsReliable &&
+      media.jobs.every((job) => job.referenceDurable);
+}
+
 Future<bool> _guardCloudStrategyExit({
   required BuildContext context,
   required WidgetRef ref,

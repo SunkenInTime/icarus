@@ -67,7 +67,7 @@ class UpdateAvailableIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return WaitingUpdateBuilder(
-      builder: (context, openUpdate) =>
+      builder: (context, openUpdate, _) =>
           openUpdate == null ? const SizedBox.shrink() : _icon(openUpdate),
     );
   }
@@ -88,14 +88,19 @@ class UpdateAvailableIcon extends StatelessWidget {
 
 /// Builds with what opens the waiting update, or null while none is known:
 /// the in-app updater for a direct Windows install, otherwise the dialog the
-/// automatic check shows.
+/// automatic check shows. [isChecking] is true while the update check runs.
 class WaitingUpdateBuilder extends ConsumerWidget {
   const WaitingUpdateBuilder({super.key, required this.builder});
 
-  final Widget Function(BuildContext context, VoidCallback? openUpdate) builder;
+  final Widget Function(
+    BuildContext context,
+    VoidCallback? openUpdate,
+    bool isChecking,
+  ) builder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final check = ref.watch(appUpdateStatusProvider);
     final desktopController = ref.watch(desktopUpdateControllerProvider);
     if (desktopController != null) {
       return ListenableBuilder(
@@ -105,16 +110,18 @@ class WaitingUpdateBuilder extends ConsumerWidget {
           desktopController.needUpdate
               ? () => DesktopUpdateDialog.show(context, desktopController)
               : null,
+          check.isLoading,
         ),
       );
     }
 
-    final status = ref.watch(appUpdateStatusProvider).valueOrNull;
+    final status = check.valueOrNull;
     return builder(
       context,
       status != null && status.isUpdateAvailable
           ? () => UpdateChecker.showUpdateDialog(context, status)
           : null,
+      check.isLoading,
     );
   }
 }

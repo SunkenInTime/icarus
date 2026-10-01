@@ -3053,7 +3053,9 @@ void main() {
         failing,
         status: DurableOutboxStatus.paused,
         attempts: 8,
-        lastError: 'ConvexFunctionException(INTERNAL_ERROR, boom)',
+        // A different refusal whose text merely mentions the code.
+        lastError: 'ConvexFunctionException(INVALID_PAYLOAD, name was '
+            'CLIENT_UPGRADE_REQUIRED)',
       ));
       final repository = _RecordingAckRepository();
       final container = _cloudQueueContainer(
@@ -3090,6 +3092,34 @@ void main() {
       expect(left.status, DurableOutboxStatus.paused);
       expect(left.pending.attempts, 8);
     });
+
+    test('sends the held work once the server accepts this build again',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _UpgradeRequiredRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(_cloudElementOp());
+      await notifier.flushNow();
+      await _settle();
+      expect(container.read(clientUpgradeRequiredProvider), isTrue);
+      expect(repository.calls, 1);
+
+      // A rolled-back deploy: the server accepts this protocol again.
+      repository.refusing = false;
+      await container.read(clientUpgradeRequiredProvider.notifier).recheck();
+      await _settle();
+
+      expect(container.read(clientUpgradeRequiredProvider), isFalse);
+      expect(repository.calls, 2);
+      expect(store.load().records, isEmpty);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+    });
   });
 }
 
@@ -3106,6 +3136,10 @@ class _UpgradeRequiredRepository extends ConvexStrategyRepository {
   _UpgradeRequiredRepository() : super(IcarusConvexApi(_UnusedTransport()));
 
   int calls = 0;
+  bool refusing = true;
+
+  @override
+  Future<bool> serverAcceptsCloudProtocol() async => !refusing;
 
   @override
   Future<List<OpAck>> applyBatch({
@@ -3115,6 +3149,9 @@ class _UpgradeRequiredRepository extends ConvexStrategyRepository {
     String? accountSubject,
   }) async {
     calls += 1;
+    if (!refusing) {
+      return [for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2)];
+    }
     throw const ConvexFunctionException(
       code: ConvexErrorCode.clientUpgradeRequired,
       rawCode: 'CLIENT_UPGRADE_REQUIRED',

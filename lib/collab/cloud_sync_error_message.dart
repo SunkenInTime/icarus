@@ -1,5 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
+import 'package:icarus/collab/src/convex_client_types.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
 
 final _urlQuery = RegExp(r'''(https?://[^\s?#"'<>]+)\?[^\s"'<>]*''');
 final _secretKeyValue = RegExp(
@@ -43,26 +46,61 @@ const unverifiedCloudWorkMessage =
 /// The server's code for a build whose cloud protocol it no longer accepts.
 const clientUpgradeRequiredCode = 'CLIENT_UPGRADE_REQUIRED';
 
-/// The queue's error while the server refuses this build. It names the
-/// server's code, so [isClientUpgradeRequiredError] knows it.
+/// The queue's error while the server refuses this build.
 const clientUpgradeRequiredQueueError =
     'Cloud sync is held until Icarus is updated ($clientUpgradeRequiredCode).';
 
-/// Whether [error], or the text kept of one, is the server refusing this
-/// build. Nothing the build sends or reads will be accepted until it is
-/// reloaded (web) or updated (desktop). It is never the user's fault, nor the
-/// fault of the work it refused.
-bool isClientUpgradeRequiredError(Object? error) =>
-    error != null && '$error'.contains(clientUpgradeRequiredCode);
+/// Whether [error] is the server refusing this build. Nothing the build
+/// sends or reads will be accepted until it is reloaded (web) or updated
+/// (desktop). It is never the user's fault, nor the fault of the work it
+/// refused. Text is matched by [isClientUpgradeRequiredReason].
+bool isClientUpgradeRequiredError(Object? error) => switch (error) {
+      ConvexFunctionException(:final rawCode) ||
+      ConvexClientFunctionError(:final rawCode) ||
+      ConvexTransportError(:final rawCode) =>
+        rawCode == clientUpgradeRequiredCode,
+      String() => isClientUpgradeRequiredReason(error),
+      _ => false,
+    };
+
+/// Whether [reason], an error kept as text, is the server refusing a build:
+/// exactly the text this build keeps, or the text a refused send left in the
+/// outbox ('$error' of the generated client's exception, which the protocol 3
+/// web build wrote too). Text that merely mentions the code is not.
+bool isClientUpgradeRequiredReason(String? reason) =>
+    reason == clientUpgradeRequiredQueueError || reason == _keptRefusal;
+
+const _keptRefusal =
+    'ConvexFunctionException($clientUpgradeRequiredCode, Client upgrade required)';
 
 /// What the user is told when the server needs a newer Icarus, with the way
-/// out their platform has.
-String clientUpgradeRequiredMessage({bool isWeb = kIsWeb}) => isWeb
-    ? 'Icarus was updated. Reload to keep syncing.'
-    : 'Icarus was updated. Install the update to keep syncing.';
+/// out their platform has. Desktop says what it can only once it knows
+/// whether an update is there to install.
+String clientUpgradeRequiredMessage({
+  bool isWeb = kIsWeb,
+  ClientUpdateAvailability update = ClientUpdateAvailability.available,
+}) {
+  if (isWeb) return 'Icarus was updated. Reload to keep syncing.';
+  return switch (update) {
+    ClientUpdateAvailability.available =>
+      'Icarus was updated. Install the update to keep syncing.',
+    ClientUpdateAvailability.checking =>
+      'Icarus was updated. Looking for the update this app needs to keep '
+          'syncing.',
+    ClientUpdateAvailability.unavailable =>
+      "Icarus was updated, but the update isn't available for this app yet. "
+          'Your work is safe on this device and syncs once the update is '
+          'installed.',
+  };
+}
+
+/// Whether the update a refused desktop build needs can be installed yet.
+enum ClientUpdateAvailability { available, checking, unavailable }
 
 String friendlyCloudSyncError(String raw) {
-  if (isClientUpgradeRequiredError(raw)) return clientUpgradeRequiredMessage();
+  if (isClientUpgradeRequiredReason(raw)) {
+    return clientUpgradeRequiredMessage();
+  }
   final lower = raw.toLowerCase();
   if (lower.contains('strategy was deleted')) {
     return 'This strategy was deleted, so its unsent changes cannot be '

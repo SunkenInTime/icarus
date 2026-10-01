@@ -780,28 +780,36 @@ class FolderContent extends ConsumerWidget {
     if (auth.isAuthenticated) {
       // The server refuses this build: a retry is refused like the first
       // try, and only a reload or an update helps.
-      final upgradeRequired = ref.watch(clientUpgradeRequiredProvider);
+      if (ref.watch(clientUpgradeRequiredProvider)) {
+        return KeyedSubtree(
+          key: const ValueKey('library-cloud-unreachable'),
+          child: ClientUpgradeNotice(
+            builder: (context, message, action) => _LibraryMessageState(
+              icon: LucideIcons.cloudOff,
+              iconColor: Settings.tacticalVioletTheme.destructive,
+              title: 'Your cloud library needs a newer Icarus',
+              subtitle: message,
+              actions: [if (action != null) action],
+            ),
+          ),
+        );
+      }
       return KeyedSubtree(
         key: const ValueKey('library-cloud-unreachable'),
         child: _LibraryMessageState(
           icon: LucideIcons.cloudOff,
           iconColor: Settings.tacticalVioletTheme.destructive,
-          title: upgradeRequired
-              ? 'Your cloud library needs a newer Icarus'
-              : "Couldn't reach your cloud library",
+          title: "Couldn't reach your cloud library",
           subtitle: auth.errorMessage ?? 'Check your connection and try again.',
           actions: [
-            if (upgradeRequired)
-              const ClientUpgradeButton()
-            else
-              ShadButton(
-                key: const ValueKey('library-cloud-retry'),
-                leading: const Icon(LucideIcons.refreshCw, size: 14),
-                onPressed: () => ref
-                    .read(authProvider.notifier)
-                    .reinitializeConvexAuth(source: 'library_retry'),
-                child: const Text('Retry'),
-              ),
+            ShadButton(
+              key: const ValueKey('library-cloud-retry'),
+              leading: const Icon(LucideIcons.refreshCw, size: 14),
+              onPressed: () => ref
+                  .read(authProvider.notifier)
+                  .reinitializeConvexAuth(source: 'library_retry'),
+              child: const Text('Retry'),
+            ),
           ],
         ),
       );

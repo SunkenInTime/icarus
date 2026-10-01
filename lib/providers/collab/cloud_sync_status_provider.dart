@@ -11,6 +11,19 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 
 enum CloudSyncStatus { synced, editing, syncing, offline, attention }
 
+/// Whether some cloud work may not be on this device: an outbox could not be
+/// read, or a write to it could not be confirmed. That work may live only in
+/// memory, so this outranks every other sync state, the server refusing this
+/// build included: nothing may suggest throwing the session away.
+final cloudWorkDurabilityUncertainProvider = Provider<bool>((ref) {
+  final opQueueState = ref.watch(strategyOpQueueProvider);
+  final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
+  return opQueueState.loadIssues.isNotEmpty ||
+      opQueueState.hasDurabilityFailure ||
+      mediaQueueState.loadIssues.isNotEmpty ||
+      mediaQueueState.durabilityError != null;
+});
+
 final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   final saveState = ref.watch(strategySaveStateProvider);
   final opQueueState = ref.watch(strategyOpQueueProvider);
@@ -26,16 +39,12 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   );
   final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
 
+  if (ref.watch(cloudWorkDurabilityUncertainProvider)) {
+    return CloudSyncStatus.attention;
+  }
   // The server refuses this build: nothing syncs until it is reloaded or
   // updated, whatever the queue holds.
   if (ref.watch(clientUpgradeRequiredProvider)) {
-    return CloudSyncStatus.attention;
-  }
-  final hasDurabilityProblem = opQueueState.loadIssues.isNotEmpty ||
-      opQueueState.hasDurabilityFailure ||
-      mediaQueueState.loadIssues.isNotEmpty ||
-      mediaQueueState.durabilityError != null;
-  if (hasDurabilityProblem) {
     return CloudSyncStatus.attention;
   }
   if (opQueueState.needsAttention ||

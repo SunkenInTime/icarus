@@ -365,15 +365,23 @@ final class _FoldersModule implements FoldersModule {
 }
 
 abstract interface class HealthModule {
-  ConvexQuery<HealthPingResult> ping();
+  ConvexQuery<HealthPingResult> ping({
+    ConvexOptional<double> clientProtocolVersion =
+        const ConvexOptional.absent(),
+  });
 }
 
 final class _HealthModule implements HealthModule {
   const _HealthModule(this._transport);
   final ConvexTransport _transport;
   @override
-  ConvexQuery<HealthPingResult> ping() {
-    final args = encodeHealthPingArgs();
+  ConvexQuery<HealthPingResult> ping({
+    ConvexOptional<double> clientProtocolVersion =
+        const ConvexOptional.absent(),
+  }) {
+    final args = encodeHealthPingArgs(
+      clientProtocolVersion: clientProtocolVersion,
+    );
     return ConvexQuery(
       transport: _transport,
       name: 'health:ping',
