@@ -108,19 +108,25 @@ class _IcaHarness {
   static Future<_IcaHarness> open() async {
     final directory =
         await Directory.systemTemp.createTemp('icarus-strategy-integrity-');
-    // Imported and exported images live under the app's support and temp
-    // folders; point both into this library so close() removes them.
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_pathProvider, (_) async => directory.path);
-    Hive.init(directory.path);
-    _ensureAdaptersRegistered();
-    await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
-    await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
-    await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
-    await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
-    await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
-    await MapThemeProfilesProvider.bootstrap();
-    return _IcaHarness._(directory, ProviderContainer());
+    final harness = _IcaHarness._(directory, ProviderContainer());
+    try {
+      // Imported and exported images live under the app's support and temp
+      // folders; point both into this library so close() removes them.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, (_) async => directory.path);
+      Hive.init(directory.path);
+      _ensureAdaptersRegistered();
+      await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+      await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+      await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+      await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+      await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+      await MapThemeProfilesProvider.bootstrap();
+      return harness;
+    } catch (_) {
+      await harness.close();
+      rethrow;
+    }
   }
 
   Box<StrategyData> get strategies =>
@@ -179,6 +185,35 @@ Future<Map<String, List<int>>> _icaAttachments(File file) async {
       if (entry.isFile && path.extension(entry.name).toLowerCase() != '.json')
         path.basename(entry.name): entry.content as List<int>,
   };
+}
+
+/// Every page of [fixture], and every element placed on it, survives import.
+void _expectFixtureContent(StrategyData imported, _IcaFixture fixture) {
+  final pages = (fixture.decodedJson['pages'] as List<dynamic>)
+      .cast<Map<String, dynamic>>();
+  final importedPages = {for (final page in imported.pages) page.id: page};
+  expect(importedPages.keys, unorderedEquals(pages.map((page) => page['id'])),
+      reason: fixture.name);
+
+  for (final page in pages) {
+    final importedPage = importedPages[page['id']]!;
+    List<dynamic> ids(String key) => [
+          for (final item in page[key] as List<dynamic>? ?? const [])
+            (item as Map<String, dynamic>)['id'],
+        ];
+    final placed = <String, Iterable<String>>{
+      'drawingData': importedPage.drawingData.map((item) => item.id),
+      'agentData': importedPage.agentData.map((item) => item.id),
+      'abilityData': importedPage.abilityData.map((item) => item.id),
+      'textData': importedPage.textData.map((item) => item.id),
+      'imageData': importedPage.imageData.map((item) => item.id),
+      'utilityData': importedPage.utilityData.map((item) => item.id),
+    };
+    for (final MapEntry(:key, :value) in placed.entries) {
+      expect(value, unorderedEquals(ids(key)),
+          reason: '${fixture.name} page ${page['id']} $key');
+    }
+  }
 }
 
 void _expectCustomShapes(StrategyData strategy, String fixtureName) {
@@ -314,6 +349,7 @@ void main() {
         expect(imported.pages, isNotEmpty, reason: fixture.name);
         expect(imported.versionNumber, Settings.versionNumber,
             reason: fixture.name);
+        _expectFixtureContent(imported, fixture);
         _expectCustomShapes(imported, fixture.name);
 
         final exported = await harness.exportIca(imported);
