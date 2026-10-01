@@ -9,7 +9,10 @@ param(
     [string]$ReleaseCandidateVersion = "",
     [string]$PublicFixtureUrl = "https://raw.githubusercontent.com/SunkenInTime/icarus/fddec2b0b6163cf3962863db18ab0f06ea467773/base-test.ica",
     [string]$PublicFixtureSha256 = "166eb3ad31a19aca418081dc3ba949aedbf12b5049cd007fda410814a03b0b1a",
-    [int]$LaunchSeconds = 12
+    # Each launch must stay alive this long and show a responsive window in
+    # it. A cold runner's first launch of the public build once took more
+    # than 12 seconds to show its window (2026-10-01).
+    [int]$LaunchSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
