@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/src/binary/binary_reader_impl.dart';
 import 'package:hive_ce/src/binary/binary_writer_impl.dart';
 import 'package:hive_ce/src/hive_impl.dart';
+import 'package:hive_ce/src/util/logger.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -30,11 +31,21 @@ HiveImpl _currentRegistry() {
 
 /// What desktop 4.6.3 registers: this build's adapters, which are unchanged
 /// since that release, except the four this build writes by hand.
-HiveImpl _desktop463Registry() => _currentRegistry()
-  ..registerAdapter(Desktop463PlacedAgentAdapter(), override: true)
-  ..registerAdapter(Desktop463PlacedAbilityAdapter(), override: true)
-  ..registerAdapter(Desktop463StrategyPageAdapter(), override: true)
-  ..registerAdapter(Desktop463FolderAdapter(), override: true);
+HiveImpl _desktop463Registry() {
+  final registry = _currentRegistry();
+  // hive_ce warns on every override, which is the point here.
+  final previousLevel = Logger.level;
+  Logger.level = LoggerLevel.error;
+  try {
+    return registry
+      ..registerAdapter(Desktop463PlacedAgentAdapter(), override: true)
+      ..registerAdapter(Desktop463PlacedAbilityAdapter(), override: true)
+      ..registerAdapter(Desktop463StrategyPageAdapter(), override: true)
+      ..registerAdapter(Desktop463FolderAdapter(), override: true);
+  } finally {
+    Logger.level = previousLevel;
+  }
+}
 
 Uint8List _write(HiveImpl registry, Object value) {
   final writer = BinaryWriterImpl(registry)..write(value);
