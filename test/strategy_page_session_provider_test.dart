@@ -22,7 +22,9 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -4117,6 +4119,75 @@ void main() {
     expect(container.read(lineUpProvider).links, isEmpty);
     expect(container.read(lineUpProvider).origins, isEmpty);
     expect(lineupOpsAfterTextEdit(container, page), isEmpty);
+    await _settle();
+  });
+
+  test('a Paranoia saved at the old size opens corrected and sends nothing',
+      () async {
+    final page = _page('page-1', 0);
+    final paranoia = PlacedAbility(
+      id: 'paranoia',
+      data: AgentData.agents[AgentType.omen]!.abilities[1],
+      position: const Offset(400, 300),
+    );
+    // As a 4.6.3-era client wrote it: payload version 1, the old 25 m size.
+    final saved = {
+      ...cloudElementPayload(
+        kind: 'ability',
+        data: {...paranoia.toJson(), 'elementType': 'ability'},
+      ),
+      'payloadVersion': 1,
+    };
+    // What the editor snapshot holds once the read path has upgraded it.
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: upgradeRemotePageSnapshot(
+        _pageSnapshot(page, elements: [
+          _textElement(page.publicId, 'text-page-1', 'remote'),
+          RemoteElement(
+            publicId: paranoia.id,
+            strategyPublicId: 'cloud-strategy',
+            pagePublicId: page.publicId,
+            elementType: 'ability',
+            payload: saved,
+            sortIndex: 1,
+            revision: 1,
+            deleted: false,
+          ),
+        ]),
+        Maps.mapNames[MapValue.ascent]!,
+      ),
+    ));
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    expect(
+      container.read(abilityProvider).single.position,
+      ParanoiaRangeMigration.migrateAbility(paranoia, MapValue.ascent).position,
+    );
+
+    container.read(textProvider).single.position = const Offset(50, 60);
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+    expect(
+      desired!.keys,
+      allOf(
+        contains(EntitySyncKey.element(page.publicId, 'text-page-1')),
+        isNot(contains(EntitySyncKey.element(page.publicId, 'paranoia'))),
+      ),
+    );
     await _settle();
   });
 
