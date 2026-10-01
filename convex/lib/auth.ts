@@ -80,6 +80,30 @@ export async function requireCurrentUser(ctx: AnyCtx): Promise<Doc<"users">> {
   return user;
 }
 
+/**
+ * Refuses a write bound to an account other than the caller's.
+ * [accountSubject] is the identity subject (the JWT `sub`) of the account
+ * the write belongs to; for Icarus it is the Supabase user id the client
+ * keys its outbox by. The refusal is FORBIDDEN, thrown, so nothing in the
+ * write is applied or recorded and the client keeps the work for its own
+ * account to send again.
+ */
+export async function assertCallerIsAccount(
+  ctx: AnyCtx,
+  accountSubject: string,
+): Promise<void> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity === null) {
+    throw unauthenticatedError();
+  }
+  if (identity.subject !== accountSubject) {
+    throw errorWithCode(
+      "FORBIDDEN",
+      "Forbidden: these changes belong to a different account",
+    );
+  }
+}
+
 export async function getStrategyRoleForUser(
   ctx: AnyCtx,
   strategy: Doc<"strategies">,

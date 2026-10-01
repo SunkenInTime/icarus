@@ -705,6 +705,7 @@ final class _LineupsModule implements LineupsModule {
 
 abstract interface class OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
     ConvexOptional<bool> checkTrashedPageDeletes =
@@ -721,6 +722,7 @@ final class _OpsModule implements OpsModule {
   final ConvexTransport _transport;
   @override
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
     ConvexOptional<bool> checkTrashedPageDeletes =
@@ -731,6 +733,7 @@ final class _OpsModule implements OpsModule {
     required String strategyPublicId,
   }) {
     final args = encodeOpsApplyBatchArgs(
+      accountSubject: accountSubject,
       checkLineupEndDeletes: checkLineupEndDeletes,
       checkLineupLinkEnds: checkLineupLinkEnds,
       checkTrashedPageDeletes: checkTrashedPageDeletes,

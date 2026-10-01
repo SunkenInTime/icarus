@@ -5446,6 +5446,7 @@ List<LineupsListForPageResultItem> decodeLineupsListForStrategyResult(
     .toList(growable: false);
 
 ConvexObject encodeOpsApplyBatchArgs({
+  ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
   ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
   ConvexOptional<bool> checkTrashedPageDeletes = const ConvexOptional.absent(),
@@ -5454,6 +5455,8 @@ ConvexObject encodeOpsApplyBatchArgs({
   required List<OpsApplyBatchArgsOpsItem> ops,
   required String strategyPublicId,
 }) => ConvexObject({
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
   if (checkLineupEndDeletes.isPresent)
     'checkLineupEndDeletes': ConvexBoolean(checkLineupEndDeletes.value),
   if (checkLineupLinkEnds.isPresent)

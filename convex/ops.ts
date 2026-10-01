@@ -1,7 +1,7 @@
 import { mutation, type MutationCtx } from "./_generated/server";
 import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { assertStrategyRole } from "./lib/auth";
+import { assertCallerIsAccount, assertStrategyRole } from "./lib/auth";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import {
   expectAssets,
@@ -1655,10 +1655,20 @@ export const applyBatch = mutation({
     // once the page is back. Older clients get the no-op a deleted page's
     // purged content gave them (see refuseDeleteOffLivePage).
     checkTrashedPageDeletes: v.optional(v.boolean()),
+    // Set by clients that bind a batch to the account whose outbox holds
+    // it: that account's identity subject. A batch can reach the server
+    // under a different sign-in than the one that queued it (the transport
+    // resends a pending mutation after a new sign-in), so one bound to
+    // another account is refused whole (see assertCallerIsAccount). Older
+    // clients send it unbound, checked against whoever is signed in.
+    accountSubject: v.optional(v.string()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
+    if (args.accountSubject !== undefined) {
+      await assertCallerIsAccount(ctx, args.accountSubject);
+    }
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const results: PublicOperationResult[] = [];

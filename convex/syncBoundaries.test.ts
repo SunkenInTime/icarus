@@ -33,6 +33,8 @@ const getFullSnapshot = makeFunctionReference<"query">(
 const addPage = makeFunctionReference<"mutation">("pages:add");
 const deletePage = makeFunctionReference<"mutation">("pages:delete");
 const reorderPages = makeFunctionReference<"mutation">("pages:reorder");
+const createShare = makeFunctionReference<"mutation">("shares:create");
+const redeemShare = makeFunctionReference<"mutation">("shares:redeem");
 
 const identity = {
   issuer: "https://sync-boundaries.test",
@@ -1636,6 +1638,118 @@ describe("replay safety after operation event expiry", () => {
       status: "noop",
       currentRevision: 2,
     });
+  });
+});
+
+describe("a batch bound to its account", () => {
+  const editorIdentity = {
+    issuer: "https://sync-boundaries.test",
+    subject: "editor",
+    tokenIdentifier: "sync-boundaries|editor",
+    name: "Sync Editor",
+  };
+
+  /// The owner's strategy, with a second account that may edit it: the
+  /// account an owner's batch would land as if it reached the server under
+  /// the editor's sign-in.
+  async function createSharedHarness() {
+    const { t, owner } = await createHarness();
+    await createBaseStrategy(owner);
+    const editor = t.withIdentity(editorIdentity);
+    await editor.mutation(ensureCurrentUser, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+    });
+    await owner.mutation(createShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      targetType: "strategy",
+      targetPublicId: strategyPublicId,
+      token: "bound-batch-editor-token",
+      role: "editor",
+    });
+    await editor.mutation(redeemShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      token: "bound-batch-editor-token",
+    });
+    return { t, owner, editor };
+  }
+
+  function boundBatch(accountSubject: string | undefined) {
+    return {
+      strategyPublicId,
+      clientId: "owner-device",
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      ops: [
+        toProtocol3Op({
+          opId: "owner-add",
+          kind: "add",
+          entityType: "element",
+          entityPublicId: "owner-element",
+          pagePublicId: pageA,
+          payload: textPayload("owner's work"),
+        }),
+      ],
+      ...(accountSubject === undefined ? {} : { accountSubject }),
+    };
+  }
+
+  async function elementIds(owner: Harness) {
+    const snapshot = (await owner.query(getPageSnapshot, {
+      strategyPublicId,
+      pagePublicId: pageA,
+    })) as { elements: Array<{ publicId: string }> };
+    return snapshot.elements.map((element) => element.publicId);
+  }
+
+  test("applies when the caller is the account", async () => {
+    const { owner } = await createSharedHarness();
+
+    const response = (await owner.mutation(
+      applyBatch,
+      boundBatch(identity.subject),
+    )) as { results: Array<Record<string, unknown>> };
+
+    expect(response.results).toMatchObject([{ status: "applied" }]);
+    expect(await elementIds(owner)).toEqual(["owner-element"]);
+  });
+
+  test("refuses the whole batch under another account, recording nothing", async () => {
+    const { t, owner, editor } = await createSharedHarness();
+
+    const refused = await editor
+      .mutation(applyBatch, boundBatch(identity.subject))
+      .catch((error: unknown) => error);
+    expect(errorCode(refused)).toBe("FORBIDDEN");
+    const signedOut = await t
+      .mutation(applyBatch, boundBatch(identity.subject))
+      .catch((error: unknown) => error);
+    expect(errorCode(signedOut)).toBe("UNAUTHENTICATED");
+
+    expect(await elementIds(owner)).toEqual([]);
+    const events = await t.run((ctx) =>
+      ctx.db.query("operationEvents").collect(),
+    );
+    expect(events).toEqual([]);
+
+    // The op id is still unknown to the server, so the owner's next session
+    // lands the same work instead of replaying a refusal.
+    const resent = (await owner.mutation(
+      applyBatch,
+      boundBatch(identity.subject),
+    )) as { results: Array<Record<string, unknown>> };
+    expect(resent.results).toMatchObject([{ status: "applied" }]);
+    expect(await elementIds(owner)).toEqual(["owner-element"]);
+  });
+
+  test("an unbound batch from an older client lands as the caller", async () => {
+    const { owner, editor } = await createSharedHarness();
+
+    const response = (await editor.mutation(
+      applyBatch,
+      boundBatch(undefined),
+    )) as { results: Array<Record<string, unknown>> };
+
+    expect(response.results).toMatchObject([{ status: "applied" }]);
+    expect(await elementIds(owner)).toEqual(["owner-element"]);
   });
 });
 

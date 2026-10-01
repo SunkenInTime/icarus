@@ -1283,6 +1283,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _finishNetworkLane();
       return;
     }
+    // The claim awaited durable writes, and the account may have signed out
+    // or changed meanwhile. The batch belongs to the account that queued it,
+    // so it goes back to that account's queue, untouched, to send once it is
+    // signed in again.
+    if (!_canSendAs(accountId)) {
+      await _releaseClaimedRecords(batch);
+      _finishNetworkLane();
+      _scheduleBackgroundDrain();
+      return;
+    }
     final batchClientId = batch.first.pending.clientId;
     final isActiveStrategy = _isActive(accountId, strategyPublicId);
     _refreshActiveQueueView(
@@ -1298,6 +1308,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         strategyPublicId: strategyPublicId,
         clientId: batchClientId,
         ops: batch.map((record) => record.pending.op).toList(growable: false),
+        // The transport can deliver this after a later sign-in (it resends
+        // pending requests on reconnect), so the server checks the batch's
+        // own account, not whoever is signed in then.
+        accountSubject: batch.first.accountId,
       );
       await _applyAcksForRecords(batch, acks);
       batchSucceeded = true;
@@ -1757,6 +1771,41 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         LineupReorderOp() =>
           false,
       };
+
+  /// Whether [accountId] is the account signed in, ready, with no auth
+  /// incident: the only time its work may be sent.
+  bool _canSendAs(String accountId) {
+    final auth = ref.read(authProvider);
+    return !auth.hasActiveAuthIncident &&
+        auth.user?.id == accountId &&
+        auth.isAuthenticated &&
+        auth.isConvexUserReady;
+  }
+
+  /// Returns a claimed batch that was never sent to its account's queue:
+  /// same op ids, no attempt counted.
+  Future<void> _releaseClaimedRecords(List<DurableOutboxRecord> batch) {
+    return _serializeWrite(() async {
+      try {
+        for (final claimed in batch) {
+          final current = _recordsByStorageKey[claimed.storageKey];
+          if (current == null ||
+              current.pending.op.opId != claimed.pending.op.opId ||
+              current.status != DurableOutboxStatus.inFlight) {
+            continue;
+          }
+          await _putRecord(current.copyWith(
+            status: DurableOutboxStatus.queued,
+            updatedAt: DateTime.now(),
+          ));
+        }
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+        return;
+      }
+      _refreshActiveQueueView();
+    });
+  }
 
   Future<void> _restoreRecordsAfterFailure(
     List<DurableOutboxRecord> batch, {

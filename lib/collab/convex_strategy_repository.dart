@@ -284,10 +284,16 @@ class ConvexStrategyRepository {
     return result.url;
   }
 
+  /// Sends [ops] to [strategyPublicId]. With [accountSubject], the account
+  /// the ops belong to (its auth user id, as the outbox keys it), the
+  /// server refuses the whole batch with FORBIDDEN unless that account is
+  /// the one signed in when the batch arrives, which may be later than when
+  /// it was sent.
   Future<List<OpAck>> applyBatch({
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     if (ops.isEmpty) return const [];
     for (final op in ops) {
@@ -317,6 +323,7 @@ class ConvexStrategyRepository {
       clientId: clientId,
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       ops: typedOps,
+      accountSubject: _optional(accountSubject),
       // Links are sent only with or after their origin and landing (see
       // the outbox's batch claim), so the server may refuse an orphan.
       checkLineupLinkEnds: const ConvexOptional.present(true),

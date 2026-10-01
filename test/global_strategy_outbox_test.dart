@@ -100,6 +100,94 @@ void main() {
     expect(store.values, isEmpty);
   });
 
+  test('a claim outlived by its account is not sent and stays with it',
+      () async {
+    final store = _HeldClaimStore();
+    await store.put(_record(strategyId: 'strategy-a', opId: 'a'));
+    store.putStatuses.clear();
+    final auth = _SwitchableAuthProvider('account-a');
+    final repository = _RecordingRepository();
+    final container = _container(
+      store: store,
+      repository: repository,
+      createAuth: () => auth,
+    );
+    addTearDown(container.dispose);
+    container
+        .read(strategyOpQueueProvider.notifier)
+        .setCurrentAccount('account-a');
+    await store.claimStarted.future;
+
+    // A signs out and B signs in while the claim is being saved.
+    auth.signInAs('account-b');
+    await _waitUntil(
+      () => container.read(strategyOpQueueProvider).accountId == 'account-b',
+    );
+    store.allowClaim();
+    await _waitUntil(() => store.putStatuses.length == 2);
+
+    expect(repository.calls, isEmpty);
+    expect(store.putStatuses, [
+      DurableOutboxStatus.inFlight,
+      DurableOutboxStatus.queued,
+    ]);
+    final kept = store.load().records.single;
+    expect(kept.accountId, 'account-a');
+    expect(kept.pending.op.opId, 'a');
+    expect(kept.pending.clientId, 'client-strategy-a');
+    expect(kept.pending.attempts, 0);
+    final queue = container.read(strategyOpQueueProvider);
+    expect(queue.accountOutbox.hasWork, isFalse);
+    expect(queue.pending, isEmpty);
+
+    // A's next session sends the same op, bound to A.
+    auth.signInAs('account-a');
+    await _waitUntil(() => repository.calls.length == 1);
+    expect(repository.calls.single.ops.single.opId, 'a');
+    expect(repository.accountSubjects.single, 'account-a');
+    await _waitUntil(() => store.values.isEmpty);
+  });
+
+  test('a batch refused under a later account stays queued for its own',
+      () async {
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(_record(strategyId: 'strategy-a', opId: 'a'));
+    final auth = _SwitchableAuthProvider('account-a');
+    final repository = _HeldRefusalRepository();
+    final container = _container(
+      store: store,
+      repository: repository,
+      createAuth: () => auth,
+    );
+    addTearDown(container.dispose);
+    container
+        .read(strategyOpQueueProvider.notifier)
+        .setCurrentAccount('account-a');
+    await repository.firstStarted.future;
+    expect(repository.accountSubjects.single, 'account-a');
+
+    // The transport delivers A's batch after B signs in; the server refuses
+    // it, since the batch is bound to A.
+    auth.signInAs('account-b');
+    await _waitUntil(
+      () => container.read(strategyOpQueueProvider).accountId == 'account-b',
+    );
+    repository.refuseFirst();
+    await _waitUntil(
+      () => store.load().records.single.status == DurableOutboxStatus.queued,
+    );
+
+    final kept = store.load().records.single;
+    expect(kept.accountId, 'account-a');
+    expect(kept.pending.op.opId, 'a');
+    expect(kept.pending.clientId, 'client-strategy-a');
+    final queue = container.read(strategyOpQueueProvider);
+    expect(queue.attentionByEntityKey, isEmpty);
+    expect(queue.accountOutbox.hasWork, isFalse);
+    expect(queue.lastError, isNull);
+    expect(repository.calls, hasLength(1));
+  });
+
   test('active work waits for a background request then runs next', () async {
     final store = MemoryDurableStrategyOutboxStore();
     await store.put(_record(strategyId: 'closed-strategy', opId: 'closed'));
@@ -816,11 +904,14 @@ ProviderContainer _container({
   bool Function()? connected,
   Stream<bool>? connectionChanges,
   String authAccountId = 'account-a',
+  AuthProvider Function()? createAuth,
 }) {
   return ProviderContainer(overrides: [
     durableStrategyOutboxStoreProvider.overrideWithValue(store),
     convexStrategyRepositoryProvider.overrideWithValue(repository),
-    authProvider.overrideWith(() => _ReadyAuthProvider(authAccountId)),
+    authProvider.overrideWith(
+      createAuth ?? () => _ReadyAuthProvider(authAccountId),
+    ),
     convexConnectionSnapshotProvider.overrideWith(
       (ref) => connected?.call() ?? true,
     ),
@@ -913,6 +1004,30 @@ class _ReadyAuthProvider extends AuthProvider {
       );
 }
 
+/// Signed in and ready as one account at a time, switched by [signInAs]:
+/// a sign-out of one account and sign-in of another on the same device.
+class _SwitchableAuthProvider extends AuthProvider {
+  _SwitchableAuthProvider(this._accountId);
+
+  String _accountId;
+
+  @override
+  AppAuthState build() => _readyAs(_accountId);
+
+  void signInAs(String accountId) {
+    _accountId = accountId;
+    state = _readyAs(accountId);
+  }
+
+  static AppAuthState _readyAs(String accountId) => AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: _user(accountId),
+      );
+}
+
 class _MutableAuthProvider extends AuthProvider {
   @override
   AppAuthState build() => AppAuthState(
@@ -955,14 +1070,17 @@ class _RecordingRepository extends ConvexStrategyRepository {
   _RecordingRepository() : super(IcarusConvexApi(_UnusedTransport()));
 
   final List<_Call> calls = [];
+  final List<String?> accountSubjects = [];
 
   @override
   Future<List<OpAck>> applyBatch({
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
+    accountSubjects.add(accountSubject);
     return [
       for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2),
     ];
@@ -979,6 +1097,7 @@ class _ThrowingRepository extends _RecordingRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
     throw error;
@@ -1002,12 +1121,14 @@ class _DeletedStrategyRepository extends _RecordingRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     if (!notFoundOnSend.contains(strategyPublicId)) {
       return super.applyBatch(
         strategyPublicId: strategyPublicId,
         clientId: clientId,
         ops: ops,
+        accountSubject: accountSubject,
       );
     }
     calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
@@ -1036,6 +1157,7 @@ class _HeldFirstRepository extends _RecordingRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
     if (calls.length == 1) {
@@ -1048,18 +1170,67 @@ class _HeldFirstRepository extends _RecordingRepository {
   }
 }
 
+/// Holds its first request until [refuseFirst], then refuses it as the
+/// server refuses a batch bound to an account other than the caller's.
+class _HeldRefusalRepository extends _RecordingRepository {
+  final firstStarted = Completer<void>();
+  final _refuse = Completer<void>();
+
+  void refuseFirst() => _refuse.complete();
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+    String? accountSubject,
+  }) async {
+    calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
+    accountSubjects.add(accountSubject);
+    firstStarted.complete();
+    await _refuse.future;
+    throw const ConvexFunctionException(
+      code: ConvexErrorCode.forbidden,
+      rawCode: 'FORBIDDEN',
+      message: 'Forbidden: these changes belong to a different account',
+    );
+  }
+}
+
 class _FailFirstRepository extends _RecordingRepository {
   @override
   Future<List<OpAck>> applyBatch({
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     calls.add((strategyId: strategyPublicId, ops: List.of(ops)));
     if (calls.length == 1) throw StateError('temporary failure');
     return [
       for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2),
     ];
+  }
+}
+
+/// Holds the first write that marks a record in flight (a batch claim)
+/// until [allowClaim], and lists the status of every write.
+class _HeldClaimStore extends MemoryDurableStrategyOutboxStore {
+  final claimStarted = Completer<void>();
+  final _allowClaim = Completer<void>();
+  final List<DurableOutboxStatus> putStatuses = [];
+
+  void allowClaim() => _allowClaim.complete();
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    if (record.status == DurableOutboxStatus.inFlight &&
+        !claimStarted.isCompleted) {
+      claimStarted.complete();
+      await _allowClaim.future;
+    }
+    putStatuses.add(record.status);
+    await super.put(record);
   }
 }
 

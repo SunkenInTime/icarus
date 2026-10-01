@@ -61426,6 +61426,12 @@
       "args": {
         "type": "object",
         "value": {
+          "accountSubject": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "checkLineupEndDeletes": {
             "fieldType": {
               "type": "boolean"

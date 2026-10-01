@@ -2966,6 +2966,7 @@ class _AckRepository extends ConvexStrategyRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     return [
       for (final op in ops)
@@ -2991,6 +2992,7 @@ class _RecordingAckRepository extends ConvexStrategyRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     calls.add(List<StrategyOp>.from(ops));
     if (calls.length == 2 && !secondCall.isCompleted) secondCall.complete();
@@ -3016,6 +3018,7 @@ class _MissingLinkEndRepository extends ConvexStrategyRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     return [
       for (final op in ops)
@@ -3048,6 +3051,7 @@ class _SequencedAckRepository extends ConvexStrategyRepository {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    String? accountSubject,
   }) async {
     calls.add(List<StrategyOp>.from(ops));
     if (calls.length == 1) {
