@@ -2467,6 +2467,106 @@ void main() {
       expect(notifier.canvasWorkCount, 0);
     });
 
+    test('recovered work kept while its ack is being stored is not resent',
+        () async {
+      final store = _GatedRemoveStore();
+      final recovered =
+          _elementPatch(opId: 'recovered', value: 'new', expectedRevision: 1);
+      const key = EntitySyncKey.element('page-1', 'element-1');
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: key,
+        pending: PendingOp(op: recovered, clientId: 'stable-client'),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      ));
+      final repository = _SequencedAckRepository();
+      final container =
+          _cloudQueueContainer(store: store, repository: repository);
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await repository.firstStarted.future;
+      repository
+          .completeFirst(const AppliedOpAck(opId: 'recovered', revision: 2));
+      await store.removeStarted.future;
+      // Still shown in flight: the page keeps it, unchanged, as its intent.
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .inFlightByEntityKey[key]!
+            .pending
+            .op
+            .opId,
+        'recovered',
+      );
+      final kept = notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {key: recovered},
+      );
+      store.releaseRemove.complete();
+      await kept;
+      final queue = container.read(strategyOpQueueProvider);
+      expect(queue.lastAckBatch.single.restored, isTrue);
+      expect(queue.pending, isEmpty);
+      expect(store.values, isEmpty);
+      expect(notifier.canvasWorkCount, 0);
+      // Past the send debounce: nothing replays it.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(repository.calls, hasLength(1));
+    });
+
+    test('an ack stored after the canvas is drawn fresh lands restored',
+        () async {
+      final store = _GatedRemoveStore();
+      final repository = _SequencedAckRepository();
+      final container =
+          _cloudQueueContainer(store: store, repository: repository);
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(
+        _elementPatch(opId: 'edit', value: 'edit', expectedRevision: 1),
+      );
+      unawaited(notifier.flushNow());
+      await repository.firstStarted.future;
+      repository.completeFirst(const AppliedOpAck(opId: 'edit', revision: 2));
+      await store.removeStarted.future;
+      // The canvas is reset and drawn again from the server while the ack
+      // is being stored.
+      notifier.forgetCanvasWork();
+      store.releaseRemove.complete();
+      await Future<void>.delayed(Duration.zero);
+      await notifier.flushNow();
+      final acked = container.read(strategyOpQueueProvider).lastAckBatch;
+      expect(acked.single.op.opId, 'edit');
+      expect(acked.single.restored, isTrue);
+    });
+
+    test('discarding refused work forgets it as the canvas\'s', () async {
+      final container = _cloudQueueContainer(
+        store: MemoryDurableStrategyOutboxStore(),
+        repository: _AckRepository(reject: true),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(
+        _elementPatch(opId: 'edit', value: 'edit', expectedRevision: 1),
+      );
+      await notifier.flushNow();
+      const key = EntitySyncKey.element('page-1', 'element-1');
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey,
+        contains(key),
+      );
+      expect(notifier.canvasWorkCount, 1);
+      await notifier.discardRejected({key});
+      expect(notifier.canvasWorkCount, 0);
+    });
+
     test('rejected predecessor leaves its element successor in attention',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
@@ -3067,6 +3167,22 @@ class _SequencedAckRepository extends ConvexStrategyRepository {
 
 /// Holds the write that promotes a successor (its record's pending op
 /// changes and the successor goes) until [releasePromotion].
+/// Holds the first record removal (an accepted op leaving the outbox) until
+/// [releaseRemove].
+class _GatedRemoveStore extends MemoryDurableStrategyOutboxStore {
+  final removeStarted = Completer<void>();
+  final releaseRemove = Completer<void>();
+
+  @override
+  Future<void> remove(String storageKey) async {
+    if (!removeStarted.isCompleted) {
+      removeStarted.complete();
+      await releaseRemove.future;
+    }
+    await super.remove(storageKey);
+  }
+}
+
 class _GatedPromotionStore extends MemoryDurableStrategyOutboxStore {
   final promotionStarted = Completer<void>();
   final releasePromotion = Completer<void>();

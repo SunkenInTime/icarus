@@ -493,6 +493,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     bool flushImmediately = false,
   }) {
     final canvasSession = _canvasSession;
+    // A desired op the queue already holds is work kept as it is (live sync
+    // keeps recovered work this way), not a new edit. Read now: by the time
+    // this write runs it may have landed and left the queue.
+    final heldOpIds = {for (final pending in state.pending) pending.op.opId};
     return _serializeWrite(() async {
       final keys = clearMissing
           ? <EntitySyncKey>{
@@ -514,21 +518,27 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         },
         flushImmediately: flushImmediately,
         canvasSession: canvasSession,
+        heldOpIds: heldOpIds,
       );
     });
   }
 
   /// [canvasSession] is the canvas's session when the desired ops were
   /// asked for: ops made from them are the canvas's work only if it has not
-  /// been drawn fresh since.
+  /// been drawn fresh since. A desired op in [heldOpIds] was already queued
+  /// then, so it is not the canvas's work; if it has landed or been
+  /// replaced since, whatever the queue now holds for its entity is left as
+  /// it is.
   Future<void> _syncDesiredLocked({
     required Set<EntitySyncKey> keys,
     required Map<EntitySyncKey, StrategyOp?> desiredOps,
     required bool flushImmediately,
     required int canvasSession,
+    Set<String> heldOpIds = const {},
   }) async {
-    void writtenByCanvas(PendingOp pending) {
-      if (canvasSession == _canvasSession) {
+    void writtenByCanvas(PendingOp pending, StrategyOp desired) {
+      if (canvasSession == _canvasSession &&
+          !heldOpIds.contains(desired.opId)) {
         _canvasOpIds.add(pending.op.opId);
       }
     }
@@ -569,6 +579,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final successorIntent = successors[key];
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
+        // Kept work that has landed or been replaced since is not written
+        // again.
+        if (desired != null &&
+            heldOpIds.contains(desired.opId) &&
+            ![
+              existing?.pending,
+              inFlightIntent?.pending,
+              successorIntent?.pending,
+              pausedIntent?.pending,
+              attentionIntent?.pending,
+            ].any((pending) => pending?.op.opId == desired.opId)) {
+          continue;
+        }
 
         // A rejected op remains the durable authority until the user
         // explicitly retries it. Reconciliation may update its successor, but
@@ -633,7 +656,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             clientId: successorIntent?.pending.clientId ??
                 attentionIntent.pending.clientId,
           );
-          writtenByCanvas(pending);
+          writtenByCanvas(pending, desired);
           final recoveredOversizedParking =
               _uncertainOversizedParking.contains(current.storageKey);
           await _putRecord(current.copyWith(
@@ -699,7 +722,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                     desired,
             clientId: successorIntent?.pending.clientId ?? state.clientId!,
           );
-          writtenByCanvas(pending);
+          writtenByCanvas(pending, desired);
           await _putRecord(_recordFor(
             key: key,
             pending: inFlightIntent.pending,
@@ -735,7 +758,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 desired,
             clientId: successorIntent.pending.clientId,
           );
-          writtenByCanvas(pending);
+          writtenByCanvas(pending, desired);
           await _putRecord(_recordFor(
             key: key,
             pending: existing.pending,
@@ -775,7 +798,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           attempts: base?.pending.attempts ?? 0,
           lastAttemptAt: base?.pending.lastAttemptAt,
         );
-        writtenByCanvas(pending);
+        writtenByCanvas(pending, desired);
         final record = _recordFor(
           key: key,
           pending: pending,
@@ -1001,6 +1024,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (_uncertainOversizedParking.isEmpty) {
         _uncertainOversizedParkingMessage = null;
       }
+      _pruneCanvasOpIds();
       final attentionMessage = _loadedAttentionMessage(
         loadIssues: state.loadIssues,
         paused: state.pausedByEntityKey,
@@ -1088,6 +1112,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (_uncertainOversizedParking.isEmpty) {
         _uncertainOversizedParkingMessage = null;
       }
+      _pruneCanvasOpIds();
       final attentionMessage = _loadedAttentionMessage(
         loadIssues: state.loadIssues,
         paused: state.pausedByEntityKey,
@@ -1515,16 +1540,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         'Server returned an incomplete operation result batch.',
       );
     }
-    final acked = <AckedEntityIntent>[];
     for (final ack in acks) {
       final sent = byOpId[ack.opId];
       if (sent == null) continue;
-      acked.add(AckedEntityIntent(
-        entityKey: sent.entityKey,
-        op: sent.pending.op,
-        ack: ack,
-        restored: !_canvasOpIds.contains(ack.opId),
-      ));
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
       final successor = current!.successorPending;
@@ -1584,6 +1602,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         await _putRecord(rejected);
       }
     }
+    // Judged once the records are stored: the canvas may have been drawn
+    // fresh meanwhile, and then none of this is on it.
+    final acked = [
+      for (final ack in acks)
+        if (byOpId[ack.opId] case final sent?)
+          AckedEntityIntent(
+            entityKey: sent.entityKey,
+            op: sent.pending.op,
+            ack: ack,
+            restored: !_canvasOpIds.contains(ack.opId),
+          ),
+    ];
     _pruneCanvasOpIds();
     if (_isDisposed) return;
     final first = batch.first;
@@ -1647,6 +1677,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       } catch (error, stackTrace) {
         _recordPersistenceFailure(error, stackTrace);
         return;
+      } finally {
+        _pruneCanvasOpIds();
       }
       AppErrorReporter.reportWarning(
         keepsAuthoredWork
@@ -1682,6 +1714,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       } catch (error, stackTrace) {
         _recordPersistenceFailure(error, stackTrace);
         return;
+      } finally {
+        _pruneCanvasOpIds();
       }
       _refreshActiveQueueView();
     });
@@ -1731,6 +1765,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (_uncertainOversizedParking.isEmpty) {
         _uncertainOversizedParkingMessage = null;
       }
+      _pruneCanvasOpIds();
       // The error shown was about the dropped work or about what remains;
       // what remains says it again.
       _refreshActiveQueueView(
