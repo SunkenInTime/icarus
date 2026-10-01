@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/sort_index_order.dart';
 
-const currentCloudProtocolVersion = 3;
+const currentCloudProtocolVersion = 4;
 const currentCloudPayloadVersion = 1;
 const maxCloudOperationBytes = 900 * 1024;
 const maxCloudBatchBytes = 15 * 1024 * 1024;

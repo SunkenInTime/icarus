@@ -1,7 +1,11 @@
 import { clientUpgradeRequiredError } from "./errors";
 import { v } from "convex/values";
 
-export const CURRENT_CLOUD_PROTOCOL_VERSION = 3;
+// 4: Paranoia rows at payload version 2 (in-game size, data version 104).
+// A client on 3 reads such a row as the old size and, on its next edit to
+// the page, would write it back moved twice. Refusing 3 outright keeps
+// those clients from reading or writing until they reload into 4.
+export const CURRENT_CLOUD_PROTOCOL_VERSION = 4;
 export const MAX_CLOUD_OPERATION_BYTES = 900 * 1024;
 export const MAX_CLOUD_ARRAY_ENTRIES = 8_000;
 export const CLOUD_OPERATION_TOO_LARGE_MESSAGE =

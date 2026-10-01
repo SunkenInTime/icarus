@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 
 const operationsPerSeed = 1000;
 const operationBatchSize = 50;
-const cloudProtocolVersion = 3;
+const cloudProtocolVersion = 4;
 const payloadVersion = 1;
 const baseFixturePath = 'test/fixtures/strategy_integrity/base-test-v43.ica';
 const baseFixtureSha256 =

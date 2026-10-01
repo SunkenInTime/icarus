@@ -55,7 +55,7 @@ void main() {
       );
 
       final json = op.toConvexJson();
-      expect(currentCloudProtocolVersion, 3);
+      expect(currentCloudProtocolVersion, 4);
       expect(json['type'], 'pageContent.patch');
       expect(json['expectedPageContentRevision'], 4);
       expect(json.containsKey('expectedSequence'), isFalse);
