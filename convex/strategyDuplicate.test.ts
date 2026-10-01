@@ -274,6 +274,7 @@ describe("strategies:duplicate", () => {
 
     type Row = Record<string, any>;
     const copy = (await owner.query(getFullSnapshot, {
+      ...protocol,
       strategyPublicId: "duplicate-copy",
     })) as { header: Row; pages: Row[]; elements: Row[]; lineups: Row[] };
     expect(copy.header).toMatchObject({
@@ -475,6 +476,7 @@ describe("strategies:duplicate", () => {
       payload: { kind: string; data: Record<string, any> };
     };
     const copy = (await owner.query(getFullSnapshot, {
+      ...protocol,
       strategyPublicId: "duplicate-copy",
     })) as { pages: Array<{ publicId: string; sortIndex: number }>; lineups: Row[] };
     // The fan-in sits on the first page (the seed's lineup is on the second).
@@ -530,6 +532,7 @@ describe("strategies:duplicate", () => {
     // The copy's placed image (its own asset row, sharing the source's bytes).
     type Row = Record<string, any>;
     const copy = (await owner.query(getFullSnapshot, {
+      ...protocol,
       strategyPublicId: "duplicate-copy",
     })) as { pages: Row[]; elements: Row[] };
     const copyImage = copy.elements.find((row) => row.elementType === "image")!;
@@ -1323,7 +1326,10 @@ describe("strategies:duplicate access", () => {
     })) as Array<{ publicId: string; role: string }>;
     expect(owned).toMatchObject([{ publicId: "editor-copy", role: "owner" }]);
     await expect(
-      owner.query(getFullSnapshot, { strategyPublicId: "editor-copy" }),
+      owner.query(getFullSnapshot, {
+        ...protocol,
+        strategyPublicId: "editor-copy",
+      }),
     ).rejects.toThrow("Forbidden");
 
     await deleteAndSweep(t, owner, source);

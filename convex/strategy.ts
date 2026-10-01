@@ -4,6 +4,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyReadable } from "./lib/auth";
 import { clientUpgradeRequiredError } from "./lib/errors";
 import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
+import {
   elementsOnPages,
   hasTrashedPages,
   getStrategyByPublicId,
@@ -45,6 +49,7 @@ async function getPageContent(
 
 export const getShell = query({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     // A share link the reader holds (see assertStrategyReadable): lets
     // someone without an account view a strategy shared with them.
@@ -52,6 +57,7 @@ export const getShell = query({
   },
   returns: strategyShellValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
     const pages = await listLivePages(ctx, strategy._id);
@@ -67,6 +73,7 @@ export const getShell = query({
 
 export const getFullSnapshot = query({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     shareToken: v.optional(v.string()),
     // Set by clients that ask images:listReferencedAssetIds, not this
@@ -77,6 +84,7 @@ export const getFullSnapshot = query({
   },
   returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
     // An older client decides from this snapshot whether an upload is still

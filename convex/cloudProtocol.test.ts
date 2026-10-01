@@ -108,6 +108,26 @@ const publicMutations = [
   ["users:ensureCurrentUser", {}],
 ] as const;
 
+// Every public read that returns element or lineup payloads, and the shell.
+const publicPayloadQueries = [
+  ["strategy:getShell", { strategyPublicId: "strategy" }],
+  [
+    "strategy:getFullSnapshot",
+    { strategyPublicId: "strategy", acceptsTrashedPagesLeftOut: true },
+  ],
+  ["page:getSnapshot", { strategyPublicId: "strategy", pagePublicId: "page" }],
+  [
+    "elements:listForPage",
+    { strategyPublicId: "strategy", pagePublicId: "page" },
+  ],
+  ["elements:listForStrategy", { strategyPublicId: "strategy" }],
+  [
+    "lineups:listForPage",
+    { strategyPublicId: "strategy", pagePublicId: "page" },
+  ],
+  ["lineups:listForStrategy", { strategyPublicId: "strategy" }],
+] as const;
+
 const publicWriteActions = [
   [
     "images:generateUploadUrl",
@@ -187,6 +207,92 @@ describe("public cloud mutation protocol gate", () => {
       code: "CLIENT_UPGRADE_REQUIRED",
       message: "Client upgrade required",
     });
+  });
+});
+
+describe("public payload query protocol gate", () => {
+  // A client from before a cutover sends no protocol on these reads; one on
+  // an older protocol sends its own. Neither may see a row it cannot read.
+  test.each(publicPayloadQueries)("%s rejects a missing protocol", async (
+    identifier,
+    args,
+  ) => {
+    const t = convexTest(schema, modules);
+    const query = makeFunctionReference<"query">(identifier);
+
+    const error = await captureError(t.query(query, args));
+
+    expect(error).not.toBeNull();
+    expect(String(error)).toContain("clientProtocolVersion");
+  });
+
+  test.each(publicPayloadQueries)("%s rejects an old protocol canonically", async (
+    identifier,
+    args,
+  ) => {
+    const t = convexTest(schema, modules);
+    const query = makeFunctionReference<"query">(identifier);
+
+    const error = await captureError(
+      t.query(query, {
+        ...args,
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION - 1,
+      }),
+    );
+
+    expectUpgradeRequired(error);
+  });
+
+  test.each(publicPayloadQueries)(
+    "%s rejects an unknown future protocol canonically",
+    async (identifier, args) => {
+      const t = convexTest(schema, modules);
+      const query = makeFunctionReference<"query">(identifier);
+
+      const error = await captureError(
+        t.query(query, {
+          ...args,
+          clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION + 1,
+        }),
+      );
+
+      expectUpgradeRequired(error);
+    },
+  );
+
+  test.each(publicPayloadQueries)("%s answers the current protocol", async (
+    identifier,
+    args,
+  ) => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({
+      issuer: "https://cloud-protocol.test",
+      subject: "owner",
+      tokenIdentifier: "cloud-protocol|owner",
+      name: "owner",
+    });
+    const protocol = { clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION };
+    await owner.mutation(
+      makeFunctionReference<"mutation">("users:ensureCurrentUser"),
+      protocol,
+    );
+    await owner.mutation(
+      makeFunctionReference<"mutation">("strategies:createWithInitialPage"),
+      {
+        ...protocol,
+        publicId: "strategy",
+        name: "Strategy",
+        mapData: "ascent",
+        initialPagePublicId: "page",
+        initialPageName: "Page 1",
+        initialPageIsAttack: true,
+      },
+    );
+    const query = makeFunctionReference<"query">(identifier);
+
+    await expect(
+      owner.query(query, { ...args, ...protocol }),
+    ).resolves.toBeDefined();
   });
 });
 

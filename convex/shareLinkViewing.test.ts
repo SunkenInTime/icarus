@@ -80,31 +80,38 @@ describe("viewing through a share link without an account", () => {
       { targetType: "strategy", strategyPublicId, role: "editor" },
     );
     await expect(
-      t.query(getStrategyShell, { strategyPublicId }),
+      t.query(getStrategyShell, { ...protocol, strategyPublicId }),
     ).rejects.toThrow("Unauthenticated");
     // Even an editor link lets a holder who has not redeemed it only view.
     await expect(
-      t.query(getStrategyShell, { strategyPublicId, shareToken }),
+      t.query(getStrategyShell, { ...protocol, strategyPublicId, shareToken }),
     ).resolves.toMatchObject({
       header: { publicId: strategyPublicId, role: "viewer" },
       pages: [{ publicId: pagePublicId }],
     });
     await expect(
-      t.query(getFullSnapshot, { strategyPublicId, shareToken }),
+      t.query(getFullSnapshot, { ...protocol, strategyPublicId, shareToken }),
     ).resolves.toMatchObject({ header: { role: "viewer" } });
     await expect(
-      t.query(getPageSnapshot, { strategyPublicId, pagePublicId, shareToken }),
+      t.query(getPageSnapshot, {
+        ...protocol,
+        strategyPublicId,
+        pagePublicId,
+        shareToken,
+      }),
     ).resolves.toMatchObject({ page: { publicId: pagePublicId } });
 
     // The link opens its own strategy and nothing else.
     await expect(
       t.query(getStrategyShell, {
+        ...protocol,
         strategyPublicId: "other-strategy",
         shareToken,
       }),
     ).rejects.toThrow("Unauthenticated");
     await expect(
       stranger.query(getStrategyShell, {
+        ...protocol,
         strategyPublicId: "other-strategy",
         shareToken,
       }),
@@ -112,10 +119,18 @@ describe("viewing through a share link without an account", () => {
 
     // A signed-in holder reads as a viewer; the owner keeps their own role.
     await expect(
-      stranger.query(getStrategyShell, { strategyPublicId, shareToken }),
+      stranger.query(getStrategyShell, {
+        ...protocol,
+        strategyPublicId,
+        shareToken,
+      }),
     ).resolves.toMatchObject({ header: { role: "viewer" } });
     await expect(
-      owner.query(getStrategyShell, { strategyPublicId, shareToken }),
+      owner.query(getStrategyShell, {
+        ...protocol,
+        strategyPublicId,
+        shareToken,
+      }),
     ).resolves.toMatchObject({ header: { role: "owner" } });
     await expect(
       stranger.mutation(updateStrategy, {
@@ -136,10 +151,14 @@ describe("viewing through a share link without an account", () => {
       t.query(resolveShare, { token: shareToken }),
     ).rejects.toThrow("Share link revoked");
     await expect(
-      t.query(getStrategyShell, { strategyPublicId, shareToken }),
+      t.query(getStrategyShell, { ...protocol, strategyPublicId, shareToken }),
     ).rejects.toThrow("Share link revoked");
     await expect(
-      stranger.query(getStrategyShell, { strategyPublicId, shareToken }),
+      stranger.query(getStrategyShell, {
+        ...protocol,
+        strategyPublicId,
+        shareToken,
+      }),
     ).rejects.toThrow("Share link revoked");
   });
 
@@ -164,6 +183,7 @@ describe("viewing through a share link without an account", () => {
     ).resolves.toEqual({ targetType: "folder", role: "viewer" });
     await expect(
       t.query(getStrategyShell, {
+        ...protocol,
         strategyPublicId: "foldered-strategy",
         shareToken: "folder-token",
       }),

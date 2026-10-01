@@ -8,15 +8,21 @@ import {
   listLivePages,
 } from "./lib/entities";
 import { errorWithCode } from "./lib/errors";
+import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
 import { lineupValidator } from "./lib/publicValidators";
 
 export const listForPage = query({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
   },
   returns: v.array(lineupValidator),
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
 
@@ -48,10 +54,12 @@ export const listForPage = query({
 
 export const listForStrategy = query({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
   },
   returns: v.array(lineupValidator),
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
 

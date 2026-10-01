@@ -4999,9 +4999,14 @@ bool _matchesRaw15(ConvexValue value) =>
     (value.value['revision'] != null && _matchesRaw4(value.value['revision']!));
 
 ConvexObject encodeElementsListForPageArgs({
+  required double clientProtocolVersion,
   required String pagePublicId,
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'elements.js:listForPage.args.clientProtocolVersion',
+  ),
   'pagePublicId': ConvexString(pagePublicId),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
@@ -5018,8 +5023,15 @@ List<ElementsListForPageResultItem> decodeElementsListForPageResult(
     .toList(growable: false);
 
 ConvexObject encodeElementsListForStrategyArgs({
+  required double clientProtocolVersion,
   required String strategyPublicId,
-}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'elements.js:listForStrategy.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<ElementsListForPageResultItem> decodeElementsListForStrategyResult(
   ConvexValue value,
@@ -5412,9 +5424,14 @@ FoldersDeleteResult decodeInvitesRevokeResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'invites.js:revoke.returns');
 
 ConvexObject encodeLineupsListForPageArgs({
+  required double clientProtocolVersion,
   required String pagePublicId,
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'lineups.js:listForPage.args.clientProtocolVersion',
+  ),
   'pagePublicId': ConvexString(pagePublicId),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
@@ -5431,8 +5448,15 @@ List<LineupsListForPageResultItem> decodeLineupsListForPageResult(
     .toList(growable: false);
 
 ConvexObject encodeLineupsListForStrategyArgs({
+  required double clientProtocolVersion,
   required String strategyPublicId,
-}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'lineups.js:listForStrategy.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<LineupsListForPageResultItem> decodeLineupsListForStrategyResult(
   ConvexValue value,
@@ -5484,10 +5508,15 @@ OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
     OpsApplyBatchResult.decode(value, 'ops.js:applyBatch.returns');
 
 ConvexObject encodePageGetSnapshotArgs({
+  required double clientProtocolVersion,
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'page.js:getSnapshot.args.clientProtocolVersion',
+  ),
   'pagePublicId': ConvexString(pagePublicId),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
@@ -5981,6 +6010,7 @@ ConvexValue decodeStrategiesUpdateResult(ConvexValue value) =>
 ConvexObject encodeStrategyGetFullSnapshotArgs({
   ConvexOptional<bool> acceptsTrashedPagesLeftOut =
       const ConvexOptional.absent(),
+  required double clientProtocolVersion,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
@@ -5988,6 +6018,10 @@ ConvexObject encodeStrategyGetFullSnapshotArgs({
     'acceptsTrashedPagesLeftOut': ConvexBoolean(
       acceptsTrashedPagesLeftOut.value,
     ),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:getFullSnapshot.args.clientProtocolVersion',
+  ),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
@@ -6000,9 +6034,14 @@ StrategyGetFullSnapshotResult decodeStrategyGetFullSnapshotResult(
 );
 
 ConvexObject encodeStrategyGetShellArgs({
+  required double clientProtocolVersion,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:getShell.args.clientProtocolVersion',
+  ),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });

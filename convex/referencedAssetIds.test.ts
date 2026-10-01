@@ -201,6 +201,7 @@ describe("images:listReferencedAssetIds", () => {
     const owner = await seed(t);
 
     const snapshot = (await owner.query(getFullSnapshot, {
+      ...protocol,
       strategyPublicId,
       acceptsTrashedPagesLeftOut: true,
     })) as { pages: Array<{ publicId: string }> };

@@ -156,10 +156,12 @@ final class _IcarusConvexApi implements IcarusConvexApi {
 
 abstract interface class ElementsModule {
   ConvexQuery<List<ElementsListForPageResultItem>> listForPage({
+    required double clientProtocolVersion,
     required String pagePublicId,
     required String strategyPublicId,
   });
   ConvexQuery<List<ElementsListForPageResultItem>> listForStrategy({
+    required double clientProtocolVersion,
     required String strategyPublicId,
   });
 }
@@ -169,10 +171,12 @@ final class _ElementsModule implements ElementsModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<List<ElementsListForPageResultItem>> listForPage({
+    required double clientProtocolVersion,
     required String pagePublicId,
     required String strategyPublicId,
   }) {
     final args = encodeElementsListForPageArgs(
+      clientProtocolVersion: clientProtocolVersion,
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
     );
@@ -186,9 +190,11 @@ final class _ElementsModule implements ElementsModule {
 
   @override
   ConvexQuery<List<ElementsListForPageResultItem>> listForStrategy({
+    required double clientProtocolVersion,
     required String strategyPublicId,
   }) {
     final args = encodeElementsListForStrategyArgs(
+      clientProtocolVersion: clientProtocolVersion,
       strategyPublicId: strategyPublicId,
     );
     return ConvexQuery(
@@ -659,10 +665,12 @@ final class _InvitesModule implements InvitesModule {
 
 abstract interface class LineupsModule {
   ConvexQuery<List<LineupsListForPageResultItem>> listForPage({
+    required double clientProtocolVersion,
     required String pagePublicId,
     required String strategyPublicId,
   });
   ConvexQuery<List<LineupsListForPageResultItem>> listForStrategy({
+    required double clientProtocolVersion,
     required String strategyPublicId,
   });
 }
@@ -672,10 +680,12 @@ final class _LineupsModule implements LineupsModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<List<LineupsListForPageResultItem>> listForPage({
+    required double clientProtocolVersion,
     required String pagePublicId,
     required String strategyPublicId,
   }) {
     final args = encodeLineupsListForPageArgs(
+      clientProtocolVersion: clientProtocolVersion,
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
     );
@@ -689,9 +699,11 @@ final class _LineupsModule implements LineupsModule {
 
   @override
   ConvexQuery<List<LineupsListForPageResultItem>> listForStrategy({
+    required double clientProtocolVersion,
     required String strategyPublicId,
   }) {
     final args = encodeLineupsListForStrategyArgs(
+      clientProtocolVersion: clientProtocolVersion,
       strategyPublicId: strategyPublicId,
     );
     return ConvexQuery(
@@ -751,6 +763,7 @@ final class _OpsModule implements OpsModule {
 
 abstract interface class PageModule {
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
+    required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -762,11 +775,13 @@ final class _PageModule implements PageModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
+    required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodePageGetSnapshotArgs(
+      clientProtocolVersion: clientProtocolVersion,
       pagePublicId: pagePublicId,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
@@ -1396,10 +1411,12 @@ abstract interface class StrategyModule {
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
   ConvexQuery<StrategyGetShellResult> getShell({
+    required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
@@ -1412,11 +1429,13 @@ final class _StrategyModule implements StrategyModule {
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetFullSnapshotArgs(
       acceptsTrashedPagesLeftOut: acceptsTrashedPagesLeftOut,
+      clientProtocolVersion: clientProtocolVersion,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );
@@ -1430,10 +1449,12 @@ final class _StrategyModule implements StrategyModule {
 
   @override
   ConvexQuery<StrategyGetShellResult> getShell({
+    required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetShellArgs(
+      clientProtocolVersion: clientProtocolVersion,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );

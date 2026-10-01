@@ -29,6 +29,7 @@ Future<void> main(List<String> arguments) async {
   await convex.setAuth(session.accessToken);
   try {
     final snapshot = await convex.query('strategy:getFullSnapshot', {
+      'clientProtocolVersion': cloudProtocolVersion,
       'strategyPublicId': strategyId(0),
     });
     final folders = await convex.query('folders:listTree', {'scope': 'all'});

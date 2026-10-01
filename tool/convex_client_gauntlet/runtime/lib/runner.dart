@@ -348,6 +348,7 @@ final class GauntletRunner {
       );
     }
     final initial = await candidate.query('strategy:getFullSnapshot', {
+      'clientProtocolVersion': cloudProtocolVersion,
       'strategyPublicId': strategyId(seed),
     });
     final snapshot = _map(initial, 'initial snapshot');
@@ -586,6 +587,7 @@ final class GauntletRunner {
     try {
       final stopwatch = Stopwatch()..start();
       final snapshot = await verifier.query('strategy:getFullSnapshot', {
+        'clientProtocolVersion': cloudProtocolVersion,
         'strategyPublicId': strategyId(seed),
       });
       final folders = await verifier.query('folders:listTree', {
@@ -645,6 +647,7 @@ final class GauntletRunner {
     await verifier.authenticate(accessToken);
     try {
       final snapshot = await verifier.query('strategy:getFullSnapshot', {
+        'clientProtocolVersion': cloudProtocolVersion,
         'strategyPublicId': strategyId(seed),
       });
       final folders = await verifier.query('folders:listTree', {
@@ -758,6 +761,7 @@ final class _SnapshotObserver {
     String strategyPublicId,
   ) async {
     final remote = await transport.subscribe('strategy:getFullSnapshot', {
+      'clientProtocolVersion': cloudProtocolVersion,
       'strategyPublicId': strategyPublicId,
     });
     final latest = _LatestValue();

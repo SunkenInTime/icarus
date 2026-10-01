@@ -4,6 +4,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "pagePublicId": {
             "fieldType": {
               "type": "string"
@@ -19684,6 +19690,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -41352,6 +41364,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "pagePublicId": {
             "fieldType": {
               "type": "string"
@@ -51220,6 +51238,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -150663,6 +150687,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "pagePublicId": {
             "fieldType": {
               "type": "string"
@@ -182707,6 +182737,12 @@
             },
             "optional": true
           },
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "shareToken": {
             "fieldType": {
               "type": "string"
@@ -212632,6 +212668,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "shareToken": {
             "fieldType": {
               "type": "string"

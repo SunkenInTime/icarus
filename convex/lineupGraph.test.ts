@@ -202,6 +202,7 @@ async function pageLineups(
   page = pagePublicId,
 ): Promise<LineupRow[]> {
   const snapshot = (await user.query(getPageSnapshot, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     strategyPublicId: strategy,
     pagePublicId: page,
   })) as { lineups: LineupRow[] };
@@ -281,6 +282,7 @@ describe("lineup graph rows", () => {
     expect(landings).toHaveLength(1);
 
     const full = (await owner.query(getFullSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as { lineups: LineupRow[] };
     expect(full.lineups.map((row) => row.publicId)).toEqual(
@@ -489,6 +491,7 @@ describe("lineup graph rows", () => {
       ),
     ]);
     const snapshot = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId,
     })) as { assets: Array<{ publicId: string }> };
@@ -790,6 +793,7 @@ describe("a link needs both of its ends", () => {
       "lineupLink:orphan",
     ]);
     const full = (await owner.query(getFullSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as { lineups: LineupRow[] };
     expect(full.lineups.map((row) => row.publicId)).toEqual([

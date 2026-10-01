@@ -102,10 +102,16 @@ describe("A/B/C access boundary", () => {
       c.query(listStrategies, { scope: "shared" }),
     ).resolves.toEqual([]);
     await expect(
-      b.query(getStrategyShell, { strategyPublicId }),
+      b.query(getStrategyShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId,
+      }),
     ).rejects.toThrow("Forbidden");
     await expect(
-      c.query(getFullSnapshot, { strategyPublicId }),
+      c.query(getFullSnapshot, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId,
+      }),
     ).rejects.toThrow("Forbidden");
 
     await a.mutation(createShare, {
@@ -121,13 +127,19 @@ describe("A/B/C access boundary", () => {
     });
 
     await expect(
-      b.query(getStrategyShell, { strategyPublicId }),
+      b.query(getStrategyShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId,
+      }),
     ).resolves.toMatchObject({
       header: { publicId: strategyPublicId, role: "viewer" },
       pages: [{ publicId: initialPagePublicId }],
     });
     await expect(
-      b.query(getFullSnapshot, { strategyPublicId }),
+      b.query(getFullSnapshot, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId,
+      }),
     ).resolves.toMatchObject({
       header: { publicId: strategyPublicId, role: "viewer" },
       pages: [{ publicId: initialPagePublicId }],
@@ -183,7 +195,10 @@ describe("A/B/C access boundary", () => {
       }),
     ).resolves.toMatchObject({ ok: true, revision: 2 });
     await expect(
-      a.query(getFullSnapshot, { strategyPublicId }),
+      a.query(getFullSnapshot, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId,
+      }),
     ).resolves.toMatchObject({
       header: { name: "Edited by B", revision: 2, role: "owner" },
       pages: [
@@ -312,7 +327,10 @@ describe("A/B/C access boundary", () => {
       b.query(listFolderTree, { scope: "shared" }),
     ).resolves.toEqual([]);
     await expect(
-      b.query(getStrategyShell, { strategyPublicId }),
+      b.query(getStrategyShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId,
+      }),
     ).rejects.toThrow("Forbidden");
 
     await a.mutation(createShare, {

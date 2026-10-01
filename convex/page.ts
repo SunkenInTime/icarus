@@ -16,15 +16,21 @@ import {
   serializePageDescriptor,
 } from "./lib/snapshotSerialization";
 import { pageSnapshotValidator } from "./lib/publicValidators";
+import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
 
 export const getSnapshot = query({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
     shareToken: v.optional(v.string()),
   },
   returns: pageSnapshotValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyReadable(ctx, strategy, args.shareToken);
     const page = await getPageByPublicId(ctx, args.pagePublicId);

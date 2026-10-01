@@ -95,6 +95,7 @@ class ConvexStrategyRepository {
     return _strategyShell(
       await _api.strategy
           .getShell(
+            clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
             strategyPublicId: strategyPublicId,
             shareToken: _optional(shareToken),
           )
@@ -122,6 +123,7 @@ class ConvexStrategyRepository {
   }) {
     return _api.strategy
         .getShell(
+          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
           strategyPublicId: strategyPublicId,
           shareToken: _optional(shareToken),
         )
@@ -137,6 +139,7 @@ class ConvexStrategyRepository {
     return _pageSnapshot(
       await _api.page
           .getSnapshot(
+            clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
             shareToken: _optional(shareToken),
@@ -152,6 +155,7 @@ class ConvexStrategyRepository {
   }) {
     return _api.page
         .getSnapshot(
+          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
           strategyPublicId: strategyPublicId,
           pagePublicId: pagePublicId,
           shareToken: _optional(shareToken),
@@ -196,6 +200,7 @@ class ConvexStrategyRepository {
     return upgradeRemoteFullSnapshot(_fullSnapshot(
       await _api.strategy
           .getFullSnapshot(
+            clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
             strategyPublicId: strategyPublicId,
             shareToken: _optional(shareToken),
             // This client checks image references apart, so it can take a

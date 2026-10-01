@@ -378,6 +378,7 @@ describe("page-scoped read contract", () => {
     await seedTwoPageContent(t, owner);
 
     const shell = (await owner.query(getShell, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as Record<string, unknown>;
     expect(shell).toHaveProperty("header");
@@ -395,6 +396,7 @@ describe("page-scoped read contract", () => {
     await seedTwoPageContent(t, owner);
 
     const snapshot = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as {
@@ -418,6 +420,7 @@ describe("page-scoped read contract", () => {
     await seedTwoPageContent(t, owner);
 
     const snapshot = (await owner.query(getFullSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as {
       pages: Array<{ publicId: string; settings: unknown }>;
@@ -494,6 +497,7 @@ describe("page-scoped read contract", () => {
       ).toMatchObject({ results: [{ status: "applied" }] });
 
       let shell = (await owner.query(getShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
       })) as {
         pages: Array<{
@@ -530,6 +534,7 @@ describe("page-scoped read contract", () => {
       });
 
       shell = (await owner.query(getShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
       })) as typeof shell;
       expect(shell.pages).toMatchObject([
@@ -549,6 +554,7 @@ describe("page-scoped read contract", () => {
       ).toMatchObject({ results: [{ status: "applied" }] });
 
       shell = (await owner.query(getShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
       })) as typeof shell;
       expect(shell.pages).toMatchObject([
@@ -601,6 +607,7 @@ describe("record-scoped write contract", () => {
     await createBaseStrategy(owner);
     const beforeStrategy = await getStrategyRow(t);
     const beforePage = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as { page: { revision: number }; content: { revision: number } };
@@ -620,6 +627,7 @@ describe("record-scoped write contract", () => {
       appliedRevision: beforePage.content.revision + 1,
     });
     const afterPage = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as {
@@ -722,6 +730,7 @@ describe("record-scoped write contract", () => {
       },
     ]);
     const snapshot = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as {
@@ -771,7 +780,10 @@ describe("record-scoped write contract", () => {
     expect(errorCode(missingStrategy)).toBe("NOT_FOUND");
 
     const missingShell = await owner
-      .query(getShell, { strategyPublicId: "strategy-that-was-deleted" })
+      .query(getShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId: "strategy-that-was-deleted",
+      })
       .catch((error: unknown) => error);
     expect(errorCode(missingShell)).toBe("NOT_FOUND");
   });
@@ -836,6 +848,7 @@ describe("record-scoped write contract", () => {
       appliedRevision: 2,
     });
     const shell = (await owner.query(getShell, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as {
       pages: Array<{ publicId: string; sortIndex: number; revision: number }>;
@@ -892,6 +905,7 @@ describe("record-scoped write contract", () => {
       { status: "applied", appliedRevision: 2 },
     ]);
     const shell = (await owner.query(getShell, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as { pages: Array<{ publicId: string; sortIndex: number }> };
     expect(shell.pages).toMatchObject([
@@ -1000,6 +1014,7 @@ describe("record-scoped write contract", () => {
       });
 
       const shell = (await owner.query(getShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
         strategyPublicId,
       })) as {
         header: { revision: number };
@@ -1036,6 +1051,7 @@ describe("record-scoped write contract", () => {
     });
 
     const shell = (await owner.query(getShell, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as {
       pages: Array<{ publicId: string; sortIndex: number; revision: number }>;
@@ -1179,6 +1195,7 @@ describe("record-scoped write contract", () => {
       { status: "noop", currentRevision: 2 },
     ]);
     const stillDeleted = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as {
@@ -1218,6 +1235,7 @@ describe("record-scoped write contract", () => {
     ]);
 
     const snapshot = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as {
@@ -1348,6 +1366,7 @@ describe("record-scoped write contract", () => {
     });
 
     const shell = (await owner.query(getShell, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as {
       pages: Array<{ publicId: string; sortIndex: number; revision: number }>;
@@ -1429,6 +1448,7 @@ describe("record-scoped write contract", () => {
       ]),
     ).rejects.toThrow(/lineupGroup|ArgumentValidationError|Validator/);
     const snapshot = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as { lineups: unknown[] };
@@ -1459,6 +1479,7 @@ describe("record-scoped write contract", () => {
     ).rejects.toThrow("Page order must include each page exactly once");
 
     const shell = (await owner.query(getShell, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
     })) as {
       header: { revision: number };
@@ -1694,6 +1715,7 @@ describe("a batch bound to its account", () => {
 
   async function elementIds(owner: Harness) {
     const snapshot = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: pageA,
     })) as { elements: Array<{ publicId: string }> };
@@ -1828,7 +1850,10 @@ describe("cloud protocol v3 boundary", () => {
       },
     ]);
     await expect(
-      owner.query(getShell, { strategyPublicId }),
+      owner.query(getShell, {
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+        strategyPublicId,
+      }),
     ).resolves.toMatchObject({
       header: { name: "Independent change landed", revision: 1 },
     });

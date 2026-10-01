@@ -4,7 +4,10 @@ import { v } from "convex/values";
 // 4: Paranoia rows at payload version 2 (in-game size, data version 104).
 // A client on 3 reads such a row as the old size and, on its next edit to
 // the page, would write it back moved twice. Refusing 3 outright keeps
-// those clients from reading or writing until they reload into 4.
+// those clients from reading or writing until they reload into 4. Every
+// public query that returns element or lineup payloads, and the shell the
+// editor opens with, takes the protocol too: a client that cannot read a
+// row must not see one.
 export const CURRENT_CLOUD_PROTOCOL_VERSION = 4;
 export const MAX_CLOUD_OPERATION_BYTES = 900 * 1024;
 export const MAX_CLOUD_ARRAY_ENTRIES = 8_000;

@@ -200,14 +200,20 @@ async function apply(
 }
 
 async function strategyRevision(user: Harness): Promise<number> {
-  const shell = (await user.query(getShell, { strategyPublicId })) as {
+  const shell = (await user.query(getShell, {
+    ...protocol,
+    strategyPublicId,
+  })) as {
     header: { revision: number };
   };
   return shell.header.revision;
 }
 
 async function livePageIds(user: Harness): Promise<string[]> {
-  const shell = (await user.query(getShell, { strategyPublicId })) as {
+  const shell = (await user.query(getShell, {
+    ...protocol,
+    strategyPublicId,
+  })) as {
     pages: Array<{ publicId: string }>;
   };
   return shell.pages.map((page) => page.publicId);
@@ -367,7 +373,10 @@ describe("page trash", () => {
     expect(kept.references.map((reference) => reference.assetPublicId).sort())
       .toEqual(["b-image", "k-shot"]);
 
-    const shell = (await owner.query(getShell, { strategyPublicId })) as {
+    const shell = (await owner.query(getShell, {
+      ...protocol,
+      strategyPublicId,
+    })) as {
       pages: Array<{ publicId: string; sortIndex: number; name: string }>;
     };
     expect(shell.pages).toMatchObject([
@@ -380,6 +389,7 @@ describe("page trash", () => {
       }>).map((page) => page.publicId),
     ).toEqual([pageA, pageC]);
     const full = (await owner.query(getFullSnapshot, {
+      ...protocol,
       strategyPublicId,
       acceptsTrashedPagesLeftOut: true,
     })) as {
@@ -395,17 +405,25 @@ describe("page trash", () => {
     expect(full.lineups).toEqual([]);
     for (const read of [getPageSnapshot, listElementsForPage, listLineupsForPage]) {
       await expectCode(
-        owner.query(read, { strategyPublicId, pagePublicId: pageB }),
+        owner.query(read, {
+          ...protocol,
+          strategyPublicId,
+          pagePublicId: pageB,
+        }),
         "NOT_FOUND",
       );
     }
     expect(
       ((await owner.query(listElementsForStrategy, {
+        ...protocol,
         strategyPublicId,
       })) as Array<{ publicId: string }>).map((element) => element.publicId),
     ).toEqual(["a-agent"]);
     expect(
-      await owner.query(listLineupsForStrategy, { strategyPublicId }),
+      await owner.query(listLineupsForStrategy, {
+        ...protocol,
+        strategyPublicId,
+      }),
     ).toEqual([]);
     // The library and folder tree read only live pages.
     expect(await library()).toBe("Attack");
@@ -417,7 +435,7 @@ describe("page trash", () => {
     await seed(owner);
     // Before anything is trashed, every client reads it as always.
     await expect(
-      owner.query(getFullSnapshot, { strategyPublicId }),
+      owner.query(getFullSnapshot, { ...protocol, strategyPublicId }),
     ).resolves.toMatchObject({ pages: expect.any(Array) });
 
     await deleteB(owner);
@@ -425,11 +443,12 @@ describe("page trash", () => {
     // An older client decides from the snapshot whether an upload is still
     // wanted: without B it would drop B's image. It is told to upgrade.
     await expectCode(
-      owner.query(getFullSnapshot, { strategyPublicId }),
+      owner.query(getFullSnapshot, { ...protocol, strategyPublicId }),
       "CLIENT_UPGRADE_REQUIRED",
     );
     await expect(
       owner.query(getFullSnapshot, {
+        ...protocol,
         strategyPublicId,
         acceptsTrashedPagesLeftOut: true,
       }),
@@ -442,7 +461,7 @@ describe("page trash", () => {
       pagePublicId: pageB,
     });
     await expect(
-      owner.query(getFullSnapshot, { strategyPublicId }),
+      owner.query(getFullSnapshot, { ...protocol, strategyPublicId }),
     ).resolves.toMatchObject({ pages: expect.any(Array) });
   });
 
@@ -627,6 +646,7 @@ describe("page trash", () => {
     const { t, owner } = await createHarness();
     await seed(owner);
     const snapshotBefore = await owner.query(getPageSnapshot, {
+      ...protocol,
       strategyPublicId,
       pagePublicId: pageB,
     });
@@ -653,6 +673,7 @@ describe("page trash", () => {
     expect(await livePageIds(owner)).toEqual([pageA, pageB, pageC]);
     expect(
       await owner.query(getPageSnapshot, {
+        ...protocol,
         strategyPublicId,
         pagePublicId: pageB,
       }),
@@ -702,7 +723,10 @@ describe("page trash", () => {
       pagePublicId: pageB,
     });
 
-    const shell = (await owner.query(getShell, { strategyPublicId })) as {
+    const shell = (await owner.query(getShell, {
+      ...protocol,
+      strategyPublicId,
+    })) as {
       pages: Array<{ publicId: string; sortIndex: number; name: string }>;
     };
     expect(shell.pages).toMatchObject([
@@ -949,7 +973,10 @@ describe("page trash", () => {
         expectedStrategyRevision: await strategyRevision(owner),
       },
     ]);
-    const shell = (await owner.query(getShell, { strategyPublicId })) as {
+    const shell = (await owner.query(getShell, {
+      ...protocol,
+      strategyPublicId,
+    })) as {
       pages: Array<{ publicId: string; sortIndex: number }>;
     };
     expect(shell.pages).toMatchObject([
@@ -987,6 +1014,7 @@ describe("page trash", () => {
     });
 
     const copy = (await owner.query(getFullSnapshot, {
+      ...protocol,
       strategyPublicId: "trash-copy",
     })) as {
       pages: Array<{ name: string }>;
