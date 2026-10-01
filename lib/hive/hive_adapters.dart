@@ -375,11 +375,11 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
   @override
   void write(BinaryWriter writer, FreeDrawing obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.listOfPoints)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.isDotted)
       ..writeByte(4)
@@ -395,9 +395,7 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..writeByte(10)
       ..write(obj.cachedPolylineLengthUnits)
       ..writeByte(11)
-      ..write(obj.thickness)
-      ..writeByte(12)
-      ..write(obj.colorValue);
+      ..write(obj.thickness);
   }
 }
 
@@ -437,13 +435,13 @@ class LineAdapter extends TypeAdapter<Line> {
   @override
   void write(BinaryWriter writer, Line obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.lineStart)
       ..writeByte(1)
       ..write(obj.lineEnd)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.isDotted)
       ..writeByte(4)
@@ -457,9 +455,7 @@ class LineAdapter extends TypeAdapter<Line> {
       ..writeByte(8)
       ..write(obj.traversalSpeedProfile)
       ..writeByte(9)
-      ..write(obj.thickness)
-      ..writeByte(10)
-      ..write(obj.colorValue);
+      ..write(obj.thickness);
   }
 }
 
@@ -495,13 +491,13 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
   @override
   void write(BinaryWriter writer, RectangleDrawing obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.start)
       ..writeByte(1)
       ..write(obj.end)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.isDotted)
       ..writeByte(4)
@@ -511,9 +507,7 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
       ..writeByte(6)
       ..write(obj.boundingBox)
       ..writeByte(7)
-      ..write(obj.thickness)
-      ..writeByte(8)
-      ..write(obj.colorValue);
+      ..write(obj.thickness);
   }
 }
 
@@ -549,13 +543,13 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
   @override
   void write(BinaryWriter writer, EllipseDrawing obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.start)
       ..writeByte(1)
       ..write(obj.end)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.thickness)
       ..writeByte(4)
@@ -565,9 +559,7 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
       ..writeByte(6)
       ..write(obj.id)
       ..writeByte(7)
-      ..write(obj.boundingBox)
-      ..writeByte(8)
-      ..write(obj.colorValue);
+      ..write(obj.boundingBox);
   }
 }
 

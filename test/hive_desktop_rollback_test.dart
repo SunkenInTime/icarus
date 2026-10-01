@@ -30,7 +30,7 @@ HiveImpl _currentRegistry() {
 }
 
 /// What desktop 4.6.3 registers: this build's adapters, which are unchanged
-/// since that release, except the four this build writes by hand.
+/// since that release, except the eight this build writes by hand.
 HiveImpl _desktop463Registry() {
   final registry = _currentRegistry();
   // hive_ce warns on every override, which is the point here.
@@ -41,7 +41,11 @@ HiveImpl _desktop463Registry() {
       ..registerAdapter(Desktop463PlacedAgentAdapter(), override: true)
       ..registerAdapter(Desktop463PlacedAbilityAdapter(), override: true)
       ..registerAdapter(Desktop463StrategyPageAdapter(), override: true)
-      ..registerAdapter(Desktop463FolderAdapter(), override: true);
+      ..registerAdapter(Desktop463FolderAdapter(), override: true)
+      ..registerAdapter(Desktop463FreeDrawingAdapter(), override: true)
+      ..registerAdapter(Desktop463LineAdapter(), override: true)
+      ..registerAdapter(Desktop463RectangleDrawingAdapter(), override: true)
+      ..registerAdapter(Desktop463EllipseDrawingAdapter(), override: true);
   } finally {
     Logger.level = previousLevel;
   }
