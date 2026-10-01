@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
+import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -1099,30 +1101,39 @@ class _SignedInAccountRow extends ConsumerWidget {
     const theme = Settings.tacticalVioletTheme;
     final email = authState.user?.email;
     final avatarUrl = authState.avatarUrl;
+    // The server refuses this build. Reconnecting can't help; reloading or
+    // updating can, so this row says what the sync button says.
+    final needsNewerIcarus = ref.watch(clientUpgradeRequiredProvider);
 
     final (String statusLabel, IconData statusIcon, Color statusColor) =
-        switch (authState.convexAuthStatus) {
-      ConvexAuthStatus.ready => (
-          'Cloud sync active',
-          LucideIcons.cloudCheck,
-          theme.mutedForeground,
-        ),
-      ConvexAuthStatus.configuring => (
-          'Connecting to cloud…',
-          LucideIcons.refreshCw,
-          theme.mutedForeground,
-        ),
-      ConvexAuthStatus.incident => (
-          'Cloud connection needs attention',
-          LucideIcons.circleAlert,
-          theme.destructive,
-        ),
-      ConvexAuthStatus.signedOut => (
-          'Cloud sync inactive',
-          LucideIcons.cloudOff,
-          theme.mutedForeground,
-        ),
-    };
+        needsNewerIcarus
+            ? (
+                'Cloud sync needs a newer Icarus',
+                LucideIcons.circleAlert,
+                theme.destructive,
+              )
+            : switch (authState.convexAuthStatus) {
+                ConvexAuthStatus.ready => (
+                    'Cloud sync active',
+                    LucideIcons.cloudCheck,
+                    theme.mutedForeground,
+                  ),
+                ConvexAuthStatus.configuring => (
+                    'Connecting to cloud…',
+                    LucideIcons.refreshCw,
+                    theme.mutedForeground,
+                  ),
+                ConvexAuthStatus.incident => (
+                    'Cloud connection needs attention',
+                    LucideIcons.circleAlert,
+                    theme.destructive,
+                  ),
+                ConvexAuthStatus.signedOut => (
+                    'Cloud sync inactive',
+                    LucideIcons.cloudOff,
+                    theme.mutedForeground,
+                  ),
+              };
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1181,7 +1192,15 @@ class _SignedInAccountRow extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 12),
-          if (authState.convexAuthStatus == ConvexAuthStatus.incident) ...[
+          if (needsNewerIcarus) ...[
+            ClientUpgradeNotice(
+              buttonSize: ShadButtonSize.sm,
+              builder: (context, message, action) =>
+                  action ?? const SizedBox.shrink(),
+            ),
+            const SizedBox(width: 8),
+          ] else if (authState.convexAuthStatus ==
+              ConvexAuthStatus.incident) ...[
             ShadButton(
               size: ShadButtonSize.sm,
               onPressed: () {
