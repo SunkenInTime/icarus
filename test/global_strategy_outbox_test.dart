@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -244,53 +243,37 @@ void main() {
     expect(finalOp.expectedElementRevision, 2);
   });
 
-  test('a link waiting for a backing-off origin does not hold up the drain',
-      () async {
+  test('a lineup backing off does not hold up the drain', () async {
     final store = MemoryDurableStrategyOutboxStore();
-    DurableOutboxRecord lineup(
-      String kind,
-      Map<String, dynamic> data, {
-      required DateTime updatedAt,
-      int attempts = 0,
-    }) {
-      final op = LineupAddOp(
-        opId: 'add-$kind',
-        lineupPublicId: cloudLineupRowId(kind, data['id'] as String),
-        pagePublicId: 'page-one',
-        payload: cloudLineupPayload(kind: kind, data: data),
-        sortIndex: 0,
-      );
-      return DurableOutboxRecord(
-        accountId: 'account-a',
-        strategyPublicId: 'blocked',
-        entityKey: EntitySyncKey.forStrategyOp(op)!,
-        pending: PendingOp(
-          op: op,
-          clientId: 'client-blocked',
-          attempts: attempts,
-          lastAttemptAt: attempts == 0 ? null : DateTime.now(),
-        ),
-        status: DurableOutboxStatus.queued,
-        createdAt: updatedAt,
-        updatedAt: updatedAt,
-      );
-    }
-
-    // The oldest work is a link whose origin just failed to send and is
-    // backing off; the link must wait for it.
-    await store.put(lineup(
-      CloudLineupKind.link,
-      {'id': 'k', 'originId': 'o', 'landingId': 'l'},
+    final lineup = LineupAddOp(
+      opId: 'add-lineup',
+      lineupPublicId: 'k',
+      pagePublicId: 'page-one',
+      payload: cloudLineupPayload({
+        'id': 'k',
+        'origin': {'id': 'o', 'agent': <String, dynamic>{}},
+        'landing': {'id': 'l', 'ability': <String, dynamic>{}},
+      }),
+      sortIndex: 0,
+    );
+    // The oldest work is a lineup that just failed to send and is backing
+    // off.
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'blocked',
+      entityKey: EntitySyncKey.forStrategyOp(lineup)!,
+      pending: PendingOp(
+        op: lineup,
+        clientId: 'client-blocked',
+        attempts: 3,
+        lastAttemptAt: DateTime.now(),
+      ),
+      status: DurableOutboxStatus.queued,
+      createdAt: DateTime(2025),
       updatedAt: DateTime(2025),
-    ));
-    await store.put(lineup(
-      CloudLineupKind.origin,
-      {'id': 'o', 'agent': <String, dynamic>{}},
-      updatedAt: DateTime(2025),
-      attempts: 3,
     ));
     // The first drain after sign-in ignores backoff; this older work takes
-    // it, so the drains after it honour the origin's backoff.
+    // it, so the drains after it honour the lineup's backoff.
     await store.put(_record(strategyId: 'first', opId: 'first')
         .copyWith(updatedAt: DateTime(2024)));
     await store.put(_record(strategyId: 'open', opId: 'open'));
@@ -305,8 +288,8 @@ void main() {
     await _waitUntil(() => repository.calls.length == 2);
     expect(repository.calls.map((call) => call.strategyId), ['first', 'open']);
     expect(
-      store.load().records.map((record) => record.pending.op.opId).toSet(),
-      {'add-${CloudLineupKind.link}', 'add-${CloudLineupKind.origin}'},
+      store.load().records.map((record) => record.pending.op.opId),
+      ['add-lineup'],
     );
   });
 

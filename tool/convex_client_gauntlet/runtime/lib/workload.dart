@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 
 const operationsPerSeed = 1000;
 const operationBatchSize = 50;
-const cloudProtocolVersion = 4;
+const cloudProtocolVersion = 5;
 const payloadVersion = 1;
 const baseFixturePath = 'test/fixtures/strategy_integrity/base-test-v43.ica';
 const baseFixtureSha256 =
@@ -47,9 +47,9 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
     _addRevisionCycle(
       add: add,
       entity: _ContentEntity.lineup,
-      // Lineup rows are keyed `<payload kind>:<entity id>`.
+      // A lineup row is keyed by the lineup's id.
       publicId:
-          'lineupOrigin:${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}',
+          '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}',
       pagePublicId: initialPageId(seed),
       payloadBuilder: (variant) => _lineupPayload(seed, cycle, variant),
       initialSortIndex: 1000 + cycle,
@@ -262,21 +262,42 @@ Map<String, Object?> _utilityPayload(int seed, int cycle, int variant) {
 
 Map<String, Object?> _lineupPayload(int seed, int cycle, int variant) {
   final id = '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}';
-  // One lineup origin row; each revision cycle moves its agent.
+  // One lineup with its origin and landing; each revision cycle moves its
+  // agent.
   return {
-    'kind': 'lineupOrigin',
+    'kind': 'lineup',
     'payloadVersion': payloadVersion,
     'data': {
       'id': id,
-      'agent': {
-        'id': '$id-agent',
-        'isDeleted': false,
-        'position': {'dx': 10 + cycle, 'dy': 20 + variant},
-        'type': 'sova',
-        'isAlly': true,
-        'state': 'none',
-        'kind': 'plain',
-        'lineUpID': id,
+      'name': 'Lineup $cycle',
+      'youtubeLink': '',
+      'notes': '',
+      'images': <Object?>[],
+      'origin': {
+        'id': '$id-origin',
+        'agent': {
+          'id': '$id-agent',
+          'isDeleted': false,
+          'position': {'dx': 10 + cycle, 'dy': 20 + variant},
+          'type': 'sova',
+          'isAlly': true,
+          'state': 'none',
+          'kind': 'plain',
+          'lineUpID': '$id-origin',
+        },
+      },
+      'landing': {
+        'id': '$id-landing',
+        'ability': {
+          'id': '$id-ability',
+          'isDeleted': false,
+          'position': {'dx': 40 + cycle, 'dy': 50},
+          'data': {'type': 'sova', 'index': 1},
+          'isAlly': true,
+          'rotation': 0,
+          'length': 0,
+          'lineUpID': '$id-landing',
+        },
       },
     },
   };

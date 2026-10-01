@@ -1,170 +1,164 @@
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/line_provider.dart';
 
-/// The payload kinds of the cloud rows that store a page's lineups.
+/// One cloud row per lineup (a [LineUpLink]): its name, video, notes and
+/// images, and whole copies of its origin and landing.
 ///
-/// A page's lineups are a graph, and the cloud stores it one row per entity
-/// so that teammates editing different links, origins or landings never
-/// touch the same row.
-abstract final class CloudLineupKind {
-  static const origin = 'lineupOrigin';
-  static const landing = 'lineupLanding';
-  static const link = 'lineupLink';
-}
-
-/// One lineup row: an origin, a landing or a link.
+/// Lineups that share a spot (several lineups from one origin, or into one
+/// landing) each carry their own copy of it, under the spot's id. The server
+/// never joins rows, so every row can be drawn on its own. The client draws
+/// the copies of one id as one spot again ([lineUpGraphFromCloudRows]), and
+/// changing a shared spot changes every row that carries it
+/// ([cloudLineupRows]).
 class CloudLineupRow {
-  const CloudLineupRow({required this.publicId, required this.payload});
+  const CloudLineupRow({
+    required this.publicId,
+    required this.payload,
+    this.revision = 0,
+  });
 
-  /// `<payload kind>:<entity id>`. Entity ids repeat across kinds (a landing
-  /// made with its link shares the link's id, and lineups from 3.x used one
-  /// id for all three), so the kind is part of the key. The entity's own id
-  /// is `payload.data.id`, exactly as on the canvas.
+  CloudLineupRow.remote(RemoteLineup lineup)
+      : this(
+          publicId: lineup.publicId,
+          payload: lineup.payload,
+          revision: lineup.revision,
+        );
+
+  /// The lineup's id, as on the canvas and in `payload.data.id`.
   final String publicId;
   final CloudPayload payload;
+
+  /// The row's server revision, which picks the copy drawn when the copies
+  /// of a shared spot disagree. Zero for a row the server does not have.
+  final int revision;
 }
 
-String cloudLineupRowId(String kind, String entityId) => '$kind:$entityId';
+/// The revision a lineup still waiting to be sent ranks at: above any the
+/// server holds, so the user's own change to a shared spot is the copy drawn
+/// until it lands.
+const pendingCloudLineupRevision = 1 << 52;
 
-/// The rows that store [graph]: its origins, then its landings, then its
-/// links.
+/// The rows that store [graph]: one per link, in link order, each carrying
+/// its origin and landing as they are now. A link whose origin or landing is
+/// missing draws nothing on the canvas, so it has no row either.
 List<CloudLineupRow> cloudLineupRows(LineUpGraph graph) {
-  CloudLineupRow row(String kind, String id, Map<String, dynamic> data) {
-    return CloudLineupRow(
-      publicId: cloudLineupRowId(kind, id),
-      payload: cloudLineupPayload(kind: kind, data: data),
-    );
-  }
-
+  final origins = {for (final origin in graph.origins) origin.id: origin};
+  final landings = {for (final landing in graph.landings) landing.id: landing};
   return [
-    for (final origin in graph.origins)
-      row(CloudLineupKind.origin, origin.id, origin.toJson()),
-    for (final landing in graph.landings)
-      row(CloudLineupKind.landing, landing.id, landing.toJson()),
     for (final link in graph.links)
-      row(CloudLineupKind.link, link.id, link.toJson()),
+      if ((origins[link.originId], landings[link.landingId])
+          case (final origin?, final landing?))
+        CloudLineupRow(
+          publicId: link.id,
+          payload: cloudLineupPayload({
+            ...link.toJson()
+              ..remove('originId')
+              ..remove('landingId'),
+            'origin': origin.toJson(),
+            'landing': landing.toJson(),
+          }),
+        ),
   ];
 }
 
-/// A page's lineup graph as its cloud rows describe it.
-class CloudLineupGraph {
-  const CloudLineupGraph({required this.graph, required this.drawnRowIds});
-
-  final LineUpGraph graph;
-
-  /// The rows [graph] was built from. Hydration draws only whole lineups: a
-  /// link whose origin and landing both exist, and the nodes such links use.
-  /// A row outside that (a link that arrived before its landing, an origin a
-  /// teammate's delete left without links) is never shown, so a client must
-  /// never author a change to it from what it hydrated.
-  final Set<String> drawnRowIds;
-}
-
-/// Reads a page's live lineup rows, in their stored order, into the graph.
+/// A page's lineups as its live [rows] describe them.
 ///
-/// Throws a [FormatException] naming the row when one cannot be read,
-/// including a row of any kind other than origin, landing or link.
-CloudLineupGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
-  final origins = <String, (LineUpOrigin, String)>{};
-  final landings = <String, (LineUpLanding, String)>{};
-  final links = <String, (LineUpLink, String)>{};
+/// Links come from the rows, in their order. Origins and landings are the
+/// rows' copies, one per id, in the order the rows first carry them. Copies
+/// of one spot disagree only after teammates changed it at the same time;
+/// every client then draws the copy from the row with the highest revision,
+/// a tie going to the greatest publicId, so all of them show the same spot.
+///
+/// Throws a [FormatException] naming the row when one cannot be read.
+LineUpGraph lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
+  final origins = <String, (LineUpOrigin, CloudLineupRow)>{};
+  final landings = <String, (LineUpLanding, CloudLineupRow)>{};
+  final links = <LineUpLink>[];
+  bool outranks(CloudLineupRow row, CloudLineupRow? drawn) =>
+      drawn == null ||
+      row.revision > drawn.revision ||
+      (row.revision == drawn.revision &&
+          row.publicId.compareTo(drawn.publicId) > 0);
 
   for (final row in rows) {
-    final data = cloudPayloadData(row.payload);
-    try {
-      switch (row.payload['kind']) {
-        case CloudLineupKind.origin:
-          final origin = LineUpOrigin.fromJson(data);
-          origins[origin.id] = (origin, row.publicId);
-        case CloudLineupKind.landing:
-          final landing = LineUpLanding.fromJson(data);
-          landings[landing.id] = (landing, row.publicId);
-        case CloudLineupKind.link:
-          final link = LineUpLink.fromJson(data);
-          links[link.id] = (link, row.publicId);
-        case final kind:
-          throw FormatException('unknown lineup kind $kind');
-      }
-    } catch (error, stackTrace) {
-      Error.throwWithStackTrace(
-        FormatException('Cloud lineup ${row.publicId} could not be read: '
-            '$error'),
-        stackTrace,
-      );
+    final (link, origin, landing) = _readLineupRow(row);
+    links.add(link);
+    if (outranks(row, origins[origin.id]?.$2)) {
+      origins[origin.id] = (origin, row);
+    }
+    if (outranks(row, landings[landing.id]?.$2)) {
+      landings[landing.id] = (landing, row);
     }
   }
-
-  final drawnLinks = [
-    for (final entry in links.values)
-      if (origins.containsKey(entry.$1.originId) &&
-          landings.containsKey(entry.$1.landingId))
-        entry,
-  ];
-  final usedOrigins = {for (final (link, _) in drawnLinks) link.originId};
-  final usedLandings = {for (final (link, _) in drawnLinks) link.landingId};
-  final drawnOrigins = [
-    for (final entry in origins.values)
-      if (usedOrigins.contains(entry.$1.id)) entry,
-  ];
-  final drawnLandings = [
-    for (final entry in landings.values)
-      if (usedLandings.contains(entry.$1.id)) entry,
-  ];
-
-  return CloudLineupGraph(
-    graph: LineUpGraph(
-      origins: [for (final (origin, _) in drawnOrigins) origin],
-      landings: [for (final (landing, _) in drawnLandings) landing],
-      links: [for (final (link, _) in drawnLinks) link],
-    ),
-    drawnRowIds: {
-      for (final (_, rowId) in drawnOrigins) rowId,
-      for (final (_, rowId) in drawnLandings) rowId,
-      for (final (_, rowId) in drawnLinks) rowId,
-    },
+  return LineUpGraph(
+    origins: [for (final (origin, _) in origins.values) origin],
+    landings: [for (final (landing, _) in landings.values) landing],
+    links: links,
   );
 }
 
-/// [graph] with every origin, landing and link id passed through [newId],
-/// and every reference to them (a link's ends, the `lineUpID` of the agent
-/// and ability) following along. Used where a copy must not collide with
-/// the rows it came from.
-LineUpGraph lineUpGraphWithIds(
-  LineUpGraph graph,
-  String Function(String kind, String id) newId,
+/// A page's lineups as its [lineups] on the server describe them. Deleted
+/// rows draw nothing.
+LineUpGraph lineUpGraphFromRemoteLineups(Iterable<RemoteLineup> lineups) {
+  return lineUpGraphFromCloudRows([
+    for (final lineup in lineups)
+      if (!lineup.deleted) CloudLineupRow.remote(lineup),
+  ]);
+}
+
+/// The payloads of [rows] as the canvas draws them, by publicId: each row
+/// rebuilt from [lineUpGraphFromCloudRows], so a row whose copy of a shared
+/// spot is not the one drawn carries the drawn copy. Comparing these with
+/// the canvas never mistakes the copy hydration chose for a local edit.
+Map<String, CloudPayload> drawnCloudLineupPayloads(
+  Iterable<CloudLineupRow> rows,
 ) {
-  final originIds = {
-    for (final origin in graph.origins)
-      origin.id: newId(CloudLineupKind.origin, origin.id),
+  return {
+    for (final row in cloudLineupRows(lineUpGraphFromCloudRows(rows)))
+      row.publicId: row.payload,
   };
-  final landingIds = {
-    for (final landing in graph.landings)
-      landing.id: newId(CloudLineupKind.landing, landing.id),
-  };
-  return LineUpGraph(
-    origins: [
-      for (final origin in graph.origins)
-        LineUpOrigin(
-          id: originIds[origin.id]!,
-          agent: origin.agent.copyWith(lineUpID: originIds[origin.id]!)
-            ..isDeleted = origin.agent.isDeleted,
-        ),
-    ],
-    landings: [
-      for (final landing in graph.landings)
-        LineUpLanding(
-          id: landingIds[landing.id]!,
-          ability: landing.ability.copyWith(lineUpID: landingIds[landing.id]!)
-            ..isDeleted = landing.ability.isDeleted,
-        ),
-    ],
-    links: [
-      for (final link in graph.links)
-        link.copyWith(
-          id: newId(CloudLineupKind.link, link.id),
-          originId: originIds[link.originId] ?? link.originId,
-          landingId: landingIds[link.landingId] ?? link.landingId,
-        ),
-    ],
-  );
+}
+
+/// Whether [op] is a lineup change in the cloud format before one row per
+/// lineup: an origin, landing or link row keyed `<kind>:<id>`. An outbox
+/// written by such a build can still hold one; no server takes it.
+bool isRetiredCloudLineupOp(StrategyOp op) {
+  if (op.entityType != StrategyOpEntityType.lineup) return false;
+  final payload = op.payload;
+  return (payload is Map && payload['kind'] != cloudLineupPayloadKind) ||
+      _retiredLineupKey.hasMatch(op.entityPublicId ?? '');
+}
+
+final _retiredLineupKey = RegExp(r'^lineup(Origin|Landing|Link):');
+
+(LineUpLink, LineUpOrigin, LineUpLanding) _readLineupRow(CloudLineupRow row) {
+  try {
+    final kind = row.payload['kind'];
+    if (kind != cloudLineupPayloadKind) {
+      throw FormatException('unknown lineup kind $kind');
+    }
+    final data = cloudPayloadData(row.payload);
+    final origin = LineUpOrigin.fromJson(_object(data['origin'], 'origin'));
+    final landing = LineUpLanding.fromJson(_object(data['landing'], 'landing'));
+    final link = LineUpLink.fromJson({
+      ...data,
+      'originId': origin.id,
+      'landingId': landing.id,
+    });
+    if (link.id != row.publicId) {
+      throw FormatException('it holds lineup ${link.id}');
+    }
+    return (link, origin, landing);
+  } catch (error, stackTrace) {
+    Error.throwWithStackTrace(
+      FormatException('Cloud lineup ${row.publicId} could not be read: '
+          '$error'),
+      stackTrace,
+    );
+  }
+}
+
+Map<String, dynamic> _object(Object? value, String name) {
+  if (value is! Map) throw FormatException('it has no $name');
+  return Map<String, dynamic>.from(value);
 }

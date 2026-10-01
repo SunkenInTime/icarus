@@ -975,17 +975,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final rejectedOp = rejected.op;
           final successor = record?.successorPending;
           final retryOp = successor?.op ?? rejectedOp;
+          // No server takes a lineup change in the old cloud format; sending
+          // it again would only bring it back here.
+          if (isRetiredCloudLineupOp(retryOp)) continue;
           final isPayloadPolicyAttention =
               record?.lastError == cloudOperationTooLargeMessage ||
                   cloudOperationExceedsPolicy(rejectedOp);
-          // Nothing moved on the server: the link is re-sent as it was,
-          // add or patch, once its ends are back; a change to a page in the
-          // trash, once the page is restored.
-          final isMissingLinkEnd =
-              record?.lastError == lineupLinkEndMissingMessage;
+          // Nothing moved on the server: a change to a page in the trash is
+          // re-sent as it was once the page is restored.
           final isOnDeletedPage = record?.lastError == pageDeletedMessage;
-          final retriesAsSent =
-              isPayloadPolicyAttention || isMissingLinkEnd || isOnDeletedPage;
+          final retriesAsSent = isPayloadPolicyAttention || isOnDeletedPage;
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
           if (!retriesAsSent && retryRevision == null) continue;
@@ -1042,9 +1041,21 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       if (!changed) {
         if (only != null) return;
+        // Old-format lineup changes are skipped on purpose, and keep their
+        // own reason.
+        final onlyRetired = attention.values.every(
+          (intent) => isRetiredCloudLineupOp(intent.pending.op),
+        );
         state = state.copyWith(
-          lastError: 'Some retained cloud work cannot be retried '
-              'automatically because the server has no matching revision.',
+          lastError: onlyRetired
+              ? _loadedAttentionMessage(
+                  loadIssues: state.loadIssues,
+                  paused: state.pausedByEntityKey,
+                  attention: attention,
+                )
+              : 'Some retained cloud work cannot be retried '
+                  'automatically because the server has no matching '
+                  'revision.',
         );
         return;
       }
@@ -1365,15 +1376,35 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _retryTimer?.cancel();
       _retryTimer = null;
       _offlineRetryCount = 0;
-      final acks = await _repo.applyBatch(
-        strategyPublicId: strategyPublicId,
-        clientId: batchClientId,
-        ops: batch.map((record) => record.pending.op).toList(growable: false),
-        // The transport can deliver this after a later sign-in (it resends
-        // pending requests on reconnect), so the server checks the batch's
-        // own account, not whoever is signed in then.
-        accountSubject: batch.first.accountId,
-      );
+      // A lineup change in the old cloud format has no shape the server
+      // takes, so it is refused here, as the server would refuse it, and
+      // waits in attention with the rest of the batch sent.
+      final sendable = [
+        for (final record in batch)
+          if (!isRetiredCloudLineupOp(record.pending.op)) record,
+      ];
+      final acks = [
+        if (sendable.isNotEmpty)
+          ...await _repo.applyBatch(
+            strategyPublicId: strategyPublicId,
+            clientId: batchClientId,
+            ops: sendable
+                .map((record) => record.pending.op)
+                .toList(growable: false),
+            // The transport can deliver this after a later sign-in (it
+            // resends pending requests on reconnect), so the server checks
+            // the batch's own account, not whoever is signed in then.
+            accountSubject: batch.first.accountId,
+          ),
+        for (final record in batch)
+          if (isRetiredCloudLineupOp(record.pending.op))
+            FailedOpAck(
+              opId: record.pending.op.opId,
+              code: 'INVALID_LINEUP_PAYLOAD_KIND',
+              rawCode: 'INVALID_LINEUP_PAYLOAD_KIND',
+              message: retiredLineupOpMessage,
+            ),
+      ];
       await _applyAcksForRecords(batch, acks);
       batchSucceeded = true;
     } catch (error, stackTrace) {
@@ -1425,75 +1456,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
   }
 
-  /// The origin and landing rows a lineup link add or patch names; empty
-  /// for any other op.
-  static Set<EntitySyncKey> _lineupLinkEndKeys(StrategyOp op) {
-    final pageId = op.pagePublicId;
-    final payload = op.payload;
-    final data = payload is Map ? payload['data'] : null;
-    if (op.entityType != StrategyOpEntityType.lineup ||
-        payload is! Map ||
-        payload['kind'] != CloudLineupKind.link ||
-        pageId == null ||
-        data is! Map) {
-      return const {};
-    }
-    return {
-      EntitySyncKey.lineup(
-        pageId,
-        cloudLineupRowId(CloudLineupKind.origin, '${data['originId']}'),
-      ),
-      EntitySyncKey.lineup(
-        pageId,
-        cloudLineupRowId(CloudLineupKind.landing, '${data['landingId']}'),
-      ),
-    };
-  }
-
-  /// Whether [op] deletes a lineup row of one of [kinds].
-  static bool _deletesLineupRow(StrategyOp op, List<String> kinds) =>
-      op is LineupDeleteOp &&
-      kinds.any((kind) => op.lineupPublicId.startsWith('$kind:'));
-
-  /// Whether [record] is a lineup op that must wait for another one still
-  /// queued or in flight (queued behind it, past a batch cap, under another
-  /// client id, backing off) outside [sentWith], the batch being claimed.
-  /// The server refuses a link whose origin or landing is not live, so a
-  /// link add or patch waits for the records of the ends it names. It also
-  /// refuses deleting an origin or landing a live link names, so an end
-  /// delete waits for every link delete on its page. Either is due once the
-  /// record it waits for has been sent.
-  bool _waitsForLineupOrder(
-    DurableOutboxRecord record, {
-    Set<EntitySyncKey> sentWith = const {},
-  }) {
-    bool isUnsent(DurableOutboxRecord other) =>
-        !sentWith.contains(other.entityKey) &&
-        (other.status == DurableOutboxStatus.queued ||
-            other.status == DurableOutboxStatus.inFlight);
-
-    final op = record.pending.op;
-    if (_deletesLineupRow(
-      op,
-      const [CloudLineupKind.origin, CloudLineupKind.landing],
-    )) {
-      return _recordsByStorageKey.values.any((other) =>
-          other.accountId == record.accountId &&
-          other.strategyPublicId == record.strategyPublicId &&
-          other.entityKey.pageId == record.entityKey.pageId &&
-          _deletesLineupRow(other.pending.op, const [CloudLineupKind.link]) &&
-          isUnsent(other));
-    }
-    return _lineupLinkEndKeys(op).any((endKey) {
-      final end = _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
-        accountId: record.accountId,
-        strategyPublicId: record.strategyPublicId,
-        entityKey: endKey,
-      )];
-      return end != null && isUnsent(end);
-    });
-  }
-
   Future<List<DurableOutboxRecord>> _claimBatch({
     required String accountId,
     required String strategyPublicId,
@@ -1512,26 +1474,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
-      // Link deletes go first, so the origin and landing deletes of a whole
-      // lineup can follow them in the same batch.
-      bool deletesLink(DurableOutboxRecord record) => _deletesLineupRow(
-            record.pending.op,
-            const [CloudLineupKind.link],
-          );
-      final ordered = [
-        ...candidates.where(deletesLink),
-        ...candidates.where((record) => !deletesLink(record)),
-      ];
       final selected = <DurableOutboxRecord>[];
-      final selectedKeys = <EntitySyncKey>{};
-      bool mustWait(DurableOutboxRecord record) =>
-          _waitsForLineupOrder(record, sentWith: selectedKeys);
-      final sendable = ordered.where((record) => !mustWait(record));
-      if (sendable.isEmpty) return const <DurableOutboxRecord>[];
-      final batchClientId = sendable.first.pending.clientId;
-      for (final candidate in ordered) {
+      final batchClientId = candidates.first.pending.clientId;
+      for (final candidate in candidates) {
         if (candidate.pending.clientId != batchClientId) continue;
-        if (mustWait(candidate)) continue;
         if (selected.length >= _maxBatchSize) break;
         final nextSelection = <DurableOutboxRecord>[...selected, candidate];
         final byteSize = serializedCloudBatchUtf8Bytes(
@@ -1541,7 +1487,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
         if (byteSize > maxCloudBatchBytes) break;
         selected.add(candidate);
-        selectedKeys.add(candidate.entityKey);
       }
       final claimed = <DurableOutboxRecord>[];
       for (final record in selected) {
@@ -2424,8 +2369,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             (record.status == DurableOutboxStatus.queued ||
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
-            !cloudOperationExceedsPolicy(record.pending.op) &&
-            !_waitsForLineupOrder(record))
+            !cloudOperationExceedsPolicy(record.pending.op))
         .toList(growable: false);
     if (candidates.isEmpty) return;
     final nextAttempt = candidates
@@ -2469,7 +2413,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
             !cloudOperationExceedsPolicy(record.pending.op) &&
-            !_waitsForLineupOrder(record) &&
             (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
         .toList(growable: false)
       ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));
@@ -2840,12 +2783,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       var hasOtherWork = false;
       for (final entry in attention.entries) {
         final record = recordFor(entry.key);
-        final reason = record?.pending.op.opId == entry.value.pending.op.opId
-            ? record?.lastError
-            : null;
-        if (reason == lineupLinkEndMissingMessage ||
-            reason == lineupPageMismatchMessage ||
-            reason == lineupEndInUseMessage ||
+        // An old-format lineup change keeps its reason whatever an older
+        // build recorded for it.
+        final reason = isRetiredCloudLineupOp(entry.value.pending.op)
+            ? retiredLineupOpMessage
+            : record?.pending.op.opId == entry.value.pending.op.opId
+                ? record?.lastError
+                : null;
+        if (reason == lineupPageMismatchMessage ||
+            reason == retiredLineupOpMessage ||
             reason == pageDeletedMessage) {
           specificReason ??= reason;
         } else {

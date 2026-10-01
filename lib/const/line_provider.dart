@@ -1438,6 +1438,16 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  /// Takes [graph] as the server's lineups merged with the ones the user
+  /// holds (see mergeHeldLineups). Held objects stay the ones on screen.
+  void mergeRemote(LineUpGraph graph) {
+    state = state.copyWith(
+      origins: [...graph.origins],
+      landings: [...graph.landings],
+      links: [...graph.links],
+    );
+  }
+
   static String objectToJson(LineUpGraph graph) {
     return jsonEncode(graph.toJson());
   }

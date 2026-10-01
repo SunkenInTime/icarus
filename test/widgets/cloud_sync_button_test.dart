@@ -377,20 +377,6 @@ void main() {
     expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
   });
 
-  test('a lineup live sync refused to send shows attention', () async {
-    final container = _createContainer(
-      liveSyncState: ActivePageLiveSyncState(
-        unsyncableLineupKeys: {
-          const EntitySyncKey.lineup('page-1', 'lineup-1')
-        },
-      ),
-    );
-    addTearDown(container.dispose);
-    await container.read(convexConnectionProvider.future);
-
-    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
-  });
-
   testWidgets('an active text draft can never appear synced', (tester) async {
     final container = _createContainer();
     addTearDown(container.dispose);
@@ -1041,19 +1027,14 @@ void main() {
 
   for (final (name, reason, expected) in [
     (
-      'a missing origin or landing',
-      lineupLinkEndMissingMessage,
-      "origin or landing spot isn't on this page in the cloud",
-    ),
-    (
       'another page',
       lineupPageMismatchMessage,
       'clashes with one on another page',
     ),
     (
-      'an origin or landing another lineup uses',
-      lineupEndInUseMessage,
-      'still uses this origin or landing spot, so it was not deleted',
+      'its old cloud format',
+      retiredLineupOpMessage,
+      'saved by an older version of Icarus',
     ),
   ]) {
     testWidgets('a lineup refused for $name says why, not "another edit"',
@@ -1101,7 +1082,7 @@ void main() {
     addTearDown(container.dispose);
     container
         .read(strategySaveStateProvider.notifier)
-        .setCloudSyncError(lineupLinkEndMissingMessage);
+        .setCloudSyncError(lineupPageMismatchMessage);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -1116,7 +1097,7 @@ void main() {
     await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+    expect(find.textContaining('another page'), findsOneWidget);
     expect(
       find.textContaining('applies to all 2 changes that need attention'),
       findsOneWidget,
@@ -1132,7 +1113,7 @@ void main() {
     );
     addTearDown(container.dispose);
     container.read(strategySaveStateProvider.notifier).setCloudSyncError(
-          '$lineupLinkEndMissingMessage. $otherWorkNeedsAttentionNote',
+          '$lineupPageMismatchMessage. $otherWorkNeedsAttentionNote',
         );
 
     await tester.pumpWidget(
@@ -1148,7 +1129,7 @@ void main() {
     await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+    expect(find.textContaining('another page'), findsOneWidget);
     expect(
       find.textContaining('Other changes here were not saved either'),
       findsOneWidget,
@@ -1201,14 +1182,14 @@ void main() {
             const ConflictResolution(
               type: ConflictResolutionType.rebase,
               opId: 'refused-link',
-              message: lineupLinkEndMissingMessage,
+              message: lineupPageMismatchMessage,
             ),
           );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(
-        toast(friendlyCloudSyncError(lineupLinkEndMissingMessage)),
+        toast(friendlyCloudSyncError(lineupPageMismatchMessage)),
         findsOneWidget,
       );
       expect(

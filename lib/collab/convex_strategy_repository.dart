@@ -349,12 +349,6 @@ class ConvexStrategyRepository {
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       ops: typedOps,
       accountSubject: _optional(accountSubject),
-      // Links are sent only with or after their origin and landing (see
-      // the outbox's batch claim), so the server may refuse an orphan.
-      checkLineupLinkEnds: const ConvexOptional.present(true),
-      // An origin or landing delete is sent only with or after the link
-      // deletes on its page, so the server may refuse one a live link names.
-      checkLineupEndDeletes: const ConvexOptional.present(true),
       // This client restores deleted pages, so it sends such a delete again.
       checkTrashedPageDeletes: const ConvexOptional.present(true),
     );

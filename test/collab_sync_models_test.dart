@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/json_converters.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 
@@ -55,7 +55,7 @@ void main() {
       );
 
       final json = op.toConvexJson();
-      expect(currentCloudProtocolVersion, 4);
+      expect(currentCloudProtocolVersion, 5);
       expect(json['type'], 'pageContent.patch');
       expect(json['expectedPageContentRevision'], 4);
       expect(json.containsKey('expectedSequence'), isFalse);
@@ -395,21 +395,39 @@ void main() {
   test('cloud payload data normalizes nested bridge maps for lineup parsing',
       () {
     final payload = <String, dynamic>{
-      'kind': 'lineupLanding',
+      'kind': cloudLineupPayloadKind,
       'payloadVersion': 1,
       'data': <Object?, Object?>{
-        'id': 'landing-1',
-        'ability': <Object?, Object?>{
-          'id': 'ability-1',
-          'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
-          'position': <Object?, Object?>{'dx': 30, 'dy': 40},
-          'lineUpID': 'landing-1',
+        'id': 'lineup-1',
+        'name': 'Garage smoke',
+        'origin': <Object?, Object?>{
+          'id': 'origin-1',
+          'agent': <Object?, Object?>{
+            'id': 'agent-1',
+            'type': 'sova',
+            'position': <Object?, Object?>{'dx': 10, 'dy': 20},
+            'lineUpID': 'origin-1',
+          },
+        },
+        'landing': <Object?, Object?>{
+          'id': 'landing-1',
+          'ability': <Object?, Object?>{
+            'id': 'ability-1',
+            'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
+            'position': <Object?, Object?>{'dx': 30, 'dy': 40},
+            'lineUpID': 'landing-1',
+          },
         },
       },
     };
 
-    final landing = LineUpLanding.fromJson(cloudPayloadData(payload));
+    final graph = lineUpGraphFromCloudRows([
+      CloudLineupRow(publicId: 'lineup-1', payload: payload),
+    ]);
+    final landing = graph.landings.single;
 
+    expect(graph.links.single.name, 'Garage smoke');
+    expect(graph.origins.single.agent.lineUpID, 'origin-1');
     expect(landing.id, 'landing-1');
     expect(landing.ability.lineUpID, 'landing-1');
     expect(landing.ability.position, const Offset(30, 40));
@@ -485,8 +503,8 @@ void main() {
     );
 
     expect(
-      () => StrategyImportExportService.strategyDataFromRemoteSnapshot(
-          snapshot),
+      () =>
+          StrategyImportExportService.strategyDataFromRemoteSnapshot(snapshot),
       throwsA(
         isA<FormatException>().having(
           (error) => error.message,

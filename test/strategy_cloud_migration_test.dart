@@ -83,7 +83,7 @@ LineUpGraph _hydrate(List<LineupAddOp> adds) {
         publicId: add.lineupPublicId,
         payload: jsonDecode(jsonEncode(add.payload)) as Map<String, dynamic>,
       ),
-  ]).graph;
+  ]);
 }
 
 String _canonical(Object? value) =>
@@ -92,20 +92,15 @@ String _canonical(Object? value) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('a lineup is uploaded as one row per origin, landing and link', () {
+  test('a lineup is uploaded as one row carrying its origin and landing', () {
     final adds = _upload(_sharedIdLineup());
 
-    expect(adds.map((add) => add.lineupPublicId), [
-      'lineupOrigin:origin-1',
-      'lineupLanding:link-1',
-      'lineupLink:link-1',
-    ]);
-    expect(adds.map((add) => add.payload['kind']), [
-      'lineupOrigin',
-      'lineupLanding',
-      'lineupLink',
-    ]);
-    expect(adds.map((add) => add.sortIndex), [0, 1, 2]);
+    expect(adds.map((add) => add.lineupPublicId), ['link-1']);
+    expect(adds.single.payload['kind'], cloudLineupPayloadKind);
+    expect(adds.single.sortIndex, 0);
+    final data = cloudPayloadData(adds.single.payload);
+    expect((data['origin'] as Map)['id'], 'origin-1');
+    expect((data['landing'] as Map)['id'], 'link-1');
     // Hydrating the upload gives back the page's graph, ids and all, so the
     // page never authors a patch for a lineup nobody touched.
     expect(
@@ -114,22 +109,20 @@ void main() {
     );
   });
 
-  test('an id another page already took is reassigned with its references', () {
+  test('a lineup id another page already took is reassigned', () {
     final adds = _upload(
       _sharedIdLineup(),
-      // A page duplicated from page 1 already uploaded this origin.
-      usedLineupIds: {'lineupOrigin:origin-1'},
+      // A page duplicated from page 1 already uploaded this lineup.
+      usedLineupIds: {'link-1'},
     );
 
-    final origin = cloudPayloadData(adds[0].payload);
-    final newOriginId = origin['id'] as String;
-    expect(newOriginId, isNot('origin-1'));
-    expect(adds[0].lineupPublicId, 'lineupOrigin:$newOriginId');
-    expect((origin['agent'] as Map)['lineUpID'], newOriginId);
-    // The landing and link ids were free, so they stay.
-    expect(adds[1].lineupPublicId, 'lineupLanding:link-1');
-    expect(adds[2].lineupPublicId, 'lineupLink:link-1');
-    expect(cloudPayloadData(adds[2].payload)['originId'], newOriginId);
+    final newId = adds.single.lineupPublicId;
+    expect(newId, isNot('link-1'));
+    final data = cloudPayloadData(adds.single.payload);
+    expect(data['id'], newId);
+    // Spots are shared within a page only, so its ends keep their ids.
+    expect((data['origin'] as Map)['id'], 'origin-1');
+    expect((data['landing'] as Map)['id'], 'link-1');
 
     // And the rows reproduce exactly when the hydrated graph is sent again.
     final resent = cloudLineupRows(_hydrate(adds));
@@ -139,13 +132,13 @@ void main() {
     );
   });
 
-  test('a fan-in lineup uploads with its shared landing and link names', () {
+  test('fan-in and fan-out upload with their shared spots and names', () {
     final fanIn = LineUpGraph(
       origins: [
         _origin('origin-a', const Offset(10, 20)),
         _origin('origin-b', const Offset(50, 60)),
       ],
-      landings: [_landing('shared')],
+      landings: [_landing('shared'), _landing('other')],
       links: [
         LineUpLink(
           id: 'link-a',
@@ -160,17 +153,37 @@ void main() {
           landingId: 'shared',
           name: 'From mid',
         ),
+        LineUpLink(
+          id: 'link-c',
+          originId: 'origin-a',
+          landingId: 'other',
+          name: 'From heaven, long',
+        ),
       ],
     );
 
     final adds = _upload(fanIn);
 
-    expect(adds, hasLength(5));
+    expect(adds.map((add) => add.lineupPublicId), [
+      'link-a',
+      'link-b',
+      'link-c',
+    ]);
     final hydrated = _hydrate(adds);
-    expect(hydrated.landings.single.id, 'shared');
+    expect(hydrated.landings.map((landing) => landing.id), [
+      'shared',
+      'other',
+    ]);
     expect(
-      [for (final link in hydrated.links) (link.landingId, link.name)],
-      [('shared', 'From heaven'), ('shared', 'From mid')],
+      [
+        for (final link in hydrated.links)
+          (link.originId, link.landingId, link.name),
+      ],
+      [
+        ('origin-a', 'shared', 'From heaven'),
+        ('origin-b', 'shared', 'From mid'),
+        ('origin-a', 'other', 'From heaven, long'),
+      ],
     );
     expect(hydrated.links.first.images.single.id, 'image-a');
     expect(_canonical(hydrated.toJson()), _canonical(fanIn.toJson()));

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:uuid/uuid.dart';
@@ -73,15 +74,22 @@ void appendMigratedPageOps(
         buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
-  // [usedLineupIds] holds row ids. An entity whose row id another page
-  // already took (a page duplicated before cloud sync) gets a fresh id, and
-  // the links and markers that name it follow along.
-  final graph = lineUpGraphWithIds(
-    page.lineUpGraph,
-    (kind, id) => _uniqueLineupEntityId(kind, id, usedLineupIds),
+  // One row per lineup, keyed by its id. A lineup whose id another page
+  // already took (a page duplicated before cloud sync) gets a fresh one. Its
+  // origin and landing keep their ids: spots are shared within a page only.
+  final graph = page.lineUpGraph;
+  final rows = cloudLineupRows(
+    LineUpGraph(
+      origins: graph.origins,
+      landings: graph.landings,
+      links: [
+        for (final link in graph.links)
+          link.copyWith(id: nextUniqueMigrationId(link.id, usedLineupIds)),
+      ],
+    ),
   );
   var lineupOrder = 0;
-  for (final row in cloudLineupRows(graph)) {
+  for (final row in rows) {
     ops.add(
       LineupAddOp(
         opId: const Uuid().v4(),
@@ -92,14 +100,6 @@ void appendMigratedPageOps(
       ),
     );
   }
-}
-
-String _uniqueLineupEntityId(String kind, String id, Set<String> usedRowIds) {
-  var candidate = id;
-  while (!usedRowIds.add(cloudLineupRowId(kind, candidate))) {
-    candidate = const Uuid().v4();
-  }
-  return candidate;
 }
 
 String nextUniqueMigrationId(String preferredId, Set<String> usedIds) {

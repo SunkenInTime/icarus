@@ -280,11 +280,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final lineUpGraph = lineUpGraphFromCloudRows([
-      for (final lineup in lineups)
-        if (!lineup.deleted)
-          CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
-    ]).graph;
+    final lineUpGraph = lineUpGraphFromRemoteLineups(lineups);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,
@@ -455,8 +451,12 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
     final lineUpGraph = lineUpGraphFromCloudRows([
       for (final lineup in projected.lineups)
-        CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
-    ]).graph;
+        CloudLineupRow(
+          publicId: lineup.publicId,
+          payload: lineup.payload,
+          revision: lineup.revision,
+        ),
+    ]);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,
