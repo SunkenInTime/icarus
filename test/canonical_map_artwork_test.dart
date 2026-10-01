@@ -1,6 +1,9 @@
 
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
 
@@ -28,9 +31,12 @@ void main() {
                       child: const SizedBox.expand(key: key)))),
         ));
         expect(tester.getSize(find.byKey(key)), viewport);
-        final expected = CanonicalMapArtwork.translation(
-            MapValue.split, viewport,
-            isAttack: attack);
+        final viewBox = Maps.mapViewBox[MapValue.split]!;
+        final scale = math.min(viewport.width / viewBox.width,
+            viewport.height / viewBox.height);
+        final expected = attack
+            ? Offset.zero
+            : -mapDefenseArtworkOffsetSvg[MapValue.split]! * scale;
         expect((tester.getTopLeft(find.byKey(key)) - expected).distance,
             lessThan(1e-9));
       }

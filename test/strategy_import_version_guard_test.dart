@@ -27,15 +27,6 @@ void main() {
     );
   });
 
-  test('version guard throws on newer version', () {
-    expect(
-      () => StrategyProvider.throwIfImportedVersionIsTooNewForTest(
-        Settings.versionNumber + 1,
-      ),
-      throwsA(isA<NewerVersionImportException>()),
-    );
-  });
-
   test('newer-version import is blocked before persistence', () async {
     final tempDir =
         await Directory.systemTemp.createTemp('icarus-import-test-');

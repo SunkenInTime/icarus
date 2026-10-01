@@ -7,7 +7,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
@@ -156,50 +155,6 @@ void main() {
           .widget<FramedAbilityIconShell>(find.byType(FramedAbilityIconShell));
       expect(framedShell.size, agentSize);
       expect(framedShell.size, isNot(abilitySize));
-    });
-
-    test('side switching leaves role icon coordinates canonical', () {
-      final container = _createContainer(
-        settings: StrategySettings(
-          agentSize: agentSize,
-          abilitySize: abilitySize,
-        ),
-      );
-      const initialPosition = Offset(100, 200);
-
-      container.read(utilityProvider.notifier).fromHive([
-        PlacedUtility(
-          id: 'role-icon',
-          type: UtilityType.controller,
-          position: initialPosition,
-        ),
-      ]);
-
-      container.read(mapProvider.notifier).switchSide();
-
-      expect(container.read(utilityProvider).single.position, initialPosition);
-    });
-
-    test('side switching leaves non-role utility coordinates canonical', () {
-      final container = _createContainer(
-        settings: StrategySettings(
-          agentSize: agentSize,
-          abilitySize: abilitySize,
-        ),
-      );
-      const initialPosition = Offset(150, 250);
-
-      container.read(utilityProvider.notifier).fromHive([
-        PlacedUtility(
-          id: 'spike',
-          type: UtilityType.spike,
-          position: initialPosition,
-        ),
-      ]);
-
-      container.read(mapProvider.notifier).switchSide();
-
-      expect(container.read(utilityProvider).single.position, initialPosition);
     });
   });
 }

@@ -512,13 +512,25 @@ void main() {
         MapValue.ascent,
         jsonDecode(source) as Map<String, dynamic>,
       );
-      final attack = geometry.attackLayers.first.segments.first;
-      final defense = geometry.defenseLayers.first.segments.first;
-
-      expect(attack.start.dx + defense.start.dx, closeTo(1000 * 16 / 9, 1e-6));
-      expect(attack.start.dy + defense.start.dy, closeTo(1000, 1e-6));
-      expect(attack.end.dx + defense.end.dx, closeTo(1000 * 16 / 9, 1e-6));
-      expect(attack.end.dy + defense.end.dy, closeTo(1000, 1e-6));
+      const world = Offset(1000 * 16 / 9, 1000);
+      expect(geometry.attackLayers.first.segments, isNotEmpty);
+      expect(geometry.defenseLayers, hasLength(geometry.attackLayers.length));
+      for (var layer = 0; layer < geometry.attackLayers.length; layer++) {
+        final attack = geometry.attackLayers[layer].segments;
+        final defense = geometry.defenseLayers[layer].segments;
+        expect(defense, hasLength(attack.length), reason: 'layer $layer');
+        var worst = 0.0;
+        for (var index = 0; index < attack.length; index++) {
+          worst = math.max(
+            worst,
+            math.max(
+              (attack[index].start + defense[index].start - world).distance,
+              (attack[index].end + defense[index].end - world).distance,
+            ),
+          );
+        }
+        expect(worst, lessThan(1e-6), reason: 'layer $layer');
+      }
     });
 
     test('loads geometry for every current competitive map', () async {

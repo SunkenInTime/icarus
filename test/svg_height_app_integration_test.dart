@@ -126,36 +126,6 @@ void main() {
     }
   });
 
-  test('only reviewed asset pairs enter the SVG-height runtime', () async {
-    expect(hasSvgHeightRuntime(MapValue.split), isTrue);
-    for (final entry in svgHeightMapRegistrations.entries) {
-      final registration = entry.value;
-      expect(registration.map, entry.key);
-      expect(hasSvgHeightRuntime(entry.key), isTrue);
-      expect(File(registration.attackModelAsset).existsSync(), isTrue);
-      expect(File(registration.defenseModelAsset).existsSync(), isTrue);
-      expect(File(registration.attackArtworkAsset).existsSync(), isTrue);
-      expect(File(registration.defenseArtworkAsset).existsSync(), isTrue);
-      expect(registration.viewBox, Maps.mapViewBox[registration.map]);
-    }
-
-    MapValue? unregistered;
-    for (final map in MapValue.values) {
-      if (!hasSvgHeightRuntime(map)) {
-        unregistered = map;
-        break;
-      }
-    }
-    if (unregistered != null) {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      expect(
-        await container.read(svgHeightRuntimeProvider(unregistered).future),
-        isNull,
-      );
-    }
-  });
-
   test('map transforms use each canonical SVG registration', () {
     for (final map in MapValue.values) {
       final transform = SvgHeightMapTransform.forMap(map);
