@@ -3165,8 +3165,6 @@ class _SequencedAckRepository extends ConvexStrategyRepository {
   }
 }
 
-/// Holds the write that promotes a successor (its record's pending op
-/// changes and the successor goes) until [releasePromotion].
 /// Holds the first record removal (an accepted op leaving the outbox) until
 /// [releaseRemove].
 class _GatedRemoveStore extends MemoryDurableStrategyOutboxStore {
@@ -3183,6 +3181,8 @@ class _GatedRemoveStore extends MemoryDurableStrategyOutboxStore {
   }
 }
 
+/// Holds the write that promotes a successor (its record's pending op
+/// changes and the successor goes) until [releasePromotion].
 class _GatedPromotionStore extends MemoryDurableStrategyOutboxStore {
   final promotionStarted = Completer<void>();
   final releasePromotion = Completer<void>();
