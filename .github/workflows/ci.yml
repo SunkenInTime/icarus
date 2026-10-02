@@ -9,16 +9,22 @@ on:
 jobs:
   native-replay:
     runs-on: ubuntu-latest
+    # Cargo build scripts run here: no write token, none left in .git.
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: native/replay
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
+      # The version in native/replay/rust-toolchain.toml.
       - name: Install Rust
-        run: |
-          rustup toolchain install stable --profile minimal --component clippy
-          rustup default stable
+        uses: dtolnay/rust-toolchain@1.96.1
+        with:
+          components: clippy, rustfmt
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -27,7 +33,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             native/replay/target
-          key: ${{ runner.os }}-cargo-replay-${{ hashFiles('native/replay/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-replay-${{ hashFiles('native/replay/Cargo.lock', 'native/replay/rust-toolchain.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-replay-
 

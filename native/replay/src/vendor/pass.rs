@@ -1,15 +1,19 @@
 // Vendored from vrfkit v0.2.5 (c4d6cc0), crates/vrfkit/src/pass.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: `Replay`, `for_each_chunk` and the
-// checkpoint block scope are dropped (crate::decode walks the chunks), and the
-// CLI error type is replaced by `vrf_frame::FrameError`.
+// checkpoint block scope are dropped (crate::decode walks the chunks), the
+// CLI error type is replaced by `vrf_frame::FrameError`, and `walk` runs our
+// vendored frame walker (`super::frame`) with its `admit` hook, stopping the
+// moment either callback says so.
 
 //! The decode pass every subcommand runs: `validate`, `diag` and `export`, over
 //! the ReplayData stream and over each Checkpoint snapshot.
 
-use vrf_frame::{FrameError, FrameSkips, walk_demo_frames};
+use vrf_bitio::BitReader;
+use vrf_frame::{FrameError, FrameSkips};
 use vrf_net::pipeline::ReplicationReader;
 use vrf_schema::NetGuidCache;
 
+use super::frame::walk_demo_frames;
 use super::sink::{ChannelState, ExportSink, ExportStats, RecordBuffers};
 
 /// One replication stream -- the ReplayData stream, or one checkpoint
@@ -47,14 +51,16 @@ impl<'a> Pass<'a> {
     }
 
     /// Read every packet in `frames` through a fresh sink counting into
-    /// `stats`, then hand its rows to `drain`. Once `drain` returns `false`
-    /// later packets are skipped (the frame callback cannot stop the walk).
+    /// `stats`, then hand its rows to `drain`. `admit` sees each frame's
+    /// ExportData before the cache applies it. Once either returns `false`
+    /// the walk stops.
     pub fn walk(
         &mut self,
         frames: &[u8],
         stats: &mut ExportStats,
+        admit: impl FnMut(&BitReader<'_>, &NetGuidCache) -> bool,
         mut drain: impl FnMut(&mut RecordBuffers, &NetGuidCache) -> bool,
-    ) -> Result<bool, FrameError> {
+    ) -> Result<(), FrameError> {
         let branch = self.branch;
         let Self {
             cache,
@@ -64,11 +70,7 @@ impl<'a> Pass<'a> {
             packets,
             ..
         } = self;
-        let mut stopped = false;
-        let walk = walk_demo_frames(frames, self.flags, cache, |pkt, cache| {
-            if stopped {
-                return;
-            }
+        let walk = walk_demo_frames(frames, self.flags, cache, admit, |pkt, cache| {
             let mut packet = ExportSink::new(cache, channels, buffers);
             packet.enable_measured_array_routes(branch);
             packet.time_ms = pkt.time_ms;
@@ -78,14 +80,12 @@ impl<'a> Pass<'a> {
             reader.process_packet(pkt.data, *packets as i32, &mut packet);
             std::mem::swap(&mut packet.stats, stats);
             *packets += 1;
-            if !drain(buffers, cache) {
-                stopped = true;
-            }
+            drain(buffers, cache)
         })?;
         self.frames += walk.frames;
         self.frame_skips.absorb(walk.skipped);
         self.non_finite_frame_times += u64::from(walk.non_finite_times);
-        Ok(!stopped)
+        Ok(())
     }
 
     /// End of stream: every bunch still in partial reassembly is counted and

@@ -85,16 +85,26 @@ class ReplayCapture {
   }
 
   static void _checkFinite(ReplayFrame frame) {
-    bool finite(double value) => value.isFinite;
     for (final widget in frame.widgets) {
-      final rotation = switch (widget) {
-        PlacedViewConeAgent(:final rotation) => rotation,
-        PlacedAbility(:final rotation) => rotation,
-        _ => 0.0,
-      };
-      if (!finite(widget.position.dx) ||
-          !finite(widget.position.dy) ||
-          !finite(rotation)) {
+      final geometry = <double>[
+        widget.position.dx,
+        widget.position.dy,
+        ...switch (widget) {
+          PlacedViewConeAgent(:final rotation, :final length) => [
+              rotation,
+              length,
+            ],
+          PlacedAbility(
+            :final rotation,
+            :final length,
+            :final armLengthsMeters
+          ) =>
+            [rotation, length, ...armLengthsMeters],
+          PlacedUtility(:final rotation, :final length) => [rotation, length],
+          _ => const <double>[],
+        },
+      ];
+      if (geometry.any((value) => !value.isFinite)) {
         throw StateError('Capture refused: ${widget.id} is not on the map.');
       }
     }

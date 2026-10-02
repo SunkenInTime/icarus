@@ -15,6 +15,10 @@ else()
   set(ICARUS_REPLAY_LIBRARY "${ICARUS_REPLAY_TARGET_DIR}/release/libicarus_replay.so")
 endif()
 set(ICARUS_REPLAY_LIBRARY "${ICARUS_REPLAY_LIBRARY}" PARENT_SCOPE)
+# Apache-2.0 section 4: vrfkit's notices and the license text travel with the
+# library, so the runner installs both beside it.
+set(ICARUS_REPLAY_NOTICE "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md" PARENT_SCOPE)
+set(ICARUS_REPLAY_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE" PARENT_SCOPE)
 
 add_custom_target(icarus_replay ALL
   COMMAND "${CARGO}" build --release --locked --lib

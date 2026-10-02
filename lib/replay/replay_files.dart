@@ -150,17 +150,21 @@ class ReplayFiles {
   }
 
   /// Copies a replay into Icarus's folder, keeping its match-id name, and
-  /// returns the copy. A file already there is returned as is.
+  /// returns the copy. The same file already there is returned as is; a
+  /// different one of the same name (a partial download) is replaced.
   Future<ReplayFile> import(String sourcePath) async {
     final directory = await icarusReplaysDirectory();
     final destination = File(p.join(directory.path, p.basename(sourcePath)));
-    if (!p.equals(destination.path, sourcePath) &&
-        !await destination.exists()) {
+    final source = File(sourcePath);
+    final alreadyKept = await destination.exists() &&
+        await destination.length() == await source.length();
+    if (!p.equals(destination.path, sourcePath) && !alreadyKept) {
       // Copy to a temporary name first so a half-copied file is never
       // listed as a replay.
       final partial = _partial(destination);
       try {
-        await File(sourcePath).copy(partial.path);
+        await source.copy(partial.path);
+        if (await destination.exists()) await destination.delete();
         await partial.rename(destination.path);
       } finally {
         if (await partial.exists()) await partial.delete();

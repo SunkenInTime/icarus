@@ -5,8 +5,9 @@
 //! The per-packet pass is vrfkit's (`vendor::pass`); this module owns the
 //! chunk loop that vrfkit's CLI keeps in `pass::for_each_chunk` and the
 //! driver, because ours decompresses through the Oodle seam, reports
-//! progress and can be cancelled.
+//! progress, can be cancelled and holds the walk to `crate::limits`.
 
+use std::cell::Cell;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::thread;
@@ -21,11 +22,13 @@ use vrf_net::stats::NetStats;
 use vrf_schema::{FxHashMap, NetGuidCache};
 
 use crate::error::{ErrorCode, ReplayError};
+use crate::limits;
 use crate::oodle::{Decompressor, inflate_replay_data};
 use crate::vendor::pass::Pass;
 use crate::vendor::sink::{ExportStats, PlayerIdentity, RecordBuffers};
 
-/// The caller's progress and cancel cells (the C ABI's two pointers).
+/// A decode's progress and cancel cells, borrowed (the C ABI lends its
+/// `IcarusReplayControl`'s).
 #[derive(Default, Clone, Copy)]
 pub struct Control<'a> {
     /// 0..=10000, hundredths of a percent; relaxed stores.
@@ -61,12 +64,16 @@ impl Control<'_> {
     }
 }
 
-/// What the walk hands its consumer.
+/// What the walk hands its consumer. An error stops the walk with it.
 pub trait Observer {
     /// One Event chunk, parsed as vrfkit's driver parses it.
-    fn on_event(&mut self, event: EventRecord);
+    fn on_event(&mut self, event: EventRecord) -> Result<(), ReplayError>;
     /// One packet's records; `cache` is the GUID table as of that packet.
-    fn on_packet(&mut self, records: &RecordBuffers, cache: &NetGuidCache);
+    fn on_packet(
+        &mut self,
+        records: &RecordBuffers,
+        cache: &NetGuidCache,
+    ) -> Result<(), ReplayError>;
 }
 
 /// What the walk counted, and the state the analysis reads afterwards.
@@ -133,6 +140,7 @@ pub fn walk(
         stream_failures: Vec::new(),
     };
 
+    let mut inflated = limits::Inflated::default();
     thread::scope(|scope| -> Result<(), ReplayError> {
         // Rendezvous: the helper holds at most one decompressed chunk ahead
         // (Oodle is order-free and a fifth of the work in vrfkit's measure).
@@ -155,11 +163,10 @@ pub fn walk(
         });
         for chunk in chunks() {
             control.check()?;
-            let (kind, payload, end) =
-                chunk.map_err(|e| crate::header::container_error(&e).with_build(build))?;
+            let (kind, payload, end) = chunk.map_err(|e| crate::header::container_error(&e))?;
             match kind {
                 ChunkType::ReplayData => {
-                    let Ok(inflated) = rx.recv() else {
+                    let Ok(inflated_chunk) = rx.recv() else {
                         // The helper stops early only when cancelled.
                         control.check()?;
                         return Err(ReplayError::new(
@@ -167,23 +174,33 @@ pub fn walk(
                             "decompression stopped",
                         ));
                     };
-                    let frames = inflated.map_err(|e| e.with_build(build))?;
-                    let finished = pass
-                        .walk(&frames, &mut stats, |records, cache| {
-                            observer.on_packet(records, cache);
-                            !control.cancelled()
-                        })
-                        .map_err(|e| {
-                            ReplayError::new(ErrorCode::Corrupt, e.to_string()).with_build(build)
-                        })?;
-                    if !finished {
-                        return Err(ReplayError::cancelled());
+                    let frames = inflated_chunk?;
+                    inflated.add(frames.len())?;
+                    // Why a callback stopped the walk, between frames or packets.
+                    let stop = Cell::new(None);
+                    let go_on = |result: Result<(), ReplayError>| match result
+                        .and_then(|()| control.check())
+                    {
+                        Ok(()) => true,
+                        Err(e) => {
+                            stop.set(Some(e));
+                            false
+                        }
+                    };
+                    pass.walk(
+                        &frames,
+                        &mut stats,
+                        |exports, cache| go_on(limits::admit_exports(exports, cache)),
+                        |records, cache| go_on(observer.on_packet(records, cache)),
+                    )
+                    .map_err(|e| ReplayError::new(ErrorCode::Corrupt, e.to_string()))?;
+                    if let Some(e) = stop.take() {
+                        return Err(e);
                     }
                 }
                 ChunkType::Event => {
-                    let event = parse_event(payload, &mut walked.event_layout_mismatches)
-                        .map_err(|e| e.with_build(build))?;
-                    observer.on_event(event);
+                    let event = parse_event(payload, &mut walked.event_layout_mismatches)?;
+                    observer.on_event(event)?;
                 }
                 // Checkpoints repeat state the stream already carried.
                 ChunkType::Checkpoint | ChunkType::Header => {}
@@ -192,10 +209,16 @@ pub fn walk(
             control.report(WALK_SHARE * end as f64 / total);
         }
         Ok(())
+    })
+    .map_err(|e| match e.build {
+        Some(_) => e,
+        None => e.with_build(build),
     })?;
 
     pass.finish();
-    observer.on_packet(&pass.buffers, &pass.cache);
+    observer
+        .on_packet(&pass.buffers, &pass.cache)
+        .map_err(|e| e.with_build(build))?;
     walked.packets = pass.packets;
     walked.net = pass.reader.stats().clone();
     walked.stream_failures = pass.channels.stream_failures().to_vec();

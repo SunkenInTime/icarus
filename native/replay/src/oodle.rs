@@ -10,6 +10,7 @@
 use vrf_container::parse_replay_data_meta;
 
 use crate::error::{ErrorCode, ReplayError};
+use crate::limits;
 use crate::selkie::Selkie;
 
 /// Inflates one Oodle archive body (the bytes after its 8-byte header) to
@@ -74,6 +75,12 @@ pub fn inflate_replay_data(
     let declared = usize::try_from(meta.size_in_bytes)
         .map_err(|_| corrupt(format!("negative ReplayData size {}", meta.size_in_bytes)))?;
     let memory = meta.memory_size_in_bytes as usize; // checked non-negative by vrf-container
+    if memory > limits::MAX_CHUNK_BYTES {
+        return Err(limits::exceeded(
+            "inflated ReplayData chunk bytes",
+            limits::MAX_CHUNK_BYTES,
+        ));
+    }
     if data.len() < declared {
         return Err(corrupt(format!(
             "ReplayData declares {declared} bytes, {} remain",
@@ -250,6 +257,19 @@ mod tests {
         }
         let plain = inflate_replay_data(&replay_data(&[7, 8, 9], 4), true, &Echo).unwrap();
         assert_eq!(plain, [7, 8, 9, 0]);
+    }
+
+    #[test]
+    fn a_chunk_inflating_past_the_cap_is_refused_before_decoding() {
+        struct Never;
+        impl Decompressor for Never {
+            fn decompress(&self, _: &[u8], size: usize) -> Result<Vec<u8>, ReplayError> {
+                panic!("asked for {size} bytes");
+            }
+        }
+        let memory = limits::MAX_CHUNK_BYTES as u32 + 1;
+        let err = inflate_replay_data(&replay_data(&[1, 2, 3], memory), true, &Never).unwrap_err();
+        assert_eq!(err.code, ErrorCode::Corrupt, "{err}");
     }
 
     #[test]

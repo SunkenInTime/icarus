@@ -14,7 +14,9 @@
 //! Shape points come from each family's own RPCs (docs/replay-format.md,
 //! "Utility shape points").
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use vrf_export::ActorRecord;
 
 use super::{Context, parse_vector, raw_vector, value_at};
 use crate::collect::Move;
@@ -100,61 +102,48 @@ pub(super) fn utility(
         }
     }
 
-    let mut open: HashMap<u32, usize> = HashMap::new();
+    let (lives, reopened) = lives(cx.actors);
     let mut out: Vec<Utility> = Vec::new();
-    let (mut no_position, mut reopened, mut no_owner) = (0, 0, 0);
-    for a in cx.actors {
-        match a.event {
-            "open" => {
-                let Some(class) = a.class_path.as_deref().filter(|c| is_utility(c)) else {
-                    continue;
-                };
-                if open.contains_key(&a.actor_net_guid) {
-                    reopened += 1;
-                }
-                let spawn = match (a.spawn_x, a.spawn_y, a.spawn_z) {
-                    (Some(x), Some(y), Some(z)) => Some([f64::from(x), f64::from(y), f64::from(z)]),
-                    _ => None,
-                };
-                let first_move = tracks.get(&a.actor_net_guid).and_then(|m| {
-                    m.iter()
-                        .find(|p| p[0] >= f64::from(a.time_ms))
-                        .map(|p| [p[1], p[2], p[3]])
-                });
-                let Some(position) = spawn.or(first_move) else {
-                    no_position += 1;
-                    continue;
-                };
-                let owner = cx
-                    .subject_behind(a.actor_net_guid, a.time_ms)
-                    .map(str::to_owned);
-                if owner.is_none() && first_round_ms.is_some_and(|t| i64::from(a.time_ms) > t) {
-                    no_owner += 1;
-                }
-                open.insert(a.actor_net_guid, out.len());
-                out.push(Utility {
-                    id: a.actor_net_guid,
-                    class_path: class.to_owned(),
-                    owner,
-                    spawn_ms: i64::from(a.time_ms),
-                    end_ms: None,
-                    position,
-                    // A spawn block carries its rotation only when it is not
-                    // zero (vrf-net's spawn.rs reads it behind a flag bit), so
-                    // a spawned actor without one faces yaw 0.
-                    yaw: a.spawn_yaw.map(f64::from).or(spawn.map(|_| 0.0)),
-                    path: None,
-                    points: None,
-                });
-            }
-            // Dormancy is not destruction (vrfkit CLAUDE.md): only a close ends it.
-            "close" => {
-                if let Some(i) = open.remove(&a.actor_net_guid) {
-                    out[i].end_ms = Some(i64::from(a.time_ms));
-                }
-            }
-            _ => {}
+    let (mut no_position, mut no_owner) = (0, 0);
+    for Life {
+        open: a,
+        class,
+        end_ms,
+    } in lives
+    {
+        let spawn = match (a.spawn_x, a.spawn_y, a.spawn_z) {
+            (Some(x), Some(y), Some(z)) => Some([f64::from(x), f64::from(y), f64::from(z)]),
+            _ => None,
+        };
+        let first_move = tracks.get(&a.actor_net_guid).and_then(|m| {
+            m.iter()
+                .find(|p| p[0] >= f64::from(a.time_ms))
+                .map(|p| [p[1], p[2], p[3]])
+        });
+        let Some(position) = spawn.or(first_move) else {
+            no_position += 1;
+            continue;
+        };
+        let owner = cx
+            .subject_behind(a.actor_net_guid, a.time_ms)
+            .map(str::to_owned);
+        if owner.is_none() && first_round_ms.is_some_and(|t| i64::from(a.time_ms) > t) {
+            no_owner += 1;
         }
+        out.push(Utility {
+            id: a.actor_net_guid,
+            class_path: class.to_owned(),
+            owner,
+            spawn_ms: i64::from(a.time_ms),
+            end_ms: end_ms.map(i64::from),
+            position,
+            // A spawn block carries its rotation only when it is not zero
+            // (vrf-net's spawn.rs reads it behind a flag bit), so a spawned
+            // actor without one faces yaw 0.
+            yaw: a.spawn_yaw.map(f64::from).or(spawn.map(|_| 0.0)),
+            path: None,
+            points: None,
+        });
     }
     trapwire_far_ends(cx, &out, &mut points);
     for u in &mut out {
@@ -183,7 +172,10 @@ pub(super) fn utility(
     }
     for (n, what) in [
         (no_position, "utility actor(s) with no position (dropped)"),
-        (reopened, "utility actor GUID(s) reopened while open"),
+        (
+            reopened,
+            "utility actor open(s) for an actor already open and awake (kept as one)",
+        ),
         (
             no_owner,
             "utility actor(s) spawned in play with no player owner",
@@ -194,6 +186,57 @@ pub(super) fn utility(
         }
     }
     out
+}
+
+/// One utility actor from its first open to its close.
+struct Life<'a> {
+    open: &'a ActorRecord,
+    class: &'a str,
+    end_ms: Option<u32>,
+}
+
+/// Every utility actor's life, in open order, and how many opens came for an
+/// actor already open and awake. Dormancy is not destruction (vrfkit
+/// CLAUDE.md): an actor that goes dormant opens again when it wakes, and it
+/// stays the one life until a close.
+fn lives(actors: &[ActorRecord]) -> (Vec<Life<'_>>, usize) {
+    let mut out: Vec<Life<'_>> = Vec::new();
+    let mut open: HashMap<u32, usize> = HashMap::new();
+    let mut dormant: HashSet<u32> = HashSet::new();
+    let mut reopened = 0;
+    for a in actors {
+        let guid = a.actor_net_guid;
+        match a.event {
+            "open" if open.contains_key(&guid) => {
+                if !dormant.remove(&guid) {
+                    reopened += 1;
+                }
+            }
+            "open" => {
+                if let Some(class) = a.class_path.as_deref().filter(|c| is_utility(c)) {
+                    open.insert(guid, out.len());
+                    out.push(Life {
+                        open: a,
+                        class,
+                        end_ms: None,
+                    });
+                }
+            }
+            "dormant" => {
+                if open.contains_key(&guid) {
+                    dormant.insert(guid);
+                }
+            }
+            "close" => {
+                dormant.remove(&guid);
+                if let Some(i) = open.remove(&guid) {
+                    out[i].end_ms = Some(a.time_ms);
+                }
+            }
+            _ => {}
+        }
+    }
+    (out, reopened)
 }
 
 /// Cypher's Trapwire opens with a `_SecondWire` actor at its far anchor, in
@@ -289,6 +332,37 @@ mod tests {
             vec![at(0.0, 0.0), at(120.0, 3.0), at(130.0, 4.0)]
         );
         assert_eq!(thin(std::iter::empty()), Vec::<[f64; 4]>::new());
+    }
+
+    #[test]
+    fn a_dormant_actor_that_wakes_is_one_life_until_it_closes() {
+        let smoke = "/Game/Characters/Wraith/S0/Ability_Smoke/GameObject_Wraith_4_Smoke.GameObject_Wraith_4_Smoke_C";
+        let at = |time_ms: u32, guid: u32, event: &'static str| ActorRecord {
+            time_ms,
+            actor_net_guid: guid,
+            event,
+            class_path: Some(smoke.to_owned()),
+            ..ActorRecord::default()
+        };
+        let actors = [
+            at(100, 7, "open"),
+            at(200, 7, "dormant"),
+            at(300, 7, "open"),
+            at(400, 7, "close"),
+            // The GUID reused after a close is a new life.
+            at(500, 7, "open"),
+        ];
+        let (found, reopened) = lives(&actors);
+        let spans: Vec<(u32, Option<u32>)> =
+            found.iter().map(|l| (l.open.time_ms, l.end_ms)).collect();
+        assert_eq!(spans, [(100, Some(400)), (500, None)]);
+        assert_eq!(reopened, 0);
+
+        // An open while open and awake is still one life, but warned about.
+        let twice = [at(100, 7, "open"), at(150, 7, "open"), at(400, 7, "close")];
+        let (found, reopened) = lives(&twice);
+        assert_eq!(found.len(), 1);
+        assert_eq!((found[0].end_ms, reopened), (Some(400), 1));
     }
 
     #[test]

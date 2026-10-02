@@ -11,10 +11,12 @@ mod ffi;
 mod fieldpath;
 pub mod guard;
 pub mod header;
+pub mod limits;
 pub mod oodle;
 pub mod selkie;
 mod vendor;
 
+use std::io::Read;
 use std::path::Path;
 
 pub use error::{ErrorCode, ReplayError};
@@ -50,8 +52,26 @@ pub fn decode_file_with(
         None => e.with_build(&build),
     };
     control.check().map_err(named)?;
-    let data = std::fs::read(path).map_err(|e| named(e.into()))?;
+    let data = read_replay(path).map_err(named)?;
     decode_bytes(&data, &build, decompressor, control).map_err(named)
+}
+
+/// The whole file, unless it is larger than [`limits::MAX_FILE_BYTES`].
+fn read_replay(path: &Path) -> Result<Vec<u8>, ReplayError> {
+    let too_large = || limits::exceeded("replay file bytes", limits::MAX_FILE_BYTES);
+    let file = std::fs::File::open(path)?;
+    let length = file.metadata()?.len();
+    if length > limits::MAX_FILE_BYTES {
+        return Err(too_large());
+    }
+    let mut data = Vec::with_capacity(length as usize);
+    // Bounded again in case the file grows while it is read.
+    file.take(limits::MAX_FILE_BYTES + 1)
+        .read_to_end(&mut data)?;
+    if data.len() as u64 > limits::MAX_FILE_BYTES {
+        return Err(too_large());
+    }
+    Ok(data)
 }
 
 /// What the transform guard measures on `data` read with `transform_branch`'s
@@ -111,6 +131,35 @@ pub fn decode_bytes(
     let analysed = analysis::analyse(&preamble, &collector, &walked, verdict);
     let json = serde_json::to_string(&analysed.document)
         .map_err(|e| ReplayError::new(ErrorCode::Corrupt, format!("document: {e}")))?;
+    limits::check_output(json.len(), analysed.blob.len())?;
     control.report(1.0);
     Ok(container::write(&json, &analysed.blob))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vrf_testkit::{Info, chunk, header_payload_for_branch, replay_info};
+
+    #[test]
+    fn a_file_past_the_size_cap_is_refused_unread() {
+        let path = std::env::temp_dir().join(format!("icarus-huge-{}.vrf", std::process::id()));
+        let mut head = replay_info(&Info::default());
+        head.extend(chunk(
+            0,
+            &header_payload_for_branch("++Ares-Core+release-13.00", 0, &[3, 0, 0, 0, 49, 56, 0]),
+        ));
+        std::fs::write(&path, &head).unwrap();
+        // Only the length grows; nothing past the header is written.
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_len(limits::MAX_FILE_BYTES + 1).unwrap();
+        drop(file);
+
+        let result = decode_file_with(&path, &oodle::Unavailable, Control::default());
+        std::fs::remove_file(&path).unwrap();
+        let err = result.unwrap_err();
+        assert_eq!(err.code, ErrorCode::Corrupt, "{err}");
+        assert!(err.message.contains("file"), "{err}");
+        assert_eq!(err.build.as_deref(), Some("++Ares-Core+release-13.00"));
+    }
 }

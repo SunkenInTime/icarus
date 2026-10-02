@@ -1,9 +1,10 @@
 //! The C ABI (include/icarus_replay.h). The only `unsafe` in the crate: it
-//! reads the caller's path and cells and hands back buffers it allocated.
+//! reads the caller's path, hands back buffers it allocated, and lends out
+//! the decode control it owns.
 
 use std::ffi::{CStr, c_char};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::decode::Control;
 use crate::error::{ErrorCode, ReplayError};
@@ -69,28 +70,85 @@ pub unsafe extern "C" fn icarus_replay_probe(path_utf8: *const c_char) -> Icarus
     })
 }
 
-/// Full decode to an `.icrp` buffer, or an error object. `progress` receives
-/// 0..10000 by relaxed stores; a nonzero `cancel` stops the decode with
-/// `cancelled`. Either may be null.
+/// A decode's progress and cancel request, shared between the decoding
+/// thread and the caller's. Opaque to C; every access is atomic.
+#[derive(Default)]
+pub struct IcarusReplayControl {
+    progress: AtomicU32,
+    cancel: AtomicU32,
+}
+
+impl IcarusReplayControl {
+    fn view(&self) -> Control<'_> {
+        Control {
+            progress: Some(&self.progress),
+            cancel: Some(&self.cancel),
+        }
+    }
+}
+
+/// A new control: progress 0, not cancelled. Free it with
+/// `icarus_replay_control_free` once no decode is using it.
+#[unsafe(no_mangle)]
+pub extern "C" fn icarus_replay_control_new() -> *mut IcarusReplayControl {
+    Box::into_raw(Box::default())
+}
+
+/// The decode's progress, 0..10000 (hundredths of a percent). 0 for null.
 ///
 /// # Safety
-/// `path_utf8` as for `icarus_replay_probe`. `progress` and `cancel` are null
-/// or 4-byte-aligned cells that stay valid until this call returns; other
-/// threads may touch them only with atomic operations.
+/// `control` is null or a live control from `icarus_replay_control_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn icarus_replay_control_progress(
+    control: *const IcarusReplayControl,
+) -> u32 {
+    // SAFETY: null or live, by the caller's contract.
+    unsafe { control.as_ref() }.map_or(0, |c| c.progress.load(Ordering::Relaxed))
+}
+
+/// Ask the decode using `control` to stop with `cancelled`. Null is ignored.
+///
+/// # Safety
+/// As for `icarus_replay_control_progress`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn icarus_replay_control_cancel(control: *const IcarusReplayControl) {
+    // SAFETY: null or live, by the caller's contract.
+    if let Some(c) = unsafe { control.as_ref() } {
+        c.cancel.store(1, Ordering::Relaxed);
+    }
+}
+
+/// Release a control. Null is ignored.
+///
+/// # Safety
+/// `control` is null or came from `icarus_replay_control_new`, is freed once,
+/// and no `icarus_replay_decode` call is still using it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn icarus_replay_control_free(control: *mut IcarusReplayControl) {
+    if !control.is_null() {
+        // SAFETY: leaked by `icarus_replay_control_new`, freed once.
+        drop(unsafe { Box::from_raw(control) });
+    }
+}
+
+/// Full decode to an `.icrp` buffer, or an error object. `control`, when not
+/// null, receives progress and is checked for a cancel request between
+/// frames and packets.
+///
+/// # Safety
+/// `path_utf8` as for `icarus_replay_probe`. `control` is null or a live
+/// control that is not freed until this call returns.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn icarus_replay_decode(
     path_utf8: *const c_char,
-    progress: *mut u32,
-    cancel: *const u32,
+    control: *const IcarusReplayControl,
 ) -> IcarusReplayBuffer {
     // SAFETY: forwarded caller contract.
     let path = unsafe { path_from(path_utf8) };
-    // SAFETY: aligned, live for the call, and only touched atomically; AtomicU32
-    // has u32's size and alignment.
-    let progress = unsafe { progress.cast::<AtomicU32>().as_ref() };
-    // SAFETY: as above; only loaded.
-    let cancel = unsafe { cancel.cast::<AtomicU32>().as_ref() };
-    guarded(|| crate::decode_file(&path?, Control { progress, cancel }))
+    // SAFETY: null or live for the whole call, by the caller's contract.
+    let control =
+        unsafe { control.as_ref() }.map_or_else(Control::default, IcarusReplayControl::view);
+    guarded(|| crate::decode_file(&path?, control))
 }
 
 /// Release a buffer from `icarus_replay_probe` or `icarus_replay_decode`.
@@ -119,9 +177,8 @@ mod tests {
     #[test]
     fn errors_cross_the_abi_as_json_and_free_cleanly() {
         let path = c"this/does/not/exist.vrf";
-        // SAFETY: a valid C string; null cells.
-        let buffer =
-            unsafe { icarus_replay_decode(path.as_ptr(), std::ptr::null_mut(), std::ptr::null()) };
+        // SAFETY: a valid C string; no control.
+        let buffer = unsafe { icarus_replay_decode(path.as_ptr(), std::ptr::null()) };
         assert_eq!(buffer.is_error, 1);
         let json: serde_json::Value = serde_json::from_slice(read(&buffer)).unwrap();
         assert_eq!(json["code"], "io");
@@ -144,6 +201,33 @@ mod tests {
                 is_error: 0,
             })
         };
+    }
+
+    #[test]
+    fn a_control_carries_cancel_in_and_progress_out() {
+        let control = icarus_replay_control_new();
+        // SAFETY: a live control, freed once at the end.
+        unsafe {
+            let view = (*control).view();
+            assert_eq!(icarus_replay_control_progress(control), 0);
+            view.report(0.5);
+            assert_eq!(icarus_replay_control_progress(control), 5_000);
+            assert!(!view.cancelled());
+            icarus_replay_control_cancel(control);
+            assert!(view.cancelled());
+
+            let path = c"this/does/not/exist.vrf";
+            let buffer = icarus_replay_decode(path.as_ptr(), control);
+            assert_eq!(buffer.is_error, 1);
+            icarus_replay_free(buffer);
+            icarus_replay_control_free(control);
+        }
+        // SAFETY: null is allowed everywhere.
+        unsafe {
+            assert_eq!(icarus_replay_control_progress(std::ptr::null()), 0);
+            icarus_replay_control_cancel(std::ptr::null());
+            icarus_replay_control_free(std::ptr::null_mut());
+        }
     }
 
     #[test]

@@ -55,6 +55,17 @@ void main() {
     expect(names, ['c.vrf']);
   });
 
+  test('importing a different file of the same name replaces the copy',
+      () async {
+    final first = await writeReplay(root, 'e');
+    await files.import(first.path);
+    final other = await Directory(p.join(root.path, 'other')).create();
+    final second = File(p.join(other.path, 'e.vrf'));
+    await second.writeAsBytes([9, 9, 9, 9, 9]);
+    final kept = await files.import(second.path);
+    expect(await File(kept.path).readAsBytes(), [9, 9, 9, 9, 9]);
+  });
+
   test('cache is keyed by file and decoder version, and replaces old ones',
       () async {
     await writeReplay(demos, 'd');

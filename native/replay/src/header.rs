@@ -139,7 +139,8 @@ pub fn container_error(error: &ContainerError) -> ReplayError {
 /// file as the Header chunk needs.
 pub fn read_preamble(path: &Path) -> Result<Preamble, ReplayError> {
     let mut file = std::fs::File::open(path)?;
-    let len = file.metadata()?.len();
+    // Past the cap a decode refuses the file anyway.
+    let len = file.metadata()?.len().min(crate::limits::MAX_FILE_BYTES);
     let mut data = Vec::new();
     let mut want: u64 = 64 * 1024;
     loop {

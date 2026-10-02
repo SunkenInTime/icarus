@@ -51,12 +51,12 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump ${{ inputs.version_bump }}
 
-      # windows/CMakeLists.txt builds the replay decoder (native/replay) with cargo.
+      # windows/CMakeLists.txt builds the replay decoder (native/replay) with
+      # cargo, on the version in native/replay/rust-toolchain.toml.
       - name: Install Rust
-        shell: pwsh
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+        uses: dtolnay/rust-toolchain@1.96.1
+        with:
+          components: clippy, rustfmt
 
       - name: Build Store Package
         shell: pwsh

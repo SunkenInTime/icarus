@@ -8,7 +8,9 @@ use vrf_export::{ActorRecord, EventRecord, FieldRecord};
 use vrf_schema::NetGuidCache;
 
 use crate::decode::Observer;
+use crate::error::ReplayError;
 use crate::guard::GuardSample;
+use crate::limits::{self, MAX_RETAINED_BYTES};
 use crate::vendor::sink::RecordBuffers;
 
 /// One field row the analysis reads. `name` is vrfkit's field name as
@@ -48,14 +50,50 @@ pub struct Collector {
     pub guard: GuardSample,
     /// `wanted` per interned name; the `Arc` held here keeps its address unique.
     verdicts: std::collections::HashMap<usize, (Arc<str>, bool)>,
+    /// Bytes of the records above, against [`MAX_RETAINED_BYTES`].
+    retained: usize,
+}
+
+impl Collector {
+    fn retain(&mut self, bytes: usize) -> Result<(), ReplayError> {
+        self.retained = self.retained.saturating_add(bytes);
+        if self.retained > MAX_RETAINED_BYTES {
+            return Err(limits::exceeded(
+                "retained record bytes",
+                MAX_RETAINED_BYTES,
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Observer for Collector {
-    fn on_event(&mut self, event: EventRecord) {
+    fn on_event(&mut self, event: EventRecord) -> Result<(), ReplayError> {
+        self.retain(
+            size_of::<EventRecord>()
+                + event.raw_payload.len()
+                + event.group.len()
+                + event.metadata.len()
+                + event.id.len(),
+        )?;
         self.events.push(event);
+        Ok(())
     }
 
-    fn on_packet(&mut self, records: &RecordBuffers, _cache: &NetGuidCache) {
+    fn on_packet(
+        &mut self,
+        records: &RecordBuffers,
+        _cache: &NetGuidCache,
+    ) -> Result<(), ReplayError> {
+        let text = |s: &Option<String>| s.as_ref().map_or(0, String::len);
+        self.retain(
+            records
+                .actors
+                .iter()
+                .map(|a| size_of::<ActorRecord>() + text(&a.class_path) + text(&a.archetype_path))
+                .sum::<usize>()
+                + records.movement.len() * size_of::<Move>(),
+        )?;
         self.actors.extend(records.actors.iter().cloned());
         self.moves.extend(records.movement.iter().map(|m| Move {
             time: m.time_ms,
@@ -80,7 +118,7 @@ impl Observer for Collector {
             if !keep {
                 continue;
             }
-            self.rows.push(Row {
+            let row = Row {
                 time: field.time_ms,
                 packet: field.packet_id,
                 actor: field.actor_net_guid,
@@ -92,8 +130,11 @@ impl Observer for Collector {
                 boolean: field.value_bool,
                 text: field.value_str.clone(),
                 raw: untyped_bytes(field),
-            });
+            };
+            self.retain(size_of::<Row>() + text(&row.text) + row.raw.as_ref().map_or(0, Vec::len))?;
+            self.rows.push(row);
         }
+        Ok(())
     }
 }
 
@@ -171,5 +212,35 @@ fn wanted(name: &str) -> bool {
                 )
                 && matches!(last, "ChangedComponent" | "LifeResult")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn records_past_the_retained_cap_are_refused() {
+        // vrfkit clones an actor's class path into every record of it, so a
+        // long path opened often adds up without the wire growing.
+        let opens = RecordBuffers {
+            actors: vec![
+                ActorRecord {
+                    class_path: Some("/Game/X".repeat(1024)),
+                    ..ActorRecord::default()
+                };
+                4
+            ],
+            ..RecordBuffers::default()
+        };
+        let cache = NetGuidCache::new();
+        let mut collector = Collector::default();
+        collector.on_packet(&opens, &cache).unwrap();
+        assert_eq!(collector.actors.len(), 4);
+
+        collector.retained = MAX_RETAINED_BYTES - 1024;
+        let err = collector.on_packet(&opens, &cache).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::Corrupt);
+        assert_eq!(collector.actors.len(), 4, "the refused packet is not kept");
     }
 }

@@ -35,25 +35,48 @@ final class _Buffer extends Struct {
   external int isError;
 }
 
+/// The library's `IcarusReplayControl`: a decode's progress and cancel
+/// request, read and written atomically on the native side.
+final class _Control extends Opaque {}
+
 typedef _ProbeC = _Buffer Function(Pointer<Utf8>);
-typedef _DecodeC = _Buffer Function(
-    Pointer<Utf8>, Pointer<Uint32>, Pointer<Uint32>);
-typedef _DecodeD = _Buffer Function(
-    Pointer<Utf8>, Pointer<Uint32>, Pointer<Uint32>);
+typedef _DecodeC = _Buffer Function(Pointer<Utf8>, Pointer<_Control>);
 typedef _FreeC = Void Function(_Buffer);
 typedef _FreeD = void Function(_Buffer);
+typedef _ControlNewC = Pointer<_Control> Function();
+typedef _ControlProgressC = Uint32 Function(Pointer<_Control>);
+typedef _ControlProgressD = int Function(Pointer<_Control>);
+typedef _ControlC = Void Function(Pointer<_Control>);
+typedef _ControlD = void Function(Pointer<_Control>);
 
 class _Library {
   _Library(DynamicLibrary library)
       : probe = library.lookupFunction<_ProbeC, _ProbeC>('icarus_replay_probe'),
-        decode = library.lookupFunction<_DecodeC, _DecodeD>(
+        decode = library.lookupFunction<_DecodeC, _DecodeC>(
           'icarus_replay_decode',
         ),
-        free = library.lookupFunction<_FreeC, _FreeD>('icarus_replay_free');
+        free = library.lookupFunction<_FreeC, _FreeD>('icarus_replay_free'),
+        controlNew = library.lookupFunction<_ControlNewC, _ControlNewC>(
+          'icarus_replay_control_new',
+        ),
+        controlProgress =
+            library.lookupFunction<_ControlProgressC, _ControlProgressD>(
+          'icarus_replay_control_progress',
+        ),
+        controlCancel = library.lookupFunction<_ControlC, _ControlD>(
+          'icarus_replay_control_cancel',
+        ),
+        controlFree = library.lookupFunction<_ControlC, _ControlD>(
+          'icarus_replay_control_free',
+        );
 
   final _Buffer Function(Pointer<Utf8>) probe;
-  final _DecodeD decode;
+  final _Buffer Function(Pointer<Utf8>, Pointer<_Control>) decode;
   final _FreeD free;
+  final Pointer<_Control> Function() controlNew;
+  final _ControlProgressD controlProgress;
+  final _ControlD controlCancel;
+  final _ControlD controlFree;
 
   static _Library? _instance;
 
@@ -106,10 +129,10 @@ ReplayDecodeJob decodeReplay(String path) => _IoDecodeJob(path);
 
 class _IoDecodeJob implements ReplayDecodeJob {
   _IoDecodeJob(String path) {
-    // Both cells are written across isolates, so they live in native memory
-    // and are freed only after the decoding isolate has finished with them.
-    final progressAddress = _progress.address;
-    final cancelAddress = _cancel.address;
+    // The control is shared with the decoding isolate by address, so it is
+    // freed only after that isolate has finished with it. Both sides reach
+    // it only through the library, which accesses it atomically.
+    final controlAddress = _control.address;
     result = Isolate.run(() {
       final library = _Library.instance;
       final nativePath = path.toNativeUtf8();
@@ -117,32 +140,30 @@ class _IoDecodeJob implements ReplayDecodeJob {
         return library.take(
           library.decode(
             nativePath,
-            Pointer<Uint32>.fromAddress(progressAddress),
-            Pointer<Uint32>.fromAddress(cancelAddress),
+            Pointer<_Control>.fromAddress(controlAddress),
           ),
         );
       } finally {
         malloc.free(nativePath);
       }
     }).whenComplete(() {
-      calloc.free(_progress);
-      calloc.free(_cancel);
       _done = true;
+      _library.controlFree(_control);
     });
   }
 
-  final Pointer<Uint32> _progress = calloc<Uint32>();
-  final Pointer<Uint32> _cancel = calloc<Uint32>();
+  final _Library _library = _Library.instance;
+  late final Pointer<_Control> _control = _library.controlNew();
   bool _done = false;
 
   @override
   late final Future<Uint8List> result;
 
   @override
-  double get progress => _done ? 1 : _progress.value / 10000;
+  double get progress => _done ? 1 : _library.controlProgress(_control) / 10000;
 
   @override
   void cancel() {
-    if (!_done) _cancel.value = 1;
+    if (!_done) _library.controlCancel(_control);
   }
 }

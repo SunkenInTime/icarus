@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:icarus/replay/replay_decoder.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_files.dart';
@@ -37,7 +38,8 @@ class ReplayLoader {
     final job = _job = decodeReplay(file.path);
     final bytes = await job.result;
     _throwIfCancelled();
-    final document = ReplayDocument.fromBytes(bytes);
+    final document = await _parse(bytes);
+    _throwIfCancelled();
     try {
       await files.writeCache(file, probe.decoderVersion, bytes);
     } on Exception {
@@ -46,12 +48,17 @@ class ReplayLoader {
     return document;
   }
 
+  /// Reading a whole match is too much work for a frame, so it happens on
+  /// another isolate; the screen keeps drawing meanwhile.
+  static Future<ReplayDocument> _parse(Uint8List bytes) =>
+      compute(ReplayDocument.fromBytes, bytes);
+
   /// The cached document, or null when there is none or it can't be used:
   /// an unreadable or outdated cache is simply decoded again.
   Future<ReplayDocument?> _readCache() async {
     try {
       final bytes = await files.readCache(file, probe.decoderVersion);
-      return bytes == null ? null : ReplayDocument.fromBytes(bytes);
+      return bytes == null ? null : await _parse(bytes);
     } on Exception {
       return null;
     }

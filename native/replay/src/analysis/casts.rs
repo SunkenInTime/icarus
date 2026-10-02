@@ -41,6 +41,16 @@ struct Element {
     location: Option<String>,
 }
 
+/// One cast: an element with its whole identity, first sent at `first_send`.
+struct Found {
+    first_send: u32,
+    player: String,
+    slot: i64,
+    round: i64,
+    cast_time: f64,
+    location: Option<String>,
+}
+
 pub(super) fn casts(cx: &mut Context<'_>, rounds: &[Round]) -> Vec<Cast> {
     // Replicated state per array element, and its state after each packet
     // that wrote to it.
@@ -78,23 +88,22 @@ pub(super) fn casts(cx: &mut Context<'_>, rounds: &[Round]) -> Vec<Cast> {
 
     // Identities in first-send order.
     let mut seen: HashSet<(String, i64, i64, u64)> = HashSet::new();
-    let mut found: Vec<(u32, Element)> = Vec::new();
-    for Snapshot {
-        time,
-        state: element,
-        ..
-    } in snapshots
-    {
-        let (Some(player), Some(slot), Some(round), Some(cast_time)) = (
-            element.player.clone(),
-            element.slot,
-            element.round,
-            element.cast_time,
-        ) else {
+    let mut found: Vec<Found> = Vec::new();
+    for Snapshot { time, state, .. } in snapshots {
+        let (Some(player), Some(slot), Some(round), Some(cast_time)) =
+            (state.player, state.slot, state.round, state.cast_time)
+        else {
             continue;
         };
-        if seen.insert((player, round, slot, cast_time.to_bits())) {
-            found.push((time, element));
+        if seen.insert((player.clone(), round, slot, cast_time.to_bits())) {
+            found.push(Found {
+                first_send: time,
+                player,
+                slot,
+                round,
+                cast_time,
+                location: state.location,
+            });
         }
     }
 
@@ -104,32 +113,28 @@ pub(super) fn casts(cx: &mut Context<'_>, rounds: &[Round]) -> Vec<Cast> {
         .filter_map(|r| Some((i64::from(r.index), r.combat_start_ms?)))
         .collect();
     let mut unplaced = 0;
-    let timed: Vec<(i64, Element)> = found
+    let timed: Vec<(i64, Found)> = found
         .into_iter()
-        .map(|(first_send, e)| {
-            let cast_ms = e
-                .round
-                .and_then(|r| buy_end.get(&r))
-                .map(|&b| b + (e.cast_time.expect("identity has a time") * 1000.0).round() as i64);
+        .map(|f| {
+            // `as` saturates a wild wire value; the sum must too.
+            let cast_ms = buy_end
+                .get(&f.round)
+                .map(|&b| b.saturating_add((f.cast_time * 1000.0).round() as i64));
             if cast_ms.is_none() {
                 unplaced += 1;
             }
-            (cast_ms.unwrap_or(i64::from(first_send)), e)
+            (cast_ms.unwrap_or(i64::from(f.first_send)), f)
         })
         .collect();
     let classes = slot_classes(cx, &timed);
     let mut casts: Vec<Cast> = timed
         .into_iter()
-        .map(|(time_ms, e)| {
-            let player = e.player.expect("identity has a player");
-            let slot = e.slot.expect("identity has a slot");
-            Cast {
-                time_ms,
-                class_path: classes.get(&(player.clone(), slot)).cloned(),
-                subject: player,
-                slot,
-                position: e.location.as_deref().and_then(parse_vector),
-            }
+        .map(|(time_ms, f)| Cast {
+            time_ms,
+            class_path: classes.get(&(f.player.clone(), f.slot)).cloned(),
+            subject: f.player,
+            slot: f.slot,
+            position: f.location.as_deref().and_then(parse_vector),
         })
         .collect();
     casts.sort_by(|a, b| (a.time_ms, &a.subject).cmp(&(b.time_ms, &b.subject)));
@@ -145,7 +150,7 @@ pub(super) fn casts(cx: &mut Context<'_>, rounds: &[Round]) -> Vec<Cast> {
 /// cast's first-send packet name one class without dissent, and no other
 /// slot of that player names it too (Reyna's two abilities spend one pool).
 /// Only ability items count: a gun's ammo is an `AuthResourceAmount` too.
-fn slot_classes(cx: &Context<'_>, casts: &[(i64, Element)]) -> HashMap<(String, i64), String> {
+fn slot_classes(cx: &Context<'_>, casts: &[(i64, Found)]) -> HashMap<(String, i64), String> {
     /// Spends within this of the cast belong to it.
     const WINDOW_MS: i64 = 10;
     // Charge decrements: (time, ability actor).
@@ -164,10 +169,8 @@ fn slot_classes(cx: &Context<'_>, casts: &[(i64, Element)]) -> HashMap<(String, 
         }
     }
     let mut votes: BTreeMap<(String, i64), BTreeMap<String, u32>> = BTreeMap::new();
-    for (time, e) in casts {
-        let (Some(player), Some(slot)) = (&e.player, e.slot) else {
-            continue;
-        };
+    for (time, Found { player, slot, .. }) in casts {
+        let slot = *slot;
         let mut candidates: Vec<String> = spends
             .iter()
             .filter(|&&(t, _)| (t - time).abs() <= WINDOW_MS)

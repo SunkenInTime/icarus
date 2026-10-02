@@ -137,4 +137,27 @@ void main() {
     );
     expect(box.isEmpty, isTrue);
   });
+
+  test('a utility turned by a non-finite angle is refused too', () async {
+    final spike = PlacedUtility(
+      id: 'replay-spike-0',
+      type: UtilityType.spike,
+      position: const Offset(500, 500),
+    )..rotation = double.infinity;
+    await expectLater(
+      capture().capture(
+        ReplayFrame(
+          timeMs: 0,
+          round: null,
+          isAttack: true,
+          agents: const [],
+          abilities: const [],
+          utilities: [spike],
+        ),
+        pageName: 'bad',
+      ),
+      throwsStateError,
+    );
+    expect(box.isEmpty, isTrue);
+  });
 }

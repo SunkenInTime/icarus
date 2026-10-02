@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:icarus/const/agents.dart';
@@ -12,6 +13,7 @@ import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_weapons.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
 /// One moment of a replay as Icarus draws it: the same placed widgets a page
 /// holds. The viewer paints these, and capturing the moment saves them.
@@ -156,6 +158,20 @@ class ReplayFrameBuilder {
     return last;
   }
 
+  /// The spike stays planted until it is defused, it detonates, or the
+  /// round ends.
+  static int _spikeGoneMs(ReplayRound round) => [
+        round.endMs,
+        if (round.defuse case final defuse?) defuse.timeMs,
+        if (round.detonateMs case final detonateMs?) detonateMs,
+      ].reduce(math.min);
+
+  static bool _onCanvas(Offset world) =>
+      world.dx >= 0 &&
+      world.dy >= 0 &&
+      world.dx <= SvgHeightMapTransform.worldWidth &&
+      world.dy <= SvgHeightMapTransform.worldHeight;
+
   /// The level the player stands on, when it is not the one the cone picks.
   double? _visionElevation(ReplayPose pose) {
     final model = heightModel;
@@ -192,8 +208,11 @@ class ReplayFrameBuilder {
       );
       final pose = state.pose;
       if (pose == null) continue;
-      final position =
-          projection.toWorld(pose.position.x, pose.position.y) - agentAnchor;
+      final standing = projection.toWorld(pose.position.x, pose.position.y);
+      // Iso's Kill Contract duels in an arena off the map; while there, the
+      // player has no place on it (the roster still lists them).
+      if (!_onCanvas(standing)) continue;
+      final position = standing - agentAnchor;
       final isAlly = team == perspective;
       final id = 'replay-player-${player.subject}';
       // What they carried out of the buy phase.
@@ -252,7 +271,7 @@ class ReplayFrameBuilder {
         plant != null &&
         plantedAt != null &&
         timeMs >= plant.timeMs &&
-        timeMs < round.endMs) {
+        timeMs < _spikeGoneMs(round)) {
       final spike = PlacedUtility(
         id: 'replay-spike-${round.index}',
         type: UtilityType.spike,

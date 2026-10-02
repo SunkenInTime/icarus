@@ -16,7 +16,7 @@ use vrf_schema::NetGuidCache;
 
 use crate::collect::{Collector, Row};
 use crate::decode::Walked;
-use crate::document::{Decoder, Document, Match, Player, Quality, Vec3};
+use crate::document::{Decoder, Document, Loss, Match, Player, Quality, Vec3};
 use crate::guard::GuardVerdict;
 use crate::header::{self, DECODER_VERSION, VRFKIT_VERSION};
 
@@ -273,9 +273,35 @@ pub(crate) fn analyse(
 
     let stats = &walked.stats;
     let net = &walked.net;
+    let loss = Loss {
+        malformed_packets: net.malformed_packets,
+        bunch_header_failures: net.bunch_header_failures,
+        lost_content_blocks: net.lost_content_blocks(),
+        rejected_partials: net.partial_errors,
+        unfinished_partials: net.unfinished_partials,
+        refused_bunches: net.channel_state_limit_failures,
+        unopened_channel_bunches: net.bunches_on_unopened_channel,
+        package_map_export_bunches: net.package_map_exports,
+    };
     let mut warnings = std::mem::take(&mut cx.warnings);
     for (name, value) in [
-        ("malformed packets", net.malformed_packets),
+        ("malformed packets", loss.malformed_packets),
+        (
+            "bunch headers that did not read",
+            loss.bunch_header_failures,
+        ),
+        ("content blocks lost", loss.lost_content_blocks),
+        ("partial bunch fragments rejected", loss.rejected_partials),
+        ("partial bunches unfinished", loss.unfinished_partials),
+        ("bunches refused at a channel limit", loss.refused_bunches),
+        (
+            "bunches on unopened channels",
+            loss.unopened_channel_bunches,
+        ),
+        (
+            "package-map export bunches",
+            loss.package_map_export_bunches,
+        ),
         ("movement decode errors", stats.movement_rpc_errors),
         ("struct-blob decode failures", stats.struct_blobs_failed),
         ("array leaf decode errors", stats.array_leaf_decode_errors),
@@ -321,6 +347,7 @@ pub(crate) fn analyse(
         quality: Quality {
             transform_verified: guard.verified,
             decode_errors: stats.overlay.decoded_err,
+            loss,
             warnings,
         },
     };

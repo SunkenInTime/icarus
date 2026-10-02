@@ -20,6 +20,8 @@ struct Phases {
     buy_end: Option<u32>,
     post_round: Option<u32>,
     side_switch: Option<u32>,
+    /// Phases sent again: (phase, kept time, repeat time).
+    repeats: Vec<(i64, u32, u32)>,
 }
 
 impl Phases {
@@ -32,6 +34,15 @@ impl Phases {
             6 => &mut self.side_switch,
             _ => return None,
         })
+    }
+
+    /// A reset and nothing after it yet.
+    fn is_lone_reset(&self) -> bool {
+        self.reset.is_some()
+            && self.start.is_none()
+            && self.buy_end.is_none()
+            && self.post_round.is_none()
+            && self.side_switch.is_none()
     }
 
     fn open(&self) -> Option<u32> {
@@ -61,8 +72,6 @@ struct Placed {
 
 pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
     let mut phases: Vec<Phases> = Vec::new();
-    // (round ordinal, phase, kept time, repeat time).
-    let mut repeated: Vec<(usize, i64, u32, u32)> = Vec::new();
     let mut results: HashMap<u32, ResultMembers> = HashMap::new();
     let mut sites = Vec::new();
     for row in cx.rows {
@@ -71,18 +80,17 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
             if !(2..=6).contains(&phase) {
                 continue;
             }
-            if phase == 2 || phases.is_empty() {
+            // A reset opens the next cycle, unless it repeats a lone reset;
+            // the first phase seen opens one, whichever it is.
+            let repeat_reset = phases.last().is_some_and(Phases::is_lone_reset);
+            if phases.is_empty() || (phase == 2 && !repeat_reset) {
                 phases.push(Phases::default());
             }
-            let ordinal = phases.len() - 1;
-            let slot = phases
-                .last_mut()
-                .expect("pushed")
-                .slot(phase)
-                .expect("2..=6");
+            let p = phases.last_mut().expect("pushed");
+            let slot = p.slot(phase).expect("2..=6");
             match *slot {
                 None => *slot = Some(row.time),
-                Some(kept) => repeated.push((ordinal, phase, kept, row.time)),
+                Some(kept) => p.repeats.push((phase, kept, row.time)),
             }
         } else if &*row.name == "PlantedAtSite" {
             sites.push((row.time, row.int.unwrap_or(0)));
@@ -97,22 +105,11 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
                 .insert(path.leaf().to_owned(), (row.int, row.text.clone()));
         }
     }
-    // Seen on 13.00: the buy phase ending twice, 0.4-0.9 s apart. The first
-    // is kept, so `combatStartMs` and the cast times built on it could be
-    // that much early.
-    for (ordinal, phase, kept, again) in repeated {
-        cx.warnings.push(format!(
-            "round {ordinal}: game phase {phase} sent again at {again} ms; the first, at {kept} ms, is kept"
-        ));
-    }
-    // The last side switch resets into a round that never starts.
-    if phases.last().is_some_and(|p| p.start.is_none()) {
-        phases.pop();
-    }
+    let phases = started(cx, phases);
 
     let opens: Vec<u32> = phases
         .iter()
-        .map(|p| p.open().expect("a phase is set"))
+        .map(|(start, p)| p.open().unwrap_or(*start))
         .collect();
     let place = |t: u32| opens.partition_point(|&o| o <= t).checked_sub(1);
     let mut placed: Vec<Placed> = phases.iter().map(|_| Placed::default()).collect();
@@ -158,7 +155,7 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
 
     let mut rounds = Vec::new();
     let mut unknown_results = Vec::new();
-    for (ordinal, (p, facts)) in phases.iter().zip(&placed).enumerate() {
+    for (ordinal, ((phase_start, p), facts)) in phases.iter().zip(&placed).enumerate() {
         let single = |v: &[(u32, i64)]| (v.len() == 1).then(|| v[0]);
         let single_t = |v: &[(u32, ())]| (v.len() == 1).then(|| v[0].0);
         let round_number = single(&facts.round_number);
@@ -175,10 +172,7 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
                 ));
             }
         }
-        let start = round_number
-            .map(|(t, _)| t)
-            .or(p.start)
-            .expect("rounds without a start are dropped");
+        let start = round_number.map_or(*phase_start, |(t, _)| t);
         let result = round_number.and_then(|(_, n)| by_number.get(&n).copied());
         let winning_team = result.and_then(|r| text(r, "WinningTeam"));
         // A match surrendered mid-round ends with no end phase but a result;
@@ -254,14 +248,51 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
     rounds
 }
 
+/// The phase cycles that started a round, each with its start phase's time.
+/// The last side switch resets into a round that never starts, dropped
+/// silently; any other cycle without a start (a replay that begins mid-round)
+/// is dropped with a warning, its side switch moved to the round before.
+/// Repeated phases are warned about under their round's ordinal.
+fn started(cx: &mut Context<'_>, mut phases: Vec<Phases>) -> Vec<(u32, Phases)> {
+    if phases.last().is_some_and(|p| p.start.is_none()) {
+        phases.pop();
+    }
+    let mut started: Vec<(u32, Phases)> = Vec::new();
+    for p in phases {
+        match p.start {
+            Some(start) => started.push((start, p)),
+            None => {
+                cx.warnings.push(format!(
+                    "game phases from {} ms never started a round (dropped)",
+                    p.open().unwrap_or(0)
+                ));
+                if let Some((_, before)) = started.last_mut() {
+                    before.side_switch = before.side_switch.or(p.side_switch);
+                }
+            }
+        }
+    }
+    // Seen on 13.00: the buy phase ending twice, 0.4-0.9 s apart. The first
+    // is kept, so `combatStartMs` and the cast times built on it could be
+    // that much early.
+    for (ordinal, (_, p)) in started.iter().enumerate() {
+        for (phase, kept, again) in &p.repeats {
+            cx.warnings.push(format!(
+                "round {ordinal}: game phase {phase} sent again at {again} ms; the first, at {kept} ms, is kept"
+            ));
+        }
+    }
+    started
+}
+
 /// Rounds whose `RoundResults` entry is missing take their attackers from a
 /// round of the same half: sides hold between side switches (phase 6, sent
 /// on the round before the switch).
-fn fill_attackers(cx: &mut Context<'_>, rounds: &mut [Round], phases: &[Phases]) {
+fn fill_attackers(cx: &mut Context<'_>, rounds: &mut [Round], phases: &[(u32, Phases)]) {
     let mut half = 0;
     let halves: Vec<usize> = phases
         .iter()
-        .map(|p| {
+        .map(|(_, p)| {
             let this = half;
             if p.side_switch.is_some() {
                 half += 1;
@@ -442,6 +473,89 @@ fn economy(cx: &Context<'_>, buy_end: Option<u32>) -> Vec<Economy> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::collect::Row;
+
+    /// The rounds of a replay whose game state sends `phases` `(time, phase)`.
+    fn rounds_of(phases: &[(u32, i64)]) -> (Vec<Round>, Vec<String>) {
+        let rows: Vec<Row> = phases
+            .iter()
+            .map(|&(time, phase)| Row {
+                time,
+                packet: time,
+                actor: 1,
+                object: None,
+                group: "/Game/GameModes/Bomb/BombGameState.BombGameState_C".into(),
+                name: "MulticastSetPhase.NewPhase".into(),
+                int: Some(phase),
+                float: None,
+                boolean: None,
+                text: None,
+                raw: None,
+            })
+            .collect();
+        let cache = vrf_schema::NetGuidCache::new();
+        let mut cx = Context {
+            rows: &rows,
+            events: &[],
+            actors: &[],
+            cache: &cache,
+            duration_ms: 10_000,
+            players: Vec::new(),
+            body_subject: HashMap::new(),
+            state_subject: HashMap::new(),
+            actor_class: HashMap::new(),
+            owner_writes: HashMap::new(),
+            instigator_writes: HashMap::new(),
+            warnings: Vec::new(),
+        };
+        let rounds = rounds(&mut cx);
+        (rounds, cx.warnings)
+    }
+
+    fn spans(rounds: &[Round]) -> Vec<(i64, i64)> {
+        rounds.iter().map(|r| (r.start_ms, r.end_ms)).collect()
+    }
+
+    #[test]
+    fn a_reset_sent_twice_is_one_round() {
+        let (rounds, warnings) = rounds_of(&[
+            (100, 2),
+            (150, 2),
+            (200, 3),
+            (300, 4),
+            (400, 5),
+            (500, 2),
+            (600, 3),
+        ]);
+        assert_eq!(spans(&rounds), [(200, 400), (600, 10_000)]);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.starts_with("round 0: game phase 2 sent again at 150 ms")),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn cycles_that_never_start_are_dropped_not_a_panic() {
+        // A replay that begins mid-round, then a reset abandoned for another.
+        let (rounds, warnings) = rounds_of(&[
+            (50, 4),
+            (60, 5),
+            (100, 2),
+            (120, 4),
+            (150, 2),
+            (200, 3),
+            (300, 4),
+            (400, 5),
+        ]);
+        assert_eq!(spans(&rounds), [(200, 400)]);
+        let dropped: Vec<&String> = warnings
+            .iter()
+            .filter(|w| w.contains("never started a round"))
+            .collect();
+        assert_eq!(dropped.len(), 2, "{warnings:?}");
+    }
 
     #[test]
     fn sites_and_reasons_map_as_documented() {

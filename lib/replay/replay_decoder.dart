@@ -64,8 +64,10 @@ class ReplayProbe {
         supported: json['supported'] as bool? ?? false,
         decoderVersion: json['decoderVersion'] as String,
         agentIds: [
+          // A player the header names no agent for is left out, not fatal.
           for (final player in (json['players'] as List? ?? const []))
-            ((player as Map)['agentId'] as String).toLowerCase(),
+            if ((player as Map)['agentId'] case final String agentId)
+              agentId.toLowerCase(),
         ],
       );
 }

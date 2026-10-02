@@ -119,7 +119,17 @@ first byte.
   },
   "quality": {
     "transformVerified": true,
-    "decodeErrors": 0,
+    "decodeErrors": 0,                      // typed field decodes that failed
+    "loss": {                               // see "Quality"
+      "malformedPackets": 0,
+      "bunchHeaderFailures": 0,
+      "lostContentBlocks": 0,
+      "rejectedPartials": 0,
+      "unfinishedPartials": 0,
+      "refusedBunches": 0,
+      "unopenedChannelBunches": 0,
+      "packageMapExportBunches": 0
+    },
     "warnings": ["…"]                       // see "Warnings"
   }
 }
@@ -203,13 +213,37 @@ agents across our 7 replays agrees with the item `classPath` where one is
 known. `classPath` is the ability item, absent where no charge spend ties a
 cast to it (always for ultimates).
 
+## Quality
+
+`transformVerified` is the transform guard's verdict; a decode that fails it
+is refused, so a document always says `true`. `decodeErrors` counts field
+values vrfkit could not type (its `overlay.decoded_err`).
+
+`loss` is what the replication stream lost before any field was read: the
+counters vrfkit's own `validate` judges a replay by. No two count the same
+thing, and a payload vrfkit keeps whole when it cannot decode it is not lost.
+
+| Counter | What it counts | vrfkit `NetStats` |
+|---|---|---|
+| `malformedPackets` | packets abandoned part-read | `malformed_packets` |
+| `bunchHeaderFailures` | bunches whose header did not read | `bunch_header_failures` |
+| `lostContentBlocks` | actor content blocks whose payload reached no field or RPC | `lost_content_blocks()` |
+| `rejectedPartials` | partial-bunch fragments refused during reassembly | `partial_errors` |
+| `unfinishedPartials` | partial bunches still incomplete at the end | `unfinished_partials` |
+| `refusedBunches` | bunches refused at a channel-state limit | `channel_state_limit_failures` |
+| `unopenedChannelBunches` | bunches for a channel with no open actor, dropped | `bunches_on_unopened_channel` |
+| `packageMapExportBunches` | bunches whose content after a package-map export is not read | `package_map_exports` |
+
+All are 0 on every replay in our corpus. Each non-zero one is also a
+warning.
+
 ## Warnings
 
 `quality.warnings` names what the decoder dropped, could not attribute, or
-chose between, one line each: decode failures by kind, deaths or utility it
-could not attribute, assists it could not separate, rounds the replay stops
-inside, and game phases sent twice (where `combatStartMs` takes the first).
-A clean replay has none.
+chose between, one line each: losses and decode failures by kind, deaths or
+utility it could not attribute, assists it could not separate, rounds the
+replay stops inside, and game phases sent twice (where `combatStartMs` takes
+the first). A clean replay has none.
 
 ## Probe
 
@@ -245,3 +279,6 @@ Codes: `notAReplay`, `unsupportedBuild`, `unsupportedCompression`,
 `transformCheckFailed`, `corrupt`, `io`, `cancelled`. `build` is present
 whenever the header was read. `transformCheckFailed` means the payloads
 decoded into noise: the build's registered transform does not fit the file.
+`corrupt` also covers a file that would need more than the decoder's caps
+(`native/replay/src/limits.rs`): a file over 512 MB, a schema or record set
+several times larger than a real match's.

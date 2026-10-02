@@ -1,6 +1,6 @@
 /*
  * icarus_replay: decodes a Valorant .vrf replay into the buffer described in
- * docs/replay-format.md. Three functions; every buffer they return is owned
+ * docs/replay-format.md. Every buffer the probe and decode return is owned
  * by the library until passed to icarus_replay_free, exactly once.
  *
  * When is_error is nonzero, ptr holds a UTF-8 JSON error object instead:
@@ -36,17 +36,33 @@ typedef struct {
 IcarusReplayBuffer icarus_replay_probe(const char* path_utf8);
 
 /*
- * Full decode: the .icrp buffer, or an error object. No callbacks; the
- * caller owns two cells it polls/sets from another thread:
- *   progress  written by the decoder with 0..10000 (hundredths of a percent),
- *             relaxed atomic stores;
- *   cancel    read between chunks and packets; nonzero stops the decode with
- *             the `cancelled` error.
- * Either pointer may be NULL. Both must be 4-byte aligned, stay valid until
- * the call returns, and be accessed atomically by other threads.
+ * A decode's progress and cancel request. The library owns its memory and
+ * makes every access atomic, so other threads may poll and cancel through
+ * these functions while icarus_replay_decode runs.
  */
-IcarusReplayBuffer icarus_replay_decode(const char* path_utf8, uint32_t* progress,
-                                        const uint32_t* cancel);
+typedef struct IcarusReplayControl IcarusReplayControl;
+
+/* A new control: progress 0, not cancelled. */
+IcarusReplayControl* icarus_replay_control_new(void);
+
+/* The decode's progress, 0..10000 (hundredths of a percent); 0 for NULL. */
+uint32_t icarus_replay_control_progress(const IcarusReplayControl* control);
+
+/* Stops the decode using the control with the `cancelled` error at its next
+ * frame or packet. NULL is ignored. */
+void icarus_replay_control_cancel(const IcarusReplayControl* control);
+
+/* Releases a control, once, after any decode using it has returned. NULL is
+ * ignored. */
+void icarus_replay_control_free(IcarusReplayControl* control);
+
+/*
+ * Full decode: the .icrp buffer, or an error object. No callbacks: progress
+ * and cancel go through `control`, which may be NULL and must not be freed
+ * until the call returns.
+ */
+IcarusReplayBuffer icarus_replay_decode(const char* path_utf8,
+                                        const IcarusReplayControl* control);
 
 /* Releases a buffer from either function. A NULL ptr is ignored. */
 void icarus_replay_free(IcarusReplayBuffer buffer);

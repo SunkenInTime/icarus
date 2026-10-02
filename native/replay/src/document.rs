@@ -167,8 +167,39 @@ pub struct MovementSpan {
 #[serde(rename_all = "camelCase")]
 pub struct Quality {
     pub transform_verified: bool,
+    /// Typed field decodes that failed (vrfkit's `overlay.decoded_err`).
     pub decode_errors: u64,
+    pub loss: Loss,
     pub warnings: Vec<String>,
+}
+
+/// What the replication stream lost, as vrfkit's `validate` verdict counts
+/// it (`vrf_net::stats::NetStats`). No two count the same bunch or block.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Loss {
+    /// Packets abandoned part-read (`malformed_packets`).
+    pub malformed_packets: u64,
+    /// Bunches whose header did not read (`bunch_header_failures`).
+    pub bunch_header_failures: u64,
+    /// Content blocks whose payload reached no field or RPC
+    /// (`lost_content_blocks()`): a payload kept whole is not lost.
+    pub lost_content_blocks: u64,
+    /// Partial-bunch fragments refused during reassembly, at a resource
+    /// limit included (`partial_errors`).
+    pub rejected_partials: u64,
+    /// Partial bunches still incomplete when the stream ended
+    /// (`unfinished_partials`).
+    pub unfinished_partials: u64,
+    /// Bunches refused at a channel-state limit
+    /// (`channel_state_limit_failures`).
+    pub refused_bunches: u64,
+    /// Bunches on a channel with no open actor, dropped whole
+    /// (`bunches_on_unopened_channel`).
+    pub unopened_channel_bunches: u64,
+    /// Package-map export bunches, whose content after the exports is not
+    /// read (`package_map_exports`).
+    pub package_map_export_bunches: u64,
 }
 
 #[cfg(test)]

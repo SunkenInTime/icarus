@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use icarus_replay::decode::{Control, Observer};
-use icarus_replay::{container, header, oodle};
+use icarus_replay::{ReplayError, container, header, oodle};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -110,11 +110,16 @@ struct Survey {
 }
 
 impl Observer for Survey {
-    fn on_event(&mut self, event: vrf_export::EventRecord) {
+    fn on_event(&mut self, event: vrf_export::EventRecord) -> Result<(), ReplayError> {
         *self.events.entry(event.group).or_default() += 1;
+        Ok(())
     }
 
-    fn on_packet(&mut self, records: &icarus_replay::RecordBuffers, _: &vrf_schema::NetGuidCache) {
+    fn on_packet(
+        &mut self,
+        records: &icarus_replay::RecordBuffers,
+        _: &vrf_schema::NetGuidCache,
+    ) -> Result<(), ReplayError> {
         self.movement_rows += records.movement.len() as u64;
         for a in &records.actors {
             let class = a.class_path.clone().unwrap_or_else(|| "?".into());
@@ -176,6 +181,7 @@ impl Observer for Survey {
                     .push(format!("{}@{}:{v}", f.actor_net_guid, f.time_ms));
             }
         }
+        Ok(())
     }
 }
 

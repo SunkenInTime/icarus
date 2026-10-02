@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::Context;
+use crate::collect::Row;
 use crate::document::{Round, VitalsRow};
 use crate::fieldpath::FieldPath;
 
@@ -48,10 +49,15 @@ enum Change {
     },
 }
 
+/// Where a change falls: its millisecond, then its place on the wire (packet,
+/// then row), so changes sent in one millisecond apply in the order sent.
+/// A round start leads its millisecond.
+type Order = (u32, u32, usize);
+
 pub(super) fn vitals(cx: &mut Context<'_>, rounds: &[Round]) -> BTreeMap<String, Vec<VitalsRow>> {
-    let mut changes: Vec<(u32, Change)> = rounds
+    let mut changes: Vec<(Order, Change)> = rounds
         .iter()
-        .filter_map(|r| Some((u32::try_from(r.start_ms).ok()?, Change::RoundStart)))
+        .filter_map(|r| Some(((u32::try_from(r.start_ms).ok()?, 0, 0), Change::RoundStart)))
         .collect();
 
     // Armour items and their full points, by actor.
@@ -60,21 +66,28 @@ pub(super) fn vitals(cx: &mut Context<'_>, rounds: &[Round]) -> BTreeMap<String,
         .iter()
         .filter_map(|(&item, class)| Some((item, super::rounds::armor_points(class)? as f64)))
         .collect();
-    for (&item, writes) in &cx.owner_writes {
-        if !full.contains_key(&item) {
+    // An item's own `Owner` writes, as `Context::owner_writes` reads them.
+    for (i, row) in cx.rows.iter().enumerate() {
+        if &*row.name != "Owner" || row.object.is_some() || !full.contains_key(&row.actor) {
             continue;
         }
-        for &(time, owner) in writes {
-            if let Some(subject) = cx.body_subject.get(&owner) {
-                let subject = subject.clone();
-                changes.push((time, Change::Assigned { subject, item }));
-            }
+        let Some(owner) = row.int.and_then(|v| u32::try_from(v).ok()) else {
+            continue;
+        };
+        if let Some(subject) = cx.body_subject.get(&owner) {
+            let subject = subject.clone();
+            let item = row.actor;
+            changes.push((
+                (row.time, row.packet, i + 1),
+                Change::Assigned { subject, item },
+            ));
         }
     }
     for a in cx.actors {
         if a.event == "close" && full.contains_key(&a.actor_net_guid) {
+            // After its packet's rows, which a close ends.
             changes.push((
-                a.time_ms,
+                (a.time_ms, a.packet_id, usize::MAX),
                 Change::Closed {
                     item: a.actor_net_guid,
                 },
@@ -82,15 +95,50 @@ pub(super) fn vitals(cx: &mut Context<'_>, rounds: &[Round]) -> BTreeMap<String,
         }
     }
 
-    // Every section result, in wire order: one life-change element's
-    // `ChangedComponent` and `LifeResult` arrive as separate rows of one call.
-    let mut results: Vec<(u32, u32, f64)> = Vec::new();
+    // A section is a body's health or an armour item's armour by its name
+    // and outer in the GUID table; shield, overheal and ability sections are
+    // neither.
+    let mut health_results = 0;
+    for (order, section, value) in section_results(cx.rows) {
+        let Some(outer) = cx.cache.get_outer_guid(section).map(|o| o.0) else {
+            continue;
+        };
+        match cx.cache.get_path_by_guid(section) {
+            Some("HealthDamageSection") => {
+                if let Some(subject) = cx.body_subject.get(&outer) {
+                    health_results += 1;
+                    let subject = subject.clone();
+                    changes.push((order, Change::Health { subject, value }));
+                }
+            }
+            Some("AttachedDamageSection") if full.contains_key(&outer) => {
+                changes.push((order, Change::Reported { item: outer, value }));
+            }
+            _ => {}
+        }
+    }
+    if health_results == 0 {
+        cx.warnings
+            .push("no health results replicated: vitals hold only each round's start".to_owned());
+    }
+
+    let subjects: Vec<&str> = cx.players.iter().map(|p| p.subject.as_str()).collect();
+    fold(&subjects, &full, in_order(changes))
+}
+
+/// Every section result `(order, section, value)`: `MulticastNotifySetLife`
+/// rows, and the life-change elements of the damage, heal and reset RPCs,
+/// whose `ChangedComponent` and `LifeResult` arrive as separate rows of one
+/// call, placed at the first.
+fn section_results(rows: &[Row]) -> Vec<(Order, u32, f64)> {
+    let mut results: Vec<(Order, u32, f64)> = Vec::new();
     let mut elements: HashMap<ElementKey<'_>, (Option<u32>, Option<f64>)> = HashMap::new();
-    let mut order: Vec<(u32, ElementKey<'_>)> = Vec::new();
-    for row in cx.rows {
+    let mut order: Vec<(Order, ElementKey<'_>)> = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let at = (row.time, row.packet, i + 1);
         if &*row.name == "MulticastNotifySetLife.NewLife" {
             if let (Some(section), Some(value)) = (row.object, row.float) {
-                results.push((row.time, section, value));
+                results.push((at, section, value));
             }
             continue;
         }
@@ -111,7 +159,7 @@ pub(super) fn vitals(cx: &mut Context<'_>, rounds: &[Round]) -> BTreeMap<String,
             path.segments[0].base,
         );
         let slot = elements.entry(key.clone()).or_insert_with(|| {
-            order.push((row.time, key));
+            order.push((at, key));
             (None, None)
         });
         match path.leaf() {
@@ -120,43 +168,21 @@ pub(super) fn vitals(cx: &mut Context<'_>, rounds: &[Round]) -> BTreeMap<String,
             _ => {}
         }
     }
-    for (time, key) in order {
+    for (at, key) in order {
         if let (Some(section), Some(value)) = elements[&key] {
-            results.push((time, section, value));
+            results.push((at, section, value));
         }
     }
+    results
+}
 
-    // A section is a body's health or an armour item's armour by its name
-    // and outer in the GUID table; shield, overheal and ability sections are
-    // neither.
-    let mut health_results = 0;
-    for (time, section, value) in results {
-        let Some(outer) = cx.cache.get_outer_guid(section).map(|o| o.0) else {
-            continue;
-        };
-        match cx.cache.get_path_by_guid(section) {
-            Some("HealthDamageSection") => {
-                if let Some(subject) = cx.body_subject.get(&outer) {
-                    health_results += 1;
-                    let subject = subject.clone();
-                    changes.push((time, Change::Health { subject, value }));
-                }
-            }
-            Some("AttachedDamageSection") if full.contains_key(&outer) => {
-                changes.push((time, Change::Reported { item: outer, value }));
-            }
-            _ => {}
-        }
-    }
-    if health_results == 0 {
-        cx.warnings
-            .push("no health results replicated: vitals hold only each round's start".to_owned());
-    }
-
-    // Stable: round starts lead their millisecond, the wire keeps its order.
+/// `changes` in the order they happened, each with its millisecond.
+fn in_order(mut changes: Vec<(Order, Change)>) -> Vec<(u32, Change)> {
     changes.sort_by_key(|c| c.0);
-    let subjects: Vec<&str> = cx.players.iter().map(|p| p.subject.as_str()).collect();
-    fold(&subjects, &full, changes)
+    changes
+        .into_iter()
+        .map(|((time, _, _), c)| (time, c))
+        .collect()
 }
 
 /// One life-change element: (packet, actor, component, element indices,
@@ -178,10 +204,14 @@ fn fold(
     let mut closed: HashSet<u32> = HashSet::new();
     let mut out: BTreeMap<String, Vec<VitalsRow>> = BTreeMap::new();
     let mut started = false;
+    // Every row in a round start's millisecond is kept, repeat or not.
+    let mut round_ms = None;
 
     for (time, change) in changes {
-        let round_start = change == Change::RoundStart;
-        started |= round_start;
+        if change == Change::RoundStart {
+            round_ms = Some(time);
+            started = true;
+        }
         let touched: Vec<String> = match change {
             Change::RoundStart => {
                 for &s in subjects {
@@ -221,22 +251,25 @@ fn fold(
                 .copied()
                 .unwrap_or(0.0);
             let rows = out.entry(subject).or_default();
-            push(rows, (i64::from(time), h, armor), round_start);
+            push(rows, (i64::from(time), h, armor), round_ms == Some(time));
         }
     }
     out
 }
 
-/// Append `row` unless it repeats the last row's values and is not forced;
-/// a row at the last row's millisecond replaces it.
-fn push(rows: &mut Vec<VitalsRow>, row: VitalsRow, force: bool) {
-    if let Some(last) = rows.last() {
-        if !force && (last.1, last.2) == (row.1, row.2) {
-            return;
-        }
-        if last.0 == row.0 {
-            rows.pop();
-        }
+/// Append `row`, replacing a row at the same millisecond, unless it then
+/// repeats the row before it and is not kept: changes in one millisecond
+/// that cancel out leave no row.
+fn push(rows: &mut Vec<VitalsRow>, row: VitalsRow, keep: bool) {
+    if rows.last().is_some_and(|last| last.0 == row.0) {
+        rows.pop();
+    }
+    if !keep
+        && rows
+            .last()
+            .is_some_and(|last| (last.1, last.2) == (row.1, row.2))
+    {
+        return;
     }
     rows.push(row);
 }
@@ -368,6 +401,89 @@ mod tests {
                 (14, 100.0, 50.0),
                 (18, 100.0, 0.0)
             ]
+        );
+    }
+
+    fn row(packet: u32, name: &str, object: u32, int: Option<i64>, float: Option<f64>) -> Row {
+        Row {
+            time: 20,
+            packet,
+            actor: 5,
+            object: Some(object),
+            group: "/Game/G.G_C".into(),
+            name: name.into(),
+            int,
+            float,
+            boolean: None,
+            text: None,
+            raw: None,
+        }
+    }
+
+    #[test]
+    fn a_millisecond_applies_its_results_in_wire_order() {
+        // In one millisecond, damage to 40 in one packet, then a regen tick
+        // to 45 in the next: the regen is the result that stands.
+        let damage = "MulticastNotifyDamage_Point.LifeChangeEvents[0]";
+        let rows = [
+            row(5, &format!("{damage}.ChangedComponent"), 3, Some(9), None),
+            row(5, &format!("{damage}.LifeResult"), 3, None, Some(40.0)),
+            row(6, "MulticastNotifySetLife.NewLife", 9, None, Some(45.0)),
+        ];
+        let changes = section_results(&rows)
+            .into_iter()
+            .map(|(at, section, value)| {
+                assert_eq!(section, 9);
+                (at, health("a", value))
+            })
+            .chain([((20, 0, 0), Change::RoundStart)])
+            .collect();
+        assert_eq!(
+            in_order(changes),
+            [
+                (20, Change::RoundStart),
+                (20, health("a", 40.0)),
+                (20, health("a", 45.0))
+            ]
+        );
+    }
+
+    #[test]
+    fn changes_that_cancel_out_in_a_millisecond_leave_no_row() {
+        let rows = play(vec![
+            (10, Change::RoundStart),
+            (12, assigned("a", 8)),
+            // Swapped for an item of the same points in one millisecond.
+            (20, Change::Closed { item: 8 }),
+            (20, assigned("a", 9)),
+            (
+                20,
+                Change::Reported {
+                    item: 9,
+                    value: 25.0,
+                },
+            ),
+        ]);
+        assert_eq!(rows["a"], vec![(10, 100.0, 0.0), (12, 100.0, 25.0)]);
+        // A round start's row stays even when the changes in its millisecond
+        // bring back the values before it.
+        let rows = play(vec![
+            (10, Change::RoundStart),
+            (12, assigned("a", 8)),
+            (30, Change::RoundStart),
+            (30, Change::Closed { item: 8 }),
+            (30, assigned("a", 9)),
+            (
+                30,
+                Change::Reported {
+                    item: 9,
+                    value: 25.0,
+                },
+            ),
+        ]);
+        assert_eq!(
+            rows["a"],
+            vec![(10, 100.0, 0.0), (12, 100.0, 25.0), (30, 100.0, 25.0)]
         );
     }
 

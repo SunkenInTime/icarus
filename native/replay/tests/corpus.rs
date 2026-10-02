@@ -1,6 +1,8 @@
-//! Corpus tests over real replays: set `ICARUS_REPLAY_CORPUS` to a directory
-//! of `.vrf` files (skipped otherwise). Each decoded replay is checked
-//! against its own Event chunks and against the rules of a match.
+//! Corpus tests over real replays, a local check before each release: set
+//! `ICARUS_REPLAY_CORPUS` to a directory of `.vrf` files (skipped otherwise).
+//! Replays carry other players' account ids, so none is committed and CI
+//! runs only the unit tests. Each decoded replay is checked against its own
+//! Event chunks and against the rules of a match.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,7 +15,9 @@ use vrf_container::{ChunkIterator, ChunkType, parse_event_chunk, parse_preamble}
 
 fn corpus() -> Vec<PathBuf> {
     let Some(dir) = std::env::var_os("ICARUS_REPLAY_CORPUS") else {
-        eprintln!("ICARUS_REPLAY_CORPUS unset: corpus test skipped");
+        eprintln!(
+            "corpus test skipped: the corpus suite is a local pre-release check;              set ICARUS_REPLAY_CORPUS to a folder of .vrf replays to run it"
+        );
         return Vec::new();
     };
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)

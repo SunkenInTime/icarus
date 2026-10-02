@@ -22,6 +22,7 @@ ReplayDocument document({
   Map<String, Object?> vitals = const {},
   List<Map<String, Object?>> utility = const [],
   Map<String, List<List<num>>> movement = const {},
+  Map<String, Object?> firstRound = const {},
 }) {
   final records = <List<num>>[];
   final movementJson = <String, Object?>{};
@@ -41,7 +42,13 @@ ReplayDocument document({
             {'subject': 'b', 'agentId': omen, 'team': 'Blue'},
           ],
       'rounds': [
-        {'index': 0, 'startMs': 0, 'endMs': 60000, 'attackingTeam': 'Red'},
+        {
+          'index': 0,
+          'startMs': 0,
+          'endMs': 60000,
+          'attackingTeam': 'Red',
+          ...firstRound,
+        },
         {'index': 1, 'startMs': 60000, 'endMs': 120000, 'attackingTeam': 'Red'},
       ],
       'kills': kills,
@@ -182,6 +189,37 @@ void main() {
       expect(blue.isAttack, isFalse);
       expect(red.agents.single.isAlly, isTrue);
       expect(blue.agents.single.isAlly, isFalse);
+    });
+
+    test('the spike is planted until it is defused', () {
+      final doc = document(firstRound: {
+        'plant': {
+          'timeMs': 20000,
+          'position': [0, 0, 100],
+        },
+        'defuse': {'timeMs': 40000},
+      });
+      final frames = builder(doc);
+      int spikes(int t) =>
+          frames.frameAt(t, perspective: ReplayTeam.red).utilities.length;
+      expect(spikes(19999), 0);
+      expect(spikes(30000), 1);
+      expect(spikes(40000), 0);
+      expect(spikes(50000), 0);
+    });
+
+    test('a player off the map (a Kill Contract duel) is not drawn', () {
+      final doc = document(movement: {
+        'a': [
+          [0, 0, 0, 100, 0, 0],
+          [500, 900000, 900000, 100, 0, 0],
+        ],
+      });
+      final frames = builder(doc);
+      expect(
+          frames.frameAt(0, perspective: ReplayTeam.red).agents, hasLength(1));
+      expect(frames.frameAt(500, perspective: ReplayTeam.red).agents, isEmpty);
+      expect(frames.playerState(player(doc, 'a'), 500).alive, isTrue);
     });
 
     test('ownerless utility is drawn only when one player could own it', () {
