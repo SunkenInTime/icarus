@@ -1123,10 +1123,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// Each durable record contains both the rejected predecessor and any newer
   /// successor for that entity. Removing the record discards both, without
   /// changing unrelated queued, in-flight, paused, or rejected work.
+  ///
+  /// Given [onlyIf] (the refused op id and successor op id of each key, as
+  /// the user last saw them), a key whose waiting work has changed since is
+  /// left as it is: the user chose to discard that work, not a newer edit.
   Future<Set<EntitySyncKey>> discardRejected(
-    Set<EntitySyncKey> entityKeys,
-  ) =>
-      _dropAttention(entityKeys, adoptRemote: true);
+    Set<EntitySyncKey> entityKeys, {
+    Map<EntitySyncKey, (String, String?)>? onlyIf,
+  }) =>
+      _dropAttention(entityKeys, adoptRemote: true, onlyIf: onlyIf);
 
   /// Whether the server refused [key]'s waiting work because a teammate
   /// deleted what it edits (rejection reason `deleted`).
@@ -1153,6 +1158,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   Future<Set<EntitySyncKey>> _dropAttention(
     Set<EntitySyncKey> entityKeys, {
     required bool adoptRemote,
+    Map<EntitySyncKey, (String, String?)>? onlyIf,
   }) {
     return _serializeWrite(() async {
       final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
@@ -1170,6 +1176,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final accountId = state.accountId;
         final strategyPublicId = state.strategyPublicId;
         if (rejected == null || accountId == null || strategyPublicId == null) {
+          continue;
+        }
+        if (onlyIf != null &&
+            onlyIf[key] !=
+                (
+                  rejected.pending.op.opId,
+                  successors[key]?.pending.op.opId,
+                )) {
           continue;
         }
         final storageKey = DurableOutboxRecord.createStorageKey(

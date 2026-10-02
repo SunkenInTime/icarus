@@ -715,6 +715,131 @@ describe("a lineup group row is checked whole", () => {
   });
 });
 
+describe("no lineup or spot is in two groups of a page", () => {
+  test("a new group holding a spot another group holds is refused, and nothing is stored", async () => {
+    const { owner } = await createHarness();
+    await apply(owner, "owner-client", [
+      addOp(lineup("k1", { landingId: "smoke" }), 0),
+    ]);
+    const results = await apply(owner, "owner-client", [
+      addOp(lineup("k2", { landingId: "smoke" }), 1),
+    ]);
+    expect(results[0]).toMatchObject({
+      status: "failed",
+      code: "INVALID_LINEUP_PAYLOAD_DATA",
+    });
+    expect(liveKeys(await pageLineups(owner))).toEqual(["k1"]);
+  });
+
+  test("a patch taking a lineup another group holds is refused and leaves the row as it was", async () => {
+    const { owner } = await createHarness();
+    await apply(owner, "owner-client", [
+      addOp(lineup("k1"), 0),
+      addOp(lineup("k2"), 1),
+    ]);
+    // k2's row also claims k1's lineup, under its own spots.
+    const grabbing = group("k2", {
+      origins: [{ id: "k2-origin" }],
+      landings: [{ id: "k2-landing" }],
+      links: [
+        { id: "k2", originId: "k2-origin", landingId: "k2-landing" },
+        { id: "k1", originId: "k2-origin", landingId: "k2-landing" },
+      ],
+    });
+    const results = await apply(owner, "owner-client", [
+      patchOp("grab-k1", grabbing, 1),
+    ]);
+    expect(results[0]).toMatchObject({
+      status: "failed",
+      code: "INVALID_LINEUP_PAYLOAD_DATA",
+    });
+    const rows = byKey(await pageLineups(owner));
+    expect(rows.get("k2")).toMatchObject({ revision: 1 });
+    expect(rows.get("k2")!.payload).toEqual(lineup("k2").payload);
+  });
+
+  test("ids only clash within a kind, within a page, among live rows", async () => {
+    const { owner } = await createHarness();
+    await addSecondPage(owner, "page-2");
+    await apply(owner, "owner-client", [
+      addOp(lineup("k1", { landingId: "shared" }), 0),
+    ]);
+    const results = await apply(owner, "owner-client", [
+      // A lineup named like another group's landing.
+      addOp(lineup("shared", { landingId: "other" }), 1),
+      // The same spot on another page.
+      addOp(lineup("k3", { landingId: "shared" }), 0, "page-2"),
+    ]);
+    expect(results.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+    ]);
+
+    // Once k1's group is deleted, its spot is free for another group.
+    await apply(owner, "owner-client", [deleteOp("drop-k1", "k1", 1)]);
+    const reuse = await apply(owner, "owner-client", [
+      addOp(lineup("k4", { landingId: "shared" }), 2),
+    ]);
+    expect(reuse[0]).toMatchObject({ status: "applied" });
+  });
+
+  test("a duplicated strategy's groups hold their spots in the copy too", async () => {
+    const { owner } = await createHarness();
+    await apply(owner, "owner-client", [addOp(lineup("k1"), 0)]);
+    await owner.mutation(duplicateStrategy, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      sourceStrategyPublicId: strategyPublicId,
+      publicId: "lineups-copy",
+      name: "Lineups (Copy)",
+    });
+    const copy = (await owner.query(getFullSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId: "lineups-copy",
+    })) as {
+      pages: Array<{ publicId: string }>;
+      lineups: Array<LineupRow & { pagePublicId: string }>;
+    };
+    const copied = copy.lineups[0]!;
+    const landingId = (
+      copied.payload.data.landings as Array<{ id: string }>
+    )[0]!.id;
+
+    const results = await apply(
+      owner,
+      "owner-client",
+      [addOp(lineup("k2", { landingId }), 1, copied.pagePublicId)],
+      "lineups-copy",
+    );
+    expect(results[0]).toMatchObject({
+      status: "failed",
+      code: "INVALID_LINEUP_PAYLOAD_DATA",
+    });
+  });
+
+  test("restoring a deleted group over a spot another group took since is refused", async () => {
+    const { owner } = await createHarness();
+    await apply(owner, "owner-client", [
+      addOp(lineup("k1", { landingId: "smoke" }), 0),
+    ]);
+    await apply(owner, "owner-client", [deleteOp("drop-k1", "k1", 1)]);
+    await apply(owner, "owner-client", [
+      addOp(lineup("k2", { landingId: "smoke" }), 1),
+    ]);
+    const results = await apply(owner, "owner-client", [
+      {
+        ...addOp(lineup("k1", { landingId: "smoke" }), 0),
+        opId: "restore-k1",
+        expectedLineupRevision: 2,
+      },
+    ]);
+    expect(results[0]).toMatchObject({
+      status: "failed",
+      code: "INVALID_LINEUP_PAYLOAD_DATA",
+    });
+    expect(liveKeys(await pageLineups(owner))).toEqual(["k2"]);
+  });
+});
+
 describe("clients on protocol 4", () => {
   test("a protocol 4 batch with its lineup options and a link row is told to upgrade", async () => {
     const { owner } = await createHarness();

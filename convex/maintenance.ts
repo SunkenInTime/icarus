@@ -24,6 +24,7 @@ import {
   syncLineupAgents,
 } from "./lib/strategyAgentSummary";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
+import { syncLineupItems } from "./lib/lineupItems";
 
 const MAINTENANCE_BATCH_SIZE = 200;
 // Content rows can each hold up to ~900 KB (the op size cap), so passes
@@ -115,6 +116,7 @@ async function purgeContentRows(
     }
     if ("lineupId" in row) {
       await syncLineupAgents(ctx, row.lineupId, null);
+      await syncLineupItems(ctx, row.lineupId, null);
       await ctx.db.delete(row.lineupId);
     } else {
       await ctx.db.delete(row.elementId);

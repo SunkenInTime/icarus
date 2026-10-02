@@ -596,6 +596,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             key.pageId != activePageId)) {
       throw StateError('Keep both is only for lineup groups on this page');
     }
+    // A copy is only kept if it can be saved; while this device cannot
+    // save outbox records, nothing is copied and nothing discarded.
+    if (queue.hasDurabilityFailure) return KeepBothOutcome.unchanged;
     final generation = _pageSessionGeneration;
     final waiting = _waitingWork(attention.keys);
     final copies = <LineUpGraph>[];
@@ -636,12 +639,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _keptAsCopy
         .addAll(waiting.entries.map((entry) => (entry.key, entry.value)));
     await pageSource.flushCurrentPage();
-    // A copy that could not be saved waits in attention itself.
-    final saved = ref
-        .read(strategyOpQueueProvider)
-        .attentionByEntityKey
-        .keys
-        .every(waiting.containsKey);
+    // A copy that could not be saved leaves the outbox failing (and waits in
+    // attention itself): nothing may be discarded on its behalf.
+    final afterCopy = ref.read(strategyOpQueueProvider);
+    final saved = !afterCopy.hasDurabilityFailure &&
+        afterCopy.attentionByEntityKey.keys.every(waiting.containsKey);
     if (!saved || !unchangedSince()) return KeepBothOutcome.copiesOnly;
     return await _useCloudVersionsFor(waiting)
         ? KeepBothOutcome.kept
@@ -688,14 +690,22 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       return false;
     }
 
+    final generation = _pageSessionGeneration;
+    bool waitingChanged() =>
+        waiting != null &&
+        (_disposed ||
+            generation != _pageSessionGeneration ||
+            !_sameWaitingWork(waiting));
+
     _isResolvingConflicts = true;
     try {
-      await _resolvePageSource(strategyId, StrategySource.cloud)
-          .flushCurrentPage();
+      final currentPageSource =
+          _resolvePageSource(strategyId, StrategySource.cloud);
+      await currentPageSource.flushCurrentPage();
       final strategyNotifier = ref.read(strategyProvider.notifier);
       strategyNotifier.consumeScheduledCloudPageSync();
       strategyNotifier.consumeScheduledCloudStrategySync();
-      if (waiting != null && !_sameWaitingWork(waiting)) return false;
+      if (waitingChanged()) return false;
       final rejected = Map<EntitySyncKey, QueuedEntityIntent>.from(
         ref.read(strategyOpQueueProvider).attentionByEntityKey,
       )..removeWhere((key, _) => waiting != null && !waiting.containsKey(key));
@@ -707,6 +717,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         return false;
       }
 
+      // Edits made while the cloud's version loaded are saved, and one to
+      // the waiting work stops a resolution limited to it: the page drawn
+      // next would replace that edit on screen.
+      if (waiting != null) {
+        await currentPageSource.flushCurrentPage();
+        if (waitingChanged()) return false;
+      }
       final targetPageId = _resolveHydrationTargetPage(snapshot);
       final localMetadata = _unsentLocalMetadata();
       if (targetPageId != null) {
@@ -735,7 +752,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
       final discarded = await ref
           .read(strategyOpQueueProvider.notifier)
-          .discardRejected(rejected.keys.toSet());
+          .discardRejected(rejected.keys.toSet(), onlyIf: waiting);
       // A failed durable delete keeps its overlay and conflict. Restore those
       // entities if only part of the requested adoption could be saved.
       if (discarded.length != rejected.length && targetPageId != null) {

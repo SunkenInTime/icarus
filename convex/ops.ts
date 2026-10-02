@@ -38,6 +38,7 @@ import {
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
 import { valuesEqual } from "./lib/canonicalValues";
+import { assertLineupGroupAlone, syncLineupItems } from "./lib/lineupItems";
 import { LINEUPS_PAYLOAD_VERSION } from "./lib/payloadValidators";
 import {
   errorWithCode,
@@ -1337,6 +1338,7 @@ async function applyLineupOp(
             existing.pageId,
           );
         }
+        await assertLineupGroupAlone(ctx, page._id, existing._id, payload);
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
@@ -1367,6 +1369,7 @@ async function applyLineupOp(
         existing.pageId,
       );
     }
+    await assertLineupGroupAlone(ctx, page._id, null, payload);
     const now = Date.now();
     await ctx.db.insert("lineups", {
       publicId,
@@ -1478,6 +1481,14 @@ async function applyLineupOp(
       existing.pageId,
     );
   }
+  if (patch.payload !== undefined) {
+    await assertLineupGroupAlone(
+      ctx,
+      existing.pageId,
+      existing._id,
+      patch.payload as LineupPayload,
+    );
+  }
   const revision = existing.revision + 1;
   await ctx.db.patch(existing._id, {
     ...patch,
@@ -1538,6 +1549,7 @@ async function reconcileExpectedAssets(
   } else {
     await syncLineupAssetReferences(ctx, row._id, row);
     await syncLineupAgents(ctx, row._id, row);
+    await syncLineupItems(ctx, row._id, row);
   }
   const now = Date.now();
   const assetsBefore = referencedAssetIds(rowBefore);

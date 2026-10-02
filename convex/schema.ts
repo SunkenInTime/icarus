@@ -138,6 +138,18 @@ export default defineSchema({
   })
     .index("by_strategyId", ["strategyId"])
     .index("by_lineupId", ["lineupId"]),
+  // The lineups and spots each live lineup group holds, one small row per
+  // item (`origin:<id>`, `landing:<id>` or `link:<id>`), kept in step with
+  // every lineup write (see lib/lineupItems.ts). A write is refused if it
+  // would put an item in two groups of a page; the check reads these rows
+  // instead of the lineup rows, whose image lists can be large.
+  lineupItems: defineTable({
+    pageId: v.id("pages"),
+    lineupId: v.id("lineups"),
+    item: v.string(),
+  })
+    .index("by_pageId_and_item", ["pageId", "item"])
+    .index("by_lineupId", ["lineupId"]),
   // Which content rows show which images: one small row per (element or
   // lineup row, image id it shows), kept in step with every content write
   // (see lib/assetReferences.ts). Media cleanup checks an image's references

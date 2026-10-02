@@ -177,7 +177,9 @@ void main() {
     expect(written.groupOf['c'], 'k9');
   });
 
-  test('a lineup joining two groups goes to one, and neither row goes', () {
+  test(
+      'a lineup joining two groups goes to one, carrying the other\'s spot '
+      '(a write the server refuses), and neither row goes', () {
     final read = lineUpGraphFromCloudRows(cloudLineupRows(_page()).rows);
     final bridged = LineUpGraph(
       origins: read.graph.origins,
@@ -198,10 +200,8 @@ void main() {
   });
 
   test('a lineup two rows name is drawn from the first, and kept there', () {
-    // A build that merged groups wrote k9 into k1's row, and was refused
-    // deleting k9's row; a teammate has edited k9 there since. Live sync
-    // writes k9's row back as stored while k9 is drawn (see
-    // _normalizedLocalEntities); the codec only draws one k9.
+    // The server keeps rows from overlapping; should two name k9 anyway,
+    // the reader draws one k9, from the first.
     CloudLineupRow row(String id, LineUpGraph graph) => CloudLineupRow(
           publicId: id,
           payload: cloudLineupsPayload({

@@ -1026,9 +1026,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // has or had, so it never lands on a teammate's group or a deleted one.
     final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
     final lineupGroupOf = _lineupGroupOfByPage[pageId] ??= {};
-    final lineUpGraph = ref.read(lineUpProvider).graph;
     final lineupRows = cloudLineupRows(
-      lineUpGraph,
+      ref.read(lineUpProvider).graph,
       groupOf: lineupGroupOf,
       takenGroupIds: {
         for (final key in [
@@ -1051,35 +1050,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         deleted: false,
       );
     }
-    // A group's row goes only when its last lineup does. A stored row none
-    // of the rows above is, while a lineup it holds is still drawn, had its
-    // lineups drawn from another row naming them too (only rows a build
-    // that merged groups wrote do that): it stays exactly as stored, never
-    // deleted and never rewritten with the other row's copy.
-    final drawnLineupIds = {for (final link in lineUpGraph.links) link.id};
-    for (final MapEntry(:key, value: base)
-        in _hydratedBaseByEntityKey.entries) {
-      if (key.pageId != pageId ||
-          key.kind != EntitySyncKeyKind.lineup ||
-          base.deleted ||
-          entities.containsKey(key)) {
-        continue;
-      }
-      final links = cloudPayloadData(base.payload)['links'];
-      final holdsDrawn = links is List &&
-          links.any(
-              (link) => link is Map && drawnLineupIds.contains(link['id']));
-      if (!holdsDrawn) continue;
-      entities[key] = _NormalizedEntity(
-        key: key,
-        overlayEntityType: ActivePageOverlayEntityType.lineup,
-        payload: base.payload,
-        sortIndex: knownSortIndex(key) ?? base.sortIndex,
-        revision: 0,
-        deleted: false,
-      );
-    }
-
     return entities;
   }
 

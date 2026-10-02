@@ -23,6 +23,7 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import type { StrategyRole } from "./lib/auth";
+import { lineupGroupItems } from "./lib/lineupItems";
 import {
   getFolderByPublicId,
   getStrategyByPublicId,
@@ -854,6 +855,11 @@ export const duplicate = mutation({
           ...agent,
         });
         copiedLineupAgents.push({ pageId, ...agent });
+      }
+      const items = lineupGroupItems(copiedLineup.payload);
+      budget.spend({ documents: items.size });
+      for (const item of items) {
+        await ctx.db.insert("lineupItems", { pageId, lineupId, item });
       }
     }
 

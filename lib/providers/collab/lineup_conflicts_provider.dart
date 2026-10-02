@@ -46,7 +46,11 @@ final lineupConflictsProvider = Provider<List<LineupGroupConflict>?>((ref) {
   final queue = ref.watch(strategyOpQueueProvider);
   final attention = queue.attentionByEntityKey;
   final page = ref.watch(remoteEditorSnapshotProvider).valueOrNull?.activePage;
-  if (attention.isEmpty || page == null) return null;
+  // Keep both saves a copy; while outbox records cannot be saved it is not
+  // offered.
+  if (attention.isEmpty || page == null || queue.hasDurabilityFailure) {
+    return null;
+  }
   final pageId = page.page.publicId;
   if (attention.keys.any(
     (key) => key.kind != EntitySyncKeyKind.lineup || key.pageId != pageId,

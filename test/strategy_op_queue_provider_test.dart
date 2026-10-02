@@ -3283,6 +3283,76 @@ void main() {
           OpRejectionReason.revisionMismatch.wireName);
     });
 
+    test('a conditional discard drops only the work still as the user saw it',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      const first = ElementPatchOp(
+        opId: 'move-1',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      const second = ElementPatchOp(
+        opId: 'move-2',
+        elementPublicId: 'element-2',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 5,
+        expectedElementRevision: 1,
+      );
+      final firstKey = EntitySyncKey.forStrategyOp(first)!;
+      final secondKey = EntitySyncKey.forStrategyOp(second)!;
+      final (container, notifier) =
+          await refused(repository, store, [first, second]);
+      // What the user chose to discard: both refused edits, nothing behind.
+      final seen = {
+        firstKey: ('move-1', null),
+        secondKey: ('move-2', null),
+      };
+
+      // Then the user edits element-2 again; it waits behind the refusal.
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          secondKey: const ElementPatchOp(
+            opId: 'newer',
+            elementPublicId: 'element-2',
+            pagePublicId: 'page-1',
+            payload: {'value': 'newer'},
+            sortIndex: 5,
+            expectedElementRevision: 1,
+          ),
+        },
+        clearMissing: false,
+      );
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .successorByEntityKey[secondKey]!
+            .pending
+            .op
+            .opId,
+        'newer',
+      );
+
+      final discarded =
+          await notifier.discardRejected({firstKey, secondKey}, onlyIf: seen);
+
+      // element-1's work is as seen, so it goes; element-2's changed, so it
+      // stays, the newer edit with it, in memory and on disk.
+      expect(discarded, {firstKey});
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey.keys, [secondKey]);
+      expect(current.successorByEntityKey[secondKey]!.pending.op.opId, 'newer');
+      final records = store.load().records;
+      expect([for (final record in records) record.entityKey], [secondKey]);
+      expect(records.single.pending.op.opId, 'move-2');
+      expect(records.single.successorPending!.op.opId, 'newer');
+    });
+
     test('discarding instead waits for the server copy to be adopted',
         () async {
       // The contrast that makes settling distinct: after Use cloud the

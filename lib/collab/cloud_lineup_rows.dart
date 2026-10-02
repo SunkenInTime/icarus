@@ -15,6 +15,11 @@ import 'package:uuid/uuid.dart';
 /// merge. That keeps every edit a write to exactly the row the user's
 /// lineups already live in, and no row is ever deleted except by deleting
 /// its last lineup.
+///
+/// No two live rows of a page hold the same lineup or spot: the server
+/// refuses a write that would make them (see assertLineupGroupAlone in
+/// convex/ops.ts), so the work waits in attention rather than two rows
+/// disagreeing about one spot.
 class CloudLineupRow {
   const CloudLineupRow({required this.publicId, required this.payload});
 
@@ -46,10 +51,9 @@ class CloudLineupRows {
 
 /// A page's lineups as its live [rows] describe them, rows in order.
 ///
-/// Ids are unique within a row, and a lineup is in one row. A spot can be
-/// in two (see [cloudLineupRows]): the first row to name a spot or lineup
-/// draws it, and a lineup in a later row aimed at that spot is drawn to it
-/// too.
+/// Ids are unique within a row and, as the server keeps them, across the
+/// page's rows. Should two rows name one anyway, the first draws it, and a
+/// lineup in a later row aimed at that spot is drawn to it too.
 ///
 /// Throws a [FormatException] naming the row when one cannot be read.
 CloudLineups lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
@@ -99,9 +103,9 @@ CloudLineups lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
 /// fresh id, when every one of them is).
 ///
 /// A row holds its lineups and every spot they aim at. The app only ever
-/// aims a new lineup at one existing spot, so a spot is in one row; when
-/// lineups of two groups do share one (only rows written elsewhere make
-/// that), each row carries it, rather than one group swallowing the other.
+/// aims a new lineup at one existing spot, so a spot is in one row. A
+/// lineup aimed at spots of two groups would put a spot in two rows; the
+/// server refuses that write, and the work waits in attention.
 ///
 /// A lineup whose origin or landing is missing draws nothing on the canvas,
 /// so it is not written; neither is a spot no lineup is aimed at. Rows come

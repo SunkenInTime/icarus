@@ -10,6 +10,7 @@ import {
   syncLineupAssetReferences,
 } from "./lib/assetReferences";
 import { syncLineupAgents } from "./lib/strategyAgentSummary";
+import { syncLineupItems } from "./lib/lineupItems";
 
 export async function insertElement(
   ctx: MutationCtx,
@@ -27,6 +28,7 @@ export async function insertLineup(
   const id = await ctx.db.insert("lineups", lineup);
   await syncLineupAssetReferences(ctx, id, lineup);
   await syncLineupAgents(ctx, id, lineup);
+  await syncLineupItems(ctx, id, lineup);
   return id;
 }
 

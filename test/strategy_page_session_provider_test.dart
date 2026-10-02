@@ -116,12 +116,15 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   /// as it is by then: a read still on its way.
   Completer<void>? refreshGate;
 
+  /// While set, only a refresh made while this holds takes [refreshGate].
+  bool Function()? gateWhen;
+
   @override
   Future<void> refresh() async {
     refreshCount += 1;
     final count = refreshCount;
-    final gate = refreshGate;
-    refreshGate = null;
+    final gate = (gateWhen?.call() ?? true) ? refreshGate : null;
+    if (gate != null) refreshGate = null;
     await gate?.future;
     final fails = readFails || (readFailsWhen?.call(count) ?? false);
     state = fails ? const AsyncData(null) : AsyncData(initialSnapshot);
@@ -301,8 +304,9 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
 
   @override
   Future<Set<EntitySyncKey>> discardRejected(
-    Set<EntitySyncKey> entityKeys,
-  ) async {
+    Set<EntitySyncKey> entityKeys, {
+    Map<EntitySyncKey, (String, String?)>? onlyIf,
+  }) async {
     if (failDiscard) return {};
     final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.attentionByEntityKey,
@@ -310,7 +314,16 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.successorByEntityKey,
     );
-    final discarded = attention.keys.toSet().intersection(entityKeys);
+    final discarded = {
+      for (final key in attention.keys.toSet().intersection(entityKeys))
+        if (onlyIf == null ||
+            onlyIf[key] ==
+                (
+                  attention[key]!.pending.op.opId,
+                  successors[key]?.pending.op.opId,
+                ))
+          key,
+    };
     for (final key in discarded) {
       attention.remove(key);
       successors.remove(key);
@@ -5102,61 +5115,6 @@ void main() {
     await _settle();
   });
 
-  test(
-      'a row an older build merged a group into never costs the merged '
-      'group its row', () async {
-    final page = _page('page-1', 0);
-    // A build that merged groups wrote k9's lineup into k1's row and was
-    // refused deleting k9's; a teammate has edited k9's lineup since.
-    final merged = _groupRow(
-      page.publicId,
-      'link-1',
-      origins: [_originJson('a'), _originJson('z', const Offset(70, 70))],
-      landings: [_landingJson('shared'), _landingJson('far')],
-      links: [
-        _linkJson('link-1', originId: 'a', landingId: 'shared'),
-        _linkJson('link-5', originId: 'z', landingId: 'shared'),
-        _linkJson('link-9', originId: 'z', landingId: 'far', notes: 'old'),
-      ],
-      revision: 2,
-    );
-    final teammates = _groupRow(
-      page.publicId,
-      'link-9',
-      origins: [_originJson('z', const Offset(70, 70))],
-      landings: [_landingJson('far')],
-      links: [
-        _linkJson('link-9', originId: 'z', landingId: 'far', notes: 'newer')
-      ],
-      revision: 3,
-      sortIndex: 1,
-    );
-    final container = await openCloudPage(page, [merged, teammates]);
-
-    // An unrelated edit writes no lineup row, and deletes none.
-    expect(lineupOpsAfterTextEdit(container, page), isEmpty);
-
-    // Nor does an edit to the merged group delete the row it merged.
-    container.read(lineUpProvider.notifier).updateLink(container
-        .read(lineUpProvider)
-        .linkById('link-1')!
-        .copyWith(notes: 'mine'));
-    final ops = {
-      for (final MapEntry(:key, :value) in container
-          .read(activePageLiveSyncProvider.notifier)
-          .syncLocalPage(
-            strategyPublicId: 'cloud-strategy',
-            pageId: page.publicId,
-          )!
-          .entries)
-        if (key.kind == EntitySyncKeyKind.lineup) key: value,
-    };
-    expect(ops.values.whereType<LineupDeleteOp>(), isEmpty);
-    expect(ops.keys,
-        isNot(contains(EntitySyncKey.lineup(page.publicId, 'link-9'))));
-    await _settle();
-  });
-
   test('a Paranoia saved at the old size opens corrected and sends nothing',
       () async {
     final page = _page('page-1', 0);
@@ -7644,6 +7602,123 @@ void main() {
       expect(queueState().attentionByEntityKey, isEmpty);
       expect(queueState().needsAttention, isFalse);
       expect(store.load().records, isEmpty);
+    });
+
+    test(
+        'an edit to the conflicting group during Keep both\'s second cloud '
+        'read, after the copy, is neither discarded nor replaced', () async {
+      final page = _page('page-1', 0);
+      final (container, _, store) = await refusedBesideTeammate(page);
+      final key = keyOf(page, 'link-a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      List<RemoteLineup> copies() => [
+            for (final row in server.liveRows)
+              if (row.publicId != 'link-a') row,
+          ];
+      // The copy's send waits, so no answer brings a read of its own; the
+      // read held is the one that loads the cloud's version to take it.
+      final send = repository.hold = Completer<void>();
+      final gate = liveRead.refreshGate = Completer<void>();
+      liveRead.gateWhen =
+          () => container.read(lineUpProvider).links.length == 4;
+
+      final keepBoth = container
+          .read(strategyPageSessionProvider.notifier)
+          .keepBothForRejected();
+      await _until(() => liveRead.refreshGate == null);
+      expect(onScreenOf(container), hasLength(4), reason: 'the copy is made');
+      // While the cloud's version is on its way, the user edits the group.
+      container.read(lineUpProvider.notifier).updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-b')!
+          .copyWith(notes: 'newer'));
+      // From here the canvas never shows the cloud's version in place of
+      // the edit, even for a moment.
+      var replaced = false;
+      container.listen(lineUpProvider, (_, next) {
+        if (next.linkById('link-b')?.notes != 'newer') replaced = true;
+      });
+      gate.complete();
+
+      expect(await keepBoth, KeepBothOutcome.copiesOnly);
+      expect(replaced, isFalse);
+      send.complete();
+      await _until(() =>
+          queueState().queuedByEntityKey.isEmpty &&
+          queueState().inFlightByEntityKey.isEmpty &&
+          copies().length == 1);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // The newer edit is on screen and waits behind the refused one...
+      expect(container.read(lineUpProvider).linkById('link-b')!.notes, 'newer');
+      expect(queueState().attentionByEntityKey.keys, [key]);
+      final newer = queueState().successorByEntityKey[key]!.pending.op;
+      expect(
+          _linkIn(newer.payload as CloudPayload, 'link-b')['notes'], 'newer');
+      expect(
+        store.load().records.singleWhere((r) => r.entityKey == key).status,
+        DurableOutboxStatus.attention,
+      );
+      // ...the cloud's group is untouched, and there is one copy.
+      expect(lineupsIn([server.row('link-a')]),
+          ['Heaven: remote lineup', 'Mid: theirs']);
+      expect(lineupsIn(copies()), ['Heaven: mine', 'Mid: remote lineup']);
+      expect(onScreenOf(container), [
+        'Heaven: mine',
+        'Mid: newer',
+        'Heaven: mine',
+        'Mid: remote lineup',
+      ]);
+    });
+
+    test(
+        'Keep both while the outbox still cannot save is not offered and '
+        'changes nothing', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, batches, _) =
+          await refusedBesideTeammate(page, store: store);
+      final key = keyOf(page, 'link-a');
+      final session = container.read(strategyPageSessionProvider.notifier);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      final waiting = queueState().attentionByEntityKey[key]!.pending.op.opId;
+      // Only the copy's write fails, so nothing but lineup groups waits.
+      store.failPut = (record) =>
+          record.entityKey.kind == EntitySyncKeyKind.lineup &&
+          record.entityKey != key;
+      expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(queueState().hasDurabilityFailure, isTrue);
+      final onScreen = onScreenOf(container);
+      expect(onScreen, hasLength(4));
+
+      // While writes still fail, the popover does not offer it...
+      expect(container.read(lineupConflictsProvider), isNull);
+      // ...and pressed anyway, it changes nothing.
+      expect(
+          queueState().attentionByEntityKey.keys,
+          everyElement(predicate<EntitySyncKey>(
+              (key) => key.kind == EntitySyncKeyKind.lineup)));
+      expect(await session.keepBothForRejected(), KeepBothOutcome.unchanged);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(onScreenOf(container), onScreen);
+      expect(
+        queueState().pending.where((pending) => pending.op is LineupAddOp),
+        hasLength(1),
+        reason: 'only the first copy waits to be saved',
+      );
+      expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
+      expect(sentFor(batches, key), hasLength(1));
+      expect(server.liveRows.map((row) => row.publicId), ['link-a']);
+      expect(container.read(lineupConflictsProvider), isNull);
     });
 
     test(
