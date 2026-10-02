@@ -613,7 +613,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         _ => null,
       };
       final entry = (key, waiting[key]!);
-      if (payload == null || _keptAsCopy.containsKey(entry)) continue;
+      if (payload == null) continue;
+      // A copy made by an earlier press stands, unless it is no longer on
+      // the canvas (the user deleted it): then this press makes it again.
+      if (_keptAsCopy[entry] case final copyId?
+          when ref.read(lineUpProvider).linkById(copyId) != null) {
+        continue;
+      }
       final copy = forkLineUpGraph(lineUpGraphFromCloudRows([
         CloudLineupRow(publicId: key.entityId!, payload: payload),
       ]).graph);
@@ -746,6 +752,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     _isResolvingConflicts = true;
     try {
+      final hadConflicts =
+          ref.read(strategyOpQueueProvider).attentionByEntityKey.isNotEmpty;
       final currentPageSource =
           _resolvePageSource(strategyId, StrategySource.cloud);
       await currentPageSource.flushCurrentPage();
@@ -760,7 +768,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final rejected = Map<EntitySyncKey, QueuedEntityIntent>.from(
         ref.read(strategyOpQueueProvider).attentionByEntityKey,
       )..removeWhere((key, _) => !resolving.containsKey(key));
-      if (rejected.isEmpty) return true;
+      // Conflicts the save turned back into queued work (a record whose
+      // removal failed before, say) were not resolved: that is no success.
+      if (rejected.isEmpty) return !hadConflicts;
 
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
@@ -773,11 +783,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       // replace that edit on screen. The canvas is noted before that save,
       // so an edit made while it is being written counts as a change too.
       final savedCanvas = _canvasStates();
+      final queueNotifier = ref.read(strategyOpQueueProvider.notifier);
+      final failuresBefore = queueNotifier.persistenceFailureCount;
       await currentPageSource.flushCurrentPage();
-      // A save that failed may have dropped a newer edit the queue never
-      // recorded; nothing is discarded or redrawn over it.
+      // A save that failed just now may have dropped a newer edit the queue
+      // never recorded; nothing is discarded or redrawn over it. (A failure
+      // left from before, say a discard that did not finish, does not stop
+      // the discard that can clear it.)
       if (waitingChanged() ||
-          ref.read(strategyOpQueueProvider).hasDurabilityFailure) {
+          queueNotifier.persistenceFailureCount != failuresBefore) {
         return false;
       }
       final targetPageId = _resolveHydrationTargetPage(snapshot);
@@ -813,6 +827,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         );
         if (!redrawn) return false;
       }
+      // What the first redraw left: a redraw after a partial discard below
+      // draws only over this, never over an edit made while discarding.
+      final redrawnCanvas = _canvasStates();
 
       final discarded = await ref
           .read(strategyOpQueueProvider.notifier)
@@ -826,7 +843,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           activePageId: () => state.activePageId,
         );
         // Redrawn only if nothing was edited since the first redraw.
-        final redrawnCanvas = _canvasStates();
         final pageData = await pageSource.loadAuthoritativePage(
           targetPageId,
           discardedEntities: discarded,

@@ -2359,7 +2359,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   bool get _hasDurabilityFailureForCurrentAccount =>
       _hasDurabilityFailureForAccount(state.accountId);
 
+  /// How many times writing the outbox has failed, so a caller can tell
+  /// whether its own save failed rather than an earlier one.
+  int get persistenceFailureCount => _persistenceFailureCount;
+  int _persistenceFailureCount = 0;
+
   void _recordPersistenceFailure(Object error, StackTrace stackTrace) {
+    _persistenceFailureCount++;
     log('Durable outbox persistence failed: $error',
         name: 'strategy_outbox', error: error, stackTrace: stackTrace);
     if (_isDisposed) return;

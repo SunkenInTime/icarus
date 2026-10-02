@@ -475,6 +475,22 @@ class _FailingOutboxStore extends MemoryDurableStrategyOutboxStore {
     }
     await super.put(record);
   }
+
+  /// While set, a removal fails when this holds for its storage key.
+  bool Function(String storageKey)? failRemove;
+
+  /// Runs as each removal starts, before it lands.
+  void Function(String storageKey)? onRemove;
+
+  @override
+  Future<void> remove(String storageKey) async {
+    onRemove?.call(storageKey);
+    await Future<void>.delayed(Duration.zero);
+    if (failRemove?.call(storageKey) ?? false) {
+      throw const FileSystemException('The disk is locked.');
+    }
+    await super.remove(storageKey);
+  }
 }
 
 /// Plays the server's page restore: [onRestore] runs for each call, and
@@ -8124,6 +8140,187 @@ void main() {
       // reason, and the sync button must not read as if it were.
       expect(container.read(strategySaveStateProvider).cloudSyncError,
           isNot(lineupOverlapMessage));
+    });
+
+    test(
+        'a move made while Use cloud discards, when the discard partly '
+        'fails, is not drawn over by the redraw that follows', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, _, _) = await refusedBesideTeammate(page,
+          store: store, elements: [_textElement(page.publicId, 'text-a', 'a')]);
+      final key = keyOf(page, 'link-a');
+      Offset textAt() => container
+          .read(textProvider)
+          .singleWhere((text) => text.id == 'text-a')
+          .position;
+      const moved = Offset(300, 300);
+      // Removing the refused work from the outbox fails; while it is on its
+      // way, the user moves the text.
+      var movedDuringDiscard = false;
+      store.onRemove = (storageKey) {
+        if (movedDuringDiscard) return;
+        movedDuringDiscard = true;
+        container.read(textProvider.notifier).updatePosition(moved, 'text-a');
+      };
+      store.failRemove = (storageKey) => true;
+      var redrawnOver = false;
+
+      final useCloud = container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      await _until(() => movedDuringDiscard);
+      container.listen(textProvider, (_, next) {
+        if (next.singleWhere((text) => text.id == 'text-a').position != moved) {
+          redrawnOver = true;
+        }
+      });
+
+      expect(await useCloud, isFalse);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(redrawnOver, isFalse);
+      expect(textAt(), moved);
+      // The refused work still waits: its record could not be removed.
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+          [key]);
+    });
+
+    test(
+        'Use cloud after storage recovers from a failed discard does not '
+        'claim success while the work goes out again, and the next press '
+        'resolves it', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, batches, _) =
+          await refusedBesideTeammate(page, store: store);
+      final key = keyOf(page, 'link-a');
+      final session = container.read(strategyPageSessionProvider.notifier);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+
+      // The first press cannot remove the refused work from the outbox.
+      store.failRemove = (storageKey) => true;
+      expect(await session.useCloudVersionsForRejected(), isFalse);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(queueState().attentionByEntityKey.keys, [key]);
+      expect(queueState().lastError, contains('could not be removed'));
+      expect(onScreenOf(container), ['Heaven: mine', 'Mid: remote lineup']);
+
+      // Storage recovers. The record the removal left uncertain goes back
+      // to the send queue on the next save, so this press finds nothing to
+      // resolve; it says so rather than claim the cloud's version is shown.
+      store.failRemove = null;
+      expect(await session.useCloudVersionsForRejected(), isFalse);
+      expect(onScreenOf(container), ['Heaven: mine', 'Mid: remote lineup']);
+
+      // The refused work goes out once more and is refused again: the
+      // teammate's version stands.
+      await _until(() =>
+          sentFor(batches, key).length == 2 &&
+          queueState().attentionByEntityKey.containsKey(key));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(sentFor(batches, key)[1].opId, sentFor(batches, key)[0].opId);
+      expect(
+        queueState()
+            .lastAckBatch
+            .singleWhere((acked) => acked.entityKey == key)
+            .ack,
+        isA<RejectedOpAck>().having((ack) => ack.rejectionReason, 'reason',
+            OpRejectionReason.revisionMismatch),
+      );
+      expect(server.row('link-a').revision, 8);
+      expect(
+          lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
+
+      // A further press takes the cloud's version. (The strategy's own
+      // details it saves on the way land too.)
+      expect(await session.useCloudVersionsForRejected(), isTrue);
+      await _until(() => queueState().pending.isEmpty);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(onScreenOf(container), ['Heaven: remote lineup', 'Mid: theirs']);
+      expect(queueState().attentionByEntityKey, isEmpty);
+      expect(queueState().needsAttention, isFalse);
+      expect(queueState().pending, isEmpty);
+      expect(store.load().records, isEmpty);
+      expect(sentFor(batches, key), hasLength(2));
+    });
+
+    test(
+        'Keep both after the user deleted the copy an earlier press made '
+        'copies again and resolves, one copy in all', () async {
+      final page = _page('page-1', 0);
+      final (container, _, store) = await refusedBesideTeammate(page);
+      final session = container.read(strategyPageSessionProvider.notifier);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      List<RemoteLineup> copies() => [
+            for (final row in server.liveRows)
+              if (row.publicId != 'link-a') row,
+          ];
+      List<String> copyLinkIds() => [
+            for (final link in container.read(lineUpProvider).links)
+              if (link.id != 'link-a' && link.id != 'link-b') link.id,
+          ];
+      Future<void> landed() async {
+        await _until(() =>
+            queueState().queuedByEntityKey.isEmpty &&
+            queueState().inFlightByEntityKey.isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      }
+
+      // The first press copies, then cannot load the cloud's version.
+      final first = liveRead.refreshCount + 1;
+      liveRead.readFailsWhen = (count) => count > first;
+      expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
+      await landed();
+      expect(copies(), hasLength(1));
+      final firstCopy = copyLinkIds();
+      expect(firstCopy, hasLength(2));
+
+      // The cloud is reachable again; the user deletes the copy, and the
+      // deletion lands.
+      liveRead.readFailsWhen = null;
+      showServer();
+      await _settle();
+      final lineUps = container.read(lineUpProvider.notifier);
+      for (final id in firstCopy) {
+        lineUps.deleteLink(id);
+      }
+      await _settle();
+      await container.read(strategyOpQueueProvider.notifier).flushNow();
+      await _until(() => copies().isEmpty);
+      await landed();
+      expect(copyLinkIds(), isEmpty);
+
+      // Pressed again with the cloud reachable: a fresh copy, and resolved.
+      expect(await session.keepBothForRejected(), KeepBothOutcome.kept);
+      await landed();
+
+      final copy = copies().single;
+      expect(lineupsIn([copy]), ['Heaven: mine', 'Mid: remote lineup']);
+      expect(copyLinkIds(), hasLength(2));
+      expect(copyLinkIds().toSet().intersection(firstCopy.toSet()), isEmpty);
+      expect(
+        onScreenOf(container),
+        unorderedEquals([
+          'Heaven: remote lineup',
+          'Mid: theirs',
+          'Heaven: mine',
+          'Mid: remote lineup',
+        ]),
+      );
+      expect(queueState().attentionByEntityKey, isEmpty);
+      expect(store.load().records, isEmpty);
     });
 
     test(
