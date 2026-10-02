@@ -97,7 +97,7 @@ class ReplayAbilityEntry {
       shape: shape,
       mapScale: mapScale,
     );
-    final anchorOffset = CoordinateSystem.instance.virtualOffsetToWorld(
+    final anchorOffset = CoordinateSystem.virtualToWorld(
       storedAbilityAnchor(ability: shape, mapScale: mapScale),
     );
     return PlacedAbility(
@@ -211,15 +211,14 @@ class _FromStart extends _Placement {
       rotation = 0;
     }
 
-    final coordinates = CoordinateSystem.instance;
     var nearEdge = 0.0;
     var length = 0.0;
     if (shape is SquareAbility) {
-      nearEdge =
-          coordinates.virtualLengthToWorld(shape.distanceBetweenAOE * mapScale);
+      nearEdge = CoordinateSystem.virtualLengthInWorld(
+          shape.distanceBetweenAOE * mapScale);
       if (shape is ResizableSquareAbility && end != null) {
-        length =
-            (end - start).distance / coordinates.virtualLengthToWorld(mapScale);
+        length = (end - start).distance /
+            CoordinateSystem.virtualLengthInWorld(mapScale);
       }
     }
     return _Geometry(
@@ -270,7 +269,7 @@ class _BarrierMesh extends _Placement {
     ];
     final rotation = _rotationToward(arms.first) -
         slotOffset(DeadlockBarrierMeshArm.topRight);
-    final worldPerArmMeter = CoordinateSystem.instance.virtualLengthToWorld(
+    final worldPerArmMeter = CoordinateSystem.virtualLengthInWorld(
       deadlockBarrierMeshArmLengthVirtual(1, mapScale),
     );
     // A blocked arm has no deployer; it shows at the shortest Icarus allows.

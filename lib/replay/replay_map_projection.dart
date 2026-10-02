@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 /// Places Valorant game-world positions on Icarus's maps.
 ///
@@ -106,6 +107,54 @@ class ReplayMapProjection {
   double worldLength(double centimetres) =>
       centimetres / 100 * _native.scale * _scale;
 
+  /// Replay z is the capsule centre. Across 373k replay samples on four maps
+  /// it sits a median 1.003 m above the height model's ground.
+  static const _capsuleCentreAboveFloorMeters = 1.003;
+
+  /// A level more than this far above the feet is overhead, not underfoot.
+  /// Crouching lowers the capsule centre by less; the stacked floors a
+  /// player can stand under are 2.5 m or more apart.
+  static const _maxLevelAboveFeetMeters = 0.6;
+
+  /// Levels this close count as the cone's own choice. Replay z scatters
+  /// about a quarter metre around the floor, too little to tell such levels
+  /// apart, and many maps carry a "Platform" support within centimetres of
+  /// the ground beneath it.
+  static const _sameLevelMeters = 0.5;
+
+  /// Game-world cm (Unreal x, y, z) -> the `visionElevation` a
+  /// PlacedViewConeAgent standing there should save: the eye elevation in cm
+  /// of the level the player is on, or null where the cone's own choice
+  /// already stands on that level, so ordinary floors save as the editor
+  /// saves them.
+  ///
+  /// [attackModel] is the map's attack-side SVG height model. Levels are the
+  /// ones the editor's elevation menu lists where the cone is drawn from: the
+  /// ground and every support. The nearest to the player's feet wins,
+  /// ignoring levels overhead. A player above every level (on a rope, or on
+  /// something the model lacks) gets null, since no saved value could say
+  /// more than the cone's own choice.
+  double? visionElevationFor(
+      SvgHeightVisibility attackModel, double x, double y, double z) {
+    final levels = _ReplayLevels.at(attackModel, attackSvgPoint(x, y));
+    if (levels == null) return null;
+    final feet = z / 100 - _capsuleCentreAboveFloorMeters;
+    double? standing;
+    for (final surface in levels.surfaces) {
+      if (surface > feet + _maxLevelAboveFeetMeters) continue;
+      if (standing == null ||
+          (surface - feet).abs() < (standing - feet).abs()) {
+        standing = surface;
+      }
+    }
+    if (standing == null) return null;
+    final automatic = levels.automaticSurface;
+    if (automatic != null && (standing - automatic).abs() < _sameLevelMeters) {
+      return null;
+    }
+    return (standing + attackModel.defaultCameraHeightMeters) * 100;
+  }
+
   // Native metres -> attack SVG, `nativeToAttackSvg` in
   // E:\IcarusWorldAudit\2026-09-06\tactical-alignment-sides-v1\<map>.json.
   // Each composes Riot's minimap UIData transform with the minimap image's
@@ -139,6 +188,40 @@ class ReplayMapProjection {
     MapValue.summit: _Affine(0.0, -3.3971209017364643, 4.613976772523586,
         -3.397120901736457, 0.0, 453.75554061572274),
   };
+}
+
+/// The levels a cone could stand on near one point of a height model, and
+/// which one it stands on by itself. Finding them scans every wall and
+/// support, so each model keeps them per quarter SVG unit (about 6 cm):
+/// playback asks again for the same few spots every frame.
+class _ReplayLevels {
+  _ReplayLevels(this.surfaces, this.automaticSurface);
+
+  final List<double> surfaces;
+  final double? automaticSurface;
+
+  static const _cellsPerSvgUnit = 4;
+  static final _cache = Expando<Map<int, _ReplayLevels?>>();
+
+  static _ReplayLevels? at(SvgHeightVisibility model, Offset point) {
+    final cells = _cache[model] ??= {};
+    final key = (point.dx * _cellsPerSvgUnit).floor() * 65536 +
+        (point.dy * _cellsPerSvgUnit).floor();
+    return cells.putIfAbsent(key, () => _measure(model, point));
+  }
+
+  static _ReplayLevels? _measure(SvgHeightVisibility model, Offset point) {
+    // The cone stands at this point, pushed out of any wall it is in.
+    final origin = model.standablePointNear(point);
+    if (origin == null) return null;
+    final ground = model.ground?.heightAt(origin);
+    final automatic = model.automaticSupportAt(origin);
+    return _ReplayLevels([
+      if (ground != null) ground,
+      for (final support in model.supportsAt(origin))
+        if (support.surfaceElevationAt(origin) case final surface?) surface,
+    ], automatic == null ? ground : automatic.surfaceElevationAt(origin));
+  }
 }
 
 /// Row-major 2x3 matrix: (x, y) -> (a x + b y + c, d x + e y + f).

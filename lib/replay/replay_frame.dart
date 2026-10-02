@@ -11,6 +11,7 @@ import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_weapons.dart';
+import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 /// One moment of a replay as Icarus draws it: the same placed widgets a page
 /// holds. The viewer paints these, and capturing the moment saves them.
@@ -65,6 +66,10 @@ class ReplayFrameBuilder {
   final ReplayDocument document;
   final ReplayMapProjection projection;
 
+  /// The map's attack-side SVG height model, once loaded. Until then cones
+  /// stand on the level they pick by themselves.
+  SvgHeightVisibility? heightModel;
+
   /// Cone length the editor allows at most; walls cut it down.
   static const _coneLength = ViewConeUtility.maxLength;
 
@@ -105,8 +110,15 @@ class ReplayFrameBuilder {
     return alive;
   }
 
-  ReplayPlayerState playerState(ReplayPlayer player, int timeMs) {
+  /// [player] at [timeMs]. Their pose may be taken at [poseTimeMs] instead,
+  /// a moment earlier, when playback moves players a few at a time.
+  ReplayPlayerState playerState(
+    ReplayPlayer player,
+    int timeMs, {
+    int? poseTimeMs,
+  }) {
     final round = document.roundAt(timeMs);
+    final poseTime = poseTimeMs ?? timeMs;
     final roundStart = round?.startMs ?? 0;
     final alive = isAlive(player, timeMs, round);
     final track = document.movement[player.subject];
@@ -114,8 +126,8 @@ class ReplayFrameBuilder {
     if (track != null) {
       if (alive) {
         // A quiet stream means standing still, not vanishing.
-        pose = track.poseAt(timeMs) ??
-            track.heldPose(timeMs, notBeforeMs: roundStart);
+        pose = track.poseAt(poseTime) ??
+            track.heldPose(poseTime, notBeforeMs: roundStart);
       } else {
         // Dead this round: keep where they fell.
         final death = _lastDeathBefore(player.subject, timeMs);
@@ -144,15 +156,28 @@ class ReplayFrameBuilder {
     return last;
   }
 
+  /// The level the player stands on, when it is not the one the cone picks.
+  double? _visionElevation(ReplayPose pose) {
+    final model = heightModel;
+    if (model == null) return null;
+    final p = pose.position;
+    return projection.visionElevationFor(model, p.x, p.y, p.z);
+  }
+
   ReplayPlayer? ownerOf(ReplayUtility utility, ReplayAbilityEntry entry) =>
       document.playerBySubject(utility.owner) ??
       _soleCasterByAgent[entry.agent];
 
-  ReplayFrame frameAt(int timeMs, {required ReplayTeam perspective}) {
+  /// The moment at [timeMs]. [poseTimeOf] may give a player's pose an
+  /// earlier time; see [ReplayPlayerState] and `ReplayPlayback.frame`.
+  ReplayFrame frameAt(
+    int timeMs, {
+    required ReplayTeam perspective,
+    int Function(ReplayPlayer player)? poseTimeOf,
+  }) {
     final round = document.roundAt(timeMs);
     final isAttack = (round?.attackingTeam ?? ReplayTeam.red) == perspective;
-    final coordinates = CoordinateSystem.instance;
-    final agentAnchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
+    final agentAnchor = CoordinateSystem.virtualToWorld(storedAgentAnchor);
 
     final agents = <PlacedAgentNode>[];
     for (final player in document.players) {
@@ -160,7 +185,11 @@ class ReplayFrameBuilder {
       final team = player.team;
       // Without an agent or a team there is nothing honest to draw.
       if (type == null || team == null) continue;
-      final state = playerState(player, timeMs);
+      final state = playerState(
+        player,
+        timeMs,
+        poseTimeMs: poseTimeOf?.call(player),
+      );
       final pose = state.pose;
       if (pose == null) continue;
       final position =
@@ -168,7 +197,8 @@ class ReplayFrameBuilder {
       final isAlly = team == perspective;
       final id = 'replay-player-${player.subject}';
       // What they carried out of the buy phase.
-      final weapon = replayWeaponType(round?.economyFor(player.subject)?.weapon);
+      final weapon =
+          replayWeaponType(round?.economyFor(player.subject)?.weapon);
       agents.add(
         state.alive
             ? PlacedViewConeAgent(
@@ -178,6 +208,7 @@ class ReplayFrameBuilder {
                 presetType: UtilityType.viewCone180,
                 rotation: projection.rotationForYaw(pose.yaw),
                 length: _coneLength,
+                visionElevation: _visionElevation(pose),
                 isAlly: isAlly,
                 weapon: weapon,
               )
@@ -228,7 +259,7 @@ class ReplayFrameBuilder {
         position: Offset.zero,
       );
       spike.position = projection.toWorld(plantedAt.x, plantedAt.y) -
-          coordinates.virtualOffsetToWorld(
+          CoordinateSystem.virtualToWorld(
             storedUtilityAnchor(
               utility: spike,
               mapScale: Maps.mapScale[projection.map]!,

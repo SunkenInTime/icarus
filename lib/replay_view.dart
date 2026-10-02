@@ -10,6 +10,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_decoder.dart';
 import 'package:icarus/replay/replay_document.dart';
@@ -17,6 +18,7 @@ import 'package:icarus/replay/replay_files.dart';
 import 'package:icarus/replay/replay_loader.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
+import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/widgets/replay/replay_canvas.dart';
 import 'package:icarus/widgets/replay/replay_dock.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
@@ -56,6 +58,8 @@ class _ReplayViewState extends ConsumerState<ReplayView>
   Timer? _progressTimer;
 
   ReplayPlayback? _playback;
+  ProviderSubscription<AsyncValue<SvgHeightRuntime?>>? _heightRuntime;
+  SvgHeightVisibility? _heightModel;
   ReplayDecodeException? _error;
   Duration _lastTick = Duration.zero;
 
@@ -68,6 +72,15 @@ class _ReplayViewState extends ConsumerState<ReplayView>
       file: widget.file,
       probe: widget.probe,
     );
+    final map = ReplayMapProjection.forMapPath(widget.probe.mapPath)?.map;
+    if (map != null) {
+      // Held for the screen's life: the provider frees the model otherwise.
+      _heightRuntime = ref.listenManual(
+        svgHeightRuntimeProvider(map),
+        (_, runtime) => _applyHeightModel(runtime.valueOrNull),
+        fireImmediately: true,
+      );
+    }
     // Progress lives in native memory; repaint the bar while decoding.
     _progressTimer = Timer.periodic(
       const Duration(milliseconds: 100),
@@ -94,6 +107,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
         projection: projection,
         perspective: perspective,
       )..addListener(_syncMapSide);
+      if (_heightModel != null) playback.heightModel = _heightModel;
       setState(() => _playback = playback);
       claimEditorState();
       _ticker.start();
@@ -107,6 +121,15 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     } finally {
       _progressTimer?.cancel();
     }
+  }
+
+  /// Cones stand on the level the replay says each player is on, once the
+  /// map's height model is in.
+  void _applyHeightModel(SvgHeightRuntime? runtime) {
+    final model = runtime?.model(true);
+    if (model == null || identical(model, _heightModel)) return;
+    _heightModel = model;
+    _playback?.heightModel = model;
   }
 
   void _fail(ReplayDecodeException error) {
@@ -169,6 +192,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
   @override
   void dispose() {
     _progressTimer?.cancel();
+    _heightRuntime?.close();
     _loader.cancel();
     _ticker.dispose();
     _playback

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
+import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
 const _degrees = math.pi / 180;
@@ -224,5 +227,101 @@ void main() {
                 defenseRotation)
             .abs(),
         lessThan(1e-9));
+  });
+
+  // Real replay poses (Unreal cm). Feet are z - 1.003 m; the cone's eye is the
+  // level's surface plus the model's 1.75 m standing eye.
+  group('visionElevationFor', () {
+    final models = <(MapValue, String), SvgHeightVisibility>{};
+    SvgHeightVisibility model(MapValue map, {String side = 'attack'}) =>
+        models[(
+          map,
+          side
+        )] ??= SvgHeightVisibility.fromJson(jsonDecode(utf8.decode(gzip.decode(
+            File('assets/maps/${Maps.mapNames[map]}_svg_height_$side.json.gz')
+                .readAsBytesSync()))) as Map<String, dynamic>);
+    double? elevation(MapValue map, double x, double y, double z) =>
+        ReplayMapProjection.forMap(map).visionElevationFor(model(map), x, y, z);
+
+    /// The surface the cone widget stands its eye on for a saved elevation.
+    double surfaceUnder(MapValue map, double x, double y, double? saved,
+        {String side = 'attack'}) {
+      final projection = ReplayMapProjection.forMap(map);
+      final heights = model(map, side: side);
+      final origin = heights.standablePointNear(side == 'attack'
+          ? projection.attackSvgPoint(x, y)
+          : projection.defenseSvgPoint(x, y))!;
+      final support =
+          heights.standingSupportAt(origin, savedEyeElevationCm: saved);
+      return support?.surfaceElevationAt(origin) ??
+          heights.ground!.heightAt(origin)!;
+    }
+
+    test('ordinary floors keep the editor default', () {
+      // Spawn corridors on Split, Summit and Sunset.
+      expect(elevation(MapValue.split, 1950, 472.1, 400.3), isNull);
+      expect(elevation(MapValue.summit, 764.47, 6200.72, 300.3), isNull);
+      expect(elevation(MapValue.sunset, -4621.59, 719.23, 300.3), isNull);
+    });
+
+    test('Split: under an automatic roof support, the floor', () {
+      // c8989335 at 1913.0 s: the default stands the eye on a support 37 m
+      // up; the player's feet are at 6.3 m on 6.5 m ground.
+      final (x, y, z) = (2548.0, -4509.0, 730.0);
+      expect(surfaceUnder(MapValue.split, x, y, null), greaterThan(37));
+      final saved = elevation(MapValue.split, x, y, z);
+      expect(saved, closeTo(825, .5));
+      expect(surfaceUnder(MapValue.split, x, y, saved), closeTo(6.5, .01));
+    });
+
+    test('Lotus: under a 9.5 m platform, the floor beneath it', () {
+      // d3c0e7a2 at 411.8 s, feet 3.39 m.
+      final (x, y, z) = (8347.0, 4240.0, 439.0);
+      expect(surfaceUnder(MapValue.lotus, x, y, null), closeTo(9.49, .02));
+      final saved = elevation(MapValue.lotus, x, y, z);
+      expect(saved, closeTo(496.4, .5));
+      expect(surfaceUnder(MapValue.lotus, x, y, saved), closeTo(3.21, .01));
+    });
+
+    test('Sunset: standing on the B medium planter', () {
+      // c8313344 at 202.5 s, feet 7.0 m over 4.0 m ground.
+      final (x, y, z) = (2619.0, -3652.0, 800.0);
+      expect(surfaceUnder(MapValue.sunset, x, y, null), closeTo(4.0, .01));
+      final saved = elevation(MapValue.sunset, x, y, z);
+      expect(saved, closeTo(777.0, .5));
+      expect(surfaceUnder(MapValue.sunset, x, y, saved), closeTo(6.02, .01));
+    });
+
+    test('Split B heaven: on it keeps the default, beneath it is the floor',
+        () {
+      // b63bb117 at 88.0 s on heaven (9.25 m over 5.0 m B site floor).
+      final (x, y) = (-198.90, -5402.98);
+      expect(elevation(MapValue.split, x, y, 1054.22), isNull);
+      expect(surfaceUnder(MapValue.split, x, y, null), closeTo(9.25, .01));
+      // The same spot at B site floor height (constructed z, feet 5.0 m).
+      final under = elevation(MapValue.split, x, y, 600);
+      expect(under, closeTo(675, .5));
+      expect(surfaceUnder(MapValue.split, x, y, under), closeTo(5.0, .01));
+    });
+
+    test('above every level the model has: the default, not a guess', () {
+      // b63bb117 at 87.8 s: feet 8.6 m where the model's levels stop at 5 m.
+      expect(elevation(MapValue.split, -270.01, -5402.82, 965.14), isNull);
+    });
+
+    test('the defense side resolves the same level', () {
+      for (final (map, x, y, z) in const [
+        (MapValue.split, 2548.0, -4509.0, 730.0),
+        (MapValue.lotus, 8347.0, 4240.0, 439.0),
+        (MapValue.sunset, 2619.0, -3652.0, 800.0),
+        (MapValue.split, -198.90, -5402.98, 600.0),
+      ]) {
+        final saved = elevation(map, x, y, z);
+        expect(saved, isNotNull);
+        expect(surfaceUnder(map, x, y, saved, side: 'defense'),
+            closeTo(surfaceUnder(map, x, y, saved), .01),
+            reason: '$map ($x, $y, $z)');
+      }
+    });
   });
 }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
+import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 /// Playback state for one open replay: the clock, the speed, and whose eyes
 /// the match is seen through. The view drives [advance] from a ticker.
@@ -40,7 +41,11 @@ class ReplayPlayback extends ChangeNotifier {
   int get durationMs => document.match.durationMs;
   ReplayRound? get round => document.roundAt(_timeMs);
 
-  ReplayFrame? _frame;
+  /// The moment on screen. While playing, each new frame moves only the
+  /// [_movesPerFrame] players whose shown pose is oldest, plus any older
+  /// than [_maxPoseAgeMs]: a moved player's view cone is cut against the
+  /// walls again, and all ten in one frame is more than a 165 Hz frame
+  /// holds. Paused, every player is exact; so is every capture.
   ReplayFrame get frame {
     final cached = _frame;
     if (cached != null &&
@@ -49,10 +54,54 @@ class ReplayPlayback extends ChangeNotifier {
       return cached;
     }
     _framePerspective = _perspective;
-    return _frame = frames.frameAt(_timeMs, perspective: _perspective);
+    if (_playing) {
+      _staggerPoses();
+    } else {
+      _poseTimes.clear();
+    }
+    return _frame = frames.frameAt(
+      _timeMs,
+      perspective: _perspective,
+      poseTimeOf: (player) => _poseTimes[player.subject] ?? _timeMs,
+    );
   }
 
+  ReplayFrame? _frame;
   ReplayTeam? _framePerspective;
+
+  static const _movesPerFrame = 3;
+  static const _maxPoseAgeMs = 66;
+
+  /// When each player's shown pose was taken, while playing.
+  final _poseTimes = <String, int>{};
+
+  void _staggerPoses() {
+    final players = document.players;
+    if (_poseTimes.length != players.length) {
+      for (final player in players) {
+        _poseTimes[player.subject] = _timeMs;
+      }
+      return;
+    }
+    final oldestFirst = [...players]..sort(
+        (a, b) => _poseTimes[a.subject]!.compareTo(_poseTimes[b.subject]!),
+      );
+    for (var i = 0; i < oldestFirst.length; i++) {
+      final subject = oldestFirst[i].subject;
+      final age = _timeMs - _poseTimes[subject]!;
+      if (i < _movesPerFrame || age > _maxPoseAgeMs || age < 0) {
+        _poseTimes[subject] = _timeMs;
+      }
+    }
+  }
+
+  /// The map's height model, for standing each cone on the right level;
+  /// it loads after the replay opens.
+  set heightModel(SvgHeightVisibility? model) {
+    frames.heightModel = model;
+    _frame = null;
+    notifyListeners();
+  }
 
   void play() {
     if (_playing) return;
@@ -64,6 +113,8 @@ class ReplayPlayback extends ChangeNotifier {
   void pause() {
     if (!_playing) return;
     _playing = false;
+    // Show every player exactly where they are.
+    _frame = null;
     notifyListeners();
   }
 
@@ -84,6 +135,7 @@ class ReplayPlayback extends ChangeNotifier {
   void seek(int timeMs) {
     final clamped = timeMs.clamp(0, durationMs);
     _carryMs = 0;
+    _poseTimes.clear();
     if (clamped == _timeMs) return;
     _timeMs = clamped;
     notifyListeners();

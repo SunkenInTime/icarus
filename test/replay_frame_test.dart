@@ -59,8 +59,6 @@ List<List<num>> still(int from, int to, {double x = 0}) => [
     ];
 
 void main() {
-  setUpAll(() => CoordinateSystem(playAreaSize: const Size(1778, 1000)));
-
   final projection = ReplayMapProjection.forMapPath(
     '/Game/Maps/Juliett/Juliett',
   )!;
@@ -121,8 +119,8 @@ void main() {
         },
       );
       final frames = builder(doc);
-      expect(frames.isAlive(player(doc, 'a'), 61000, doc.roundAt(61000)),
-          isTrue);
+      expect(
+          frames.isAlive(player(doc, 'a'), 61000, doc.roundAt(61000)), isTrue);
       // And last round's reading is not shown as this round's health.
       expect(frames.playerState(player(doc, 'a'), 61000).health, isNull);
     });
@@ -209,12 +207,25 @@ void main() {
         utility: [smoke],
       );
       expect(
-        builder(twoOmens)
-            .frameAt(2000, perspective: ReplayTeam.red)
-            .abilities,
+        builder(twoOmens).frameAt(2000, perspective: ReplayTeam.red).abilities,
         isEmpty,
       );
     });
+  });
+
+  test('size conversions need no laid-out canvas, and match the canvas', () {
+    for (final height in [700.0, 1440.0]) {
+      final canvas = CoordinateSystem(
+        playAreaSize: Size(height * 16 / 9, height),
+      );
+      const offset = Offset(17.5, 17.5);
+      final viaCanvas = canvas.virtualOffsetToWorld(offset);
+      final static = CoordinateSystem.virtualToWorld(offset);
+      expect(static.dx, closeTo(viaCanvas.dx, 1e-9));
+      expect(static.dy, closeTo(viaCanvas.dy, 1e-9));
+      expect(CoordinateSystem.virtualLengthInWorld(30),
+          closeTo(canvas.virtualLengthToWorld(30), 1e-9));
+    }
   });
 
   group('playback', () {
@@ -241,6 +252,48 @@ void main() {
       expect(p.timeMs, 60000);
       p.previousRound();
       expect(p.timeMs, 0);
+    });
+
+    test('playing moves a few players a frame; pausing shows all exactly', () {
+      final subjects = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'];
+      final doc = document(
+        players: [
+          for (final subject in subjects)
+            {'subject': subject, 'agentId': jett, 'team': 'Red'},
+        ],
+        movement: {
+          // Everyone walks along x, 1 cm a millisecond.
+          for (final subject in subjects)
+            subject: [
+              for (var t = 0; t <= 60000; t += 50)
+                [t, t.toDouble(), 0, 100, 0, 0]
+            ],
+        },
+      );
+      final playback = ReplayPlayback(
+        document: doc,
+        projection: projection,
+        perspective: ReplayTeam.red,
+      )..play();
+      Map<String, Offset> positions() => {
+            for (final agent in playback.frame.agents) agent.id: agent.position,
+          };
+      final before = positions();
+      playback.advance(const Duration(milliseconds: 10));
+      final after = positions();
+      final moved = subjects
+          .where((s) => before['replay-player-$s'] != after['replay-player-$s'])
+          .length;
+      expect(moved, 3);
+
+      playback.pause();
+      final exact = playback.frames
+          .frameAt(playback.timeMs, perspective: ReplayTeam.red)
+          .agents;
+      expect(
+        {for (final agent in playback.frame.agents) agent.id: agent.position},
+        {for (final agent in exact) agent.id: agent.position},
+      );
     });
 
     test('playing stops at the end', () {
