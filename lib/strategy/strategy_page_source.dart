@@ -286,7 +286,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     ]);
     ref
         .read(activePageLiveSyncProvider.notifier)
-        .noteLineupAliases(cloudLineups.aliases);
+        .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,
@@ -461,7 +461,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     ]);
     ref
         .read(activePageLiveSyncProvider.notifier)
-        .noteLineupAliases(cloudLineups.aliases);
+        .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,

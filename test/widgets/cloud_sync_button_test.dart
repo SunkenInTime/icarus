@@ -13,6 +13,7 @@ import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/lineup_conflicts_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
@@ -21,6 +22,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
+import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
@@ -188,11 +190,15 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
 }
 
 class _ConflictSession extends StrategyPageSessionNotifier {
-  _ConflictSession({this.result = true, this.failure});
+  _ConflictSession({this.result = true, this.failure, this.keepBoth});
 
   final bool result;
   final Object? failure;
+
+  /// What Keep both answers; by default what [result] says.
+  final KeepBothOutcome? keepBoth;
   int useCloudCount = 0;
+  int keepBothCount = 0;
 
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
@@ -207,6 +213,14 @@ class _ConflictSession extends StrategyPageSessionNotifier {
     useCloudCount += 1;
     if (failure != null) throw failure!;
     return result;
+  }
+
+  @override
+  Future<KeepBothOutcome> keepBothForRejected() async {
+    keepBothCount += 1;
+    if (failure != null) throw failure!;
+    return keepBoth ??
+        (result ? KeepBothOutcome.kept : KeepBothOutcome.unchanged);
   }
 }
 
@@ -295,12 +309,14 @@ ProviderContainer _createContainer({
 ProviderContainer _createConflictContainer({
   required _AttentionOpQueue queue,
   required _ConflictSession session,
+  List<LineupGroupConflict>? lineupConflicts,
 }) {
   return ProviderContainer(
     overrides: [
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
       strategyOpQueueProvider.overrideWith(() => queue),
       strategyPageSessionProvider.overrideWith(() => session),
+      lineupConflictsProvider.overrideWithValue(lineupConflicts),
       cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
       cloudMediaAccountIdProvider.overrideWithValue('account-a'),
       convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
@@ -911,6 +927,10 @@ void main() {
       find.textContaining('applies to all 2 conflicting changes'),
       findsOneWidget,
     );
+    // An element conflict has no lineup changes to list and nothing to keep
+    // beside the cloud's version.
+    expect(find.text('Keep both'), findsNothing);
+    expect(find.text('Your changes'), findsNothing);
 
     await tester.tap(find.text('Use cloud'));
     await tester.pumpAndSettle();
@@ -918,6 +938,133 @@ void main() {
     expect(session.useCloudCount, 1);
     expect(queue.retryRejectedCount, 0);
     expect(queue.flushNowCount, 0);
+  });
+
+  group('lineup conflicts', () {
+    LineupChange change(String label, String description) =>
+        LineupChange(label: label, description: description);
+
+    final conflicts = [
+      LineupGroupConflict(
+        key: const EntitySyncKey.lineup('page-1', 'link-a'),
+        yours: [change('Heaven', 'notes edited')],
+        cloud: [
+          change('Mid', 'renamed'),
+          change('Short', 'added'),
+          change('Long', 'landing moved'),
+          change('Deep', 'deleted'),
+          change('Sova lineup', 'images changed'),
+        ],
+      ),
+    ];
+
+    Future<void> openPopover(
+        WidgetTester tester, ProviderContainer container) async {
+      // The test font sets every glyph a full em wide, so the lists wrap far
+      // more than in the app; a desktop-sized window gives them the room.
+      tester.view.physicalSize = const Size(1280, 1024);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+                body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(_syncButton('attention'));
+      await tester.pumpAndSettle();
+    }
+
+    Finder line(String text) => find.text(text, findRichText: true);
+
+    testWidgets('list what each side changed and offer Keep both',
+        (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession();
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: conflicts,
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      expect(
+        find.textContaining('A teammate changed these lineups'),
+        findsOneWidget,
+      );
+      expect(find.text('Your changes'), findsOneWidget);
+      expect(line('Heaven · notes edited'), findsOneWidget);
+      expect(find.text('Cloud changes'), findsOneWidget);
+      expect(line('Mid · renamed'), findsOneWidget);
+      expect(line('Short · added'), findsOneWidget);
+      expect(line('Long · landing moved'), findsOneWidget);
+      expect(line('Deep · deleted'), findsOneWidget);
+      // Past four lines the rest are counted.
+      expect(line('Sova lineup · images changed'), findsNothing);
+      expect(find.text('and 1 more lineup'), findsOneWidget);
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep mine'), findsOneWidget);
+      expect(find.text('Keep both'), findsOneWidget);
+
+      await tester.tap(find.text('Keep both'));
+      await tester.pumpAndSettle();
+
+      expect(session.keepBothCount, 1);
+      expect(session.useCloudCount, 0);
+      expect(queue.retryRejectedCount, 0);
+      expect(queue.flushNowCount, 0);
+    });
+
+    testWidgets('a Keep both that cannot load the cloud version says so',
+        (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession(result: false);
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: conflicts,
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      await tester.tap(find.text('Keep both'));
+      await tester.pumpAndSettle();
+
+      expect(session.keepBothCount, 1);
+      expect(
+        find.text('Could not load the cloud version. Nothing was changed.'),
+        findsOneWidget,
+      );
+      expect(find.text('Keep both'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a Keep both that copied but then lost the cloud version points to '
+        'Use cloud', (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession(keepBoth: KeepBothOutcome.copiesOnly);
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: conflicts,
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      await tester.tap(find.text('Keep both'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Your version was added as a copy'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Choose Use cloud to finish'), findsOneWidget);
+    });
   });
 
   testWidgets(

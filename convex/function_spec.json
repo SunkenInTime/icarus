@@ -44665,7 +44665,7 @@
                   "kind": {
                     "fieldType": {
                       "type": "literal",
-                      "value": "lineup"
+                      "value": "lineups"
                     },
                     "optional": false
                   },
@@ -48008,7 +48008,7 @@
                   "kind": {
                     "fieldType": {
                       "type": "literal",
-                      "value": "lineup"
+                      "value": "lineups"
                     },
                     "optional": false
                   },
@@ -91406,7 +91406,7 @@
                                 "kind": {
                                   "fieldType": {
                                     "type": "literal",
-                                    "value": "lineup"
+                                    "value": "lineups"
                                   },
                                   "optional": false
                                 },
@@ -104496,7 +104496,7 @@
                                 "kind": {
                                   "fieldType": {
                                     "type": "literal",
-                                    "value": "lineup"
+                                    "value": "lineups"
                                   },
                                   "optional": false
                                 },
@@ -137511,7 +137511,7 @@
                                       "kind": {
                                         "fieldType": {
                                           "type": "literal",
-                                          "value": "lineup"
+                                          "value": "lineups"
                                         },
                                         "optional": false
                                       },
@@ -160827,7 +160827,7 @@
                         "kind": {
                           "fieldType": {
                             "type": "literal",
-                            "value": "lineup"
+                            "value": "lineups"
                           },
                           "optional": false
                         },
@@ -186398,7 +186398,7 @@
                         "kind": {
                           "fieldType": {
                             "type": "literal",
-                            "value": "lineup"
+                            "value": "lineups"
                           },
                           "optional": false
                         },

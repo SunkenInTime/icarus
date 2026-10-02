@@ -3,7 +3,7 @@ import { getConvexSize, v, type Value } from "convex/values";
 import {
   agentTypesOf,
   deleteStrategyAgentSummary,
-  lineupAgentOf,
+  lineupAgentsOf,
   refreshStrategyAgentSummary,
   storeStrategyAgentSummary,
 } from "./lib/strategyAgentSummary";
@@ -537,10 +537,9 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 type LineupPayload = Doc<"lineups">["payload"];
 
 /// New ids for a copied strategy's lineups: one map shared by every row and
-/// every id in it. Lineups that share an origin or landing in the source
-/// carry the same id for it, so their copies do too, and the copy draws
-/// them as one spot again. Ids the source repeats across a lineup and its
-/// ends (a landing may take its lineup's id) repeat in the copy the same way.
+/// every id in it, so one source id always becomes one copy id. Ids the
+/// source repeats within a group (a landing may take its lineup's id, a
+/// link names its origin and landing) repeat in the copy the same way.
 function lineupIdMap() {
   const ids = new Map<string, string>();
   return (id: string): string => {
@@ -550,26 +549,39 @@ function lineupIdMap() {
   };
 }
 
-/// A lineup row as the copy stores it: the lineup, its origin and its
-/// landing under new ids, each marker's `lineUpID` following its end.
+/// A lineup group row as the copy stores it: the group, its origins,
+/// landings and links under new ids, each link naming its ends' new ids and
+/// each marker's `lineUpID` following its spot. Everything else is kept as
+/// it is.
 function copiedLineupRow(
   payload: LineupPayload,
   newId: (id: string) => string,
 ): { publicId: string; payload: LineupPayload } {
   const data = payload.data;
   const idOf = (value: unknown) => (typeof value === "string" ? value : "");
-  const copiedEnd = (end: unknown, markerKey: "agent" | "ability") => {
-    if (!isJsonObject(end)) return end;
-    const id = newId(idOf(end.id));
-    const marker = end[markerKey];
+  const entries = (value: unknown): unknown[] =>
+    Array.isArray(value) ? value : [];
+  const copiedSpot = (spot: unknown, markerKey: "agent" | "ability") => {
+    if (!isJsonObject(spot)) return spot;
+    const id = newId(idOf(spot.id));
+    const marker = spot[markerKey];
     return {
-      ...end,
+      ...spot,
       id,
       ...(isJsonObject(marker)
         ? { [markerKey]: { ...marker, lineUpID: id } }
         : {}),
     };
   };
+  const copiedLink = (link: unknown) =>
+    isJsonObject(link)
+      ? {
+          ...link,
+          id: newId(idOf(link.id)),
+          originId: newId(idOf(link.originId)),
+          landingId: newId(idOf(link.landingId)),
+        }
+      : link;
   const id = newId(idOf(data.id));
   return {
     publicId: id,
@@ -578,8 +590,13 @@ function copiedLineupRow(
       data: {
         ...data,
         id,
-        origin: copiedEnd(data.origin, "agent"),
-        landing: copiedEnd(data.landing, "ability"),
+        origins: entries(data.origins).map((origin) =>
+          copiedSpot(origin, "agent"),
+        ),
+        landings: entries(data.landings).map((landing) =>
+          copiedSpot(landing, "ability"),
+        ),
+        links: entries(data.links).map(copiedLink),
       } as LineupData,
     },
   };
@@ -828,8 +845,7 @@ export const duplicate = mutation({
       budget.spend({ documents: assetIdsOfRow(copiedLineup).size });
       const lineupId = await ctx.db.insert("lineups", copiedLineup);
       await insertAssetReferences(ctx, { lineupId }, copiedLineup);
-      const agent = lineupAgentOf(copiedLineup.payload);
-      if (agent !== null) {
+      for (const agent of lineupAgentsOf(copiedLineup.payload)) {
         budget.spend({ documents: 1 });
         await ctx.db.insert("lineupAgents", {
           strategyId,

@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -41,6 +43,7 @@ import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
+import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
@@ -56,6 +59,19 @@ enum PageSwitchDirection { next, previous }
 /// The page on screen, which a teammate deleted while it held work the server
 /// never got. [name] is its name when it was last loaded.
 typedef DeletedPage = ({String pageId, String name});
+
+/// How Keep both ended (see StrategyPageSessionNotifier.keepBothForRejected).
+enum KeepBothOutcome {
+  /// The cloud's versions stand, and the user's are beside them as copies.
+  kept,
+
+  /// The cloud's versions could not be loaded. Nothing changed.
+  unchanged,
+
+  /// The user's versions were added as copies, but the cloud's could not be
+  /// loaded after all, so the conflicts still wait. Use cloud finishes.
+  copiesOnly,
+}
 
 /// How an attempt to restore a deleted page ended.
 enum DeletedPageRestore {
@@ -542,6 +558,60 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (flushImmediately && strategyState.source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
+  }
+
+  /// Keeps both versions of every conflicting lineup group: the cloud's
+  /// stays the group, and the user's goes beside it as a copy under fresh
+  /// ids (see forkLineUpGraph), so neither side's work is lost. A version
+  /// that deletes the group, or only reorders it, holds nothing to copy.
+  ///
+  /// Only for conflicts that are all lineup groups on the page on screen
+  /// (see lineupConflictsProvider); anything else is a [StateError]. The
+  /// cloud's version is loaded first, so a device that cannot reach it
+  /// changes nothing. The copies then go on the canvas, and
+  /// [useCloudVersionsForRejected] queues them before it discards anything:
+  /// if taking the cloud's version still fails, the copies and the waiting
+  /// versions both remain, and Use cloud finishes the job.
+  Future<KeepBothOutcome> keepBothForRejected() async {
+    final strategyState = ref.read(strategyProvider);
+    final queue = ref.read(strategyOpQueueProvider);
+    final attention = queue.attentionByEntityKey;
+    final activePageId = state.activePageId;
+    if (strategyState.source != StrategySource.cloud ||
+        attention.isEmpty ||
+        attention.keys.any((key) =>
+            key.kind != EntitySyncKeyKind.lineup ||
+            key.pageId != activePageId)) {
+      throw StateError('Keep both is only for lineup groups on this page');
+    }
+    final copies = <LineUpGraph>[];
+    for (final MapEntry(:key, value: refused) in attention.entries) {
+      final newest = (queue.successorByEntityKey[key] ?? refused).pending.op;
+      final payload = switch (newest) {
+        LineupAddOp(:final payload) => payload,
+        LineupPatchOp(:final payload?) => payload,
+        _ => null,
+      };
+      if (payload == null) continue;
+      copies.add(forkLineUpGraph(lineUpGraphFromCloudRows([
+        CloudLineupRow(publicId: key.entityId!, payload: payload),
+      ]).graph));
+    }
+
+    await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null ||
+        snapshot.header.publicId != strategyState.strategyId) {
+      return KeepBothOutcome.unchanged;
+    }
+
+    final lineUps = ref.read(lineUpProvider.notifier);
+    for (final copy in copies) {
+      lineUps.addRecovered(copy);
+    }
+    return await useCloudVersionsForRejected()
+        ? KeepBothOutcome.kept
+        : KeepBothOutcome.copiesOnly;
   }
 
   /// Adopts the cloud version for every current conflict in this strategy.

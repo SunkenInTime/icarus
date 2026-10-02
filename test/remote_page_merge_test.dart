@@ -85,6 +85,21 @@ void main() {
         _link('k3', 'o3', 'l3', 'k3 renamed'),
       ],
     );
+    // The group rows: g1 holds k1 and k2 with their spots, g3 holds k3 (and
+    // a teammate's k4, when there is one).
+    const groups = {
+      'k1': 'g1',
+      'o1': 'g1',
+      'k2': 'g1',
+      'o2': 'g1',
+      'shared': 'g1',
+      'k3': 'g3',
+      'o3': 'g3',
+      'l3': 'g3',
+      'k4': 'g3',
+      'o4': 'g3',
+    };
+    String? groupOf(String id) => groups[id];
     Map<String, String> names(LineUpGraph graph) =>
         {for (final link in graph.links) link.id: link.name};
     Map<String, double> spots(LineUpGraph graph) => {
@@ -95,19 +110,27 @@ void main() {
         };
 
     test('nothing held takes the server copy whole', () {
-      final (graph, held) =
-          mergeHeldLineups(local: local, remote: remote, holding: {'x'});
+      final (graph, held) = mergeHeldLineups(
+        local: local,
+        remote: remote,
+        holding: {'x'},
+        groupOf: groupOf,
+      );
 
       expect(held, isEmpty);
       expect(identical(graph, remote), isTrue);
     });
 
-    test('holding a spot holds every lineup sharing it, and only those', () {
-      final (graph, held) =
-          mergeHeldLineups(local: local, remote: remote, holding: {'o1'});
+    test('holding a spot holds its whole group, and only that', () {
+      final (graph, held) = mergeHeldLineups(
+        local: local,
+        remote: remote,
+        holding: {'o1'},
+        groupOf: groupOf,
+      );
 
-      // o1 holds k1; k1 shares its landing with k2, so k2 waits too.
-      expect(held, {'k1', 'k2'});
+      // o1 holds group g1, so k2 waits with k1.
+      expect(held, {'g1'});
       expect(names(graph), {'k1': 'k1', 'k2': 'k2', 'k3': 'k3 renamed'});
       expect(spots(graph), {
         'o1': 1,
@@ -127,10 +150,14 @@ void main() {
         links: [...remote.links, _link('k4', 'o4', 'l3')],
       );
 
-      final (graph, held) =
-          mergeHeldLineups(local: local, remote: withNew, holding: {'l3'});
+      final (graph, held) = mergeHeldLineups(
+        local: local,
+        remote: withNew,
+        holding: {'l3'},
+        groupOf: groupOf,
+      );
 
-      expect(held, {'k3', 'k4'});
+      expect(held, {'g3'});
       expect(graph.links.map((link) => link.id), ['k1', 'k2', 'k3']);
       expect(graph.origins.map((origin) => origin.id), ['o1', 'o2', 'o3']);
       expect(spots(graph)['l3'], 1);
@@ -143,12 +170,44 @@ void main() {
         links: [remote.links[1], remote.links[2]],
       );
 
-      final (graph, held) =
-          mergeHeldLineups(local: local, remote: without, holding: {'k1'});
+      final (graph, held) = mergeHeldLineups(
+        local: local,
+        remote: without,
+        holding: {'k1'},
+        groupOf: groupOf,
+      );
 
-      expect(held, {'k1', 'k2'});
+      expect(held, {'g1'});
       expect(graph.links.map((link) => link.id), ['k1', 'k2', 'k3']);
       expect(spots(graph)['o1'], 1);
+    });
+
+    test('a group holds lineups no spot connects any more', () {
+      // k3 is in g1 too: the lineup that joined it to k1 was deleted, and
+      // a group never splits.
+      String? oneGroup(String id) => id == 'x' ? null : 'g1';
+
+      final (graph, held) = mergeHeldLineups(
+        local: local,
+        remote: remote,
+        holding: {'k1'},
+        groupOf: oneGroup,
+      );
+
+      expect(held, {'g1'});
+      expect(names(graph), {'k1': 'k1', 'k2': 'k2', 'k3': 'k3'});
+    });
+
+    test('a lineup in no group yet holds what shares its spots', () {
+      final (graph, held) = mergeHeldLineups(
+        local: local,
+        remote: remote,
+        holding: {'o1'},
+        groupOf: (_) => null,
+      );
+
+      expect(held, isEmpty);
+      expect(names(graph), {'k1': 'k1', 'k2': 'k2', 'k3': 'k3 renamed'});
     });
   });
 }

@@ -13,7 +13,7 @@ import 'package:icarus/migrations/paranoia_range_migration.dart';
 /// rewritten on the server, so every client reads it the same way until
 /// someone edits it.
 ///
-/// Lineup rows are never corrected. The one-row lineup (protocol 5) came
+/// Lineup rows are never corrected. The lineup group row (protocol 5) came
 /// after data version 104, so every lineup row holds its Paranoia at the
 /// in-game size already; correcting one would move it twice.
 const paranoiaCloudPayloadVersion = 2;

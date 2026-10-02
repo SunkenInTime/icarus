@@ -78,7 +78,7 @@ List<LineupAddOp> _upload(
 /// server returns them.
 LineUpGraph _hydrate(List<LineupAddOp> adds) => _hydrated(adds).graph;
 
-/// [_hydrate], with the aliases drawing it took.
+/// [_hydrate], with the group each lineup and spot was drawn from.
 CloudLineups _hydrated(List<LineupAddOp> adds) {
   return lineUpGraphFromCloudRows([
     for (final add in adds)
@@ -95,15 +95,16 @@ String _canonical(Object? value) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('a lineup is uploaded as one row carrying its origin and landing', () {
+  test('a lineup is uploaded as a group row holding it and its spots', () {
     final adds = _upload(_sharedIdLineup());
 
     expect(adds.map((add) => add.lineupPublicId), ['link-1']);
-    expect(adds.single.payload['kind'], cloudLineupPayloadKind);
+    expect(adds.single.payload['kind'], cloudLineupsPayloadKind);
     expect(adds.single.sortIndex, 0);
     final data = cloudPayloadData(adds.single.payload);
-    expect((data['origin'] as Map)['id'], 'origin-1');
-    expect((data['landing'] as Map)['id'], 'link-1');
+    expect((data['origins'] as List).single['id'], 'origin-1');
+    expect((data['landings'] as List).single['id'], 'link-1');
+    expect((data['links'] as List).single['id'], 'link-1');
     // Hydrating the upload gives back the page's graph, ids and all, so the
     // page never authors a patch for a lineup nobody touched.
     expect(
@@ -112,29 +113,28 @@ void main() {
     );
   });
 
-  test('a lineup id another page already took is reassigned', () {
+  test('a group id another page already took is not reused', () {
+    final usedLineupIds = {'link-1'};
     final adds = _upload(
       _sharedIdLineup(),
-      // A page duplicated from page 1 already uploaded this lineup.
-      usedLineupIds: {'link-1'},
+      // A page duplicated from page 1 already uploaded this group.
+      usedLineupIds: usedLineupIds,
     );
 
     final newId = adds.single.lineupPublicId;
     expect(newId, isNot('link-1'));
+    expect(usedLineupIds, {'link-1', newId});
     final data = cloudPayloadData(adds.single.payload);
     expect(data['id'], newId);
-    // Spots are shared within a page only, so its ends keep their ids.
-    expect((data['origin'] as Map)['id'], 'origin-1');
-    expect((data['landing'] as Map)['id'], 'link-1');
+    // Ids inside a row only need to be unique in the row, so they stay.
+    expect((data['links'] as List).single['id'], 'link-1');
+    expect((data['origins'] as List).single['id'], 'origin-1');
 
     // And the rows reproduce exactly when the hydrated graph is sent again.
     final hydrated = _hydrated(adds);
-    final resent = cloudLineupRows(
-      hydrated.graph,
-      aliases: hydrated.aliases,
-    );
+    final resent = cloudLineupRows(hydrated.graph, groupOf: hydrated.groupOf);
     expect(
-      _canonical([for (final row in resent) row.payload]),
+      _canonical([for (final row in resent.rows) row.payload]),
       _canonical([for (final add in adds) add.payload]),
     );
   });
@@ -171,11 +171,8 @@ void main() {
 
     final adds = _upload(fanIn);
 
-    expect(adds.map((add) => add.lineupPublicId), [
-      'link-a',
-      'link-b',
-      'link-c',
-    ]);
+    // Connected through their spots, the three lineups are one group.
+    expect(adds.map((add) => add.lineupPublicId), ['link-a']);
     final hydrated = _hydrate(adds);
     expect(hydrated.landings.map((landing) => landing.id), [
       'shared',

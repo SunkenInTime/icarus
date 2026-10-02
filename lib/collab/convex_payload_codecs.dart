@@ -111,15 +111,16 @@ final class UtilityConvexCodec implements ConvexPayloadCodec<CloudPayload> {
   ConvexValue encode(CloudPayload value) => _encodePayload(value, 'utility');
 }
 
-@ConvexPayload('lineup')
-final class LineupConvexCodec implements ConvexPayloadCodec<CloudPayload> {
-  const LineupConvexCodec();
+// One lineup group: the lineups on a page joined through shared spots.
+@ConvexPayload('lineups')
+final class LineupsConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const LineupsConvexCodec();
 
   @override
-  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'lineup');
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'lineups');
 
   @override
-  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineup');
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineups');
 }
 
 // The origin, landing and link rows of protocol 4. The server still takes

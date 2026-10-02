@@ -395,34 +395,45 @@ void main() {
   test('cloud payload data normalizes nested bridge maps for lineup parsing',
       () {
     final payload = <String, dynamic>{
-      'kind': cloudLineupPayloadKind,
+      'kind': cloudLineupsPayloadKind,
       'payloadVersion': 1,
       'data': <Object?, Object?>{
-        'id': 'lineup-1',
-        'name': 'Garage smoke',
-        'origin': <Object?, Object?>{
-          'id': 'origin-1',
-          'agent': <Object?, Object?>{
-            'id': 'agent-1',
-            'type': 'sova',
-            'position': <Object?, Object?>{'dx': 10, 'dy': 20},
-            'lineUpID': 'origin-1',
+        'id': 'group-1',
+        'origins': <Object?>[
+          <Object?, Object?>{
+            'id': 'origin-1',
+            'agent': <Object?, Object?>{
+              'id': 'agent-1',
+              'type': 'sova',
+              'position': <Object?, Object?>{'dx': 10, 'dy': 20},
+              'lineUpID': 'origin-1',
+            },
           },
-        },
-        'landing': <Object?, Object?>{
-          'id': 'landing-1',
-          'ability': <Object?, Object?>{
-            'id': 'ability-1',
-            'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
-            'position': <Object?, Object?>{'dx': 30, 'dy': 40},
-            'lineUpID': 'landing-1',
+        ],
+        'landings': <Object?>[
+          <Object?, Object?>{
+            'id': 'landing-1',
+            'ability': <Object?, Object?>{
+              'id': 'ability-1',
+              'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
+              'position': <Object?, Object?>{'dx': 30, 'dy': 40},
+              'lineUpID': 'landing-1',
+            },
           },
-        },
+        ],
+        'links': <Object?>[
+          <Object?, Object?>{
+            'id': 'lineup-1',
+            'originId': 'origin-1',
+            'landingId': 'landing-1',
+            'name': 'Garage smoke',
+          },
+        ],
       },
     };
 
     final read = lineUpGraphFromCloudRows([
-      CloudLineupRow(publicId: 'lineup-1', payload: payload),
+      CloudLineupRow(publicId: 'group-1', payload: payload),
     ]);
     final graph = read.graph;
     final landing = graph.landings.single;
@@ -432,7 +443,7 @@ void main() {
     expect(landing.id, 'landing-1');
     expect(landing.ability.lineUpID, 'landing-1');
     expect(landing.ability.position, const Offset(30, 40));
-    expect(read.aliases.isEmpty, isTrue);
+    expect(read.groupOf['lineup-1'], 'group-1');
   });
 
   test('ability info accepts Convex float64 integers and rejects fractions',
@@ -511,7 +522,7 @@ void main() {
         isA<FormatException>().having(
           (error) => error.message,
           'message',
-          contains('Cloud lineup lineup-1 could not be read'),
+          contains('Cloud lineup group lineup-1 could not be read'),
         ),
       ),
     );

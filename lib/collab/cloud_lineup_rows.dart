@@ -1,140 +1,218 @@
-import 'dart:convert';
-
-import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:uuid/uuid.dart';
 
-/// One cloud row per lineup (a [LineUpLink]): its name, video, notes and
-/// images, and whole copies of its origin and landing.
+/// One cloud row per lineup group: lineups that share a standing spot or a
+/// landing spot, stored together with those spots.
 ///
-/// Lineups that share a spot (several lineups from one origin, or into one
-/// landing) each carry their own copy of it, under the spot's id. The server
-/// never joins rows, so every row can be drawn on its own, and a lineup's
-/// row only ever changes when the user changes that lineup or its spot.
+/// A shared spot lives in exactly one row, so it can never disagree with
+/// itself, and the row's one revision guards every lineup on it: two
+/// clients changing the same group meet as an ordinary conflict. A row never
+/// names anything outside itself.
+///
+/// A group only grows or merges, never splits: deleting the lineup that
+/// joined two halves leaves both halves in the row. That keeps every edit a
+/// write to exactly the row the user's lineups already live in.
 class CloudLineupRow {
   const CloudLineupRow({required this.publicId, required this.payload});
 
   CloudLineupRow.remote(RemoteLineup lineup)
       : this(publicId: lineup.publicId, payload: lineup.payload);
 
-  /// The lineup's id, as on the canvas and in `payload.data.id`.
+  /// The group's id, as in `payload.data.id`.
   final String publicId;
   final CloudPayload payload;
 }
 
-/// Local ids standing for real origin and landing ids, alias to real id.
-/// They exist only on the canvas (see [lineUpGraphFromCloudRows]); rows are
-/// always written under the real id.
-class CloudLineupAliases {
-  const CloudLineupAliases({this.origins = const {}, this.landings = const {}});
-
-  static const none = CloudLineupAliases();
-
-  final Map<String, String> origins;
-  final Map<String, String> landings;
-
-  bool get isEmpty => origins.isEmpty && landings.isEmpty;
-
-  CloudLineupAliases followedBy(CloudLineupAliases other) {
-    if (other.isEmpty) return this;
-    return CloudLineupAliases(
-      origins: {...origins, ...other.origins},
-      landings: {...landings, ...other.landings},
-    );
-  }
-}
-
-/// A page's lineups as cloud rows describe them, and the aliases drawing
-/// them took.
+/// A page's lineups as cloud rows describe them, and the group each lineup
+/// and spot was drawn from (lineup, origin or landing id to group id).
 class CloudLineups {
-  const CloudLineups({
-    required this.graph,
-    this.aliases = CloudLineupAliases.none,
-  });
+  const CloudLineups({required this.graph, this.groupOf = const {}});
 
   final LineUpGraph graph;
-  final CloudLineupAliases aliases;
+  final Map<String, String> groupOf;
 }
 
-/// A page's lineups as its live [rows] describe them.
+/// The rows that store a page's lineups, and the group each lineup and spot
+/// went into.
+class CloudLineupRows {
+  const CloudLineupRows({required this.rows, required this.groupOf});
+
+  final List<CloudLineupRow> rows;
+  final Map<String, String> groupOf;
+}
+
+/// A page's lineups as its live [rows] describe them, rows in order.
 ///
-/// Links come from the rows, in their order. The copies the rows carry of
-/// one origin (or landing) id are grouped by value. Copies that agree, as
-/// they do unless a change reached only some of a spot's lineups, are drawn
-/// as one spot under the real id. Copies that disagree are drawn apart, one
-/// spot per value: the value the row with the smallest lineup id carries
-/// keeps the real id, and every other value is drawn under the alias
-/// `<real id>@<smallest lineup id carrying it>`. Every client draws the same
-/// spots from the same rows, and nothing is written for it: each lineup
-/// keeps its own copy until the user changes it. Spots appear in the order
-/// the rows first carry them.
+/// Ids are unique within a row but nothing stops two rows naming the same
+/// one (two clients merging groups at once, say). The first row to name a
+/// spot or lineup draws it; a lineup in a later row aimed at that spot is
+/// drawn to it too.
 ///
 /// Throws a [FormatException] naming the row when one cannot be read.
 CloudLineups lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
-  final read = [for (final row in rows) _readLineupRow(row)];
-  final originIds = _spotIds([
-    for (final (link, origin, _) in read) (link.id, origin.id, origin.toJson()),
-  ]);
-  final landingIds = _spotIds([
-    for (final (link, _, landing) in read)
-      (link.id, landing.id, landing.toJson()),
-  ]);
-
   final origins = <String, LineUpOrigin>{};
   final landings = <String, LineUpLanding>{};
-  final links = <LineUpLink>[];
-  for (final (link, origin, landing) in read) {
-    final originId = originIds.byLineup[link.id]!;
-    final landingId = landingIds.byLineup[link.id]!;
-    origins.putIfAbsent(originId, () => _originAs(origin, originId));
-    landings.putIfAbsent(landingId, () => _landingAs(landing, landingId));
-    links.add(link.copyWith(originId: originId, landingId: landingId));
+  final links = <String, LineUpLink>{};
+  final groupOf = <String, String>{};
+  for (final row in rows) {
+    final group = _readGroupRow(row);
+    for (final origin in group.origins) {
+      if (origins.containsKey(origin.id)) continue;
+      origins[origin.id] = origin;
+      groupOf[origin.id] = row.publicId;
+    }
+    for (final landing in group.landings) {
+      if (landings.containsKey(landing.id)) continue;
+      landings[landing.id] = landing;
+      groupOf[landing.id] = row.publicId;
+    }
+    for (final link in group.links) {
+      if (links.containsKey(link.id)) continue;
+      links[link.id] = link;
+      groupOf[link.id] = row.publicId;
+    }
   }
   return CloudLineups(
     graph: LineUpGraph(
       origins: origins.values.toList(),
       landings: landings.values.toList(),
-      links: links,
+      links: links.values.toList(),
     ),
-    aliases: CloudLineupAliases(
-      origins: originIds.aliases,
-      landings: landingIds.aliases,
-    ),
+    groupOf: groupOf,
   );
 }
 
-/// The rows that store [graph]: one per link, in link order, each carrying
-/// its origin and landing as they are now, under their real ids ([aliases]
-/// maps the canvas's aliases back). A link whose origin or landing is
-/// missing draws nothing on the canvas, so it has no row either.
-List<CloudLineupRow> cloudLineupRows(
+/// The rows that store [graph], given the group each lineup and spot was in
+/// before ([groupOf], from the rows the canvas was drawn from and earlier
+/// calls).
+///
+/// Lineups connected through a spot share a row, and so do lineups that
+/// shared one before, so a group never splits. A group connected to two
+/// groups (only a merge from two clients makes one) takes the smaller id
+/// and the other row is no longer written. A group with no lineup that was
+/// in one before is new: it takes its smallest lineup id that is not
+/// already a group's id, here, in [groupOf] or in [takenGroupIds] (or a
+/// fresh id, when every one of them is).
+///
+/// A lineup whose origin or landing is missing draws nothing on the canvas,
+/// so it is not written; neither is a spot no lineup is aimed at. Rows come
+/// in the order of their first lineup, their contents in [graph]'s order.
+CloudLineupRows cloudLineupRows(
   LineUpGraph graph, {
-  CloudLineupAliases aliases = CloudLineupAliases.none,
+  Map<String, String> groupOf = const {},
+  Set<String> takenGroupIds = const {},
 }) {
-  final origins = {
-    for (final origin in graph.origins)
-      origin.id: _originAs(origin, aliases.origins[origin.id] ?? origin.id),
-  };
-  final landings = {
-    for (final landing in graph.landings)
-      landing.id:
-          _landingAs(landing, aliases.landings[landing.id] ?? landing.id),
-  };
-  return [
+  final originIds = {for (final origin in graph.origins) origin.id};
+  final landingIds = {for (final landing in graph.landings) landing.id};
+  final links = [
     for (final link in graph.links)
-      if ((origins[link.originId], landings[link.landingId])
-          case (final origin?, final landing?))
-        CloudLineupRow(
-          publicId: link.id,
-          payload: cloudLineupPayload({
-            ...link.toJson()
-              ..remove('originId')
-              ..remove('landingId'),
-            'origin': origin.toJson(),
-            'landing': landing.toJson(),
-          }),
-        ),
+      if (originIds.contains(link.originId) &&
+          landingIds.contains(link.landingId))
+        link,
   ];
+
+  // Union-find over lineups, spots and earlier groups, each kind in its own
+  // namespace so equal ids of different kinds stay apart.
+  final parent = <String, String>{};
+  String find(String node) {
+    final up = parent[node] ?? node;
+    if (up == node) return node;
+    return parent[node] = find(up);
+  }
+
+  void union(String a, String b) {
+    parent.putIfAbsent(a, () => a);
+    parent.putIfAbsent(b, () => b);
+    final rootA = find(a);
+    final rootB = find(b);
+    if (rootA != rootB) parent[rootA] = rootB;
+  }
+
+  void joinEarlierGroup(String node, String id) {
+    if (groupOf[id] case final group?) union(node, 'g:$group');
+  }
+
+  for (final link in links) {
+    final node = 'k:${link.id}';
+    union(node, 'o:${link.originId}');
+    union(node, 'l:${link.landingId}');
+    joinEarlierGroup(node, link.id);
+    joinEarlierGroup('o:${link.originId}', link.originId);
+    joinEarlierGroup('l:${link.landingId}', link.landingId);
+  }
+
+  // Each component's links in graph order, and the earlier groups in it.
+  final linksByRoot = <String, List<LineUpLink>>{};
+  for (final link in links) {
+    (linksByRoot[find('k:${link.id}')] ??= []).add(link);
+  }
+  final earlierByRoot = <String, List<String>>{};
+  for (final node in parent.keys) {
+    if (node.startsWith('g:')) {
+      (earlierByRoot[find(node)] ??= []).add(node.substring(2));
+    }
+  }
+
+  String smallest(Iterable<String> ids) =>
+      ids.reduce((a, b) => a.compareTo(b) <= 0 ? a : b);
+
+  final idByRoot = <String, String>{};
+  final used = <String>{...takenGroupIds, ...groupOf.values};
+  for (final MapEntry(key: root, value: earlier) in earlierByRoot.entries) {
+    if (!linksByRoot.containsKey(root)) continue;
+    final id = smallest(earlier);
+    idByRoot[root] = id;
+    used.addAll(earlier);
+  }
+  for (final MapEntry(key: root, value: groupLinks) in linksByRoot.entries) {
+    if (idByRoot.containsKey(root)) continue;
+    final candidates = [for (final link in groupLinks) link.id]..sort();
+    final id = candidates.firstWhere(
+      (candidate) => !used.contains(candidate),
+      orElse: () => const Uuid().v4(),
+    );
+    idByRoot[root] = id;
+    used.add(id);
+  }
+
+  final originsById = {for (final origin in graph.origins) origin.id: origin};
+  final landingsById = {
+    for (final landing in graph.landings) landing.id: landing,
+  };
+  final assigned = <String, String>{};
+  final rows = <CloudLineupRow>[];
+  for (final MapEntry(key: root, value: groupLinks) in linksByRoot.entries) {
+    final id = idByRoot[root]!;
+    final usedOrigins = {for (final link in groupLinks) link.originId};
+    final usedLandings = {for (final link in groupLinks) link.landingId};
+    final origins = [
+      for (final origin in graph.origins)
+        if (usedOrigins.contains(origin.id)) originsById[origin.id]!,
+    ];
+    final landings = [
+      for (final landing in graph.landings)
+        if (usedLandings.contains(landing.id)) landingsById[landing.id]!,
+    ];
+    for (final itemId in [...usedOrigins, ...usedLandings]) {
+      assigned[itemId] = id;
+    }
+    for (final link in groupLinks) {
+      assigned[link.id] = id;
+    }
+    rows.add(
+      CloudLineupRow(
+        publicId: id,
+        payload: cloudLineupsPayload({
+          'id': id,
+          'origins': [for (final origin in origins) origin.toJson()],
+          'landings': [for (final landing in landings) landing.toJson()],
+          'links': [for (final link in groupLinks) link.toJson()],
+        }),
+      ),
+    );
+  }
+  return CloudLineupRows(rows: rows, groupOf: assigned);
 }
 
 /// A page's lineups as its [lineups] on the server describe them. Deleted
@@ -146,109 +224,71 @@ LineUpGraph lineUpGraphFromRemoteLineups(Iterable<RemoteLineup> lineups) {
   ]).graph;
 }
 
-/// Whether [op] is a lineup change in the cloud format before one row per
-/// lineup: an origin, landing or link row keyed `<kind>:<id>`. An outbox
-/// written by such a build can still hold one; it is never sent.
+/// Whether [op] is a lineup change in a cloud format before one row per
+/// lineup group: an origin, landing or link row keyed `<kind>:<id>`. An
+/// outbox written by such a build can still hold one; it is never sent.
 bool isRetiredCloudLineupOp(StrategyOp op) {
   if (op.entityType != StrategyOpEntityType.lineup) return false;
   final payload = op.payload;
-  return (payload is Map && payload['kind'] != cloudLineupPayloadKind) ||
+  return (payload is Map && payload['kind'] != cloudLineupsPayloadKind) ||
       _retiredLineupKey.hasMatch(op.entityPublicId ?? '');
 }
 
 final _retiredLineupKey = RegExp(r'^lineup(Origin|Landing|Link):');
 
-/// The spot id each lineup's copy of one kind of end is drawn under, and the
-/// aliases among them; see [lineUpGraphFromCloudRows].
-({Map<String, String> byLineup, Map<String, String> aliases}) _spotIds(
-  List<(String lineupId, String endId, Map<String, dynamic> value)> copies,
-) {
-  // End id -> value -> the lineups carrying that value.
-  final groups = <String, Map<String, List<String>>>{};
-  for (final (lineupId, endId, value) in copies) {
-    ((groups[endId] ??= {})[_valueKey(value)] ??= []).add(lineupId);
-  }
-  final byLineup = <String, String>{};
-  final aliases = <String, String>{};
-  String smallest(List<String> ids) => ids.reduce(
-        (a, b) => a.compareTo(b) <= 0 ? a : b,
-      );
-  for (final MapEntry(key: endId, value: byValue) in groups.entries) {
-    final firsts = {
-      for (final MapEntry(:key, value: lineups) in byValue.entries)
-        key: smallest(lineups),
-    };
-    final realValue = firsts.entries
-        .reduce((a, b) => a.value.compareTo(b.value) <= 0 ? a : b)
-        .key;
-    for (final MapEntry(key: value, value: lineups) in byValue.entries) {
-      final id = value == realValue ? endId : '$endId@${firsts[value]}';
-      if (id != endId) aliases[id] = endId;
-      for (final lineupId in lineups) {
-        byLineup[lineupId] = id;
-      }
-    }
-  }
-  return (byLineup: byLineup, aliases: aliases);
-}
-
-String _valueKey(Map<String, dynamic> value) =>
-    canonicalCloudJsonEncode(jsonDecode(jsonEncode(value)));
-
-/// [origin] under [id], its agent's `lineUpID` following when it named the
-/// origin's old id.
-LineUpOrigin _originAs(LineUpOrigin origin, String id) {
-  if (id == origin.id) return origin;
-  final agent = origin.agent;
-  return LineUpOrigin(
-    id: id,
-    agent: agent.lineUpID == origin.id
-        ? (agent.copyWith(lineUpID: id)..isDeleted = agent.isDeleted)
-        : agent,
-  );
-}
-
-/// [landing] under [id], its ability's `lineUpID` following when it named
-/// the landing's old id.
-LineUpLanding _landingAs(LineUpLanding landing, String id) {
-  if (id == landing.id) return landing;
-  final ability = landing.ability;
-  return LineUpLanding(
-    id: id,
-    ability: ability.lineUpID == landing.id
-        ? (ability.copyWith(lineUpID: id)..isDeleted = ability.isDeleted)
-        : ability,
-  );
-}
-
-(LineUpLink, LineUpOrigin, LineUpLanding) _readLineupRow(CloudLineupRow row) {
+({
+  List<LineUpOrigin> origins,
+  List<LineUpLanding> landings,
+  List<LineUpLink> links,
+}) _readGroupRow(CloudLineupRow row) {
   try {
     final kind = row.payload['kind'];
-    if (kind != cloudLineupPayloadKind) {
+    if (kind != cloudLineupsPayloadKind) {
       throw FormatException('unknown lineup kind $kind');
     }
     final data = cloudPayloadData(row.payload);
-    final origin = LineUpOrigin.fromJson(_object(data['origin'], 'origin'));
-    final landing = LineUpLanding.fromJson(_object(data['landing'], 'landing'));
-    final link = LineUpLink.fromJson({
-      ...data,
-      'originId': origin.id,
-      'landingId': landing.id,
-    });
-    if (link.id != row.publicId) {
-      throw FormatException('it holds lineup ${link.id}');
+    if (data['id'] != row.publicId) {
+      throw FormatException('it holds group ${data['id']}');
     }
-    return (link, origin, landing);
+    final group = (
+      origins: [
+        for (final json in _objects(data['origins'], 'origins'))
+          LineUpOrigin.fromJson(json),
+      ],
+      landings: [
+        for (final json in _objects(data['landings'], 'landings'))
+          LineUpLanding.fromJson(json),
+      ],
+      links: [
+        for (final json in _objects(data['links'], 'links'))
+          LineUpLink.fromJson(json),
+      ],
+    );
+    final originIds = {for (final origin in group.origins) origin.id};
+    final landingIds = {for (final landing in group.landings) landing.id};
+    for (final link in group.links) {
+      if (!originIds.contains(link.originId) ||
+          !landingIds.contains(link.landingId)) {
+        throw FormatException('lineup ${link.id} is aimed outside the row');
+      }
+    }
+    return group;
   } catch (error, stackTrace) {
     Error.throwWithStackTrace(
-      FormatException('Cloud lineup ${row.publicId} could not be read: '
+      FormatException('Cloud lineup group ${row.publicId} could not be read: '
           '$error'),
       stackTrace,
     );
   }
 }
 
-Map<String, dynamic> _object(Object? value, String name) {
-  if (value is! Map) throw FormatException('it has no $name');
-  return Map<String, dynamic>.from(value);
+List<Map<String, dynamic>> _objects(Object? value, String name) {
+  if (value is! List) throw FormatException('it has no $name');
+  return [
+    for (final entry in value)
+      if (entry is Map)
+        Map<String, dynamic>.from(entry)
+      else
+        throw FormatException('its $name hold something other than objects'),
+  ];
 }

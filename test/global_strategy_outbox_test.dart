@@ -249,10 +249,17 @@ void main() {
       opId: 'add-lineup',
       lineupPublicId: 'k',
       pagePublicId: 'page-one',
-      payload: cloudLineupPayload({
+      payload: cloudLineupsPayload({
         'id': 'k',
-        'origin': {'id': 'o', 'agent': <String, dynamic>{}},
-        'landing': {'id': 'l', 'ability': <String, dynamic>{}},
+        'origins': [
+          {'id': 'o', 'agent': <String, dynamic>{}},
+        ],
+        'landings': [
+          {'id': 'l', 'ability': <String, dynamic>{}},
+        ],
+        'links': [
+          {'id': 'k', 'originId': 'o', 'landingId': 'l'},
+        ],
       }),
       sortIndex: 0,
     );

@@ -11,7 +11,7 @@ import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import { UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 import schema from "./schema";
-import { lineupPayload } from "./testContent.helpers";
+import { lineupsPayload, oneLineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -108,22 +108,25 @@ function imagePayload(assetPublicId: string) {
   };
 }
 
-/// Two lineups thrown from one sova origin, the first showing an image.
+/// Two lineup groups: one of two lineups thrown from one sova origin, the
+/// first showing an image, and one of a single lineup from another.
 const lineupRows = [
   {
     lineupPublicId: "k",
-    payload: lineupPayload("k", {
-      originId: "o",
-      landingId: "l",
-      agentType: "sova",
-      images: [{ id: "k-shot" }],
+    payload: lineupsPayload("k", {
+      origins: [{ id: "o", agentType: "sova" }],
+      landings: [{ id: "l" }, { id: "l2" }],
+      links: [
+        { id: "k", originId: "o", landingId: "l", images: [{ id: "k-shot" }] },
+        { id: "k-2", originId: "o", landingId: "l2" },
+      ],
     }),
   },
   {
     lineupPublicId: "k2",
-    payload: lineupPayload("k2", {
-      originId: "o",
-      landingId: "l2",
+    payload: oneLineupPayload("k2", {
+      originId: "o2",
+      landingId: "l3",
       agentType: "sova",
     }),
   },
@@ -548,7 +551,7 @@ describe("page trash", () => {
         type: "lineup.add",
         lineupPublicId: "k3",
         pagePublicId: pageB,
-        payload: lineupPayload("k3", { originId: "o", landingId: "l3" }),
+        payload: oneLineupPayload("k3", { originId: "o3", landingId: "l4" }),
         sortIndex: 3,
       },
       {
@@ -557,7 +560,13 @@ describe("page trash", () => {
         pagePublicId: pageB,
         payload: {
           ...lineupRows[0]!.payload,
-          data: { ...lineupRows[0]!.payload.data, name: "edited" },
+          data: {
+            ...lineupRows[0]!.payload.data,
+            links: lineupRows[0]!.payload.data.links.map((link) => ({
+              ...link,
+              name: "edited",
+            })),
+          },
         },
         expectedLineupRevision: 1,
       },

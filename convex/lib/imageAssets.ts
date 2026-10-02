@@ -52,24 +52,28 @@ export function collectAssetIdFromElementPayload(
   return typeof payload.data.id === "string" ? payload.data.id : null;
 }
 
-/// The images a lineup shows: data.images[*].id. Its origin and landing
-/// hold none.
+/// The images a lineup group shows: links[*].images[*].id, across every
+/// lineup in it. Its origins and landings hold none.
 export function collectAssetIdsFromLineupPayload(
   payload: Doc<"lineups">["payload"],
 ): Set<string> {
   const assetIds = new Set<string>();
-  const images = payload.data.images;
-  if (!Array.isArray(images)) return assetIds;
-  for (const image of images) {
-    if (
-      typeof image === "object" &&
-      image !== null &&
-      typeof (image as { id?: unknown }).id === "string"
-    ) {
-      assetIds.add((image as { id: string }).id);
+  const links = payload.data.links;
+  if (!Array.isArray(links)) return assetIds;
+  for (const link of links) {
+    const images = isObject(link) ? link.images : undefined;
+    if (!Array.isArray(images)) continue;
+    for (const image of images) {
+      if (isObject(image) && typeof image.id === "string") {
+        assetIds.add(image.id);
+      }
     }
   }
   return assetIds;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function collectReferencedAssetIds(

@@ -14,6 +14,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -92,16 +93,18 @@ Set<EntitySyncKey> mergeRemoteStrategyEditorPageData(
   ref.read(placedImageProvider.notifier).mergeRemote(data.images, keep);
   ref.read(utilityProvider.notifier).mergeRemote(data.utilities, keep);
 
-  final (lineUpGraph, heldLineups) = mergeHeldLineups(
+  final liveSync = ref.read(activePageLiveSyncProvider.notifier);
+  final (lineUpGraph, heldGroups) = mergeHeldLineups(
     local: ref.read(lineUpProvider).graph,
     remote: data.lineUpGraph.deepCopy(),
     holding: holding,
+    groupOf: (id) => liveSync.lineupGroupOf(data.pageId, id),
   );
   ref.read(lineUpProvider.notifier).mergeRemote(lineUpGraph);
   heldBack.addAll({
     for (final key in changed)
       if (key.kind == EntitySyncKeyKind.lineup &&
-          heldLineups.contains(key.entityId))
+          heldGroups.contains(key.entityId))
         key,
   });
 

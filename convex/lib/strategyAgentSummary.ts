@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { WithoutSystemFields } from "convex/server";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
@@ -14,17 +15,23 @@ function agentTypeOf(data: unknown): string | null {
   return typeof type === "string" && type.length > 0 ? type : null;
 }
 
-/// The agent a lineup starts from: its origin's id and agent type, or null
-/// for a lineup without one.
-export function lineupAgentOf(
+/// The agents a lineup group starts from: each origin's id and agent type,
+/// skipping an origin whose agent names no type.
+export function lineupAgentsOf(
   payload: Doc<"lineups">["payload"],
-): { originId: string; agentType: string } | null {
-  const origin = asRecord(payload.data.origin);
-  const agentType = agentTypeOf(origin?.agent);
-  if (origin === null || typeof origin.id !== "string" || agentType === null) {
-    return null;
+): { originId: string; agentType: string }[] {
+  const origins = payload.data.origins;
+  if (!Array.isArray(origins)) return [];
+  const agents: { originId: string; agentType: string }[] = [];
+  for (const origin of origins) {
+    const record = asRecord(origin);
+    const agentType = agentTypeOf(record?.agent);
+    if (record === null || typeof record.id !== "string" || agentType === null) {
+      continue;
+    }
+    agents.push({ originId: record.id, agentType });
   }
-  return { originId: origin.id, agentType };
+  return agents;
 }
 
 type LineupAgent = Pick<
@@ -32,10 +39,10 @@ type LineupAgent = Pick<
   "pageId" | "originId" | "agentType"
 >;
 
-/// Brings the lineupAgents row of one lineup in step with it: one row while
-/// the lineup is live and starts from an agent, none otherwise. Call after
-/// every write of a lineup row, with null once the row itself is gone.
-export async function syncLineupAgent(
+/// Brings the lineupAgents rows of one lineup group in step with it: one
+/// row per origin while the group is live, none otherwise. Call after every
+/// write of a lineup row, with null once the row itself is gone.
+export async function syncLineupAgents(
   ctx: MutationCtx,
   lineupId: Id<"lineups">,
   lineup: Pick<
@@ -46,28 +53,37 @@ export async function syncLineupAgent(
   const existing = await ctx.db
     .query("lineupAgents")
     .withIndex("by_lineupId", (q) => q.eq("lineupId", lineupId))
-    .unique();
-  const agent =
-    lineup === null || lineup.deleted ? null : lineupAgentOf(lineup.payload);
-  if (agent === null || lineup === null) {
-    if (existing !== null) await ctx.db.delete(existing._id);
-    return;
+    .collect();
+  // Keyed by origin id, which is unique within a group.
+  const wanted = new Map<string, WithoutSystemFields<Doc<"lineupAgents">>>();
+  if (lineup !== null && !lineup.deleted) {
+    for (const agent of lineupAgentsOf(lineup.payload)) {
+      wanted.set(agent.originId, {
+        strategyId: lineup.strategyId,
+        pageId: lineup.pageId,
+        lineupId,
+        ...agent,
+      });
+    }
   }
-  const wanted = {
-    strategyId: lineup.strategyId,
-    pageId: lineup.pageId,
-    lineupId,
-    ...agent,
-  };
-  if (existing === null) {
-    await ctx.db.insert("lineupAgents", wanted);
-  } else if (
-    existing.strategyId !== wanted.strategyId ||
-    existing.pageId !== wanted.pageId ||
-    existing.originId !== wanted.originId ||
-    existing.agentType !== wanted.agentType
-  ) {
-    await ctx.db.patch(existing._id, wanted);
+  for (const row of existing) {
+    const want = wanted.get(row.originId);
+    if (want === undefined) {
+      // An origin the group no longer holds, or a second row for one.
+      await ctx.db.delete(row._id);
+      continue;
+    }
+    wanted.delete(row.originId);
+    if (
+      row.strategyId !== want.strategyId ||
+      row.pageId !== want.pageId ||
+      row.agentType !== want.agentType
+    ) {
+      await ctx.db.patch(row._id, want);
+    }
+  }
+  for (const row of wanted.values()) {
+    await ctx.db.insert("lineupAgents", row);
   }
 }
 
@@ -113,8 +129,8 @@ export async function refreshStrategyAgentSummary(
 }
 
 /// The agents that live content uses, most used first. Takes any elements
-/// and the agents of live lineups; live agent elements count, and each
-/// lineup origin once per page, however many lineups share it.
+/// and the agents of live lineup groups; live agent elements count, and
+/// each lineup origin once per page, however many lineups share it.
 export function agentTypesOf(
   elements: Pick<Doc<"elements">, "deleted" | "elementType" | "payload">[],
   lineupAgents: LineupAgent[],

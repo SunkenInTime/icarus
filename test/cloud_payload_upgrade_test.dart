@@ -112,7 +112,7 @@ void main() {
       links: [
         LineUpLink(id: 'lineup', originId: 'origin', landingId: 'landing'),
       ],
-    )).single.payload;
+    )).rows.single.payload;
 
     expect(lineup['payloadVersion'], currentCloudPayloadVersion);
     expect(identical(upgradeCloudPayload(lineup, _map), lineup), isTrue);

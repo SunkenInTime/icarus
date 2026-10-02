@@ -8,12 +8,14 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
+import 'package:icarus/providers/collab/lineup_conflicts_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/dialogs/deleted_page_dialog.dart';
@@ -189,6 +191,46 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     }
   }
 
+  Future<void> _keepBoth() async {
+    if (_isResolving) return;
+    setState(() {
+      _isResolving = true;
+      _resolutionError = null;
+    });
+    String? resolutionError;
+    try {
+      switch (await ref
+          .read(strategyPageSessionProvider.notifier)
+          .keepBothForRejected()) {
+        case KeepBothOutcome.kept:
+          _popoverController.hide();
+        case KeepBothOutcome.unchanged:
+          resolutionError = 'Could not load the cloud version. '
+              'Nothing was changed.';
+        case KeepBothOutcome.copiesOnly:
+          resolutionError = 'Your version was added as a copy, but the '
+              'cloud version could not be loaded. Choose Use cloud to '
+              'finish.';
+      }
+    } catch (error, stackTrace) {
+      log(
+        'Failed to keep both versions: $error',
+        name: 'cloud_conflict_resolution',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      resolutionError = 'Could not keep both versions. '
+          'Your version is still saved on this device.';
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResolving = false;
+          _resolutionError = resolutionError;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final source = ref.watch(strategyProvider.select((state) => state.source));
@@ -263,6 +305,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         upgradeRequired: upgradeRequired,
         saveState: saveState,
         rejectedCount: opQueueState.attentionByEntityKey.length,
+        lineupConflicts: ref.watch(lineupConflictsProvider),
         hasOtherStrategyWork: hasOtherStrategyWork,
         hasOtherStrategyAttention: hasOtherStrategyAttention,
         hasActiveStrategyAttention: hasActiveStrategyAttention,
@@ -270,6 +313,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         resolutionError: _resolutionError,
         onRetry: _retry,
         onUseCloudVersions: _useCloudVersions,
+        onKeepBoth: _keepBoth,
       ),
       child: EditorToolbarButton(
         key: ValueKey('cloud-sync-button-${status.name}'),
@@ -361,6 +405,7 @@ class _SyncStatusPopover extends StatelessWidget {
     required this.upgradeRequired,
     required this.saveState,
     required this.rejectedCount,
+    required this.lineupConflicts,
     required this.hasOtherStrategyWork,
     required this.hasOtherStrategyAttention,
     required this.hasActiveStrategyAttention,
@@ -368,6 +413,7 @@ class _SyncStatusPopover extends StatelessWidget {
     required this.resolutionError,
     required this.onRetry,
     required this.onUseCloudVersions,
+    required this.onKeepBoth,
   });
 
   final _SyncStatus status;
@@ -377,6 +423,11 @@ class _SyncStatusPopover extends StatelessWidget {
   final bool upgradeRequired;
   final StrategySaveState saveState;
   final int rejectedCount;
+
+  /// What each side did to the lineup groups in conflict, when the refused
+  /// work is all lineup groups on this page (see lineupConflictsProvider).
+  /// Then the popover lists the changes and offers Keep both.
+  final List<LineupGroupConflict>? lineupConflicts;
   final bool hasOtherStrategyWork;
   final bool hasOtherStrategyAttention;
   final bool hasActiveStrategyAttention;
@@ -384,8 +435,17 @@ class _SyncStatusPopover extends StatelessWidget {
   final String? resolutionError;
   final Future<void> Function() onRetry;
   final Future<void> Function() onUseCloudVersions;
+  final Future<void> Function() onKeepBoth;
 
   bool get hasRejectedWork => rejectedCount > 0;
+
+  /// The lineup changes to list, when there is no more specific reason to
+  /// show instead (a deleted page, an oversized change).
+  List<LineupGroupConflict>? get _shownLineupConflicts {
+    final error = saveState.cloudSyncError;
+    if (error != null && isSpecificAttentionReason(error)) return null;
+    return lineupConflicts;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -417,6 +477,13 @@ class _SyncStatusPopover extends StatelessWidget {
                     expands: false,
                     onPressed: isResolving ? null : onUseCloudVersions,
                     child: const Text('Use cloud'),
+                  ),
+                if (_shownLineupConflicts != null)
+                  ShadButton.secondary(
+                    size: ShadButtonSize.sm,
+                    expands: false,
+                    onPressed: isResolving ? null : onKeepBoth,
+                    child: const Text('Keep both'),
                   ),
                 ShadButton(
                   size: ShadButtonSize.sm,
@@ -464,6 +531,8 @@ class _SyncStatusPopover extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+            if (_shownLineupConflicts case final conflicts?)
+              _LineupConflictList(conflicts: conflicts),
             if (resolutionError != null) ...[
               const SizedBox(height: 8),
               Text(
@@ -542,7 +611,16 @@ class _SyncStatusPopover extends StatelessWidget {
     final parts = <String>[];
     final error = saveState.cloudSyncError;
     final hasSpecificReason = error != null && isSpecificAttentionReason(error);
-    if (hasRejectedWork && !hasSpecificReason) {
+    if (_shownLineupConflicts != null) {
+      parts.add(
+        'A teammate changed these lineups while you were working on them. '
+        'Your version remains saved on this device.',
+      );
+      parts.add(
+        'Keep mine replaces their changes, Use cloud replaces yours, and '
+        'Keep both adds yours beside theirs as a copy.',
+      );
+    } else if (hasRejectedWork && !hasSpecificReason) {
       parts.add(
         'Another edit reached the cloud first. Your version remains saved '
         'on this device.',
@@ -590,5 +668,82 @@ class _SyncStatusPopover extends StatelessWidget {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+}
+
+/// The lineups each side changed in the conflicting lineup groups: what
+/// Keep mine would replace (the cloud's changes) and what Use cloud would
+/// (the user's), so neither choice drops work the user cannot see.
+class _LineupConflictList extends StatelessWidget {
+  const _LineupConflictList({required this.conflicts});
+
+  final List<LineupGroupConflict> conflicts;
+
+  /// More lines than this read as a wall; the rest are counted instead.
+  static const _maxLines = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final yours = [for (final conflict in conflicts) ...conflict.yours];
+    final cloud = [for (final conflict in conflicts) ...conflict.cloud];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        _section(context, 'Your changes', yours),
+        const SizedBox(height: 8),
+        _section(context, 'Cloud changes', cloud),
+      ],
+    );
+  }
+
+  Widget _section(
+    BuildContext context,
+    String title,
+    List<LineupChange> changes,
+  ) {
+    final theme = ShadTheme.of(context);
+    final lineStyle = theme.textTheme.small.copyWith(
+      color: theme.colorScheme.foreground,
+      fontSize: 12,
+      height: 1.35,
+    );
+    final mutedStyle = lineStyle.copyWith(
+      color: theme.colorScheme.mutedForeground,
+    );
+    final shown = changes.take(_maxLines).toList();
+    final hidden = changes.length - shown.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.small.copyWith(
+            color: theme.colorScheme.mutedForeground,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        if (changes.isEmpty) Text('No lineup changes', style: mutedStyle),
+        for (final change in shown)
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: change.label),
+                TextSpan(text: ' · ${change.description}', style: mutedStyle),
+              ],
+            ),
+            style: lineStyle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        if (hidden > 0)
+          Text(
+            hidden == 1 ? 'and 1 more lineup' : 'and $hidden more lineups',
+            style: mutedStyle,
+          ),
+      ],
+    );
   }
 }

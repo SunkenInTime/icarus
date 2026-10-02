@@ -89,16 +89,31 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   /// hold ends, but no longer ordered against anything on the server.
   final Set<EntitySyncKey> _heldDeletedKeys = {};
 
-  /// Every alias drawing lineups has given a spot (see
-  /// lineUpGraphFromCloudRows), so rows are written under the real ids. An
-  /// alias names its real id and the lineup it came from, so one alias
-  /// always means the same spot and they are only ever added.
-  CloudLineupAliases _lineupAliases = CloudLineupAliases.none;
+  /// Per page, the lineup group each lineup and spot was last drawn from or
+  /// written to (see cloudLineupRows), so a group keeps its id and its
+  /// lineups while the canvas changes under it. Per page because a page
+  /// duplicated before cloud sync repeats its lineup ids. Never forgotten:
+  /// an undo can bring back a lineup long after its row moved on.
+  final Map<String, Map<String, String>> _lineupGroupOfByPage = {};
 
-  /// Records the aliases a canvas about to be drawn from cloud rows uses.
-  void noteLineupAliases(CloudLineupAliases aliases) {
-    _lineupAliases = _lineupAliases.followedBy(aliases);
+  /// Records the groups a canvas of [pageId] about to be drawn from cloud
+  /// rows uses.
+  void noteLineupGroups(String pageId, Map<String, String> groupOf) {
+    (_lineupGroupOfByPage[pageId] ??= {}).addAll(groupOf);
   }
+
+  /// The server's version of [key] the canvas was drawn from, which local
+  /// edits to it were made against: its payload, or null when the canvas was
+  /// drawn without it or with it deleted.
+  Object? hydratedBasePayload(EntitySyncKey key) {
+    final base = _hydratedBaseByEntityKey[key];
+    return base == null || base.deleted ? null : base.payload;
+  }
+
+  /// The lineup group [itemId] (a lineup, origin or landing) on [pageId]
+  /// was last in.
+  String? lineupGroupOf(String pageId, String itemId) =>
+      _lineupGroupOfByPage[pageId]?[itemId];
 
   @override
   ActivePageLiveSyncState build() {
@@ -565,12 +580,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       }
 
       // The user deleted, on the canvas, an item whose change the server
-      // refused: the server has it deleted too, so the refused change has
-      // nothing left to keep, and Keep mine must not bring the item back.
+      // refused because a teammate deleted it: both sides have it deleted,
+      // so the refused change has nothing left to keep, and Keep mine must
+      // not bring the item back.
       if (local == null &&
           existingOverlay != null &&
           (remote == null || remote.deleted) &&
-          queueState.attentionByEntityKey.containsKey(key)) {
+          queueState.attentionByEntityKey.containsKey(key) &&
+          ref.read(strategyOpQueueProvider.notifier).refusedAsDeleted(key)) {
         settledAttention.add(key);
       }
 
@@ -999,15 +1016,26 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    // One row per lineup, carrying its origin and landing as the canvas
-    // draws them, under their real ids. A change to a shared spot changes
-    // every lineup drawn on it; a lineup nobody changed matches its stored
-    // row, so it is never written.
+    // One row per lineup group, holding its lineups and their spots as the
+    // canvas draws them. A group nobody changed matches its stored row, so
+    // it is never written. A new group never takes the id of a row this page
+    // has or had, so it never lands on a teammate's group or a deleted one.
     final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
-    for (final row in cloudLineupRows(
+    final lineupGroupOf = _lineupGroupOfByPage[pageId] ??= {};
+    final lineupRows = cloudLineupRows(
       ref.read(lineUpProvider).graph,
-      aliases: _lineupAliases,
-    )) {
+      groupOf: lineupGroupOf,
+      takenGroupIds: {
+        for (final key in [
+          ..._hydratedBaseByEntityKey.keys,
+          ...state.overlayByEntityKey.keys,
+        ])
+          if (key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup)
+            key.entityId!,
+      },
+    );
+    lineupGroupOf.addAll(lineupRows.groupOf);
+    for (final row in lineupRows.rows) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
         key: key,

@@ -9,7 +9,7 @@ import {
   syncElementAssetReferences,
   syncLineupAssetReferences,
 } from "./lib/assetReferences";
-import { syncLineupAgent } from "./lib/strategyAgentSummary";
+import { syncLineupAgents } from "./lib/strategyAgentSummary";
 
 export async function insertElement(
   ctx: MutationCtx,
@@ -26,55 +26,114 @@ export async function insertLineup(
 ): Promise<Id<"lineups">> {
   const id = await ctx.db.insert("lineups", lineup);
   await syncLineupAssetReferences(ctx, id, lineup);
-  await syncLineupAgent(ctx, id, lineup);
+  await syncLineupAgents(ctx, id, lineup);
   return id;
 }
 
-export type TestLineup = {
-  originId?: string;
-  landingId?: string;
+type Position = { dx: number; dy: number };
+
+export type TestOrigin = {
+  id: string;
   agentType?: string;
-  originPosition?: { dx: number; dy: number };
-  landingPosition?: { dx: number; dy: number };
+  position?: Position;
+};
+
+export type TestLanding = { id: string; position?: Position };
+
+export type TestLink = {
+  id: string;
+  originId: string;
+  landingId: string;
   name?: string;
   youtubeLink?: string;
   notes?: string;
   images?: Array<{ id: string; fileExtension?: string }>;
 };
 
-/// A lineup row's payload as a client writes it: the lineup's details and
-/// whole copies of its origin (the agent) and landing (the ability), each
-/// marker's `lineUpID` naming its end. Lineups that share a spot pass the
-/// same originId or landingId. The row's key is [id].
-export function lineupPayload(id: string, lineup: TestLineup = {}) {
-  const originId = lineup.originId ?? `${id}-origin`;
-  const landingId = lineup.landingId ?? `${id}-landing`;
+export type TestLineupGroup = {
+  origins: TestOrigin[];
+  landings: TestLanding[];
+  links: TestLink[];
+};
+
+/// A lineup group row's payload as a client writes it: the group's id (the
+/// row's key), its origins (each placing an agent), landings (each placing
+/// an ability) and links, each in the shape of the Dart model's toJson()
+/// (LineUpOrigin, LineUpLanding, LineUpLink), each marker's `lineUpID`
+/// naming its spot.
+export function lineupsPayload(id: string, group: TestLineupGroup) {
   return {
-    kind: "lineup" as const,
+    kind: "lineups" as const,
     payloadVersion: 1,
     data: {
       id,
-      name: lineup.name ?? "",
-      youtubeLink: lineup.youtubeLink ?? "",
-      notes: lineup.notes ?? "",
-      images: lineup.images ?? [],
-      origin: {
-        id: originId,
+      origins: group.origins.map((origin) => ({
+        id: origin.id,
         agent: {
-          id: `agent-${originId}`,
-          type: lineup.agentType ?? "sova",
-          position: lineup.originPosition ?? { dx: 0, dy: 0 },
-          lineUpID: originId,
+          id: `agent-${origin.id}`,
+          type: origin.agentType ?? "sova",
+          position: origin.position ?? { dx: 0, dy: 0 },
+          lineUpID: origin.id,
         },
-      },
-      landing: {
-        id: landingId,
+      })),
+      landings: group.landings.map((landing) => ({
+        id: landing.id,
         ability: {
-          id: `ability-${landingId}`,
-          position: lineup.landingPosition ?? { dx: 0, dy: 0 },
-          lineUpID: landingId,
+          id: `ability-${landing.id}`,
+          position: landing.position ?? { dx: 0, dy: 0 },
+          lineUpID: landing.id,
         },
-      },
+      })),
+      links: group.links.map((link) => ({
+        id: link.id,
+        originId: link.originId,
+        landingId: link.landingId,
+        name: link.name ?? "",
+        youtubeLink: link.youtubeLink ?? "",
+        notes: link.notes ?? "",
+        images: link.images ?? [],
+      })),
     },
   };
+}
+
+export type TestLineup = {
+  originId?: string;
+  landingId?: string;
+  agentType?: string;
+  originPosition?: Position;
+  landingPosition?: Position;
+  name?: string;
+  youtubeLink?: string;
+  notes?: string;
+  images?: Array<{ id: string; fileExtension?: string }>;
+};
+
+/// A group row holding one lineup: one origin, one landing and the link
+/// between them. The group and its link take [id]; the spots default to
+/// `<id>-origin` and `<id>-landing`.
+export function oneLineupPayload(id: string, lineup: TestLineup = {}) {
+  const originId = lineup.originId ?? `${id}-origin`;
+  const landingId = lineup.landingId ?? `${id}-landing`;
+  return lineupsPayload(id, {
+    origins: [
+      {
+        id: originId,
+        agentType: lineup.agentType,
+        position: lineup.originPosition,
+      },
+    ],
+    landings: [{ id: landingId, position: lineup.landingPosition }],
+    links: [
+      {
+        id,
+        originId,
+        landingId,
+        name: lineup.name,
+        youtubeLink: lineup.youtubeLink,
+        notes: lineup.notes,
+        images: lineup.images,
+      },
+    ],
+  });
 }

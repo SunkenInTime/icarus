@@ -1287,7 +1287,7 @@ final class LineupsListForPageResultItem {
         '$path.pagePublicId',
       ),
       payload: _decodePayload(
-        () => const LineupConvexCodec().decode(
+        () => const LineupsConvexCodec().decode(
           object.value['payload'] ?? _missing(path, 'payload'),
         ),
         '$path.payload',
@@ -1321,7 +1321,7 @@ final class LineupsListForPageResultItem {
       'deleted': ConvexBoolean(deleted),
       'pagePublicId': ConvexString(pagePublicId),
       'payload': _encodePayload(
-        () => const LineupConvexCodec().encode(payload),
+        () => const LineupsConvexCodec().encode(payload),
         '$path.payload',
       ),
       'publicId': ConvexString(publicId),
@@ -2861,7 +2861,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentLineup
         '$path.revision',
       ),
       value: _decodePayload(
-        () => const LineupConvexCodec().decode(
+        () => const LineupsConvexCodec().decode(
           object.value['value'] ?? _missing(path, 'value'),
         ),
         '$path.value',
@@ -2875,7 +2875,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentLineup
       'type': ConvexString('lineup'),
       'revision': _encodeNumber(revision, '$path.revision'),
       'value': _encodePayload(
-        () => const LineupConvexCodec().encode(value),
+        () => const LineupsConvexCodec().encode(value),
         '$path.value',
       ),
     });
@@ -4616,8 +4616,8 @@ CloudPayload _decodeOpsApplyBatchArgsOpsItemLineupAddPayload(
     '$path.kind',
   );
   return switch (tag) {
-    'lineup' => _decodePayload(
-      () => const LineupConvexCodec().decode(value),
+    'lineups' => _decodePayload(
+      () => const LineupsConvexCodec().decode(value),
       path,
     ),
     'lineupOrigin' => _decodePayload(
@@ -4645,8 +4645,8 @@ ConvexValue _encodeOpsApplyBatchArgsOpsItemLineupAddPayload(
 ) {
   final tag = value['kind'];
   return switch (tag) {
-    'lineup' => _encodePayload(
-      () => const LineupConvexCodec().encode(value),
+    'lineups' => _encodePayload(
+      () => const LineupsConvexCodec().encode(value),
       path,
     ),
     'lineupOrigin' => _encodePayload(
@@ -4678,8 +4678,8 @@ CloudPayload _decodeOpsApplyBatchArgsOpsItemLineupPatchPayload(
     '$path.kind',
   );
   return switch (tag) {
-    'lineup' => _decodePayload(
-      () => const LineupConvexCodec().decode(value),
+    'lineups' => _decodePayload(
+      () => const LineupsConvexCodec().decode(value),
       path,
     ),
     'lineupOrigin' => _decodePayload(
@@ -4707,8 +4707,8 @@ ConvexValue _encodeOpsApplyBatchArgsOpsItemLineupPatchPayload(
 ) {
   final tag = value['kind'];
   return switch (tag) {
-    'lineup' => _encodePayload(
-      () => const LineupConvexCodec().encode(value),
+    'lineups' => _encodePayload(
+      () => const LineupsConvexCodec().encode(value),
       path,
     ),
     'lineupOrigin' => _encodePayload(

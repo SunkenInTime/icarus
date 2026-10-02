@@ -105,11 +105,13 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    // One row per lineup, keyed by the lineup's id (payload.data.id). A key
-    // is unique within its strategy, not across strategies: a strategy
-    // copied on a device keeps its original's lineup ids.
+    // One row per lineup group: the lineups on one page joined through
+    // shared spots, holding its origins, landings and links. Keyed by the
+    // group's id (payload.data.id). A key is unique within its strategy, not
+    // across strategies: a strategy copied on a device keeps its original's
+    // lineup ids.
     // This shape replaced the origin/landing/link rows with no migration:
-    // production and dev held no lineup rows when it shipped (2026-10-01).
+    // production and dev held no lineup rows when it shipped (2026-10-02).
     payloadKind: lineupPayloadKindValidator,
     payloadVersion: v.number(),
     payload: lineupPayloadValidator,
@@ -122,10 +124,11 @@ export default defineSchema({
     .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_pageId", ["pageId"])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
-  // The agent each live lineup starts from, one small row per lineup, kept
-  // in step with every lineup write (see lib/strategyAgentSummary.ts). The
-  // strategy's agent summary reads these instead of the lineup rows, whose
-  // image lists can make reading them all exceed a transaction's limits.
+  // The agents a live lineup group starts from: one small row per origin in
+  // the group, kept in step with every lineup write (see
+  // lib/strategyAgentSummary.ts). The strategy's agent summary reads these
+  // instead of the lineup rows, whose image lists can make reading them all
+  // exceed a transaction's limits.
   lineupAgents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),

@@ -8,7 +8,8 @@ import { v } from "convex/values";
 // public query that returns element or lineup payloads, and the shell the
 // editor opens with, takes the protocol too: a client that cannot read a
 // row must not see one.
-// 5: a lineup is one row of kind "lineup" carrying its origin and landing,
+// 5: one row per lineup group, of kind "lineups": the lineups on a page
+// joined through shared spots, with their origins, landings and links,
 // replacing the origin, landing and link rows of 4. A client on 4 cannot
 // read the new rows and writes rows the server no longer takes, so it is
 // refused until it reloads into 5.

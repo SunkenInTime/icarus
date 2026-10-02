@@ -11,8 +11,10 @@ import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
 import {
   insertLineup,
-  lineupPayload,
+  lineupsPayload,
+  oneLineupPayload,
   type TestLineup,
+  type TestLineupGroup,
 } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
@@ -109,12 +111,17 @@ async function createHarness(): Promise<{
   return { t, owner, editor, viewer };
 }
 
-/** A lineup row as a test sends it: its key and its payload. */
+/** A group row holding one lineup, as a test sends it: its key and payload. */
 function lineup(id: string, details: TestLineup = {}) {
-  return { key: id, payload: lineupPayload(id, details) };
+  return { key: id, payload: oneLineupPayload(id, details) };
 }
 
-type Row = ReturnType<typeof lineup>;
+/** A lineup group row as a test sends it: its key and its payload. */
+function group(id: string, lineups: TestLineupGroup) {
+  return { key: id, payload: lineupsPayload(id, lineups) };
+}
+
+type Row = { key: string; payload: { kind: string; data: object } };
 
 function addOp(row: Row, sortIndex: number, page = pagePublicId) {
   return {
@@ -220,9 +227,9 @@ type LineupAgentRow = {
   agentType: string;
 };
 
-/// A strategy's lineupAgents rows, each named by its lineup's and page's
-/// public ids, ordered by lineup. Fails on a row that names a lineup gone
-/// or out of step with it (another strategy or page).
+/// A strategy's lineupAgents rows, each named by its group's and page's
+/// public ids, ordered by group and origin. Fails on a row that names a
+/// group gone or out of step with it (another strategy or page).
 async function lineupAgentRows(
   t: RootHarness,
   strategy = strategyPublicId,
@@ -255,7 +262,11 @@ async function lineupAgentRows(
         agentType: row.agentType,
       });
     }
-    return described.sort((a, b) => a.lineup.localeCompare(b.lineup));
+    return described.sort(
+      (a, b) =>
+        a.lineup.localeCompare(b.lineup) ||
+        a.originId.localeCompare(b.originId),
+    );
   });
 }
 
@@ -283,50 +294,63 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** Two lineups from different origins aiming at one shared landing. */
-const fanIn = [
-  lineup("from-heaven", {
-    originId: "heaven",
-    landingId: "site",
-    name: "From heaven",
-  }),
-  lineup("from-mid", { originId: "mid", landingId: "site", name: "From mid" }),
-];
+/// One group: two lineups from different origins into one shared landing
+/// (fan-in), and a third from the first one's origin to another landing
+/// (fan-out). A fresh copy each call, for a test to change.
+function siteLineups(): TestLineupGroup {
+  return {
+    origins: [
+      { id: "heaven", agentType: "brimstone", position: { dx: 120, dy: 340 } },
+      { id: "mid", agentType: "viper", position: { dx: 200, dy: 100 } },
+    ],
+    landings: [
+      { id: "site", position: { dx: 400, dy: 220 } },
+      { id: "hell", position: { dx: 500, dy: 300 } },
+    ],
+    links: [
+      {
+        id: "from-heaven",
+        originId: "heaven",
+        landingId: "site",
+        name: "From heaven",
+        youtubeLink: "https://youtu.be/heaven",
+        notes: "Jump throw",
+      },
+      { id: "from-mid", originId: "mid", landingId: "site", name: "From mid" },
+      {
+        id: "heaven-to-hell",
+        originId: "heaven",
+        landingId: "hell",
+        name: "Hell",
+      },
+    ],
+  };
+}
 
-/** Two lineups thrown from one shared origin to different landings. */
-const fanOut = [
-  lineup("to-default", {
-    originId: "spawn",
-    landingId: "default",
-    name: "Default plant",
-  }),
-  lineup("to-hell", { originId: "spawn", landingId: "hell", name: "Hell" }),
-];
+const siteKey = "site-group";
 
-describe("one row per lineup", () => {
-  test("a lineup round-trips with its origin and landing intact", async () => {
+function siteGroup(edit: (lineups: TestLineupGroup) => void = () => {}) {
+  const lineups = siteLineups();
+  edit(lineups);
+  return group(siteKey, lineups);
+}
+
+describe("one row per lineup group", () => {
+  test("a group round-trips with its origins, landings and links intact", async () => {
     const { owner } = await createHarness();
-    const row = lineup("smoke", {
-      originId: "smoke-origin",
-      landingId: "smoke-landing",
-      agentType: "brimstone",
-      originPosition: { dx: 120, dy: 340 },
-      landingPosition: { dx: 400, dy: 220 },
-      name: "A main smoke",
-      youtubeLink: "https://youtu.be/smoke",
-      notes: "Jump throw",
-    });
+    const row = siteGroup();
     const results = await apply(owner, "owner-client", [addOp(row, 0)]);
     expect(results[0]).toMatchObject({ status: "applied", appliedRevision: 1 });
 
     const rows = await pageLineups(owner);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      publicId: "smoke",
+      publicId: siteKey,
       revision: 1,
       deleted: false,
     });
     expect(rows[0]!.payload).toEqual(row.payload);
+    expect(rows[0]!.payload.kind).toBe("lineups");
 
     const full = (await owner.query(getFullSnapshot, {
       clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
@@ -341,180 +365,73 @@ describe("one row per lineup", () => {
     expect(listed.map((entry) => entry.payload)).toEqual([row.payload]);
   });
 
-  test("lineups sharing a landing each store and read back their own copy", async () => {
+  test("a group, its lineup and that lineup's landing may share one id", async () => {
     const { owner } = await createHarness();
-    const results = await apply(
-      owner,
-      "owner-client",
-      fanIn.map((row, index) => addOp(row, index)),
-    );
-    expect(results.map((result) => result.status)).toEqual([
-      "applied",
-      "applied",
-    ]);
-
-    const rows = byKey(await pageLineups(owner));
-    expect([...rows.keys()]).toEqual(["from-heaven", "from-mid"]);
-    for (const row of fanIn) {
-      expect(rows.get(row.key)!.payload).toEqual(row.payload);
-    }
-    expect(rows.get("from-heaven")!.payload.data.landing).toEqual(
-      rows.get("from-mid")!.payload.data.landing,
-    );
-  });
-
-  test("lineups sharing an origin each store and read back their own copy", async () => {
-    const { owner } = await createHarness();
-    const results = await apply(
-      owner,
-      "owner-client",
-      fanOut.map((row, index) => addOp(row, index)),
-    );
-    expect(results.map((result) => result.status)).toEqual([
-      "applied",
-      "applied",
-    ]);
-
-    const rows = byKey(await pageLineups(owner));
-    for (const row of fanOut) {
-      expect(rows.get(row.key)!.payload).toEqual(row.payload);
-    }
-    expect(rows.get("to-default")!.payload.data.origin).toEqual(
-      rows.get("to-hell")!.payload.data.origin,
-    );
-  });
-
-  test("a lineup may share its id with its landing", async () => {
-    const { owner } = await createHarness();
-    const row = lineup("same-id", { landingId: "same-id" });
+    const row = group("same-id", {
+      origins: [{ id: "origin" }],
+      landings: [{ id: "same-id" }],
+      links: [{ id: "same-id", originId: "origin", landingId: "same-id" }],
+    });
     const results = await apply(owner, "owner-client", [addOp(row, 0)]);
     expect(results[0]).toMatchObject({ status: "applied" });
     expect((await pageLineups(owner))[0]!.payload).toEqual(row.payload);
   });
 
-  test("moving a shared spot patches each lineup that carries it on its own", async () => {
+  test("moving a shared spot is one patch of its group, seen by every lineup in it", async () => {
     const { owner } = await createHarness();
-    await apply(
-      owner,
-      "owner-client",
-      fanIn.map((row, index) => addOp(row, index)),
-    );
+    await apply(owner, "owner-client", [addOp(siteGroup(), 0)]);
     const moved = { dx: 10, dy: 20 };
+    const edit = siteGroup((lineups) => {
+      lineups.landings[0]!.position = moved;
+    });
 
-    const first = await apply(owner, "owner-client", [
-      patchOp(
-        "move-site-heaven",
-        lineup("from-heaven", {
-          originId: "heaven",
-          landingId: "site",
-          landingPosition: moved,
-          name: "From heaven",
-        }),
-        1,
-      ),
+    const results = await apply(owner, "owner-client", [
+      patchOp("move-site", edit, 1),
     ]);
-    expect(first[0]).toMatchObject({ status: "applied", appliedRevision: 2 });
-    // The other row keeps its own copy until its own patch lands.
-    let rows = byKey(await pageLineups(owner));
-    expect(rows.get("from-heaven")).toMatchObject({ revision: 2 });
-    expect(rows.get("from-mid")).toMatchObject({ revision: 1 });
-    expect(rows.get("from-mid")!.payload).toEqual(fanIn[1]!.payload);
-
-    const second = await apply(owner, "owner-client", [
-      patchOp(
-        "move-site-mid",
-        lineup("from-mid", {
-          originId: "mid",
-          landingId: "site",
-          landingPosition: moved,
-          name: "From mid",
-        }),
-        1,
-      ),
-    ]);
-    expect(second[0]).toMatchObject({ status: "applied", appliedRevision: 2 });
-    rows = byKey(await pageLineups(owner));
-    for (const key of ["from-heaven", "from-mid"]) {
-      expect(rows.get(key)).toMatchObject({ revision: 2 });
-      expect(rows.get(key)!.payload.data.landing).toMatchObject({
+    expect(results[0]).toMatchObject({ status: "applied", appliedRevision: 2 });
+    const rows = await pageLineups(owner);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ revision: 2 });
+    expect(rows[0]!.payload).toEqual(edit.payload);
+    const data = rows[0]!.payload.data as {
+      landings: Array<{ id: string; ability: { position: unknown } }>;
+      links: Array<{ landingId: string }>;
+    };
+    // The spot is stored once, and both lineups into it name it.
+    expect(data.landings.filter((landing) => landing.id === "site")).toEqual([
+      {
         id: "site",
-        ability: { position: moved, lineUpID: "site" },
-      });
-    }
+        ability: { id: "ability-site", position: moved, lineUpID: "site" },
+      },
+    ]);
+    expect(data.links.map((link) => link.landingId)).toEqual([
+      "site",
+      "site",
+      "hell",
+    ]);
   });
 
-  test("teammates editing different lineups that share a spot never conflict", async () => {
+  test("teammates editing different lineups of one group from the same revision: the second is a conflict, not a silent overwrite", async () => {
     const { owner, editor } = await createHarness();
-    await apply(
-      owner,
-      "owner-client",
-      fanIn.map((row, index) => addOp(row, index)),
-    );
-
-    // Both edit from the same loaded revision (1) of their own lineup: the
-    // owner moves the shared landing on theirs, the editor writes notes on
-    // the other.
+    await apply(owner, "owner-client", [addOp(siteGroup(), 0)]);
+    const ownerEdit = siteGroup((lineups) => {
+      lineups.links[0]!.name = "Owner name";
+    });
     const ownerResults = await apply(owner, "owner-client", [
-      patchOp(
-        "owner-moves-site",
-        lineup("from-heaven", {
-          originId: "heaven",
-          landingId: "site",
-          landingPosition: { dx: 5, dy: 5 },
-          name: "From heaven",
-        }),
-        1,
-      ),
-    ]);
-    const editorResults = await apply(editor, "editor-client", [
-      patchOp(
-        "editor-notes-mid",
-        lineup("from-mid", {
-          originId: "mid",
-          landingId: "site",
-          name: "From mid",
-          notes: "Editor notes",
-        }),
-        1,
-      ),
+      patchOp("owner-renames", ownerEdit, 1),
     ]);
     expect(ownerResults[0]).toMatchObject({
       status: "applied",
       appliedRevision: 2,
     });
-    expect(editorResults[0]).toMatchObject({
-      status: "applied",
-      appliedRevision: 2,
-    });
 
-    const rows = byKey(await pageLineups(owner));
-    expect(rows.get("from-heaven")!.payload.data).toMatchObject({
-      notes: "",
-      landing: { ability: { position: { dx: 5, dy: 5 } } },
-    });
-    expect(rows.get("from-mid")!.payload.data).toMatchObject({
-      notes: "Editor notes",
-      landing: { ability: { position: { dx: 0, dy: 0 } } },
-    });
-  });
-
-  test("a stale edit to the same lineup is a conflict, not a silent overwrite", async () => {
-    const { owner, editor } = await createHarness();
-    await apply(owner, "owner-client", [addOp(fanIn[0]!, 0)]);
-    const ownerEdit = lineup("from-heaven", {
-      originId: "heaven",
-      landingId: "site",
-      name: "Owner name",
-    });
-    await apply(owner, "owner-client", [patchOp("owner-renames", ownerEdit, 1)]);
-
+    // The editor, still on revision 1, writes notes on another lineup of
+    // the same group.
     const stale = await apply(editor, "editor-client", [
       patchOp(
-        "editor-renames",
-        lineup("from-heaven", {
-          originId: "heaven",
-          landingId: "site",
-          name: "Stale name",
+        "editor-notes",
+        siteGroup((lineups) => {
+          lineups.links[1]!.notes = "Editor notes";
         }),
         1,
       ),
@@ -524,118 +441,204 @@ describe("one row per lineup", () => {
       reason: "revision_mismatch",
       current: { type: "lineup", revision: 2, value: ownerEdit.payload },
     });
-    const row = byKey(await pageLineups(owner)).get("from-heaven");
+    const row = byKey(await pageLineups(owner)).get(siteKey);
     expect(row).toMatchObject({ revision: 2 });
     expect(row!.payload).toEqual(ownerEdit.payload);
   });
 
-  test("deleting a spot's lineups leaves a teammate's new lineup from that spot", async () => {
-    const { owner, editor } = await createHarness();
-    await apply(
-      owner,
-      "owner-client",
-      fanIn.map((row, index) => addOp(row, index)),
-    );
-
-    // The owner deletes every lineup into "site" while the editor, who has
-    // not seen that yet, places a new lineup into the same spot.
-    const deletes = await apply(owner, "owner-client", [
-      deleteOp("delete-heaven", "from-heaven", 1),
-      deleteOp("delete-mid", "from-mid", 1),
-    ]);
-    const added = await apply(editor, "editor-client", [
-      addOp(lineup("from-garage", { originId: "garage", landingId: "site" }), 2),
-    ]);
-    expect(deletes.map((result) => result.status)).toEqual([
-      "applied",
-      "applied",
-    ]);
-    expect(added[0]).toMatchObject({ status: "applied" });
-
-    const rows = await pageLineups(owner);
-    expect(liveKeys(rows)).toEqual(["from-garage"]);
-    expect(byKey(rows).get("from-garage")!.payload.data.landing).toMatchObject(
-      { id: "site" },
-    );
-  });
-
-  test("a viewer reads lineups but cannot write them", async () => {
+  test("a viewer reads lineup groups but cannot write them", async () => {
     const { owner, viewer } = await createHarness();
-    await apply(owner, "owner-client", [addOp(fanIn[0]!, 0)]);
+    await apply(owner, "owner-client", [addOp(siteGroup(), 0)]);
     await expect(
-      apply(viewer, "viewer-client", [addOp(fanIn[1]!, 1)]),
+      apply(viewer, "viewer-client", [addOp(lineup("viewer-lineup"), 1)]),
     ).rejects.toThrow("Forbidden");
     await expect(
       apply(viewer, "viewer-client", [
         patchOp(
           "viewer-renames",
-          lineup("from-heaven", {
-            originId: "heaven",
-            landingId: "site",
-            name: "Viewer",
+          siteGroup((lineups) => {
+            lineups.links[0]!.name = "Viewer";
           }),
           1,
         ),
       ]),
     ).rejects.toThrow("Forbidden");
     expect((await pageLineups(viewer)).map((row) => row.publicId)).toEqual([
-      "from-heaven",
+      siteKey,
     ]);
   });
 });
 
-describe("a lineup row must be drawable on its own", () => {
-  test("a row missing its origin or landing, or keyed apart from its id, is refused", async () => {
-    const { owner } = await createHarness();
-    const valid = lineupPayload("k");
-    const withData = (id: string, data: Record<string, unknown>) => ({
-      ...addOp(lineup(id), 0),
-      payload: { ...valid, data: { ...valid.data, id, ...data } },
-    });
-    const withoutOrigin = withData("no-origin", { origin: undefined });
-    delete (withoutOrigin.payload.data as Record<string, unknown>).origin;
-    const withoutLanding = withData("no-landing", {});
-    delete (withoutLanding.payload.data as Record<string, unknown>).landing;
-    const originWithoutAgent = withData("no-agent", {
-      origin: { id: "o" },
-    });
-    const landingWithoutAbility = withData("no-ability", {
-      landing: { id: "l" },
-    });
-    const originWithoutId = withData("no-origin-id", {
-      origin: { agent: valid.data.origin.agent },
-    });
-    const mismatchedKey = { ...addOp(lineup("k"), 0), lineupPublicId: "other" };
-    const graphKey = { ...addOp(lineup("k"), 0), lineupPublicId: "lineupLink:k" };
+describe("a lineup group row is checked whole", () => {
+  /// An add of the site group under [key] whose payload [edit] has changed.
+  function brokenAdd(
+    key: string,
+    edit: (payload: {
+      kind: string;
+      payloadVersion: number;
+      data: Record<string, any>;
+    }) => void,
+  ) {
+    const payload = structuredClone(group(key, siteLineups()).payload) as {
+      kind: string;
+      payloadVersion: number;
+      data: Record<string, any>;
+    };
+    edit(payload);
+    return { ...addOp({ key, payload }, 0), opId: `add-${key}` };
+  }
 
-    const results = await apply(owner, "owner-client", [
-      withoutOrigin,
-      withoutLanding,
-      originWithoutAgent,
-      landingWithoutAbility,
-      originWithoutId,
-      mismatchedKey,
-      graphKey,
-    ]);
-    expect(results).toHaveLength(7);
-    for (const result of results) {
-      expect(result).toMatchObject({
-        status: "failed",
+  test("each broken rule refuses the row with its code, and nothing is stored", async () => {
+    const { owner } = await createHarness();
+    const cases: Array<{
+      op: Record<string, unknown>;
+      code: string;
+    }> = [
+      {
+        op: brokenAdd("unknown-version", (payload) => {
+          payload.payloadVersion = 2;
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_VERSION",
+      },
+      {
+        op: brokenAdd("no-id", (payload) => {
+          delete payload.data.id;
+        }),
         code: "INVALID_LINEUP_PAYLOAD_DATA",
-      });
-    }
+      },
+      {
+        op: { ...brokenAdd("keyed", () => {}), lineupPublicId: "other-key" },
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      ...(["origins", "landings", "links"] as const).flatMap((field) => [
+        {
+          op: brokenAdd(`no-${field}`, (payload) => {
+            delete payload.data[field];
+          }),
+          code: "INVALID_LINEUP_PAYLOAD_DATA",
+        },
+        {
+          op: brokenAdd(`${field}-not-a-list`, (payload) => {
+            payload.data[field] = { [payload.data[field][0].id]: true };
+          }),
+          code: "INVALID_LINEUP_PAYLOAD_DATA",
+        },
+        {
+          op: brokenAdd(`${field}-entry-not-an-object`, (payload) => {
+            payload.data[field][0] = payload.data[field][0].id;
+          }),
+          code: "INVALID_LINEUP_PAYLOAD_DATA",
+        },
+        {
+          op: brokenAdd(`${field}-entry-without-id`, (payload) => {
+            delete payload.data[field][0].id;
+          }),
+          code: "INVALID_LINEUP_PAYLOAD_DATA",
+        },
+        {
+          op: brokenAdd(`${field}-entry-with-empty-id`, (payload) => {
+            payload.data[field][0].id = "";
+          }),
+          code: "INVALID_LINEUP_PAYLOAD_DATA",
+        },
+        {
+          op: brokenAdd(`${field}-repeat-an-id`, (payload) => {
+            payload.data[field][1].id = payload.data[field][0].id;
+          }),
+          code: "INVALID_LINEUP_PAYLOAD_DATA",
+        },
+      ]),
+      {
+        op: brokenAdd("origin-without-agent", (payload) => {
+          delete payload.data.origins[0].agent;
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      {
+        op: brokenAdd("landing-without-ability", (payload) => {
+          delete payload.data.landings[0].ability;
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      {
+        op: brokenAdd("no-lineups", (payload) => {
+          payload.data.links = [];
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      {
+        op: brokenAdd("link-to-missing-origin", (payload) => {
+          payload.data.links[0].originId = "nowhere";
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      {
+        op: brokenAdd("link-to-missing-landing", (payload) => {
+          payload.data.links[0].landingId = "nowhere";
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      {
+        op: brokenAdd("link-without-origin", (payload) => {
+          delete payload.data.links[0].originId;
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      {
+        op: brokenAdd("link-without-landing", (payload) => {
+          delete payload.data.links[0].landingId;
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+      {
+        // A link may not name a landing as its origin.
+        op: brokenAdd("link-ends-swapped", (payload) => {
+          payload.data.links[0].originId = "site";
+          payload.data.links[0].landingId = "heaven";
+        }),
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+      },
+    ];
+
+    const results = await apply(
+      owner,
+      "owner-client",
+      cases.map((entry) => entry.op),
+    );
+    expect(results).toEqual(
+      cases.map((entry) =>
+        expect.objectContaining({
+          opId: entry.op.opId,
+          status: "failed",
+          code: entry.code,
+        }),
+      ),
+    );
     expect(await pageLineups(owner)).toEqual([]);
   });
 
-  test("a patch that drops an end is refused and leaves the row as it was", async () => {
+  test("a spot no lineup uses is kept", async () => {
     const { owner } = await createHarness();
-    await apply(owner, "owner-client", [addOp(fanIn[0]!, 0)]);
-    const { landing: _landing, ...withoutLanding } = fanIn[0]!.payload.data;
+    const row = siteGroup((lineups) => {
+      lineups.origins.push({ id: "unused-origin", agentType: "jett" });
+      lineups.landings.push({ id: "unused-landing" });
+    });
+    const results = await apply(owner, "owner-client", [addOp(row, 0)]);
+    expect(results[0]).toMatchObject({ status: "applied" });
+    expect((await pageLineups(owner))[0]!.payload).toEqual(row.payload);
+  });
+
+  test("a patch that breaks the group is refused and leaves the row as it was", async () => {
+    const { owner } = await createHarness();
+    await apply(owner, "owner-client", [addOp(siteGroup(), 0)]);
+    // The landing two lineups aim at is gone, but they still name it.
+    const broken = siteGroup((lineups) => {
+      lineups.landings = lineups.landings.filter(
+        (landing) => landing.id !== "site",
+      );
+    });
     const results = await apply(owner, "owner-client", [
-      {
-        ...patchOp("drop-landing", fanIn[0]!, 1),
-        payload: { ...fanIn[0]!.payload, data: withoutLanding },
-      },
+      patchOp("drop-site", broken, 1),
     ]);
     expect(results[0]).toMatchObject({
       status: "failed",
@@ -643,10 +646,10 @@ describe("a lineup row must be drawable on its own", () => {
     });
     const row = (await pageLineups(owner))[0]!;
     expect(row).toMatchObject({ revision: 1 });
-    expect(row.payload).toEqual(fanIn[0]!.payload);
+    expect(row.payload).toEqual(siteGroup().payload);
   });
 
-  test("a row of an old graph kind is refused by the handler, the legacy group by the contract", async () => {
+  test("the graph kinds of protocol 4 are refused by the handler; lineup and lineupGroup by the contract", async () => {
     const { owner } = await createHarness();
     // Protocol 4's graph rows get past argument validation so an old client
     // reaches the protocol gate; on protocol 5 the handler refuses each op.
@@ -675,26 +678,41 @@ describe("a lineup row must be drawable on its own", () => {
         code: "INVALID_LINEUP_PAYLOAD_KIND",
       });
     }
-    // The group of protocol 3 and earlier is still refused whole.
-    await expect(
-      apply(owner, "old-client", [
-        {
-          opId: "add-lineupGroup",
-          type: "lineup.add",
-          lineupPublicId: "group",
-          pagePublicId,
-          payload: {
-            kind: "lineupGroup",
-            payloadVersion: 1,
-            data: { id: "group", items: [{ id: "item" }] },
-          },
-          sortIndex: 0,
+    // The group of protocol 3 and earlier, and the one-row-per-lineup shape
+    // this branch tried before groups, are refused whole: no client that
+    // could send them speaks protocol 5.
+    const retired = [
+      {
+        kind: "lineupGroup",
+        payloadVersion: 1,
+        data: { id: "group", items: [{ id: "item" }] },
+      },
+      {
+        kind: "lineup",
+        payloadVersion: 1,
+        data: {
+          id: "group",
+          origin: { id: "o", agent: { type: "sova" } },
+          landing: { id: "l", ability: {} },
         },
-      ]),
-    ).rejects.toThrow(/Validator error|ArgumentValidationError/);
+      },
+    ];
+    for (const payload of retired) {
+      await expect(
+        apply(owner, "old-client", [
+          {
+            opId: `add-${payload.kind}`,
+            type: "lineup.add",
+            lineupPublicId: "group",
+            pagePublicId,
+            payload,
+            sortIndex: 0,
+          },
+        ]),
+      ).rejects.toThrow(/Validator error|ArgumentValidationError/);
+    }
     expect(await pageLineups(owner)).toEqual([]);
   });
-
 });
 
 describe("clients on protocol 4", () => {
@@ -796,7 +814,7 @@ describe("clients on protocol 4", () => {
 });
 
 describe("lineup row keys belong to their strategy and page", () => {
-  test("the same lineup ids in two strategies are separate rows", async () => {
+  test("the same group ids in two strategies are separate rows", async () => {
     const { owner } = await createHarness();
     const copyId = "local-duplicate";
     const copyPage = "local-duplicate-page";
@@ -818,13 +836,10 @@ describe("lineup row keys belong to their strategy and page", () => {
       const results = await apply(
         owner,
         `upload-${strategy}`,
-        fanIn.map((row, index) => addOp(row, index, page)),
+        [addOp(siteGroup(), 0, page)],
         strategy,
       );
-      expect(results.map((result) => result.status)).toEqual([
-        "applied",
-        "applied",
-      ]);
+      expect(results[0]).toMatchObject({ status: "applied" });
     }
     // Editing one copy leaves the other untouched.
     await apply(
@@ -834,10 +849,8 @@ describe("lineup row keys belong to their strategy and page", () => {
         {
           ...patchOp(
             "rename-in-copy",
-            lineup("from-heaven", {
-              originId: "heaven",
-              landingId: "site",
-              name: "Copy name",
+            siteGroup((lineups) => {
+              lineups.links[0]!.name = "Copy name";
             }),
             1,
           ),
@@ -846,10 +859,16 @@ describe("lineup row keys belong to their strategy and page", () => {
       ],
       copyId,
     );
-    const original = byKey(await pageLineups(owner));
-    const copy = byKey(await pageLineups(owner, copyId, copyPage));
-    expect(original.get("from-heaven")!.payload.data.name).toBe("From heaven");
-    expect(copy.get("from-heaven")!.payload.data.name).toBe("Copy name");
+    const firstLinkName = (row: LineupRow | undefined) =>
+      (row!.payload.data as { links: Array<{ name: string }> }).links[0]!.name;
+    expect(firstLinkName(byKey(await pageLineups(owner)).get(siteKey))).toBe(
+      "From heaven",
+    );
+    expect(
+      firstLinkName(
+        byKey(await pageLineups(owner, copyId, copyPage)).get(siteKey),
+      ),
+    ).toBe("Copy name");
   });
 
   test("a lineup row is never moved to another page by a patch", async () => {
@@ -883,19 +902,19 @@ describe("lineup row keys belong to their strategy and page", () => {
     expect(await pageLineups(owner, strategyPublicId, secondPage)).toEqual([]);
   });
 
-  test("the same lineup added twice with a different order is one add", async () => {
+  test("the same group added twice with a different order is one add", async () => {
     const { owner, editor } = await createHarness();
-    const first = await apply(owner, "owner-client", [addOp(fanIn[0]!, 3)]);
-    const second = await apply(editor, "editor-client", [addOp(fanIn[0]!, 7)]);
+    const first = await apply(owner, "owner-client", [addOp(siteGroup(), 3)]);
+    const second = await apply(editor, "editor-client", [
+      addOp(siteGroup(), 7),
+    ]);
     expect(first[0]).toMatchObject({ status: "applied" });
     expect(second[0]).toMatchObject({ status: "noop" });
     const conflicting = await apply(editor, "editor-client", [
       {
         ...addOp(
-          lineup("from-heaven", {
-            originId: "heaven",
-            landingId: "site",
-            agentType: "jett",
+          siteGroup((lineups) => {
+            lineups.origins[0]!.agentType = "jett";
           }),
           7,
         ),
@@ -910,16 +929,17 @@ describe("lineup row keys belong to their strategy and page", () => {
 });
 
 describe("lineup images", () => {
-  test("a lineup's images are referenced while it lives and released when it is deleted", async () => {
+  test("a group references every image across its lineups while it lives, and releases them when it is deleted", async () => {
     const { t, owner } = await createHarness();
     await t.run(markAssetReferencesReady);
+    const shots = ["shot-1", "shot-2", "shot-3"];
     await t.run(async (ctx) => {
       const strategy = await ctx.db
         .query("strategies")
         .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
         .unique();
       const now = Date.now();
-      for (const publicId of ["shot-1", "shot-2"]) {
+      for (const publicId of shots) {
         await ctx.db.insert("imageAssets", {
           publicId,
           provider: "r2",
@@ -927,58 +947,67 @@ describe("lineup images", () => {
           objectKey: `tests/${publicId}.png`,
           uploadStatus: "active",
           fileExtension: ".png",
+          mimeType: "image/png",
           createdAt: now,
           updatedAt: now,
         });
       }
     });
-    const row = lineup("k", {
-      images: [
-        { id: "shot-1", fileExtension: ".png" },
-        { id: "shot-2", fileExtension: ".png" },
-      ],
-    });
-    await apply(owner, "owner-client", [addOp(row, 0)]);
+    // Two lineups of the group show images, one of them shared by both.
+    const withImages = (secondLinkShots: string[]) =>
+      siteGroup((lineups) => {
+        lineups.links[0]!.images = [
+          { id: "shot-1", fileExtension: ".png" },
+          { id: "shot-2", fileExtension: ".png" },
+        ];
+        lineups.links[2]!.images = secondLinkShots.map((id) => ({
+          id,
+          fileExtension: ".png",
+        }));
+      });
+    await apply(owner, "owner-client", [
+      addOp(withImages(["shot-2", "shot-3"]), 0),
+    ]);
 
     const snapshot = (await owner.query(getPageSnapshot, {
       clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId,
     })) as { assets: Array<{ publicId: string }> };
-    expect(snapshot.assets.map((asset) => asset.publicId).sort()).toEqual([
-      "shot-1",
-      "shot-2",
-    ]);
-    const references = await t.run(async (ctx) =>
-      (await ctx.db.query("assetReferences").collect()).filter(
-        (reference) => reference.lineupId !== undefined,
-      ),
+    expect(snapshot.assets.map((asset) => asset.publicId).sort()).toEqual(
+      shots,
     );
-    expect(
-      references.map((reference) => reference.assetPublicId).sort(),
-    ).toEqual(["shot-1", "shot-2"]);
+    // One reference per image the row shows, however many lineups show it.
+    const lineupReferences = async () =>
+      (
+        await t.run(async (ctx) => await ctx.db.query("assetReferences").collect())
+      )
+        .filter((reference) => reference.lineupId !== undefined)
+        .map((reference) => reference.assetPublicId)
+        .sort();
+    expect(await lineupReferences()).toEqual(shots);
     const asked = {
       strategyPublicId,
-      assetPublicIds: ["shot-1", "shot-2", "never-shown"],
+      assetPublicIds: [...shots, "never-shown"],
     };
+    expect(await owner.query(listReferencedAssetIds, asked)).toEqual(shots);
+
+    // Dropping an image one lineup still shows keeps it; dropping the last
+    // lineup showing an image releases only that one.
+    await apply(owner, "owner-client", [
+      patchOp("drop-shared-shot", withImages(["shot-3"]), 1),
+    ]);
+    expect(await owner.query(listReferencedAssetIds, asked)).toEqual(shots);
+    await apply(owner, "owner-client", [
+      patchOp("drop-shot-3", withImages([]), 2),
+    ]);
     expect(await owner.query(listReferencedAssetIds, asked)).toEqual([
       "shot-1",
       "shot-2",
     ]);
+    expect(await lineupReferences()).toEqual(["shot-1", "shot-2"]);
 
-    // Dropping one image from the lineup releases only that one.
-    await apply(owner, "owner-client", [
-      patchOp(
-        "drop-shot-2",
-        lineup("k", { images: [{ id: "shot-1", fileExtension: ".png" }] }),
-        1,
-      ),
-    ]);
-    expect(await owner.query(listReferencedAssetIds, asked)).toEqual([
-      "shot-1",
-    ]);
-
-    await apply(owner, "owner-client", [deleteOp("delete-k", "k", 2)]);
+    await apply(owner, "owner-client", [deleteOp("delete-site", siteKey, 3)]);
     expect(await owner.query(listReferencedAssetIds, asked)).toEqual([]);
   });
 });
@@ -987,22 +1016,40 @@ describe("agent summary", () => {
   test("an origin shared by several lineups counts once, distinct origins count each", async () => {
     const { t, owner } = await createHarness();
     await apply(owner, "owner-client", [
-      // One astra origin shared by two lineups.
-      addOp(lineup("astra-a", { originId: "astra", agentType: "astra" }), 0),
-      addOp(lineup("astra-b", { originId: "astra", agentType: "astra" }), 1),
-      // Two viper origins.
-      addOp(lineup("viper-a", { originId: "viper-1", agentType: "viper" }), 2),
-      addOp(lineup("viper-b", { originId: "viper-2", agentType: "viper" }), 3),
+      // One astra origin, thrown to two landings.
+      addOp(
+        group("astra", {
+          origins: [{ id: "astra-origin", agentType: "astra" }],
+          landings: [{ id: "a-site" }, { id: "b-site" }],
+          links: [
+            { id: "astra-a", originId: "astra-origin", landingId: "a-site" },
+            { id: "astra-b", originId: "astra-origin", landingId: "b-site" },
+          ],
+        }),
+        0,
+      ),
+      // Two viper origins into one landing.
+      addOp(
+        group("viper", {
+          origins: [
+            { id: "viper-1", agentType: "viper" },
+            { id: "viper-2", agentType: "viper" },
+          ],
+          landings: [{ id: "wall" }],
+          links: [
+            { id: "viper-a", originId: "viper-1", landingId: "wall" },
+            { id: "viper-b", originId: "viper-2", landingId: "wall" },
+          ],
+        }),
+        1,
+      ),
     ]);
     // Counted per lineup, astra would tie viper and sort first by name;
     // counted per origin, viper (2) leads astra (1).
     expect(await agentSummary(t)).toEqual(["viper", "astra"]);
 
-    // Deleting every lineup from an origin drops its agent.
-    await apply(owner, "owner-client", [
-      deleteOp("delete-astra-a", "astra-a", 1),
-      deleteOp("delete-astra-b", "astra-b", 1),
-    ]);
+    // Deleting the group of an origin drops its agent.
+    await apply(owner, "owner-client", [deleteOp("delete-astra", "astra", 1)]);
     expect(await agentSummary(t)).toEqual(["viper"]);
   });
 
@@ -1070,78 +1117,93 @@ describe("agent summary", () => {
     expect(await agentSummary(t)).toEqual(["astra", "kayo", "sova", "viper"]);
   });
 
-  test("each live lineup keeps one agent row in step with it, and the summary follows them", async () => {
+  test("each live group keeps one agent row per origin in step with it, and the summary follows them", async () => {
     const { t, owner } = await createHarness();
     const secondPage = "lineups-page-2";
     await addSecondPage(owner, secondPage);
-    const astra = (notes = "") =>
-      lineup("astra-a", { originId: "astra", agentType: "astra", notes });
-    const viper = (agentType: string) =>
-      lineup("viper-a", { originId: "viper-1", agentType });
     const kayo = lineup("kayo-a", { originId: "kayo", agentType: "kayo" });
+    const rawRows = async () =>
+      await t.run(async (ctx) => await ctx.db.query("lineupAgents").collect());
 
-    // Adding a lineup adds its row.
+    // Adding a group adds a row for each of its origins.
     await apply(owner, "owner-client", [
-      addOp(astra(), 0),
-      addOp(viper("viper"), 1),
+      addOp(siteGroup(), 0),
       addOp(kayo, 0, secondPage),
     ]);
     expect(await lineupAgentRows(t)).toEqual([
-      { lineup: "astra-a", page: pagePublicId, originId: "astra", agentType: "astra" },
       { lineup: "kayo-a", page: secondPage, originId: "kayo", agentType: "kayo" },
-      { lineup: "viper-a", page: pagePublicId, originId: "viper-1", agentType: "viper" },
+      { lineup: siteKey, page: pagePublicId, originId: "heaven", agentType: "brimstone" },
+      { lineup: siteKey, page: pagePublicId, originId: "mid", agentType: "viper" },
     ]);
-    expect(await agentSummary(t)).toEqual(["astra", "kayo", "viper"]);
+    expect(await agentSummary(t)).toEqual(["brimstone", "kayo", "viper"]);
 
-    // A patch that changes the origin's agent updates its row; one that
-    // leaves the agent alone leaves it as it was.
-    const astraRowBefore = await t.run(async (ctx) =>
-      (await ctx.db.query("lineupAgents").collect()).find(
-        (row) => row.originId === "astra",
-      ),
-    );
-    const patched = await apply(owner, "owner-client", [
-      patchOp("viper-to-sova", viper("sova"), 1),
-      patchOp("astra-notes", astra("Run and throw"), 1),
-    ]);
-    expect(patched.map((result) => result.status)).toEqual([
-      "applied",
-      "applied",
-    ]);
-    expect(await lineupAgentRows(t)).toEqual([
-      { lineup: "astra-a", page: pagePublicId, originId: "astra", agentType: "astra" },
-      { lineup: "kayo-a", page: secondPage, originId: "kayo", agentType: "kayo" },
-      { lineup: "viper-a", page: pagePublicId, originId: "viper-1", agentType: "sova" },
-    ]);
+    // A patch that changes one origin's agent updates that row alone; the
+    // other origin's row is left exactly as it was.
+    const before = await rawRows();
+    const heavenRow = before.find((row) => row.originId === "heaven")!;
+    const midRow = before.find((row) => row.originId === "mid")!;
+    const midToSova = siteGroup((lineups) => {
+      lineups.origins[1]!.agentType = "sova";
+    });
     expect(
-      await t.run(async (ctx) =>
-        (await ctx.db.query("lineupAgents").collect()).find(
-          (row) => row.originId === "astra",
-        ),
-      ),
-    ).toEqual(astraRowBefore);
-    expect(await agentSummary(t)).toEqual(["astra", "kayo", "sova"]);
+      (await apply(owner, "owner-client", [patchOp("mid-to-sova", midToSova, 1)]))[0],
+    ).toMatchObject({ status: "applied" });
+    let after = await rawRows();
+    expect(after.find((row) => row.originId === "heaven")).toEqual(heavenRow);
+    expect(after.find((row) => row.originId === "mid")).toEqual({
+      ...midRow,
+      agentType: "sova",
+    });
+    expect(await agentSummary(t)).toEqual(["brimstone", "kayo", "sova"]);
 
-    // Deleting a lineup removes its row; restoring it brings the row back.
-    await apply(owner, "owner-client", [deleteOp("delete-astra", "astra-a", 2)]);
+    // A lineup from a new origin adds its row; dropping an origin (and its
+    // lineup) deletes its row, leaving the rest.
+    const reshaped = siteGroup((lineups) => {
+      lineups.origins[1]!.agentType = "sova";
+      lineups.origins.push({ id: "garage", agentType: "astra" });
+      lineups.links.push({ id: "from-garage", originId: "garage", landingId: "site" });
+    });
+    await apply(owner, "owner-client", [patchOp("add-garage", reshaped, 2)]);
+    expect(
+      (await lineupAgentRows(t)).filter((row) => row.lineup === siteKey),
+    ).toEqual([
+      { lineup: siteKey, page: pagePublicId, originId: "garage", agentType: "astra" },
+      { lineup: siteKey, page: pagePublicId, originId: "heaven", agentType: "brimstone" },
+      { lineup: siteKey, page: pagePublicId, originId: "mid", agentType: "sova" },
+    ]);
+    const withoutMid = siteGroup((lineups) => {
+      lineups.origins = lineups.origins.filter((origin) => origin.id !== "mid");
+      lineups.origins.push({ id: "garage", agentType: "astra" });
+      lineups.links = lineups.links.filter((link) => link.originId !== "mid");
+      lineups.links.push({ id: "from-garage", originId: "garage", landingId: "site" });
+    });
+    await apply(owner, "owner-client", [patchOp("drop-mid", withoutMid, 3)]);
+    after = await rawRows();
+    expect(after.find((row) => row.originId === "heaven")).toEqual(heavenRow);
+    expect(
+      (await lineupAgentRows(t)).filter((row) => row.lineup === siteKey),
+    ).toEqual([
+      { lineup: siteKey, page: pagePublicId, originId: "garage", agentType: "astra" },
+      { lineup: siteKey, page: pagePublicId, originId: "heaven", agentType: "brimstone" },
+    ]);
+    expect(await agentSummary(t)).toEqual(["astra", "brimstone", "kayo"]);
+
+    // Deleting a group removes all its rows; restoring it brings them back.
+    await apply(owner, "owner-client", [deleteOp("delete-site", siteKey, 4)]);
     expect((await lineupAgentRows(t)).map((row) => row.lineup)).toEqual([
       "kayo-a",
-      "viper-a",
     ]);
-    expect(await agentSummary(t)).toEqual(["kayo", "sova"]);
+    expect(await agentSummary(t)).toEqual(["kayo"]);
     const restored = await apply(owner, "owner-client", [
-      { ...addOp(astra(), 0), opId: "restore-astra", expectedLineupRevision: 3 },
+      { ...addOp(withoutMid, 0), opId: "restore-site", expectedLineupRevision: 5 },
     ]);
-    expect(restored[0]).toMatchObject({ status: "applied", appliedRevision: 4 });
-    expect(await lineupAgentRows(t)).toContainEqual({
-      lineup: "astra-a",
-      page: pagePublicId,
-      originId: "astra",
-      agentType: "astra",
-    });
-    expect(await agentSummary(t)).toEqual(["astra", "kayo", "sova"]);
+    expect(restored[0]).toMatchObject({ status: "applied", appliedRevision: 6 });
+    expect(
+      (await lineupAgentRows(t)).map((row) => `${row.lineup}:${row.originId}`),
+    ).toEqual(["kayo-a:kayo", `${siteKey}:garage`, `${siteKey}:heaven`]);
+    expect(await agentSummary(t)).toEqual(["astra", "brimstone", "kayo"]);
 
-    // A page in the trash keeps its lineups' rows for a restore, and the
+    // A page in the trash keeps its groups' rows for a restore, and the
     // summary leaves them out until the page comes back.
     const trashed = await apply(owner, "owner-client", [
       {
@@ -1153,17 +1215,17 @@ describe("agent summary", () => {
     ]);
     expect(trashed[0]).toMatchObject({ status: "applied" });
     expect((await lineupAgentRows(t)).map((row) => row.lineup)).toEqual([
-      "astra-a",
       "kayo-a",
-      "viper-a",
+      siteKey,
+      siteKey,
     ]);
-    expect(await agentSummary(t)).toEqual(["astra", "sova"]);
+    expect(await agentSummary(t)).toEqual(["astra", "brimstone"]);
     await owner.mutation(restorePage, {
       clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       pagePublicId: secondPage,
     });
-    expect(await agentSummary(t)).toEqual(["astra", "kayo", "sova"]);
+    expect(await agentSummary(t)).toEqual(["astra", "brimstone", "kayo"]);
   });
 
   test("purging leaves no agent row behind, even one a tombstone kept", async () => {
@@ -1171,10 +1233,10 @@ describe("agent summary", () => {
     const { t, owner } = await createHarness();
     await t.run(markAssetReferencesReady);
     await apply(owner, "owner-client", [
-      addOp(lineup("gone", { agentType: "astra" }), 0),
+      addOp(siteGroup(), 0),
       addOp(lineup("kept", { agentType: "viper" }), 1),
     ]);
-    await apply(owner, "owner-client", [deleteOp("delete-gone", "gone", 1)]);
+    await apply(owner, "owner-client", [deleteOp("delete-site", siteKey, 1)]);
     expect((await lineupAgentRows(t)).map((row) => row.lineup)).toEqual([
       "kept",
     ]);
@@ -1182,14 +1244,14 @@ describe("agent summary", () => {
     // table existed) goes with the tombstone.
     await t.run(async (ctx) => {
       const gone = (await ctx.db.query("lineups").collect()).find(
-        (row) => row.publicId === "gone",
+        (row) => row.publicId === siteKey,
       )!;
       await ctx.db.insert("lineupAgents", {
         strategyId: gone.strategyId,
         pageId: gone.pageId,
         lineupId: gone._id,
-        originId: "gone-origin",
-        agentType: "astra",
+        originId: "heaven",
+        agentType: "brimstone",
       });
     });
 
@@ -1209,12 +1271,11 @@ describe("agent summary", () => {
     ]);
   });
 
-  test("a duplicate's lineups get agent rows of their own", async () => {
+  test("a duplicate's groups get agent rows of their own, one per origin", async () => {
     const { t, owner } = await createHarness();
     await apply(owner, "owner-client", [
-      addOp(lineup("astra-a", { originId: "astra", agentType: "astra" }), 0),
-      addOp(lineup("astra-b", { originId: "astra", agentType: "astra" }), 1),
-      addOp(lineup("viper-a", { originId: "viper", agentType: "viper" }), 2),
+      addOp(siteGroup(), 0),
+      addOp(lineup("astra-a", { originId: "astra", agentType: "astra" }), 1),
     ]);
     const sourceRows = await lineupAgentRows(t);
 
@@ -1225,6 +1286,7 @@ describe("agent summary", () => {
       name: "Lineups (Copy)",
     });
 
+    type Origin = { id: string; agent: { type: string } };
     const copy = (await owner.query(getFullSnapshot, {
       clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId: "lineups-copy",
@@ -1235,19 +1297,19 @@ describe("agent summary", () => {
     const copyRows = await lineupAgentRows(t, "lineups-copy");
     expect(copyRows).toEqual(
       copy.lineups
-        .map((row) => {
-          const origin = row.payload.data.origin as {
-            id: string;
-            agent: { type: string };
-          };
-          return {
+        .flatMap((row) =>
+          (row.payload.data.origins as Origin[]).map((origin) => ({
             lineup: row.publicId,
             page: row.pagePublicId,
             originId: origin.id,
             agentType: origin.agent.type,
-          };
-        })
-        .sort((a, b) => a.lineup.localeCompare(b.lineup)),
+          })),
+        )
+        .sort(
+          (a, b) =>
+            a.lineup.localeCompare(b.lineup) ||
+            a.originId.localeCompare(b.originId),
+        ),
     );
     expect(copyRows).toHaveLength(3);
     expect(copyRows.map((row) => row.page)).toEqual(
@@ -1255,13 +1317,23 @@ describe("agent summary", () => {
     );
     // The source keeps its rows untouched.
     expect(await lineupAgentRows(t)).toEqual(sourceRows);
-    expect(await agentSummary(t, "lineups-copy")).toEqual(["astra", "viper"]);
+    expect(await agentSummary(t, "lineups-copy")).toEqual([
+      "astra",
+      "brimstone",
+      "viper",
+    ]);
 
     // Editing the copy moves only the copy's rows.
-    const viperCopy = copyRows.find((row) => row.agentType === "viper")!;
-    const viperCopyLanding = copy.lineups.find(
-      (row) => row.publicId === viperCopy.lineup,
-    )!.payload.data.landing as { id: string };
+    const copiedSite = copy.lineups.find(
+      (row) => (row.payload.data.origins as Origin[]).length === 2,
+    )!;
+    const data = structuredClone(copiedSite.payload.data) as {
+      origins: Origin[];
+    };
+    const viperOrigin = data.origins.find(
+      (origin) => origin.agent.type === "viper",
+    )!;
+    viperOrigin.agent.type = "jett";
     const edited = await apply(
       owner,
       "copy-client",
@@ -1269,13 +1341,9 @@ describe("agent summary", () => {
         {
           opId: "copy-viper-to-jett",
           type: "lineup.patch",
-          lineupPublicId: viperCopy.lineup,
-          pagePublicId: viperCopy.page,
-          payload: lineupPayload(viperCopy.lineup, {
-            originId: viperCopy.originId,
-            landingId: viperCopyLanding.id,
-            agentType: "jett",
-          }),
+          lineupPublicId: copiedSite.publicId,
+          pagePublicId: copiedSite.pagePublicId,
+          payload: { ...copiedSite.payload, data },
           expectedLineupRevision: 1,
         },
       ],
@@ -1284,36 +1352,36 @@ describe("agent summary", () => {
     expect(edited[0]).toMatchObject({ status: "applied" });
     expect(
       (await lineupAgentRows(t, "lineups-copy")).find(
-        (row) => row.lineup === viperCopy.lineup,
+        (row) => row.originId === viperOrigin.id,
       ),
-    ).toEqual({ ...viperCopy, agentType: "jett" });
-    expect(await agentSummary(t, "lineups-copy")).toEqual(["astra", "jett"]);
+    ).toMatchObject({ lineup: copiedSite.publicId, agentType: "jett" });
+    expect(await agentSummary(t, "lineups-copy")).toEqual([
+      "astra",
+      "brimstone",
+      "jett",
+    ]);
     expect(await lineupAgentRows(t)).toEqual(sourceRows);
-    expect(await agentSummary(t)).toEqual(["astra", "viper"]);
+    expect(await agentSummary(t)).toEqual(["astra", "brimstone", "viper"]);
   });
 });
 
 describe("a resent lineup op", () => {
   test("reports the revision it landed at, so a successor cannot overwrite a teammate's later edit", async () => {
     const { owner, editor } = await createHarness();
-    await apply(owner, "owner-client", [addOp(fanIn[0]!, 0)]);
+    await apply(owner, "owner-client", [addOp(siteGroup(), 0)]);
     const mine = patchOp(
       "owner-renames",
-      lineup("from-heaven", {
-        originId: "heaven",
-        landingId: "site",
-        name: "Owner name",
+      siteGroup((lineups) => {
+        lineups.links[0]!.name = "Owner name";
       }),
       1,
     );
     const first = await apply(owner, "owner-client", [mine]);
     expect(first[0]).toMatchObject({ status: "applied", appliedRevision: 2 });
 
-    // A teammate edits the same lineup after it.
-    const theirs = lineup("from-heaven", {
-      originId: "heaven",
-      landingId: "site",
-      name: "Editor name",
+    // A teammate edits the same group after it.
+    const theirs = siteGroup((lineups) => {
+      lineups.links[0]!.name = "Editor name";
     });
     const teammate = await apply(editor, "editor-client", [
       patchOp("editor-renames", theirs, 2),
@@ -1326,11 +1394,9 @@ describe("a resent lineup op", () => {
       mine,
       patchOp(
         "owner-notes",
-        lineup("from-heaven", {
-          originId: "heaven",
-          landingId: "site",
-          name: "Owner name",
-          notes: "Owner notes",
+        siteGroup((lineups) => {
+          lineups.links[0]!.name = "Owner name";
+          lineups.links[0]!.notes = "Owner notes";
         }),
         2,
       ),
@@ -1345,9 +1411,48 @@ describe("a resent lineup op", () => {
       reason: "revision_mismatch",
       current: { type: "lineup", revision: 3, value: theirs.payload },
     });
-    const row = byKey(await pageLineups(owner)).get("from-heaven")!;
+    const row = byKey(await pageLineups(owner)).get(siteKey)!;
     expect(row.revision).toBe(3);
     expect(row.payload).toEqual(theirs.payload);
+  });
+
+  test("whose event recorded no revision replays with none, not the row's latest", async () => {
+    const { t, owner, editor } = await createHarness();
+    const mine = addOp(siteGroup(), 0);
+    const first = await apply(owner, "owner-client", [mine]);
+    expect(first[0]).toMatchObject({ status: "applied", appliedRevision: 1 });
+    // An event written without the revision its op landed at.
+    await t.run(async (ctx) => {
+      const event = (await ctx.db.query("operationEvents").collect()).find(
+        (row) => row.opId === mine.opId,
+      )!;
+      await ctx.db.patch(event._id, { appliedRevision: undefined });
+    });
+    // A teammate moves the row on.
+    const theirs = siteGroup((lineups) => {
+      lineups.links[0]!.name = "Editor name";
+    });
+    await apply(editor, "editor-client", [patchOp("editor-renames", theirs, 1)]);
+
+    // The replay names no revision, so the client cannot rebase a successor
+    // onto the teammate's edit; the successor, still on 1, meets the usual
+    // revision check.
+    const resent = await apply(owner, "owner-client", [
+      mine,
+      patchOp(
+        "owner-renames",
+        siteGroup((lineups) => {
+          lineups.links[0]!.name = "Owner name";
+        }),
+        1,
+      ),
+    ]);
+    expect(resent[0]).toEqual({ opId: mine.opId, status: "noop" });
+    expect(resent[1]).toMatchObject({
+      status: "rejected",
+      reason: "revision_mismatch",
+      current: { type: "lineup", revision: 2, value: theirs.payload },
+    });
   });
 });
 
@@ -1383,8 +1488,8 @@ function elementAdd(
   };
 }
 
-/// Writes a live lineup straight to the table, bypassing applyBatch and so
-/// the agent summary refresh.
+/// Writes a live group of one lineup straight to the table, bypassing
+/// applyBatch and so the agent summary refresh.
 async function seedLineupRow(t: RootHarness, id: string, agentType: string) {
   await t.run(async (ctx) => {
     const strategy = await ctx.db
@@ -1400,9 +1505,9 @@ async function seedLineupRow(t: RootHarness, id: string, agentType: string) {
       publicId: id,
       strategyId: strategy!._id,
       pageId: page!._id,
-      payloadKind: "lineup",
+      payloadKind: "lineups",
       payloadVersion: 1,
-      payload: lineupPayload(id, { agentType }),
+      payload: oneLineupPayload(id, { agentType }),
       sortIndex: 0,
       revision: 1,
       deleted: false,

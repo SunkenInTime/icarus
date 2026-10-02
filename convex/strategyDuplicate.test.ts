@@ -9,7 +9,7 @@ import type { DataModel } from "./_generated/dataModel";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
-import { lineupPayload } from "./testContent.helpers";
+import { lineupsPayload, oneLineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -72,19 +72,26 @@ async function createHarness(): Promise<{
   return { t, owner, other };
 }
 
+// One lineup group holding one lineup. The group, its lineup and its
+// landing share one id, as a landing made with its lineup does.
 const seedLineupData = {
   id: "item-1",
-  name: "Shock dart",
-  notes: "Two bounces",
-  images: [{ id: "lineup-image" }],
-  origin: {
-    id: "origin-1",
-    agent: { type: "sova", lineUpID: "origin-1" },
-  },
-  landing: {
-    id: "item-1",
-    ability: { type: "shock_dart", lineUpID: "item-1" },
-  },
+  origins: [
+    { id: "origin-1", agent: { type: "sova", lineUpID: "origin-1" } },
+  ],
+  landings: [
+    { id: "item-1", ability: { type: "shock_dart", lineUpID: "item-1" } },
+  ],
+  links: [
+    {
+      id: "item-1",
+      originId: "origin-1",
+      landingId: "item-1",
+      name: "Shock dart",
+      notes: "Two bounces",
+      images: [{ id: "lineup-image" }],
+    },
+  ],
 };
 
 /// A two-page strategy with a placed image, a lineup with an image, an agent,
@@ -186,15 +193,14 @@ async function seedSource(t: RootHarness, owner: Harness): Promise<void> {
         pagePublicId: firstPage,
         expectedElementRevision: 1,
       },
-      // One lineup showing an image. Its landing shares the lineup's id, as
-      // landings made with their lineup do.
+      // One lineup group showing an image.
       {
         opId: "add-lineup",
         type: "lineup.add",
         lineupPublicId: "item-1",
         pagePublicId: secondPage,
         payload: {
-          kind: "lineup",
+          kind: "lineups",
           payloadVersion: 1,
           data: seedLineupData,
         },
@@ -328,27 +334,30 @@ describe("strategies:duplicate", () => {
     expect(copy.lineups).toHaveLength(1);
     const lineup = copy.lineups[0]!;
     expect(lineup.pagePublicId).toBe(copySecondPage);
-    expect(lineup.payload.kind).toBe("lineup");
-    // Fresh ids, still shared where the source shared them (the landing
-    // keeps the lineup's id), with each marker following its end.
-    const { id, origin, landing } = lineup.payload.data;
+    expect(lineup.payload.kind).toBe("lineups");
+    // Fresh ids, still shared where the source shared them (the group, its
+    // lineup and its landing keep one id), with each link naming its ends'
+    // new ids and each marker following its spot.
+    const { id, origins } = lineup.payload.data;
+    const originId = origins[0].id;
     expect(lineup.publicId).toBe(id);
     expect(id).not.toBe("item-1");
-    expect(origin.id).not.toBe("origin-1");
-    expect(landing.id).toBe(id);
+    expect(originId).not.toBe("origin-1");
+    expect(originId).not.toBe(id);
     expect(lineup.payload.data).toEqual({
       id,
-      name: "Shock dart",
-      notes: "Two bounces",
-      images: [{ id: "lineup-image" }],
-      origin: {
-        id: origin.id,
-        agent: { type: "sova", lineUpID: origin.id },
-      },
-      landing: {
-        id,
-        ability: { type: "shock_dart", lineUpID: id },
-      },
+      origins: [{ id: originId, agent: { type: "sova", lineUpID: originId } }],
+      landings: [{ id, ability: { type: "shock_dart", lineUpID: id } }],
+      links: [
+        {
+          id,
+          originId,
+          landingId: id,
+          name: "Shock dart",
+          notes: "Two bounces",
+          images: [{ id: "lineup-image" }],
+        },
+      ],
     });
 
     expect(await imageUrls(owner, "duplicate-copy")).toEqual({
@@ -414,7 +423,7 @@ describe("strategies:duplicate", () => {
     ).toEqual([]);
   });
 
-  test("lineups that share spots copy with their sharing, details and image, and outlive the original", async () => {
+  test("a lineup group copies whole under new ids, with its shared spots, details and images, and outlives the original", async () => {
     vi.useFakeTimers();
     const fetchMock = mockR2Deletes();
     const { t, owner } = await createHarness();
@@ -425,51 +434,70 @@ describe("strategies:duplicate", () => {
         .withIndex("by_publicId", (q) => q.eq("publicId", source))
         .unique();
       const now = Date.now();
-      await ctx.db.insert("imageAssets", {
-        publicId: "link-image",
-        provider: "r2",
-        strategyId: strategy!._id,
-        uploadAttemptPublicId: "link-image-attempt",
-        objectKey: `strategies/${source}/link-image.png`,
-        uploadStatus: "active",
-        fileExtension: ".png",
-        mimeType: "image/png",
-        width: 64,
-        height: 32,
-        byteSize: 100,
-        uploadedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
+      for (const publicId of ["link-image", "fan-out-image"]) {
+        await ctx.db.insert("imageAssets", {
+          publicId,
+          provider: "r2",
+          strategyId: strategy!._id,
+          uploadAttemptPublicId: `${publicId}-attempt`,
+          objectKey: `strategies/${source}/${publicId}.png`,
+          uploadStatus: "active",
+          fileExtension: ".png",
+          mimeType: "image/png",
+          width: 64,
+          height: 32,
+          byteSize: 100,
+          uploadedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     });
     // Two lineups from different origins into one landing (fan-in), and a
-    // third from the first one's origin to another landing (fan-out). The
-    // shared landing takes the first lineup's id, as a landing made with its
-    // lineup does.
-    const rows = [
-      lineupPayload("link-a", {
-        originId: "origin-a",
-        landingId: "link-a",
-        name: "From heaven",
-        notes: "Run and throw",
-        images: [{ id: "link-image", fileExtension: ".png" }],
-      }),
-      lineupPayload("link-b", {
-        originId: "origin-b",
-        landingId: "link-a",
-        name: "From mid",
-      }),
-      lineupPayload("link-c", {
-        originId: "origin-a",
-        landingId: "landing-c",
-        name: "Fan out",
-      }),
-    ];
+    // third from the first one's origin to another landing (fan-out): one
+    // group. The shared landing takes the first lineup's id, as a landing
+    // made with its lineup does, and the group takes it too. A second group
+    // on the page holds one lineup.
+    const group = lineupsPayload("link-a", {
+      origins: [
+        { id: "origin-a", position: { dx: 10, dy: 10 } },
+        { id: "origin-b", agentType: "brimstone", position: { dx: 20, dy: 20 } },
+      ],
+      landings: [
+        { id: "link-a", position: { dx: 300, dy: 300 } },
+        { id: "landing-c", position: { dx: 500, dy: 500 } },
+      ],
+      links: [
+        {
+          id: "link-a",
+          originId: "origin-a",
+          landingId: "link-a",
+          name: "From heaven",
+          notes: "Run and throw",
+          images: [{ id: "link-image", fileExtension: ".png" }],
+        },
+        {
+          id: "link-b",
+          originId: "origin-b",
+          landingId: "link-a",
+          name: "From mid",
+          youtubeLink: "https://youtu.be/b",
+        },
+        {
+          id: "link-c",
+          originId: "origin-a",
+          landingId: "landing-c",
+          name: "Fan out",
+          images: [{ id: "fan-out-image", fileExtension: ".png" }],
+        },
+      ],
+    });
+    const lone = oneLineupPayload("lone", { name: "Lone" });
     const added = (await owner.mutation(applyBatch, {
       ...protocol,
       strategyPublicId: source,
       clientId: "shared-spots",
-      ops: rows.map((payload, index) => ({
+      ops: [group, lone].map((payload, index) => ({
         opId: `add-${payload.data.id}`,
         type: "lineup.add",
         lineupPublicId: payload.data.id,
@@ -478,9 +506,10 @@ describe("strategies:duplicate", () => {
         sortIndex: 10 + index,
       })),
     })) as { results: Array<{ status: string }> };
-    expect(added.results.map((result) => result.status)).toEqual(
-      rows.map(() => "applied"),
-    );
+    expect(added.results.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+    ]);
 
     await duplicate(owner);
     await deleteAndSweep(t, owner, source);
@@ -489,65 +518,114 @@ describe("strategies:duplicate", () => {
       publicId: string;
       pagePublicId: string;
       sortIndex: number;
-      payload: { kind: string; data: Record<string, any> };
+      payload: {
+        kind: string;
+        payloadVersion: number;
+        data: Record<string, any>;
+      };
     };
     const copy = (await owner.query(getFullSnapshot, {
       ...protocol,
       strategyPublicId: "duplicate-copy",
-    })) as { pages: Array<{ publicId: string; sortIndex: number }>; lineups: Row[] };
-    // These sit on the first page (the seed's lineup is on the second).
-    const copyFirstPage = [...copy.pages].sort((a, b) => a.sortIndex - b.sortIndex)[0]!
-      .publicId;
+    })) as {
+      pages: Array<{ publicId: string; sortIndex: number }>;
+      lineups: Row[];
+    };
+    // These sit on the first page (the seed's group is on the second).
+    const copyFirstPage = [...copy.pages].sort(
+      (a, b) => a.sortIndex - b.sortIndex,
+    )[0]!.publicId;
     const copied = copy.lineups
       .filter((row) => row.pagePublicId === copyFirstPage)
       .sort((a, b) => a.sortIndex - b.sortIndex);
-    expect(copied.map((row) => row.payload.data.name)).toEqual([
-      "From heaven",
-      "From mid",
-      "Fan out",
-    ]);
-    const oldIds = [
+    expect(copied).toHaveLength(2);
+    const [copiedGroup, copiedLone] = copied as [Row, Row];
+
+    // Read the new ids off the copy, in the source's order.
+    const newIdOf = new Map<string, string>();
+    const remember = (sourceId: string, copyId: string) => {
+      // One source id always becomes one copy id.
+      expect(newIdOf.get(sourceId) ?? copyId).toBe(copyId);
+      newIdOf.set(sourceId, copyId);
+    };
+    for (const [sourcePayload, row] of [
+      [group, copiedGroup],
+      [lone, copiedLone],
+    ] as const) {
+      const data = row.payload.data;
+      expect(row.publicId).toBe(data.id);
+      remember(sourcePayload.data.id, data.id);
+      for (const field of ["origins", "landings", "links"] as const) {
+        expect(data[field]).toHaveLength(sourcePayload.data[field].length);
+        sourcePayload.data[field].forEach((entry, index) =>
+          remember(entry.id, data[field][index].id),
+        );
+      }
+    }
+    // Ids that were apart stay apart, and none is reused from the source.
+    const sourceIds = [...newIdOf.keys()].sort();
+    const copyIds = [...newIdOf.values()];
+    expect(sourceIds).toEqual([
+      "landing-c",
       "link-a",
       "link-b",
       "link-c",
+      "lone",
+      "lone-landing",
+      "lone-origin",
       "origin-a",
       "origin-b",
-      "landing-c",
-    ];
-    for (const row of copied) {
-      const { id, origin, landing } = row.payload.data;
-      // Each row is keyed by its new lineup id.
-      expect(row.publicId).toBe(id);
-      for (const newId of [id, origin.id, landing.id]) {
-        expect(oldIds).not.toContain(newId);
-      }
-      // Each marker follows its end's new id.
-      expect(origin.agent.lineUpID).toBe(origin.id);
-      expect(landing.ability.lineUpID).toBe(landing.id);
-    }
-    const [heaven, mid, fanOut] = copied.map((row) => row.payload.data);
-    // Fan-in survives: one new landing id, still the first lineup's id.
-    expect(mid!.landing.id).toBe(heaven!.landing.id);
-    expect(heaven!.landing.id).toBe(heaven!.id);
-    // Fan-out survives: one new origin id for both lineups from it.
-    expect(fanOut!.origin.id).toBe(heaven!.origin.id);
-    // And spots that were apart stay apart.
-    expect(mid!.origin.id).not.toBe(heaven!.origin.id);
-    expect(fanOut!.landing.id).not.toBe(heaven!.landing.id);
-    expect(new Set(copied.map((row) => row.publicId)).size).toBe(3);
-    // Details and the image come along.
-    expect(heaven).toMatchObject({
-      notes: "Run and throw",
-      youtubeLink: "",
-      images: [{ id: "link-image", fileExtension: ".png" }],
-    });
-    expect(mid!.images).toEqual([]);
+    ]);
+    expect(new Set(copyIds).size).toBe(copyIds.length);
+    for (const copyId of copyIds) expect(sourceIds).not.toContain(copyId);
 
-    // The copy's lineup image is its own reference and survived the
-    // original.
+    // Each copy is its source row under the new ids: each link naming its
+    // ends' new ids, each marker following its spot, every place, detail
+    // and image as it was.
+    const renamed = (payload: typeof group) => {
+      const id = (old: string) => newIdOf.get(old)!;
+      return {
+        ...payload,
+        data: {
+          id: id(payload.data.id),
+          origins: payload.data.origins.map((origin) => ({
+            ...origin,
+            id: id(origin.id),
+            agent: { ...origin.agent, lineUpID: id(origin.id) },
+          })),
+          landings: payload.data.landings.map((landing) => ({
+            ...landing,
+            id: id(landing.id),
+            ability: { ...landing.ability, lineUpID: id(landing.id) },
+          })),
+          links: payload.data.links.map((link) => ({
+            ...link,
+            id: id(link.id),
+            originId: id(link.originId),
+            landingId: id(link.landingId),
+          })),
+        },
+      };
+    };
+    expect(copiedGroup.payload).toEqual(renamed(group));
+    expect(copiedLone.payload).toEqual(renamed(lone));
+    // Fan-in and fan-out survive: both lineups into the shared landing name
+    // one new id, still the group's and the first lineup's, and both
+    // lineups from the shared origin name one new id.
+    const links = copiedGroup.payload.data.links;
+    expect(links[1].landingId).toBe(links[0].landingId);
+    expect(links[0].landingId).toBe(copiedGroup.publicId);
+    expect(links[0].id).toBe(copiedGroup.publicId);
+    expect(links[2].originId).toBe(links[0].originId);
+
+    // The copy's lineup images are its own references, one per image across
+    // every link, and survived the original.
     expect(fetchMock).not.toHaveBeenCalled();
     const urls = await imageUrls(owner, "duplicate-copy");
     expect(urls["link-image"]).toEqual(expect.stringContaining("link-image.png"));
+    expect(urls["fan-out-image"]).toEqual(
+      expect.stringContaining("fan-out-image.png"),
+    );
     const lineupReferences = await t.run(async (ctx) => {
       const copyRow = await ctx.db
         .query("strategies")
@@ -562,149 +640,19 @@ describe("strategies:duplicate", () => {
         .map((reference) => reference.assetPublicId)
         .sort();
     });
-    expect(lineupReferences).toEqual(["lineup-image", "link-image"]);
-
-    await deleteAndSweep(t, owner, "duplicate-copy");
-    expect(deletedKeys(fetchMock)).toContain(
-      `/duplicate-bucket/strategies/${source}/link-image.png`,
-    );
-  });
-
-  test("a duplicate copies each lineup row exactly, even where rows sharing a spot disagree on it", async () => {
-    const { owner } = await createHarness();
-    const exact = "exact-source";
-    const exactPage = "exact-source-page";
-    await owner.mutation(createStrategy, {
-      ...protocol,
-      publicId: exact,
-      name: "Exact",
-      mapData: "split",
-      initialPagePublicId: exactPage,
-      initialPageName: "Setup",
-      initialPageIsAttack: true,
-    });
-    // A and B land in one spot but their rows hold it in different places;
-    // A and C start from one origin, also held in different places. C's
-    // landing shares C's id. Each row is drawn from its own copy, so the
-    // duplicate must carry every row over as it is, whatever the new ids.
-    const rows = [
-      lineupPayload("lineup-a", {
-        originId: "origin-a",
-        landingId: "spot",
-        originPosition: { dx: 10, dy: 10 },
-        landingPosition: { dx: 300, dy: 300 },
-        name: "A",
-        notes: "Jump throw",
-      }),
-      lineupPayload("lineup-b", {
-        originId: "origin-b",
-        landingId: "spot",
-        agentType: "brimstone",
-        originPosition: { dx: 20, dy: 20 },
-        landingPosition: { dx: 100, dy: 100 },
-        name: "B",
-        youtubeLink: "https://youtu.be/b",
-      }),
-      lineupPayload("lineup-c", {
-        originId: "origin-a",
-        landingId: "lineup-c",
-        originPosition: { dx: 40, dy: 40 },
-        landingPosition: { dx: 500, dy: 500 },
-        name: "C",
-      }),
-    ];
-    const added = (await owner.mutation(applyBatch, {
-      ...protocol,
-      strategyPublicId: exact,
-      clientId: "exact",
-      ops: rows.map((payload, index) => ({
-        opId: `add-${payload.data.id}`,
-        type: "lineup.add",
-        lineupPublicId: payload.data.id,
-        pagePublicId: exactPage,
-        payload,
-        sortIndex: index,
-      })),
-    })) as { results: Array<{ status: string }> };
-    expect(added.results.map((result) => result.status)).toEqual(
-      rows.map(() => "applied"),
-    );
-
-    await owner.mutation(duplicateStrategy, {
-      ...protocol,
-      sourceStrategyPublicId: exact,
-      publicId: "exact-copy",
-      name: "Exact (Copy)",
-    });
-    type Row = { publicId: string; payload: { data: Record<string, any> } };
-    const copied = (
-      (await owner.query(getFullSnapshot, {
-        ...protocol,
-        strategyPublicId: "exact-copy",
-      })) as { lineups: Row[] }
-    ).lineups;
-    expect(copied.map((row) => row.payload.data.name).sort()).toEqual([
-      "A",
-      "B",
-      "C",
+    expect(lineupReferences).toEqual([
+      "fan-out-image",
+      "lineup-image",
+      "link-image",
     ]);
 
-    // Pair each source row with its copy and read off the new ids.
-    const newIdOf = new Map<string, string>();
-    const remember = (sourceId: string, copyId: string) => {
-      // One source id always becomes one copy id.
-      expect(newIdOf.get(sourceId) ?? copyId).toBe(copyId);
-      newIdOf.set(sourceId, copyId);
-    };
-    const pairs = rows.map((sourcePayload) => {
-      const copy = copied.find(
-        (row) => row.payload.data.name === sourcePayload.data.name,
-      )!;
-      const data = copy.payload.data;
-      expect(copy.publicId).toBe(data.id);
-      remember(sourcePayload.data.id, data.id);
-      remember(sourcePayload.data.origin.id, data.origin.id);
-      remember(sourcePayload.data.landing.id, data.landing.id);
-      return { sourcePayload, copy };
-    });
-    // Ids that were apart stay apart, and none is reused from the source.
-    const sourceIds = [...newIdOf.keys()].sort();
-    const copyIds = [...newIdOf.values()];
-    expect(sourceIds).toEqual(
-      ["lineup-a", "lineup-b", "lineup-c", "origin-a", "origin-b", "spot"],
+    await deleteAndSweep(t, owner, "duplicate-copy");
+    expect(deletedKeys(fetchMock)).toEqual(
+      expect.arrayContaining([
+        `/duplicate-bucket/strategies/${source}/link-image.png`,
+        `/duplicate-bucket/strategies/${source}/fan-out-image.png`,
+      ]),
     );
-    expect(new Set(copyIds).size).toBe(copyIds.length);
-    for (const copyId of copyIds) expect(sourceIds).not.toContain(copyId);
-
-    // Each copy is its source row under the new ids, each marker following
-    // its end, every place and detail as it was.
-    for (const { sourcePayload, copy } of pairs) {
-      const data = sourcePayload.data;
-      const originId = newIdOf.get(data.origin.id)!;
-      const landingId = newIdOf.get(data.landing.id)!;
-      expect(copy.payload).toEqual({
-        ...sourcePayload,
-        data: {
-          ...data,
-          id: newIdOf.get(data.id)!,
-          origin: {
-            ...data.origin,
-            id: originId,
-            agent: { ...data.origin.agent, lineUpID: originId },
-          },
-          landing: {
-            ...data.landing,
-            id: landingId,
-            ability: { ...data.landing.ability, lineUpID: landingId },
-          },
-        },
-      });
-    }
-    // So the copy's shared spot disagrees exactly as the original's did.
-    const [copyA, copyB] = pairs.map((pair) => pair.copy.payload.data);
-    expect(copyA!.landing.id).toBe(copyB!.landing.id);
-    expect(copyA!.landing.ability.position).toEqual({ dx: 300, dy: 300 });
-    expect(copyB!.landing.ability.position).toEqual({ dx: 100, dy: 100 });
   });
 
   test("an image whose tombstone is purged is reclaimed once nothing shows it", async () => {
@@ -802,7 +750,7 @@ describe("strategies:duplicate", () => {
       ],
     });
     vi.setSystemTime(Date.now() + 31 * day);
-    const showing = lineupPayload("late-link", {
+    const showing = oneLineupPayload("late-link", {
       images: [{ id: "placed-image" }],
     });
     await owner.mutation(applyBatch, {
@@ -1276,7 +1224,7 @@ describe("images placed before their upload", () => {
           type: "lineup.add",
           lineupPublicId: "link-shows-shared",
           pagePublicId: firstPage,
-          payload: lineupPayload("link-shows-shared", {
+          payload: oneLineupPayload("link-shows-shared", {
             images: [{ id: "link-late-image", fileExtension: ".png" }],
           }),
           sortIndex: 2,
@@ -1317,7 +1265,7 @@ describe("images placed before their upload", () => {
           type: "lineup.add",
           lineupPublicId: "shows-b",
           pagePublicId: firstPage,
-          payload: lineupPayload("shows-b", {
+          payload: oneLineupPayload("shows-b", {
             images: [{ id: "pending-b", fileExtension: ".png" }],
           }),
           sortIndex: 5,
@@ -1361,7 +1309,7 @@ describe("images placed before their upload", () => {
           type: "lineup.add",
           lineupPublicId: "lineup-shows-batch",
           pagePublicId: firstPage,
-          payload: lineupPayload("lineup-shows-batch", {
+          payload: oneLineupPayload("lineup-shows-batch", {
             images: [{ id: "batch-shown" }],
           }),
           sortIndex: 3,
@@ -1399,7 +1347,7 @@ describe("images placed before their upload", () => {
           type: "lineup.add",
           lineupPublicId: "late-link",
           pagePublicId: firstPage,
-          payload: lineupPayload("late-link", {
+          payload: oneLineupPayload("late-link", {
             images: [{ id: "late-link-image", fileExtension: ".png" }],
           }),
           sortIndex: 1,

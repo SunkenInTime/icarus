@@ -3220,6 +3220,69 @@ void main() {
       expect(store.load().records, isEmpty);
     });
 
+    test(
+        'work deleted on both sides stays in attention when its refusal was '
+        'not a deletion', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      // Refused as deleted: a teammate deleted element-1.
+      const elementPatch = ElementPatchOp(
+        opId: 'move-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      // Refused as a revision mismatch: an add of lineup group k against a
+      // revision it no longer has. That says nothing about whether the
+      // server deleted k, never had it, or holds it elsewhere.
+      final staleAdd = LineupAddOp(
+        opId: 'stale-add',
+        lineupPublicId: 'k',
+        pagePublicId: 'page-1',
+        payload: _lineupAdd(opId: 'unused').payload,
+        sortIndex: 0,
+        expectedLineupRevision: 1,
+      );
+      final elementKey = EntitySyncKey.forStrategyOp(elementPatch)!;
+      final lineupKey = EntitySyncKey.forStrategyOp(staleAdd)!;
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(elementPatch, flushImmediately: false);
+      await notifier.enqueue(staleAdd, flushImmediately: false);
+      await notifier.flushNow();
+      await _settle();
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+        unorderedEquals([elementKey, lineupKey]),
+      );
+      expect(notifier.refusedAsDeleted(elementKey), isTrue);
+      expect(notifier.refusedAsDeleted(lineupKey), isFalse);
+
+      // The user deleted both on the canvas.
+      final settled = await notifier.settleAttention({elementKey, lineupKey});
+
+      // Only the work refused as deleted is dropped; the other still waits,
+      // in memory and on disk, for the user to choose.
+      expect(settled, {elementKey});
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+        [lineupKey],
+      );
+      expect(container.read(strategyOpQueueProvider).needsAttention, isTrue);
+      final records = store.load().records;
+      expect([for (final record in records) record.entityKey], [lineupKey]);
+      expect(records.single.status, DurableOutboxStatus.attention);
+      expect(records.single.lastError,
+          OpRejectionReason.revisionMismatch.wireName);
+    });
+
     test('discarding instead waits for the server copy to be adopted',
         () async {
       // The contrast that makes settling distinct: after Use cloud the
@@ -3498,11 +3561,17 @@ LineupAddOp _lineupAdd({
     opId: opId,
     lineupPublicId: id,
     pagePublicId: pageId,
-    payload: cloudLineupPayload({
+    payload: cloudLineupsPayload({
       'id': id,
-      'name': name,
-      'origin': {'id': 'o', 'agent': <String, dynamic>{}},
-      'landing': {'id': 'l', 'ability': <String, dynamic>{}},
+      'origins': [
+        {'id': 'o', 'agent': <String, dynamic>{}},
+      ],
+      'landings': [
+        {'id': 'l', 'ability': <String, dynamic>{}},
+      ],
+      'links': [
+        {'id': id, 'originId': 'o', 'landingId': 'l', 'name': name},
+      ],
     }),
     sortIndex: 0,
   );

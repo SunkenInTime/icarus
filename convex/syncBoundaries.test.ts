@@ -18,7 +18,7 @@ import schema from "./schema";
 import {
   insertElement,
   insertLineup,
-  lineupPayload,
+  oneLineupPayload,
 } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
@@ -79,9 +79,9 @@ function imagePayload(assetPublicId: string) {
   };
 }
 
-/// A lineup showing one image; its row key is [lineupId].
+/// A group of one lineup showing one image; its row key is [lineupId].
 function lineupShowing(assetPublicId: string, lineupId = "restorable") {
-  return lineupPayload(lineupId, {
+  return oneLineupPayload(lineupId, {
     originId: "origin",
     landingId: "landing",
     name: "B lineup",
@@ -355,7 +355,7 @@ async function seedTwoPageContent(t: Harness, owner: Harness) {
       publicId: "lineup-b",
       strategyId: strategy._id,
       pageId: pageBId,
-      payloadKind: "lineup",
+      payloadKind: "lineups",
       payloadVersion: 1,
       payload: lineupShowing(assetB, "lineup-b"),
       sortIndex: 0,
@@ -1258,7 +1258,7 @@ describe("record-scoped write contract", () => {
         publicId: string;
         revision: number;
         deleted: boolean;
-        payload: { data: { images: Array<{ id: string }> } };
+        payload: { data: { links: Array<{ images: Array<{ id: string }> }> } };
       }>;
     };
     expect(snapshot.elements).toMatchObject([
@@ -1275,7 +1275,7 @@ describe("record-scoped write contract", () => {
         revision: 3,
         deleted: false,
         payload: {
-          data: { images: [{ id: restoredAsset }] },
+          data: { links: [{ images: [{ id: restoredAsset }] }] },
         },
       },
     ]);
@@ -1398,10 +1398,10 @@ describe("record-scoped write contract", () => {
     expect(replayed).toMatchObject({ revision: 2, reused: true });
   });
 
-  test("a lineup without its landing is refused", async () => {
+  test("a lineup group whose lineup names a landing it does not hold is refused", async () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);
-    const { landing: _landing, ...withoutLanding } = lineupShowing(
+    const { landings: _landings, ...withoutLandings } = lineupShowing(
       "asset-empty",
       "lineup-empty",
     ).data;
@@ -1413,7 +1413,11 @@ describe("record-scoped write contract", () => {
         entityType: "lineup",
         entityPublicId: "lineup-empty",
         pagePublicId: pageA,
-        payload: { kind: "lineup", payloadVersion: 1, data: withoutLanding },
+        payload: {
+          kind: "lineups",
+          payloadVersion: 1,
+          data: { ...withoutLandings, landings: [] },
+        },
       },
       {
         opId: "add-lineup",
@@ -1464,23 +1468,37 @@ describe("record-scoped write contract", () => {
         rawCode: "INVALID_LINEUP_PAYLOAD_KIND",
       },
     ]);
-    // The legacy group before it is refused whole by argument validation.
-    await expect(
-      applyOps(owner, "old-client", [
-        {
-          opId: "add-legacy-group",
-          kind: "add",
-          entityType: "lineup",
-          entityPublicId: "legacy-group",
-          pagePublicId: pageA,
-          payload: {
-            kind: "lineupGroup",
-            payloadVersion: 1,
-            data: { id: "legacy-group", items: [{ id: "item" }] },
-          },
+    // The legacy group before it, and the one-row-per-lineup shape tried
+    // before groups, are refused whole by argument validation.
+    for (const payload of [
+      {
+        kind: "lineupGroup",
+        payloadVersion: 1,
+        data: { id: "legacy-group", items: [{ id: "item" }] },
+      },
+      {
+        kind: "lineup",
+        payloadVersion: 1,
+        data: {
+          id: "legacy-group",
+          origin: { id: "o", agent: { type: "sova" } },
+          landing: { id: "l", ability: {} },
         },
-      ]),
-    ).rejects.toThrow(/Validator error|ArgumentValidationError/);
+      },
+    ]) {
+      await expect(
+        applyOps(owner, "old-client", [
+          {
+            opId: `add-legacy-${payload.kind}`,
+            kind: "add",
+            entityType: "lineup",
+            entityPublicId: "legacy-group",
+            pagePublicId: pageA,
+            payload,
+          },
+        ]),
+      ).rejects.toThrow(/Validator error|ArgumentValidationError/);
+    }
     const snapshot = (await owner.query(getPageSnapshot, {
       clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
@@ -1532,7 +1550,7 @@ describe("record-scoped write contract", () => {
 function contentPayload(entity: "element" | "lineup", id: string, label: string) {
   return entity === "element"
     ? textPayload(label)
-    : lineupPayload(id, { name: label });
+    : oneLineupPayload(id, { name: label });
 }
 
 type ContentRow = {

@@ -68,14 +68,15 @@ CloudPayload cloudElementPayload({
   };
 }
 
-/// The payload kind of a lineup row (see cloud_lineup_rows.dart).
-const cloudLineupPayloadKind = 'lineup';
+/// The payload kind of a lineup group row (see cloud_lineup_rows.dart).
+const cloudLineupsPayloadKind = 'lineups';
 
-/// One lineup row's payload. Lineup rows are never corrected on read (see
-/// cloud_payload_upgrade.dart), so they all stay at the current version.
-CloudPayload cloudLineupPayload(Map<String, dynamic> data) {
+/// One lineup group row's payload. Lineup rows are never corrected on read
+/// (see cloud_payload_upgrade.dart), so they all stay at the current
+/// version.
+CloudPayload cloudLineupsPayload(Map<String, dynamic> data) {
   return <String, dynamic>{
-    'kind': cloudLineupPayloadKind,
+    'kind': cloudLineupsPayloadKind,
     'payloadVersion': currentCloudPayloadVersion,
     'data': _normalizeCloudPayloadData(data),
   };

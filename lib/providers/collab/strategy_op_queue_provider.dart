@@ -1128,13 +1128,27 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   ) =>
       _dropAttention(entityKeys, adoptRemote: true);
 
+  /// Whether the server refused [key]'s waiting work because a teammate
+  /// deleted what it edits (rejection reason `deleted`).
+  bool refusedAsDeleted(EntitySyncKey key) =>
+      _recordForActiveKey(key)?.lastError == OpRejectionReason.deleted.wireName;
+
   /// Drops the refused work of entities the user has since deleted on the
-  /// canvas while the server has them deleted too. Both sides agree they
-  /// are gone, so nothing is left to keep, and Keep mine must not bring
-  /// them back. Unlike [discardRejected] the canvas is already the truth:
-  /// there is nothing to adopt.
+  /// canvas, when the server refused it because a teammate deleted them
+  /// ([refusedAsDeleted]). Both sides agree they are gone, so nothing is
+  /// left to keep, and Keep mine must not bring them back. Work refused for
+  /// any other reason stays: only that refusal says the server deleted the
+  /// item, rather than never having it or holding it elsewhere. Unlike
+  /// [discardRejected] the canvas is already the truth: there is nothing to
+  /// adopt.
   Future<Set<EntitySyncKey>> settleAttention(Set<EntitySyncKey> entityKeys) =>
-      _dropAttention(entityKeys, adoptRemote: false);
+      _dropAttention(
+        {
+          for (final key in entityKeys)
+            if (refusedAsDeleted(key)) key
+        },
+        adoptRemote: false,
+      );
 
   Future<Set<EntitySyncKey>> _dropAttention(
     Set<EntitySyncKey> entityKeys, {

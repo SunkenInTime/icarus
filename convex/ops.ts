@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertCallerIsAccount, assertStrategyRole } from "./lib/auth";
 import {
   refreshStrategyAgentSummary,
-  syncLineupAgent,
+  syncLineupAgents,
 } from "./lib/strategyAgentSummary";
 import {
   expectAssets,
@@ -38,6 +38,7 @@ import {
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
 import { valuesEqual } from "./lib/canonicalValues";
+import { LINEUPS_PAYLOAD_VERSION } from "./lib/payloadValidators";
 import {
   errorWithCode,
   invalidPayloadError,
@@ -342,9 +343,12 @@ function invalidLineupData(message: string) {
   return errorWithCode("INVALID_LINEUP_PAYLOAD_DATA", message);
 }
 
-/// Checks one lineup row before it is stored. A row is one whole lineup,
-/// keyed by its id, holding its origin and landing: every row can be drawn
-/// on its own, whatever other rows exist.
+/// Checks one lineup group row before it is stored: a group keyed by its
+/// id, whose origins, landings and links each have an id unique among their
+/// kind, each origin placing an agent and each landing an ability, with at
+/// least one link, and every link joining an origin and a landing the row
+/// holds. A row that breaks any of these is refused whole, never stored.
+/// A spot no link uses is allowed.
 function assertLineupPayload(
   payload: unknown,
   lineupPublicId: string,
@@ -355,13 +359,13 @@ function assertLineupPayload(
   // Argument validation lets the graph rows of protocol 4 through, so an old
   // client reaches the protocol gate (see lineupOpPayloadValidator); none is
   // ever stored.
-  if (payload.kind !== "lineup") {
+  if (payload.kind !== "lineups") {
     throw errorWithCode(
       "INVALID_LINEUP_PAYLOAD_KIND",
       "Invalid lineup payload kind",
     );
   }
-  if (typeof payload.payloadVersion !== "number") {
+  if (payload.payloadVersion !== LINEUPS_PAYLOAD_VERSION) {
     throw errorWithCode(
       "INVALID_LINEUP_PAYLOAD_VERSION",
       "Invalid lineup payload version",
@@ -375,28 +379,67 @@ function assertLineupPayload(
   }
   const data = payload.data;
   if (typeof data.id !== "string" || data.id.length === 0) {
-    throw invalidLineupData("Lineup payload has no id");
+    throw invalidLineupData("Lineup group has no id");
   }
   if (lineupPublicId !== data.id) {
-    throw invalidLineupData("Lineup key does not match its payload");
+    throw invalidLineupData("Lineup group key does not match its payload");
   }
-  // The row must carry both ends hydration draws; a row without them would
-  // load as nothing and read as a deletion nobody made.
-  if (!hasEnd(data.origin, "agent") || !hasEnd(data.landing, "ability")) {
-    throw invalidLineupData("Lineup has no origin or landing");
+  const originIds = idsOfEntries(data.origins, "origins", "agent");
+  const landingIds = idsOfEntries(data.landings, "landings", "ability");
+  idsOfEntries(data.links, "links");
+  const links = data.links as Array<Record<string, unknown>>;
+  // A group without a lineup would load as nothing and read as a deletion
+  // nobody made.
+  if (links.length === 0) {
+    throw invalidLineupData("Lineup group has no lineups");
+  }
+  for (const link of links) {
+    if (
+      typeof link.originId !== "string" ||
+      !originIds.has(link.originId) ||
+      typeof link.landingId !== "string" ||
+      !landingIds.has(link.landingId)
+    ) {
+      throw invalidLineupData(
+        "A lineup names an origin or landing its group does not hold",
+      );
+    }
   }
   return payload as LineupPayload;
 }
 
-/// Whether [end] is an origin or landing: an id and the marker it places
-/// under [markerKey].
-function hasEnd(end: unknown, markerKey: "agent" | "ability"): boolean {
-  return (
-    isRecord(end) &&
-    typeof end.id === "string" &&
-    end.id.length > 0 &&
-    isRecord(end[markerKey])
-  );
+/// The ids of a lineup group's [field] (its origins, landings or links),
+/// refusing the row unless [entries] is a list of objects each with an id
+/// no other entry in it shares, and, given a [markerKey], the object it
+/// places there.
+function idsOfEntries(
+  entries: unknown,
+  field: string,
+  markerKey?: "agent" | "ability",
+): Set<string> {
+  if (!Array.isArray(entries)) {
+    throw invalidLineupData(`Lineup group ${field} is not a list`);
+  }
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      entry.id.length === 0
+    ) {
+      throw invalidLineupData(`Lineup group ${field} has an entry with no id`);
+    }
+    if (ids.has(entry.id)) {
+      throw invalidLineupData(`Two of a lineup group's ${field} share an id`);
+    }
+    if (markerKey !== undefined && !isRecord(entry[markerKey])) {
+      throw invalidLineupData(
+        `Lineup group ${field} has an entry with no ${markerKey}`,
+      );
+    }
+    ids.add(entry.id);
+  }
+  return ids;
 }
 
 /// A patch or reorder of a row a teammate deleted. Changing the tombstone
@@ -1494,7 +1537,7 @@ async function reconcileExpectedAssets(
     await syncElementAssetReferences(ctx, row._id, row);
   } else {
     await syncLineupAssetReferences(ctx, row._id, row);
-    await syncLineupAgent(ctx, row._id, row);
+    await syncLineupAgents(ctx, row._id, row);
   }
   const now = Date.now();
   const assetsBefore = referencedAssetIds(rowBefore);
@@ -1582,7 +1625,9 @@ export const applyBatch = mutation({
         const latest = await getTargetSnapshot(ctx, strategy, op);
         // An accepted op replays at the revision it landed at, not the
         // row's latest: a successor rebased onto a teammate's later edit
-        // would overwrite that edit unseen.
+        // would overwrite that edit unseen. An event that recorded no
+        // revision replays with none, for the same reason; the client then
+        // keeps its base revision and a later edit meets the usual check.
         const replayResult: OperationResult =
           existingEvent.status === "failed"
             ? {
@@ -1598,7 +1643,7 @@ export const applyBatch = mutation({
                   latestRevision: latest?.revision,
                   latestPayload: latest?.payload,
                 }
-              : noop(existingEvent.appliedRevision ?? latest?.revision);
+              : noop(existingEvent.appliedRevision);
         results.push(toPublicResult(op, replayResult));
         continue;
       }

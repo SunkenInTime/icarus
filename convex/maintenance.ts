@@ -21,7 +21,7 @@ import {
 } from "./images";
 import {
   refreshStrategyAgentSummary,
-  syncLineupAgent,
+  syncLineupAgents,
 } from "./lib/strategyAgentSummary";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 
@@ -114,7 +114,7 @@ async function purgeContentRows(
       break;
     }
     if ("lineupId" in row) {
-      await syncLineupAgent(ctx, row.lineupId, null);
+      await syncLineupAgents(ctx, row.lineupId, null);
       await ctx.db.delete(row.lineupId);
     } else {
       await ctx.db.delete(row.elementId);

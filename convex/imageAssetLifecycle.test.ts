@@ -14,7 +14,7 @@ import schema from "./schema";
 import {
   insertElement,
   insertLineup,
-  lineupPayload,
+  lineupsPayload,
 } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
@@ -236,31 +236,32 @@ describe("image asset lifecycle", () => {
           updatedAt: now,
         });
       }
+      // One lineup group whose two lineups each show an image.
       await insertLineup(ctx, {
         publicId: "remaining-lineup",
         strategyId: strategy._id,
         pageId: pageBId,
-        payloadKind: "lineup",
+        payloadKind: "lineups",
         payloadVersion: 1,
-        payload: lineupPayload("remaining-lineup", {
-          images: [{ id: "still-used" }],
+        payload: lineupsPayload("remaining-lineup", {
+          origins: [{ id: "origin" }],
+          landings: [{ id: "landing" }, { id: "other-landing" }],
+          links: [
+            {
+              id: "remaining-lineup",
+              originId: "origin",
+              landingId: "landing",
+              images: [{ id: "still-used" }],
+            },
+            {
+              id: "remaining-link",
+              originId: "origin",
+              landingId: "other-landing",
+              images: [{ id: "still-used-by-link", fileExtension: ".png" }],
+            },
+          ],
         }),
         sortIndex: 0,
-        revision: 1,
-        deleted: false,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await insertLineup(ctx, {
-        publicId: "remaining-link",
-        strategyId: strategy._id,
-        pageId: pageBId,
-        payloadKind: "lineup",
-        payloadVersion: 1,
-        payload: lineupPayload("remaining-link", {
-          images: [{ id: "still-used-by-link", fileExtension: ".png" }],
-        }),
-        sortIndex: 1,
         revision: 1,
         deleted: false,
         createdAt: now,

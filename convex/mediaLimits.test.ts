@@ -21,7 +21,7 @@ import { modules } from "./test.setup";
 import {
   insertElement,
   insertLineup,
-  lineupPayload,
+  oneLineupPayload,
 } from "./testContent.helpers";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -368,7 +368,7 @@ describe("media cleanup stays within transaction limits", () => {
           type: "lineup.add",
           lineupPublicId: "link",
           pagePublicId,
-          payload: lineupPayload("link", { images: [{ id: "old-image" }] }),
+          payload: oneLineupPayload("link", { images: [{ id: "old-image" }] }),
           sortIndex: 0,
         },
       ],
@@ -416,7 +416,7 @@ describe("asset references follow their content", () => {
           type: "lineup.add",
           lineupPublicId: "k",
           pagePublicId,
-          payload: lineupPayload("k", { images: [{ id: "a" }, { id: "b" }] }),
+          payload: oneLineupPayload("k", { images: [{ id: "a" }, { id: "b" }] }),
           sortIndex: 0,
         },
       ],
@@ -446,7 +446,7 @@ describe("asset references follow their content", () => {
           type: "lineup.patch",
           lineupPublicId: "k",
           pagePublicId,
-          payload: lineupPayload("k", { images: [{ id: "a" }] }),
+          payload: oneLineupPayload("k", { images: [{ id: "a" }] }),
           expectedLineupRevision: 1,
         },
       ],
@@ -512,9 +512,9 @@ describe("asset references follow their content", () => {
           publicId: `before-${index}`,
           strategyId,
           pageId,
-          payloadKind: "lineup",
+          payloadKind: "lineups",
           payloadVersion: 1,
-          payload: lineupPayload(`before-${index}`, {
+          payload: oneLineupPayload(`before-${index}`, {
             images: [{ id: `link-image-${index}` }],
           }),
           sortIndex: index,
@@ -617,9 +617,9 @@ describe("before the reference backfill", () => {
         publicId: "live",
         strategyId,
         pageId,
-        payloadKind: "lineup",
+        payloadKind: "lineups",
         payloadVersion: 1,
-        payload: lineupPayload("live", { images: [{ id: "lineup-shown" }] }),
+        payload: oneLineupPayload("live", { images: [{ id: "lineup-shown" }] }),
         sortIndex: 0,
         revision: 1,
         deleted: false,
@@ -697,9 +697,9 @@ describe("the backfill and its gate", () => {
         publicId: linkId,
         strategyId,
         pageId,
-        payloadKind: "lineup",
+        payloadKind: "lineups",
         payloadVersion: 1,
-        payload: lineupPayload(linkId, {
+        payload: oneLineupPayload(linkId, {
           images: Array.from({ length: images }, (_, index) => ({
             id: `${linkId}-${index}`,
           })),
@@ -958,9 +958,9 @@ describe("purges stay within transaction limits", () => {
           publicId: `many-${lineup}`,
           strategyId,
           pageId,
-          payloadKind: "lineup",
+          payloadKind: "lineups",
           payloadVersion: 1,
-          payload: lineupPayload(`many-${lineup}`, {
+          payload: oneLineupPayload(`many-${lineup}`, {
             images: Array.from({ length: 850 }, (_, image) => ({
               id: `image-${lineup}-${image}`,
             })),
@@ -1203,9 +1203,9 @@ describe("duplicate stays within transaction limits", () => {
           publicId: `big-${index}`,
           strategyId,
           pageId,
-          payloadKind: "lineup",
+          payloadKind: "lineups",
           payloadVersion: 1,
-          payload: lineupPayload(`big-${index}`, {
+          payload: oneLineupPayload(`big-${index}`, {
             agentType: agentTypes[index % agentTypes.length],
             notes: largeText,
           }),
@@ -1255,7 +1255,7 @@ describe("duplicate stays within transaction limits", () => {
             type: "lineup.patch",
             lineupPublicId: "big-0",
             pagePublicId,
-            payload: lineupPayload("big-0", {
+            payload: oneLineupPayload("big-0", {
               agentType: "jett",
               notes: largeText,
             }),
@@ -1277,9 +1277,9 @@ describe("duplicate stays within transaction limits", () => {
         publicId: "gallery",
         strategyId,
         pageId,
-        payloadKind: "lineup",
+        payloadKind: "lineups",
         payloadVersion: 1,
-        payload: lineupPayload("gallery", {
+        payload: oneLineupPayload("gallery", {
           images: Array.from({ length: count }, (_, index) => ({
             id: `gallery-${index}`,
           })),

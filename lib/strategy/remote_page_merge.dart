@@ -34,36 +34,46 @@ List<T> mergeRemoteItems<T>({
 
 /// The server's lineups ([remote]), except the ones the user is holding:
 /// those stay as the canvas ([local]) has them, as [mergeRemoteItems] keeps
-/// held items. Returns the merged graph and the ids of the held lineups.
+/// held items. Returns the merged graph and the lineup groups held.
 ///
-/// A lineup is held when the user holds it, its origin or its landing, or
-/// when it shares a spot with a held lineup: a shared spot is drawn once,
-/// so every lineup on it takes the same side. The other lineups take the
-/// server's copy. A held lineup only the server has (a teammate's new
-/// lineup on a held spot) waits off the canvas until the hold ends, like a
-/// held lineup the server removed waits on it.
+/// The user holds a lineup group by holding one of its lineups or spots;
+/// [groupOf] names the group of a lineup or spot, local or remote. A group
+/// is one cloud row, so it takes one side whole: every lineup in a held
+/// group, and every lineup sharing a spot with one, stays as the canvas has
+/// it. The other lineups take the server's copy. A held lineup only the
+/// server has (a teammate's new lineup in a held group) waits off the
+/// canvas until the hold ends, like a held lineup the server removed waits
+/// on it.
 (LineUpGraph, Set<String>) mergeHeldLineups({
   required LineUpGraph local,
   required LineUpGraph remote,
   required Set<String> holding,
+  required String? Function(String id) groupOf,
 }) {
   final allLinks = [...local.links, ...remote.links];
   final held = <String>{};
   final heldIds = {...holding};
+  final heldGroups = {
+    for (final id in holding)
+      if (groupOf(id) case final group?) group,
+  };
   for (var grew = true; grew;) {
     grew = false;
     for (final link in allLinks) {
       if (held.contains(link.id)) continue;
+      final group = groupOf(link.id);
       if (heldIds.contains(link.id) ||
           heldIds.contains(link.originId) ||
-          heldIds.contains(link.landingId)) {
+          heldIds.contains(link.landingId) ||
+          heldGroups.contains(group)) {
         held.add(link.id);
         heldIds.addAll([link.originId, link.landingId]);
+        if (group != null) heldGroups.add(group);
         grew = true;
       }
     }
   }
-  if (held.isEmpty) return (remote, held);
+  if (held.isEmpty) return (remote, heldGroups);
 
   final localLinks = {for (final link in local.links) link.id: link};
   final remoteLinkIds = {for (final link in remote.links) link.id};
@@ -104,6 +114,6 @@ List<T> mergeRemoteItems<T>({
       ],
       links: links,
     ),
-    held,
+    heldGroups,
   );
 }

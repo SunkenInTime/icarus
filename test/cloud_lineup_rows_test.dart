@@ -8,18 +8,14 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 
-LineUpOrigin _origin(
-  String id, {
-  Offset position = const Offset(10, 20),
-  String? lineUpID,
-}) =>
+LineUpOrigin _origin(String id, {Offset position = const Offset(10, 20)}) =>
     LineUpOrigin(
       id: id,
       agent: PlacedAgent(
         id: 'agent-$id',
         type: AgentType.sova,
         position: position,
-        lineUpID: lineUpID ?? id,
+        lineUpID: id,
       ),
     );
 
@@ -34,11 +30,14 @@ LineUpLanding _landing(String id, {Offset position = const Offset(30, 40)}) =>
       ),
     );
 
-/// Two origins into one landing (fan-in), and a second lineup out of
-/// origin a (fan-out).
-LineUpGraph _shared() => LineUpGraph(
-      origins: [_origin('a'), _origin('b')],
-      landings: [_landing('shared'), _landing('other')],
+LineUpLink _link(String id, String originId, String landingId) =>
+    LineUpLink(id: id, originId: originId, landingId: landingId, name: id);
+
+/// One group: two origins into landing `shared` (fan-in), and a second
+/// lineup out of origin a (fan-out). And a second group, k9 alone.
+LineUpGraph _page() => LineUpGraph(
+      origins: [_origin('a'), _origin('b'), _origin('z')],
+      landings: [_landing('shared'), _landing('other'), _landing('far')],
       links: [
         LineUpLink(
           id: 'k1',
@@ -48,389 +47,244 @@ LineUpGraph _shared() => LineUpGraph(
           notes: 'jump throw',
           images: [SimpleImageData(id: 'img-1', fileExtension: '.png')],
         ),
-        LineUpLink(id: 'k2', originId: 'b', landingId: 'shared', name: 'B'),
-        LineUpLink(id: 'k3', originId: 'a', landingId: 'other', name: 'C'),
+        _link('k2', 'b', 'shared'),
+        _link('k9', 'z', 'far'),
+        _link('k3', 'a', 'other'),
       ],
     );
-
-/// The row of lineup [id] from [origin] into [landing], as a client that
-/// saw that copy of each wrote it.
-CloudLineupRow _row(String id, LineUpOrigin origin, LineUpLanding landing) =>
-    cloudLineupRows(LineUpGraph(
-      origins: [origin],
-      landings: [landing],
-      links: [
-        LineUpLink(id: id, originId: origin.id, landingId: landing.id),
-      ],
-    )).single;
-
-const _here = Offset(30, 40);
-const _moved = Offset(99, 99);
-const _elsewhere = Offset(55, 55);
-
-/// Lineups k1, k2 and k3 into landing `shared`: k1 carries it [_here], k2
-/// and k3 a copy [_moved] that never reached k1.
-List<CloudLineupRow> _splitLanding() => [
-      _row('k1', _origin('o1'), _landing('shared')),
-      _row('k2', _origin('o2'), _landing('shared', position: _moved)),
-      _row('k3', _origin('o3'), _landing('shared', position: _moved)),
-    ];
 
 String _json(LineUpGraph graph) => jsonEncode(graph.toJson());
 
-/// [value] as plain JSON.
-Object? _plain(Object? value) => jsonDecode(jsonEncode(value));
-
 /// [rows] as canonical JSON, to compare them exactly.
 String _canonical(Iterable<CloudLineupRow> rows) =>
-    canonicalCloudJsonEncode(_plain([
+    canonicalCloudJsonEncode(jsonDecode(jsonEncode([
       for (final row in rows)
         {'publicId': row.publicId, 'payload': row.payload},
-    ]));
+    ])));
 
-/// The [end] (`origin` or `landing`) [row] carries.
-Map<String, dynamic> _end(CloudLineupRow row, String end) =>
-    Map<String, dynamic>.from((row.payload['data'] as Map)[end] as Map);
+Map<String, dynamic> _data(CloudLineupRow row) =>
+    Map<String, dynamic>.from(row.payload['data'] as Map);
 
-/// Each lineup's origin and landing ids as [read] draws them.
-Map<String, (String, String)> _ends(CloudLineups read) => {
-      for (final link in read.graph.links)
-        link.id: (link.originId, link.landingId),
-    };
-
-Offset _originAt(CloudLineups read, String id) =>
-    read.graph.origins.firstWhere((o) => o.id == id).agent.position;
-
-Offset _landingAt(CloudLineups read, String id) =>
-    read.graph.landings.firstWhere((l) => l.id == id).ability.position;
-
-/// Every order of [items].
-List<List<T>> _orders<T>(List<T> items) => items.length <= 1
-    ? [items]
-    : [
-        for (final (i, first) in items.indexed)
-          for (final rest in _orders([...items]..removeAt(i))) [first, ...rest],
-      ];
+List<String> _ids(Object? entries) => [
+      for (final entry in entries as List) (entry as Map)['id'] as String,
+    ];
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  test('lineups connected through a spot share one row with their spots', () {
+    final written = cloudLineupRows(_page());
 
-  test('each lineup is one row, carrying its whole origin and landing', () {
-    final rows = cloudLineupRows(_shared());
-
-    expect(rows.map((row) => row.publicId), ['k1', 'k2', 'k3']);
-    final first = rows.first.payload;
-    expect(first['kind'], cloudLineupPayloadKind);
-    expect(first['payloadVersion'], currentCloudPayloadVersion);
-    final data = first['data'] as Map<String, dynamic>;
-    expect(data.keys.toSet(), {
-      'id',
-      'name',
-      'youtubeLink',
-      'notes',
-      'images',
-      'origin',
-      'landing',
-    });
-    // An end is the spot itself, nothing added.
-    expect(_plain(data['origin']), _plain(_origin('a').toJson()));
-    expect(_plain(data['landing']), _plain(_landing('shared').toJson()));
-    expect(data['images'], [
-      {'id': 'img-1', 'fileExtension': '.png'},
-    ]);
-  });
-
-  test('copies that agree draw one shared spot under its real id', () {
-    final rows = cloudLineupRows(_shared());
-
-    for (final order in _orders(rows)) {
-      final read = lineUpGraphFromCloudRows(order);
-      expect(read.aliases.isEmpty, isTrue);
-      expect(read.graph.origins.map((o) => o.id).toSet(), {'a', 'b'});
-      expect(read.graph.landings.map((l) => l.id).toSet(), {'shared', 'other'});
-      expect(_ends(read), {
-        'k1': ('a', 'shared'),
-        'k2': ('b', 'shared'),
-        'k3': ('a', 'other'),
-      });
-    }
-
-    // Fan-in and fan-out round-trip: the page drawn is the page written,
-    // and writing it again gives back the same rows.
-    final read = lineUpGraphFromCloudRows(rows);
-    expect(_json(read.graph), _json(_shared()));
-    final written = cloudLineupRows(read.graph, aliases: read.aliases);
-    expect(_canonical(written), _canonical(rows));
-  });
-
-  test('copies that disagree draw apart, the smallest lineup id keeping the id',
-      () {
-    for (final order in _orders(_splitLanding())) {
-      final read = lineUpGraphFromCloudRows(order);
-
-      expect(_ends(read), {
-        'k1': ('o1', 'shared'),
-        'k2': ('o2', 'shared@k2'),
-        'k3': ('o3', 'shared@k2'),
-      });
-      expect(_landingAt(read, 'shared'), _here);
-      expect(_landingAt(read, 'shared@k2'), _moved);
-      expect(read.graph.landings, hasLength(2));
-      expect(read.aliases.landings, {'shared@k2': 'shared'});
-      expect(read.aliases.origins, isEmpty);
-    }
-
-    // Which copy keeps the id follows the lineup ids, not which copy is
-    // newer: here the moved copy is k1's.
-    final read = lineUpGraphFromCloudRows([
-      _row('k2', _origin('o2'), _landing('shared')),
-      _row('k1', _origin('o1'), _landing('shared', position: _moved)),
-    ]);
-    expect(_ends(read), {
-      'k2': ('o2', 'shared@k2'),
-      'k1': ('o1', 'shared'),
-    });
-    expect(_landingAt(read, 'shared'), _moved);
-    expect(_landingAt(read, 'shared@k2'), _here);
-  });
-
-  test('spots appear in the order the rows first carry them', () {
-    final read = lineUpGraphFromCloudRows(_splitLanding().reversed);
-
-    expect(read.graph.origins.map((o) => o.id), ['o3', 'o2', 'o1']);
-    expect(read.graph.landings.map((l) => l.id), ['shared@k2', 'shared']);
-    expect(read.graph.links.map((l) => l.id), ['k3', 'k2', 'k1']);
-  });
-
-  test('three copies that disagree draw three spots', () {
-    final rows = [
-      _row('k1', _origin('o1'), _landing('shared')),
-      _row('k2', _origin('o2'), _landing('shared', position: _moved)),
-      _row('k3', _origin('o3'), _landing('shared', position: _elsewhere)),
-      _row('k4', _origin('o4'), _landing('shared', position: _moved)),
-    ];
-
-    for (final order in _orders(rows)) {
-      final read = lineUpGraphFromCloudRows(order);
-
-      expect(_ends(read), {
-        'k1': ('o1', 'shared'),
-        'k2': ('o2', 'shared@k2'),
-        'k3': ('o3', 'shared@k3'),
-        'k4': ('o4', 'shared@k2'),
-      });
-      expect(_landingAt(read, 'shared'), _here);
-      expect(_landingAt(read, 'shared@k2'), _moved);
-      expect(_landingAt(read, 'shared@k3'), _elsewhere);
-      expect(read.aliases.landings, {
-        'shared@k2': 'shared',
-        'shared@k3': 'shared',
-      });
-    }
-  });
-
-  test('an origin and a landing split on their own', () {
-    const far = Offset(70, 80);
-    final read = lineUpGraphFromCloudRows([
-      _row('k1', _origin('a'), _landing('l')),
-      // Only the origin disagrees.
-      _row('k2', _origin('a', position: far), _landing('l')),
-      // Only the landing disagrees.
-      _row('k3', _origin('a'), _landing('l', position: _moved)),
-    ]);
-
-    expect(_ends(read), {
-      'k1': ('a', 'l'),
-      'k2': ('a@k2', 'l'),
-      'k3': ('a', 'l@k3'),
-    });
-    expect(_originAt(read, 'a'), const Offset(10, 20));
-    expect(_originAt(read, 'a@k2'), far);
-    expect(_landingAt(read, 'l'), _here);
-    expect(_landingAt(read, 'l@k3'), _moved);
-    expect(read.aliases.origins, {'a@k2': 'a'});
-    expect(read.aliases.landings, {'l@k3': 'l'});
-  });
-
-  test('an unchanged page writes back every row exactly', () {
-    final pages = {
-      'agreeing': cloudLineupRows(_shared()),
-      'split landing': _splitLanding(),
-      'split origin and landing': [
-        _row('k1', _origin('a'), _landing('l')),
-        _row('k2', _origin('a', position: _elsewhere), _landing('l')),
-        _row('k3', _origin('a'), _landing('l', position: _moved)),
-        _row('k4', _origin('a', position: _elsewhere), _landing('l')),
-      ],
-    };
-
-    for (final MapEntry(key: page, value: rows) in pages.entries) {
-      // Rows as the server returns them.
-      final stored = [
-        for (final row in rows)
-          CloudLineupRow(
-            publicId: row.publicId,
-            payload: _plain(row.payload) as Map<String, dynamic>,
-          ),
-      ];
-      final hydrated = lineUpGraphFromCloudRows(stored);
-
-      final written = cloudLineupRows(
-        hydrated.graph,
-        aliases: hydrated.aliases,
-      );
-
-      expect(_canonical(written), _canonical(stored), reason: page);
-    }
-  });
-
-  test('moving a spot drawn apart changes only the rows carrying it', () {
-    final rows = _splitLanding();
-    final hydrated = lineUpGraphFromCloudRows(rows);
-    LineUpGraph moving(String id, Offset to) => LineUpGraph(
-          origins: hydrated.graph.origins,
-          landings: [
-            for (final landing in hydrated.graph.landings)
-              landing.id == id
-                  ? LineUpLanding(
-                      id: id,
-                      ability: landing.ability.copyWith(position: to),
-                    )
-                  : landing,
-          ],
-          links: hydrated.graph.links,
-        );
-
-    // The aliased spot: k2 and k3 change, under the real id.
-    final aliasMoved = cloudLineupRows(
-      moving('shared@k2', _elsewhere),
-      aliases: hydrated.aliases,
-    );
-    expect(_canonical([aliasMoved[0]]), _canonical([rows[0]]));
-    for (final row in aliasMoved.skip(1)) {
-      final landing = _end(row, 'landing');
-      expect(landing['id'], 'shared');
-      expect((landing['ability'] as Map)['lineUpID'], 'shared');
-      expect(
-        _plain(landing),
-        _plain(_landing('shared', position: _elsewhere).toJson()),
-      );
-    }
-    expect(_end(aliasMoved[1], 'landing'), _end(aliasMoved[2], 'landing'));
-
-    // The spot that kept the id: only k1 changes.
-    final realMoved = cloudLineupRows(
-      moving('shared', _elsewhere),
-      aliases: hydrated.aliases,
-    );
+    expect(written.rows.map((row) => row.publicId), ['k1', 'k9']);
+    final group = written.rows.first;
+    expect(group.payload['kind'], cloudLineupsPayloadKind);
+    expect(group.payload['payloadVersion'], currentCloudPayloadVersion);
+    final data = _data(group);
+    expect(data['id'], 'k1');
+    expect(_ids(data['origins']), ['a', 'b']);
+    expect(_ids(data['landings']), ['shared', 'other']);
+    expect(_ids(data['links']), ['k1', 'k2', 'k3']);
     expect(
-      _plain(_end(realMoved[0], 'landing')),
-      _plain(_landing('shared', position: _elsewhere).toJson()),
+      (data['links'] as List).first,
+      jsonDecode(jsonEncode(_page().links.first.toJson())),
+      reason: 'a lineup is stored as the canvas has it',
     );
-    expect(_canonical(realMoved.skip(1)), _canonical(rows.skip(1)));
+    expect(_ids(_data(written.rows.last)['links']), ['k9']);
+    expect(written.groupOf, {
+      for (final id in ['a', 'b', 'shared', 'other', 'k1', 'k2', 'k3'])
+        id: 'k1',
+      for (final id in ['z', 'far', 'k9']) id: 'k9',
+    });
   });
 
-  test("a marker's lineUpID follows its spot's alias, and back", () {
-    final rows = [
-      _row('k1', _origin('a'), _landing('l')),
-      _row('k2', _origin('a', position: _moved),
-          _landing('l', position: _moved)),
-      // A marker that never named its spot keeps what it named.
-      _row(
-        'k3',
-        _origin('a', position: _elsewhere, lineUpID: 'unrelated'),
-        _landing('l'),
-      ),
-    ];
-    final hydrated = lineUpGraphFromCloudRows(rows);
+  test('rows draw back the page exactly, and write back the same rows', () {
+    final written = cloudLineupRows(_page());
+    final read = lineUpGraphFromCloudRows(written.rows);
 
-    final origins = {
-      for (final origin in hydrated.graph.origins)
-        origin.id: origin.agent.lineUpID,
-    };
-    expect(origins, {'a': 'a', 'a@k2': 'a@k2', 'a@k3': 'unrelated'});
+    expect(read.groupOf, written.groupOf);
+    final rewritten = cloudLineupRows(read.graph, groupOf: read.groupOf);
+    expect(_canonical(rewritten.rows), _canonical(written.rows));
+    // Graph order is rows' order: the round trip keeps every lineup, spot
+    // and field.
     expect(
-      hydrated.graph.landings
-          .firstWhere((l) => l.id == 'l@k2')
-          .ability
-          .lineUpID,
-      'l@k2',
+      _json(read.graph),
+      _json(LineUpGraph(
+        origins: [_origin('a'), _origin('b'), _origin('z')],
+        landings: [_landing('shared'), _landing('other'), _landing('far')],
+        links: [_page().links[0], _page().links[1], _page().links[3]] +
+            [_page().links[2]],
+      )),
     );
-
-    final written = cloudLineupRows(hydrated.graph, aliases: hydrated.aliases);
-    expect((_end(written[1], 'origin')['agent'] as Map)['lineUpID'], 'a');
-    expect((_end(written[1], 'landing')['ability'] as Map)['lineUpID'], 'l');
-    expect(
-      (_end(written[2], 'origin')['agent'] as Map)['lineUpID'],
-      'unrelated',
-    );
-    expect(_canonical(written), _canonical(rows));
   });
 
-  test('a lineup added to a spot drawn apart is written under the real id', () {
-    final rows = _splitLanding();
-    final hydrated = lineUpGraphFromCloudRows(rows);
-    final added = LineUpGraph(
-      origins: [...hydrated.graph.origins, _origin('o4')],
-      landings: hydrated.graph.landings,
+  test('a group keeps its id when the lineup it was named after goes', () {
+    final read = lineUpGraphFromCloudRows(cloudLineupRows(_page()).rows);
+    final withoutK1 = LineUpGraph(
+      origins: read.graph.origins,
+      landings: read.graph.landings,
       links: [
-        ...hydrated.graph.links,
-        LineUpLink(id: 'k4', originId: 'o4', landingId: 'shared@k2'),
+        for (final link in read.graph.links)
+          if (link.id != 'k1') link,
       ],
     );
 
-    final written = cloudLineupRows(added, aliases: hydrated.aliases);
-
-    expect(_canonical(written.take(3)), _canonical(rows));
-    expect(
-        _plain(_end(written[3], 'landing')), _plain(_end(rows[1], 'landing')));
-    expect(_end(written[3], 'landing')['id'], 'shared');
-    // And it is drawn again on the spot it was added to.
-    expect(_ends(lineUpGraphFromCloudRows(written))['k4'], ('o4', 'shared@k2'));
+    final rows = cloudLineupRows(withoutK1, groupOf: read.groupOf).rows;
+    expect(rows.map((row) => row.publicId), ['k1', 'k9']);
+    expect(_ids(_data(rows.first)['links']), ['k2', 'k3']);
   });
 
-  test('aliases followed by more aliases keep both', () {
-    const first = CloudLineupAliases(
-      origins: {'a@k2': 'a'},
-      landings: {'l@k3': 'l'},
+  test('a group never splits: halves stay in its row', () {
+    // k1 (a -> shared) and k3 (b -> l2) connect only through k2
+    // (b -> shared).
+    final graph = LineUpGraph(
+      origins: [_origin('a'), _origin('b')],
+      landings: [_landing('shared'), _landing('l2')],
+      links: [
+        _link('k1', 'a', 'shared'),
+        _link('k2', 'b', 'shared'),
+        _link('k3', 'b', 'l2'),
+      ],
     );
-    const second = CloudLineupAliases(origins: {'b@k5': 'b'});
+    final read = lineUpGraphFromCloudRows(cloudLineupRows(graph).rows);
 
-    final both = first.followedBy(second);
+    // Deleting k2 leaves {k1} and {k3} unconnected.
+    final split = LineUpGraph(
+      origins: graph.origins,
+      landings: graph.landings,
+      links: [graph.links[0], graph.links[2]],
+    );
+    final rows = cloudLineupRows(split, groupOf: read.groupOf).rows;
+    expect(rows.map((row) => row.publicId), ['k1']);
+    expect(_ids(_data(rows.single)['links']), ['k1', 'k3']);
 
-    expect(both.origins, {'a@k2': 'a', 'b@k5': 'b'});
-    expect(both.landings, {'l@k3': 'l'});
-    expect(identical(first.followedBy(CloudLineupAliases.none), first), isTrue);
-    expect(CloudLineupAliases.none.isEmpty, isTrue);
+    // Without what the rows said, the halves would be two new groups.
+    expect(
+      cloudLineupRows(split).rows.map((row) => row.publicId),
+      ['k1', 'k3'],
+    );
   });
 
-  test('a link missing its origin or landing has no row', () {
-    final rows = cloudLineupRows(LineUpGraph(
+  test('a new lineup on a spot joins that spot\'s group', () {
+    final read = lineUpGraphFromCloudRows(cloudLineupRows(_page()).rows);
+    final added = LineUpGraph(
+      origins: [...read.graph.origins, _origin('c')],
+      landings: read.graph.landings,
+      links: [...read.graph.links, _link('k0', 'c', 'far')],
+    );
+
+    final written = cloudLineupRows(added, groupOf: read.groupOf);
+    expect(written.rows.map((row) => row.publicId), ['k1', 'k9']);
+    expect(_ids(_data(written.rows.last)['links']), ['k9', 'k0']);
+    expect(written.groupOf['k0'], 'k9');
+    expect(written.groupOf['c'], 'k9');
+  });
+
+  test('a lineup joining two groups merges them under the smaller id', () {
+    final read = lineUpGraphFromCloudRows(cloudLineupRows(_page()).rows);
+    final bridged = LineUpGraph(
+      origins: read.graph.origins,
+      landings: read.graph.landings,
+      links: [...read.graph.links, _link('k5', 'z', 'shared')],
+    );
+
+    final rows = cloudLineupRows(bridged, groupOf: read.groupOf).rows;
+    expect(rows.map((row) => row.publicId), ['k1']);
+    expect(_ids(_data(rows.single)['links']), ['k1', 'k2', 'k3', 'k9', 'k5']);
+  });
+
+  test('a new group never takes a group id already in use', () {
+    final graph = LineUpGraph(
       origins: [_origin('a')],
       landings: [_landing('l')],
-      links: [
-        LineUpLink(id: 'k1', originId: 'a', landingId: 'l'),
-        LineUpLink(id: 'dangling', originId: 'a', landingId: 'missing'),
-      ],
-    ));
+      links: [_link('k1', 'a', 'l'), _link('k2', 'a', 'l')],
+    );
 
+    expect(
+      cloudLineupRows(graph, takenGroupIds: {'k1'}).rows.single.publicId,
+      'k2',
+    );
+    // A group id remembered for a lineup elsewhere is in use too.
+    expect(
+      cloudLineupRows(graph, groupOf: {'gone': 'k1'}).rows.single.publicId,
+      'k2',
+    );
+    // Every lineup id taken: a fresh id.
+    final fresh = cloudLineupRows(graph, takenGroupIds: {'k1', 'k2'});
+    expect(fresh.rows.single.publicId, isNot(anyOf('k1', 'k2')));
+    expect(fresh.groupOf['k1'], fresh.rows.single.publicId);
+  });
+
+  test('a lineup missing a spot, and a spot no lineup uses, are not written',
+      () {
+    final rows = cloudLineupRows(LineUpGraph(
+      origins: [_origin('a'), _origin('lonely')],
+      landings: [_landing('l')],
+      links: [
+        _link('k1', 'a', 'l'),
+        _link('dangling', 'a', 'missing'),
+      ],
+    )).rows;
+
+    expect(rows.map((row) => row.publicId), ['k1']);
+    expect(_ids(_data(rows.single)['origins']), ['a']);
+    expect(_ids(_data(rows.single)['links']), ['k1']);
+  });
+
+  test('the first row naming a spot or lineup draws it', () {
+    // Two clients put lineups on spot `shared` into different groups.
+    final first = cloudLineupRows(LineUpGraph(
+      origins: [_origin('a')],
+      landings: [_landing('shared')],
+      links: [_link('k1', 'a', 'shared')],
+    )).rows.single;
+    final second = cloudLineupRows(LineUpGraph(
+      origins: [_origin('b')],
+      landings: [_landing('shared', position: const Offset(99, 99))],
+      links: [_link('k2', 'b', 'shared')],
+    )).rows.single;
+
+    final read = lineUpGraphFromCloudRows([first, second]);
+    expect(read.graph.landings.map((l) => l.id), ['shared']);
+    expect(read.graph.landings.single.ability.position, const Offset(30, 40));
+    expect(read.graph.links.map((l) => l.landingId), ['shared', 'shared']);
+    expect(read.groupOf['shared'], 'k1');
+
+    // Written back, they become one group: the spot connects them.
+    final rows = cloudLineupRows(read.graph, groupOf: read.groupOf).rows;
     expect(rows.map((row) => row.publicId), ['k1']);
   });
 
   test('a row of any other shape fails loudly, naming the row', () {
-    final valid = cloudLineupRows(_shared()).first.payload;
-    final data = valid['data'] as Map<String, dynamic>;
+    final valid = cloudLineupRows(_page()).rows.first.payload;
+    final data = Map<String, dynamic>.from(valid['data'] as Map);
     final broken = <String, CloudPayload>{
-      // The graph rows of protocol 4 and the legacy group are not lineups.
+      // Protocol 4's graph rows, the legacy group, and the per-lineup row
+      // this replaced are not groups.
       'lineupLink': {...valid, 'kind': 'lineupLink'},
       'lineupGroup': {...valid, 'kind': 'lineupGroup'},
-      'no origin': {
+      'lineup': {...valid, 'kind': 'lineup'},
+      'no origins': {
         ...valid,
-        'data': {...data}..remove('origin'),
+        'data': {...data}..remove('origins'),
       },
-      'no landing': {
+      'no links': {
         ...valid,
-        'data': {...data}..remove('landing'),
+        'data': {...data}..remove('links'),
+      },
+      'a lineup aimed outside the row': {
+        ...valid,
+        'data': {
+          ...data,
+          'landings': [
+            for (final landing in data['landings'] as List)
+              if ((landing as Map)['id'] != 'other') landing,
+          ],
+        },
+      },
+      'not objects': {
+        ...valid,
+        'data': {
+          ...data,
+          'origins': ['a'],
+        },
       },
     };
     for (final MapEntry(key: reason, value: payload) in broken.entries) {
@@ -441,7 +295,7 @@ void main() {
         throwsA(isA<FormatException>().having(
           (error) => error.message,
           'message',
-          contains('Cloud lineup k1 could not be read'),
+          contains('Cloud lineup group k1 could not be read'),
         )),
         reason: reason,
       );
@@ -453,14 +307,14 @@ void main() {
       throwsA(isA<FormatException>().having(
         (error) => error.message,
         'message',
-        contains('Cloud lineup someone-else could not be read'),
+        contains('Cloud lineup group someone-else could not be read'),
       )),
-      reason: 'a row keyed apart from its lineup',
+      reason: 'a row keyed apart from its group',
     );
   });
 
-  test('ops in the cloud format before one row per lineup are retired', () {
-    final payload = cloudLineupRows(_shared()).first.payload;
+  test('ops in a cloud format before lineup group rows are retired', () {
+    final payload = cloudLineupRows(_page()).rows.first.payload;
     expect(
       isRetiredCloudLineupOp(LineupAddOp(
         opId: 'op',
@@ -471,16 +325,19 @@ void main() {
       )),
       isFalse,
     );
-    expect(
-      isRetiredCloudLineupOp(LineupAddOp(
-        opId: 'op',
-        lineupPublicId: 'lineupLink:k1',
-        pagePublicId: 'p',
-        payload: {...payload, 'kind': 'lineupLink'},
-        sortIndex: 0,
-      )),
-      isTrue,
-    );
+    for (final kind in ['lineupLink', 'lineup']) {
+      expect(
+        isRetiredCloudLineupOp(LineupAddOp(
+          opId: 'op',
+          lineupPublicId: 'k1',
+          pagePublicId: 'p',
+          payload: {...payload, 'kind': kind},
+          sortIndex: 0,
+        )),
+        isTrue,
+        reason: kind,
+      );
+    }
     for (final key in ['lineupOrigin:a', 'lineupLanding:l', 'lineupLink:k']) {
       expect(
         isRetiredCloudLineupOp(LineupDeleteOp(

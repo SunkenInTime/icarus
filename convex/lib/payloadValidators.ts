@@ -114,24 +114,27 @@ export const elementPayloadValidator = v.union(
   }),
 );
 
-// A lineup is one row: its details (name, video, notes, images) and whole
-// copies of its origin (the agent) and landing (the ability). Lineups that
-// share a spot each carry their own copy of it, and the client draws those
-// copies as one spot again (see cloud_lineup_rows.dart).
-export const lineupPayloadKindValidator = v.literal("lineup");
+// A lineup group is one row: the lineups on one page joined through shared
+// spots, with each spot stored once. data holds the group's id (the row's
+// key) and its origins (each placing an agent), landings (each placing an
+// ability) and links (one per lineup: which origin to which landing, and its
+// name, video, notes and images). See assertLineupPayload in ops.ts for the
+// rules a row must meet.
+export const lineupPayloadKindValidator = v.literal("lineups");
+export const LINEUPS_PAYLOAD_VERSION = 1;
 
 export const lineupPayloadValidator = v.object({
-  kind: v.literal("lineup"),
+  kind: v.literal("lineups"),
   payloadVersion: v.number(),
   data: cloudJsonObjectValidator,
 });
 
-// What a lineup op may carry as an argument: a lineup, or a row of the graph
-// clients on protocol 4 and earlier wrote. Convex checks arguments before
+// What a lineup op may carry as an argument: a lineup group, or a row of the
+// graph clients on protocol 4 wrote. Convex checks arguments before
 // the handler runs, so refusing the old kinds here would answer an old
 // client with a validation error instead of CLIENT_UPGRADE_REQUIRED from the
 // protocol gate. The handler refuses them (see assertLineupPayload in
-// ops.ts) and storage takes only lineups.
+// ops.ts) and storage takes only lineup groups.
 export const lineupOpPayloadValidator = v.union(
   lineupPayloadValidator,
   v.object({
