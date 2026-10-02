@@ -28,14 +28,28 @@ void main() {
       if (ground == null) continue;
       for (final support in model.supports) {
         if (!support.automaticStandingAllowed) continue;
-        // Far everywhere: every corner with ground beneath it is far above it.
-        var nearest = double.infinity;
-        for (final corner in support.rings.expand((ring) => ring)) {
-          final floor = ground.heightAt(corner);
-          final surface = support.surfaceElevationAt(corner);
-          if (floor == null || surface == null) continue;
-          if (surface - floor < nearest) nearest = surface - floor;
+        double nearestAbove(Iterable<Offset> points) {
+          var nearest = double.infinity;
+          for (final point in points) {
+            final floor = ground.heightAt(point);
+            final surface = support.surfaceElevationAt(point);
+            if (floor == null || surface == null) continue;
+            if (surface - floor < nearest) nearest = surface - floor;
+          }
+          return nearest;
         }
+
+        // Far everywhere: far above the ground at every corner, and at every
+        // point of a one-unit grid inside, where the ground may rise.
+        var nearest = nearestAbove(support.rings.expand((ring) => ring));
+        if (nearest < _farMeters) continue;
+        final bounds = support.bounds;
+        final inside = nearestAbove([
+          for (var y = bounds.top.ceilToDouble(); y <= bounds.bottom; y++)
+            for (var x = bounds.left.ceilToDouble(); x <= bounds.right; x++)
+              if (support.contains(Offset(x, y))) Offset(x, y),
+        ]);
+        if (inside < nearest) nearest = inside;
         if (nearest >= _farMeters && nearest.isFinite) {
           far.add('${file.uri.pathSegments.last}: ${support.id} '
               '${nearest.toStringAsFixed(1)} m above the ground');
