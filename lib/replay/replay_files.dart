@@ -164,7 +164,7 @@ class ReplayFiles {
       final partial = _partial(destination);
       try {
         await source.copy(partial.path);
-        if (await destination.exists()) await destination.delete();
+        // Replaces a kept copy in one step, so a failure leaves it intact.
         await partial.rename(destination.path);
       } finally {
         if (await partial.exists()) await partial.delete();

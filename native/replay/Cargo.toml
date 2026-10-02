@@ -1,6 +1,9 @@
 [package]
 name = "icarus_replay"
-version = "0.1.0"
+# Bump whenever the decoded output could change: Icarus keys its cache of
+# decoded replays by it (header::DECODER_VERSION), so an unchanged version
+# serves the old output.
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.86"
 license = "Apache-2.0"

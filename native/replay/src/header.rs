@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn decoder_version_names_both_versions() {
-        assert_eq!(DECODER_VERSION, "0.1.0+vrfkit.0.2.5");
+        assert_eq!(DECODER_VERSION, "0.2.0+vrfkit.0.2.5");
     }
 
     #[test]
