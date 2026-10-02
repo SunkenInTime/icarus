@@ -2143,6 +2143,83 @@ void main() {
       expect(store.values, isEmpty);
     });
 
+    test('a replayed predecessor rebases its successor where it was applied',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'first-edit',
+        value: 'first',
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'second-edit',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+      );
+
+      // The server applied first-edit at 2, its ack was lost, and a
+      // teammate's edit took the row to 3 before first-edit was sent again.
+      // The replay is answered as a noop at the revision first-edit was
+      // applied at, not the row's revision now.
+      repository.completeFirst(const NoopOpAck(
+        opId: 'first-edit',
+        currentRevision: 2,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final promoted = repository.calls[1].single as ElementPatchOp;
+      expect(promoted.payload, {'value': 'second'});
+      expect(promoted.expectedElementRevision, 2);
+
+      // So the server, its row at 3, refuses it rather than letting it
+      // overwrite the teammate's edit unseen.
+      repository.completeSecond(
+        promoted.expectedElementRevision == 3
+            ? AppliedOpAck(opId: promoted.opId, revision: 4)
+            : RejectedOpAck(
+                opId: promoted.opId,
+                rejectionReason: OpRejectionReason.revisionMismatch,
+                current: const ElementCurrentSnapshot(
+                  revision: 3,
+                  value: {'value': 'teammate'},
+                ),
+              ),
+      );
+      await repository.secondCompleted.future;
+      await _settle();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(current.successorByEntityKey, isEmpty);
+      expect(
+        current.attentionByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final record = store.load().records.single;
+      expect(record.status, DurableOutboxStatus.attention);
+      expect(record.pending.op.opId, promoted.opId);
+      expect(record.lastError, OpRejectionReason.revisionMismatch.wireName);
+      expect(record.latestServerRevision, 3);
+    });
+
     test('restart replays an element predecessor before its successor',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
@@ -3042,6 +3119,147 @@ void main() {
         expect(record.lastError, OpRejectionReason.deleted.wireName);
       }
     });
+
+    test(
+        'work deleted on both sides is settled, and keep mine cannot revive it',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      const elementPatch = ElementPatchOp(
+        opId: 'move-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      final lineupPatch = LineupPatchOp(
+        opId: 'move-lineup',
+        lineupPublicId: 'k',
+        pagePublicId: 'page-1',
+        payload: _lineupAdd(opId: 'unused', name: 'moved').payload,
+        sortIndex: 3,
+        expectedLineupRevision: 1,
+      );
+      // Refused alongside them, and not deleted on the canvas.
+      const unrelatedPatch = ElementPatchOp(
+        opId: 'move-other',
+        elementPublicId: 'element-2',
+        pagePublicId: 'page-1',
+        payload: {'value': 'other'},
+        sortIndex: 5,
+        expectedElementRevision: 1,
+      );
+      final elementKey = EntitySyncKey.forStrategyOp(elementPatch)!;
+      final lineupKey = EntitySyncKey.forStrategyOp(lineupPatch)!;
+      final unrelatedKey = EntitySyncKey.forStrategyOp(unrelatedPatch)!;
+      final (container, notifier) = await refused(
+        repository,
+        store,
+        [elementPatch, lineupPatch, unrelatedPatch],
+      );
+
+      // The user deleted element-1 and lineup k on the canvas.
+      final settled = await notifier.settleAttention({elementKey, lineupKey});
+
+      expect(settled, {elementKey, lineupKey});
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+        [unrelatedKey],
+      );
+      expect(
+        [for (final record in store.load().records) record.entityKey],
+        [unrelatedKey],
+      );
+
+      // Keep mine brings back only the work still in attention.
+      await notifier.retryRejected(flushImmediately: false);
+      expect(
+        container.read(strategyOpQueueProvider).queuedByEntityKey.keys,
+        [unrelatedKey],
+      );
+      await notifier.flushNow();
+      await _settle();
+      expect(repository.restored.keys, ['element-2']);
+      expect(repository.calls, hasLength(2));
+      expect(
+        [for (final op in repository.calls.last) op.entityPublicId],
+        ['element-2'],
+      );
+
+      // Settling adopts nothing from the server: a later edit to a settled
+      // entity is queued and sent as any other.
+      const restore = ElementAddOp(
+        opId: 'add-again',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'again'},
+        sortIndex: 4,
+        expectedElementRevision: 2,
+      );
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {elementKey: restore},
+        clearMissing: false,
+      );
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .queuedByEntityKey[elementKey]!
+            .pending
+            .op
+            .payload,
+        {'value': 'again'},
+      );
+      await notifier.flushNow();
+      await _settle();
+      expect(repository.restored.keys, ['element-2', 'element-1']);
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(store.load().records, isEmpty);
+    });
+
+    test('discarding instead waits for the server copy to be adopted',
+        () async {
+      // The contrast that makes settling distinct: after Use cloud the
+      // canvas is about to be redrawn from the server, so desired work for
+      // the entity is ignored until adoption completes.
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      const elementPatch = ElementPatchOp(
+        opId: 'move-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      final key = EntitySyncKey.forStrategyOp(elementPatch)!;
+      final (container, notifier) =
+          await refused(repository, store, [elementPatch]);
+
+      await notifier.discardRejected({key});
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'add-again',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'again'},
+            sortIndex: 4,
+            expectedElementRevision: 2,
+          ),
+        },
+        clearMissing: false,
+      );
+
+      expect(
+        container.read(strategyOpQueueProvider).queuedByEntityKey,
+        isEmpty,
+      );
+    });
   });
 
   group('a server that needs a newer Icarus', () {
@@ -3283,8 +3501,8 @@ LineupAddOp _lineupAdd({
     payload: cloudLineupPayload({
       'id': id,
       'name': name,
-      'origin': {'id': 'o', 'agent': <String, dynamic>{}, 'version': 1},
-      'landing': {'id': 'l', 'ability': <String, dynamic>{}, 'version': 1},
+      'origin': {'id': 'o', 'agent': <String, dynamic>{}},
+      'landing': {'id': 'l', 'ability': <String, dynamic>{}},
     }),
     sortIndex: 0,
   );

@@ -285,7 +285,6 @@ Map<String, Object?> _lineupPayload(int seed, int cycle, int variant) {
           'kind': 'plain',
           'lineUpID': '$id-origin',
         },
-        'version': 1,
       },
       'landing': {
         'id': '$id-landing',
@@ -299,7 +298,6 @@ Map<String, Object?> _lineupPayload(int seed, int cycle, int variant) {
           'length': 0,
           'lineUpID': '$id-landing',
         },
-        'version': 1,
       },
     },
   };

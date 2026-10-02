@@ -840,7 +840,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
               snapshot: loadedRemoteSnapshot,
             );
         _lastAppliedRemoteSnapshot = loadedRemoteSnapshot;
-        _healLineupsOf(pageData.pageId);
       }
       _updateHydrationBookkeeping(
         pageData.pageId,
@@ -1309,24 +1308,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       keepBaseFor: heldBack,
     );
     _lastAppliedRemoteSnapshot = snapshot;
-    _healLineupsOf(pageId);
     _updateHydrationBookkeeping(
       pageId,
       hydrationKey: _buildRemotePageHydrationKey(snapshot, pageId),
     );
     if (heldBack.isNotEmpty) _remoteChangeWaitsForEditor = true;
-  }
-
-  /// Sends the drawn copy of each shared spot to the lineup rows of
-  /// [pageId] that hold another, as soon as the page is drawn: until then a
-  /// lineup whose row still holds the old copy would show it to anyone who
-  /// opens the page after the lineup drawing the new copy is deleted.
-  void _healLineupsOf(String pageId) {
-    if (ref.read(activePageLiveSyncProvider.notifier).lineupsNeedHealing(
-          pageId,
-        )) {
-      unawaited(ref.read(strategyProvider.notifier).notifyCloudMutation());
-    }
   }
 
   String? _resolveHydrationTargetPage(RemoteEditorSnapshot snapshot) {

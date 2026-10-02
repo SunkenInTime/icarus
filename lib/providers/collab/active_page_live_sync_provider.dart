@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:math' show max;
@@ -14,6 +15,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -86,6 +88,17 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   /// Items the user holds that the server deleted: still on screen until the
   /// hold ends, but no longer ordered against anything on the server.
   final Set<EntitySyncKey> _heldDeletedKeys = {};
+
+  /// Every alias drawing lineups has given a spot (see
+  /// lineUpGraphFromCloudRows), so rows are written under the real ids. An
+  /// alias names its real id and the lineup it came from, so one alias
+  /// always means the same spot and they are only ever added.
+  CloudLineupAliases _lineupAliases = CloudLineupAliases.none;
+
+  /// Records the aliases a canvas about to be drawn from cloud rows uses.
+  void noteLineupAliases(CloudLineupAliases aliases) {
+    _lineupAliases = _lineupAliases.followedBy(aliases);
+  }
 
   @override
   ActivePageLiveSyncState build() {
@@ -516,6 +529,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       state.overlayByEntityKey,
     );
     final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
+    final settledAttention = <EntitySyncKey>{};
 
     for (final key in pageKeys) {
       if (_remoteAdoptionPending.contains(key)) {
@@ -548,6 +562,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         retainedDesiredOps[key] = retainedOp;
         _debugLog('overlay.keep $key reason=durable_queue_only');
         continue;
+      }
+
+      // The user deleted, on the canvas, an item whose change the server
+      // refused: the server has it deleted too, so the refused change has
+      // nothing left to keep, and Keep mine must not bring the item back.
+      if (local == null &&
+          existingOverlay != null &&
+          (remote == null || remote.deleted) &&
+          queueState.attentionByEntityKey.containsKey(key)) {
+        settledAttention.add(key);
       }
 
       if (matchesHydratedBase && !shouldPreserveTouched) {
@@ -631,6 +655,20 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       nextOverlay[key] = overlay;
       _debugLog(
         'overlay.upsert $key deletion=false baseRevision=${overlay.baseRevision}',
+      );
+    }
+
+    if (settledAttention.isNotEmpty) {
+      // A refusal still waiting to be announced is moot too, as when the
+      // user chooses Use cloud.
+      for (final key in settledAttention) {
+        final refused = queueState.attentionByEntityKey[key]!.pending.op.opId;
+        ref.read(strategyConflictProvider.notifier).clear(refused);
+      }
+      unawaited(
+        ref
+            .read(strategyOpQueueProvider.notifier)
+            .settleAttention(settledAttention),
       );
     }
 
@@ -961,14 +999,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    // One row per lineup, carrying its origin and landing as the canvas draws
-    // them. A change to a shared spot therefore changes every lineup on it,
-    // and a row whose stored copy of a spot is not the drawn one is written
-    // with the drawn one: compared with the rows as stored, it differs.
+    // One row per lineup, carrying its origin and landing as the canvas
+    // draws them, under their real ids. A change to a shared spot changes
+    // every lineup drawn on it; a lineup nobody changed matches its stored
+    // row, so it is never written.
     final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
     for (final row in cloudLineupRows(
       ref.read(lineUpProvider).graph,
-      drawn: _drawnLineups(pageId),
+      aliases: _lineupAliases,
     )) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
@@ -982,40 +1020,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
 
     return entities;
-  }
-
-  /// Whether a lineup row of [pageId] holds a copy of a spot other than the
-  /// one the canvas draws (a change reached only some rows of the spot, or a
-  /// conflict was settled for one row), or other work the canvas holds for
-  /// it. The next sync writes each such row as the canvas has it.
-  bool lineupsNeedHealing(String pageId) {
-    if (state.hydratedPageId != pageId) return false;
-    return _normalizedLocalEntities(pageId).entries.any(
-          (entry) =>
-              entry.key.kind == EntitySyncKeyKind.lineup &&
-              !_entitiesEquivalent(
-                entry.value,
-                _hydratedBaseByEntityKey[entry.key],
-              ),
-        );
-  }
-
-  /// [pageId]'s lineups as the canvas was drawn from them: the live lineup
-  /// rows it was hydrated from, as accepted since. Their spot versions are
-  /// what a change on the canvas builds on.
-  CloudLineups _drawnLineups(String pageId) {
-    return lineUpGraphFromCloudRows([
-      for (final MapEntry(:key, value: base)
-          in _hydratedBaseByEntityKey.entries)
-        if (key.pageId == pageId &&
-            key.kind == EntitySyncKeyKind.lineup &&
-            key.entityId != null &&
-            !base.deleted)
-          CloudLineupRow(
-            publicId: key.entityId!,
-            payload: Map<String, dynamic>.from(base.payload as Map),
-          ),
-    ]);
   }
 
   List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {

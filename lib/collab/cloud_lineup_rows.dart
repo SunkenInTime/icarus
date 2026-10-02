@@ -8,15 +8,9 @@ import 'package:icarus/const/line_provider.dart';
 /// images, and whole copies of its origin and landing.
 ///
 /// Lineups that share a spot (several lineups from one origin, or into one
-/// landing) each carry their own copy of it, under the spot's id, with the
-/// spot's version. The server never joins rows, so every row can be drawn on
-/// its own. The client draws the copies of one id as one spot again
-/// ([lineUpGraphFromCloudRows]) and writes every row of a spot with the copy
-/// it draws ([cloudLineupRows]), so copies that drifted apart (a change that
-/// reached only some of the rows) come back together.
-///
-/// Versions live only here, in the cloud rows: the canvas, Hive and .ica
-/// files never see them.
+/// landing) each carry their own copy of it, under the spot's id. The server
+/// never joins rows, so every row can be drawn on its own, and a lineup's
+/// row only ever changes when the user changes that lineup or its spot.
 class CloudLineupRow {
   const CloudLineupRow({required this.publicId, required this.payload});
 
@@ -28,139 +22,119 @@ class CloudLineupRow {
   final CloudPayload payload;
 }
 
-/// A page's lineups as cloud rows describe them, with the version of each
-/// spot drawn.
+/// Local ids standing for real origin and landing ids, alias to real id.
+/// They exist only on the canvas (see [lineUpGraphFromCloudRows]); rows are
+/// always written under the real id.
+class CloudLineupAliases {
+  const CloudLineupAliases({this.origins = const {}, this.landings = const {}});
+
+  static const none = CloudLineupAliases();
+
+  final Map<String, String> origins;
+  final Map<String, String> landings;
+
+  bool get isEmpty => origins.isEmpty && landings.isEmpty;
+
+  CloudLineupAliases followedBy(CloudLineupAliases other) {
+    if (other.isEmpty) return this;
+    return CloudLineupAliases(
+      origins: {...origins, ...other.origins},
+      landings: {...landings, ...other.landings},
+    );
+  }
+}
+
+/// A page's lineups as cloud rows describe them, and the aliases drawing
+/// them took.
 class CloudLineups {
   const CloudLineups({
     required this.graph,
-    this.originVersions = const {},
-    this.landingVersions = const {},
+    this.aliases = CloudLineupAliases.none,
   });
 
-  static const empty = CloudLineups(graph: LineUpGraph.empty);
-
   final LineUpGraph graph;
+  final CloudLineupAliases aliases;
+}
 
-  /// The version of each origin and landing drawn, by id.
-  final Map<String, int> originVersions;
-  final Map<String, int> landingVersions;
+/// A page's lineups as its live [rows] describe them.
+///
+/// Links come from the rows, in their order. The copies the rows carry of
+/// one origin (or landing) id are grouped by value. Copies that agree, as
+/// they do unless a change reached only some of a spot's lineups, are drawn
+/// as one spot under the real id. Copies that disagree are drawn apart, one
+/// spot per value: the value the row with the smallest lineup id carries
+/// keeps the real id, and every other value is drawn under the alias
+/// `<real id>@<smallest lineup id carrying it>`. Every client draws the same
+/// spots from the same rows, and nothing is written for it: each lineup
+/// keeps its own copy until the user changes it. Spots appear in the order
+/// the rows first carry them.
+///
+/// Throws a [FormatException] naming the row when one cannot be read.
+CloudLineups lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
+  final read = [for (final row in rows) _readLineupRow(row)];
+  final originIds = _spotIds([
+    for (final (link, origin, _) in read) (link.id, origin.id, origin.toJson()),
+  ]);
+  final landingIds = _spotIds([
+    for (final (link, _, landing) in read)
+      (link.id, landing.id, landing.toJson()),
+  ]);
+
+  final origins = <String, LineUpOrigin>{};
+  final landings = <String, LineUpLanding>{};
+  final links = <LineUpLink>[];
+  for (final (link, origin, landing) in read) {
+    final originId = originIds.byLineup[link.id]!;
+    final landingId = landingIds.byLineup[link.id]!;
+    origins.putIfAbsent(originId, () => _originAs(origin, originId));
+    landings.putIfAbsent(landingId, () => _landingAs(landing, landingId));
+    links.add(link.copyWith(originId: originId, landingId: landingId));
+  }
+  return CloudLineups(
+    graph: LineUpGraph(
+      origins: origins.values.toList(),
+      landings: landings.values.toList(),
+      links: links,
+    ),
+    aliases: CloudLineupAliases(
+      origins: originIds.aliases,
+      landings: landingIds.aliases,
+    ),
+  );
 }
 
 /// The rows that store [graph]: one per link, in link order, each carrying
-/// its origin and landing as they are now. A link whose origin or landing is
+/// its origin and landing as they are now, under their real ids ([aliases]
+/// maps the canvas's aliases back). A link whose origin or landing is
 /// missing draws nothing on the canvas, so it has no row either.
-///
-/// [drawn] is what the canvas was drawn from. A spot keeps the version it
-/// was drawn at while it is unchanged, and goes one past it once changed,
-/// so the change outranks every copy the rows hold. A spot [drawn] lacks
-/// starts at version 1.
 List<CloudLineupRow> cloudLineupRows(
   LineUpGraph graph, {
-  CloudLineups drawn = CloudLineups.empty,
+  CloudLineupAliases aliases = CloudLineupAliases.none,
 }) {
-  final drawnOrigins = {
-    for (final origin in drawn.graph.origins) origin.id: origin,
-  };
-  final drawnLandings = {
-    for (final landing in drawn.graph.landings) landing.id: landing,
-  };
-  int versionOf(
-    String id,
-    Map<String, dynamic> now,
-    Map<String, dynamic>? before,
-    Map<String, int> versions,
-  ) {
-    final version = versions[id];
-    if (version == null || before == null) return 1;
-    return _sameJson(now, before) ? version : version + 1;
-  }
-
-  final origins = {for (final origin in graph.origins) origin.id: origin};
-  final landings = {for (final landing in graph.landings) landing.id: landing};
-  final originJson = <String, Map<String, dynamic>>{
+  final origins = {
     for (final origin in graph.origins)
-      origin.id: {
-        ...origin.toJson(),
-        'version': versionOf(
-          origin.id,
-          origin.toJson(),
-          drawnOrigins[origin.id]?.toJson(),
-          drawn.originVersions,
-        ),
-      },
+      origin.id: _originAs(origin, aliases.origins[origin.id] ?? origin.id),
   };
-  final landingJson = <String, Map<String, dynamic>>{
+  final landings = {
     for (final landing in graph.landings)
-      landing.id: {
-        ...landing.toJson(),
-        'version': versionOf(
-          landing.id,
-          landing.toJson(),
-          drawnLandings[landing.id]?.toJson(),
-          drawn.landingVersions,
-        ),
-      },
+      landing.id:
+          _landingAs(landing, aliases.landings[landing.id] ?? landing.id),
   };
   return [
     for (final link in graph.links)
-      if (origins.containsKey(link.originId) &&
-          landings.containsKey(link.landingId))
+      if ((origins[link.originId], landings[link.landingId])
+          case (final origin?, final landing?))
         CloudLineupRow(
           publicId: link.id,
           payload: cloudLineupPayload({
             ...link.toJson()
               ..remove('originId')
               ..remove('landingId'),
-            'origin': originJson[link.originId],
-            'landing': landingJson[link.landingId],
+            'origin': origin.toJson(),
+            'landing': landing.toJson(),
           }),
         ),
   ];
-}
-
-/// A page's lineups as its live [rows] describe them.
-///
-/// Links come from the rows, in their order. Origins and landings are the
-/// rows' copies, one per id, in the order the rows first carry them. When
-/// copies of a spot disagree, every client draws the one with the highest
-/// version, a tie going to the row with the greatest lineup id.
-///
-/// Throws a [FormatException] naming the row when one cannot be read.
-CloudLineups lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
-  final origins = <String, (LineUpOrigin, int, String)>{};
-  final landings = <String, (LineUpLanding, int, String)>{};
-  final links = <LineUpLink>[];
-  bool outranks(int version, String rowId, (Object, int, String)? drawn) =>
-      drawn == null ||
-      version > drawn.$2 ||
-      (version == drawn.$2 && rowId.compareTo(drawn.$3) > 0);
-
-  for (final row in rows) {
-    final (link, origin, originVersion, landing, landingVersion) =
-        _readLineupRow(row);
-    links.add(link);
-    if (outranks(originVersion, row.publicId, origins[origin.id])) {
-      origins[origin.id] = (origin, originVersion, row.publicId);
-    }
-    if (outranks(landingVersion, row.publicId, landings[landing.id])) {
-      landings[landing.id] = (landing, landingVersion, row.publicId);
-    }
-  }
-  return CloudLineups(
-    graph: LineUpGraph(
-      origins: [for (final (origin, _, _) in origins.values) origin],
-      landings: [for (final (landing, _, _) in landings.values) landing],
-      links: links,
-    ),
-    originVersions: {
-      for (final MapEntry(:key, value: (_, version, _)) in origins.entries)
-        key: version,
-    },
-    landingVersions: {
-      for (final MapEntry(:key, value: (_, version, _)) in landings.entries)
-        key: version,
-    },
-  );
 }
 
 /// A page's lineups as its [lineups] on the server describe them. Deleted
@@ -184,19 +158,78 @@ bool isRetiredCloudLineupOp(StrategyOp op) {
 
 final _retiredLineupKey = RegExp(r'^lineup(Origin|Landing|Link):');
 
-(LineUpLink, LineUpOrigin, int, LineUpLanding, int) _readLineupRow(
-  CloudLineupRow row,
+/// The spot id each lineup's copy of one kind of end is drawn under, and the
+/// aliases among them; see [lineUpGraphFromCloudRows].
+({Map<String, String> byLineup, Map<String, String> aliases}) _spotIds(
+  List<(String lineupId, String endId, Map<String, dynamic> value)> copies,
 ) {
+  // End id -> value -> the lineups carrying that value.
+  final groups = <String, Map<String, List<String>>>{};
+  for (final (lineupId, endId, value) in copies) {
+    ((groups[endId] ??= {})[_valueKey(value)] ??= []).add(lineupId);
+  }
+  final byLineup = <String, String>{};
+  final aliases = <String, String>{};
+  String smallest(List<String> ids) => ids.reduce(
+        (a, b) => a.compareTo(b) <= 0 ? a : b,
+      );
+  for (final MapEntry(key: endId, value: byValue) in groups.entries) {
+    final firsts = {
+      for (final MapEntry(:key, value: lineups) in byValue.entries)
+        key: smallest(lineups),
+    };
+    final realValue = firsts.entries
+        .reduce((a, b) => a.value.compareTo(b.value) <= 0 ? a : b)
+        .key;
+    for (final MapEntry(key: value, value: lineups) in byValue.entries) {
+      final id = value == realValue ? endId : '$endId@${firsts[value]}';
+      if (id != endId) aliases[id] = endId;
+      for (final lineupId in lineups) {
+        byLineup[lineupId] = id;
+      }
+    }
+  }
+  return (byLineup: byLineup, aliases: aliases);
+}
+
+String _valueKey(Map<String, dynamic> value) =>
+    canonicalCloudJsonEncode(jsonDecode(jsonEncode(value)));
+
+/// [origin] under [id], its agent's `lineUpID` following when it named the
+/// origin's old id.
+LineUpOrigin _originAs(LineUpOrigin origin, String id) {
+  if (id == origin.id) return origin;
+  final agent = origin.agent;
+  return LineUpOrigin(
+    id: id,
+    agent: agent.lineUpID == origin.id
+        ? (agent.copyWith(lineUpID: id)..isDeleted = agent.isDeleted)
+        : agent,
+  );
+}
+
+/// [landing] under [id], its ability's `lineUpID` following when it named
+/// the landing's old id.
+LineUpLanding _landingAs(LineUpLanding landing, String id) {
+  if (id == landing.id) return landing;
+  final ability = landing.ability;
+  return LineUpLanding(
+    id: id,
+    ability: ability.lineUpID == landing.id
+        ? (ability.copyWith(lineUpID: id)..isDeleted = ability.isDeleted)
+        : ability,
+  );
+}
+
+(LineUpLink, LineUpOrigin, LineUpLanding) _readLineupRow(CloudLineupRow row) {
   try {
     final kind = row.payload['kind'];
     if (kind != cloudLineupPayloadKind) {
       throw FormatException('unknown lineup kind $kind');
     }
     final data = cloudPayloadData(row.payload);
-    final originJson = _object(data['origin'], 'origin');
-    final landingJson = _object(data['landing'], 'landing');
-    final origin = LineUpOrigin.fromJson(originJson);
-    final landing = LineUpLanding.fromJson(landingJson);
+    final origin = LineUpOrigin.fromJson(_object(data['origin'], 'origin'));
+    final landing = LineUpLanding.fromJson(_object(data['landing'], 'landing'));
     final link = LineUpLink.fromJson({
       ...data,
       'originId': origin.id,
@@ -205,13 +238,7 @@ final _retiredLineupKey = RegExp(r'^lineup(Origin|Landing|Link):');
     if (link.id != row.publicId) {
       throw FormatException('it holds lineup ${link.id}');
     }
-    return (
-      link,
-      origin,
-      _version(originJson, 'origin'),
-      landing,
-      _version(landingJson, 'landing'),
-    );
+    return (link, origin, landing);
   } catch (error, stackTrace) {
     Error.throwWithStackTrace(
       FormatException('Cloud lineup ${row.publicId} could not be read: '
@@ -224,17 +251,4 @@ final _retiredLineupKey = RegExp(r'^lineup(Origin|Landing|Link):');
 Map<String, dynamic> _object(Object? value, String name) {
   if (value is! Map) throw FormatException('it has no $name');
   return Map<String, dynamic>.from(value);
-}
-
-int _version(Map<String, dynamic> end, String name) {
-  final version = end['version'];
-  if (version is! num || version != version.roundToDouble() || version < 1) {
-    throw FormatException('its $name has no version');
-  }
-  return version.toInt();
-}
-
-bool _sameJson(Map<String, dynamic> left, Map<String, dynamic> right) {
-  return canonicalCloudJsonEncode(jsonDecode(jsonEncode(left))) ==
-      canonicalCloudJsonEncode(jsonDecode(jsonEncode(right)));
 }

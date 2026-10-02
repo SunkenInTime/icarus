@@ -78,7 +78,7 @@ List<LineupAddOp> _upload(
 /// server returns them.
 LineUpGraph _hydrate(List<LineupAddOp> adds) => _hydrated(adds).graph;
 
-/// [_hydrate], with the version of each spot drawn.
+/// [_hydrate], with the aliases drawing it took.
 CloudLineups _hydrated(List<LineupAddOp> adds) {
   return lineUpGraphFromCloudRows([
     for (final add in adds)
@@ -104,9 +104,6 @@ void main() {
     final data = cloudPayloadData(adds.single.payload);
     expect((data['origin'] as Map)['id'], 'origin-1');
     expect((data['landing'] as Map)['id'], 'link-1');
-    // An upload is the spots' first cloud copy.
-    expect((data['origin'] as Map)['version'], 1);
-    expect((data['landing'] as Map)['version'], 1);
     // Hydrating the upload gives back the page's graph, ids and all, so the
     // page never authors a patch for a lineup nobody touched.
     expect(
@@ -132,7 +129,10 @@ void main() {
 
     // And the rows reproduce exactly when the hydrated graph is sent again.
     final hydrated = _hydrated(adds);
-    final resent = cloudLineupRows(hydrated.graph, drawn: hydrated);
+    final resent = cloudLineupRows(
+      hydrated.graph,
+      aliases: hydrated.aliases,
+    );
     expect(
       _canonical([for (final row in resent) row.payload]),
       _canonical([for (final add in adds) add.payload]),

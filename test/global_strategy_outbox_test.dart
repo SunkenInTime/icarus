@@ -251,8 +251,8 @@ void main() {
       pagePublicId: 'page-one',
       payload: cloudLineupPayload({
         'id': 'k',
-        'origin': {'id': 'o', 'agent': <String, dynamic>{}, 'version': 1},
-        'landing': {'id': 'l', 'ability': <String, dynamic>{}, 'version': 1},
+        'origin': {'id': 'o', 'agent': <String, dynamic>{}},
+        'landing': {'id': 'l', 'ability': <String, dynamic>{}},
       }),
       sortIndex: 0,
     );

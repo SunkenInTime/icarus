@@ -1125,7 +1125,21 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// changing unrelated queued, in-flight, paused, or rejected work.
   Future<Set<EntitySyncKey>> discardRejected(
     Set<EntitySyncKey> entityKeys,
-  ) {
+  ) =>
+      _dropAttention(entityKeys, adoptRemote: true);
+
+  /// Drops the refused work of entities the user has since deleted on the
+  /// canvas while the server has them deleted too. Both sides agree they
+  /// are gone, so nothing is left to keep, and Keep mine must not bring
+  /// them back. Unlike [discardRejected] the canvas is already the truth:
+  /// there is nothing to adopt.
+  Future<Set<EntitySyncKey>> settleAttention(Set<EntitySyncKey> entityKeys) =>
+      _dropAttention(entityKeys, adoptRemote: false);
+
+  Future<Set<EntitySyncKey>> _dropAttention(
+    Set<EntitySyncKey> entityKeys, {
+    required bool adoptRemote,
+  }) {
     return _serializeWrite(() async {
       final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
         state.attentionByEntityKey,
@@ -1168,7 +1182,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           _uncertainOversizedParking.remove(storageKey);
           attention.remove(key);
           successors.remove(key);
-          _awaitingRemoteAdoption.add(key);
+          if (adoptRemote) _awaitingRemoteAdoption.add(key);
           discarded.add(key);
         } catch (error, stackTrace) {
           persistenceError = error;

@@ -515,6 +515,13 @@ class _ServerRepository implements ConvexStrategyRepository {
   final void Function() afterBatch;
   final List<List<StrategyOp>> batches = [];
 
+  /// While set, a batch waits for it before it reaches the server.
+  Completer<void>? hold;
+
+  /// While set, the next batch reaches the server, then this runs and the
+  /// answer is lost on its way back: the send fails as if offline.
+  void Function()? loseNextAnswer;
+
   @override
   Future<List<OpAck>> applyBatch({
     required String strategyPublicId,
@@ -523,7 +530,13 @@ class _ServerRepository implements ConvexStrategyRepository {
     String? accountSubject,
   }) async {
     batches.add(ops);
+    await hold?.future;
     final acks = server.applyBatch(ops);
+    if (loseNextAnswer case final lose?) {
+      loseNextAnswer = null;
+      lose();
+      throw const SocketException('The answer was lost.');
+    }
     afterBatch();
     return acks;
   }
@@ -631,21 +644,19 @@ Map<String, dynamic> _abilityJson(
       'armLengthsMeters': [10, 10, 10, 10],
     };
 
-/// Origin [id] as a lineup row carries it, at its spot's [version].
+/// Origin [id] as a lineup row carries it.
 Map<String, dynamic> _originJson(
   String id, [
   Offset position = const Offset(10, 20),
-  int version = 1,
 ]) =>
-    {'id': id, 'agent': _agentJson(id, position), 'version': version};
+    {'id': id, 'agent': _agentJson(id, position)};
 
-/// Landing [id] as a lineup row carries it, at its spot's [version].
+/// Landing [id] as a lineup row carries it.
 Map<String, dynamic> _landingJson(
   String id, [
   Offset position = const Offset(30, 40),
-  int version = 1,
 ]) =>
-    {'id': id, 'ability': _abilityJson(id, position), 'version': version};
+    {'id': id, 'ability': _abilityJson(id, position)};
 
 /// One lineup as the server stores it: one row, the link [id] with its own
 /// copies of its [origin] and [landing].
@@ -731,7 +742,9 @@ RemoteLineup _editedLineup(
 /// A write expecting another revision than the row's is refused with the
 /// row as it is. A patch or reorder of a tombstone is refused as `deleted`;
 /// an add expecting the tombstone's revision brings the row back. A write
-/// that would change nothing is a noop, whatever revision it expected.
+/// that would change nothing is a noop, whatever revision it expected. An op
+/// sent again (its answer lost) is answered as a noop at the revision it
+/// landed at, or refused again.
 class _FakeServer {
   _FakeServer(
     this.pageId, {
@@ -749,6 +762,9 @@ class _FakeServer {
   final String pageId;
   final Map<String, _Row> _lineups = {};
   final Map<String, _Row> _elements = {};
+
+  /// The answer to each element and lineup op taken, by op id.
+  final Map<String, OpAck> _answers = {};
 
   /// Every lineup op this server answered, in order.
   final List<StrategyOp> received = [];
@@ -880,30 +896,48 @@ class _FakeServer {
     OpAck noop() =>
         NoopOpAck(opId: op.opId, currentRevision: existing?.revision);
 
-    switch (change.kind) {
-      case StrategyOpKind.add:
-        final payload = change.payload!;
-        final sortIndex = change.sortIndex!;
-        if (existing == null) return store(payload, sortIndex);
-        if (existing.deleted) return stale() ?? store(payload, sortIndex);
-        return _sameJson(existing.payload, payload)
-            ? noop()
-            : refused(OpRejectionReason.alreadyExists);
-      case StrategyOpKind.delete:
-        if (existing == null || existing.deleted) return noop();
-        return stale() ??
-            store(existing.payload, existing.sortIndex, deleted: true);
-      case StrategyOpKind.patch || StrategyOpKind.reorder:
-        if (existing == null) return refused(OpRejectionReason.notFound);
-        if (existing.deleted) return refused(OpRejectionReason.deleted);
-        final payload = change.payload ?? existing.payload;
-        final sortIndex = change.sortIndex ?? existing.sortIndex;
-        if (_sameJson(payload, existing.payload) &&
-            sortIndex == existing.sortIndex) {
-          return noop();
-        }
-        return stale() ?? store(payload, sortIndex);
+    // An op already answered is answered again as it was: an accepted one
+    // as a noop at the revision it landed at, not the row's latest.
+    switch (_answers[op.opId]) {
+      case RejectedOpAck(:final rejectionReason):
+        return refused(rejectionReason);
+      case final OpAck accepted?:
+        return NoopOpAck(
+          opId: op.opId,
+          currentRevision: accepted.appliedRevision,
+        );
+      case null:
+        break;
     }
+
+    OpAck answer() {
+      switch (change.kind) {
+        case StrategyOpKind.add:
+          final payload = change.payload!;
+          final sortIndex = change.sortIndex!;
+          if (existing == null) return store(payload, sortIndex);
+          if (existing.deleted) return stale() ?? store(payload, sortIndex);
+          return _sameJson(existing.payload, payload)
+              ? noop()
+              : refused(OpRejectionReason.alreadyExists);
+        case StrategyOpKind.delete:
+          if (existing == null || existing.deleted) return noop();
+          return stale() ??
+              store(existing.payload, existing.sortIndex, deleted: true);
+        case StrategyOpKind.patch || StrategyOpKind.reorder:
+          if (existing == null) return refused(OpRejectionReason.notFound);
+          if (existing.deleted) return refused(OpRejectionReason.deleted);
+          final payload = change.payload ?? existing.payload;
+          final sortIndex = change.sortIndex ?? existing.sortIndex;
+          if (_sameJson(payload, existing.payload) &&
+              sortIndex == existing.sortIndex) {
+            return noop();
+          }
+          return stale() ?? store(payload, sortIndex);
+      }
+    }
+
+    return _answers[op.opId] = answer();
   }
 
   /// A teammate's change to lineup row [id] lands: [edit] changes its data,
@@ -989,21 +1023,27 @@ class _Row {
       );
 }
 
-/// Moves the version of [end] (a lineup row's origin or landing) on by one,
-/// as a client changing that spot does.
-void _bumpVersion(Map end) => end['version'] = (end['version'] as int) + 1;
-
-/// The origin and landing ids and versions row [row] carries.
-({String origin, int originVersion, String landing, int landingVersion})
-    _endsOf(RemoteLineup row) {
+/// The origin and landing row [row] carries: their ids, and where their
+/// markers stand.
+({String origin, Offset originAt, String landing, Offset landingAt}) _endsOf(
+  RemoteLineup row,
+) {
   final data = cloudPayloadData(row.payload);
   final origin = data['origin'] as Map;
   final landing = data['landing'] as Map;
+  Offset at(Object? marker) {
+    final position = (marker! as Map)['position'] as Map;
+    return Offset(
+      (position['dx'] as num).toDouble(),
+      (position['dy'] as num).toDouble(),
+    );
+  }
+
   return (
     origin: origin['id'] as String,
-    originVersion: origin['version'] as int,
+    originAt: at(origin['agent']),
     landing: landing['id'] as String,
-    landingVersion: landing['version'] as int,
+    landingAt: at(landing['ability']),
   );
 }
 
@@ -4759,45 +4799,56 @@ void main() {
   });
 
   test(
-      'copies of a shared spot that disagree draw the highest version, a tie '
-      'the greatest lineup id', () async {
+      'copies of a shared spot that disagree are drawn apart, and opening '
+      'the page writes nothing', () async {
     final page = _page('page-1', 0);
-    // Teammates moved the shared origin and the shared landing at the same
-    // time, so the rows carrying each disagree. Row revisions rank nothing:
-    // the row with the newest origin has the lowest.
-    final container = await openCloudPage(page, [
+    // A change to the shared origin reached link-1 but not link-2, and one
+    // to the shared landing reached link-3 but not link-2.
+    final rows = [
       _lineupRow(page.publicId, 'link-1',
-          origin: _originJson('origin', const Offset(100, 100), 5),
+          origin: _originJson('origin', const Offset(100, 100)),
           landing: _landingJson('landing-1'),
           revision: 1),
       _lineupRow(page.publicId, 'link-2',
-          origin: _originJson('origin', const Offset(200, 200), 3),
-          landing: _landingJson('landing', const Offset(220, 220), 3),
+          origin: _originJson('origin', const Offset(200, 200)),
+          landing: _landingJson('landing', const Offset(220, 220)),
           revision: 9,
           sortIndex: 1),
       _lineupRow(page.publicId, 'link-3',
           origin: _originJson('origin-3'),
-          landing: _landingJson('landing', const Offset(330, 330), 3),
+          landing: _landingJson('landing', const Offset(330, 330)),
           revision: 2,
           sortIndex: 2),
-    ]);
+    ];
+    final container = await openCloudPage(page, rows);
 
+    // One spot per value: the value of the smallest lineup id carrying the
+    // spot keeps its id, the other is drawn under an alias. Each lineup is
+    // attached to its own copy, its marker following the alias.
     final lineUps = container.read(lineUpProvider);
-    expect(
-        lineUps.links.map((link) => link.id), ['link-1', 'link-2', 'link-3']);
-    expect(lineUps.origins.map((origin) => origin.id), ['origin', 'origin-3']);
-    // Version 5 outranks version 3, whatever the rows' revisions.
+    expect(lineUps.origins.map((origin) => origin.id),
+        ['origin', 'origin@link-2', 'origin-3']);
+    expect(lineUps.landings.map((landing) => landing.id),
+        ['landing-1', 'landing', 'landing@link-3']);
+    expect([
+      for (final link in lineUps.links) (link.id, link.originId, link.landingId)
+    ], [
+      ('link-1', 'origin', 'landing-1'),
+      ('link-2', 'origin@link-2', 'landing'),
+      ('link-3', 'origin-3', 'landing@link-3'),
+    ]);
     expect(
         lineUps.originById('origin')!.agent.position, const Offset(100, 100));
-    expect(lineUps.landings.map((landing) => landing.id),
-        ['landing-1', 'landing']);
-    // Both copies are at version 3: link-3's id is the greater.
+    final aliasedOrigin = lineUps.originById('origin@link-2')!.agent;
+    expect(aliasedOrigin.position, const Offset(200, 200));
+    expect(aliasedOrigin.lineUpID, 'origin@link-2');
     expect(lineUps.landingById('landing')!.ability.position,
-        const Offset(330, 330));
+        const Offset(220, 220));
+    final aliasedLanding = lineUps.landingById('landing@link-3')!.ability;
+    expect(aliasedLanding.position, const Offset(330, 330));
+    expect(aliasedLanding.lineUpID, 'landing@link-3');
 
-    // link-2 holds copies of both spots other than the drawn ones, so it is
-    // written with them, at their versions, against its own revision. The
-    // rows already holding the drawn copies are left be.
+    // Opening the page writes no lineup, nor does an unrelated edit.
     await _settle();
     Map<EntitySyncKey, StrategyOp> queuedLineupOps() => {
           for (final entry in container
@@ -4807,33 +4858,29 @@ void main() {
             if (entry.key.kind == EntitySyncKeyKind.lineup)
               entry.key: entry.value.pending.op,
         };
-    final link2 = EntitySyncKey.lineup(page.publicId, 'link-2');
-    expect(queuedLineupOps().keys, [link2]);
-    final heal = queuedLineupOps()[link2]! as LineupPatchOp;
-    expect(heal.expectedLineupRevision, 9);
-    void expectDrawnCopies(CloudPayload payload) {
-      final data = cloudPayloadData(payload);
-      final origin = data['origin'] as Map;
-      final landing = data['landing'] as Map;
-      expect(origin['version'], 5);
-      expect((origin['agent'] as Map)['position'], {'dx': 100.0, 'dy': 100.0});
-      expect(landing['version'], 3);
-      expect(
-          (landing['ability'] as Map)['position'], {'dx': 330.0, 'dy': 330.0});
-    }
+    expect(queuedLineupOps(), isEmpty);
+    expect(lineupOpsAfterTextEdit(container, page), isEmpty);
 
-    expectDrawnCopies(heal.payload!);
-
-    // A real edit to that lineup carries the drawn copies with it.
+    // An edit to link-2 writes its row with its own copies, under the real
+    // ids, against its own revision.
     container
         .read(lineUpProvider.notifier)
         .updateLink(lineUps.linkById('link-2')!.copyWith(notes: 'jump throw'));
     await _settle();
+    final link2 = EntitySyncKey.lineup(page.publicId, 'link-2');
     expect(queuedLineupOps().keys, [link2]);
     final patch = queuedLineupOps()[link2]! as LineupPatchOp;
     expect(patch.expectedLineupRevision, 9);
-    expect(cloudPayloadData(patch.payload)['notes'], 'jump throw');
-    expectDrawnCopies(patch.payload!);
+    final data = cloudPayloadData(patch.payload);
+    expect(data['notes'], 'jump throw');
+    final origin = data['origin'] as Map;
+    expect(origin['id'], 'origin');
+    expect((origin['agent'] as Map)['lineUpID'], 'origin');
+    expect((origin['agent'] as Map)['position'], {'dx': 200.0, 'dy': 200.0});
+    final landing = data['landing'] as Map;
+    expect(landing['id'], 'landing');
+    expect((landing['ability'] as Map)['lineUpID'], 'landing');
+    expect((landing['ability'] as Map)['position'], {'dx': 220.0, 'dy': 220.0});
     await _settle();
   });
 
@@ -5006,6 +5053,7 @@ void main() {
     const placedAt = Offset(100, 100);
     late _FakeStrategyOpQueueNotifier queue;
     late _FakeServer server;
+    late _ServerRepository repository;
 
     /// Page settings that round-trip exactly, so live sync authors nothing
     /// for them; the agent size marks which server revision is on screen.
@@ -5237,7 +5285,6 @@ void main() {
       server.teammateEdit(link.id, (data) {
         final origin = data['origin'] as Map;
         (origin['agent'] as Map)['weapon'] = 'vandal';
-        _bumpVersion(origin);
       });
       remote.setSnapshot(serverSnapshot(page, server.rows, 4));
       await settleSync(container, 4);
@@ -5430,8 +5477,6 @@ void main() {
         final landing = cloudPayloadData(op.payload)['landing'] as Map;
         expect((landing['ability'] as Map)['position'],
             {'dx': moved.dx, 'dy': moved.dy});
-        // The moved landing outranks every copy the rows hold.
-        expect(landing['version'], 2);
       }
 
       lineups = await land(container, remote, page, contentRevision: 4);
@@ -5440,8 +5485,8 @@ void main() {
         {a.id: 3, b.id: 2, other.id: 1},
       );
       expect(
-        {for (final row in lineups) row.publicId: _endsOf(row).landingVersion},
-        {a.id: 2, b.id: 2, other.id: 1},
+        {for (final row in lineups) row.publicId: _endsOf(row).landingAt},
+        {a.id: moved, b.id: moved, other.id: const Offset(300, 300)},
       );
       final hydrated = container.read(lineUpProvider);
       expect(hydrated.landingById(a.landingId)!.ability.position, moved);
@@ -5929,7 +5974,6 @@ void main() {
           final landing = data['landing'] as Map;
           final ability = landing['ability'] as Map;
           (ability['visualState'] as Map)['showRangeFill'] = false;
-          _bumpVersion(landing);
         },
       );
 
@@ -5963,7 +6007,6 @@ void main() {
         teammate: (data) {
           final origin = data['origin'] as Map;
           (origin['agent'] as Map)['weapon'] = 'vandal';
-          _bumpVersion(origin);
         },
       );
 
@@ -6025,7 +6068,6 @@ void main() {
       server.teammateEdit(link.id, (data) {
         final origin = data['origin'] as Map;
         (origin['agent'] as Map)['weapon'] = 'vandal';
-        _bumpVersion(origin);
       });
       remote.pageCatalog[first.publicId] = _pageSnapshot(
         first,
@@ -6094,14 +6136,25 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
-      // The server draws the moved origin for all three lineups now (A's and
-      // B's copies outrank C's), but C's row still holds the old one.
-      final drawn = lineUpGraphFromRemoteLineups(server.liveRows);
-      expect(drawn.origins.single.agent.position, moved);
-      expect(_endsOf(server.row(c.id)).originVersion, 1);
+      // The rows disagree now: C's still holds the old origin.
+      expect(
+        {
+          for (final row in server.liveRows) row.publicId: _endsOf(row).originAt
+        },
+        {a.id: moved, b.id: moved, c.id: placedAt},
+      );
+
+      // C's patch is not taken as done by the refresh: it is still queued,
+      // the same op, until C's row holds the moved origin.
+      expect(lineupOps(queuedOps()).keys, [cKey]);
+      expect(queuedOps()[cKey]!.opId, sent[cKey]!.opId);
+      // Meanwhile the user's canvas keeps the move on all three lineups.
+      final onScreen = container.read(lineUpProvider);
+      expect(onScreen.origins.map((origin) => origin.id), [a.originId]);
+      expect(onScreen.origins.single.agent.position, moved);
 
       // The user carries on, so the page syncs against that snapshot. C's
-      // patch is not taken as done: it stays queued, as it was.
+      // patch still waits, against C's revision, under the origin's id.
       container.read(lineUpProvider.notifier).updateLink(container
           .read(lineUpProvider)
           .linkById(a.id)!
@@ -6112,28 +6165,31 @@ void main() {
       final patch = waiting[cKey]! as LineupPatchOp;
       expect(patch.expectedLineupRevision, 1);
       final origin = cloudPayloadData(patch.payload)['origin'] as Map;
-      expect(origin['version'], 2);
+      expect(origin['id'], a.originId);
       expect((origin['agent'] as Map)['position'],
           {'dx': moved.dx, 'dy': moved.dy});
 
-      // Its retry lands: every row holds the moved origin, at its version.
+      // Its retry lands: every row holds the moved origin.
       await land(container, remote, page, contentRevision: 4);
       expect(
         {for (final row in server.liveRows) row.publicId: row.revision},
         {a.id: 3, b.id: 2, c.id: 2},
       );
       for (final row in server.liveRows) {
-        expect(_endsOf(row).originVersion, 2, reason: row.publicId);
-        final data = cloudPayloadData(row.payload);
-        expect(((data['origin'] as Map)['agent'] as Map)['position'],
-            {'dx': moved.dx, 'dy': moved.dy},
-            reason: row.publicId);
+        expect(_endsOf(row).origin, a.originId, reason: row.publicId);
+        expect(_endsOf(row).originAt, moved, reason: row.publicId);
       }
       // Three adds, three patches of the origin, and the notes; nothing more.
       expect(server.received, hasLength(7));
       expect(lineupOps(queuedOps()), isEmpty);
       expect(desiredOps(container, page), isEmpty);
       expect(queue.state.attentionByEntityKey, isEmpty);
+
+      // The rows agree again, so the origin is drawn as one spot.
+      final hydrated = container.read(lineUpProvider);
+      expect(hydrated.origins.map((origin) => origin.id), [a.originId]);
+      expect(hydrated.origins.single.agent.position, moved);
+      expect(hydrated.links.map((link) => link.originId).toSet(), {a.originId});
       await _settle();
     });
 
@@ -6141,114 +6197,48 @@ void main() {
     const older = Offset(220, 220);
 
     /// Lineups A and B into one landing whose rows disagree: A's copy is at
-    /// [newer], version 5; B's at [older], version 3. B's row has the higher
-    /// revision, which ranks nothing.
+    /// [newer], B's at [older]. B's row has the higher revision, which ranks
+    /// nothing.
     List<RemoteLineup> divergedFanIn(String pageId) => [
           _lineupRow(pageId, 'link-a',
               origin: _originJson('origin-a'),
-              landing: _landingJson('landing', newer, 5),
+              landing: _landingJson('landing', newer),
               revision: 1),
           _lineupRow(pageId, 'link-b',
               origin: _originJson('origin-b', const Offset(60, 20)),
-              landing: _landingJson('landing', older, 3),
+              landing: _landingJson('landing', older),
               revision: 7,
               sortIndex: 1),
         ];
 
-    /// The landing the server's rows draw, as anyone opening the page sees.
-    Offset serverLanding() => lineUpGraphFromRemoteLineups(server.liveRows)
-        .landings
-        .single
-        .ability
-        .position;
+    /// Each lineup drawn, with the spot ids it is attached to.
+    List<(String, String, String)> drawnLinks(ProviderContainer container) => [
+          for (final link in container.read(lineUpProvider).links)
+            (link.id, link.originId, link.landingId),
+        ];
 
-    void expectHealOfB(StrategyOp? op) {
-      expect(op, isA<LineupPatchOp>());
-      final heal = op! as LineupPatchOp;
-      expect(heal.expectedLineupRevision, 7);
-      final landing = cloudPayloadData(heal.payload)['landing'] as Map;
-      expect(landing['version'], 5);
-      expect((landing['ability'] as Map)['position'],
-          {'dx': newer.dx, 'dy': newer.dy});
-    }
-
-    test(
-        'opening a page heals a row holding an older copy, once, so deleting '
-        'the lineup with the newer one keeps the spot', () async {
-      final (container, remote, page) =
-          await openEmpty(divergedFanIn('page-1'));
-      LineUpLanding landing() =>
-          container.read(lineUpProvider).landingById('landing')!;
-      expect(landing().ability.position, newer);
-
-      // Hydration sends B's row the drawn copy at once, against B's revision.
-      await _settle();
-      final heals = lineupOps(queuedOps());
-      expect(heals.keys, [keyOf(page, 'link-b')]);
-      expectHealOfB(heals.values.single);
-      await land(container, remote, page, contentRevision: 2);
-      expect(server.row('link-b').revision, 8);
-      expect(_endsOf(server.row('link-b')).landingVersion, 5);
-      expect(server.received, hasLength(1));
-
-      // Once: the healed page syncs and hydrates again with nothing to send.
-      await container.read(strategyProvider.notifier).notifyCloudMutation();
-      await _settle();
-      expect(lineupOps(queuedOps()), isEmpty);
-
-      // Deleting A leaves B on the newer copy, here and for anyone opening
-      // the page.
-      container.read(lineUpProvider.notifier).deleteLink('link-a');
-      await land(container, remote, page, contentRevision: 3);
-      expect(server.row('link-a').deleted, isTrue);
-      expect(server.received, hasLength(2));
-      expect(serverLanding(), newer);
-      expect(landing().ability.position, newer);
-      expect(lineupOps(queuedOps()), isEmpty);
-      await _settle();
-    });
-
-    test(
-        'deleting the lineup with the newer copy while the heal waits sends '
-        'both in one batch', () async {
-      final (container, remote, page) =
-          await openEmpty(divergedFanIn('page-1'));
-      await _settle();
-      expect(lineupOps(queuedOps()).keys, [keyOf(page, 'link-b')]);
-
-      container.read(lineUpProvider.notifier).deleteLink('link-a');
-      await _settle();
-      final batch = lineupOps(queuedOps());
-      expect(
-          batch.keys.toSet(), {keyOf(page, 'link-a'), keyOf(page, 'link-b')});
-      expect(batch[keyOf(page, 'link-a')], isA<LineupDeleteOp>());
-      expectHealOfB(batch[keyOf(page, 'link-b')]);
-
-      await land(container, remote, page, contentRevision: 2);
-      expect(server.row('link-a').deleted, isTrue);
-      expect(_endsOf(server.row('link-b')).landingVersion, 5);
-      expect(serverLanding(), newer);
-      expect(
-        container.read(lineUpProvider).landingById('landing')!.ability.position,
-        newer,
-      );
-      expect(lineupOps(queuedOps()), isEmpty);
-      await _settle();
-    });
+    Offset? landingAt(ProviderContainer container, String id) =>
+        container.read(lineUpProvider).landingById(id)?.ability.position;
 
     test('opening a page whose copies agree writes no lineup', () async {
       final (container, remote, page) = await openEmpty([
         _lineupRow('page-1', 'link-a',
             origin: _originJson('origin-a'),
-            landing: _landingJson('landing', newer, 4),
+            landing: _landingJson('landing', newer),
             revision: 3),
         _lineupRow('page-1', 'link-b',
             origin: _originJson('origin-b', const Offset(60, 20)),
-            landing: _landingJson('landing', newer, 4),
+            landing: _landingJson('landing', newer),
             revision: 8,
             sortIndex: 1),
       ]);
       await _settle();
+      expect(container.read(lineUpProvider).landings.map((l) => l.id),
+          ['landing']);
+      expect(drawnLinks(container), [
+        ('link-a', 'origin-a', 'landing'),
+        ('link-b', 'origin-b', 'landing'),
+      ]);
       expect(lineupOps(queuedOps()), isEmpty);
 
       // Nor does the next hydration.
@@ -6258,12 +6248,14 @@ void main() {
       expect(server.received, isEmpty);
     });
 
-    test('opening a diverged page heals each stale row once', () async {
+    test(
+        'opening a page whose copies disagree writes nothing and draws each '
+        'copy as its own spot', () async {
       final (container, remote, page) = await openEmpty([
         ...divergedFanIn('page-1'),
         _lineupRow('page-1', 'link-c',
             origin: _originJson('origin-c', const Offset(90, 20)),
-            landing: _landingJson('landing', older, 3),
+            landing: _landingJson('landing', older),
             revision: 4,
             sortIndex: 2),
         _lineupRow('page-1', 'link-d',
@@ -6271,112 +6263,172 @@ void main() {
             landing: _landingJson('landing-d'),
             sortIndex: 3),
       ]);
+      void expectSplit() {
+        // A's copy, carried by the smallest lineup id, keeps the landing's
+        // id; B's and C's, which agree, share one aliased spot.
+        expect(container.read(lineUpProvider).landings.map((l) => l.id),
+            ['landing', 'landing@link-b', 'landing-d']);
+        expect(landingAt(container, 'landing'), newer);
+        expect(landingAt(container, 'landing@link-b'), older);
+        expect(drawnLinks(container), [
+          ('link-a', 'origin-a', 'landing'),
+          ('link-b', 'origin-b', 'landing@link-b'),
+          ('link-c', 'origin-c', 'landing@link-b'),
+          ('link-d', 'origin-d', 'landing-d'),
+        ]);
+      }
+
+      expectSplit();
       await _settle();
-      final heals = lineupOps(queuedOps());
+      expect(lineupOps(queuedOps()), isEmpty);
+
+      // A teammate's unrelated change brings a fresh hydration: the same
+      // spots are drawn, and still nothing is written.
+      server.teammateEdit('link-d', (data) => data['notes'] = 'teammate');
+      remote.setSnapshot(serverSnapshot(page, server.rows, 2));
+      await settleSync(container, 2);
       expect(
-          heals.keys.toSet(), {keyOf(page, 'link-b'), keyOf(page, 'link-c')});
+          container.read(lineUpProvider).linkById('link-d')!.notes, 'teammate');
+      expectSplit();
+      expect(lineupOps(queuedOps()), isEmpty);
+      expect(desiredOps(container, page), isEmpty);
+      expect(server.received, isEmpty);
+    });
+
+    for (final (deleted, kept, keptAt) in [
+      ('link-a', 'link-b', older),
+      ('link-b', 'link-a', newer),
+    ]) {
+      test(
+          'deleting $deleted from a landing whose copies disagree leaves '
+          '$kept on its own copy, its row untouched', () async {
+        final (container, remote, page) =
+            await openEmpty(divergedFanIn('page-1'));
+        final keptRow = server.row(kept);
+
+        container.read(lineUpProvider.notifier).deleteLink(deleted);
+        await _settle();
+        // Only the deletion is written.
+        final ops = lineupOps(queuedOps());
+        expect(ops.keys, [keyOf(page, deleted)]);
+        expect(ops.values.single, isA<LineupDeleteOp>());
+        expect(drawnLinks(container).single.$1, kept);
+        expect(
+          landingAt(container, drawnLinks(container).single.$3),
+          keptAt,
+        );
+
+        await land(container, remote, page, contentRevision: 2);
+        expect(server.row(deleted).deleted, isTrue);
+        expect(server.received, hasLength(1));
+        // The kept lineup's row is as it was, its own copy and all.
+        expect(server.row(kept).revision, keptRow.revision);
+        expect(
+          canonicalCloudJsonEncode(server.row(kept).payload),
+          canonicalCloudJsonEncode(keptRow.payload),
+        );
+        // Drawn on its copy, under the landing's own id now nothing
+        // disagrees with it, here and for anyone opening the page.
+        expect(drawnLinks(container).single.$3, 'landing');
+        expect(landingAt(container, 'landing'), keptAt);
+        expect(
+          lineUpGraphFromRemoteLineups(server.liveRows)
+              .landings
+              .single
+              .ability
+              .position,
+          keptAt,
+        );
+        expect(lineupOps(queuedOps()), isEmpty);
+        expect(desiredOps(container, page), isEmpty);
+        await _settle();
+      });
+    }
+
+    test(
+        'moving one copy of a split spot patches only the rows carrying it, '
+        'and once they agree the spot is drawn as one', () async {
+      final (container, remote, page) = await openEmpty([
+        ...divergedFanIn('page-1'),
+        _lineupRow('page-1', 'link-c',
+            origin: _originJson('origin-c', const Offset(90, 20)),
+            landing: _landingJson('landing', older),
+            revision: 4,
+            sortIndex: 2),
+      ]);
+      const moved = Offset(500, 500);
+
+      /// The landing [op] writes: under the real id, its marker naming it,
+      /// at [moved].
+      void expectMovedLanding(StrategyOp op) {
+        final landing =
+            cloudPayloadData((op as LineupPatchOp).payload)['landing'] as Map;
+        expect(landing['id'], 'landing');
+        expect((landing['ability'] as Map)['lineUpID'], 'landing');
+        expect((landing['ability'] as Map)['position'],
+            {'dx': moved.dx, 'dy': moved.dy});
+      }
+
+      // The aliased copy, B's and C's: only their rows, each against its
+      // own revision.
+      container
+          .read(lineUpProvider.notifier)
+          .updateLandingPosition('landing@link-b', moved);
+      var ops = lineupOps(desiredOps(container, page));
       expect(
         {
-          for (final op in heals.values.cast<LineupPatchOp>())
+          for (final op in ops.values.cast<LineupPatchOp>())
             op.lineupPublicId: op.expectedLineupRevision,
         },
         {'link-b': 7, 'link-c': 4},
       );
+      ops.values.forEach(expectMovedLanding);
       await land(container, remote, page, contentRevision: 2);
-      expect(server.received, hasLength(2));
       expect(
         {for (final row in server.liveRows) row.publicId: row.revision},
-        {'link-a': 1, 'link-b': 8, 'link-c': 5, 'link-d': 1},
+        {'link-a': 1, 'link-b': 8, 'link-c': 5},
+      );
+      // A's copy still differs, so the spot is still drawn split.
+      expect(landingAt(container, 'landing'), newer);
+      expect(landingAt(container, 'landing@link-b'), moved);
+
+      // The real-id copy, A's: only A's row.
+      container
+          .read(lineUpProvider.notifier)
+          .updateLandingPosition('landing', moved);
+      ops = lineupOps(desiredOps(container, page));
+      expect(ops.keys, [keyOf(page, 'link-a')]);
+      expect((ops.values.single as LineupPatchOp).expectedLineupRevision, 1);
+      expectMovedLanding(ops.values.single);
+      await land(container, remote, page, contentRevision: 3);
+      expect(
+        {for (final row in server.liveRows) row.publicId: row.revision},
+        {'link-a': 2, 'link-b': 8, 'link-c': 5},
       );
 
-      // A teammate's unrelated change brings a fresh hydration: nothing more
-      // is written.
-      server.teammateEdit('link-d', (data) => data['notes'] = 'teammate');
-      remote.setSnapshot(serverSnapshot(page, server.rows, 3));
-      await settleSync(container, 3);
+      // Every copy agrees: one spot again, every lineup on it.
+      expect(container.read(lineUpProvider).landings.map((l) => l.id),
+          ['landing']);
+      expect(landingAt(container, 'landing'), moved);
       expect(
-          container.read(lineUpProvider).linkById('link-d')!.notes, 'teammate');
+        drawnLinks(container).map((link) => link.$3).toSet(),
+        {'landing'},
+      );
+      expect(server.received, hasLength(3));
       expect(lineupOps(queuedOps()), isEmpty);
-      expect(server.received, hasLength(2));
-    });
-
-    test('two teammates healing the same row both land, the second as a noop',
-        () async {
-      final (container, remote, page) =
-          await openEmpty(divergedFanIn('page-1'));
-      final mine = queue;
-      // A teammate opens the page before either heal has landed.
-      final theirRemote = _FakeRemoteEditorNotifier(serverSnapshot(
-        page,
-        server.rows,
-        1,
-      ));
-      final theirQueue = _FakeStrategyOpQueueNotifier();
-      final theirs =
-          await _cloudContainer(remote: theirRemote, queue: theirQueue);
-      await theirs
-          .read(strategyPageSessionProvider.notifier)
-          .initializeForStrategy(
-            strategyId: 'cloud-strategy',
-            source: StrategySource.cloud,
-            selectFirstPageIfNeeded: true,
-          );
+      expect(desiredOps(container, page), isEmpty);
       await _settle();
-      Map<EntitySyncKey, StrategyOp> healsOf(
-              _FakeStrategyOpQueueNotifier queue) =>
-          lineupOps({
-            for (final entry in queue.state.queuedByEntityKey.entries)
-              entry.key: entry.value.pending.op,
-          });
-      final theirHeals = healsOf(theirQueue);
-      expect(healsOf(mine).keys, [keyOf(page, 'link-b')]);
-      expect(theirHeals.keys, [keyOf(page, 'link-b')]);
-      expectHealOfB(theirHeals.values.single);
-
-      // Mine lands first.
-      await land(container, remote, page, contentRevision: 2);
-      expect(server.row('link-b').revision, 8);
-
-      // Theirs, sent against the revision before mine, finds the row
-      // already holding it: a noop, not a conflict.
-      final theirSent = {
-        for (final entry in theirQueue.state.queuedByEntityKey.entries)
-          entry.key: entry.value.pending.op,
-      };
-      final theirAcks = server.applyBatch(theirSent.values);
-      expect(
-        theirAcks
-            .firstWhere((ack) => ack.opId == theirHeals.values.single.opId),
-        isA<NoopOpAck>().having((ack) => ack.currentRevision, 'revision', 8),
-      );
-      theirRemote.initialSnapshot = serverSnapshot(page, server.rows, 2);
-      theirQueue.answer(theirSent, theirAcks);
-      for (var i = 0; i < 10; i++) {
-        await _settle();
-      }
-      expect(theirs.read(strategySettingsProvider).agentSize, 32,
-          reason: 'their page rehydrated from the server');
-      for (final (client, clientQueue) in [
-        (container, mine),
-        (theirs, theirQueue),
-      ]) {
-        expect(clientQueue.state.attentionByEntityKey, isEmpty);
-        expect(client.read(strategyConflictProvider), isEmpty);
-        expect(healsOf(clientQueue), isEmpty);
-        expect(
-          client.read(lineUpProvider).landingById('landing')!.ability.position,
-          newer,
-        );
-      }
-      expect(server.row('link-b').revision, 8);
-      expect(server.received, hasLength(2));
     });
 
-    /// Opens [page] on the real queue, which sends to [server] and reads it
-    /// back after every batch. Returns the container and the batches sent.
+    /// Opens [page] on the real queue, its outbox kept in [store], which
+    /// sends to [server] through [repository] and reads it back after every
+    /// batch. A batch waits for [hold] while it is set. Returns the
+    /// container and the batches sent.
     Future<(ProviderContainer, List<List<StrategyOp>>)> openOnRealQueue(
-      RemotePage page,
-    ) async {
+      RemotePage page, {
+      DurableStrategyOutboxStore? store,
+      Completer<void>? hold,
+    }) async {
       RemoteEditorSnapshot read() => _editorSnapshot(
             pages: [page],
             activePage: _pageSnapshot(
@@ -6387,14 +6439,14 @@ void main() {
             ),
           );
       final remote = _FakeRemoteEditorNotifier(read());
-      final repository = _ServerRepository(
+      repository = _ServerRepository(
         server,
         afterBatch: () => remote.initialSnapshot = read(),
-      );
+      )..hold = hold;
       final container = ProviderContainer(overrides: [
         remoteEditorSnapshotProvider.overrideWith(() => remote),
         durableStrategyOutboxStoreProvider
-            .overrideWithValue(MemoryDurableStrategyOutboxStore()),
+            .overrideWithValue(store ?? MemoryDurableStrategyOutboxStore()),
         convexStrategyRepositoryProvider.overrideWithValue(repository),
         authProvider.overrideWith(_CloudReadyAuthProvider.new),
         convexConnectionSnapshotProvider.overrideWithValue(true),
@@ -6427,6 +6479,41 @@ void main() {
       return (container, repository.batches);
     }
 
+    /// Every op sent for [key] in [batches], in order.
+    List<StrategyOp> sentFor(
+      List<List<StrategyOp>> batches,
+      EntitySyncKey key,
+    ) =>
+        [
+          for (final batch in batches)
+            ...batch.where((op) => EntitySyncKey.forStrategyOp(op) == key),
+        ];
+
+    /// The edit to [key] the server refused as deleted waits in attention,
+    /// with its conflict.
+    Future<void> refusedAsDeleted(
+      ProviderContainer container,
+      List<List<StrategyOp>> batches,
+      EntitySyncKey key,
+    ) async {
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      await _until(() => queueState().attentionByEntityKey.containsKey(key));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(sentFor(batches, key).single.kind, StrategyOpKind.patch);
+      expect(
+        queueState()
+            .lastAckBatch
+            .singleWhere((acked) => acked.entityKey == key)
+            .ack,
+        isA<RejectedOpAck>().having(
+            (ack) => ack.rejectionReason, 'reason', OpRejectionReason.deleted),
+      );
+      expect(container.read(strategyConflictProvider), hasLength(1));
+    }
+
     /// The edit to [key] the server refused as deleted waits in attention,
     /// with its conflict; Keep mine then sends it again. Returns the op it
     /// sent, once it has landed.
@@ -6437,35 +6524,19 @@ void main() {
     ) async {
       StrategyOpQueueState queueState() =>
           container.read(strategyOpQueueProvider);
-      List<StrategyOp> sentFor() => [
-            for (final batch in batches)
-              ...batch.where((op) => EntitySyncKey.forStrategyOp(op) == key),
-          ];
-      await _until(() => queueState().attentionByEntityKey.containsKey(key));
-      for (var i = 0; i < 10; i++) {
-        await _settle();
-      }
-      expect(sentFor().single.kind, StrategyOpKind.patch);
-      expect(
-        queueState()
-            .lastAckBatch
-            .singleWhere((acked) => acked.entityKey == key)
-            .ack,
-        isA<RejectedOpAck>().having(
-            (ack) => ack.rejectionReason, 'reason', OpRejectionReason.deleted),
-      );
-      expect(container.read(strategyConflictProvider), hasLength(1));
+      List<StrategyOp> sent() => sentFor(batches, key);
+      await refusedAsDeleted(container, batches, key);
 
       final opQueue = container.read(strategyOpQueueProvider.notifier);
       await opQueue.retryRejected(flushImmediately: false);
       await opQueue.flushNow();
-      await _until(() => queueState().pending.isEmpty && sentFor().length == 2);
+      await _until(() => queueState().pending.isEmpty && sent().length == 2);
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
       expect(queueState().attentionByEntityKey, isEmpty);
       expect(queueState().needsAttention, isFalse);
-      return sentFor().last;
+      return sent().last;
     }
 
     test(
@@ -6537,6 +6608,254 @@ void main() {
       expect(element.payload, restore.payload);
       expect(onScreen()?.position, const Offset(300, 300));
       expect(onScreen()?.text, 'hello');
+    });
+
+    /// After [refusedAsDeleted], the user deletes the item on the canvas
+    /// with [delete]. Both sides agree it is gone, so the refused change is
+    /// settled, in the queue and in [store], and Keep mine then brings
+    /// nothing back.
+    Future<void> deletedAfterRefusal(
+      ProviderContainer container,
+      List<List<StrategyOp>> batches,
+      MemoryDurableStrategyOutboxStore store,
+      EntitySyncKey key,
+      void Function() delete,
+    ) async {
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      Iterable<DurableOutboxRecord> stored() =>
+          store.load().records.where((record) => record.entityKey == key);
+      await refusedAsDeleted(container, batches, key);
+      expect(stored().single.status, DurableOutboxStatus.attention);
+
+      delete();
+      await _until(() =>
+          !queueState().attentionByEntityKey.containsKey(key) &&
+          queueState().pending.isEmpty);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(queueState().attentionByEntityKey, isEmpty);
+      expect(queueState().successorByEntityKey, isEmpty);
+      expect(queueState().needsAttention, isFalse);
+      expect(stored(), isEmpty);
+      // Its refusal is not announced after the fact either.
+      expect(container.read(strategyConflictProvider), isEmpty);
+
+      // Keep mine has nothing left to send.
+      final opQueue = container.read(strategyOpQueueProvider.notifier);
+      await opQueue.retryRejected(flushImmediately: false);
+      await opQueue.flushNow();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(
+        sentFor(batches, key).where((op) => op.kind == StrategyOpKind.add),
+        isEmpty,
+      );
+      expect(queueState().pending, isEmpty);
+      expect(stored(), isEmpty);
+    }
+
+    test(
+        'a lineup the user deletes after a teammate deleted it and their '
+        'edit was refused stays deleted through Keep mine', () async {
+      final page = _page('page-1', 0);
+      server =
+          _FakeServer(page.publicId, lineups: [_lineup(page.publicId, 'a')]);
+      final store = MemoryDurableStrategyOutboxStore();
+      final (container, batches) = await openOnRealQueue(page, store: store);
+      LineUpLink? onScreen() =>
+          container.read(lineUpProvider).linkById('link-a');
+
+      // A teammate deletes the lineup while the user edits its notes.
+      server.teammateDelete('link-a');
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(onScreen()!.copyWith(notes: 'mine'));
+      await deletedAfterRefusal(
+        container,
+        batches,
+        store,
+        _lineupKey(page.publicId, 'a'),
+        () => container.read(lineUpProvider.notifier).deleteLink('link-a'),
+      );
+
+      expect(onScreen(), isNull);
+      expect(server.row('link-a').deleted, isTrue);
+      expect(server.row('link-a').revision, 2);
+      expect(server.liveRows, isEmpty);
+    });
+
+    test(
+        'an element the user deletes after a teammate deleted it and their '
+        'move was refused stays deleted through Keep mine', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId,
+          elements: [_textElement(page.publicId, 'text-a', 'hello')]);
+      final store = MemoryDurableStrategyOutboxStore();
+      final (container, batches) = await openOnRealQueue(page, store: store);
+      PlacedText? onScreen() => container
+          .read(textProvider)
+          .where((text) => text.id == 'text-a')
+          .firstOrNull;
+
+      // A teammate deletes the text while the user moves it.
+      server.teammateDeleteElement('text-a');
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'text-a');
+      await deletedAfterRefusal(
+        container,
+        batches,
+        store,
+        EntitySyncKey.element(page.publicId, 'text-a'),
+        () =>
+            container.read(textProvider.notifier).removeTextAsAction('text-a'),
+      );
+
+      expect(onScreen(), isNull);
+      expect(server.element('text-a').deleted, isTrue);
+      expect(server.element('text-a').revision, 2);
+    });
+
+    test(
+        'a recovered edit to a lineup on a split spot is sent as it was, and '
+        'opening the page writes nothing else', () async {
+      final page = _page('page-1', 0);
+      server =
+          _FakeServer(page.publicId, lineups: divergedFanIn(page.publicId));
+      final rowA = server.row('link-a');
+      final rowB = server.row('link-b');
+      final bKey = keyOf(page, 'link-b');
+      // Before a restart, the user's notes edit to B was saved to the outbox
+      // but never sent.
+      final recovered = LineupPatchOp(
+        opId: 'recovered-notes',
+        lineupPublicId: 'link-b',
+        pagePublicId: page.publicId,
+        payload:
+            _editedLineup(rowB, (data) => data['notes'] = 'recovered').payload,
+        expectedLineupRevision: rowB.revision,
+      );
+      final store = MemoryDurableStrategyOutboxStore();
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        entityKey: bKey,
+        pending: PendingOp(op: recovered, clientId: 'client-before-restart'),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ));
+
+      // Its send waits while the page opens.
+      final hold = Completer<void>();
+      final (container, batches) =
+          await openOnRealQueue(page, store: store, hold: hold);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      bool isLineup(StrategyOp op) =>
+          EntitySyncKey.forStrategyOp(op)?.kind == EntitySyncKeyKind.lineup;
+
+      // The page draws B on its own copy of the landing, and the recovered
+      // edit is the only lineup work: nothing replaced it, nothing joined it.
+      expect(container.read(lineUpProvider).landings.map((l) => l.id),
+          ['landing', 'landing@link-b']);
+      expect(
+        [
+          for (final pending in queueState().pending)
+            if (isLineup(pending.op)) pending.op.opId,
+        ],
+        ['recovered-notes'],
+      );
+      expect(
+        [for (final record in store.load().records) record.pending.op.opId],
+        ['recovered-notes'],
+      );
+
+      hold.complete();
+      await _until(() => queueState().pending.isEmpty);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // Only the recovered edit was ever sent for a lineup, as it was saved.
+      expect(
+        [
+          for (final batch in batches)
+            for (final op in batch)
+              if (isLineup(op)) op.opId,
+        ],
+        ['recovered-notes'],
+      );
+      expect(server.received.single.payload, recovered.payload);
+      expect(server.row('link-b').revision, rowB.revision + 1);
+      expect(
+          cloudPayloadData(server.row('link-b').payload)['notes'], 'recovered');
+      expect(server.row('link-a').revision, rowA.revision);
+      expect(
+        canonicalCloudJsonEncode(server.row('link-a').payload),
+        canonicalCloudJsonEncode(rowA.payload),
+      );
+      expect(
+        container.read(lineUpProvider).linkById('link-b')!.notes,
+        'recovered',
+      );
+      expect(landingAt(container, 'landing@link-b'), older);
+      expect(landingAt(container, 'landing'), newer);
+    });
+
+    test(
+        'an edit whose answer was lost is answered at the revision it landed '
+        'at, so the edit behind it cannot overwrite a teammate', () async {
+      final page = _page('page-1', 0);
+      server =
+          _FakeServer(page.publicId, lineups: [_lineup(page.publicId, 'a')]);
+      final hold = Completer<void>();
+      final (container, batches) = await openOnRealQueue(page, hold: hold);
+      final key = _lineupKey(page.publicId, 'a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      LineUpLink onScreen() =>
+          container.read(lineUpProvider).linkById('link-a')!;
+
+      // The user's notes edit reaches the server, which takes it at
+      // revision 2, but the answer is lost; a teammate renames the lineup
+      // right after.
+      repository.loseNextAnswer = () =>
+          server.teammateEdit('link-a', (data) => data['name'] = 'theirs');
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(onScreen().copyWith(notes: 'one'));
+      await _until(() => queueState().inFlightByEntityKey.containsKey(key));
+      // While it is on its way, the user edits again; that waits behind it.
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(onScreen().copyWith(notes: 'two'));
+      await _until(() => queueState().successorByEntityKey.containsKey(key));
+      hold.complete();
+
+      // The first edit is sent again and answered as landed at revision 2,
+      // so the second goes against revision 2: refused, not stored over the
+      // teammate's name.
+      await _until(() => queueState().attentionByEntityKey.containsKey(key));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      final sent = sentFor(batches, key);
+      expect(sent, hasLength(3));
+      expect(sent[1].opId, sent[0].opId);
+      expect(cloudPayloadData(sent[2].payload)['notes'], 'two');
+      expect((sent[2] as LineupPatchOp).expectedLineupRevision, 2);
+      final row = server.row('link-a');
+      expect(row.revision, 3);
+      expect(cloudPayloadData(row.payload)['name'], 'theirs');
+      expect(cloudPayloadData(row.payload)['notes'], 'one');
+      expect(container.read(strategyConflictProvider), hasLength(1));
     });
   });
 
