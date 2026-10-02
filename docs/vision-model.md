@@ -489,6 +489,30 @@ blanket was right. `seal_void_walls.py` only existed to stop the leak that
 change caused. A reading of "nothing above the ceiling" on a covered
 passage is not evidence without Dara.
 
+## Windows into unplayable space (2026-10-02)
+
+Dara's rule: a hole no player could see or shoot through is not a hole in
+the tactical model. Sunset's Mid building showed why. Both long walls carry
+a measured window from about 6 to 7.6 m, the building's inside is not
+painted floor, and a cone from the shack roof beside it went in one window,
+across the empty interior and out of the other.
+
+A window is a gap of at most 3 m between two bands of one wall piece. Where
+a piece runs along unplayable space, the archive's
+`scripts/seal_windows_into_voids.py` fills its windows. It is narrower than
+the withdrawn void seal and changes nothing else:
+- An eye above a wall's top still sees over it.
+- A passage under a wall's lowest band stays open.
+- A gap taller than 3 m stays open. It is sky between a wall and something
+  far overhead, not a window.
+- A window with painted floor on both sides stays a window.
+- A gap that holds the eye of a player standing on a surface touching the
+  piece stays open, so an agent on a pillar still sees out of it.
+- Openings Dara reviewed as see-through keep their gaps.
+
+The reviewed sightline suite from the archive passes on the sealed models.
+`test/svg_void_window_test.dart` pins the Sunset case.
+
 ## Drag performance on Windows (2026-09-19)
 
 Dara's bar: dragging an agent with a cone must feel instant on Windows.
