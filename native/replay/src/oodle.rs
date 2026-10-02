@@ -1,15 +1,16 @@
 //! The Oodle seam. Every compressed archive in a replay goes through one
 //! [`Decompressor`]; nothing else in the crate knows how Oodle works.
 //!
-//! The production decoder is our own clean-room Selkie decoder, which fills
-//! this seam when it lands. Until then a build has either no decoder
-//! ([`Unavailable`], which reports `unsupportedCompression`) or, with the
-//! `dev-vectors` feature, [`VectorDecompressor`], which looks each archive up
-//! in a directory of recorded input/output pairs.
+//! The production decoder is our own clean-room [`Selkie`]. With the
+//! `dev-vectors` feature and `ICARUS_OODLE_VECTORS` set, a build instead uses
+//! [`VectorDecompressor`], which looks each archive up in a directory of
+//! recorded input/output pairs. [`Unavailable`] refuses every archive, for
+//! exercising the `unsupportedCompression` path.
 
 use vrf_container::parse_replay_data_meta;
 
 use crate::error::{ErrorCode, ReplayError};
+use crate::selkie::Selkie;
 
 /// Inflates one Oodle archive body (the bytes after its 8-byte header) to
 /// exactly `decompressed_size` bytes.
@@ -17,22 +18,20 @@ pub trait Decompressor: Send + Sync {
     fn decompress(&self, input: &[u8], decompressed_size: usize) -> Result<Vec<u8>, ReplayError>;
 }
 
-/// No decoder in this build: every compressed archive is refused.
+/// No decoder: every compressed archive is refused.
 pub struct Unavailable;
 
 impl Decompressor for Unavailable {
     fn decompress(&self, _input: &[u8], decompressed_size: usize) -> Result<Vec<u8>, ReplayError> {
         Err(ReplayError::new(
             ErrorCode::UnsupportedCompression,
-            format!(
-                "this build has no Oodle decoder (a {decompressed_size}-byte archive needs one)"
-            ),
+            format!("no Oodle decoder (a {decompressed_size}-byte archive needs one)"),
         ))
     }
 }
 
-/// The decompressor this build ships with: the dev vectors when the feature
-/// is on and `ICARUS_OODLE_VECTORS` names a directory, otherwise none.
+/// The decompressor this build ships with: [`Selkie`], or the dev vectors
+/// when the feature is on and `ICARUS_OODLE_VECTORS` names a directory.
 pub fn default_decompressor() -> Box<dyn Decompressor> {
     #[cfg(feature = "dev-vectors")]
     if let Some(dir) = std::env::var_os("ICARUS_OODLE_VECTORS") {
@@ -41,7 +40,7 @@ pub fn default_decompressor() -> Box<dyn Decompressor> {
             Err(error) => Box::new(Broken(error)),
         };
     }
-    Box::new(Unavailable)
+    Box::new(Selkie)
 }
 
 /// A vectors directory that could not be indexed: every archive reports why.

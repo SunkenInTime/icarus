@@ -12,6 +12,7 @@ mod fieldpath;
 pub mod guard;
 pub mod header;
 pub mod oodle;
+pub mod selkie;
 mod vendor;
 
 use std::path::Path;
