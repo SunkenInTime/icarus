@@ -184,9 +184,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// Waiting work Keep both already put a copy of on the canvas, by
   /// [_waitingWork] entry: pressing it again finishes the job instead of
   /// copying the same version twice.
-  /// The copy's first lineup id, by entry, so every press can check the
-  /// copy is saved before anything is discarded.
-  final Map<(EntitySyncKey, (String, String?)), String> _keptAsCopy = {};
+  /// The copy's lineup ids, by entry, so every press can check the copy
+  /// is saved before anything is discarded.
+  final Map<(EntitySyncKey, (String, String?)), List<String>> _keptAsCopy = {};
 
   @override
   StrategyPageSessionState build() {
@@ -604,7 +604,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final generation = _pageSessionGeneration;
     final waiting = _waitingWork(attention.keys);
     final copies = <LineUpGraph>[];
-    final copied = <(EntitySyncKey, (String, String?)), String>{};
+    final copied = <(EntitySyncKey, (String, String?)), List<String>>{};
     for (final MapEntry(:key, value: refused) in attention.entries) {
       final newest = (queue.successorByEntityKey[key] ?? refused).pending.op;
       final payload = switch (newest) {
@@ -614,10 +614,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       };
       final entry = (key, waiting[key]!);
       if (payload == null) continue;
-      // A copy made by an earlier press stands, unless it is no longer on
-      // the canvas (the user deleted it): then this press makes it again.
-      if (_keptAsCopy[entry] case final copyId?
-          when ref.read(lineUpProvider).linkById(copyId) != null) {
+      // A copy made by an earlier press stands while any of its lineups is
+      // on the canvas; once the user deleted it all, this press makes it
+      // again.
+      if (_keptAsCopy[entry] case final copyIds?
+          when copyIds.any(
+            (id) => ref.read(lineUpProvider).linkById(id) != null,
+          )) {
         continue;
       }
       final copy = forkLineUpGraph(lineUpGraphFromCloudRows([
@@ -625,7 +628,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       ]).graph);
       if (copy.links.isEmpty) continue;
       copies.add(copy);
-      copied[entry] = copy.links.first.id;
+      copied[entry] = [for (final link in copy.links) link.id];
     }
     bool unchangedSince() =>
         !_disposed &&
@@ -649,9 +652,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
     _keptAsCopy.addAll(copied);
     // Every copy of this work, made now or by an earlier press.
+    final lineUpState = ref.read(lineUpProvider);
     final copyLineupIds = [
       for (final MapEntry(:key, :value) in waiting.entries)
-        if (_keptAsCopy[(key, value)] case final lineupId?) lineupId,
+        if (_keptAsCopy[(key, value)] case final ids?)
+          // One surviving lineup names the copy's group.
+          ids.firstWhere(
+            (id) => lineUpState.linkById(id) != null,
+            orElse: () => ids.first,
+          ),
     ];
     await pageSource.flushCurrentPage();
     // A copy that could not be saved leaves the outbox failing (and waits in
@@ -752,8 +761,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     _isResolvingConflicts = true;
     try {
-      final hadConflicts =
-          ref.read(strategyOpQueueProvider).attentionByEntityKey.isNotEmpty;
+      final conflictKeys = {
+        ...ref.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+      };
       final currentPageSource =
           _resolvePageSource(strategyId, StrategySource.cloud);
       await currentPageSource.flushCurrentPage();
@@ -770,7 +780,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       )..removeWhere((key, _) => !resolving.containsKey(key));
       // Conflicts the save turned back into queued work (a record whose
       // removal failed before, say) were not resolved: that is no success.
-      if (rejected.isEmpty) return !hadConflicts;
+      // Ones it settled (gone on both sides) are.
+      if (rejected.isEmpty) {
+        final pending = {
+          for (final work in ref.read(strategyOpQueueProvider).pending)
+            EntitySyncKey.forStrategyOp(work.op),
+        };
+        return !conflictKeys.any(pending.contains);
+      }
 
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;

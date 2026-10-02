@@ -8324,6 +8324,117 @@ void main() {
     });
 
     test(
+        'Keep both after the user deleted one lineup of the copy keeps the '
+        'rest of it and resolves without a second copy', () async {
+      final page = _page('page-1', 0);
+      final (container, _, store) = await refusedBesideTeammate(page);
+      final session = container.read(strategyPageSessionProvider.notifier);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      List<RemoteLineup> copies() => [
+            for (final row in server.liveRows)
+              if (row.publicId != 'link-a') row,
+          ];
+      List<LineUpLink> copiedLinks() => [
+            for (final link in container.read(lineUpProvider).links)
+              if (link.id != 'link-a' && link.id != 'link-b') link,
+          ];
+      Future<void> landed() async {
+        await _until(() => queueState()
+            .pending
+            .where((work) => !queueState()
+                .attentionByEntityKey
+                .values
+                .any((waiting) => waiting.pending.op.opId == work.op.opId))
+            .isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      }
+
+      // The first press copies both lineups, then cannot load the cloud's
+      // version.
+      final first = liveRead.refreshCount + 1;
+      liveRead.readFailsWhen = (count) => count > first;
+      expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
+      await landed();
+      expect(lineupsIn(copies()), ['Heaven: mine', 'Mid: remote lineup']);
+
+      // The cloud is reachable again; the user deletes one copied lineup.
+      liveRead.readFailsWhen = null;
+      showServer();
+      await _settle();
+      final heaven = copiedLinks().singleWhere((link) => link.name == 'Heaven');
+      final mid = copiedLinks().singleWhere((link) => link.name == 'Mid');
+      container.read(lineUpProvider.notifier).deleteLink(heaven.id);
+      await _settle();
+      await container.read(strategyOpQueueProvider.notifier).flushNow();
+      await _until(() => lineupsIn(copies()).length == 1);
+      await landed();
+
+      // Pressed again: the rest of the copy stands, nothing is copied again.
+      expect(await session.keepBothForRejected(), KeepBothOutcome.kept);
+      await landed();
+
+      expect(lineupsIn(copies()), ['Mid: remote lineup']);
+      expect(copiedLinks().map((link) => link.id), [mid.id]);
+      expect(
+        onScreenOf(container),
+        unorderedEquals(
+            ['Heaven: remote lineup', 'Mid: theirs', 'Mid: remote lineup']),
+      );
+      expect(queueState().attentionByEntityKey, isEmpty);
+      expect(queueState().needsAttention, isFalse);
+      expect(store.load().records, isEmpty);
+    });
+
+    test(
+        'Use cloud pressed before a deleted-on-both-sides refusal settles '
+        'counts its settling as resolved', () async {
+      final page = _page('page-1', 0);
+      server =
+          _FakeServer(page.publicId, lineups: [_lineup(page.publicId, 'a')]);
+      final store = MemoryDurableStrategyOutboxStore();
+      final (container, batches) = await openOnRealQueue(page, store: store);
+      final key = _lineupKey(page.publicId, 'a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+
+      // A teammate deletes the lineup while the user edits it: refused as
+      // deleted.
+      server.teammateDelete('link-a');
+      container.read(lineUpProvider.notifier).updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-a')!
+          .copyWith(notes: 'mine'));
+      await refusedAsDeleted(container, batches, key);
+
+      // The user deletes it too and, before that is saved, presses Use
+      // cloud: its save settles the refusal, both sides having it gone.
+      container.read(lineUpProvider.notifier).deleteLink('link-a');
+      expect(queueState().attentionByEntityKey.keys, [key]);
+      expect(
+        await container
+            .read(strategyPageSessionProvider.notifier)
+            .useCloudVersionsForRejected(),
+        isTrue,
+      );
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(queueState().attentionByEntityKey, isEmpty);
+      expect(queueState().needsAttention, isFalse);
+      expect(
+        [for (final record in store.load().records) record.entityKey],
+        isNot(contains(key)),
+      );
+      expect(container.read(lineUpProvider).links, isEmpty);
+      expect(server.row('link-a').deleted, isTrue);
+      expect(sentFor(batches, key), hasLength(1));
+    });
+
+    test(
         'after Keep both, exporting the strategy to .ica and importing it '
         'brings back both versions', () async {
       final page = _page('page-1', 0);
