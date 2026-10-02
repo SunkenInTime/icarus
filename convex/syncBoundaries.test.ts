@@ -1742,6 +1742,70 @@ describe("a write that changes nothing", () => {
   }
 });
 
+describe("a resent op whose ack was lost", () => {
+  test("reports the revision it landed at, so a successor cannot overwrite a teammate's later edit", async () => {
+    const { t, owner } = await createHarness();
+    await createBaseStrategy(owner);
+    await applyOps(owner, "first-client", [
+      {
+        opId: "add",
+        type: "element.add",
+        elementPublicId: "element-a",
+        pagePublicId: pageA,
+        payload: textPayload("base"),
+        sortIndex: 0,
+      },
+    ]);
+    const patch = (opId: string, text: string, expectedElementRevision: number) => ({
+      opId,
+      type: "element.patch",
+      elementPublicId: "element-a",
+      pagePublicId: pageA,
+      payload: textPayload(text),
+      expectedElementRevision,
+    });
+    const mine = patch("mine", "mine", 1);
+    const first = await applyOps(owner, "first-client", [mine]);
+    expect(first.results[0]).toMatchObject({
+      status: "applied",
+      appliedRevision: 2,
+    });
+
+    // A teammate's device edits the element after it.
+    const teammate = await applyOps(owner, "teammate-client", [
+      patch("theirs", "theirs", 2),
+    ]);
+    expect(teammate.results[0]).toMatchObject({
+      status: "applied",
+      appliedRevision: 3,
+    });
+
+    // The first client never heard back: it sends the op again with the
+    // same id, and the successor it queued on top of it.
+    const resent = await applyOps(owner, "first-client", [
+      mine,
+      patch("mine-next", "mine again", 2),
+    ]);
+    expect(resent.results[0]).toEqual({
+      opId: "mine",
+      status: "noop",
+      currentRevision: 2,
+    });
+    expect(resent.results[1]).toMatchObject({
+      opId: "mine-next",
+      status: "rejected",
+      reason: "revision_mismatch",
+      current: { type: "element", revision: 3, value: textPayload("theirs") },
+    });
+    const row = await t.run(async (ctx) =>
+      (await ctx.db.query("elements").collect()).find(
+        (element) => element.publicId === "element-a",
+      ),
+    );
+    expect(row).toMatchObject({ revision: 3, payload: textPayload("theirs") });
+  });
+});
+
 describe("replay safety after operation event expiry", () => {
   test("identical add acknowledges and different add rejects", async () => {
     const { t, owner } = await createHarness();

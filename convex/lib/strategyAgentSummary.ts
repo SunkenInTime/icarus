@@ -14,30 +14,84 @@ function agentTypeOf(data: unknown): string | null {
   return typeof type === "string" && type.length > 0 ? type : null;
 }
 
+/// The agent a lineup starts from: its origin's id and agent type, or null
+/// for a lineup without one.
+export function lineupAgentOf(
+  payload: Doc<"lineups">["payload"],
+): { originId: string; agentType: string } | null {
+  const origin = asRecord(payload.data.origin);
+  const agentType = agentTypeOf(origin?.agent);
+  if (origin === null || typeof origin.id !== "string" || agentType === null) {
+    return null;
+  }
+  return { originId: origin.id, agentType };
+}
+
+type LineupAgent = Pick<
+  Doc<"lineupAgents">,
+  "pageId" | "originId" | "agentType"
+>;
+
+/// Brings the lineupAgents row of one lineup in step with it: one row while
+/// the lineup is live and starts from an agent, none otherwise. Call after
+/// every write of a lineup row, with null once the row itself is gone.
+export async function syncLineupAgent(
+  ctx: MutationCtx,
+  lineupId: Id<"lineups">,
+  lineup: Pick<
+    Doc<"lineups">,
+    "strategyId" | "pageId" | "deleted" | "payload"
+  > | null,
+): Promise<void> {
+  const existing = await ctx.db
+    .query("lineupAgents")
+    .withIndex("by_lineupId", (q) => q.eq("lineupId", lineupId))
+    .unique();
+  const agent =
+    lineup === null || lineup.deleted ? null : lineupAgentOf(lineup.payload);
+  if (agent === null || lineup === null) {
+    if (existing !== null) await ctx.db.delete(existing._id);
+    return;
+  }
+  const wanted = {
+    strategyId: lineup.strategyId,
+    pageId: lineup.pageId,
+    lineupId,
+    ...agent,
+  };
+  if (existing === null) {
+    await ctx.db.insert("lineupAgents", wanted);
+  } else if (
+    existing.strategyId !== wanted.strategyId ||
+    existing.pageId !== wanted.pageId ||
+    existing.originId !== wanted.originId ||
+    existing.agentType !== wanted.agentType
+  ) {
+    await ctx.db.patch(existing._id, wanted);
+  }
+}
+
 /// Recomputes which agents a strategy uses, from its live agent elements and
 /// the origins of its live lineups on pages not in the trash, and stores the
-/// answer in its own row. Content ops never
-/// touch the strategy row itself; the summary is derived data that the
-/// folder tree reads without scanning elements.
+/// answer in its own row. Content ops never touch the strategy row itself;
+/// the summary is derived data that the folder tree reads without scanning
+/// elements.
 export async function refreshStrategyAgentSummary(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
 ): Promise<void> {
-  // Only agent elements and live lineups carry an agent, so only they are
-  // read. That still reads every live lineup row, image ids and all (never
-  // image bytes), so callers refresh only when a change may have touched an
-  // agent: applyBatch skips batches without page, agent or lineup changes.
+  // Agent elements are small. Lineups are read through their lineupAgents
+  // rows, never the lineup rows themselves: those carry image lists and
+  // could take a strategy's reads past a transaction's limits.
   const agents = await ctx.db
     .query("elements")
     .withIndex("by_strategyId_and_elementType", (q) =>
       q.eq("strategyId", strategyId).eq("elementType", "agent"),
     )
     .collect();
-  const lineups = await ctx.db
-    .query("lineups")
-    .withIndex("by_strategyId_and_deleted", (q) =>
-      q.eq("strategyId", strategyId).eq("deleted", false),
-    )
+  const lineupAgents = await ctx.db
+    .query("lineupAgents")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
     .collect();
   const trashedPageIds = new Set(
     (
@@ -54,16 +108,16 @@ export async function refreshStrategyAgentSummary(
   await storeStrategyAgentSummary(
     ctx,
     strategyId,
-    agentTypesOf(agents.filter(onLivePage), lineups.filter(onLivePage)),
+    agentTypesOf(agents.filter(onLivePage), lineupAgents.filter(onLivePage)),
   );
 }
 
 /// The agents that live content uses, most used first. Takes any elements
-/// and lineup rows; live agent elements count, and each origin of a live
-/// lineup once per page, however many lineups share it.
+/// and the agents of live lineups; live agent elements count, and each
+/// lineup origin once per page, however many lineups share it.
 export function agentTypesOf(
   elements: Pick<Doc<"elements">, "deleted" | "elementType" | "payload">[],
-  lineups: Pick<Doc<"lineups">, "deleted" | "pageId" | "payload">[],
+  lineupAgents: LineupAgent[],
 ): string[] {
   const counts = new Map<string, number>();
   const bump = (type: string | null) => {
@@ -75,13 +129,11 @@ export function agentTypesOf(
     bump(agentTypeOf(element.payload.data));
   }
   const countedOrigins = new Set<string>();
-  for (const lineup of lineups) {
-    if (lineup.deleted) continue;
-    const origin = asRecord(lineup.payload.data.origin);
-    const originKey = `${lineup.pageId}:${String(origin?.id)}`;
-    if (origin === null || countedOrigins.has(originKey)) continue;
+  for (const { pageId, originId, agentType } of lineupAgents) {
+    const originKey = `${pageId}:${originId}`;
+    if (countedOrigins.has(originKey)) continue;
     countedOrigins.add(originKey);
-    bump(agentTypeOf(origin.agent));
+    bump(agentType);
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))

@@ -2,7 +2,10 @@ import { mutation, type MutationCtx } from "./_generated/server";
 import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertCallerIsAccount, assertStrategyRole } from "./lib/auth";
-import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
+import {
+  refreshStrategyAgentSummary,
+  syncLineupAgent,
+} from "./lib/strategyAgentSummary";
 import {
   expectAssets,
   referencedAssetIds,
@@ -341,9 +344,7 @@ function invalidLineupData(message: string) {
 
 /// Checks one lineup row before it is stored. A row is one whole lineup,
 /// keyed by its id, holding its origin and landing: every row can be drawn
-/// on its own, whatever other rows exist. Each end carries its spot's
-/// version, which decides the copy drawn when lineups sharing the spot
-/// disagree (see lineUpGraphFromCloudRows on the client).
+/// on its own, whatever other rows exist.
 function assertLineupPayload(
   payload: unknown,
   lineupPublicId: string,
@@ -382,22 +383,19 @@ function assertLineupPayload(
   // The row must carry both ends hydration draws; a row without them would
   // load as nothing and read as a deletion nobody made.
   if (!hasEnd(data.origin, "agent") || !hasEnd(data.landing, "ability")) {
-    throw invalidLineupData("Lineup has no versioned origin or landing");
+    throw invalidLineupData("Lineup has no origin or landing");
   }
   return payload as LineupPayload;
 }
 
-/// Whether [end] is an origin or landing: an id, the marker it places under
-/// [markerKey], and its spot's version (an integer from 1).
+/// Whether [end] is an origin or landing: an id and the marker it places
+/// under [markerKey].
 function hasEnd(end: unknown, markerKey: "agent" | "ability"): boolean {
   return (
     isRecord(end) &&
     typeof end.id === "string" &&
     end.id.length > 0 &&
-    isRecord(end[markerKey]) &&
-    typeof end.version === "number" &&
-    Number.isInteger(end.version) &&
-    end.version >= 1
+    isRecord(end[markerKey])
   );
 }
 
@@ -1496,6 +1494,7 @@ async function reconcileExpectedAssets(
     await syncElementAssetReferences(ctx, row._id, row);
   } else {
     await syncLineupAssetReferences(ctx, row._id, row);
+    await syncLineupAgent(ctx, row._id, row);
   }
   const now = Date.now();
   const assetsBefore = referencedAssetIds(rowBefore);
@@ -1581,6 +1580,9 @@ export const applyBatch = mutation({
         .first();
       if (existingEvent !== null) {
         const latest = await getTargetSnapshot(ctx, strategy, op);
+        // An accepted op replays at the revision it landed at, not the
+        // row's latest: a successor rebased onto a teammate's later edit
+        // would overwrite that edit unseen.
         const replayResult: OperationResult =
           existingEvent.status === "failed"
             ? {
@@ -1596,7 +1598,7 @@ export const applyBatch = mutation({
                   latestRevision: latest?.revision,
                   latestPayload: latest?.payload,
                 }
-              : noop(latest?.revision);
+              : noop(existingEvent.appliedRevision ?? latest?.revision);
         results.push(toPublicResult(op, replayResult));
         continue;
       }

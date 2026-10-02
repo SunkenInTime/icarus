@@ -80,12 +80,10 @@ const seedLineupData = {
   origin: {
     id: "origin-1",
     agent: { type: "sova", lineUpID: "origin-1" },
-    version: 1,
   },
   landing: {
     id: "item-1",
     ability: { type: "shock_dart", lineUpID: "item-1" },
-    version: 1,
   },
 };
 
@@ -238,24 +236,6 @@ function mockR2Deletes() {
   return fetchMock;
 }
 
-/// The copy of a shared landing clients draw, as lineUpGraphFromCloudRows
-/// picks it: the highest spot version, ties to the greatest lineup id.
-function drawnLanding(
-  rows: Array<{ payload: { data: Record<string, any> } }>,
-  landingId: string,
-): Record<string, any> {
-  const carriers = rows
-    .map((row) => row.payload.data)
-    .filter((data) => data.landing.id === landingId);
-  if (carriers.length === 0) throw new Error(`No lineup lands at ${landingId}`);
-  return carriers.reduce((best, data) =>
-    data.landing.version > best.landing.version ||
-    (data.landing.version === best.landing.version && data.id > best.id)
-      ? data
-      : best,
-  ).landing;
-}
-
 function deletedKeys(fetchMock: ReturnType<typeof mockR2Deletes>): string[] {
   return fetchMock.mock.calls
     .map((call) => new URL(String(call[0])).pathname)
@@ -364,12 +344,10 @@ describe("strategies:duplicate", () => {
       origin: {
         id: origin.id,
         agent: { type: "sova", lineUpID: origin.id },
-        version: 1,
       },
       landing: {
         id,
         ability: { type: "shock_dart", lineUpID: id },
-        version: 1,
       },
     });
 
@@ -592,119 +570,141 @@ describe("strategies:duplicate", () => {
     );
   });
 
-  test("a shared spot's copies keep their versions, so the copy draws the spot where the original did", async () => {
+  test("a duplicate copies each lineup row exactly, even where rows sharing a spot disagree on it", async () => {
     const { owner } = await createHarness();
-    const versioned = "versions-source";
-    const versionedPage = "versions-source-page";
+    const exact = "exact-source";
+    const exactPage = "exact-source-page";
     await owner.mutation(createStrategy, {
       ...protocol,
-      publicId: versioned,
-      name: "Versions",
+      publicId: exact,
+      name: "Exact",
       mapData: "split",
-      initialPagePublicId: versionedPage,
+      initialPagePublicId: exactPage,
       initialPageName: "Setup",
       initialPageIsAttack: true,
     });
-    const atY = { dx: 300, dy: 300 };
-    const atX = { dx: 100, dy: 100 };
-    // Two lineups into one landing whose copies disagree on where it is.
-    // A holds the newer spot (version 5) on a row never edited since;
-    // B holds an older spot (version 3) on a row edited five times since,
-    // and has the greater lineup id. Drawing by row revision or by lineup
-    // id alone would pick X; by spot version the spot is at Y.
-    const lineupA = lineupPayload("lineup-a", {
-      originId: "origin-a",
-      landingId: "spot",
-      landingPosition: atY,
-      landingVersion: 5,
-      name: "A",
-    });
-    const lineupB = (notes: string) =>
+    // A and B land in one spot but their rows hold it in different places;
+    // A and C start from one origin, also held in different places. C's
+    // landing shares C's id. Each row is drawn from its own copy, so the
+    // duplicate must carry every row over as it is, whatever the new ids.
+    const rows = [
+      lineupPayload("lineup-a", {
+        originId: "origin-a",
+        landingId: "spot",
+        originPosition: { dx: 10, dy: 10 },
+        landingPosition: { dx: 300, dy: 300 },
+        name: "A",
+        notes: "Jump throw",
+      }),
       lineupPayload("lineup-b", {
         originId: "origin-b",
         landingId: "spot",
-        landingPosition: atX,
-        landingVersion: 3,
+        agentType: "brimstone",
+        originPosition: { dx: 20, dy: 20 },
+        landingPosition: { dx: 100, dy: 100 },
         name: "B",
-        notes,
-      });
-    const ops: Array<Record<string, unknown>> = [
-      ...[lineupA, lineupB("")].map((payload, index) => ({
+        youtubeLink: "https://youtu.be/b",
+      }),
+      lineupPayload("lineup-c", {
+        originId: "origin-a",
+        landingId: "lineup-c",
+        originPosition: { dx: 40, dy: 40 },
+        landingPosition: { dx: 500, dy: 500 },
+        name: "C",
+      }),
+    ];
+    const added = (await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: exact,
+      clientId: "exact",
+      ops: rows.map((payload, index) => ({
         opId: `add-${payload.data.id}`,
         type: "lineup.add",
         lineupPublicId: payload.data.id,
-        pagePublicId: versionedPage,
+        pagePublicId: exactPage,
         payload,
         sortIndex: index,
       })),
-    ];
-    for (let revision = 1; revision <= 5; revision++) {
-      ops.push({
-        opId: `edit-b-${revision}`,
-        type: "lineup.patch",
-        lineupPublicId: "lineup-b",
-        pagePublicId: versionedPage,
-        payload: lineupB(`edit ${revision}`),
-        expectedLineupRevision: revision,
-      });
-    }
-    const added = (await owner.mutation(applyBatch, {
-      ...protocol,
-      strategyPublicId: versioned,
-      clientId: "versions",
-      ops,
     })) as { results: Array<{ status: string }> };
     expect(added.results.map((result) => result.status)).toEqual(
-      ops.map(() => "applied"),
+      rows.map(() => "applied"),
     );
-
-    type Row = {
-      publicId: string;
-      revision: number;
-      payload: { data: Record<string, any> };
-    };
-    const lineupsOf = async (strategyPublicId: string) =>
-      (
-        (await owner.query(getFullSnapshot, {
-          ...protocol,
-          strategyPublicId,
-        })) as { lineups: Row[] }
-      ).lineups;
-    const original = await lineupsOf(versioned);
-    const byName = (rows: Row[], name: string) =>
-      rows.find((row) => row.payload.data.name === name)!;
-    // The trap is set: B wins on revision and on id, A on version.
-    expect(byName(original, "A").revision).toBe(1);
-    expect(byName(original, "B").revision).toBe(6);
-    expect(drawnLanding(original, "spot").ability.position).toEqual(atY);
 
     await owner.mutation(duplicateStrategy, {
       ...protocol,
-      sourceStrategyPublicId: versioned,
-      publicId: "versions-copy",
-      name: "Versions (Copy)",
+      sourceStrategyPublicId: exact,
+      publicId: "exact-copy",
+      name: "Exact (Copy)",
     });
-    const copied = await lineupsOf("versions-copy");
-    const copyA = byName(copied, "A").payload.data;
-    const copyB = byName(copied, "B").payload.data;
-    // One spot still, under a new id, each copy keeping its version and
-    // place.
-    expect(copyA.landing.id).toBe(copyB.landing.id);
-    expect(copyA.landing.id).not.toBe("spot");
-    expect(copyA.landing).toMatchObject({
-      version: 5,
-      ability: { position: atY },
+    type Row = { publicId: string; payload: { data: Record<string, any> } };
+    const copied = (
+      (await owner.query(getFullSnapshot, {
+        ...protocol,
+        strategyPublicId: "exact-copy",
+      })) as { lineups: Row[] }
+    ).lineups;
+    expect(copied.map((row) => row.payload.data.name).sort()).toEqual([
+      "A",
+      "B",
+      "C",
+    ]);
+
+    // Pair each source row with its copy and read off the new ids.
+    const newIdOf = new Map<string, string>();
+    const remember = (sourceId: string, copyId: string) => {
+      // One source id always becomes one copy id.
+      expect(newIdOf.get(sourceId) ?? copyId).toBe(copyId);
+      newIdOf.set(sourceId, copyId);
+    };
+    const pairs = rows.map((sourcePayload) => {
+      const copy = copied.find(
+        (row) => row.payload.data.name === sourcePayload.data.name,
+      )!;
+      const data = copy.payload.data;
+      expect(copy.publicId).toBe(data.id);
+      remember(sourcePayload.data.id, data.id);
+      remember(sourcePayload.data.origin.id, data.origin.id);
+      remember(sourcePayload.data.landing.id, data.landing.id);
+      return { sourcePayload, copy };
     });
-    expect(copyB.landing).toMatchObject({
-      version: 3,
-      ability: { position: atX },
-    });
-    expect(copyA.origin.version).toBe(1);
-    expect(copyB.origin.version).toBe(1);
-    // So the copy draws the spot where the original did.
-    expect(drawnLanding(copied, copyA.landing.id).ability.position).toEqual(
-      atY,
+    // Ids that were apart stay apart, and none is reused from the source.
+    const sourceIds = [...newIdOf.keys()].sort();
+    const copyIds = [...newIdOf.values()];
+    expect(sourceIds).toEqual(
+      ["lineup-a", "lineup-b", "lineup-c", "origin-a", "origin-b", "spot"],
     );
+    expect(new Set(copyIds).size).toBe(copyIds.length);
+    for (const copyId of copyIds) expect(sourceIds).not.toContain(copyId);
+
+    // Each copy is its source row under the new ids, each marker following
+    // its end, every place and detail as it was.
+    for (const { sourcePayload, copy } of pairs) {
+      const data = sourcePayload.data;
+      const originId = newIdOf.get(data.origin.id)!;
+      const landingId = newIdOf.get(data.landing.id)!;
+      expect(copy.payload).toEqual({
+        ...sourcePayload,
+        data: {
+          ...data,
+          id: newIdOf.get(data.id)!,
+          origin: {
+            ...data.origin,
+            id: originId,
+            agent: { ...data.origin.agent, lineUpID: originId },
+          },
+          landing: {
+            ...data.landing,
+            id: landingId,
+            ability: { ...data.landing.ability, lineUpID: landingId },
+          },
+        },
+      });
+    }
+    // So the copy's shared spot disagrees exactly as the original's did.
+    const [copyA, copyB] = pairs.map((pair) => pair.copy.payload.data);
+    expect(copyA!.landing.id).toBe(copyB!.landing.id);
+    expect(copyA!.landing.ability.position).toEqual({ dx: 300, dy: 300 });
+    expect(copyB!.landing.ability.position).toEqual({ dx: 100, dy: 100 });
   });
 
   test("an image whose tombstone is purged is reclaimed once nothing shows it", async () => {

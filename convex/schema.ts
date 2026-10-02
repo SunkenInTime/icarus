@@ -108,6 +108,8 @@ export default defineSchema({
     // One row per lineup, keyed by the lineup's id (payload.data.id). A key
     // is unique within its strategy, not across strategies: a strategy
     // copied on a device keeps its original's lineup ids.
+    // This shape replaced the origin/landing/link rows with no migration:
+    // production and dev held no lineup rows when it shipped (2026-10-01).
     payloadKind: lineupPayloadKindValidator,
     payloadVersion: v.number(),
     payload: lineupPayloadValidator,
@@ -119,9 +121,20 @@ export default defineSchema({
   })
     .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_pageId", ["pageId"])
-    // Live lineups of a strategy, read for its agent summary.
-    .index("by_strategyId_and_deleted", ["strategyId", "deleted"])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
+  // The agent each live lineup starts from, one small row per lineup, kept
+  // in step with every lineup write (see lib/strategyAgentSummary.ts). The
+  // strategy's agent summary reads these instead of the lineup rows, whose
+  // image lists can make reading them all exceed a transaction's limits.
+  lineupAgents: defineTable({
+    strategyId: v.id("strategies"),
+    pageId: v.id("pages"),
+    lineupId: v.id("lineups"),
+    originId: v.string(),
+    agentType: v.string(),
+  })
+    .index("by_strategyId", ["strategyId"])
+    .index("by_lineupId", ["lineupId"]),
   // Which content rows show which images: one small row per (element or
   // lineup row, image id it shows), kept in step with every content write
   // (see lib/assetReferences.ts). Media cleanup checks an image's references

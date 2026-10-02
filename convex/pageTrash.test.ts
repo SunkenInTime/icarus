@@ -322,6 +322,9 @@ async function rowsOnPage(t: RootHarness, pageId: Id<"pages">) {
     references: (await ctx.db.query("assetReferences").collect()).filter(
       (reference) => reference.pageId === pageId,
     ),
+    lineupAgents: (await ctx.db.query("lineupAgents").collect()).filter(
+      (row) => row.pageId === pageId,
+    ),
   }));
 }
 
@@ -367,6 +370,11 @@ describe("page trash", () => {
     expect(kept.contents).toHaveLength(1);
     expect(kept.references.map((reference) => reference.assetPublicId).sort())
       .toEqual(["b-image", "k-shot"]);
+    // The lineups' agent rows stay with them for a restore; the summary
+    // below leaves them out because their page is in the trash.
+    expect(kept.lineupAgents.map((row) => row.lineupId).sort()).toEqual(
+      kept.lineups.map((row) => row._id).sort(),
+    );
 
     const shell = (await owner.query(getShell, {
       ...protocol,
@@ -875,6 +883,7 @@ describe("page trash", () => {
       lineups: [],
       contents: [],
       references: [],
+      lineupAgents: [],
     });
     expect(await rowsOnPage(t, liveA!._id)).toEqual(aRows);
     expect(await livePageIds(owner)).toEqual([pageA, pageC]);
@@ -1059,6 +1068,7 @@ describe("page trash", () => {
       lineups: [],
       contents: [],
       references: [],
+      lineupAgents: [],
     });
   });
 });

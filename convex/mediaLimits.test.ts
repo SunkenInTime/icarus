@@ -12,7 +12,9 @@ import * as images from "./images";
 import { processAssetReclaimBatch } from "./images";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import * as maintenance from "./maintenance";
+import * as ops from "./ops";
 import schema from "./schema";
 import * as strategies from "./strategies";
 import { modules } from "./test.setup";
@@ -1186,6 +1188,85 @@ describe("duplicate stays within transaction limits", () => {
         .unique();
     });
     expect(summary?.agentTypes).toEqual(["jett"]);
+  });
+
+  test("the agent summary never reads lineup rows, however large they are", async () => {
+    const { t, owner } = await createHarness();
+    const { strategyId, pageId } = await ids(t);
+    // 25 lineups as large as the op size cap allows: more than the 16 MiB a
+    // transaction may read, were the summary to read them.
+    const agentTypes = ["sova", "kayo", "viper"];
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      for (let index = 0; index < 25; index++) {
+        await insertLineup(ctx, {
+          publicId: `big-${index}`,
+          strategyId,
+          pageId,
+          payloadKind: "lineup",
+          payloadVersion: 1,
+          payload: lineupPayload(`big-${index}`, {
+            agentType: agentTypes[index % agentTypes.length],
+            notes: largeText,
+          }),
+          sortIndex: index,
+          revision: 1,
+          deleted: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+    const lineupBytes = await t.run(async (ctx) =>
+      (await ctx.db.query("lineups").collect())
+        .map((row) => getConvexSize(row as any))
+        .reduce((a, b) => a + b, 0),
+    );
+    expect(lineupBytes).toBeGreaterThan(16 * 1024 * 1024);
+
+    const refreshRead = await t.run(async (ctx) => {
+      const counted = countReads(ctx);
+      await refreshStrategyAgentSummary(counted.ctx, strategyId);
+      return counted.bytesRead();
+    });
+    expect(refreshRead).toBeLessThan(64 * 1024);
+    const summary = async () =>
+      await t.run(async (ctx) => {
+        const row = await ctx.db
+          .query("strategyAgentSummaries")
+          .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+          .unique();
+        return row?.agentTypes;
+      });
+    // 9 sova origins, 8 kayo, 8 viper.
+    expect(await summary()).toEqual(["sova", "kayo", "viper"]);
+
+    // A lineup edit, which refreshes the summary, reads the lineup it
+    // edits and not the others.
+    const batchRead = await owner.run(async (ctx) => {
+      const counted = countReads(ctx);
+      await (ops.applyBatch as any)._handler(counted.ctx, {
+        ...protocol,
+        strategyPublicId,
+        clientId: "big-editor",
+        ops: [
+          {
+            opId: "big-0-to-jett",
+            type: "lineup.patch",
+            lineupPublicId: "big-0",
+            pagePublicId,
+            payload: lineupPayload("big-0", {
+              agentType: "jett",
+              notes: largeText,
+            }),
+            expectedLineupRevision: 1,
+          },
+        ],
+      });
+      return counted.bytesRead();
+    });
+    expect(batchRead).toBeLessThan(lineupBytes / 4);
+    expect(await summary()).toEqual(["kayo", "sova", "viper", "jett"]);
   });
 
   async function seedLinkImages(t: RootHarness, count: number) {

@@ -19,7 +19,10 @@ import {
   queueAssetReclaim,
   sweepDeletedImageAssetsRef,
 } from "./images";
-import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
+import {
+  refreshStrategyAgentSummary,
+  syncLineupAgent,
+} from "./lib/strategyAgentSummary";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 
 const MAINTENANCE_BATCH_SIZE = 200;
@@ -110,7 +113,12 @@ async function purgeContentRows(
       purgedAll = false;
       break;
     }
-    await ctx.db.delete("elementId" in row ? row.elementId : row.lineupId);
+    if ("lineupId" in row) {
+      await syncLineupAgent(ctx, row.lineupId, null);
+      await ctx.db.delete(row.lineupId);
+    } else {
+      await ctx.db.delete(row.elementId);
+    }
   }
   for (const [strategyId, assetPublicIds] of assetIdsByStrategy) {
     await queueAssetReclaim(ctx, strategyId, assetPublicIds);

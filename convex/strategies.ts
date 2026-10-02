@@ -3,6 +3,7 @@ import { getConvexSize, v, type Value } from "convex/values";
 import {
   agentTypesOf,
   deleteStrategyAgentSummary,
+  lineupAgentOf,
   refreshStrategyAgentSummary,
   storeStrategyAgentSummary,
 } from "./lib/strategyAgentSummary";
@@ -44,7 +45,6 @@ import {
   assetIdsOfRow,
   insertAssetReferences,
   type ReferencingElement,
-  type ReferencingLineup,
 } from "./lib/assetReferences";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import { markDeletedStrategyImageAssetsRef } from "./images";
@@ -768,7 +768,10 @@ export const duplicate = mutation({
       );
     }
     const copiedElements: ReferencingElement[] = [];
-    const copiedLineups: ReferencingLineup[] = [];
+    const copiedLineupAgents: Pick<
+      Doc<"lineupAgents">,
+      "pageId" | "originId" | "agentType"
+    >[] = [];
     for (const element of sourceElements) {
       const pageId = pageIdMap.get(element.pageId);
       if (element.deleted || pageId === undefined) continue;
@@ -825,7 +828,17 @@ export const duplicate = mutation({
       budget.spend({ documents: assetIdsOfRow(copiedLineup).size });
       const lineupId = await ctx.db.insert("lineups", copiedLineup);
       await insertAssetReferences(ctx, { lineupId }, copiedLineup);
-      copiedLineups.push(copiedLineup);
+      const agent = lineupAgentOf(copiedLineup.payload);
+      if (agent !== null) {
+        budget.spend({ documents: 1 });
+        await ctx.db.insert("lineupAgents", {
+          strategyId,
+          pageId,
+          lineupId,
+          ...agent,
+        });
+        copiedLineupAgents.push({ pageId, ...agent });
+      }
     }
 
     for (const [targetAssetPublicId, sourceAssetPublicId] of
@@ -852,7 +865,7 @@ export const duplicate = mutation({
     await storeStrategyAgentSummary(
       ctx,
       strategyId,
-      agentTypesOf(copiedElements, copiedLineups),
+      agentTypesOf(copiedElements, copiedLineupAgents),
     );
     return { ok: true } as const;
   },
