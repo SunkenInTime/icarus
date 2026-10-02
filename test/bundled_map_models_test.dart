@@ -59,9 +59,9 @@ const _modelChecksums = <String, String>{
   'summit_svg_height_defense.json.gz':
       '50a0519df3bc7e4d94df018ad334bae0abddd48f26ce0fe6fbfa3c2628e5cf58',
   'sunset_svg_height_attack.json.gz':
-      '6659f36a236903bc0583b8090a016ae0c194920f5f3d3b37f319f7328ee53f4f',
+      '9a08e7ffc12d79fa6acc49613aa42ad3ff68ed7bfb931331b0cd466db81ca47a',
   'sunset_svg_height_defense.json.gz':
-      'a17517aa5bdb12b284ac56ced54214ad01c67b778998bdb8c6d3ccf6fb64c922',
+      'b23983dacd4f4caa101a3f57901ccd8eb674cc0b3255e2033ad9a4966056c959',
 };
 
 void main() {
