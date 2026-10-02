@@ -1269,11 +1269,11 @@ void main() {
       queue: queue,
       session: _ConflictSession(),
       // Even with lineup changes to list, the specific reason comes first.
-      lineupConflicts: [
+      lineupConflicts: const [
         LineupGroupConflict(
-          key: const EntitySyncKey.lineup('page-1', 'link-a'),
-          yours: const [LineupChange(label: 'Heaven', description: 'added')],
-          cloud: const [],
+          key: EntitySyncKey.lineup('page-1', 'link-a'),
+          yours: [LineupChange(label: 'Heaven', description: 'added')],
+          cloud: [],
         ),
       ],
     );
@@ -1308,6 +1308,56 @@ void main() {
     expect(find.text('Keep both'), findsNothing);
     expect(find.text('Use cloud'), findsOneWidget);
   });
+
+  for (final (name, error, keepMine) in [
+    ('alone', lineupOverlapMessage, true),
+    (
+      'beside other work',
+      '$lineupOverlapMessage. $otherWorkNeedsAttentionNote',
+      true,
+    ),
+  ]) {
+    testWidgets(
+        'an overlap refusal $name still offers Keep mine, saying when it '
+        'helps', (tester) async {
+      final queue = _AttentionOpQueue(keepMine ? 2 : 1);
+      final container = _createConflictContainer(
+        queue: queue,
+        session: _ConflictSession(),
+      );
+      addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).setCloudSyncError(
+            error,
+          );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+              body: CloudSyncButton(style: kEditorToolbarButtonStyle),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(_syncButton('attention'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('shares a spot with lineups saved separately'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('refused while the spot is still shared'),
+        findsOneWidget,
+      );
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep mine'), keepMine ? findsOneWidget : findsNothing);
+      expect(find.text('Retry sync'), findsNothing);
+      expect(find.text('Keep both'), findsNothing);
+    });
+  }
 
   testWidgets(
       'a lineup refusal among several changes says the choice covers all '

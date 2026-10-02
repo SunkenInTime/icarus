@@ -132,8 +132,9 @@ String friendlyCloudSyncError(String raw) {
   }
   if (lower.contains(lineupOverlapMessage.toLowerCase())) {
     return 'This lineup shares a spot with lineups saved separately, so it '
-        'was not saved to the cloud. It remains on this device; Use cloud '
-        'removes it here.';
+        'was not saved to the cloud. It remains on this device. Keep mine '
+        'sends it again, and is refused while the spot is still shared; Use '
+        'cloud removes it here.';
   }
   if (lower.contains(lineupPageMismatchMessage.toLowerCase())) {
     return 'This lineup clashes with one on another page, so it was not '

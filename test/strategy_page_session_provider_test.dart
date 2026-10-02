@@ -603,6 +603,10 @@ class _ServerRepository implements ConvexStrategyRepository {
   /// answer is lost on its way back: the send fails as if offline.
   void Function()? loseNextAnswer;
 
+  /// While set, an op it answers for never reaches [server]; that answer
+  /// is returned instead, as a validation the server fails.
+  OpAck? Function(StrategyOp op)? refuse;
+
   @override
   Future<List<OpAck>> applyBatch({
     required String strategyPublicId,
@@ -612,7 +616,9 @@ class _ServerRepository implements ConvexStrategyRepository {
   }) async {
     batches.add(ops);
     await hold?.future;
-    final acks = server.applyBatch(ops);
+    final acks = [
+      for (final op in ops) refuse?.call(op) ?? server.apply(op),
+    ];
     if (loseNextAnswer case final lose?) {
       loseNextAnswer = null;
       lose();
@@ -7940,6 +7946,184 @@ void main() {
       expect(replaced, isFalse, reason: 'the redraw put back the old text');
       expect(textOf('text-b'), 'typed');
       expect(resolved, isFalse);
+    });
+
+    test(
+        'Keep both pressed again while the copy still cannot be saved '
+        'discards nothing and redraws nothing', () async {
+      final page = _page('page-1', 0);
+      final (container, batches, store) = await refusedBesideTeammate(page);
+      final key = keyOf(page, 'link-a');
+      final session = container.read(strategyPageSessionProvider.notifier);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      final waiting = queueState().attentionByEntityKey[key]!.pending.op.opId;
+      // Keep both's reads find the user is a viewer now, so nothing they
+      // edit is saved, the copy included.
+      final now = liveRead.initialSnapshot;
+      liveRead.initialSnapshot = _editorSnapshot(
+        pages: now.pages,
+        activePage: now.activePage!,
+        role: 'viewer',
+      );
+      expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      final withCopy = onScreenOf(container);
+      expect(withCopy, hasLength(4));
+
+      // Pressed again, still a viewer: the copy it remembers is still not
+      // saved, so the original is not discarded on its behalf.
+      var redrawn = false;
+      container.listen(lineUpProvider, (_, __) => redrawn = true);
+      expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(redrawn, isFalse);
+      expect(onScreenOf(container), withCopy);
+      expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
+      expect(
+        store.load().records.singleWhere((r) => r.entityKey == key).status,
+        DurableOutboxStatus.attention,
+      );
+      expect(
+        queueState().pending.where((pending) => pending.op is LineupAddOp),
+        isEmpty,
+      );
+      expect(sentFor(batches, key), hasLength(1));
+      expect(
+          lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
+    });
+
+    test(
+        'an edit whose save fails while Use cloud loads the cloud version '
+        'stops it: the edit stays on screen and nothing is discarded',
+        () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, batches, _) =
+          await refusedBesideTeammate(page, store: store);
+      final key = keyOf(page, 'link-a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      final waiting = queueState().attentionByEntityKey[key]!.pending.op.opId;
+      final refreshes = liveRead.refreshCount;
+      final gate = liveRead.refreshGate = Completer<void>();
+
+      final useCloud = container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      await _until(() => liveRead.refreshCount > refreshes);
+      // While the cloud's version is on its way, the user edits the group,
+      // and that edit cannot be written to the outbox.
+      store.failPut = (record) => record.entityKey == key;
+      container.read(lineUpProvider.notifier).updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-b')!
+          .copyWith(notes: 'newer'));
+      var replaced = false;
+      container.listen(lineUpProvider, (_, next) {
+        if (next.linkById('link-b')?.notes != 'newer') replaced = true;
+      });
+      gate.complete();
+
+      expect(await useCloud, isFalse);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(queueState().hasDurabilityFailure, isTrue);
+      expect(replaced, isFalse);
+      expect(onScreenOf(container), ['Heaven: mine', 'Mid: newer']);
+      // The refused work is not discarded, in memory or on disk.
+      expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
+      final record =
+          store.load().records.singleWhere((r) => r.entityKey == key);
+      expect(record.status, DurableOutboxStatus.attention);
+      expect(record.pending.op.opId, waiting);
+      expect(sentFor(batches, key), hasLength(1));
+      expect(
+          lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
+    });
+
+    /// The server's refusal of lineup group [key] for overlapping another.
+    OpAck? Function(StrategyOp op) refuseAsOverlapping(EntitySyncKey key) =>
+        (op) => EntitySyncKey.forStrategyOp(op) == key
+            ? FailedOpAck(
+                opId: op.opId,
+                code: 'INVALID_LINEUP_PAYLOAD_DATA',
+                rawCode: 'INVALID_LINEUP_PAYLOAD_DATA',
+                message: lineupOverlapMessage,
+              )
+            : null;
+
+    test(
+        'a lineup group refused for overlapping another, alone, reaches the '
+        'sync button as exactly that reason', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)]);
+      final (container, _) = await openOnRealQueue(page);
+      final key = keyOf(page, 'link-a');
+      repository.refuse = refuseAsOverlapping(key);
+
+      container.read(lineUpProvider.notifier).updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-a')!
+          .copyWith(notes: 'mine'));
+      await _until(() => container
+          .read(strategyOpQueueProvider)
+          .attentionByEntityKey
+          .containsKey(key));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(container.read(strategyOpQueueProvider).lastError,
+          lineupOverlapMessage);
+      expect(container.read(strategySaveStateProvider).cloudSyncError,
+          lineupOverlapMessage);
+    });
+
+    test(
+        'an overlap refusal beside a teammate deletion Keep mine can restore '
+        'is not reported as the only reason', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId, lineups: [
+        fanIn(page.publicId),
+        _lineup(page.publicId, 'd', sortIndex: 1),
+      ]);
+      final (container, _) = await openOnRealQueue(page);
+      final overlapping = keyOf(page, 'link-a');
+      final deleted = keyOf(page, 'link-d');
+      repository.refuse = refuseAsOverlapping(overlapping);
+      // A teammate deletes lineup d; the user edits both groups.
+      server.teammateDelete('link-d');
+      final lineUps = container.read(lineUpProvider.notifier);
+      lineUps.updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-a')!
+          .copyWith(notes: 'mine'));
+      lineUps.updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-d')!
+          .copyWith(notes: 'mine'));
+      await _until(() =>
+          container.read(strategyOpQueueProvider).attentionByEntityKey.length ==
+          2);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+        unorderedEquals([overlapping, deleted]),
+      );
+
+      // Keep mine can bring lineup d back, so the overlap is not the only
+      // reason, and the sync button must not read as if it were.
+      expect(container.read(strategySaveStateProvider).cloudSyncError,
+          isNot(lineupOverlapMessage));
     });
 
     test(

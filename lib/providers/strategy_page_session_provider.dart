@@ -184,7 +184,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// Waiting work Keep both already put a copy of on the canvas, by
   /// [_waitingWork] entry: pressing it again finishes the job instead of
   /// copying the same version twice.
-  final Set<(EntitySyncKey, (String, String?))> _keptAsCopy = {};
+  /// The copy's first lineup id, by entry, so every press can check the
+  /// copy is saved before anything is discarded.
+  final Map<(EntitySyncKey, (String, String?)), String> _keptAsCopy = {};
 
   @override
   StrategyPageSessionState build() {
@@ -602,6 +604,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final generation = _pageSessionGeneration;
     final waiting = _waitingWork(attention.keys);
     final copies = <LineUpGraph>[];
+    final copied = <(EntitySyncKey, (String, String?)), String>{};
     for (final MapEntry(:key, value: refused) in attention.entries) {
       final newest = (queue.successorByEntityKey[key] ?? refused).pending.op;
       final payload = switch (newest) {
@@ -609,12 +612,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         LineupPatchOp(:final payload?) => payload,
         _ => null,
       };
-      if (payload == null || _keptAsCopy.contains((key, waiting[key]!))) {
-        continue;
-      }
-      copies.add(forkLineUpGraph(lineUpGraphFromCloudRows([
+      final entry = (key, waiting[key]!);
+      if (payload == null || _keptAsCopy.containsKey(entry)) continue;
+      final copy = forkLineUpGraph(lineUpGraphFromCloudRows([
         CloudLineupRow(publicId: key.entityId!, payload: payload),
-      ]).graph));
+      ]).graph);
+      if (copy.links.isEmpty) continue;
+      copies.add(copy);
+      copied[entry] = copy.links.first.id;
     }
     bool unchangedSince() =>
         !_disposed &&
@@ -636,12 +641,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     for (final copy in copies) {
       lineUps.addRecovered(copy);
     }
+    _keptAsCopy.addAll(copied);
+    // Every copy of this work, made now or by an earlier press.
     final copyLineupIds = [
-      for (final copy in copies)
-        if (copy.links.isNotEmpty) copy.links.first.id,
+      for (final MapEntry(:key, :value) in waiting.entries)
+        if (_keptAsCopy[(key, value)] case final lineupId?) lineupId,
     ];
-    _keptAsCopy
-        .addAll(waiting.entries.map((entry) => (entry.key, entry.value)));
     await pageSource.flushCurrentPage();
     // A copy that could not be saved leaves the outbox failing (and waits in
     // attention itself): nothing may be discarded on its behalf.
@@ -769,7 +774,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       // so an edit made while it is being written counts as a change too.
       final savedCanvas = _canvasStates();
       await currentPageSource.flushCurrentPage();
-      if (waitingChanged()) return false;
+      // A save that failed may have dropped a newer edit the queue never
+      // recorded; nothing is discarded or redrawn over it.
+      if (waitingChanged() ||
+          ref.read(strategyOpQueueProvider).hasDurabilityFailure) {
+        return false;
+      }
       final targetPageId = _resolveHydrationTargetPage(snapshot);
       final localMetadata = _unsentLocalMetadata();
       if (targetPageId != null) {
@@ -782,13 +792,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           targetPageId,
           discardedEntities: rejected.keys.toSet(),
         );
-        // Nothing awaits between this check and the redraw: an edit since
-        // the last save is still only on the canvas, and stops it.
-        if (waitingChanged() || !_sameCanvas(savedCanvas)) return false;
+        // An edit since the last save is still only on the canvas, and
+        // stops the redraw; checked again where the redraw happens, after
+        // the page list it awaits.
+        bool unchangedCanvas() => !waitingChanged() && _sameCanvas(savedCanvas);
+        if (!unchangedCanvas()) return false;
+        var redrawn = false;
         await _applyLoadedPageData(
           pageData,
           strategyId: strategyId,
           source: StrategySource.cloud,
+          canApply: () => redrawn = unchangedCanvas(),
           hydrationKey: _buildRemotePageHydrationKey(snapshot, targetPageId),
           preserveTextDrafts: true,
           loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
@@ -797,6 +811,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
                   ? null
                   : localMetadata,
         );
+        if (!redrawn) return false;
       }
 
       final discarded = await ref
@@ -810,6 +825,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           strategyId: strategyId,
           activePageId: () => state.activePageId,
         );
+        // Redrawn only if nothing was edited since the first redraw.
+        final redrawnCanvas = _canvasStates();
         final pageData = await pageSource.loadAuthoritativePage(
           targetPageId,
           discardedEntities: discarded,
@@ -818,6 +835,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           pageData,
           strategyId: strategyId,
           source: StrategySource.cloud,
+          canApply: () =>
+              !_disposed &&
+              generation == _pageSessionGeneration &&
+              _sameCanvas(redrawnCanvas),
           preserveTextDrafts: true,
           loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
           preservedMetadata: discarded.contains(const EntitySyncKey.strategy())

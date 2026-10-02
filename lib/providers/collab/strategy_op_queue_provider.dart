@@ -2905,6 +2905,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             reason == teammateDeletedMessage ||
             reason == retiredLineupOpMessage ||
             reason == pageDeletedMessage) {
+          // A second, different reason is other work too: one explanation
+          // must not stand for both.
+          if (specificReason != null && reason != specificReason) {
+            hasOtherWork = true;
+          }
           specificReason ??= reason;
         } else {
           hasOtherWork = true;
