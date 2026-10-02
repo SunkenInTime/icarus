@@ -1259,6 +1259,57 @@ void main() {
   }
 
   testWidgets(
+      'a lineup group the server refused as overlapping another says why, '
+      'not that a teammate changed it', (tester) async {
+    tester.view.physicalSize = const Size(1280, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final queue = _AttentionOpQueue(1);
+    final container = _createConflictContainer(
+      queue: queue,
+      session: _ConflictSession(),
+      // Even with lineup changes to list, the specific reason comes first.
+      lineupConflicts: [
+        LineupGroupConflict(
+          key: const EntitySyncKey.lineup('page-1', 'link-a'),
+          yours: const [LineupChange(label: 'Heaven', description: 'added')],
+          cloud: const [],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(strategySaveStateProvider.notifier)
+        .setCloudSyncError(lineupOverlapMessage);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(_syncButton('attention'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('shares a spot with lineups saved separately'),
+      findsOneWidget,
+    );
+    expect(
+        find.textContaining('Keep mine replaces their changes'), findsNothing);
+    expect(
+        find.textContaining('A teammate changed these lineups'), findsNothing);
+    expect(find.textContaining('Another edit reached'), findsNothing);
+    expect(find.text('Your changes'), findsNothing);
+    expect(find.text('Keep both'), findsNothing);
+    expect(find.text('Use cloud'), findsOneWidget);
+  });
+
+  testWidgets(
       'a lineup refusal among several changes says the choice covers all '
       'of them', (tester) async {
     final queue = _AttentionOpQueue(2);

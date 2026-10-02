@@ -23,6 +23,12 @@ const cloudStrategyDeletedMessage =
 const lineupPageMismatchMessage =
     'This lineup belongs to another page and cannot be moved';
 
+/// The server's message when it refuses a lineup group row holding a
+/// lineup or spot another group of the page holds (see assertLineupGroupAlone
+/// in convex/lib/lineupItems.ts). Sending it again cannot help.
+const lineupOverlapMessage =
+    'A lineup or spot in this group is already in another group';
+
 /// Marks an outbox record holding a lineup change in the cloud format before
 /// one row per lineup (an origin, landing or link row). No server takes it
 /// any more, so it is never sent; it waits in attention until the user

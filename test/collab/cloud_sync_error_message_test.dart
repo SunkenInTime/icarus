@@ -56,6 +56,22 @@ void main() {
     expect(message, isNot(contains('Keep mine')));
   });
 
+  test('explains a lineup group refused for overlapping another', () {
+    final message = friendlyCloudSyncError(lineupOverlapMessage);
+
+    expect(message, contains('shares a spot'));
+    expect(message, contains('not saved to the cloud'));
+    expect(message, contains('Use cloud'));
+    expect(message, isNot(contains(lineupOverlapMessage)));
+    expect(isSpecificAttentionReason(lineupOverlapMessage), isTrue);
+    // As the queue reports it beside other refused work.
+    expect(
+      isSpecificAttentionReason(
+          '$lineupOverlapMessage. $otherWorkNeedsAttentionNote'),
+      isTrue,
+    );
+  });
+
   test('lineup refusals and oversized work are specific attention reasons', () {
     expect(isSpecificAttentionReason(lineupPageMismatchMessage), isTrue);
     expect(isSpecificAttentionReason(retiredLineupOpMessage), isTrue);

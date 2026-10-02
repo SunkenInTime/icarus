@@ -636,13 +636,32 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     for (final copy in copies) {
       lineUps.addRecovered(copy);
     }
+    final copyLineupIds = [
+      for (final copy in copies)
+        if (copy.links.isNotEmpty) copy.links.first.id,
+    ];
     _keptAsCopy
         .addAll(waiting.entries.map((entry) => (entry.key, entry.value)));
     await pageSource.flushCurrentPage();
     // A copy that could not be saved leaves the outbox failing (and waits in
     // attention itself): nothing may be discarded on its behalf.
     final afterCopy = ref.read(strategyOpQueueProvider);
-    final saved = !afterCopy.hasDurabilityFailure &&
+    final liveSync = ref.read(activePageLiveSyncProvider.notifier);
+    final queuedKeys = {
+      for (final pending in afterCopy.pending)
+        EntitySyncKey.forStrategyOp(pending.op),
+    };
+    // Each copy's group must be queued (or already on the server): a save
+    // skipped without failing, say after edit access was lost, leaves the
+    // copy on the canvas alone.
+    final copiesQueued = copyLineupIds.every((lineupId) {
+      final group = liveSync.lineupGroupOf(activePageId!, lineupId);
+      if (group == null) return false;
+      final key = EntitySyncKey.lineup(activePageId, group);
+      return queuedKeys.contains(key) || liveSync.hydratedBase(key) != null;
+    });
+    final saved = copiesQueued &&
+        !afterCopy.hasDurabilityFailure &&
         afterCopy.attentionByEntityKey.keys.every(waiting.containsKey);
     if (!saved || !unchangedSince()) return KeepBothOutcome.copiesOnly;
     return await _useCloudVersionsFor(waiting)
@@ -666,6 +685,27 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     };
   }
 
+  /// The canvas's content, one state object per kind of item on it. Every
+  /// edit replaces its kind's object, so comparing them by identity tells
+  /// whether anything changed in between.
+  List<Object?> _canvasStates() => [
+        ref.read(agentProvider),
+        ref.read(abilityProvider),
+        ref.read(drawingProvider),
+        ref.read(textProvider),
+        ref.read(placedImageProvider),
+        ref.read(utilityProvider),
+        ref.read(lineUpProvider),
+      ];
+
+  bool _sameCanvas(List<Object?> saved) {
+    final now = _canvasStates();
+    for (var i = 0; i < saved.length; i++) {
+      if (!identical(saved[i], now[i])) return false;
+    }
+    return true;
+  }
+
   /// Whether exactly [waiting] still waits, nothing changed or gone.
   bool _sameWaitingWork(Map<EntitySyncKey, (String, String?)> waiting) {
     final now = _waitingWork(waiting.keys);
@@ -680,7 +720,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   Future<bool> useCloudVersionsForRejected() => _useCloudVersionsFor(null);
 
   /// [useCloudVersionsForRejected], for exactly the conflicts in [waiting]
-  /// when given: if they no longer wait as they were, nothing is discarded.
+  /// (by default, every conflict once the page's edits are saved). If they
+  /// no longer wait as they were, or the canvas changed after its last
+  /// save, nothing is discarded or redrawn: the newer work stays.
   Future<bool> _useCloudVersionsFor(
     Map<EntitySyncKey, (String, String?)>? waiting,
   ) async {
@@ -691,11 +733,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
 
     final generation = _pageSessionGeneration;
+    late Map<EntitySyncKey, (String, String?)> resolving;
     bool waitingChanged() =>
-        waiting != null &&
-        (_disposed ||
-            generation != _pageSessionGeneration ||
-            !_sameWaitingWork(waiting));
+        _disposed ||
+        generation != _pageSessionGeneration ||
+        !_sameWaitingWork(resolving);
 
     _isResolvingConflicts = true;
     try {
@@ -705,10 +747,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final strategyNotifier = ref.read(strategyProvider.notifier);
       strategyNotifier.consumeScheduledCloudPageSync();
       strategyNotifier.consumeScheduledCloudStrategySync();
+      resolving = waiting ??
+          _waitingWork(
+            ref.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+          );
       if (waitingChanged()) return false;
       final rejected = Map<EntitySyncKey, QueuedEntityIntent>.from(
         ref.read(strategyOpQueueProvider).attentionByEntityKey,
-      )..removeWhere((key, _) => waiting != null && !waiting.containsKey(key));
+      )..removeWhere((key, _) => !resolving.containsKey(key));
       if (rejected.isEmpty) return true;
 
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -718,12 +764,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       }
 
       // Edits made while the cloud's version loaded are saved, and one to
-      // the waiting work stops a resolution limited to it: the page drawn
-      // next would replace that edit on screen.
-      if (waiting != null) {
-        await currentPageSource.flushCurrentPage();
-        if (waitingChanged()) return false;
-      }
+      // the waiting work stops the resolution: the page drawn next would
+      // replace that edit on screen. The canvas is noted before that save,
+      // so an edit made while it is being written counts as a change too.
+      final savedCanvas = _canvasStates();
+      await currentPageSource.flushCurrentPage();
+      if (waitingChanged()) return false;
       final targetPageId = _resolveHydrationTargetPage(snapshot);
       final localMetadata = _unsentLocalMetadata();
       if (targetPageId != null) {
@@ -736,6 +782,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           targetPageId,
           discardedEntities: rejected.keys.toSet(),
         );
+        // Nothing awaits between this check and the redraw: an edit since
+        // the last save is still only on the canvas, and stops it.
+        if (waitingChanged() || !_sameCanvas(savedCanvas)) return false;
         await _applyLoadedPageData(
           pageData,
           strategyId: strategyId,
@@ -752,7 +801,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
       final discarded = await ref
           .read(strategyOpQueueProvider.notifier)
-          .discardRejected(rejected.keys.toSet(), onlyIf: waiting);
+          .discardRejected(rejected.keys.toSet(), onlyIf: resolving);
       // A failed durable delete keeps its overlay and conflict. Restore those
       // entities if only part of the requested adoption could be saved.
       if (discarded.length != rejected.length && targetPageId != null) {

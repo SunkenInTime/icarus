@@ -91,9 +91,13 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
     state = AsyncData(snapshot);
   }
 
+  /// Runs as each page is asked for, before it is read.
+  void Function(String? pagePublicId)? onSetActivePage;
+
   @override
   Future<RemotePageSnapshot?> setActivePage(String? pagePublicId) async {
     selectedPageIds.add(pagePublicId);
+    onSetActivePage?.call(pagePublicId);
     if (pagePublicId == failingPageId) {
       throw StateError('Failed to load $pagePublicId');
     }
@@ -182,10 +186,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     );
     if (desiredOp != null &&
         state.attentionByEntityKey.containsKey(entityKey)) {
-      successors[entityKey] = QueuedEntityIntent(
-        entityKey: entityKey,
-        pending: PendingOp(op: desiredOp, clientId: 'test-client'),
-      );
+      _keepBehindRefusal(successors, entityKey, desiredOp);
       state = state.copyWith(successorByEntityKey: successors);
       return;
     }
@@ -223,10 +224,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     }
     for (final entry in desiredOpsByEntityKey.entries) {
       if (state.attentionByEntityKey.containsKey(entry.key)) {
-        successors[entry.key] = QueuedEntityIntent(
-          entityKey: entry.key,
-          pending: PendingOp(op: entry.value, clientId: 'test-client'),
-        );
+        _keepBehindRefusal(successors, entry.key, entry.value);
         continue;
       }
       queued[entry.key] = QueuedEntityIntent(
@@ -237,6 +235,34 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     state = state.copyWith(
       queuedByEntityKey: queued,
       successorByEntityKey: successors,
+    );
+  }
+
+  /// Like the real queue, keeps [desired] behind [key]'s refused op: work
+  /// the same as the refused op needs nothing behind it, and work the same
+  /// as the one already behind it leaves that one, op id and all.
+  void _keepBehindRefusal(
+    Map<EntitySyncKey, QueuedEntityIntent> successors,
+    EntitySyncKey key,
+    StrategyOp desired,
+  ) {
+    bool same(StrategyOp left, StrategyOp right) =>
+        left.kind == right.kind &&
+        left.entityType == right.entityType &&
+        left.entityPublicId == right.entityPublicId &&
+        left.pagePublicId == right.pagePublicId &&
+        cloudJsonEquivalent(left.payload, right.payload) &&
+        left.sortIndex == right.sortIndex &&
+        left.expectedRevision == right.expectedRevision;
+    if (same(state.attentionByEntityKey[key]!.pending.op, desired)) {
+      successors.remove(key);
+      return;
+    }
+    final behind = successors[key]?.pending.op;
+    if (behind != null && same(behind, desired)) return;
+    successors[key] = QueuedEntityIntent(
+      entityKey: key,
+      pending: PendingOp(op: desired, clientId: 'test-client'),
     );
   }
 
@@ -436,8 +462,14 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
 class _FailingOutboxStore extends MemoryDurableStrategyOutboxStore {
   bool Function(DurableOutboxRecord record)? failPut;
 
+  /// Runs as each write starts, before it lands: while it is on its way.
+  void Function(DurableOutboxRecord record)? onPut;
+
   @override
   Future<void> put(DurableOutboxRecord record) async {
+    onPut?.call(record);
+    // A real write leaves the event loop; so does this one.
+    await Future<void>.delayed(Duration.zero);
     if (failPut?.call(record) ?? false) {
       throw const FileSystemException('The disk is full.');
     }
@@ -6936,8 +6968,10 @@ void main() {
       RemotePage page, {
       MemoryDurableStrategyOutboxStore? store,
       List<RemotePage> otherPages = const [],
+      List<RemoteElement> elements = const [],
     }) async {
-      server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)]);
+      server = _FakeServer(page.publicId,
+          lineups: [fanIn(page.publicId)], elements: elements);
       store ??= MemoryDurableStrategyOutboxStore();
       final (container, batches) =
           await openOnRealQueue(page, store: store, otherPages: otherPages);
@@ -7719,6 +7753,193 @@ void main() {
       expect(sentFor(batches, key), hasLength(1));
       expect(server.liveRows.map((row) => row.publicId), ['link-a']);
       expect(container.read(lineupConflictsProvider), isNull);
+    });
+
+    test(
+        'an edit to the conflicting group while Use cloud loads the cloud '
+        'version is neither discarded nor replaced', () async {
+      final page = _page('page-1', 0);
+      final (container, _, store) = await refusedBesideTeammate(page);
+      final key = keyOf(page, 'link-a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      final refreshes = liveRead.refreshCount;
+      final gate = liveRead.refreshGate = Completer<void>();
+
+      final useCloud = container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      await _until(() => liveRead.refreshCount > refreshes);
+      // While the cloud's version is on its way, the user edits the group.
+      container.read(lineUpProvider.notifier).updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-b')!
+          .copyWith(notes: 'newer'));
+      var replaced = false;
+      container.listen(lineUpProvider, (_, next) {
+        if (next.linkById('link-b')?.notes != 'newer') replaced = true;
+      });
+      gate.complete();
+
+      expect(await useCloud, isFalse);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(replaced, isFalse);
+      expect(onScreenOf(container), ['Heaven: mine', 'Mid: newer']);
+      // The refused work and the newer edit behind it both still wait.
+      expect(queueState().attentionByEntityKey.keys, [key]);
+      final newer = queueState().successorByEntityKey[key]!.pending.op;
+      expect(
+          _linkIn(newer.payload as CloudPayload, 'link-b')['notes'], 'newer');
+      final record =
+          store.load().records.singleWhere((r) => r.entityKey == key);
+      expect(record.status, DurableOutboxStatus.attention);
+      expect(record.successorPending!.op.opId, newer.opId);
+      expect(
+          lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
+    });
+
+    test(
+        'Keep both whose copy is not saved because edit access went away '
+        'discards nothing', () async {
+      final page = _page('page-1', 0);
+      final (container, batches, store) = await refusedBesideTeammate(page);
+      final key = keyOf(page, 'link-a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      final waiting = queueState().attentionByEntityKey[key]!.pending.op.opId;
+      // The cloud read Keep both makes finds the user is a viewer now, so
+      // the page's edits, the copy included, are no longer saved.
+      final now = liveRead.initialSnapshot;
+      liveRead.initialSnapshot = _editorSnapshot(
+        pages: now.pages,
+        activePage: now.activePage!,
+        role: 'viewer',
+      );
+
+      final outcome = await container
+          .read(strategyPageSessionProvider.notifier)
+          .keepBothForRejected();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(outcome, KeepBothOutcome.copiesOnly);
+      expect(queueState().hasDurabilityFailure, isFalse);
+      expect(
+        queueState().pending.where((pending) => pending.op is LineupAddOp),
+        isEmpty,
+        reason: 'the copy was never queued',
+      );
+      // The waiting work is untouched, in memory and on disk.
+      expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
+      expect(
+        store.load().records.singleWhere((r) => r.entityKey == key).status,
+        DurableOutboxStatus.attention,
+      );
+      expect(sentFor(batches, key), hasLength(1));
+      expect(
+          lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
+      expect(onScreenOf(container), contains('Heaven: mine'));
+    });
+
+    test(
+        'a canvas edit after Use cloud\'s last save, while it loads the page, '
+        'stops the redraw', () async {
+      final page = _page('page-1', 0);
+      final (container, _, store) = await refusedBesideTeammate(page);
+      final key = keyOf(page, 'link-a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      // The cloud read comes back before the page itself, so loading the
+      // page waits for it: the one wait between the last save and the
+      // redraw. The user's edit lands there.
+      final now = liveRead.initialSnapshot;
+      liveRead.initialSnapshot =
+          RemoteEditorSnapshot(shell: now.shell, activePage: null);
+      var replaced = false;
+      var edited = false;
+      liveRead.onSetActivePage = (pageId) {
+        if (edited || pageId != page.publicId) return;
+        edited = true;
+        container.read(lineUpProvider.notifier).updateLink(container
+            .read(lineUpProvider)
+            .linkById('link-b')!
+            .copyWith(notes: 'later'));
+        container.listen(lineUpProvider, (_, next) {
+          if (next.linkById('link-b')?.notes != 'later') replaced = true;
+        });
+      };
+
+      final resolved = await container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(edited, isTrue, reason: 'the edit landed in the window');
+      expect(resolved, isFalse);
+      expect(replaced, isFalse);
+      expect(onScreenOf(container), ['Heaven: mine', 'Mid: later']);
+      expect(queueState().attentionByEntityKey.keys, [key]);
+      expect(
+        store.load().records.singleWhere((r) => r.entityKey == key).status,
+        DurableOutboxStatus.attention,
+      );
+      expect(
+          lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
+    });
+
+    test(
+        'an edit made while Use cloud\'s last save is being written stops the '
+        'redraw', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, _, _) =
+          await refusedBesideTeammate(page, store: store, elements: [
+        _textElement(page.publicId, 'text-a', 'a'),
+        _textElement(page.publicId, 'text-b', 'b', sortIndex: 1),
+      ]);
+      String textOf(String id) =>
+          container.read(textProvider).singleWhere((t) => t.id == id).text;
+      final refreshes = liveRead.refreshCount;
+      final gate = liveRead.refreshGate = Completer<void>();
+
+      final useCloud = container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      await _until(() => liveRead.refreshCount > refreshes);
+      // An edit made while the cloud's version loads gives the last save
+      // something to write...
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'text-a');
+      // ...and while that write is on its way, the user types elsewhere.
+      var typed = false;
+      var replaced = false;
+      store.onPut = (record) {
+        if (typed || record.entityKey.entityId != 'text-a') return;
+        typed = true;
+        container.read(textProvider.notifier).commitText('text-b', 'typed');
+        container.listen(textProvider, (_, next) {
+          if (next.singleWhere((t) => t.id == 'text-b').text != 'typed') {
+            replaced = true;
+          }
+        });
+      };
+      gate.complete();
+
+      final resolved = await useCloud;
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(typed, isTrue, reason: 'the edit landed during the write');
+      expect(replaced, isFalse, reason: 'the redraw put back the old text');
+      expect(textOf('text-b'), 'typed');
+      expect(resolved, isFalse);
     });
 
     test(

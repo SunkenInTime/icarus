@@ -32,6 +32,7 @@ bool isSpecificAttentionReason(String error) {
   final lower = error.toLowerCase();
   return lower.contains('too large for cloud sync') ||
       lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
+      lower.contains(lineupOverlapMessage.toLowerCase()) ||
       lower.contains(retiredLineupOpMessage.toLowerCase()) ||
       lower.contains(teammateDeletedMessage.toLowerCase()) ||
       lower.contains(pageDeletedMessage.toLowerCase());
@@ -128,6 +129,11 @@ String friendlyCloudSyncError(String raw) {
     return 'A saved change is too large for cloud sync. It remains saved on '
         'this device. Reduce it, then choose Keep mine to retry, or Use '
         'cloud to drop it.';
+  }
+  if (lower.contains(lineupOverlapMessage.toLowerCase())) {
+    return 'This lineup shares a spot with lineups saved separately, so it '
+        'was not saved to the cloud. It remains on this device; Use cloud '
+        'removes it here.';
   }
   if (lower.contains(lineupPageMismatchMessage.toLowerCase())) {
     return 'This lineup clashes with one on another page, so it was not '

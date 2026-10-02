@@ -2901,6 +2901,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             ? teammateDeletedMessage
             : lastError;
         if (reason == lineupPageMismatchMessage ||
+            reason == lineupOverlapMessage ||
             reason == teammateDeletedMessage ||
             reason == retiredLineupOpMessage ||
             reason == pageDeletedMessage) {

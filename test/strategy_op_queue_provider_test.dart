@@ -966,6 +966,37 @@ void main() {
       );
     });
 
+    test(
+        'a lineup group refused for overlapping another stays saved and keeps '
+        'that reason', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _FailingLineupRepository(
+          code: 'INVALID_LINEUP_PAYLOAD_DATA',
+          message: lineupOverlapMessage,
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      final lineup = _lineupAdd(opId: 'add-group');
+      final key = EntitySyncKey.forStrategyOp(lineup)!;
+
+      await notifier.enqueue(lineup, flushImmediately: false);
+      await notifier.flushNow();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey[key]!.pending.op.opId, 'add-group');
+      expect(current.lastError, lineupOverlapMessage);
+      expect(isSpecificAttentionReason(current.lastError!), isTrue);
+      final durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.lastError, lineupOverlapMessage);
+      expect(friendlyCloudSyncError(durable.lastError!),
+          contains('shares a spot'));
+    });
+
     test('opening a strategy shows its saved lineup refusal', () async {
       final store = MemoryDurableStrategyOutboxStore();
       await store.put(_savedRecord(
@@ -3809,7 +3840,13 @@ class _RecordingAckRepository extends ConvexStrategyRepository {
 /// Refuses every op as the server refuses a lineup whose row lives on
 /// another page.
 class _FailingLineupRepository extends ConvexStrategyRepository {
-  _FailingLineupRepository() : super(IcarusConvexApi(_UnusedTransport()));
+  _FailingLineupRepository({
+    this.code = 'LINEUP_PAGE_MISMATCH',
+    this.message = lineupPageMismatchMessage,
+  }) : super(IcarusConvexApi(_UnusedTransport()));
+
+  final String code;
+  final String message;
 
   @override
   Future<List<OpAck>> applyBatch({
@@ -3822,9 +3859,9 @@ class _FailingLineupRepository extends ConvexStrategyRepository {
       for (final op in ops)
         FailedOpAck(
           opId: op.opId,
-          code: 'LINEUP_PAGE_MISMATCH',
-          rawCode: 'LINEUP_PAGE_MISMATCH',
-          message: lineupPageMismatchMessage,
+          code: code,
+          rawCode: code,
+          message: message,
         ),
     ];
   }
