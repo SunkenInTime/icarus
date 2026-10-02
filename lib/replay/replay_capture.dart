@@ -1,7 +1,7 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/replay/replay_frame.dart';
@@ -14,9 +14,15 @@ import 'package:uuid/uuid.dart';
 /// Players and utility keep their replay ids on every page, so the editor's
 /// page transitions move each player from one captured moment to the next.
 class ReplayCapture {
-  ReplayCapture({required this.ref, required this.map, required this.name});
+  ReplayCapture({
+    required this.createStrategy,
+    required this.map,
+    required this.name,
+  });
 
-  final WidgetRef ref;
+  /// Makes the empty strategy the first capture fills, as the library's
+  /// New Strategy does.
+  final Future<StrategyData> Function(MapValue map, String name) createStrategy;
   final MapValue map;
 
   /// The strategy's name when the first capture creates it.
@@ -24,22 +30,31 @@ class ReplayCapture {
 
   String? _strategyId;
 
-  /// The strategy captures go to, once there is one.
+  /// The page the last capture added.
+  String? get lastPageId => _lastPageId;
+  String? _lastPageId;
+
+  /// The strategy captures go to, while it still exists on this map. If the
+  /// user deleted it or moved it to another map, the next capture starts a
+  /// new one rather than writing this map's positions into it.
   StrategyData? get strategy {
     final id = _strategyId;
     if (id == null) return null;
-    return Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
+    final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
+    return strategy?.mapData == map ? strategy : null;
   }
 
   /// Saves [frame] as a page named [pageName] and returns the strategy.
-  Future<StrategyData> capture(ReplayFrame frame,
-      {required String pageName}) async {
+  /// Refuses, without writing, a frame holding a non-finite number.
+  Future<StrategyData> capture(
+    ReplayFrame frame, {
+    required String pageName,
+  }) async {
+    _checkFinite(frame);
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     var target = strategy;
     final replaceBlankPage = target == null;
-    target ??= await ref
-        .read(strategyProvider.notifier)
-        .createNewStrategy(map: map, name: name);
+    target ??= await createStrategy(map, name);
     _strategyId = target.id;
 
     final pages = [...target.pages]
@@ -65,6 +80,23 @@ class ReplayCapture {
       lastEdited: DateTime.now(),
     );
     await box.put(updated.id, updated);
+    _lastPageId = page.id;
     return updated;
+  }
+
+  static void _checkFinite(ReplayFrame frame) {
+    bool finite(double value) => value.isFinite;
+    for (final widget in frame.widgets) {
+      final rotation = switch (widget) {
+        PlacedViewConeAgent(:final rotation) => rotation,
+        PlacedAbility(:final rotation) => rotation,
+        _ => 0.0,
+      };
+      if (!finite(widget.position.dx) ||
+          !finite(widget.position.dy) ||
+          !finite(rotation)) {
+        throw StateError('Capture refused: ${widget.id} is not on the map.');
+      }
+    }
   }
 }

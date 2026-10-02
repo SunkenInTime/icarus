@@ -265,7 +265,7 @@ class _ScrubberPainter extends CustomPainter {
         final victim = playback.document.playerBySubject(kill.victim);
         // A kill counts for the killer's team; a fall or spike death for
         // the other team.
-        final scoringTeam = killer?.team ?? victim?.team.other;
+        final scoringTeam = killer?.team ?? victim?.team?.other;
         final color = scoringTeam == null
             ? theme.mutedForeground
             : scoringTeam == playback.perspective

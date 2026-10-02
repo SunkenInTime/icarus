@@ -120,6 +120,7 @@ class _PlayerRow extends StatelessWidget {
     final agentData = agent == null ? null : AgentData.agents[agent];
     final weapon = replayWeaponType(economy?.weapon);
     final name = state.player.name ?? agentData?.name ?? 'Unknown agent';
+    final credits = economy?.credits;
     return Opacity(
       opacity: state.alive ? 1 : 0.4,
       child: SizedBox(
@@ -145,7 +146,7 @@ class _PlayerRow extends StatelessWidget {
                     name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13),
+                    style: const TextStyle(fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   _VitalsBar(health: state.health, armor: state.armor),
@@ -153,6 +154,8 @@ class _PlayerRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            // What they carried out of the buy phase, and what they had
+            // left to spend.
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -161,10 +164,25 @@ class _PlayerRow extends StatelessWidget {
                   Image.asset(weapon.iconPath, height: 14)
                 else
                   const SizedBox(height: 14),
-                if (economy != null)
-                  Text(
-                    '${economy!.credits}',
-                    style: theme.textTheme.muted.copyWith(fontSize: 11),
+                if (credits != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        LucideIcons.coins,
+                        size: 10,
+                        color: theme.colorScheme.mutedForeground,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '$credits',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.mutedForeground,
+                        ),
+                      ),
+                    ],
                   ),
               ],
             ),
@@ -175,7 +193,8 @@ class _PlayerRow extends StatelessWidget {
   }
 }
 
-/// Health as a filled bar out of 100, armor as a thinner bar under it.
+/// Health as a filled bar out of 100, armor as a thinner bar under it. An
+/// unknown reading shows the empty track, never a guess.
 class _VitalsBar extends StatelessWidget {
   const _VitalsBar({required this.health, required this.armor});
 
@@ -205,7 +224,7 @@ class _VitalsBar extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        bar((health ?? 100) / 100, Settings.tacticalVioletTheme.foreground, 3),
+        bar((health ?? 0) / 100, Settings.tacticalVioletTheme.foreground, 3),
         const SizedBox(height: 2),
         bar((armor ?? 0) / 50, Settings.tacticalVioletTheme.mutedForeground, 2),
       ],
@@ -304,9 +323,8 @@ class _KillIcon extends StatelessWidget {
         color: Settings.tacticalVioletTheme.secondary,
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: player == null
-              ? Settings.tacticalVioletTheme.border
-              : player!.team.colorFor(perspective),
+          color: player?.team?.colorFor(perspective) ??
+              Settings.tacticalVioletTheme.border,
         ),
       ),
       child:

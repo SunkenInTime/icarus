@@ -30,26 +30,40 @@ final replayLibraryProvider =
 );
 
 class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
-  /// Headers already read, by file cache key: a refresh only probes new files.
-  final _probes = <String, ReplayListing>{};
+  /// What each file's header said, by file cache key, so a refresh only
+  /// probes files it hasn't seen. The listing itself is rebuilt each time
+  /// from the file as it is now.
+  final _probes = <String, ({ReplayProbe? probe, ReplayDecodeException? error})>{};
 
   @override
   Future<List<ReplayListing>> build() => _load();
 
   Future<List<ReplayListing>> _load() async {
     final files = await ref.read(replayFilesProvider).list();
-    final listings = <ReplayListing>[];
-    for (final file in files) {
-      listings.add(_probes[file.cacheKey] ??= await _probe(file));
-    }
-    return listings;
+    return [for (final file in files) await _listing(file)];
   }
 
-  Future<ReplayListing> _probe(ReplayFile file) async {
+  Future<ReplayListing> _listing(ReplayFile file) async {
+    final header = _probes[file.cacheKey] ??= await _probe(file);
+    return ReplayListing(file: file, probe: header.probe, error: header.error);
+  }
+
+  /// One unreadable file is listed as such; it never hides the others.
+  Future<({ReplayProbe? probe, ReplayDecodeException? error})> _probe(
+    ReplayFile file,
+  ) async {
     try {
-      return ReplayListing(file: file, probe: await probeReplay(file.path));
+      return (probe: await probeReplay(file.path), error: null);
     } on ReplayDecodeException catch (error) {
-      return ReplayListing(file: file, error: error);
+      return (probe: null, error: error);
+    } catch (error) {
+      return (
+        probe: null,
+        error: const ReplayDecodeException(
+          'corrupt',
+          "This file couldn't be read.",
+        ),
+      );
     }
   }
 
@@ -61,6 +75,6 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   Future<ReplayListing> import(String path) async {
     final file = await ref.read(replayFilesProvider).import(path);
     await refresh();
-    return _probes[file.cacheKey] ?? await _probe(file);
+    return _listing(file);
   }
 }

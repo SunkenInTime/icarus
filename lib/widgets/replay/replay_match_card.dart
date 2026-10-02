@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -13,10 +14,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// Where the match stands, and the one thing to do with it: capture the
 /// moment into a strategy.
 class ReplayMatchCard extends ConsumerStatefulWidget {
-  const ReplayMatchCard({super.key, required this.playback, required this.map});
+  const ReplayMatchCard({
+    super.key,
+    required this.playback,
+    required this.map,
+    required this.onReturnFromEditor,
+  });
 
   final ReplayPlayback playback;
   final MapValue map;
+
+  /// Called after the captured strategy's editor closes, which leaves its
+  /// own map and settings behind.
+  final VoidCallback onReturnFromEditor;
 
   @override
   ConsumerState<ReplayMatchCard> createState() => _ReplayMatchCardState();
@@ -24,13 +34,14 @@ class ReplayMatchCard extends ConsumerStatefulWidget {
 
 class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
   late final ReplayCapture _capture = ReplayCapture(
-    ref: ref,
+    createStrategy: (map, name) => ref
+        .read(strategyProvider.notifier)
+        .createNewStrategy(map: map, name: name),
     map: widget.map,
     name: '${replayMapName(widget.map)} replay · '
         '${_dateLabel(widget.playback.document.match.recordedAt)}',
   );
   bool _capturing = false;
-  int _captured = 0;
 
   String _dateLabel(DateTime? date) =>
       MaterialLocalizations.of(context).formatShortDate(date ?? DateTime.now());
@@ -48,7 +59,6 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         perspective: playback.perspective,
       );
       await _capture.capture(frame, pageName: replayMomentLabel(playback));
-      setState(() => _captured++);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         "Couldn't capture this moment.",
@@ -61,19 +71,28 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     }
   }
 
-  void _openStrategy() {
+  /// Opens the strategy on the page just captured.
+  Future<void> _openStrategy() async {
     final strategy = _capture.strategy;
     if (strategy == null) return;
     widget.playback.pause();
-    Navigator.push(
+    final page = strategy.pages.firstWhere(
+      (page) => page.id == _capture.lastPageId,
+      orElse: () => strategy.pages.last,
+    );
+    await Navigator.push(
       context,
       StrategyView.route(
         initialStrategyId: strategy.id,
         initialStrategyName: strategy.name,
         initialMapValue: strategy.mapData,
-        initialIsAttack: strategy.pages.last.isAttack,
+        initialIsAttack: page.isAttack,
+        initialPageId: page.id,
       ),
     );
+    if (!mounted) return;
+    widget.onReturnFromEditor();
+    setState(() {});
   }
 
   @override
@@ -94,6 +113,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
           final round = playback.round;
           final score = _score(playback);
           final isAttack = playback.frame.isAttack;
+          final captured = _capture.strategy?.pages.length ?? 0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -143,15 +163,15 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                   ),
                 ],
               ),
-              if (_captured > 0) ...[
+              if (captured > 0) ...[
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        _captured == 1
+                        captured == 1
                             ? '1 page captured'
-                            : '$_captured pages captured',
+                            : '$captured pages captured',
                         style: theme.textTheme.muted,
                       ),
                     ),
@@ -171,13 +191,12 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     );
   }
 
-  /// Rounds won before the one being watched.
+  /// Rounds decided by the moment being watched.
   ({int ally, int enemy}) _score(ReplayPlayback playback) {
-    final current = playback.round?.index ?? 0;
     var ally = 0;
     var enemy = 0;
     for (final round in playback.document.rounds) {
-      if (round.index >= current) break;
+      if (round.endMs > playback.timeMs) break;
       final winner = round.winningTeam;
       if (winner == null) continue;
       if (winner == playback.perspective) {

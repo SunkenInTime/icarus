@@ -10,6 +10,7 @@ import 'package:icarus/replay/replay_ability_catalog.dart';
 import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
+import 'package:icarus/replay/replay_weapons.dart';
 
 /// One moment of a replay as Icarus draws it: the same placed widgets a page
 /// holds. The viewer paints these, and capturing the moment saves them.
@@ -87,39 +88,50 @@ class ReplayFrameBuilder {
     return byAgent;
   }();
 
-  /// Whether [player] is alive at [timeMs]. Health is the truth when the
-  /// replay has it (it sees revives); otherwise the player is dead from their
-  /// death until the next round starts.
+  /// Whether [player] is alive at [timeMs]: whichever came last this round
+  /// of the round starting (alive), a health reading (alive above 0, which
+  /// sees revives) and a recorded death.
   bool isAlive(ReplayPlayer player, int timeMs, ReplayRound? round) {
-    final vitals = document.vitals[player.subject]?.at(timeMs);
-    if (vitals != null) return vitals.health > 0;
     final roundStart = round?.startMs ?? 0;
-    for (final death in _deathsBySubject[player.subject] ?? const []) {
-      if (death.timeMs >= roundStart && death.timeMs <= timeMs) return false;
+    var alive = true;
+    var decidedAt = roundStart;
+    final vitals = document.vitals[player.subject]?.at(timeMs);
+    if (vitals != null && vitals.timeMs >= roundStart) {
+      alive = vitals.health > 0;
+      decidedAt = vitals.timeMs;
     }
-    return true;
+    final death = _lastDeathBefore(player.subject, timeMs);
+    if (death != null && death.timeMs >= decidedAt) alive = false;
+    return alive;
   }
 
   ReplayPlayerState playerState(ReplayPlayer player, int timeMs) {
     final round = document.roundAt(timeMs);
+    final roundStart = round?.startMs ?? 0;
     final alive = isAlive(player, timeMs, round);
     final track = document.movement[player.subject];
-    ReplayPose? pose = track?.poseAt(timeMs);
-    if (!alive && pose == null && track != null) {
-      // The body is gone from the stream; keep where it fell.
-      final death = _lastDeathBefore(player.subject, timeMs);
-      if (death != null) {
-        final index = track.indexAtOrBefore(death.timeMs);
-        if (index >= 0) pose = track.poseAtIndex(index);
+    ReplayPose? pose;
+    if (track != null) {
+      if (alive) {
+        // A quiet stream means standing still, not vanishing.
+        pose = track.poseAt(timeMs) ??
+            track.heldPose(timeMs, notBeforeMs: roundStart);
+      } else {
+        // Dead this round: keep where they fell.
+        final death = _lastDeathBefore(player.subject, timeMs);
+        if (death != null && death.timeMs >= roundStart) {
+          pose = track.heldPose(death.timeMs, notBeforeMs: roundStart);
+        }
       }
     }
     final vitals = document.vitals[player.subject]?.at(timeMs);
+    final vitalsCurrent = vitals != null && vitals.timeMs >= roundStart;
     return ReplayPlayerState(
       player: player,
       alive: alive,
       pose: pose,
-      health: vitals?.health,
-      armor: vitals?.armor,
+      health: vitalsCurrent ? vitals.health : null,
+      armor: vitalsCurrent ? vitals.armor : null,
     );
   }
 
@@ -145,14 +157,18 @@ class ReplayFrameBuilder {
     final agents = <PlacedAgentNode>[];
     for (final player in document.players) {
       final type = replayAgentType(player.agentId);
-      if (type == null) continue;
+      final team = player.team;
+      // Without an agent or a team there is nothing honest to draw.
+      if (type == null || team == null) continue;
       final state = playerState(player, timeMs);
       final pose = state.pose;
       if (pose == null) continue;
       final position =
           projection.toWorld(pose.position.x, pose.position.y) - agentAnchor;
-      final isAlly = player.team == perspective;
+      final isAlly = team == perspective;
       final id = 'replay-player-${player.subject}';
+      // What they carried out of the buy phase.
+      final weapon = replayWeaponType(round?.economyFor(player.subject)?.weapon);
       agents.add(
         state.alive
             ? PlacedViewConeAgent(
@@ -163,6 +179,7 @@ class ReplayFrameBuilder {
                 rotation: projection.rotationForYaw(pose.yaw),
                 length: _coneLength,
                 isAlly: isAlly,
+                weapon: weapon,
               )
             : PlacedAgent(
                 id: id,
@@ -170,6 +187,7 @@ class ReplayFrameBuilder {
                 position: position,
                 isAlly: isAlly,
                 state: AgentState.dead,
+                weapon: weapon,
               ),
       );
     }
@@ -183,22 +201,25 @@ class ReplayFrameBuilder {
       final owner = ownerOf(utility, entry);
       // An unknown owner among duplicate agents would be a guess at the
       // team colour; leave it out instead.
-      if (owner == null) continue;
+      final ownerTeam = owner?.team;
+      if (ownerTeam == null) continue;
       abilities.add(
         entry.place(
           utility: utility,
           projection: projection,
           timeMs: timeMs,
           id: 'replay-utility-${utility.id}',
-          isAlly: owner.team == perspective,
+          isAlly: ownerTeam == perspective,
         ),
       );
     }
 
     final utilities = <PlacedUtility>[];
     final plant = round?.plant;
+    final plantedAt = plant?.position;
     if (round != null &&
         plant != null &&
+        plantedAt != null &&
         timeMs >= plant.timeMs &&
         timeMs < round.endMs) {
       final spike = PlacedUtility(
@@ -206,7 +227,7 @@ class ReplayFrameBuilder {
         type: UtilityType.spike,
         position: Offset.zero,
       );
-      spike.position = projection.toWorld(plant.position.x, plant.position.y) -
+      spike.position = projection.toWorld(plantedAt.x, plantedAt.y) -
           coordinates.virtualOffsetToWorld(
             storedUtilityAnchor(
               utility: spike,

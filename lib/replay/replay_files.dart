@@ -27,11 +27,13 @@ class ReplayFile {
   final int sizeBytes;
   final DateTime modified;
 
-  /// Valorant names replays after their match id.
-  String get matchId => p.basenameWithoutExtension(path);
+  /// Valorant names replays after their match id. Lower-cased: Windows
+  /// paths don't care about case, so neither does the match id.
+  String get matchId => p.basenameWithoutExtension(path).toLowerCase();
 
-  /// Identifies this exact file for caching: a replay re-downloaded or
-  /// replaced gets a new key.
+  /// Identifies this exact file for caching. Valorant never rewrites a
+  /// replay; one re-downloaded or replaced gets a new size or time, and so a
+  /// new key.
   String get cacheKey =>
       '$matchId-$sizeBytes-${modified.millisecondsSinceEpoch}';
 }
@@ -90,7 +92,8 @@ class ReplayFiles {
       ).create(recursive: true);
 
   /// Every replay in both folders, newest first. A match present in both is
-  /// listed once, from Icarus's folder, which Valorant will not clear.
+  /// listed once, from Icarus's folder, which Valorant will not clear. A
+  /// folder that can't be read lists nothing; the other still does.
   Future<List<ReplayFile>> list() async {
     final byMatch = <String, ReplayFile>{};
     final valorant = _valorantDemosPath;
@@ -104,14 +107,30 @@ class ReplayFiles {
         );
       }
     }
-    for (final file in await _scan(await icarusReplaysDirectory())) {
+    final Directory kept;
+    try {
+      kept = await icarusReplaysDirectory();
+    } on FileSystemException {
+      return _newestFirst(byMatch.values);
+    }
+    for (final file in await _scan(kept)) {
       byMatch[file.matchId] = file;
     }
-    return byMatch.values.toList()
-      ..sort((a, b) => b.modified.compareTo(a.modified));
+    return _newestFirst(byMatch.values);
   }
 
+  static List<ReplayFile> _newestFirst(Iterable<ReplayFile> files) =>
+      files.toList()..sort((a, b) => b.modified.compareTo(a.modified));
+
   Future<List<ReplayFile>> _scan(Directory directory) async {
+    try {
+      return await _scanOrThrow(directory);
+    } on FileSystemException {
+      return const [];
+    }
+  }
+
+  Future<List<ReplayFile>> _scanOrThrow(Directory directory) async {
     if (!await directory.exists()) return const [];
     final files = <ReplayFile>[];
     await for (final entity in directory.list(followLinks: false)) {
@@ -139,9 +158,13 @@ class ReplayFiles {
         !await destination.exists()) {
       // Copy to a temporary name first so a half-copied file is never
       // listed as a replay.
-      final partial = File('${destination.path}.partial');
-      await File(sourcePath).copy(partial.path);
-      await partial.rename(destination.path);
+      final partial = _partial(destination);
+      try {
+        await File(sourcePath).copy(partial.path);
+        await partial.rename(destination.path);
+      } finally {
+        if (await partial.exists()) await partial.delete();
+      }
     }
     final stat = await destination.stat();
     return ReplayFile(
@@ -151,6 +174,12 @@ class ReplayFiles {
       modified: stat.modified,
     );
   }
+
+  /// A temporary name beside [target], unique to this write, so two writes
+  /// of the same file never share one. Never listed: it isn't a `.vrf`.
+  static File _partial(File target) => File(
+        '${target.path}.${DateTime.now().microsecondsSinceEpoch}.partial',
+      );
 
   Future<File> _cacheFile(ReplayFile file, String decoderVersion) async => File(
         p.join(
@@ -172,13 +201,18 @@ class ReplayFiles {
     Uint8List bytes,
   ) async {
     final cache = await _cacheFile(file, decoderVersion);
-    final partial = File('${cache.path}.partial');
-    await partial.writeAsBytes(bytes, flush: true);
-    await partial.rename(cache.path);
+    final partial = _partial(cache);
+    try {
+      await partial.writeAsBytes(bytes, flush: true);
+      await partial.rename(cache.path);
+    } finally {
+      if (await partial.exists()) await partial.delete();
+    }
     await for (final entity in cache.parent.list()) {
       final name = p.basename(entity.path);
       if (entity is File &&
           name.startsWith('${file.matchId}-') &&
+          name.endsWith('.icrp') &&
           !p.equals(entity.path, cache.path)) {
         await entity.delete();
       }

@@ -56,18 +56,20 @@ class ReplayDocument {
     if (jsonEnd > bytes.length) {
       throw const FormatException('Decoded replay is truncated.');
     }
-    final json =
-        jsonDecode(utf8.decode(Uint8List.sublistView(bytes, 12, jsonEnd)))
-            as Map<String, dynamic>;
     final blobStart = (jsonEnd + 7) & ~7;
     final blob = blobStart <= bytes.length
         ? ByteData.sublistView(bytes, blobStart)
         : ByteData(0);
     try {
+      final json =
+          jsonDecode(utf8.decode(Uint8List.sublistView(bytes, 12, jsonEnd)))
+              as Map<String, dynamic>;
       return ReplayDocument._fromJson(json, blob);
     } on TypeError catch (error) {
-      // A field of the wrong type or missing: the buffer is not what this
+      // A field missing or of the wrong type: the buffer is not what this
       // reader understands, which callers handle like any bad format.
+      throw FormatException('Decoded replay is malformed: $error');
+    } on RangeError catch (error) {
       throw FormatException('Decoded replay is malformed: $error');
     }
   }
@@ -178,16 +180,17 @@ class ReplayPlayer {
 
   final String subject;
 
-  /// valorant-api.com agent UUID.
-  final String agentId;
-  final ReplayTeam team;
+  /// valorant-api.com agent UUID, when the header names one.
+  final String? agentId;
+
+  /// Null when no combat report names the player's team.
+  final ReplayTeam? team;
   final String? name;
 
   factory ReplayPlayer.fromJson(Map<String, dynamic> json) => ReplayPlayer(
         subject: json['subject'] as String,
-        agentId: (json['agentId'] as String).toLowerCase(),
-        team: ReplayTeam.tryParse(json['team']) ??
-            (throw FormatException('Player ${json['subject']} has no team.')),
+        agentId: (json['agentId'] as String?)?.toLowerCase(),
+        team: ReplayTeam.tryParse(json['team']),
         name: json['name'] as String?,
       );
 }
@@ -213,7 +216,9 @@ class ReplayRound {
   final int startMs;
   final int? combatStartMs;
   final int endMs;
-  final ReplayTeam attackingTeam;
+
+  /// Null when no round of this half has a result to tell sides apart.
+  final ReplayTeam? attackingTeam;
   final ReplayTeam? winningTeam;
   final ReplayRoundEnd? endReason;
   final ReplaySpikePlant? plant;
@@ -238,10 +243,7 @@ class ReplayRound {
         startMs: json['startMs'] as int,
         combatStartMs: json['combatStartMs'] as int?,
         endMs: json['endMs'] as int,
-        attackingTeam: ReplayTeam.tryParse(json['attackingTeam']) ??
-            (throw FormatException(
-              'Round ${json['index']} has no attacking team.',
-            )),
+        attackingTeam: ReplayTeam.tryParse(json['attackingTeam']),
         winningTeam: ReplayTeam.tryParse(json['winningTeam']),
         endReason: ReplayRoundEnd.values
             .where((value) => value.name == json['endReason'])
@@ -270,14 +272,16 @@ class ReplaySpikePlant {
   });
 
   final int timeMs;
-  final ReplayVector position;
+  final ReplayVector? position;
   final String? site;
   final String? subject;
 
   factory ReplaySpikePlant.fromJson(Map<String, dynamic> json) =>
       ReplaySpikePlant(
         timeMs: json['timeMs'] as int,
-        position: ReplayVector.fromJson(json['position'] as List),
+        position: json['position'] == null
+            ? null
+            : ReplayVector.fromJson(json['position'] as List),
         site: json['site'] as String?,
         subject: json['subject'] as String?,
       );
@@ -299,15 +303,14 @@ class ReplaySpikeDefuse {
 class ReplayEconomy {
   const ReplayEconomy({
     required this.subject,
-    required this.credits,
-    this.loadoutValue,
+    this.credits,
     this.weapon,
     this.armor,
   });
 
   final String subject;
-  final int credits;
-  final int? loadoutValue;
+  /// Null when no money was replicated by the end of the buy phase.
+  final int? credits;
 
   /// Equippable class path of the best weapon carried into the round.
   final String? weapon;
@@ -317,8 +320,7 @@ class ReplayEconomy {
 
   factory ReplayEconomy.fromJson(Map<String, dynamic> json) => ReplayEconomy(
         subject: json['subject'] as String,
-        credits: json['credits'] as int,
-        loadoutValue: json['loadoutValue'] as int?,
+        credits: json['credits'] as int?,
         weapon: json['weapon'] as String?,
         armor: json['armor'] as int?,
       );
@@ -398,7 +400,7 @@ class ReplayUtility {
         spawnMs: json['spawnMs'] as int,
         endMs: json['endMs'] as int?,
         position: ReplayVector.fromJson(json['position'] as List),
-        yaw: (json['yaw'] as num?)?.toDouble(),
+        yaw: json['yaw'] == null ? null : _finite(json['yaw'] as num),
         path: [
           for (final row in (json['path'] as List? ?? const []))
             ReplayPathPoint.fromJson(row as List),
@@ -428,6 +430,16 @@ class ReplayQuality {
       );
 }
 
+/// [value], refusing NaN and infinities: nothing non-finite may reach a
+/// placed widget, and from there a saved strategy.
+double _finite(num value) {
+  final number = value.toDouble();
+  if (!number.isFinite) {
+    throw FormatException('Decoded replay holds a non-finite number: $value');
+  }
+  return number;
+}
+
 /// A point in game-world centimetres.
 class ReplayVector {
   const ReplayVector(this.x, this.y, this.z);
@@ -437,9 +449,9 @@ class ReplayVector {
   final double z;
 
   factory ReplayVector.fromJson(List json) => ReplayVector(
-        (json[0] as num).toDouble(),
-        (json[1] as num).toDouble(),
-        (json[2] as num).toDouble(),
+        _finite(json[0] as num),
+        _finite(json[1] as num),
+        _finite(json[2] as num),
       );
 }
 
@@ -453,9 +465,9 @@ class ReplayPathPoint {
   factory ReplayPathPoint.fromJson(List json) => ReplayPathPoint(
         (json[0] as num).toInt(),
         ReplayVector(
-          (json[1] as num).toDouble(),
-          (json[2] as num).toDouble(),
-          (json[3] as num).toDouble(),
+          _finite(json[1] as num),
+          _finite(json[2] as num),
+          _finite(json[3] as num),
         ),
       );
 }
@@ -495,10 +507,17 @@ class ReplayMovementTrack {
     if (offset < 0 || count < 0 || end > blob.lengthInBytes) {
       throw const FormatException('Movement record range is out of bounds.');
     }
-    return ReplayMovementTrack._(
-      ByteData.sublistView(blob, offset, end),
-      count,
-    );
+    final records = ByteData.sublistView(blob, offset, end);
+    for (var i = 0; i < count; i++) {
+      for (var field = 0; field < 5; field++) {
+        final value =
+            records.getFloat32(i * _recordBytes + 4 + field * 4, Endian.little);
+        if (!value.isFinite) {
+          throw const FormatException('Movement holds a non-finite number.');
+        }
+      }
+    }
+    return ReplayMovementTrack._(records, count);
   }
 
   int timeAt(int index) =>
@@ -528,6 +547,14 @@ class ReplayMovementTrack {
       }
     }
     return found;
+  }
+
+  /// The last recorded pose at or before [timeMs], if it is no older than
+  /// [notBeforeMs]: where a player stands while the stream is quiet.
+  ReplayPose? heldPose(int timeMs, {required int notBeforeMs}) {
+    final index = indexAtOrBefore(timeMs);
+    if (index < 0 || timeAt(index) < notBeforeMs) return null;
+    return poseAtIndex(index);
   }
 
   /// The pose at [timeMs], interpolated between the samples around it.
@@ -585,14 +612,15 @@ class ReplayVitalsTrack {
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i] as List;
       times[i] = (row[0] as num).toInt();
-      health[i] = (row[1] as num).toDouble();
-      armor[i] = (row[2] as num).toDouble();
+      health[i] = _finite(row[1] as num);
+      armor[i] = _finite(row[2] as num);
     }
     return ReplayVitalsTrack._(times, health, armor);
   }
 
-  /// Health and armor as of [timeMs], or null before the first row.
-  ({double health, double armor})? at(int timeMs) {
+  /// The row in force at [timeMs] (with when it was recorded), or null
+  /// before the first row.
+  ({int timeMs, double health, double armor})? at(int timeMs) {
     var low = 0;
     var high = _times.length - 1;
     var found = -1;
@@ -607,6 +635,7 @@ class ReplayVitalsTrack {
     }
     if (found < 0) return null;
     return (
+      timeMs: _times[found],
       health: math.max(0.0, _health[found]),
       armor: math.max(0.0, _armor[found]),
     );

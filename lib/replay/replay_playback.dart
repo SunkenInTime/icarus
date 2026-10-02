@@ -24,6 +24,10 @@ class ReplayPlayback extends ChangeNotifier {
   final ReplayFrameBuilder frames;
 
   int _timeMs = 0;
+
+  /// The part of a millisecond the clock has run but not yet shown, so
+  /// playback speed doesn't depend on frame rate.
+  double _carryMs = 0;
   bool _playing = false;
   double _speed = 1;
   ReplayTeam _perspective;
@@ -79,6 +83,7 @@ class ReplayPlayback extends ChangeNotifier {
 
   void seek(int timeMs) {
     final clamped = timeMs.clamp(0, durationMs);
+    _carryMs = 0;
     if (clamped == _timeMs) return;
     _timeMs = clamped;
     notifyListeners();
@@ -87,8 +92,10 @@ class ReplayPlayback extends ChangeNotifier {
   /// Moves the clock by [elapsed] of wall time at the current speed.
   void advance(Duration elapsed) {
     if (!_playing) return;
-    final next = _timeMs + (elapsed.inMicroseconds * _speed / 1000).round();
-    _timeMs = math.min(next, durationMs);
+    final exact = _carryMs + elapsed.inMicroseconds * _speed / 1000;
+    final whole = exact.floor();
+    _carryMs = exact - whole;
+    _timeMs = math.min(_timeMs + whole, durationMs);
     if (_timeMs >= durationMs) _playing = false;
     notifyListeners();
   }

@@ -193,7 +193,10 @@ class _FromStart extends _Placement {
     required double mapScale,
   }) {
     final points = utility.points;
-    final startPoint = points.length >= 2 ? points.first : utility.position;
+    // A shape drawn by its points stays put; otherwise the start travels
+    // with the utility (Paranoia, a moving cover).
+    final startPoint =
+        points.length >= 2 ? points.first : utility.positionAt(timeMs);
     final start = projection.toWorld(startPoint.x, startPoint.y);
     final endPoint = points.isEmpty ? null : points.last;
     final end =

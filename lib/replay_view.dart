@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -8,6 +9,8 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_decoder.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_files.dart';
@@ -55,7 +58,6 @@ class _ReplayViewState extends ConsumerState<ReplayView>
   ReplayPlayback? _playback;
   ReplayDecodeException? _error;
   Duration _lastTick = Duration.zero;
-  bool? _drawnAsAttack;
 
   @override
   void initState() {
@@ -75,8 +77,8 @@ class _ReplayViewState extends ConsumerState<ReplayView>
   }
 
   Future<void> _open() async {
-    final projection = ReplayMapProjection.forMapPath(widget.probe.mapPath);
     try {
+      final projection = ReplayMapProjection.forMapPath(widget.probe.mapPath);
       if (projection == null) {
         throw const ReplayDecodeException(
           'unsupportedMap',
@@ -84,33 +86,46 @@ class _ReplayViewState extends ConsumerState<ReplayView>
         );
       }
       final document = await _loader.load();
+      if (!mounted) return;
       final perspective = await _defaultPerspective(document);
       if (!mounted) return;
       final playback = ReplayPlayback(
         document: document,
         projection: projection,
         perspective: perspective,
-      )..addListener(_onPlaybackChanged);
+      )..addListener(_syncMapSide);
       setState(() => _playback = playback);
-      _syncMapSide(playback);
+      claimEditorState();
       _ticker.start();
     } on ReplayDecodeException catch (error) {
-      if (mounted) setState(() => _error = error);
+      if (mounted && !error.isCancelled) setState(() => _error = error);
     } on FormatException catch (error) {
-      if (mounted) {
-        setState(
-            () => _error = ReplayDecodeException('corrupt', error.message));
-      }
+      _fail(ReplayDecodeException('corrupt', error.message));
+    } catch (error) {
+      // Whatever else went wrong, the screen must not sit on "Reading".
+      _fail(ReplayDecodeException('io', '$error'));
     } finally {
       _progressTimer?.cancel();
     }
   }
 
+  void _fail(ReplayDecodeException error) {
+    if (mounted) setState(() => _error = error);
+  }
+
   /// The team of whoever played this match on this machine, else Red.
   Future<ReplayTeam> _defaultPerspective(ReplayDocument document) async {
-    final local = await ref.read(replayFilesProvider).localSubjects();
+    Set<String> local;
+    try {
+      local = await ref.read(replayFilesProvider).localSubjects();
+    } on FileSystemException {
+      local = const {};
+    }
     for (final player in document.players) {
-      if (local.contains(player.subject.toLowerCase())) return player.team;
+      final team = player.team;
+      if (team != null && local.contains(player.subject.toLowerCase())) {
+        return team;
+      }
     }
     return ReplayTeam.red;
   }
@@ -121,21 +136,34 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     _playback?.advance(delta);
   }
 
-  void _onPlaybackChanged() {
+  /// The editor's widgets this screen draws with read their map, side and
+  /// marker settings from the editor's providers. Point them at this replay
+  /// and at the settings a captured strategy starts with. Called on opening
+  /// and on coming back from the editor, which leaves its own state behind.
+  void claimEditorState() {
     final playback = _playback;
-    if (playback != null) _syncMapSide(playback);
+    if (playback == null) return;
+    final preferences = ref.read(appPreferencesProvider);
+    ref.read(strategySettingsProvider.notifier).fromHive(
+          StrategySettings(
+            agentSize: preferences.defaultAgentSizeForNewStrategies,
+            abilitySize: preferences.defaultAbilitySizeForNewStrategies,
+            useNeutralTeamColors:
+                preferences.defaultNeutralTeamColorsForNewStrategies,
+          ),
+        );
+    _syncMapSide();
   }
 
-  /// The editor's map widgets read the map and side from [mapProvider]; the
-  /// side follows the perspective team round by round.
-  void _syncMapSide(ReplayPlayback playback) {
+  /// The side follows the perspective team round by round.
+  void _syncMapSide() {
+    final playback = _playback;
+    if (playback == null) return;
+    final map = playback.frames.projection.map;
     final isAttack = playback.frame.isAttack;
-    if (_drawnAsAttack == isAttack) return;
-    _drawnAsAttack = isAttack;
-    ref.read(mapProvider.notifier).fromHive(
-          ReplayMapProjection.forMapPath(widget.probe.mapPath)!.map,
-          isAttack,
-        );
+    final current = ref.read(mapProvider);
+    if (current.currentMap == map && current.isAttack == isAttack) return;
+    ref.read(mapProvider.notifier).fromHive(map, isAttack);
   }
 
   @override
@@ -144,7 +172,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     _loader.cancel();
     _ticker.dispose();
     _playback
-      ?..removeListener(_onPlaybackChanged)
+      ?..removeListener(_syncMapSide)
       ..dispose();
     super.dispose();
   }
@@ -183,7 +211,11 @@ class _ReplayViewState extends ConsumerState<ReplayView>
             _ReplayStrip(map: map, probe: widget.probe),
             Expanded(
               child: playback != null
-                  ? _ReplayBench(playback: playback, map: map!)
+                  ? _ReplayBench(
+                      playback: playback,
+                      map: map!,
+                      onReturnFromEditor: claimEditorState,
+                    )
                   : _ReplayLoading(
                       progress: _loader.progress,
                       error: _error,
@@ -259,10 +291,15 @@ String replayMapName(MapValue map) {
 /// match and actions top-left, roster on the right, timeline along the
 /// bottom.
 class _ReplayBench extends StatelessWidget {
-  const _ReplayBench({required this.playback, required this.map});
+  const _ReplayBench({
+    required this.playback,
+    required this.map,
+    required this.onReturnFromEditor,
+  });
 
   final ReplayPlayback playback;
   final MapValue map;
+  final VoidCallback onReturnFromEditor;
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +318,11 @@ class _ReplayBench extends StatelessWidget {
           alignment: Alignment.topLeft,
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: ReplayMatchCard(playback: playback, map: map),
+            child: ReplayMatchCard(
+              playback: playback,
+              map: map,
+              onReturnFromEditor: onReturnFromEditor,
+            ),
           ),
         ),
         Positioned(

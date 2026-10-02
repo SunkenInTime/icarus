@@ -78,7 +78,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
             gradient: RadialGradient(
               radius: 1.5,
               colors: [
-                const Color(0xff18181b),
+                ShadTheme.of(context).colorScheme.card,
                 ShadTheme.of(context).colorScheme.background,
               ],
             ),

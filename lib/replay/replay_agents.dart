@@ -35,5 +35,5 @@ const Map<String, AgentType> replayAgentsById = {
   '7f94d92c-4234-0a36-9646-3a87eb8b5c89': AgentType.yoru,
 };
 
-AgentType? replayAgentType(String agentId) =>
-    replayAgentsById[agentId.toLowerCase()];
+AgentType? replayAgentType(String? agentId) =>
+    agentId == null ? null : replayAgentsById[agentId.toLowerCase()];
