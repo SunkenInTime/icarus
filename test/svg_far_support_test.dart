@@ -58,4 +58,38 @@ void main() {
     }
     expect(far, isEmpty);
   });
+
+  // The two that started it are still there to pick by hand, at their
+  // measured heights: only the default changed.
+  for (final (map, side, id, at, height) in const [
+    (
+      'split',
+      'attack',
+      'split-measured-mesh-7707-13',
+      Offset(235.4, 235.7),
+      36.5
+    ),
+    (
+      'split',
+      'defense',
+      'split-measured-mesh-7707-13',
+      Offset(230.8, 237.3),
+      36.5
+    ),
+    ('lotus', 'attack', 'lotus-measured-volume-393-0', Offset(264, 266), 16.3),
+    ('lotus', 'defense', 'lotus-measured-volume-393-0', Offset(228, 207), 16.3),
+  ]) {
+    test('$map $side keeps $id as a level to pick by hand', () {
+      final model = SvgHeightVisibility.fromJson(
+        jsonDecode(utf8.decode(gzip.decode(
+            File('assets/maps/${map}_svg_height_$side.json.gz')
+                .readAsBytesSync()))) as Map<String, dynamic>,
+      );
+      final support =
+          model.supportsAt(at).singleWhere((support) => support.id == id);
+      expect(support.automaticStandingAllowed, isFalse);
+      expect(support.surfaceElevationAt(at), closeTo(height, 0.1));
+      expect(model.automaticSupportAt(at)?.id, isNot(id));
+    });
+  }
 }
