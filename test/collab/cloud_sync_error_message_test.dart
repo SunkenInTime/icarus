@@ -30,6 +30,23 @@ void main() {
     expect(message, isNot(contains('LINEUP_PAGE_MISMATCH')));
   });
 
+  test('explains a change to something a teammate deleted', () {
+    final message = friendlyCloudSyncError(teammateDeletedMessage);
+
+    expect(message, contains('A teammate deleted what you changed'));
+    expect(message, contains('Keep mine brings it back'));
+    expect(message, contains('Use cloud lets it go'));
+  });
+
+  test('says when Keep mine cannot bring a deleted item back', () {
+    final message = friendlyCloudSyncError(teammateDeletedCannotRestoreMessage);
+
+    expect(message, contains('cannot bring it back'));
+    expect(message, contains('Use cloud'));
+    expect(message, isNot(contains('Keep mine')));
+    expect(message, isNot(contains('matching revision')));
+  });
+
   test('explains a lineup change saved in the old cloud format', () {
     final message = friendlyCloudSyncError(retiredLineupOpMessage);
 
@@ -42,6 +59,11 @@ void main() {
   test('lineup refusals and oversized work are specific attention reasons', () {
     expect(isSpecificAttentionReason(lineupPageMismatchMessage), isTrue);
     expect(isSpecificAttentionReason(retiredLineupOpMessage), isTrue);
+    expect(isSpecificAttentionReason(teammateDeletedMessage), isTrue);
+    expect(
+      isSpecificAttentionReason(teammateDeletedCannotRestoreMessage),
+      isTrue,
+    );
     expect(isSpecificAttentionReason(pageDeletedMessage), isTrue);
     expect(isSpecificAttentionReason(cloudOperationTooLargeMessage), isTrue);
     for (final reason in [

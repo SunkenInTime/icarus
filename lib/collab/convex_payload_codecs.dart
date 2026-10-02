@@ -121,3 +121,49 @@ final class LineupConvexCodec implements ConvexPayloadCodec<CloudPayload> {
   @override
   ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineup');
 }
+
+// The origin, landing and link rows of protocol 4. The server still takes
+// them as lineup op arguments, so an old client reaches its protocol gate
+// instead of failing argument validation, and refuses them in the handler
+// (see lineupOpPayloadValidator in convex/lib/payloadValidators.ts). This
+// build never sends them: an outbox record holding one waits in attention
+// (see isRetiredCloudLineupOp).
+
+@ConvexPayload('lineupOrigin')
+final class LineupOriginConvexCodec
+    implements ConvexPayloadCodec<CloudPayload> {
+  const LineupOriginConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) =>
+      _decodePayload(value, 'lineupOrigin');
+
+  @override
+  ConvexValue encode(CloudPayload value) =>
+      _encodePayload(value, 'lineupOrigin');
+}
+
+@ConvexPayload('lineupLanding')
+final class LineupLandingConvexCodec
+    implements ConvexPayloadCodec<CloudPayload> {
+  const LineupLandingConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) =>
+      _decodePayload(value, 'lineupLanding');
+
+  @override
+  ConvexValue encode(CloudPayload value) =>
+      _encodePayload(value, 'lineupLanding');
+}
+
+@ConvexPayload('lineupLink')
+final class LineupLinkConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const LineupLinkConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'lineupLink');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineupLink');
+}

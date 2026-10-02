@@ -31,6 +31,17 @@ const retiredLineupOpMessage =
     'This lineup change was saved in an older cloud format and cannot be '
     'sent';
 
+/// Why saved work waits when the server refused it because a teammate
+/// deleted what it edits (rejection reason `deleted`). Keep mine brings the
+/// item back as the user has it.
+const teammateDeletedMessage = 'A teammate deleted what this change edits';
+
+/// Why such work stays after Keep mine: a reorder, say, holds nothing to
+/// bring the item back with.
+const teammateDeletedCannotRestoreMessage =
+    'A teammate deleted what this change edits, and this change cannot '
+    'bring it back';
+
 /// The server's message when it refuses a change to a page in its trash
 /// (PAGE_DELETED). Such a change lands if the page is restored and it is
 /// sent again.
@@ -1034,6 +1045,7 @@ class PendingOp {
 
 enum OpRejectionReason {
   alreadyExists('already_exists'),
+  deleted('deleted'),
   elementStrategyMismatch('element_strategy_mismatch'),
   lineupStrategyMismatch('lineup_strategy_mismatch'),
   missingExpectedRevision('missing_expected_revision'),

@@ -190,15 +190,11 @@ class ProjectedPageLineup {
     required this.publicId,
     required this.payload,
     required this.sortIndex,
-    required this.revision,
   });
 
   final String publicId;
   final CloudPayload payload;
   final int sortIndex;
-
-  /// Ranks this lineup's copies of shared spots (see CloudLineupRow).
-  final int revision;
 }
 
 class ActivePageProjectedState {

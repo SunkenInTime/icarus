@@ -451,12 +451,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
     final lineUpGraph = lineUpGraphFromCloudRows([
       for (final lineup in projected.lineups)
-        CloudLineupRow(
-          publicId: lineup.publicId,
-          payload: lineup.payload,
-          revision: lineup.revision,
-        ),
-    ]);
+        CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
+    ]).graph;
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,

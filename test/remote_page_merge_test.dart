@@ -1,4 +1,3 @@
-import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';

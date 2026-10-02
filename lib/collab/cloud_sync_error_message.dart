@@ -33,6 +33,7 @@ bool isSpecificAttentionReason(String error) {
   return lower.contains('too large for cloud sync') ||
       lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
       lower.contains(retiredLineupOpMessage.toLowerCase()) ||
+      lower.contains(teammateDeletedMessage.toLowerCase()) ||
       lower.contains(pageDeletedMessage.toLowerCase());
 }
 
@@ -132,6 +133,14 @@ String friendlyCloudSyncError(String raw) {
     return 'This lineup clashes with one on another page, so it was not '
         'saved to the cloud. It remains on this device; Use cloud removes '
         'it here.';
+  }
+  if (lower.contains(teammateDeletedCannotRestoreMessage.toLowerCase())) {
+    return 'A teammate deleted what this change edits, and this change '
+        'cannot bring it back. Use cloud to let it go.';
+  }
+  if (lower.contains(teammateDeletedMessage.toLowerCase())) {
+    return 'A teammate deleted what you changed. Keep mine brings it back '
+        'as you have it; Use cloud lets it go.';
   }
   if (lower.contains(retiredLineupOpMessage.toLowerCase())) {
     return 'A lineup change saved by an older version of Icarus cannot be '

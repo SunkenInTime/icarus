@@ -707,7 +707,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             publicId: lineup.publicId,
             payload: lineup.payload,
             sortIndex: lineup.sortIndex,
-            revision: lineup.revision,
           ),
     };
 
@@ -777,9 +776,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             publicId: lineupId,
             payload: Map<String, dynamic>.from(overlay.desiredPayload! as Map),
             sortIndex: overlay.desiredSortIndex ?? 0,
-            // The user's own change to a shared spot is the copy drawn
-            // until it lands.
-            revision: pendingCloudLineupRevision,
           );
           continue;
       }
@@ -860,21 +856,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    // A live lineup compares as the canvas draws it: carrying the drawn copy
-    // of each spot it shares, so the copy hydration chose never reads as an
-    // edit to the rows whose copy lost.
-    final lineups =
-        snapshot.lineupsByPage[page.publicId] ?? const <RemoteLineup>[];
-    final drawnLineups = drawnCloudLineupPayloads([
-      for (final lineup in lineups)
-        if (!lineup.deleted) CloudLineupRow.remote(lineup),
-    ]);
-    for (final lineup in lineups) {
+    for (final lineup
+        in (snapshot.lineupsByPage[page.publicId] ?? const <RemoteLineup>[])) {
       final key = EntitySyncKey.lineup(page.publicId, lineup.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
-        payload: drawnLineups[lineup.publicId] ?? lineup.payload,
+        payload: lineup.payload,
         sortIndex: lineup.sortIndex,
         revision: lineup.revision,
         deleted: lineup.deleted,
@@ -973,10 +961,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    // One row per lineup, carrying its origin and landing as they are now, so
-    // a change to a shared spot changes every lineup that uses it.
+    // One row per lineup, carrying its origin and landing as the canvas draws
+    // them. A change to a shared spot therefore changes every lineup on it,
+    // and a row whose stored copy of a spot is not the drawn one is written
+    // with the drawn one: compared with the rows as stored, it differs.
     final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
-    for (final row in cloudLineupRows(ref.read(lineUpProvider).graph)) {
+    for (final row in cloudLineupRows(
+      ref.read(lineUpProvider).graph,
+      drawn: _drawnLineups(pageId),
+    )) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
@@ -989,6 +982,40 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
 
     return entities;
+  }
+
+  /// Whether a lineup row of [pageId] holds a copy of a spot other than the
+  /// one the canvas draws (a change reached only some rows of the spot, or a
+  /// conflict was settled for one row), or other work the canvas holds for
+  /// it. The next sync writes each such row as the canvas has it.
+  bool lineupsNeedHealing(String pageId) {
+    if (state.hydratedPageId != pageId) return false;
+    return _normalizedLocalEntities(pageId).entries.any(
+          (entry) =>
+              entry.key.kind == EntitySyncKeyKind.lineup &&
+              !_entitiesEquivalent(
+                entry.value,
+                _hydratedBaseByEntityKey[entry.key],
+              ),
+        );
+  }
+
+  /// [pageId]'s lineups as the canvas was drawn from them: the live lineup
+  /// rows it was hydrated from, as accepted since. Their spot versions are
+  /// what a change on the canvas builds on.
+  CloudLineups _drawnLineups(String pageId) {
+    return lineUpGraphFromCloudRows([
+      for (final MapEntry(:key, value: base)
+          in _hydratedBaseByEntityKey.entries)
+        if (key.pageId == pageId &&
+            key.kind == EntitySyncKeyKind.lineup &&
+            key.entityId != null &&
+            !base.deleted)
+          CloudLineupRow(
+            publicId: key.entityId!,
+            payload: Map<String, dynamic>.from(base.payload as Map),
+          ),
+    ]);
   }
 
   List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {

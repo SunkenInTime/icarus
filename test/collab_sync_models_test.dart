@@ -408,6 +408,8 @@ void main() {
             'position': <Object?, Object?>{'dx': 10, 'dy': 20},
             'lineUpID': 'origin-1',
           },
+          // Convex returns every number as a float64.
+          'version': 1.0,
         },
         'landing': <Object?, Object?>{
           'id': 'landing-1',
@@ -417,13 +419,15 @@ void main() {
             'position': <Object?, Object?>{'dx': 30, 'dy': 40},
             'lineUpID': 'landing-1',
           },
+          'version': 2.0,
         },
       },
     };
 
-    final graph = lineUpGraphFromCloudRows([
+    final read = lineUpGraphFromCloudRows([
       CloudLineupRow(publicId: 'lineup-1', payload: payload),
     ]);
+    final graph = read.graph;
     final landing = graph.landings.single;
 
     expect(graph.links.single.name, 'Garage smoke');
@@ -431,6 +435,8 @@ void main() {
     expect(landing.id, 'landing-1');
     expect(landing.ability.lineUpID, 'landing-1');
     expect(landing.ability.position, const Offset(30, 40));
+    expect(read.originVersions, {'origin-1': 1});
+    expect(read.landingVersions, {'landing-1': 2});
   });
 
   test('ability info accepts Convex float64 integers and rejects fractions',

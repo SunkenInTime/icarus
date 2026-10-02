@@ -239,7 +239,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final loaded = _store.load();
     _recordsByStorageKey = {
       for (final record in loaded.records)
-        record.storageKey: _resumedAfterUpgrade(record),
+        record.storageKey: _retiredAsAttention(_resumedAfterUpgrade(record)),
     };
     ref.onDispose(() {
       _isDisposed = true;
@@ -286,6 +286,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ? null
           : 'The cloud outbox contains unreadable saved work.',
       accountOutbox: _accountSummary(session.accountId),
+    );
+  }
+
+  /// [record] waiting in attention when it holds a lineup change in the
+  /// cloud format before one row per lineup, whatever state an older build
+  /// left it in (queued, paused, refused for another reason). It can never
+  /// be sent; in attention it is shown, with its reason, and nothing but the
+  /// user's discard removes it: reconciling the canvas's work never touches
+  /// attention. Like [_resumedAfterUpgrade], only the copy in memory changes.
+  static DurableOutboxRecord _retiredAsAttention(DurableOutboxRecord record) {
+    if (!isRetiredCloudLineupOp(record.pending.op) ||
+        (record.status == DurableOutboxStatus.attention &&
+            record.lastError == retiredLineupOpMessage)) {
+      return record;
+    }
+    return record.copyWith(
+      status: DurableOutboxStatus.attention,
+      lastError: retiredLineupOpMessage,
     );
   }
 
@@ -992,13 +1010,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (retryOp is ElementAddOp || retryOp is LineupAddOp) &&
                   (record?.lastError == 'missing_expected_revision' ||
                       record?.lastError == 'revision_mismatch');
-          final rebasedOp = retriesAsSent
-              ? retryOp.withOpId(const Uuid().v4())
-              : _rebaseRejectedOp(
-                  retryOp,
-                  retryRevision!,
-                  preserveAdd: isTombstoneRestore,
-                );
+          // A teammate deleted what this change edits. Keeping mine brings
+          // it back as the user has it: an add over the tombstone.
+          final restoresDeleted =
+              record?.lastError == OpRejectionReason.deleted.wireName;
+          final StrategyOp rebasedOp;
+          if (retriesAsSent) {
+            rebasedOp = retryOp.withOpId(const Uuid().v4());
+          } else if (restoresDeleted) {
+            final restore = _restoreOp(retryOp, retryRevision!);
+            if (restore == null) continue;
+            rebasedOp = restore;
+          } else {
+            rebasedOp = _rebaseRejectedOp(
+              retryOp,
+              retryRevision!,
+              preserveAdd: isTombstoneRestore,
+            );
+          }
           _keepCanvasWritten(retryOp, rebasedOp);
           final pending = PendingOp(
             op: rebasedOp,
@@ -1046,6 +1075,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final onlyRetired = attention.values.every(
           (intent) => isRetiredCloudLineupOp(intent.pending.op),
         );
+        // Changes a teammate's delete refused that hold nothing to bring
+        // the item back with.
+        final cannotRestore = attention.keys.any(
+          (key) =>
+              _recordForActiveKey(key)?.lastError ==
+              OpRejectionReason.deleted.wireName,
+        );
         state = state.copyWith(
           lastError: onlyRetired
               ? _loadedAttentionMessage(
@@ -1053,9 +1089,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                   paused: state.pausedByEntityKey,
                   attention: attention,
                 )
-              : 'Some retained cloud work cannot be retried '
-                  'automatically because the server has no matching '
-                  'revision.',
+              : cannotRestore
+                  ? teammateDeletedCannotRestoreMessage
+                  : 'Some retained cloud work cannot be retried '
+                      'automatically because the server has no matching '
+                      'revision.',
         );
         return;
       }
@@ -1376,35 +1414,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _retryTimer?.cancel();
       _retryTimer = null;
       _offlineRetryCount = 0;
-      // A lineup change in the old cloud format has no shape the server
-      // takes, so it is refused here, as the server would refuse it, and
-      // waits in attention with the rest of the batch sent.
-      final sendable = [
-        for (final record in batch)
-          if (!isRetiredCloudLineupOp(record.pending.op)) record,
-      ];
-      final acks = [
-        if (sendable.isNotEmpty)
-          ...await _repo.applyBatch(
-            strategyPublicId: strategyPublicId,
-            clientId: batchClientId,
-            ops: sendable
-                .map((record) => record.pending.op)
-                .toList(growable: false),
-            // The transport can deliver this after a later sign-in (it
-            // resends pending requests on reconnect), so the server checks
-            // the batch's own account, not whoever is signed in then.
-            accountSubject: batch.first.accountId,
-          ),
-        for (final record in batch)
-          if (isRetiredCloudLineupOp(record.pending.op))
-            FailedOpAck(
-              opId: record.pending.op.opId,
-              code: 'INVALID_LINEUP_PAYLOAD_KIND',
-              rawCode: 'INVALID_LINEUP_PAYLOAD_KIND',
-              message: retiredLineupOpMessage,
-            ),
-      ];
+      final acks = await _repo.applyBatch(
+        strategyPublicId: strategyPublicId,
+        clientId: batchClientId,
+        ops: batch.map((record) => record.pending.op).toList(growable: false),
+        // The transport can deliver this after a later sign-in (it resends
+        // pending requests on reconnect), so the server checks the batch's
+        // own account, not whoever is signed in then.
+        accountSubject: batch.first.accountId,
+      );
       await _applyAcksForRecords(batch, acks);
       batchSucceeded = true;
     } catch (error, stackTrace) {
@@ -2577,6 +2595,57 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
+  /// [op] as an add bringing its element or lineup back over the tombstone
+  /// at [revision], with the payload and place the user has. Null for a
+  /// change that does not hold them (a reorder, a delete); live sync's
+  /// patches always do.
+  static StrategyOp? _restoreOp(StrategyOp op, int revision) {
+    final opId = const Uuid().v4();
+    return switch (op) {
+      ElementAddOp(
+        :final elementPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) ||
+      ElementPatchOp(
+        :final elementPublicId,
+        pagePublicId: final pagePublicId?,
+        payload: final payload?,
+        sortIndex: final sortIndex?,
+      ) =>
+        ElementAddOp(
+          opId: opId,
+          elementPublicId: elementPublicId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          sortIndex: sortIndex,
+          expectedElementRevision: revision,
+        ),
+      LineupAddOp(
+        :final lineupPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) ||
+      LineupPatchOp(
+        :final lineupPublicId,
+        pagePublicId: final pagePublicId?,
+        payload: final payload?,
+        sortIndex: final sortIndex?,
+      ) =>
+        LineupAddOp(
+          opId: opId,
+          lineupPublicId: lineupPublicId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          sortIndex: sortIndex,
+          expectedLineupRevision: revision,
+        ),
+      _ => null,
+    };
+  }
+
   StrategyOp _rebaseRejectedOp(
     StrategyOp op,
     int revision, {
@@ -2783,14 +2852,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       var hasOtherWork = false;
       for (final entry in attention.entries) {
         final record = recordFor(entry.key);
-        // An old-format lineup change keeps its reason whatever an older
-        // build recorded for it.
-        final reason = isRetiredCloudLineupOp(entry.value.pending.op)
-            ? retiredLineupOpMessage
-            : record?.pending.op.opId == entry.value.pending.op.opId
-                ? record?.lastError
-                : null;
+        final lastError = record?.pending.op.opId == entry.value.pending.op.opId
+            ? record?.lastError
+            : null;
+        final reason = lastError == OpRejectionReason.deleted.wireName
+            ? teammateDeletedMessage
+            : lastError;
         if (reason == lineupPageMismatchMessage ||
+            reason == teammateDeletedMessage ||
             reason == retiredLineupOpMessage ||
             reason == pageDeletedMessage) {
           specificReason ??= reason;
