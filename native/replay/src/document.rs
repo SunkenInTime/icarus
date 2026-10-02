@@ -8,7 +8,10 @@ use serde::Serialize;
 pub type Vec3 = [f64; 3];
 
 /// `[timeMs, health, armor]`.
-pub type VitalsRow = (i64, Option<f64>, Option<f64>);
+pub type VitalsRow = (i64, f64, f64);
+
+/// `[timeMs, x, y, z]`: like every row, its time is an integer.
+pub type PathRow = (i64, f64, f64, f64);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,8 +56,6 @@ pub struct Player {
     pub subject: String,
     pub agent_id: Option<String>,
     pub team: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
     pub character_guids: Vec<u32>,
 }
 
@@ -106,8 +107,6 @@ pub struct Economy {
     pub subject: String,
     pub credits: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub loadout_value: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub weapon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub armor: Option<i64>,
@@ -139,7 +138,7 @@ pub struct Utility {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub yaw: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<Vec<[f64; 4]>>,
+    pub path: Option<Vec<PathRow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<Vec3>>,
 }
@@ -149,7 +148,8 @@ pub struct Utility {
 pub struct Cast {
     pub time_ms: i64,
     pub subject: String,
-    /// The replicated `AbilityCastsThisRound[].Slot` value.
+    /// `AbilityCastsThisRound[].Slot`: 3 grenade, 4 ability one, 5 ability
+    /// two, 9 ultimate (docs/replay-format.md).
     pub slot: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_path: Option<String>,
@@ -169,4 +169,37 @@ pub struct Quality {
     pub transform_verified: bool,
     pub decode_errors: u64,
     pub warnings: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_times_serialize_as_integers() {
+        let utility = Utility {
+            id: 1,
+            class_path:
+                "/Game/Characters/Clay/S0/Ability_E/Pawn_Clay_E_Boomba.Pawn_Clay_E_Boomba_C"
+                    .to_owned(),
+            owner: None,
+            spawn_ms: 50_000,
+            end_ms: None,
+            position: [0.0, 0.0, 0.0],
+            yaw: Some(0.0),
+            path: Some(vec![(50_806, 1.5, -2.0, 3.0)]),
+            points: None,
+        };
+        let json = serde_json::to_string(&utility).unwrap();
+        assert!(json.contains("[50806,1.5,-2.0,3.0]"), "{json}");
+        let back: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let row = &back["path"][0];
+        assert!(row[0].is_i64(), "{row}");
+        assert_eq!(row[0].as_i64(), Some(50_806));
+
+        let vitals: VitalsRow = (1203, 100.0, 50.0);
+        let back: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&vitals).unwrap()).unwrap();
+        assert!(back[0].is_i64(), "{back}");
+    }
 }

@@ -1,7 +1,8 @@
 # Decoded replay format
 
 `native/replay` turns a Valorant `.vrf` into one decoded replay: a byte
-buffer that Icarus caches on disk as `<sha256-of-vrf>.icrp` and reads in Dart.
+buffer that Icarus caches on disk (one `.icrp` per replay file and decoder
+version) and reads in Dart.
 It holds Valorant facts only. Nothing in it names an Icarus agent, ability,
 page, or widget; `lib/replay/` maps the facts onto Icarus.
 
@@ -54,7 +55,6 @@ first byte.
       "subject": "978b3946-…",
       "agentId": "1dbf2edd-…",              // valorant-api.com agent UUID; null if the header lacks it
       "team": "Red",                         // null if no combat report names it
-      "name?": "…",                         // never set yet: the replay carries no display name
       "characterGuids": [1206, 45530]       // every body this player had, in order
     }
   ],
@@ -74,7 +74,6 @@ first byte.
         {
           "subject": "…",
           "credits": 3900,                  // null if no Money was replicated by then
-          "loadoutValue?": 4700,            // never set yet: not replicated per player (13.00)
           "weapon?": "…",                   // primary, else sidearm, equippable class path
           "armor?": 50                      // shield points of the armour worn: 25 or 50
         }
@@ -91,7 +90,7 @@ first byte.
     }
   ],
   "vitals": {
-    "<subject>": [[timeMs, health, armor], …] // one row per change; null until the wire states it
+    "<subject>": [[timeMs, health, armor], …] // see "Vitals"
   },
   "utility": [
     {
@@ -101,16 +100,16 @@ first byte.
       "spawnMs": 61000,
       "endMs?": 76000,                      // actor closed
       "position": [x, y, z],
-      "yaw?": 90.0,
-      "path?": [[timeMs, x, y, z], …],     // later replicated positions (projectiles, moving walls)
-      "points?": [[x, y, z], …]             // shape points (walls, paths drawn in-game)
+      "yaw?": 90.0,                         // absent only for an actor with no spawn transform
+      "path?": [[timeMs, x, y, z], …],     // where it went, about 10 Hz; see "Utility"
+      "points?": [[x, y, z], …]             // shape points; see "Utility"
     }
   ],
   "casts": [
     {
       "timeMs": 60500,
       "subject": "…",
-      "slot": 4,                            // the replicated ability slot
+      "slot": 4,                            // 3 grenade (C), 4 ability one (Q), 5 ability two (E), 9 ultimate (X)
       "classPath?": "…",                    // the ability item; absent where the wire does not tie it
       "position?": [x, y, z]
     }
@@ -121,7 +120,7 @@ first byte.
   "quality": {
     "transformVerified": true,
     "decodeErrors": 0,
-    "warnings": ["…"]
+    "warnings": ["…"]                       // see "Warnings"
   }
 }
 ```
@@ -140,9 +139,77 @@ f32  yaw
 f32  pitch
 ```
 
-Records come from every body in the player's `characterGuids`. A body that
-is parked off-map between lives (around x -50000, z -49900) is dropped, not
-recorded. `yaw` is 0..360 as replicated; `pitch` is signed, -180..180.
+Records come from every body in the player's `characterGuids`, wherever it
+is. Iso's Kill Contract duels its two players in an arena off the map, around
+x ±50000, z -49900, so their records sit there for the duel (6-7 s in our
+corpus). `yaw` is 0..360 as replicated; `pitch` is signed, -180..180.
+
+## Vitals
+
+Each player's rows start at the first round's start; nothing is known
+before it. Every round opens with a row for every player at health 100, the
+reset the game sends each body (the first round's bodies spawn full). After
+that there is one row per change: damage and heals set health to the wire's
+absolute result, a death leaves it at 0, and a revive (Sage, Clove) is a
+reset back to 100. Heals and regenerating shields report every tick, about
+125 a second, so a healed player has hundreds of rows.
+
+Armour is the armour item the player wears: bought, it counts its full
+points (25 or 50) until it reports a lower value, a survivor carries it into
+the next round, and selling it or a round's end after death leaves 0.
+Values are rounded to two decimals; both are always numbers.
+
+## Utility
+
+`yaw` is the actor's spawn yaw. A spawn sends its rotation only when it is
+not zero, so a spawned actor without one has yaw 0; `yaw` is absent only
+for an actor that opened with no spawn transform at all.
+
+`path` is where the actor went while open, from its `ReplicatedMovement`
+(projectiles, moving smokes and walls) and, for pawns (Boom Bot, Owl Drone,
+Prowler, Wingman, Seekers, Trailblazer, Yoru's decoy and fake teleporter,
+Cypher's camera, Killjoy's bots), from the movement records the game sends
+for every pawn. Repeats are dropped and points kept at least 100 ms apart,
+with the last always kept. It is absent when the actor never left its
+`position`.
+
+`points` is a shape, each family's own replicated geometry, in wire order:
+
+| Utility | `points` | Source |
+|---|---|---|
+| Phoenix's Blaze (`GameObject_Phoenix_Q_FlameWallManager_Production`), Viper's Toxic Screen (`GameObject_Pandemic_E_SmokeScreenManager`, not in our corpus) | the wall, start to end | `MulticastAddSmokeScreenPoint.Translation` |
+| Neon's Fast Lane (`GameObject_Sprinter_4_Tunnel`) | the lane, start to end, 125 cm apart | `MulticastAddTunnelPoint.Translation` |
+| Vyse's Shear (`GameObject_Nox_Wall`) | the wall's start and end | `MulticastInitializeWall.WallStartLocation`, `WallEndLocation` |
+| Vyse's Shear trap (`GameObject_Nox_WallTrap`) | the wall it raises, start and end | `MulticastInitializeTrapAnchors.WallStartPoint`, `WallEndPoint` |
+| Deadlock's Barrier Mesh (`GameObject_CableJamRoot`) | each arm's end, one per arm that deployed (a blocked arm has none) | each `GameObject_CableJam_CableDeployer_Precomputed` it owns: `MulticastInitialize.Destination` |
+| Cypher's Trapwire (`GameObject_Gumshoe_E_TripWire`) | one point, the far anchor; the actor is the near one | the `GameObject_Gumshoe_E_TripWire_SecondWire` opened with it, same millisecond and `Owner` |
+
+Every other utility has none. The Fast Lane, Shear and Barrier Mesh values
+are vectors vrfkit leaves untyped; the decoder reads them as three
+little-endian doubles, which put each wall's first point on its actor and
+each mesh's `RootLocation` on its root.
+
+## Players
+
+The replay names players by `subject` alone. It carries no display name or
+Riot ID: the PlayerState's `ProfileName` is the crosshair profile ("Imported
+Crosshair 07-15-2023 14:55:05").
+
+## Casts
+
+`slot` names the ability: 3, 4, 5 and 9 are valorant-api.com's `Grenade`,
+`Ability1`, `Ability2` and `Ultimate` of the caster's agent. Every cast of 26
+agents across our 7 replays agrees with the item `classPath` where one is
+known. `classPath` is the ability item, absent where no charge spend ties a
+cast to it (always for ultimates).
+
+## Warnings
+
+`quality.warnings` names what the decoder dropped, could not attribute, or
+chose between, one line each: decode failures by kind, deaths or utility it
+could not attribute, assists it could not separate, rounds the replay stops
+inside, and game phases sent twice (where `combatStartMs` takes the first).
+A clean replay has none.
 
 ## Probe
 

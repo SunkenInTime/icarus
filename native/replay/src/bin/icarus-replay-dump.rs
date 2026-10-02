@@ -1,6 +1,6 @@
 //! Dev tool: decode one replay and write what came out, for inspection.
 //!
-//!     icarus-replay-dump <replay.vrf> [out-dir]
+//!     icarus-replay-dump [--survey | --rows=A,B] <replay.vrf> [out-dir]
 //!
 //! Writes `<id>.icrp` and `<id>.json` (the document, movement summarized) to
 //! `out-dir` (default: the current directory) and prints a one-line summary.
@@ -8,7 +8,7 @@
 //! stream carried with its row and typed-value counts, for finding facts;
 //! `--rows=A,B` writes `<id>.rows.tsv`, every field row whose name or group
 //! contains A or B. Both also write `<id>.guids.tsv`, the GUID table.
-//! Oodle archives come from `ICARUS_OODLE_VECTORS` (feature `dev-vectors`).
+//! Decompresses with the build's decoder (`oodle::default_decompressor`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ fn main() {
         .collect();
     let paths: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     let Some(input) = paths.first() else {
-        eprintln!("usage: icarus-replay-dump [--survey] <replay.vrf> [out-dir]");
+        eprintln!("usage: icarus-replay-dump [--survey | --rows=A,B] <replay.vrf> [out-dir]");
         std::process::exit(2);
     };
     let out_dir = PathBuf::from(paths.get(1).map_or(".", |s| s.as_str()));
@@ -137,8 +137,7 @@ impl Observer for Survey {
                         .or(f.value_str.clone())
                         .unwrap_or_else(|| format!("{}b", f.bit_count));
                     self.rows.push_str(&format!(
-                        "{}	{}	{}	{}	{}	{name}	{value}
-",
+                        "{}\t{}\t{}\t{}\t{}\t{name}\t{value}\n",
                         f.time_ms,
                         f.packet_id,
                         f.actor_net_guid,
@@ -274,11 +273,7 @@ fn run_survey(
         .iter()
         .map(|e| {
             let outer = e.outer_net_guid.map_or(String::new(), |o| o.to_string());
-            format!(
-                "{}	{outer}	{}
-",
-                e.net_guid, e.path
-            )
+            format!("{}\t{outer}\t{}\n", e.net_guid, e.path)
         })
         .collect();
     std::fs::write(

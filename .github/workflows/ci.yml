@@ -46,7 +46,9 @@ jobs:
           cargo clippy --locked --all-targets --features dev-vectors -- -D warnings
 
       - name: Test
-        run: cargo test --locked
+        run: |
+          cargo test --locked
+          cargo test --locked --features dev-vectors
 
   validate:
     runs-on: windows-latest

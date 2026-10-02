@@ -61,7 +61,8 @@ struct Placed {
 
 pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
     let mut phases: Vec<Phases> = Vec::new();
-    let mut repeated = 0;
+    // (round ordinal, phase, kept time, repeat time).
+    let mut repeated: Vec<(usize, i64, u32, u32)> = Vec::new();
     let mut results: HashMap<u32, ResultMembers> = HashMap::new();
     let mut sites = Vec::new();
     for row in cx.rows {
@@ -73,15 +74,15 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
             if phase == 2 || phases.is_empty() {
                 phases.push(Phases::default());
             }
+            let ordinal = phases.len() - 1;
             let slot = phases
                 .last_mut()
                 .expect("pushed")
                 .slot(phase)
                 .expect("2..=6");
-            if slot.is_none() {
-                *slot = Some(row.time);
-            } else {
-                repeated += 1;
+            match *slot {
+                None => *slot = Some(row.time),
+                Some(kept) => repeated.push((ordinal, phase, kept, row.time)),
             }
         } else if &*row.name == "PlantedAtSite" {
             sites.push((row.time, row.int.unwrap_or(0)));
@@ -96,9 +97,12 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
                 .insert(path.leaf().to_owned(), (row.int, row.text.clone()));
         }
     }
-    if repeated > 0 {
+    // Seen on 13.00: the buy phase ending twice, 0.4-0.9 s apart. The first
+    // is kept, so `combatStartMs` and the cast times built on it could be
+    // that much early.
+    for (ordinal, phase, kept, again) in repeated {
         cx.warnings.push(format!(
-            "{repeated} game phase(s) repeated within a round (first kept)"
+            "round {ordinal}: game phase {phase} sent again at {again} ms; the first, at {kept} ms, is kept"
         ));
     }
     // The last side switch resets into a round that never starts.
@@ -175,17 +179,21 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
             .map(|(t, _)| t)
             .or(p.start)
             .expect("rounds without a start are dropped");
+        let result = round_number.and_then(|(_, n)| by_number.get(&n).copied());
+        let winning_team = result.and_then(|r| text(r, "WinningTeam"));
+        // A match surrendered mid-round ends with no end phase but a result;
+        // only a round with neither was cut off.
         let end = match p.post_round.or_else(|| opens.get(ordinal + 1).copied()) {
             Some(end) => i64::from(end),
             None => {
-                cx.warnings.push(format!(
-                    "round {ordinal} has no end phase; it ends with the replay"
-                ));
+                if winning_team.is_none() {
+                    cx.warnings.push(format!(
+                        "round {ordinal} never ended: the replay stops inside it"
+                    ));
+                }
                 cx.duration_ms
             }
         };
-        let result = round_number.and_then(|(_, n)| by_number.get(&n).copied());
-        let winning_team = result.and_then(|r| text(r, "WinningTeam"));
         let role = result.and_then(|r| text(r, "WinningTeamRole"));
         let attacking_team = match (winning_team.as_deref(), role.as_deref()) {
             (Some(team), Some("attacker")) => Some(team.to_owned()),
@@ -424,7 +432,6 @@ fn economy(cx: &Context<'_>, buy_end: Option<u32>) -> Vec<Economy> {
             Economy {
                 subject: p.subject.clone(),
                 credits: money.get(&p.state).copied(),
-                loadout_value: None,
                 weapon: gun(false).or_else(|| gun(true)),
                 armor: items.iter().filter_map(|c| armor_points(c)).max(),
             }

@@ -82,6 +82,13 @@ jobs:
         shell: pwsh
         run: fvm install
 
+      # windows/CMakeLists.txt builds the replay decoder (native/replay) with cargo.
+      - name: Install Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
       - name: Build Windows Release Binaries
         shell: pwsh
         env:

@@ -75,11 +75,8 @@ pub struct Walked {
     pub players: FxHashMap<u32, PlayerIdentity>,
     pub stats: ExportStats,
     pub net: NetStats,
-    pub replay_data_chunks: u32,
-    pub event_chunks: u32,
     pub unknown_chunks: u32,
     pub packets: u32,
-    pub frames: u32,
     /// Event chunks whose payload did not fit the measured layout.
     pub event_layout_mismatches: u32,
     pub stream_failures: Vec<String>,
@@ -130,11 +127,8 @@ pub fn walk(
         players: FxHashMap::default(),
         stats: ExportStats::default(),
         net: NetStats::default(),
-        replay_data_chunks: 0,
-        event_chunks: 0,
         unknown_chunks: 0,
         packets: 0,
-        frames: 0,
         event_layout_mismatches: 0,
         stream_failures: Vec::new(),
     };
@@ -174,7 +168,6 @@ pub fn walk(
                         ));
                     };
                     let frames = inflated.map_err(|e| e.with_build(build))?;
-                    walked.replay_data_chunks += 1;
                     let finished = pass
                         .walk(&frames, &mut stats, |records, cache| {
                             observer.on_packet(records, cache);
@@ -188,7 +181,6 @@ pub fn walk(
                     }
                 }
                 ChunkType::Event => {
-                    walked.event_chunks += 1;
                     let event = parse_event(payload, &mut walked.event_layout_mismatches)
                         .map_err(|e| e.with_build(build))?;
                     observer.on_event(event);
@@ -205,7 +197,6 @@ pub fn walk(
     pass.finish();
     observer.on_packet(&pass.buffers, &pass.cache);
     walked.packets = pass.packets;
-    walked.frames = pass.frames;
     walked.net = pass.reader.stats().clone();
     walked.stream_failures = pass.channels.stream_failures().to_vec();
     walked.players = pass.channels.players().clone();

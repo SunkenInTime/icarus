@@ -7,9 +7,14 @@ set -eu
 source_dir="$SRCROOT/../native/replay"
 output_dir="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
 target_dir="$TARGET_TEMP_DIR/icarus_replay_cargo"
+# Xcode's PATH does not include rustup's bin directory.
 cargo="${CARGO:-$HOME/.cargo/bin/cargo}"
 if [ ! -x "$cargo" ]; then
-  cargo="$(command -v cargo)"
+  cargo="$(command -v cargo || true)"
+fi
+if [ -z "$cargo" ]; then
+  echo "error: cargo not found; install Rust with rustup to build the replay decoder" >&2
+  exit 1
 fi
 mkdir -p "$output_dir"
 

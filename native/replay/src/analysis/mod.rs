@@ -200,6 +200,20 @@ pub(crate) fn parse_vector(text: &str) -> Option<Vec3> {
     (parts.next().is_none() && v.iter().all(|c| c.is_finite())).then_some(v)
 }
 
+/// A vector parameter vrfkit leaves untyped: 192 bits, three little-endian
+/// f64 (UE5's double `FVector`). Typed so only where a field's values were
+/// checked against the world: Fast Lane's points step 125 cm along a line
+/// from the actor, Shear's start is its actor's spawn, Barrier Mesh's
+/// `RootLocation` is its root's.
+pub(crate) fn raw_vector(raw: &[u8]) -> Option<Vec3> {
+    if raw.len() != 24 {
+        return None;
+    }
+    let f = |i: usize| f64::from_le_bytes(raw[i..i + 8].try_into().expect("8 bytes"));
+    let v = [f(0), f(8), f(16)];
+    v.iter().all(|c| c.is_finite()).then_some(v)
+}
+
 /// The result of the analysis: the JSON document and the movement blob.
 pub struct Analysed {
     pub document: Document,
@@ -228,7 +242,6 @@ pub(crate) fn analyse(
             subject: p.subject.clone(),
             agent_id: agents.get(&p.subject).cloned().flatten(),
             team: teams.get(&p.subject).cloned(),
-            name: None,
             character_guids: p.bodies.clone(),
         })
         .collect();
@@ -249,8 +262,12 @@ pub(crate) fn analyse(
 
     let rounds = rounds::rounds(&mut cx);
     let kills = kills::kills(&mut cx, &teams);
-    let vitals = vitals::vitals(&mut cx);
-    let utility = utility::utility(&mut cx);
+    let vitals = vitals::vitals(&mut cx, &rounds);
+    let utility = utility::utility(
+        &mut cx,
+        &collector.moves,
+        rounds.first().map(|r| r.start_ms),
+    );
     let casts = casts::casts(&mut cx, &rounds);
     let (movement, blob) = movement::movement(&mut cx, &collector.moves);
 
@@ -379,6 +396,19 @@ mod tests {
         assert_eq!(parse_vector("(1,2,3,4)"), None);
         assert_eq!(parse_vector("1,2,3"), None);
         assert_eq!(parse_vector("(NaN,0,0)"), None);
+    }
+
+    #[test]
+    fn untyped_vectors_are_three_little_endian_doubles() {
+        // A Fast Lane point from c8989335, as its 24 payload bytes.
+        let mut raw = Vec::new();
+        for v in [6081.25_f64, -4858.5, 210.0] {
+            raw.extend(v.to_le_bytes());
+        }
+        assert_eq!(raw_vector(&raw), Some([6081.25, -4858.5, 210.0]));
+        assert_eq!(raw_vector(&raw[..16]), None, "two doubles are not a vector");
+        raw[..8].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert_eq!(raw_vector(&raw), None);
     }
 
     #[test]
