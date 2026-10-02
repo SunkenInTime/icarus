@@ -317,7 +317,7 @@ class _SpeedButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final speeds = ReplayPlayback.speeds;
+    const speeds = ReplayPlayback.speeds;
     final next = speeds[(speeds.indexOf(playback.speed) + 1) % speeds.length];
     final label = playback.speed == playback.speed.roundToDouble()
         ? '${playback.speed.round()}×'

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
@@ -11,6 +12,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/replay/replay_ability_catalog.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
 
 void main() {
@@ -67,16 +69,54 @@ void main() {
   Offset unitFor(double rotation) =>
       Offset(math.sin(rotation), -math.cos(rotation));
 
-  /// Screen distance from a square's anchor to the near edge of its area.
-  double anchorToNearEdge(SquareAbility shape, double mapScale) =>
-      coordinates.scale(
-        storedAbilityAnchor(ability: shape, mapScale: mapScale).dy -
-            shape.height * mapScale,
-      );
+  /// Where a square's area starts and how long it runs, measured off the
+  /// widget the editor draws for [ability], unrotated: [gap] from the anchor
+  /// (the icon's centre) to the area's near edge, and the area's [length],
+  /// both in screen pixels.
+  Future<({double gap, double length})> measureSquare(
+    WidgetTester tester,
+    PlacedAbility ability,
+    ReplayMapProjection projection,
+  ) async {
+    tester.view.physicalSize = const Size(3000, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Center(
+            child: ability.data.abilityData!.createWidget(
+              id: ability.id,
+              isAlly: true,
+              mapScale: mapScaleOf(projection),
+              length: ability.length,
+              watchMouse: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    final area =
+        tester.getRect(find.byKey(const ValueKey('square-range-body')));
+    final icon = tester.getCenter(find.byType(AbilityWidget));
+    return (gap: icon.dy - area.bottom, length: area.height);
+  }
 
   Matcher near(Offset expected, {double pixels = 1}) => predicate<Offset>(
         (actual) => (actual - expected).distance <= pixels,
         'within $pixels px of $expected',
+      );
+
+  /// Whether a rotation points the same way as a screen direction.
+  Matcher pointsAlong(Offset direction, {double degrees = 1}) =>
+      predicate<double>(
+        (rotation) {
+          final unit = direction / direction.distance;
+          final along = unitFor(rotation);
+          final cosine = unit.dx * along.dx + unit.dy * along.dy;
+          return cosine >= math.cos(degrees * math.pi / 180);
+        },
+        'within $degrees degrees of $direction',
       );
 
   group('class paths seen in the 13.00 replays', () {
@@ -199,7 +239,8 @@ void main() {
         wall.rotation, closeTo(projection.rotationForYaw(347.68 + 90), 1e-9));
   });
 
-  test("Neon's Fast Lane runs from its first tunnel point to its last", () {
+  testWidgets("Neon's Fast Lane runs from its first tunnel point to its last",
+      (tester) async {
     // c8989335 (Split), the tunnel at 57646 ms.
     final projection = ReplayMapProjection.forMap(MapValue.split);
     const start = ReplayVector(6081, -4858, 210);
@@ -214,23 +255,22 @@ void main() {
       ),
       projection,
     );
-    final shape = lane.data.abilityData! as ResizableSquareAbility;
-    final mapScale = mapScaleOf(projection);
+    final drawn = await measureSquare(tester, lane, projection);
     final anchor = drawnAnchor(lane, projection);
     final direction = unitFor(lane.rotation);
-    final nearEdge = anchorToNearEdge(shape, mapScale);
-    final drawnLength =
-        coordinates.scale(shape.resolveLength(lane.length) * mapScale);
 
-    expect(anchor + direction * nearEdge, near(screenOf(projection, start)));
-    expect(anchor + direction * (nearEdge + drawnLength),
+    expect(anchor + direction * drawn.gap, near(screenOf(projection, start)));
+    expect(anchor + direction * (drawn.gap + drawn.length),
         near(screenOf(projection, end)));
   });
 
-  test("Breach's Fault Line starts at the fissure and runs along its yaw", () {
-    // dc078274 (Sunset): the fissure spawns 8 m ahead of Breach, on yaw.
+  testWidgets(
+      "Breach's Fault Line starts at the fissure and runs along its yaw",
+      (tester) async {
+    // dc078274 (Sunset) at 66945 ms: the fissure spawns 8 m ahead of
+    // Breach's CharacterLocation (955, -612), on its yaw.
     final projection = ReplayMapProjection.forMap(MapValue.sunset);
-    const at = ReplayVector(955, -1412, 300);
+    const at = ReplayVector(960, -1412, 300);
     final fissure = place(
       utility(
         '/Game/Characters/Breach/S0/Ability_E/GameObject_Breach_E_SweetSpot'
@@ -240,13 +280,131 @@ void main() {
       ),
       projection,
     );
-    final shape = fissure.data.abilityData! as SquareAbility;
-    final nearEdge = anchorToNearEdge(shape, mapScaleOf(projection));
+    final drawn = await measureSquare(tester, fissure, projection);
 
-    expect(fissure.rotation, closeTo(projection.rotationForYaw(270.3), 1e-9));
     expect(
-        drawnAnchor(fissure, projection) + unitFor(fissure.rotation) * nearEdge,
+        fissure.rotation,
+        pointsAlong(screenOf(projection, at) -
+            screenOf(projection, const ReplayVector(955, -612, 300))));
+    expect(
+        drawnAnchor(fissure, projection) +
+            unitFor(fissure.rotation) * drawn.gap,
         near(screenOf(projection, at)));
+  });
+
+  testWidgets("Cypher's Trapwire runs from its anchor to the second wire",
+      (tester) async {
+    // dc078274 (Sunset) at 208146 ms: the TripWire actor and its
+    // _SecondWire, given to the wire as its one shape point.
+    final projection = ReplayMapProjection.forMap(MapValue.sunset);
+    const first = ReplayVector(677, 2203, 261);
+    const second = ReplayVector(681, 2735, 261);
+    final wire = place(
+      utility(
+        '/Game/Characters/Gumshoe/S0/Ability_E/GameObject_Gumshoe_E_TripWire.'
+        'GameObject_Gumshoe_E_TripWire_C',
+        position: first,
+        yaw: 90,
+        points: const [second],
+      ),
+      projection,
+    );
+    final drawn = await measureSquare(tester, wire, projection);
+    final anchor = drawnAnchor(wire, projection);
+    final direction = unitFor(wire.rotation);
+
+    expect(anchor + direction * drawn.gap, near(screenOf(projection, first)));
+    expect(anchor + direction * (drawn.gap + drawn.length),
+        near(screenOf(projection, second)));
+  });
+
+  test("Cypher's Trapwire without its second wire runs along its yaw", () {
+    // dc078274 (Sunset) at 246510 ms; the _SecondWire is at
+    // (-2244, -2043), where the yaw points.
+    final projection = ReplayMapProjection.forMap(MapValue.sunset);
+    const first = ReplayVector(-3541, -2047, 532);
+    final wire = place(
+      utility(
+        '/Game/Characters/Gumshoe/S0/Ability_E/GameObject_Gumshoe_E_TripWire.'
+        'GameObject_Gumshoe_E_TripWire_C',
+        position: first,
+        yaw: 360,
+      ),
+      projection,
+    );
+
+    expect(drawnAnchor(wire, projection), near(screenOf(projection, first)));
+    expect(
+        wire.rotation,
+        pointsAlong(
+            screenOf(projection, const ReplayVector(-2244, -2043, 532)) -
+                screenOf(projection, first)));
+  });
+
+  test("Vyse's Shear runs from its start toward its end", () {
+    // d3c0e7a2 (Lotus): the armed trap at 19160 ms and a raised wall at
+    // 1469036 ms, with their MulticastInitialize* start and end points.
+    final projection = ReplayMapProjection.forMap(MapValue.lotus);
+    final cases = [
+      (
+        asset: 'GameObject_Nox_WallTrap',
+        at: const ReplayVector(5730, -895, 371),
+        yaw: 90.0,
+        start: const ReplayVector(5740, -900, 203),
+        end: const ReplayVector(5740, 300, 203),
+      ),
+      (
+        asset: 'GameObject_Nox_Wall',
+        at: const ReplayVector(1701, -460, 250),
+        yaw: 270.0,
+        start: const ReplayVector(1701, -460, 250),
+        end: const ReplayVector(1005, -460, 250),
+      ),
+    ];
+    for (final c in cases) {
+      final shear = place(
+        utility(
+          '/Game/Characters/Nox/S0/Ability_Q/${c.asset}.${c.asset}_C',
+          position: c.at,
+          yaw: c.yaw,
+        ),
+        projection,
+      );
+
+      expect((shear.data.type, shear.data.index), (AgentType.vyse, 0),
+          reason: c.asset);
+      expect(drawnAnchor(shear, projection),
+          near(screenOf(projection, c.start), pixels: 2),
+          reason: c.asset);
+      expect(
+          shear.rotation,
+          pointsAlong(
+              screenOf(projection, c.end) - screenOf(projection, c.start)),
+          reason: c.asset);
+    }
+  });
+
+  test("Phoenix's Blaze runs along its replicated wall points", () {
+    // dc078274 (Sunset) at 281150 ms: the manager stands on Phoenix and
+    // MulticastAddSmokeScreenPoint lays the wall out ahead of it.
+    final projection = ReplayMapProjection.forMap(MapValue.sunset);
+    const first = ReplayVector(-1305, -4718, 200);
+    const last = ReplayVector(568, -4804, 200);
+    final blaze = place(
+      utility(
+        '/Game/Characters/Phoenix/S0/Ability_Q/Production/GameObject_Phoenix_Q_'
+        'FlameWallManager_Production.GameObject_Phoenix_Q_FlameWallManager_'
+        'Production_C',
+        position: const ReplayVector(-1449, -4714, 376),
+        yaw: 358.2,
+        points: const [first, ReplayVector(-1180, -4722, 200), last],
+      ),
+      projection,
+    );
+
+    expect(drawnAnchor(blaze, projection), near(screenOf(projection, first)));
+    expect(blaze.rotation,
+        pointsAlong(screenOf(projection, last) - screenOf(projection, first)));
   });
 
   test("Deadlock's Barrier Mesh arms reach each deployer's destination", () {
@@ -336,10 +494,8 @@ const observedMapped = <String, (AgentType, int)>{
       (AgentType.deadlock, 1),
   '/Game/Characters/Cable/S0/Ability_Q/GameObject_StealthingTrap_SoundSensor.GameObject_StealthingTrap_SoundSensor_C':
       (AgentType.deadlock, 1),
-  '/Game/Characters/Cable/S0/Ability_X/Actor_FishingHook.Actor_FishingHook_C': (
-    AgentType.deadlock,
-    3
-  ),
+  '/Game/Characters/Cable/S0/Ability_X/GameObject_FishingHook_CageSphere.GameObject_FishingHook_CageSphere_C':
+      (AgentType.deadlock, 3),
   '/Game/Characters/Cashew/S0/Ability_4/GameObject_Cashew_4_SonarPing.GameObject_Cashew_4_SonarPing_C':
       (AgentType.tejo, 0),
   '/Game/Characters/Cashew/S0/Ability_4/Pawn_Cashew_4_Spider_LockOn.Pawn_Cashew_4_Spider_LockOn_C':
@@ -388,8 +544,6 @@ const observedMapped = <String, (AgentType, int)>{
     AgentType.skye,
     3
   ),
-  '/Game/Characters/Gumshoe/S0/Ability_4/Projectile_Gumshoe_4_CageTrap.Projectile_Gumshoe_4_CageTrap_C':
-      (AgentType.cypher, 1),
   '/Game/Characters/Gumshoe/S0/Ability_4/Zone_Gumshoe_4_Cage.Zone_Gumshoe_4_Cage_C':
       (AgentType.cypher, 1),
   '/Game/Characters/Gumshoe/S0/Ability_E/GameObject_Gumshoe_E_TripWire.GameObject_Gumshoe_E_TripWire_C':
@@ -438,10 +592,6 @@ const observedMapped = <String, (AgentType, int)>{
       (AgentType.vyse, 3),
   '/Game/Characters/Phoenix/S0/Ability_4/Production/NewMolotov/Patch_Phoenix_MolotovFire.Patch_Phoenix_MolotovFire_C':
       (AgentType.pheonix, 2),
-  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced.Projectile_Phoenix_E_FlareCurve_Synced_C':
-      (AgentType.pheonix, 1),
-  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced_Right.Projectile_Phoenix_E_FlareCurve_Synced_Right_C':
-      (AgentType.pheonix, 1),
   '/Game/Characters/Phoenix/S0/Ability_Q/Production/GameObject_Phoenix_Q_FlameWallManager_Production.GameObject_Phoenix_Q_FlameWallManager_Production_C':
       (AgentType.pheonix, 0),
   '/Game/Characters/Phoenix/S0/Ability_X/Production/GameObject_Phoenix_X_ResTarget_Production.GameObject_Phoenix_X_ResTarget_Production_C':
@@ -529,8 +679,8 @@ const observedIgnored = <String>[
   '/Game/Characters/Cable/S0/Ability_E/Projectile_CableJam_InAir.Projectile_CableJam_InAir_C',
   '/Game/Characters/Cable/S0/Ability_Q/Ability_Cable_Q_SoundSensor.Ability_Cable_Q_SoundSensor_C',
   '/Game/Characters/Cable/S0/Ability_X/Ability_Cable_X_FishingHook.Ability_Cable_X_FishingHook_C',
+  '/Game/Characters/Cable/S0/Ability_X/Actor_FishingHook.Actor_FishingHook_C',
   '/Game/Characters/Cable/S0/Ability_X/GameObject_FishingHook_BouncingTrajectoryWarning.GameObject_FishingHook_BouncingTrajectoryWarning_C',
-  '/Game/Characters/Cable/S0/Ability_X/GameObject_FishingHook_CageSphere.GameObject_FishingHook_CageSphere_C',
   '/Game/Characters/Cable/S0/Ability_X/GameObject_FishingHook_EndOfTrajectoryWarning.GameObject_FishingHook_EndOfTrajectoryWarning_C',
   '/Game/Characters/Cable/S0/Ability_X/GameObject_MotherNode.GameObject_MotherNode_C',
   '/Game/Characters/Cable/S0/Ability_X/GameObject_Spline.GameObject_Spline_C',
@@ -569,6 +719,7 @@ const observedIgnored = <String>[
   '/Game/Characters/Guide/S0/Ability_X/Equippable_Guide_X_Pack_Attack.Equippable_Guide_X_Pack_Attack_C',
   '/Game/Characters/Guide/S0/Ability_X/Equippable_PlaceholderDefault.Equippable_PlaceholderDefault_C',
   '/Game/Characters/Gumshoe/S0/Ability_4/Ability_Gumshoe_4_CageTrap.Ability_Gumshoe_4_CageTrap_C',
+  '/Game/Characters/Gumshoe/S0/Ability_4/Projectile_Gumshoe_4_CageTrap.Projectile_Gumshoe_4_CageTrap_C',
   '/Game/Characters/Gumshoe/S0/Ability_E/Ability_Gumshoe_E_TripWire.Ability_Gumshoe_E_TripWire_C',
   '/Game/Characters/Gumshoe/S0/Ability_E/GameObject_Gumshoe_E_TripWire_SecondWire.GameObject_Gumshoe_E_TripWire_SecondWire_C',
   '/Game/Characters/Gumshoe/S0/Ability_Q/Ability_Gumshoe_Q_Camera.Ability_Gumshoe_Q_Camera_C',
@@ -604,6 +755,8 @@ const observedIgnored = <String>[
   '/Game/Characters/Phoenix/S0/Ability_4/Production/Ability_Phoenix_4_Molotov_Production.Ability_Phoenix_4_Molotov_Production_C',
   '/Game/Characters/Phoenix/S0/Ability_4/Production/Projectile_Phoenix_4_Molotov_Production.Projectile_Phoenix_4_Molotov_Production_C',
   '/Game/Characters/Phoenix/S0/Ability_E/Production/Ability_Phoenix_E_FlareCurve_Production.Ability_Phoenix_E_FlareCurve_Production_C',
+  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced.Projectile_Phoenix_E_FlareCurve_Synced_C',
+  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced_Right.Projectile_Phoenix_E_FlareCurve_Synced_Right_C',
   '/Game/Characters/Phoenix/S0/Ability_Q/Production/Ability_Phoenix_Q_FireballWall_Production.Ability_Phoenix_Q_FireballWall_Production_C',
   '/Game/Characters/Phoenix/S0/Ability_Q/Production/Projectile_Phoenix_Q_FlameWall_ThroughWall.Projectile_Phoenix_Q_FlameWall_ThroughWall_C',
   '/Game/Characters/Phoenix/S0/Ability_X/Production/Ability_Phoenix_X_SelfRes_Production.Ability_Phoenix_X_SelfRes_Production_C',

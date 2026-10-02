@@ -4,7 +4,8 @@ import 'dart:typed_data';
 
 /// One decoded Valorant replay, read from the `.icrp` buffer that
 /// `native/replay` writes. Facts only, in game units: no Icarus types appear
-/// here. The format is specified in `docs/replay-format.md`.
+/// here. The format is specified in `docs/replay-format.md`; ability casts
+/// are in it too but nothing reads them yet, so they are not parsed.
 class ReplayDocument {
   ReplayDocument._({
     required this.match,
@@ -12,7 +13,6 @@ class ReplayDocument {
     required this.rounds,
     required this.kills,
     required this.utility,
-    required this.casts,
     required this.vitals,
     required this.movement,
     required this.quality,
@@ -26,7 +26,6 @@ class ReplayDocument {
   final List<ReplayRound> rounds;
   final List<ReplayKill> kills;
   final List<ReplayUtility> utility;
-  final List<ReplayCast> casts;
 
   /// Health and armor per player, one row per change.
   final Map<String, ReplayVitalsTrack> vitals;
@@ -64,7 +63,13 @@ class ReplayDocument {
     final blob = blobStart <= bytes.length
         ? ByteData.sublistView(bytes, blobStart)
         : ByteData(0);
-    return ReplayDocument._fromJson(json, blob);
+    try {
+      return ReplayDocument._fromJson(json, blob);
+    } on TypeError catch (error) {
+      // A field of the wrong type or missing: the buffer is not what this
+      // reader understands, which callers handle like any bad format.
+      throw FormatException('Decoded replay is malformed: $error');
+    }
   }
 
   factory ReplayDocument._fromJson(Map<String, dynamic> json, ByteData blob) {
@@ -84,8 +89,6 @@ class ReplayDocument {
         ..sort((a, b) => a.timeMs.compareTo(b.timeMs)),
       utility: [for (final u in list('utility')) ReplayUtility.fromJson(u)]
         ..sort((a, b) => a.spawnMs.compareTo(b.spawnMs)),
-      casts: [for (final c in list('casts')) ReplayCast.fromJson(c)]
-        ..sort((a, b) => a.timeMs.compareTo(b.timeMs)),
       vitals: {
         for (final entry in vitalsJson.entries)
           entry.key: ReplayVitalsTrack.fromJson(entry.value as List),
@@ -297,14 +300,14 @@ class ReplayEconomy {
   const ReplayEconomy({
     required this.subject,
     required this.credits,
-    required this.loadoutValue,
+    this.loadoutValue,
     this.weapon,
     this.armor,
   });
 
   final String subject;
   final int credits;
-  final int loadoutValue;
+  final int? loadoutValue;
 
   /// Equippable class path of the best weapon carried into the round.
   final String? weapon;
@@ -315,7 +318,7 @@ class ReplayEconomy {
   factory ReplayEconomy.fromJson(Map<String, dynamic> json) => ReplayEconomy(
         subject: json['subject'] as String,
         credits: json['credits'] as int,
-        loadoutValue: json['loadoutValue'] as int,
+        loadoutValue: json['loadoutValue'] as int?,
         weapon: json['weapon'] as String?,
         armor: json['armor'] as int?,
       );
@@ -407,29 +410,6 @@ class ReplayUtility {
       );
 }
 
-class ReplayCast {
-  const ReplayCast({
-    required this.timeMs,
-    required this.subject,
-    required this.classPath,
-    this.position,
-  });
-
-  final int timeMs;
-  final String subject;
-  final String classPath;
-  final ReplayVector? position;
-
-  factory ReplayCast.fromJson(Map<String, dynamic> json) => ReplayCast(
-        timeMs: json['timeMs'] as int,
-        subject: json['subject'] as String,
-        classPath: json['classPath'] as String,
-        position: json['position'] == null
-            ? null
-            : ReplayVector.fromJson(json['position'] as List),
-      );
-}
-
 class ReplayQuality {
   const ReplayQuality({
     required this.transformVerified,
@@ -469,8 +449,9 @@ class ReplayPathPoint {
   final int timeMs;
   final ReplayVector position;
 
+  // Rows are number arrays, so the time may arrive written as 1200.0.
   factory ReplayPathPoint.fromJson(List json) => ReplayPathPoint(
-        json[0] as int,
+        (json[0] as num).toInt(),
         ReplayVector(
           (json[1] as num).toDouble(),
           (json[2] as num).toDouble(),
@@ -603,7 +584,7 @@ class ReplayVitalsTrack {
     final armor = Float32List(rows.length);
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i] as List;
-      times[i] = row[0] as int;
+      times[i] = (row[0] as num).toInt();
       health[i] = (row[1] as num).toDouble();
       armor[i] = (row[2] as num).toDouble();
     }

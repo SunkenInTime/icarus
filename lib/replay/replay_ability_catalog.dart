@@ -171,14 +171,18 @@ class _AtPoint extends _Placement {
 
 /// A wall or directed area that starts at the utility and runs one way.
 ///
-/// It starts at the first shape point, else where the utility spawned, and
-/// runs toward the last shape point, else along the utility's yaw. Icarus
-/// anchors these squares at the caster, a handle's width (plus the
-/// ability's gap) short of the shape's near edge, so the anchor is set back
-/// by that much and the near edge lands on the start. A resizable square
-/// also takes its length from start to end.
+/// With two or more shape points it runs from the first to the last. With
+/// one, it runs from the utility to that point (a wire's far anchor). With
+/// none, it starts at the utility and runs along its yaw plus [yawOffset].
+/// Icarus anchors these squares at the caster, the ability's gap short of
+/// the shape's near edge (the squares' widgets lay the area out that way),
+/// so the anchor is set back by the gap and the near edge lands on the
+/// start. A resizable square also takes its length from start to end.
 class _FromStart extends _Placement {
-  const _FromStart();
+  const _FromStart({this.yawOffset = 0});
+
+  /// Degrees from the utility's yaw to the way the shape runs.
+  final double yawOffset;
 
   @override
   _Geometry resolve({
@@ -188,10 +192,10 @@ class _FromStart extends _Placement {
     required Ability shape,
     required double mapScale,
   }) {
-    final startPoint =
-        utility.points.isEmpty ? utility.position : utility.points.first;
+    final points = utility.points;
+    final startPoint = points.length >= 2 ? points.first : utility.position;
     final start = projection.toWorld(startPoint.x, startPoint.y);
-    final endPoint = utility.points.length >= 2 ? utility.points.last : null;
+    final endPoint = points.isEmpty ? null : points.last;
     final end =
         endPoint == null ? null : projection.toWorld(endPoint.x, endPoint.y);
 
@@ -199,7 +203,7 @@ class _FromStart extends _Placement {
     if (end != null && end != start) {
       rotation = _rotationToward(end - start);
     } else if (utility.yaw != null) {
-      rotation = projection.rotationForYaw(utility.yaw!);
+      rotation = projection.rotationForYaw(utility.yaw! + yawOffset);
     } else {
       rotation = 0;
     }
@@ -208,10 +212,8 @@ class _FromStart extends _Placement {
     var nearEdge = 0.0;
     var length = 0.0;
     if (shape is SquareAbility) {
-      final anchor = storedAbilityAnchor(ability: shape, mapScale: mapScale);
-      nearEdge = coordinates.virtualLengthToWorld(
-        anchor.dy - shape.height * mapScale,
-      );
+      nearEdge =
+          coordinates.virtualLengthToWorld(shape.distanceBetweenAOE * mapScale);
       if (shape is ResizableSquareAbility && end != null) {
         length =
             (end - start).distance / coordinates.virtualLengthToWorld(mapScale);
@@ -353,10 +355,11 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'GameObject_Smonk_NewSmoke_PDS': _area(AgentType.clove, 2),
 
   // Cypher (Gumshoe). The Trapwire actor sits on its first anchor, its yaw
-  // toward the second; the wire's end is the _SecondWire actor's position,
-  // which the decoder carries as the wire's shape points.
+  // toward the second, which is the _SecondWire actor's position. Given
+  // that as a shape point the wire runs to it; without one it runs along the
+  // yaw at full length. The thrown cage never replicates where it lands
+  // (its actor stays on Cypher), so only the cage zone is drawn.
   'GameObject_Gumshoe_E_TripWire': _wall(AgentType.cypher, 0),
-  'Projectile_Gumshoe_4_CageTrap': _marker(AgentType.cypher, 1),
   'Zone_Gumshoe_4_Cage': _area(AgentType.cypher, 1),
   'Pawn_Gumshoe_Q_PossessableCamera': _marker(AgentType.cypher, 2),
   'GameObject_RemovableObject_GumshoeTrackingDart':
@@ -364,12 +367,14 @@ final Map<String, ReplayAbilityEntry> _catalog = {
 
   // Deadlock (Cable). Icarus index 0 draws GravNet and index 2 the Barrier
   // Mesh (by icon and shape), though agents.dart names them the other way.
+  // Sonic Sensor's yaw faces out of the surface it is stuck to. Annihilation's
+  // own actor stays on Deadlock; the cocoon is where it caught someone.
   'Patch_NetToss': _area(AgentType.deadlock, 0),
   'GameObject_StealthingTrap_SoundSensor': _rectangle(AgentType.deadlock, 1),
   'GameObject_SoundSensor_SweetSpotFissure': _rectangle(AgentType.deadlock, 1),
   'GameObject_CableJamRoot': const ReplayAbilityEntry._(
       AgentType.deadlock, 2, ReplayUtilityKind.barrierMesh, _BarrierMesh()),
-  'Actor_FishingHook': _projectile(AgentType.deadlock, 3),
+  'GameObject_FishingHook_CageSphere': _marker(AgentType.deadlock, 3),
 
   // Fade (BountyHunter).
   'Pawn_BountyHunter_4_WolfHound': _marker(AgentType.fade, 0),
@@ -386,10 +391,10 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Projectile_E_Aggrobot_DiscTurret_PowerWave': _projectile(AgentType.gekko, 2),
   'Pawn_Aggrobot_RollyPolly': _marker(AgentType.gekko, 3),
 
-  // Harbor (Mage), asset index.
+  // Harbor (Mage), asset index. Icarus draws High Tide as its icon, so it
+  // follows the wall's guided head (Giehl's MageWallDescriptor).
   'GameObject_Mage_4_SplashGrenade': _area(AgentType.harbor, 0),
-  'Projectile_Mage_Q_Wall': const ReplayAbilityEntry._(
-      AgentType.harbor, 1, ReplayUtilityKind.wall, _point),
+  'Projectile_Mage_Q_Wall': _projectile(AgentType.harbor, 1),
   'GameObject_Mage_E_WorldSmoke': _area(AgentType.harbor, 2),
   'GameObject_Mage_X_TidalWave': _rectangle(AgentType.harbor, 3),
 
@@ -439,12 +444,11 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Intention_Wraith_X_GlobalTeleport': _marker(AgentType.omen, 3),
 
   // Phoenix. Icarus index 1 is Curveball and index 2 Hot Hands (by icon and
-  // shape), though agents.dart names them the other way.
+  // shape), though agents.dart names them the other way. Curveball's actors
+  // stay on Phoenix and never replicate the flare's flight, so it is not
+  // drawn.
   'GameObject_Phoenix_Q_FlameWallManager_Production':
       _wall(AgentType.pheonix, 0),
-  'Projectile_Phoenix_E_FlareCurve_Synced': _projectile(AgentType.pheonix, 1),
-  'Projectile_Phoenix_E_FlareCurve_Synced_Right':
-      _projectile(AgentType.pheonix, 1),
   'Patch_Phoenix_MolotovFire': _area(AgentType.pheonix, 2),
   'GameObject_Phoenix_X_ResTarget_Production': _marker(AgentType.pheonix, 3),
 
@@ -503,9 +507,11 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Patch_Pandemic_X_Circular': _area(AgentType.viper, 3),
 
   // Vyse (Nox). Icarus index 0 draws Shear and index 1 Razorvine (by icon
-  // and shape), though agents.dart names them the other way. Shear's wall
-  // and its armed trap both replicate a start and an end.
-  'GameObject_Nox_Wall': _wall(AgentType.vyse, 0),
+  // and shape), though agents.dart names them the other way. Shear's armed
+  // trap and its raised wall both sit on the wall's start; the trap's yaw
+  // runs along the wall and the raised wall's faces across it.
+  'GameObject_Nox_Wall': const ReplayAbilityEntry._(
+      AgentType.vyse, 0, ReplayUtilityKind.wall, _FromStart(yawOffset: -90)),
   'GameObject_Nox_WallTrap': _wall(AgentType.vyse, 0),
   'GameObject_Nox_BarbedWire': _area(AgentType.vyse, 1),
   'Patch_Nox_BarbedWire': _area(AgentType.vyse, 1),
