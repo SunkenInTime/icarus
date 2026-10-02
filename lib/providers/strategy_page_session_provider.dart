@@ -68,8 +68,10 @@ enum KeepBothOutcome {
   /// The cloud's versions could not be loaded. Nothing changed.
   unchanged,
 
-  /// The user's versions were added as copies, but the cloud's could not be
-  /// loaded after all, so the conflicts still wait. Use cloud finishes.
+  /// The user's versions were added as copies, but something failed before
+  /// the conflicts were resolved (the cloud's versions stopped loading, a
+  /// copy could not be saved, or the waiting work changed), so they still
+  /// wait.
   copiesOnly,
 }
 
@@ -178,6 +180,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   /// The latest strategy revision at which each page was seen live.
   final Map<String, int> _pagesSeenLiveAt = {};
+
+  /// Waiting work Keep both already put a copy of on the canvas, by
+  /// [_waitingWork] entry: pressing it again finishes the job instead of
+  /// copying the same version twice.
+  final Set<(EntitySyncKey, (String, String?))> _keptAsCopy = {};
 
   @override
   StrategyPageSessionState build() {
@@ -566,24 +573,31 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// that deletes the group, or only reorders it, holds nothing to copy.
   ///
   /// Only for conflicts that are all lineup groups on the page on screen
-  /// (see lineupConflictsProvider); anything else is a [StateError]. The
-  /// cloud's version is loaded first, so a device that cannot reach it
-  /// changes nothing. The copies then go on the canvas, and
-  /// [useCloudVersionsForRejected] queues them before it discards anything:
-  /// if taking the cloud's version still fails, the copies and the waiting
-  /// versions both remain, and Use cloud finishes the job.
+  /// (see lineupConflictsProvider); anything else is a [StateError].
+  ///
+  /// Nothing is discarded unless everything still matches what was copied:
+  /// the cloud's version loads, the page on screen is the same one, the
+  /// waiting work is the same (an edit made meanwhile would not be in the
+  /// copy), and the copy itself saved. When the cloud's version cannot be
+  /// loaded, or the work changed before the copy was made, nothing changes.
+  /// When something fails after, the copy stays and the conflicts still
+  /// wait; pressing Keep both again resolves them without a second copy.
   Future<KeepBothOutcome> keepBothForRejected() async {
     final strategyState = ref.read(strategyProvider);
+    final strategyId = strategyState.strategyId;
     final queue = ref.read(strategyOpQueueProvider);
     final attention = queue.attentionByEntityKey;
     final activePageId = state.activePageId;
     if (strategyState.source != StrategySource.cloud ||
+        strategyId == null ||
         attention.isEmpty ||
         attention.keys.any((key) =>
             key.kind != EntitySyncKeyKind.lineup ||
             key.pageId != activePageId)) {
       throw StateError('Keep both is only for lineup groups on this page');
     }
+    final generation = _pageSessionGeneration;
+    final waiting = _waitingWork(attention.keys);
     final copies = <LineUpGraph>[];
     for (final MapEntry(:key, value: refused) in attention.entries) {
       final newest = (queue.successorByEntityKey[key] ?? refused).pending.op;
@@ -592,33 +606,82 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         LineupPatchOp(:final payload?) => payload,
         _ => null,
       };
-      if (payload == null) continue;
+      if (payload == null || _keptAsCopy.contains((key, waiting[key]!))) {
+        continue;
+      }
       copies.add(forkLineUpGraph(lineUpGraphFromCloudRows([
         CloudLineupRow(publicId: key.entityId!, payload: payload),
       ]).graph));
     }
+    bool unchangedSince() =>
+        !_disposed &&
+        generation == _pageSessionGeneration &&
+        _sameWaitingWork(waiting);
 
     await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    if (snapshot == null ||
-        snapshot.header.publicId != strategyState.strategyId) {
+    if (snapshot == null || snapshot.header.publicId != strategyId) {
       return KeepBothOutcome.unchanged;
     }
+    // Edits made while the cloud's version loaded are saved first; one to
+    // a conflicting group is newer than the copy, so nothing goes ahead.
+    final pageSource = _resolvePageSource(strategyId, StrategySource.cloud);
+    await pageSource.flushCurrentPage();
+    if (!unchangedSince()) return KeepBothOutcome.unchanged;
 
     final lineUps = ref.read(lineUpProvider.notifier);
     for (final copy in copies) {
       lineUps.addRecovered(copy);
     }
-    return await useCloudVersionsForRejected()
+    _keptAsCopy
+        .addAll(waiting.entries.map((entry) => (entry.key, entry.value)));
+    await pageSource.flushCurrentPage();
+    // A copy that could not be saved waits in attention itself.
+    final saved = ref
+        .read(strategyOpQueueProvider)
+        .attentionByEntityKey
+        .keys
+        .every(waiting.containsKey);
+    if (!saved || !unchangedSince()) return KeepBothOutcome.copiesOnly;
+    return await _useCloudVersionsFor(waiting)
         ? KeepBothOutcome.kept
         : KeepBothOutcome.copiesOnly;
+  }
+
+  /// The refused op, and the newer one queued behind it if any, of each of
+  /// [keys]: what is waiting for the user's choice.
+  Map<EntitySyncKey, (String, String?)> _waitingWork(
+    Iterable<EntitySyncKey> keys,
+  ) {
+    final queue = ref.read(strategyOpQueueProvider);
+    return {
+      for (final key in keys)
+        if (queue.attentionByEntityKey[key] case final refused?)
+          key: (
+            refused.pending.op.opId,
+            queue.successorByEntityKey[key]?.pending.op.opId,
+          ),
+    };
+  }
+
+  /// Whether exactly [waiting] still waits, nothing changed or gone.
+  bool _sameWaitingWork(Map<EntitySyncKey, (String, String?)> waiting) {
+    final now = _waitingWork(waiting.keys);
+    return now.length == waiting.length &&
+        waiting.entries.every((entry) => now[entry.key] == entry.value);
   }
 
   /// Adopts the cloud version for every current conflict in this strategy.
   ///
   /// The authoritative page is loaded before any local intent is discarded.
   /// A failed load therefore leaves the durable conflict available to retry.
-  Future<bool> useCloudVersionsForRejected() async {
+  Future<bool> useCloudVersionsForRejected() => _useCloudVersionsFor(null);
+
+  /// [useCloudVersionsForRejected], for exactly the conflicts in [waiting]
+  /// when given: if they no longer wait as they were, nothing is discarded.
+  Future<bool> _useCloudVersionsFor(
+    Map<EntitySyncKey, (String, String?)>? waiting,
+  ) async {
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
     if (strategyState.source != StrategySource.cloud || strategyId == null) {
@@ -632,9 +695,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final strategyNotifier = ref.read(strategyProvider.notifier);
       strategyNotifier.consumeScheduledCloudPageSync();
       strategyNotifier.consumeScheduledCloudStrategySync();
+      if (waiting != null && !_sameWaitingWork(waiting)) return false;
       final rejected = Map<EntitySyncKey, QueuedEntityIntent>.from(
         ref.read(strategyOpQueueProvider).attentionByEntityKey,
-      );
+      )..removeWhere((key, _) => waiting != null && !waiting.containsKey(key));
       if (rejected.isEmpty) return true;
 
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();

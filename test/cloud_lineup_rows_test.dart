@@ -177,7 +177,7 @@ void main() {
     expect(written.groupOf['c'], 'k9');
   });
 
-  test('a lineup joining two groups merges them under the smaller id', () {
+  test('a lineup joining two groups goes to one, and neither row goes', () {
     final read = lineUpGraphFromCloudRows(cloudLineupRows(_page()).rows);
     final bridged = LineUpGraph(
       origins: read.graph.origins,
@@ -185,9 +185,64 @@ void main() {
       links: [...read.graph.links, _link('k5', 'z', 'shared')],
     );
 
-    final rows = cloudLineupRows(bridged, groupOf: read.groupOf).rows;
-    expect(rows.map((row) => row.publicId), ['k1']);
-    expect(_ids(_data(rows.single)['links']), ['k1', 'k2', 'k3', 'k9', 'k5']);
+    final written = cloudLineupRows(bridged, groupOf: read.groupOf);
+    // k5 joins the smaller group, k1, and carries origin z with it; k9's
+    // row keeps z too, and nothing is deleted.
+    expect(written.rows.map((row) => row.publicId), ['k1', 'k9']);
+    expect(_ids(_data(written.rows.first)['links']), ['k1', 'k2', 'k3', 'k5']);
+    expect(_ids(_data(written.rows.first)['origins']), ['a', 'b', 'z']);
+    expect(_ids(_data(written.rows.last)['links']), ['k9']);
+    expect(_ids(_data(written.rows.last)['origins']), ['z']);
+    expect(written.groupOf['z'], 'k9', reason: 'a spot stays in its group');
+    expect(written.groupOf['k5'], 'k1');
+  });
+
+  test('a lineup two rows name is drawn from the first, and kept there', () {
+    // A build that merged groups wrote k9 into k1's row, and was refused
+    // deleting k9's row; a teammate has edited k9 there since. Live sync
+    // writes k9's row back as stored while k9 is drawn (see
+    // _normalizedLocalEntities); the codec only draws one k9.
+    CloudLineupRow row(String id, LineUpGraph graph) => CloudLineupRow(
+          publicId: id,
+          payload: cloudLineupsPayload({
+            'id': id,
+            'origins': [for (final origin in graph.origins) origin.toJson()],
+            'landings': [
+              for (final landing in graph.landings) landing.toJson(),
+            ],
+            'links': [for (final link in graph.links) link.toJson()],
+          }),
+        );
+    final merged = row(
+      'k1',
+      LineUpGraph(
+        origins: [_origin('a'), _origin('z')],
+        landings: [_landing('shared'), _landing('far')],
+        links: [
+          _link('k1', 'a', 'shared'),
+          _link('k9', 'z', 'far').copyWith(notes: 'old'),
+        ],
+      ),
+    );
+    final teammates = row(
+      'k9',
+      LineUpGraph(
+        origins: [_origin('z')],
+        landings: [_landing('far')],
+        links: [_link('k9', 'z', 'far').copyWith(notes: 'newer')],
+      ),
+    );
+
+    final read = lineUpGraphFromCloudRows([merged, teammates]);
+    expect(read.graph.links.map((link) => link.id), ['k1', 'k9']);
+    expect(read.graph.links.last.notes, 'old');
+    expect(read.groupOf['k9'], 'k1');
+    expect(
+      cloudLineupRows(read.graph, groupOf: read.groupOf)
+          .rows
+          .map((row) => row.publicId),
+      ['k1'],
+    );
   });
 
   test('a new group never takes a group id already in use', () {
@@ -247,9 +302,12 @@ void main() {
     expect(read.graph.links.map((l) => l.landingId), ['shared', 'shared']);
     expect(read.groupOf['shared'], 'k1');
 
-    // Written back, they become one group: the spot connects them.
+    // Written back, both rows stay, each carrying the spot as drawn: no
+    // lineup moves rows and no row is deleted.
     final rows = cloudLineupRows(read.graph, groupOf: read.groupOf).rows;
-    expect(rows.map((row) => row.publicId), ['k1']);
+    expect(rows.map((row) => row.publicId), ['k1', 'k2']);
+    expect(_ids(_data(rows.last)['links']), ['k2']);
+    expect(_ids(_data(rows.last)['landings']), ['shared']);
   });
 
   test('a row of any other shape fails loudly, naming the row', () {

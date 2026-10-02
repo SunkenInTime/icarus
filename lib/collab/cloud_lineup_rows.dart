@@ -5,14 +5,16 @@ import 'package:uuid/uuid.dart';
 /// One cloud row per lineup group: lineups that share a standing spot or a
 /// landing spot, stored together with those spots.
 ///
-/// A shared spot lives in exactly one row, so it can never disagree with
+/// A shared spot lives in its group's row, so it cannot disagree with
 /// itself, and the row's one revision guards every lineup on it: two
 /// clients changing the same group meet as an ordinary conflict. A row never
 /// names anything outside itself.
 ///
-/// A group only grows or merges, never splits: deleting the lineup that
-/// joined two halves leaves both halves in the row. That keeps every edit a
-/// write to exactly the row the user's lineups already live in.
+/// A lineup stays in the group it was first written to: deleting the lineup
+/// that joined two halves leaves both halves in the row, and groups never
+/// merge. That keeps every edit a write to exactly the row the user's
+/// lineups already live in, and no row is ever deleted except by deleting
+/// its last lineup.
 class CloudLineupRow {
   const CloudLineupRow({required this.publicId, required this.payload});
 
@@ -44,10 +46,10 @@ class CloudLineupRows {
 
 /// A page's lineups as its live [rows] describe them, rows in order.
 ///
-/// Ids are unique within a row but nothing stops two rows naming the same
-/// one (two clients merging groups at once, say). The first row to name a
-/// spot or lineup draws it; a lineup in a later row aimed at that spot is
-/// drawn to it too.
+/// Ids are unique within a row, and a lineup is in one row. A spot can be
+/// in two (see [cloudLineupRows]): the first row to name a spot or lineup
+/// draws it, and a lineup in a later row aimed at that spot is drawn to it
+/// too.
 ///
 /// Throws a [FormatException] naming the row when one cannot be read.
 CloudLineups lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
@@ -87,13 +89,19 @@ CloudLineups lineUpGraphFromCloudRows(Iterable<CloudLineupRow> rows) {
 /// before ([groupOf], from the rows the canvas was drawn from and earlier
 /// calls).
 ///
-/// Lineups connected through a spot share a row, and so do lineups that
-/// shared one before, so a group never splits. A group connected to two
-/// groups (only a merge from two clients makes one) takes the smaller id
-/// and the other row is no longer written. A group with no lineup that was
-/// in one before is new: it takes its smallest lineup id that is not
+/// A lineup stays in the group it was first written to, so a group never
+/// splits, and no row is ever deleted to tidy groups up: a group's row goes
+/// only when its last lineup does. New lineups that share a spot form one
+/// component, which joins the group one of its spots is already in (the
+/// smallest such group's id, when spots of two groups meet in it), or else
+/// is a new group. A new group takes its smallest lineup id that is not
 /// already a group's id, here, in [groupOf] or in [takenGroupIds] (or a
 /// fresh id, when every one of them is).
+///
+/// A row holds its lineups and every spot they aim at. The app only ever
+/// aims a new lineup at one existing spot, so a spot is in one row; when
+/// lineups of two groups do share one (only rows written elsewhere make
+/// that), each row carries it, rather than one group swallowing the other.
 ///
 /// A lineup whose origin or landing is missing draws nothing on the canvas,
 /// so it is not written; neither is a spot no lineup is aimed at. Rows come
@@ -112,8 +120,22 @@ CloudLineupRows cloudLineupRows(
         link,
   ];
 
-  // Union-find over lineups, spots and earlier groups, each kind in its own
-  // namespace so equal ids of different kinds stay apart.
+  // The group of each lineup already in one, and so of the spots they aim
+  // at, as far as [groupOf] does not already say.
+  final linkGroup = <String, String>{
+    for (final link in links)
+      if (groupOf[link.id] case final group?) link.id: group,
+  };
+  final spotGroup = <String, String>{};
+  for (final link in links) {
+    for (final spot in ['o:${link.originId}', 'l:${link.landingId}']) {
+      final group = groupOf[spot.substring(2)] ?? linkGroup[link.id];
+      if (group != null) spotGroup.putIfAbsent(spot, () => group);
+    }
+  }
+
+  // New lineups, joined through the spots they share: each kind of id in
+  // its own namespace, so an origin and a landing with one id stay apart.
   final parent = <String, String>{};
   String find(String node) {
     final up = parent[node] ?? node;
@@ -122,83 +144,78 @@ CloudLineupRows cloudLineupRows(
   }
 
   void union(String a, String b) {
-    parent.putIfAbsent(a, () => a);
-    parent.putIfAbsent(b, () => b);
     final rootA = find(a);
     final rootB = find(b);
     if (rootA != rootB) parent[rootA] = rootB;
   }
 
-  void joinEarlierGroup(String node, String id) {
-    if (groupOf[id] case final group?) union(node, 'g:$group');
+  final newLinks = [
+    for (final link in links)
+      if (!linkGroup.containsKey(link.id)) link,
+  ];
+  for (final link in newLinks) {
+    union('k:${link.id}', 'o:${link.originId}');
+    union('k:${link.id}', 'l:${link.landingId}');
   }
-
-  for (final link in links) {
-    final node = 'k:${link.id}';
-    union(node, 'o:${link.originId}');
-    union(node, 'l:${link.landingId}');
-    joinEarlierGroup(node, link.id);
-    joinEarlierGroup('o:${link.originId}', link.originId);
-    joinEarlierGroup('l:${link.landingId}', link.landingId);
-  }
-
-  // Each component's links in graph order, and the earlier groups in it.
-  final linksByRoot = <String, List<LineUpLink>>{};
-  for (final link in links) {
-    (linksByRoot[find('k:${link.id}')] ??= []).add(link);
-  }
-  final earlierByRoot = <String, List<String>>{};
-  for (final node in parent.keys) {
-    if (node.startsWith('g:')) {
-      (earlierByRoot[find(node)] ??= []).add(node.substring(2));
+  final componentLinks = <String, List<LineUpLink>>{};
+  final componentGroups = <String, Set<String>>{};
+  for (final link in newLinks) {
+    final root = find('k:${link.id}');
+    (componentLinks[root] ??= []).add(link);
+    for (final spot in ['o:${link.originId}', 'l:${link.landingId}']) {
+      if (spotGroup[spot] case final group?) {
+        (componentGroups[root] ??= {}).add(group);
+      }
     }
   }
 
   String smallest(Iterable<String> ids) =>
       ids.reduce((a, b) => a.compareTo(b) <= 0 ? a : b);
-
-  final idByRoot = <String, String>{};
-  final used = <String>{...takenGroupIds, ...groupOf.values};
-  for (final MapEntry(key: root, value: earlier) in earlierByRoot.entries) {
-    if (!linksByRoot.containsKey(root)) continue;
-    final id = smallest(earlier);
-    idByRoot[root] = id;
-    used.addAll(earlier);
-  }
-  for (final MapEntry(key: root, value: groupLinks) in linksByRoot.entries) {
-    if (idByRoot.containsKey(root)) continue;
-    final candidates = [for (final link in groupLinks) link.id]..sort();
-    final id = candidates.firstWhere(
-      (candidate) => !used.contains(candidate),
-      orElse: () => const Uuid().v4(),
-    );
-    idByRoot[root] = id;
-    used.add(id);
-  }
-
-  final originsById = {for (final origin in graph.origins) origin.id: origin};
-  final landingsById = {
-    for (final landing in graph.landings) landing.id: landing,
+  final used = <String>{
+    ...takenGroupIds,
+    ...groupOf.values,
+    ...linkGroup.values,
   };
+  for (final MapEntry(key: root, value: component) in componentLinks.entries) {
+    final String group;
+    if (componentGroups[root] case final groups?) {
+      group = smallest(groups);
+    } else {
+      final candidates = [for (final link in component) link.id]..sort();
+      group = candidates.firstWhere(
+        (candidate) => !used.contains(candidate),
+        orElse: () => const Uuid().v4(),
+      );
+      used.add(group);
+    }
+    for (final link in component) {
+      linkGroup[link.id] = group;
+    }
+  }
+
+  final linksByGroup = <String, List<LineUpLink>>{};
+  for (final link in links) {
+    (linksByGroup[linkGroup[link.id]!] ??= []).add(link);
+  }
   final assigned = <String, String>{};
   final rows = <CloudLineupRow>[];
-  for (final MapEntry(key: root, value: groupLinks) in linksByRoot.entries) {
-    final id = idByRoot[root]!;
+  for (final MapEntry(key: id, value: groupLinks) in linksByGroup.entries) {
     final usedOrigins = {for (final link in groupLinks) link.originId};
     final usedLandings = {for (final link in groupLinks) link.landingId};
     final origins = [
       for (final origin in graph.origins)
-        if (usedOrigins.contains(origin.id)) originsById[origin.id]!,
+        if (usedOrigins.contains(origin.id)) origin,
     ];
     final landings = [
       for (final landing in graph.landings)
-        if (usedLandings.contains(landing.id)) landingsById[landing.id]!,
+        if (usedLandings.contains(landing.id)) landing,
     ];
-    for (final itemId in [...usedOrigins, ...usedLandings]) {
-      assigned[itemId] = id;
-    }
     for (final link in groupLinks) {
       assigned[link.id] = id;
+    }
+    // A spot carried by two rows stays with the group it was in.
+    for (final spot in [...usedOrigins, ...usedLandings]) {
+      assigned.putIfAbsent(spot, () => groupOf[spot] ?? id);
     }
     rows.add(
       CloudLineupRow(

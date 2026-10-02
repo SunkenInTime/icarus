@@ -981,6 +981,46 @@ void main() {
 
     Finder line(String text) => find.text(text, findRichText: true);
 
+    testWidgets(
+        'without the version both sides started from, list one section of '
+        'how yours differs from the cloud', (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession();
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: [
+          LineupGroupConflict(
+            key: const EntitySyncKey.lineup('page-1', 'link-a'),
+            yours: [
+              change('Heaven', 'notes edited'),
+              change('Mid', 'notes edited'),
+            ],
+            cloud: null,
+          ),
+          // One conflict without that version is enough to show none of
+          // the sides' changes apart.
+          LineupGroupConflict(
+            key: const EntitySyncKey.lineup('page-1', 'link-z'),
+            yours: [change('Long', 'landing moved')],
+            cloud: [change('Short', 'added')],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      expect(
+          find.text('How your version differs from the cloud'), findsOneWidget);
+      expect(line('Heaven · notes edited'), findsOneWidget);
+      expect(line('Mid · notes edited'), findsOneWidget);
+      expect(line('Long · landing moved'), findsOneWidget);
+      expect(find.text('Your changes'), findsNothing);
+      expect(find.text('Cloud changes'), findsNothing);
+      expect(line('Short · added'), findsNothing);
+      expect(find.text('Keep both'), findsOneWidget);
+    });
+
     testWidgets('list what each side changed and offer Keep both',
         (tester) async {
       final queue = _AttentionOpQueue(1);
@@ -1044,8 +1084,8 @@ void main() {
     });
 
     testWidgets(
-        'a Keep both that copied but then lost the cloud version points to '
-        'Use cloud', (tester) async {
+        'a Keep both that copied but could not resolve says the conflict '
+        'is still open', (tester) async {
       final queue = _AttentionOpQueue(1);
       final session = _ConflictSession(keepBoth: KeepBothOutcome.copiesOnly);
       final container = _createConflictContainer(
@@ -1063,7 +1103,7 @@ void main() {
         find.textContaining('Your version was added as a copy'),
         findsOneWidget,
       );
-      expect(find.textContaining('Choose Use cloud to finish'), findsOneWidget);
+      expect(find.textContaining('the conflict is still open'), findsOneWidget);
     });
   });
 

@@ -209,8 +209,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
               'Nothing was changed.';
         case KeepBothOutcome.copiesOnly:
           resolutionError = 'Your version was added as a copy, but the '
-              'cloud version could not be loaded. Choose Use cloud to '
-              'finish.';
+              'conflict is still open.';
       }
     } catch (error, stackTrace) {
       log(
@@ -685,7 +684,18 @@ class _LineupConflictList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final yours = [for (final conflict in conflicts) ...conflict.yours];
-    final cloud = [for (final conflict in conflicts) ...conflict.cloud];
+    // Without the version both sides started from, only the difference
+    // between them can be shown, not who made it.
+    if (conflicts.any((conflict) => conflict.cloud == null)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 10),
+          _section(context, 'How your version differs from the cloud', yours),
+        ],
+      );
+    }
+    final cloud = [for (final conflict in conflicts) ...?conflict.cloud];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

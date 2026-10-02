@@ -109,10 +109,22 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   /// While set, a refresh reads nothing, as a read refused or cut off.
   bool readFails = false;
 
+  /// While set, a refresh reads nothing when this holds for its count.
+  bool Function(int refreshCount)? readFailsWhen;
+
+  /// While set, the next refresh waits for it, then reads [initialSnapshot]
+  /// as it is by then: a read still on its way.
+  Completer<void>? refreshGate;
+
   @override
   Future<void> refresh() async {
     refreshCount += 1;
-    state = readFails ? const AsyncData(null) : AsyncData(initialSnapshot);
+    final count = refreshCount;
+    final gate = refreshGate;
+    refreshGate = null;
+    await gate?.future;
+    final fails = readFails || (readFailsWhen?.call(count) ?? false);
+    state = fails ? const AsyncData(null) : AsyncData(initialSnapshot);
   }
 
   @override
@@ -403,6 +415,20 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     state = state.copyWith(
       inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
     );
+  }
+}
+
+/// An outbox whose writes fail while [failPut] holds for the record, as a
+/// full or locked disk.
+class _FailingOutboxStore extends MemoryDurableStrategyOutboxStore {
+  bool Function(DurableOutboxRecord record)? failPut;
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    if (failPut?.call(record) ?? false) {
+      throw const FileSystemException('The disk is full.');
+    }
+    await super.put(record);
   }
 }
 
@@ -5076,6 +5102,61 @@ void main() {
     await _settle();
   });
 
+  test(
+      'a row an older build merged a group into never costs the merged '
+      'group its row', () async {
+    final page = _page('page-1', 0);
+    // A build that merged groups wrote k9's lineup into k1's row and was
+    // refused deleting k9's; a teammate has edited k9's lineup since.
+    final merged = _groupRow(
+      page.publicId,
+      'link-1',
+      origins: [_originJson('a'), _originJson('z', const Offset(70, 70))],
+      landings: [_landingJson('shared'), _landingJson('far')],
+      links: [
+        _linkJson('link-1', originId: 'a', landingId: 'shared'),
+        _linkJson('link-5', originId: 'z', landingId: 'shared'),
+        _linkJson('link-9', originId: 'z', landingId: 'far', notes: 'old'),
+      ],
+      revision: 2,
+    );
+    final teammates = _groupRow(
+      page.publicId,
+      'link-9',
+      origins: [_originJson('z', const Offset(70, 70))],
+      landings: [_landingJson('far')],
+      links: [
+        _linkJson('link-9', originId: 'z', landingId: 'far', notes: 'newer')
+      ],
+      revision: 3,
+      sortIndex: 1,
+    );
+    final container = await openCloudPage(page, [merged, teammates]);
+
+    // An unrelated edit writes no lineup row, and deletes none.
+    expect(lineupOpsAfterTextEdit(container, page), isEmpty);
+
+    // Nor does an edit to the merged group delete the row it merged.
+    container.read(lineUpProvider.notifier).updateLink(container
+        .read(lineUpProvider)
+        .linkById('link-1')!
+        .copyWith(notes: 'mine'));
+    final ops = {
+      for (final MapEntry(:key, :value) in container
+          .read(activePageLiveSyncProvider.notifier)
+          .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+          )!
+          .entries)
+        if (key.kind == EntitySyncKeyKind.lineup) key: value,
+    };
+    expect(ops.values.whereType<LineupDeleteOp>(), isEmpty);
+    expect(ops.keys,
+        isNot(contains(EntitySyncKey.lineup(page.publicId, 'link-9'))));
+    await _settle();
+  });
+
   test('a Paranoia saved at the old size opens corrected and sends nothing',
       () async {
     final page = _page('page-1', 0);
@@ -6388,6 +6469,10 @@ void main() {
     /// Shows the page as [server] now holds it, as the live read would.
     late void Function() showServer;
 
+    /// Has the live read show [pageId] from now on, as it does once the
+    /// session selects that page.
+    late void Function(String pageId) readPage;
+
     /// Opens [page] on the real queue, its outbox kept in [store], which
     /// sends to [server] through [repository] and reads it back after every
     /// batch. A batch waits for [hold] while it is set. The queue reaches
@@ -6397,22 +6482,44 @@ void main() {
       RemotePage page, {
       DurableStrategyOutboxStore? store,
       Completer<void>? hold,
+      List<RemotePage> otherPages = const [],
     }) async {
+      final others = {
+        for (final other in otherPages)
+          other.publicId: _pageSnapshot(other, settings: settingsFor(1)),
+      };
+      var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
-            pages: [page],
-            activePage: _pageSnapshot(
-              page,
-              settings: settingsFor(1),
-              elements: server.elements,
-              lineups: server.rows,
-            ),
+            pages: [page, ...otherPages],
+            activePage: others[shown] ??
+                _pageSnapshot(
+                  page,
+                  settings: settingsFor(1),
+                  elements: server.elements,
+                  lineups: server.rows,
+                ),
           );
-      final remote = liveRead = _FakeRemoteEditorNotifier(read());
-      showServer = () => remote.setSnapshot(read());
-      repository = _ServerRepository(
-        server,
-        afterBatch: () => remote.initialSnapshot = read(),
-      )..hold = hold;
+      final remote = liveRead = _FakeRemoteEditorNotifier(read(), pageCatalog: {
+        page.publicId: read().activePage!,
+        ...others,
+      });
+      void reread() {
+        final shownBefore = shown;
+        shown = page.publicId;
+        remote.pageCatalog[page.publicId] = read().activePage!;
+        shown = shownBefore;
+        remote.initialSnapshot = read();
+      }
+
+      showServer = () {
+        reread();
+        remote.setSnapshot(remote.initialSnapshot);
+      };
+      readPage = (pageId) {
+        shown = pageId;
+        reread();
+      };
+      repository = _ServerRepository(server, afterBatch: reread)..hold = hold;
       final container = ProviderContainer(overrides: [
         remoteEditorSnapshotProvider.overrideWith(() => remote),
         durableStrategyOutboxStoreProvider
@@ -6867,10 +6974,15 @@ void main() {
           ProviderContainer,
           List<List<StrategyOp>>,
           MemoryDurableStrategyOutboxStore,
-        )> refusedBesideTeammate(RemotePage page) async {
+        )> refusedBesideTeammate(
+      RemotePage page, {
+      MemoryDurableStrategyOutboxStore? store,
+      List<RemotePage> otherPages = const [],
+    }) async {
       server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)]);
-      final store = MemoryDurableStrategyOutboxStore();
-      final (container, batches) = await openOnRealQueue(page, store: store);
+      store ??= MemoryDurableStrategyOutboxStore();
+      final (container, batches) =
+          await openOnRealQueue(page, store: store, otherPages: otherPages);
       final key = keyOf(page, 'link-a');
 
       // Both clients start from revision 7; the teammate's save lands first.
@@ -6924,7 +7036,7 @@ void main() {
       final conflict = container.read(lineupConflictsProvider)!.single;
       expect(conflict.key, key);
       expect(described(conflict.yours), ['Heaven: notes edited']);
-      expect(described(conflict.cloud), ['Mid: notes edited']);
+      expect(described(conflict.cloud!), ['Mid: notes edited']);
     });
 
     test(
@@ -7280,6 +7392,258 @@ void main() {
       );
       expect(sentFor(batches, key), hasLength(1));
       expect(container.read(strategyConflictProvider), hasLength(1));
+    });
+
+    /// The lineups on screen, each as `name: notes`.
+    List<String> onScreenOf(ProviderContainer container) => [
+          for (final link in container.read(lineUpProvider).links)
+            '${link.name}: ${link.notes}',
+        ];
+
+    test(
+        'Keep both whose copy cannot be saved discards nothing: the copy and '
+        'the waiting work both stay', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, batches, _) =
+          await refusedBesideTeammate(page, store: store);
+      final key = keyOf(page, 'link-a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      final waiting = queueState().attentionByEntityKey[key]!.pending.op.opId;
+      // The copy's outbox write fails; the waiting work's record is kept.
+      store.failPut = (record) => record.entityKey != key;
+
+      final outcome = await container
+          .read(strategyPageSessionProvider.notifier)
+          .keepBothForRejected();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(outcome, KeepBothOutcome.copiesOnly);
+      // The original still waits, in memory and on disk, as it was.
+      expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
+      expect(
+        store.load().records.singleWhere((r) => r.entityKey == key).status,
+        DurableOutboxStatus.attention,
+      );
+      expect(sentFor(batches, key), hasLength(1));
+      // The copy is still on screen beside the user's version; the cloud's
+      // version was not taken.
+      expect(
+        onScreenOf(container),
+        [
+          'Heaven: mine',
+          'Mid: remote lineup',
+          'Heaven: mine',
+          'Mid: remote lineup'
+        ],
+      );
+      // The server has only the teammate's version; nothing was discarded.
+      expect(server.liveRows.map((row) => row.publicId), ['link-a']);
+      expect(
+          lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
+      expect(queueState().hasDurabilityFailure, isTrue);
+    });
+
+    test(
+        'an edit to the conflicting group while Keep both loads the cloud '
+        'version stops it: no copy, and the newer edit still waits', () async {
+      final page = _page('page-1', 0);
+      final (container, _, store) = await refusedBesideTeammate(page);
+      final key = keyOf(page, 'link-a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      final refreshes = liveRead.refreshCount;
+      final gate = liveRead.refreshGate = Completer<void>();
+
+      final keepBoth = container
+          .read(strategyPageSessionProvider.notifier)
+          .keepBothForRejected();
+      await _until(() => liveRead.refreshCount > refreshes);
+      // While the cloud's version is on its way, the user edits the group.
+      container.read(lineUpProvider.notifier).updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-b')!
+          .copyWith(notes: 'newer'));
+      gate.complete();
+
+      expect(await keepBoth, KeepBothOutcome.unchanged);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // No copy was made of the version the edit replaced...
+      expect(onScreenOf(container), ['Heaven: mine', 'Mid: newer']);
+      expect(server.liveRows.map((row) => row.publicId), ['link-a']);
+      // ...and the newer edit waits behind the refused one, for the user.
+      expect(queueState().attentionByEntityKey.keys, [key]);
+      final newer = queueState().successorByEntityKey[key]!.pending.op;
+      expect(
+          _linkIn(newer.payload as CloudPayload, 'link-b')['notes'], 'newer');
+      expect(_linkIn(newer.payload as CloudPayload, 'link-a')['notes'], 'mine');
+      expect(
+        store.load().records.singleWhere((r) => r.entityKey == key).status,
+        DurableOutboxStatus.attention,
+      );
+    });
+
+    test(
+        'switching page while Keep both loads the cloud version stops it: '
+        'no copy on either page', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      final (container, _, _) =
+          await refusedBesideTeammate(page, otherPages: [other]);
+      final key = keyOf(page, 'link-a');
+      final session = container.read(strategyPageSessionProvider.notifier);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      bool copyQueued() => queueState().pending.any((pending) =>
+          pending.op is LineupAddOp ||
+          EntitySyncKey.forStrategyOp(pending.op)?.pageId == other.publicId);
+      final refreshes = liveRead.refreshCount;
+      final gate = liveRead.refreshGate = Completer<void>();
+
+      final keepBoth = session.keepBothForRejected();
+      await _until(() => liveRead.refreshCount > refreshes);
+      // While the cloud's version is on its way, the user opens page 2.
+      await session.setActivePage(other.publicId);
+      readPage(other.publicId);
+      gate.complete();
+
+      expect(await keepBoth, KeepBothOutcome.unchanged);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
+      expect(container.read(lineUpProvider).links, isEmpty);
+      expect(copyQueued(), isFalse);
+
+      // Back on page 1: the user's version, and no copy of it.
+      await session.setActivePage(page.publicId);
+      readPage(page.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(onScreenOf(container), ['Heaven: mine', 'Mid: remote lineup']);
+      expect(copyQueued(), isFalse);
+      expect(server.liveRows.map((row) => row.publicId), ['link-a']);
+      expect(queueState().attentionByEntityKey.keys, [key]);
+    });
+
+    test(
+        'once the page is drawn again, the conflict lists how the user\'s '
+        'version differs from the cloud\'s, not who changed what', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      final (container, _, _) =
+          await refusedBesideTeammate(page, otherPages: [other]);
+      final key = keyOf(page, 'link-a');
+      final session = container.read(strategyPageSessionProvider.notifier);
+      expect(container.read(lineupConflictsProvider)!.single.cloud, isNotNull);
+
+      // The user leaves the page and comes back while the conflict waits:
+      // the page is drawn from the cloud's version, revision 8.
+      await session.setActivePage(other.publicId);
+      readPage(other.publicId);
+      await _settle();
+      await session.setActivePage(page.publicId);
+      readPage(page.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(
+        container
+            .read(activePageLiveSyncProvider.notifier)
+            .hydratedBase(key)
+            ?.revision,
+        8,
+      );
+
+      final conflict = container.read(lineupConflictsProvider)!.single;
+      expect(conflict.key, key);
+      // Against revision 8, the teammate's notes on Mid would read as the
+      // user's, so the sides are not told apart: only the difference.
+      expect(conflict.cloud, isNull);
+      expect(described(conflict.yours),
+          ['Heaven: notes edited', 'Mid: notes edited']);
+      expect(
+        described(conflict.yours),
+        described(lineupChanges(
+          from: lineUpGraphFromRemoteLineups([server.row('link-a')]),
+          to: lineUpGraphFromCloudRows([
+            CloudLineupRow(
+              publicId: 'link-a',
+              payload: container
+                  .read(strategyOpQueueProvider)
+                  .attentionByEntityKey[key]!
+                  .pending
+                  .op
+                  .payload as CloudPayload,
+            ),
+          ]).graph,
+        )),
+      );
+    });
+
+    test(
+        'Keep both pressed again after it copied but could not resolve '
+        'finishes without a second copy', () async {
+      final page = _page('page-1', 0);
+      final (container, batches, store) = await refusedBesideTeammate(page);
+      final key = keyOf(page, 'link-a');
+      final session = container.read(strategyPageSessionProvider.notifier);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      List<RemoteLineup> copies() => [
+            for (final row in server.liveRows)
+              if (row.publicId != 'link-a') row,
+          ];
+
+      // The first read, before the copy, works; the cloud's version then
+      // stops loading.
+      final first = liveRead.refreshCount + 1;
+      liveRead.readFailsWhen = (count) => count > first;
+      expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
+      // The copy goes out; the waiting work stays.
+      await _until(() =>
+          queueState().queuedByEntityKey.isEmpty &&
+          queueState().inFlightByEntityKey.isEmpty &&
+          server.liveRows.length == 2);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(copies(), hasLength(1));
+      expect(queueState().attentionByEntityKey.keys, [key]);
+
+      // Pressed again with the cloud reachable, it only resolves.
+      liveRead.readFailsWhen = null;
+      expect(await session.keepBothForRejected(), KeepBothOutcome.kept);
+      await _until(() => queueState().pending.isEmpty);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      final copy = copies().single;
+      expect(lineupsIn([copy]), ['Heaven: mine', 'Mid: remote lineup']);
+      expect(sentFor(batches, keyOf(page, copy.publicId)), hasLength(1));
+      expect(lineupsIn([server.row('link-a')]),
+          ['Heaven: remote lineup', 'Mid: theirs']);
+      expect(
+        onScreenOf(container),
+        unorderedEquals([
+          'Heaven: remote lineup',
+          'Mid: theirs',
+          'Heaven: mine',
+          'Mid: remote lineup',
+        ]),
+      );
+      expect(queueState().attentionByEntityKey, isEmpty);
+      expect(queueState().needsAttention, isFalse);
+      expect(store.load().records, isEmpty);
     });
 
     test(

@@ -103,11 +103,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   /// The server's version of [key] the canvas was drawn from, which local
-  /// edits to it were made against: its payload, or null when the canvas was
-  /// drawn without it or with it deleted.
-  Object? hydratedBasePayload(EntitySyncKey key) {
+  /// edits to it were made against: its revision, and its payload (null
+  /// when it was deleted). Null when the canvas was drawn without it.
+  ({int revision, Object? payload})? hydratedBase(EntitySyncKey key) {
     final base = _hydratedBaseByEntityKey[key];
-    return base == null || base.deleted ? null : base.payload;
+    if (base == null) return null;
+    return (
+      revision: base.revision,
+      payload: base.deleted ? null : base.payload
+    );
   }
 
   /// The lineup group [itemId] (a lineup, origin or landing) on [pageId]
@@ -1022,8 +1026,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // has or had, so it never lands on a teammate's group or a deleted one.
     final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
     final lineupGroupOf = _lineupGroupOfByPage[pageId] ??= {};
+    final lineUpGraph = ref.read(lineUpProvider).graph;
     final lineupRows = cloudLineupRows(
-      ref.read(lineUpProvider).graph,
+      lineUpGraph,
       groupOf: lineupGroupOf,
       takenGroupIds: {
         for (final key in [
@@ -1042,6 +1047,34 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         overlayEntityType: ActivePageOverlayEntityType.lineup,
         payload: row.payload,
         sortIndex: knownSortIndex(key) ?? freshLineupSortIndex(),
+        revision: 0,
+        deleted: false,
+      );
+    }
+    // A group's row goes only when its last lineup does. A stored row none
+    // of the rows above is, while a lineup it holds is still drawn, had its
+    // lineups drawn from another row naming them too (only rows a build
+    // that merged groups wrote do that): it stays exactly as stored, never
+    // deleted and never rewritten with the other row's copy.
+    final drawnLineupIds = {for (final link in lineUpGraph.links) link.id};
+    for (final MapEntry(:key, value: base)
+        in _hydratedBaseByEntityKey.entries) {
+      if (key.pageId != pageId ||
+          key.kind != EntitySyncKeyKind.lineup ||
+          base.deleted ||
+          entities.containsKey(key)) {
+        continue;
+      }
+      final links = cloudPayloadData(base.payload)['links'];
+      final holdsDrawn = links is List &&
+          links.any(
+              (link) => link is Map && drawnLineupIds.contains(link['id']));
+      if (!holdsDrawn) continue;
+      entities[key] = _NormalizedEntity(
+        key: key,
+        overlayEntityType: ActivePageOverlayEntityType.lineup,
+        payload: base.payload,
+        sortIndex: knownSortIndex(key) ?? base.sortIndex,
         revision: 0,
         deleted: false,
       );
