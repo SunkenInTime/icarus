@@ -57,4 +57,23 @@ void main() {
     expect(moved!.dx, greaterThan(10));
     expect(pieces.receiverContains(moved), isTrue);
   });
+
+  test('a far open edge does not stop a near exit through a thin neighbour',
+      () {
+    // Thin walls cover both near sides of a 4 x 10 wall. The open ends are
+    // 5 units away, out of reach; the way out is through a neighbour.
+    final boxed = SvgHeightVisibility.fromJson(data(
+      [
+        wall('wide', [rectangle(0, 0, 4, 10)]),
+        wall('west', [rectangle(-0.5, 0, 0, 10)]),
+        wall('east', [rectangle(4, 0, 4.5, 10)]),
+      ],
+      receiver: [_floor(rectangle(-20, -20, 20, 30))],
+    ));
+    const start = Offset(1.9, 5);
+    final moved = boxed.standablePointNear(start);
+    expect(moved, isNotNull);
+    expect((moved! - start).distance, lessThanOrEqualTo(2.5));
+    expect(boxed.walls.where((w) => w.contains(moved)), isEmpty);
+  });
 }
