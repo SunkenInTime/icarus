@@ -3,6 +3,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
+import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Playback along the bottom: every round of the match, then the round being
@@ -23,28 +24,38 @@ class ReplayDock extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.border),
       ),
-      child: ListenableBuilder(
-        listenable: playback,
-        builder: (context, _) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _RoundStrip(playback: playback),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                ShadIconButton.ghost(
+      // Only the clock and the scrubber change every frame; the rest
+      // rebuilds when what it shows does.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ReplaySelect(
+            listenable: playback,
+            select: () => (playback.round?.index, playback.perspective),
+            builder: (context, _) => _RoundStrip(playback: playback),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              ReplaySelect(
+                listenable: playback,
+                select: () => playback.playing,
+                builder: (context, playing) => ShadIconButton.ghost(
                   width: 32,
                   height: 32,
                   onPressed: playback.togglePlaying,
                   icon: Icon(
-                    playback.playing ? LucideIcons.pause : LucideIcons.play,
+                    playing ? LucideIcons.pause : LucideIcons.play,
                     size: 18,
                   ),
                 ),
-                const SizedBox(width: 4),
-                SizedBox(
-                  width: 40,
-                  child: Text(
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 40,
+                child: ListenableBuilder(
+                  listenable: playback,
+                  builder: (context, _) => Text(
                     _roundClock(playback),
                     style: const TextStyle(
                       fontSize: 12,
@@ -53,14 +64,23 @@ class ReplayDock extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(child: _RoundScrubber(playback: playback)),
-                const SizedBox(width: 12),
-                _SpeedButton(playback: playback),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ListenableBuilder(
+                  listenable: playback,
+                  builder: (context, _) => _RoundScrubber(playback: playback),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ReplaySelect(
+                listenable: playback,
+                select: () => playback.speed,
+                builder: (context, _) => _SpeedButton(playback: playback),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

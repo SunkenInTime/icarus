@@ -1,12 +1,19 @@
+import 'dart:typed_data';
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/replay/replay_cone_cuts.dart';
+import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
+import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 
 import 'replay_test_support.dart';
 
@@ -251,6 +258,67 @@ void main() {
     });
   });
 
+  group('utility', () {
+    const omenOrb =
+        '/Game/Characters/Wraith/S0/Ability_4/Projectile_Wraith_4_Smoke.Projectile_Wraith_4_Smoke_C';
+    Map<String, Object?> smoke({int spawnMs = 1000, int? endMs = 9000}) => {
+          'id': 1,
+          'classPath': omenSmoke,
+          'owner': 'b',
+          'spawnMs': spawnMs,
+          'endMs': endMs,
+          'position': [0, 0, 100],
+        };
+
+    test('a smoke blocks sight while it is up', () {
+      final frames = builder(document(utility: [smoke()]));
+      final up = frames.frameAt(2000, perspective: ReplayTeam.red);
+      expect(up.occluders.single, isA<CircleOccluder>());
+      expect((up.occluders.single as CircleOccluder).radius, greaterThan(0));
+      expect(
+          frames.frameAt(9600, perspective: ReplayTeam.red).occluders, isEmpty);
+    });
+
+    test('a utility rings as it activates and fades out as it ends', () {
+      final frames = builder(document(utility: [smoke()]));
+      ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
+      expect(at(1100).effects.whereType<ReplayActivation>(), hasLength(1));
+      expect(at(2000).effects, isEmpty);
+      // Ended at 9000: drawn fading for half a second, then gone, and never
+      // part of what a capture saves.
+      final leaving = at(9200);
+      expect(leaving.abilities, isEmpty);
+      final exit = leaving.effects.whereType<ReplayExit>().single;
+      expect(exit.progress, closeTo(0.4, 1e-9));
+      expect(at(9600).effects, isEmpty);
+    });
+
+    test('a thrown smoke flies as its icon, not as the smoke', () {
+      final frames = builder(document(utility: [
+        {
+          'id': 2,
+          'classPath': omenOrb,
+          'owner': 'b',
+          'spawnMs': 1000,
+          'endMs': 2000,
+          'position': [0, 0, 100],
+          'path': [
+            [1500, 500, 0, 100],
+            [2000, 1000, 0, 100],
+          ],
+        },
+      ]));
+      final frame = frames.frameAt(1250, perspective: ReplayTeam.red);
+      expect(frame.abilities, isEmpty);
+      final flight = frame.effects.whereType<ReplayFlight>().single;
+      // Half way to its first path point: the path is followed smoothly.
+      final start = projection.toWorld(0, 0);
+      final first = projection.toWorld(500, 0);
+      expect((flight.trail.last - Offset.lerp(start, first, 0.5)!).distance,
+          lessThan(1e-6));
+    });
+  });
+
   test('size conversions need no laid-out canvas, and match the canvas', () {
     for (final height in [700.0, 1440.0]) {
       final canvas = CoordinateSystem(
@@ -292,24 +360,25 @@ void main() {
       expect(p.timeMs, 0);
     });
 
-    test('playing moves a few players a frame; pausing shows all exactly', () {
+    ReplayDocument walkers(List<String> subjects) => document(
+          players: [
+            for (final subject in subjects)
+              {'subject': subject, 'agentId': jett, 'team': 'Red'},
+          ],
+          movement: {
+            // Everyone walks along x, 1 cm a millisecond.
+            for (final subject in subjects)
+              subject: [
+                for (var t = 0; t <= 60000; t += 50)
+                  [t, t.toDouble(), 0, 100, 0, 0]
+              ],
+          },
+        );
+
+    test('playing moves every player every frame', () {
       final subjects = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'];
-      final doc = document(
-        players: [
-          for (final subject in subjects)
-            {'subject': subject, 'agentId': jett, 'team': 'Red'},
-        ],
-        movement: {
-          // Everyone walks along x, 1 cm a millisecond.
-          for (final subject in subjects)
-            subject: [
-              for (var t = 0; t <= 60000; t += 50)
-                [t, t.toDouble(), 0, 100, 0, 0]
-            ],
-        },
-      );
       final playback = ReplayPlayback(
-        document: doc,
+        document: walkers(subjects),
         projection: projection,
         perspective: ReplayTeam.red,
       )..play();
@@ -319,19 +388,71 @@ void main() {
       final before = positions();
       playback.advance(const Duration(milliseconds: 10));
       final after = positions();
-      final moved = subjects
-          .where((s) => before['replay-player-$s'] != after['replay-player-$s'])
-          .length;
-      expect(moved, 3);
-
-      playback.pause();
-      final exact = playback.frames
-          .frameAt(playback.timeMs, perspective: ReplayTeam.red)
-          .agents;
       expect(
-        {for (final agent in playback.frame.agents) agent.id: agent.position},
-        {for (final agent in exact) agent.id: agent.position},
+        subjects.where(
+            (s) => before['replay-player-$s'] != after['replay-player-$s']),
+        hasLength(subjects.length),
       );
+      // With no cone worker, each cone cuts its own.
+      expect(playback.frame.cones, isEmpty);
+    });
+
+    test('cones are cut on a worker and drawn from their latest cut', () async {
+      CoordinateSystem(playAreaSize: const Size(1600, 900));
+      List<int> model(String side) =>
+          File('assets/maps/sunset_svg_height_$side.json.gz').readAsBytesSync();
+      final worker = await ReplayConeWorker.start(
+        attackModel: Uint8List.fromList(model('attack')),
+        defenseModel: Uint8List.fromList(model('defense')),
+      );
+      addTearDown(worker.dispose);
+      final playback = ReplayPlayback(
+        document: walkers(['p0']),
+        projection: projection,
+        perspective: ReplayTeam.red,
+      );
+      var arrived = 0;
+      final cuts = ReplayConeCuts(
+        worker: worker,
+        map: projection.map,
+        attackModel: SvgHeightVisibility.fromJson(
+            jsonDecode(utf8.decode(gzip.decode(model('attack'))))
+                as Map<String, dynamic>),
+        defenseModel: SvgHeightVisibility.fromJson(
+            jsonDecode(utf8.decode(gzip.decode(model('defense'))))
+                as Map<String, dynamic>),
+        coneLength: ReplayFrameBuilder.coneLength,
+        apertureDegrees: 180,
+        onCut: () {
+          arrived++;
+          playback.coneCutArrived();
+        },
+      );
+      playback
+        ..coneCuts = cuts
+        ..seek(1000);
+
+      // Asked for, not yet cut: no cone rather than a wrong one.
+      final waiting = playback.frame.cones.values.single;
+      expect(waiting.cut, isNull);
+      while (arrived == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final cut = playback.frame.cones.values.single;
+      expect(cut.cut!.cone!.polygon.length, greaterThanOrEqualTo(3));
+      expect(cut.cut!.aim, cut.aim, reason: 'paused: cut where they stand');
+
+      // Moving on, the agent moves at once; the old cut is drawn carried
+      // along to it until the next one arrives.
+      playback.seek(1500);
+      final moved = playback.frame.cones.values.single;
+      expect(moved.cut!.id, cut.cut!.id);
+      expect(moved.aim.origin, isNot(moved.cut!.aim.origin));
+      while (arrived == 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final caughtUp = playback.frame.cones.values.single;
+      expect(caughtUp.cut!.aim, caughtUp.aim);
     });
 
     test('playing stops at the end', () {

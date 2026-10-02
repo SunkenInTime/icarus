@@ -309,6 +309,7 @@ class ReplayEconomy {
   });
 
   final String subject;
+
   /// Null when no money was replicated by the end of the buy phase.
   final int? credits;
 
@@ -382,16 +383,33 @@ class ReplayUtility {
   bool isActiveAt(int timeMs) =>
       timeMs >= spawnMs && (endMs == null || timeMs < endMs!);
 
-  /// Where the utility is at [timeMs]: the last path point reached, else
-  /// where it spawned.
+  /// Where the utility is at [timeMs], between the path points around it
+  /// (the path is about 10 Hz, so stepping from point to point stutters).
+  /// Before its first point it is where it spawned.
   ReplayVector positionAt(int timeMs) {
-    var current = position;
+    var fromMs = spawnMs;
+    var from = position;
     for (final point in path) {
-      if (point.timeMs > timeMs) break;
-      current = point.position;
+      if (point.timeMs > timeMs) {
+        final span = point.timeMs - fromMs;
+        if (span <= 0) return point.position;
+        final t = ((timeMs - fromMs) / span).clamp(0.0, 1.0);
+        return from.lerp(point.position, t);
+      }
+      fromMs = point.timeMs;
+      from = point.position;
     }
-    return current;
+    return from;
   }
+
+  /// Where the utility went from [fromMs] to [toMs], ending where it is at
+  /// [toMs]: the path points between, in order.
+  List<ReplayVector> trail(int fromMs, int toMs) => [
+        if (fromMs <= spawnMs) position,
+        for (final point in path)
+          if (point.timeMs > fromMs && point.timeMs < toMs) point.position,
+        positionAt(toMs),
+      ];
 
   factory ReplayUtility.fromJson(Map<String, dynamic> json) => ReplayUtility(
         id: json['id'] as int,
@@ -447,6 +465,13 @@ class ReplayVector {
   final double x;
   final double y;
   final double z;
+
+  /// The point [t] of the way from here to [other].
+  ReplayVector lerp(ReplayVector other, double t) => ReplayVector(
+        x + (other.x - x) * t,
+        y + (other.y - y) * t,
+        z + (other.z - z) * t,
+      );
 
   factory ReplayVector.fromJson(List json) => ReplayVector(
         _finite(json[0] as num),

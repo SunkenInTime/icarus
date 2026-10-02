@@ -599,18 +599,42 @@ class SvgHeightVisibility {
     String? supportId,
     double? absoluteEyeElevationMeters,
     int arcSteps = 96,
-  }) {
-    final timer = Stopwatch()..start();
-    final base = _horizontalCone(
+  }) =>
+      withSightlineFloors(
+        horizontalCone(
+            origin: origin,
+            directionRadians: directionRadians,
+            range: range,
+            apertureRadians: apertureRadians,
+            cameraHeightMeters: cameraHeightMeters,
+            supportHeightAboveFloorMeters: supportHeightAboveFloorMeters,
+            supportId: supportId,
+            absoluteEyeElevationMeters: absoluteEyeElevationMeters,
+            arcSteps: arcSteps),
         origin: origin,
         directionRadians: directionRadians,
         range: range,
         apertureRadians: apertureRadians,
         cameraHeightMeters: cameraHeightMeters,
-        supportHeightAboveFloorMeters: supportHeightAboveFloorMeters,
-        supportId: supportId,
-        absoluteEyeElevationMeters: absoluteEyeElevationMeters,
-        arcSteps: arcSteps);
+        arcSteps: arcSteps,
+      );
+
+  /// Whether [withSightlineFloors] can change a cone at all on this map.
+  bool get hasSightlineFloors => sightlineFloors.isNotEmpty;
+
+  /// [base], a [horizontalCone], with the reviewed destination floors it
+  /// overlooks cast down to a standing target (see `docs/vision-model.md`).
+  /// Uses `dart:ui` path operations, so it runs on the root isolate only.
+  SvgVisibilityCone withSightlineFloors(
+    SvgVisibilityCone base, {
+    required Offset origin,
+    required double directionRadians,
+    required double range,
+    required double apertureRadians,
+    double? cameraHeightMeters,
+    int arcSteps = 96,
+  }) {
+    final timer = Stopwatch()..start();
     if (sightlineFloors.isEmpty || base.polygon.length < 3) return base;
     final eye = base.eyeElevationMeters!;
     Path? visibility;
@@ -669,7 +693,9 @@ class SvgHeightVisibility {
         visibilityPath: visibility);
   }
 
-  SvgVisibilityCone _horizontalCone({
+  /// The cone cut by a horizontal sightline at eye height alone. Uses no
+  /// `dart:ui` paths, so a worker isolate can run it.
+  SvgVisibilityCone horizontalCone({
     required Offset origin,
     required double directionRadians,
     required double range,

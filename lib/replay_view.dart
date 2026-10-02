@@ -12,7 +12,11 @@ import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/const/utilities.dart';
+import 'package:icarus/replay/replay_cone_cuts.dart';
+import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/replay/replay_decoder.dart';
+import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_files.dart';
 import 'package:icarus/replay/replay_loader.dart';
@@ -60,6 +64,11 @@ class _ReplayViewState extends ConsumerState<ReplayView>
   ReplayPlayback? _playback;
   ProviderSubscription<AsyncValue<SvgHeightRuntime?>>? _heightRuntime;
   SvgHeightVisibility? _heightModel;
+  SvgHeightRuntime? _heightRuntimeValue;
+
+  /// Cuts view cones off the UI thread once the map's models are in.
+  ReplayConeCuts? _coneCuts;
+  var _startingConeCuts = false;
   ReplayDecodeException? _error;
   Duration _lastTick = Duration.zero;
 
@@ -109,6 +118,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
       )..addListener(_syncMapSide);
       if (_heightModel != null) playback.heightModel = _heightModel;
       setState(() => _playback = playback);
+      unawaited(_startConeCuts());
       claimEditorState();
       _ticker.start();
     } on ReplayDecodeException catch (error) {
@@ -129,7 +139,49 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     final model = runtime?.model(true);
     if (model == null || identical(model, _heightModel)) return;
     _heightModel = model;
+    _heightRuntimeValue = runtime;
     _playback?.heightModel = model;
+    unawaited(_startConeCuts());
+  }
+
+  /// Starts cutting view cones on a worker once both the replay and the
+  /// map's height models are in. Until then each cone cuts its own.
+  Future<void> _startConeCuts() async {
+    final playback = _playback;
+    final runtime = _heightRuntimeValue;
+    if (playback == null ||
+        runtime == null ||
+        _coneCuts != null ||
+        _startingConeCuts) {
+      return;
+    }
+    final registration = svgHeightRegistrationFor(runtime.map);
+    if (registration == null) return;
+    _startingConeCuts = true;
+    try {
+      final dependencies = ref.read(svgHeightRuntimeDependenciesProvider);
+      final worker = await ReplayConeWorker.start(
+        attackModel: await dependencies.loadModel(registration, true),
+        defenseModel: await dependencies.loadModel(registration, false),
+      );
+      if (!mounted) {
+        worker.dispose();
+        return;
+      }
+      _coneCuts = playback.coneCuts = ReplayConeCuts(
+        worker: worker,
+        map: runtime.map,
+        attackModel: runtime.model(true),
+        defenseModel: runtime.model(false),
+        coneLength: ReplayFrameBuilder.coneLength,
+        apertureDegrees: UtilityData.getViewConeAngle(UtilityType.viewCone180),
+        onCut: playback.coneCutArrived,
+      );
+    } catch (_) {
+      // Without the worker each cone cuts its own, as in the editor.
+    } finally {
+      _startingConeCuts = false;
+    }
   }
 
   void _fail(ReplayDecodeException error) {
@@ -195,6 +247,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     _heightRuntime?.close();
     _loader.cancel();
     _ticker.dispose();
+    _coneCuts?.dispose();
     _playback
       ?..removeListener(_syncMapSide)
       ..dispose();

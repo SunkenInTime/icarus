@@ -61,6 +61,20 @@ class SplitSvgMapTransform {
       _transform.sideWorldFromSource(point, isAttack: isAttack);
 }
 
+/// Marks view cones below as drawn by someone else. The replay viewer
+/// paints every cone in one layer from cuts made off the UI thread; the
+/// agents it places would otherwise each cut and paint their own again.
+class ViewConesDrawnElsewhere extends InheritedWidget {
+  const ViewConesDrawnElsewhere({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<ViewConesDrawnElsewhere>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(ViewConesDrawnElsewhere oldWidget) => false;
+}
+
 /// A mounted child owns one cache key. Preview cones with no persisted ID still
 /// remain independent, and unmounting removes only that observer's cached cone.
 class SvgHeightViewCone extends StatefulWidget {
@@ -112,6 +126,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
 
   @override
   Widget build(BuildContext context) {
+    if (ViewConesDrawnElsewhere.of(context)) return const SizedBox.expand();
     final coordinates = CoordinateSystem.instance;
     final model = widget.runtime.model(widget.isAttack);
     final mapTransform = SvgHeightMapTransform.forMap(widget.runtime.map);
@@ -280,6 +295,10 @@ class SvgHeightViewConePainter extends CustomPainter {
     canvas.drawCircle(apex, radius, paint);
     canvas.restore();
   }
+
+  /// [rings] as a path, the way cones are clipped by them.
+  static Path ringsPath(List<List<Offset>> rings, {required bool evenOdd}) =>
+      _path(rings, evenOdd: evenOdd);
 
   static Path _path(List<List<Offset>> rings, {required bool evenOdd}) {
     final path = Path()

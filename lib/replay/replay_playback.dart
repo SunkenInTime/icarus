@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
@@ -41,11 +42,9 @@ class ReplayPlayback extends ChangeNotifier {
   int get durationMs => document.match.durationMs;
   ReplayRound? get round => document.roundAt(_timeMs);
 
-  /// The moment on screen. While playing, each new frame moves only the
-  /// [_movesPerFrame] players whose shown pose is oldest, plus any older
-  /// than [_maxPoseAgeMs]: a moved player's view cone is cut against the
-  /// walls again, and all ten in one frame is more than a 165 Hz frame
-  /// holds. Paused, every player is exact; so is every capture.
+  /// The moment on screen, every player exactly where they are. With
+  /// [coneCuts], view cones are cut on a worker and drawn from their latest
+  /// cut, so the UI thread only draws; without, each cone cuts its own.
   ReplayFrame get frame {
     final cached = _frame;
     if (cached != null &&
@@ -54,45 +53,29 @@ class ReplayPlayback extends ChangeNotifier {
       return cached;
     }
     _framePerspective = _perspective;
-    if (_playing) {
-      _staggerPoses();
-    } else {
-      _poseTimes.clear();
-    }
     return _frame = frames.frameAt(
       _timeMs,
       perspective: _perspective,
-      poseTimeOf: (player) => _poseTimes[player.subject] ?? _timeMs,
+      cuts: _coneCuts,
     );
   }
 
   ReplayFrame? _frame;
   ReplayTeam? _framePerspective;
 
-  static const _movesPerFrame = 3;
-  static const _maxPoseAgeMs = 66;
+  /// Where view cones are cut, once the worker is up.
+  ReplayConeCuts? get coneCuts => _coneCuts;
+  ReplayConeCuts? _coneCuts;
+  set coneCuts(ReplayConeCuts? cuts) {
+    _coneCuts = cuts;
+    _frame = null;
+    notifyListeners();
+  }
 
-  /// When each player's shown pose was taken, while playing.
-  final _poseTimes = <String, int>{};
-
-  void _staggerPoses() {
-    final players = document.players;
-    if (_poseTimes.length != players.length) {
-      for (final player in players) {
-        _poseTimes[player.subject] = _timeMs;
-      }
-      return;
-    }
-    final oldestFirst = [...players]..sort(
-        (a, b) => _poseTimes[a.subject]!.compareTo(_poseTimes[b.subject]!),
-      );
-    for (var i = 0; i < oldestFirst.length; i++) {
-      final subject = oldestFirst[i].subject;
-      final age = _timeMs - _poseTimes[subject]!;
-      if (i < _movesPerFrame || age > _maxPoseAgeMs || age < 0) {
-        _poseTimes[subject] = _timeMs;
-      }
-    }
+  /// A cut arrived: show it, if the moment on screen is waiting for it.
+  void coneCutArrived() {
+    _frame = null;
+    if (!_playing) notifyListeners();
   }
 
   /// The map's height model, for standing each cone on the right level;
@@ -113,8 +96,6 @@ class ReplayPlayback extends ChangeNotifier {
   void pause() {
     if (!_playing) return;
     _playing = false;
-    // Show every player exactly where they are.
-    _frame = null;
     notifyListeners();
   }
 
@@ -135,7 +116,6 @@ class ReplayPlayback extends ChangeNotifier {
   void seek(int timeMs) {
     final clamped = timeMs.clamp(0, durationMs);
     _carryMs = 0;
-    _poseTimes.clear();
     if (clamped == _timeMs) return;
     _timeMs = clamped;
     notifyListeners();

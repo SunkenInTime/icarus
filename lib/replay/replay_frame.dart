@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -8,11 +9,13 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/replay/replay_ability_catalog.dart';
+import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_weapons.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
 /// One moment of a replay as Icarus draws it: the same placed widgets a page
@@ -25,6 +28,10 @@ class ReplayFrame {
     required this.agents,
     required this.abilities,
     required this.utilities,
+    this.occluders = const [],
+    this.cones = const {},
+    this.dimmed = const {},
+    this.effects = const [],
   });
 
   final int timeMs;
@@ -37,7 +44,91 @@ class ReplayFrame {
   final List<PlacedAbility> abilities;
   final List<PlacedUtility> utilities;
 
+  /// Smokes and smoke walls up at this moment, which cut the view cones.
+  final List<VisionOccluder> occluders;
+
+  /// Each living agent's latest cone cut, by agent id, when cones are cut
+  /// on a worker (see [ReplayConeCuts]). Empty when each cone cuts its own.
+  final Map<String, ReplayConeSource> cones;
+
+  /// Abilities drawn faintly, by id: ranges and areas players stand in, so
+  /// the agents and cones under them stay readable. Smokes stay solid.
+  final Set<String> dimmed;
+
+  /// What the viewer animates around the placed widgets: utility arriving,
+  /// leaving, and in flight. Never part of a capture.
+  final List<ReplayEffect> effects;
+
   List<PlacedWidget> get widgets => [...utilities, ...abilities, ...agents];
+}
+
+/// A player's view cone as drawn: where it is aimed now, and its latest cut
+/// (see [ReplayConeCuts]), which may lag the aim by a frame or two and is
+/// carried along to it. No cut yet draws no cone.
+typedef ReplayConeSource = ({ReplayConeAim aim, ReplayConeCut? cut});
+
+/// Something the viewer animates for a moment. Positions are canonical
+/// world units, like placed widgets'.
+sealed class ReplayEffect {
+  const ReplayEffect({required this.isAlly});
+
+  final bool isAlly;
+}
+
+/// A utility activating: a ring spreading from it as it arrives.
+class ReplayActivation extends ReplayEffect {
+  const ReplayActivation({
+    required this.centre,
+    required this.radius,
+    required this.progress,
+    required super.isAlly,
+  });
+
+  final Offset centre;
+
+  /// How far the ring spreads, world units.
+  final double radius;
+
+  /// 0 as it activates, 1 when the ring has faded.
+  final double progress;
+}
+
+/// A utility ending (destroyed, expired, or popped): its ability fading out
+/// where it last stood, with a ring bursting from it.
+class ReplayExit extends ReplayEffect {
+  const ReplayExit({
+    required this.ability,
+    required this.centre,
+    required this.radius,
+    required this.progress,
+    required this.dimmed,
+    required super.isAlly,
+  });
+
+  final PlacedAbility ability;
+  final Offset centre;
+  final double radius;
+
+  /// 0 as it ends, 1 when it is gone.
+  final double progress;
+
+  /// Whether the ability was drawn faintly while it was up.
+  final bool dimmed;
+}
+
+/// A thrown utility in flight: its ability's icon where it is now, and the
+/// path it took over the last moment.
+class ReplayFlight extends ReplayEffect {
+  const ReplayFlight({
+    required this.iconPath,
+    required this.trail,
+    required super.isAlly,
+  });
+
+  final String iconPath;
+
+  /// Oldest first; the last point is where it is now.
+  final List<Offset> trail;
 }
 
 /// How a player stands at one moment.
@@ -73,7 +164,7 @@ class ReplayFrameBuilder {
   SvgHeightVisibility? heightModel;
 
   /// Cone length the editor allows at most; walls cut it down.
-  static const _coneLength = ViewConeUtility.maxLength;
+  static const coneLength = ViewConeUtility.maxLength;
 
   late final Map<String, List<ReplayKill>> _deathsBySubject = () {
     final deaths = <String, List<ReplayKill>>{};
@@ -82,6 +173,11 @@ class ReplayFrameBuilder {
     }
     return deaths;
   }();
+
+  /// Each utility's catalog entry, looked up once rather than every frame.
+  late final List<ReplayAbilityEntry?> _entries = [
+    for (final utility in document.utility) replayAbilityFor(utility.classPath),
+  ];
 
   /// The owner of each utility actor when the replay does not name one but
   /// only one player could have cast it.
@@ -184,28 +280,33 @@ class ReplayFrameBuilder {
       document.playerBySubject(utility.owner) ??
       _soleCasterByAgent[entry.agent];
 
-  /// The moment at [timeMs]. [poseTimeOf] may give a player's pose an
-  /// earlier time; see [ReplayPlayerState] and `ReplayPlayback.frame`.
+  /// How long a utility's arrival ring and its exit last.
+  static const activationMs = 450;
+  static const exitMs = 500;
+
+  /// How much of a thrown utility's path trails behind it.
+  static const trailMs = 350;
+
+  /// The moment at [timeMs]. With [cuts], each living player's cone is
+  /// asked for where they are now and drawn from its latest cut; see
+  /// [ReplayFrame.cones].
   ReplayFrame frameAt(
     int timeMs, {
     required ReplayTeam perspective,
-    int Function(ReplayPlayer player)? poseTimeOf,
+    ReplayConeCuts? cuts,
   }) {
     final round = document.roundAt(timeMs);
     final isAttack = (round?.attackingTeam ?? ReplayTeam.red) == perspective;
     final agentAnchor = CoordinateSystem.virtualToWorld(storedAgentAnchor);
 
     final agents = <PlacedAgentNode>[];
+    final cones = <String, ReplayConeSource>{};
     for (final player in document.players) {
       final type = replayAgentType(player.agentId);
       final team = player.team;
       // Without an agent or a team there is nothing honest to draw.
       if (type == null || team == null) continue;
-      final state = playerState(
-        player,
-        timeMs,
-        poseTimeMs: poseTimeOf?.call(player),
-      );
+      final state = playerState(player, timeMs);
       final pose = state.pose;
       if (pose == null) continue;
       final standing = projection.toWorld(pose.position.x, pose.position.y);
@@ -215,6 +316,23 @@ class ReplayFrameBuilder {
       final position = standing - agentAnchor;
       final isAlly = team == perspective;
       final id = 'replay-player-${player.subject}';
+      final visionElevation = _visionElevation(pose);
+      final rotation = projection.rotationForYaw(pose.yaw);
+      if (state.alive && cuts != null) {
+        final aim = ReplayConeAim(
+          origin: standing,
+          rotation: rotation,
+          isAttack: isAttack,
+          elevationCm: visionElevation,
+        );
+        cuts.want(player.subject, aim);
+        final cut = cuts.latest(player.subject);
+        cones[id] = (
+          aim: aim,
+          // A cut from the other side's map is no cut at all.
+          cut: cut != null && cut.aim.isAttack == isAttack ? cut : null,
+        );
+      }
       // What they carried out of the buy phase.
       final weapon =
           replayWeaponType(round?.economyFor(player.subject)?.weapon);
@@ -225,9 +343,9 @@ class ReplayFrameBuilder {
                 type: type,
                 position: position,
                 presetType: UtilityType.viewCone180,
-                rotation: projection.rotationForYaw(pose.yaw),
-                length: _coneLength,
-                visionElevation: _visionElevation(pose),
+                rotation: rotation,
+                length: coneLength,
+                visionElevation: visionElevation,
                 isAlly: isAlly,
                 weapon: weapon,
               )
@@ -243,25 +361,80 @@ class ReplayFrameBuilder {
     }
 
     final abilities = <PlacedAbility>[];
-    for (final utility in document.utility) {
+    final occluders = <VisionOccluder>[];
+    final dimmed = <String>{};
+    final effects = <ReplayEffect>[];
+    final mapScale = Maps.mapScale[projection.map] ?? 1.0;
+    for (var i = 0; i < document.utility.length; i++) {
+      final utility = document.utility[i];
       if (utility.spawnMs > timeMs) break;
-      if (!utility.isActiveAt(timeMs)) continue;
-      final entry = replayAbilityFor(utility.classPath);
+      final endMs = utility.endMs;
+      final active = utility.isActiveAt(timeMs);
+      // An ending utility lingers a moment to fade out.
+      final leaving = !active && endMs != null && timeMs - endMs < exitMs;
+      if (!active && !leaving) continue;
+      final entry = _entries[i];
       if (entry == null) continue;
       final owner = ownerOf(utility, entry);
       // An unknown owner among duplicate agents would be a guess at the
       // team colour; leave it out instead.
       final ownerTeam = owner?.team;
       if (ownerTeam == null) continue;
-      abilities.add(
-        entry.place(
-          utility: utility,
-          projection: projection,
-          timeMs: timeMs,
-          id: 'replay-utility-${utility.id}',
-          isAlly: ownerTeam == perspective,
-        ),
+      final isAlly = ownerTeam == perspective;
+
+      if (entry.kind == ReplayUtilityKind.flight) {
+        if (active) {
+          effects.add(ReplayFlight(
+            iconPath: entry.ability.iconPath,
+            trail: [
+              for (final point in utility.trail(timeMs - trailMs, timeMs))
+                projection.toWorld(point.x, point.y),
+            ],
+            isAlly: isAlly,
+          ));
+        }
+        continue;
+      }
+
+      // Where it last stood, for one that has just ended.
+      final shownAt = active ? timeMs : endMs! - 1;
+      final ability = entry.place(
+        utility: utility,
+        projection: projection,
+        timeMs: shownAt,
+        id: 'replay-utility-${utility.id}',
+        isAlly: isAlly,
       );
+      final at = utility.positionAt(shownAt);
+      final centre = projection.toWorld(at.x, at.y);
+      final radius = _radiusOf(entry, mapScale);
+      final faint =
+          (entry.kind == ReplayUtilityKind.area && entry.blocks == null) ||
+              entry.kind == ReplayUtilityKind.rectangle;
+      if (!active) {
+        effects.add(ReplayExit(
+          ability: ability,
+          centre: centre,
+          radius: radius,
+          progress: (timeMs - endMs!) / exitMs,
+          dimmed: faint,
+          isAlly: isAlly,
+        ));
+        continue;
+      }
+      abilities.add(ability);
+      if (faint) dimmed.add(ability.id);
+      final occluder = _occluderOf(entry, utility, timeMs, centre, radius);
+      if (occluder != null) occluders.add(occluder);
+      final age = timeMs - utility.spawnMs;
+      if (age < activationMs) {
+        effects.add(ReplayActivation(
+          centre: centre,
+          radius: radius,
+          progress: age / activationMs,
+          isAlly: isAlly,
+        ));
+      }
     }
 
     final utilities = <PlacedUtility>[];
@@ -294,6 +467,45 @@ class ReplayFrameBuilder {
       agents: agents,
       abilities: abilities,
       utilities: utilities,
+      occluders: occluders,
+      cones: cones,
+      dimmed: dimmed,
+      effects: effects,
     );
+  }
+
+  /// How far an ability reaches from its centre, world units: a circle's
+  /// radius as drawn, otherwise about an icon's width.
+  static double _radiusOf(ReplayAbilityEntry entry, double mapScale) {
+    final shape = entry.ability.abilityData;
+    final virtual = shape is CircleAbility ? shape.size * mapScale / 2 : 18.0;
+    return CoordinateSystem.virtualLengthInWorld(virtual);
+  }
+
+  /// What [utility] hides from sight now, when it is a smoke or a wall of
+  /// smoke or fire.
+  VisionOccluder? _occluderOf(
+    ReplayAbilityEntry entry,
+    ReplayUtility utility,
+    int timeMs,
+    Offset centre,
+    double radius,
+  ) {
+    switch (entry.blocks) {
+      case null:
+        return null;
+      case ReplayVisionBlock.sphere:
+        return CircleOccluder(centre, radius);
+      case ReplayVisionBlock.line:
+        // A wall raised point by point stands along its points; a guided
+        // one (High Tide) along where its head has been.
+        final points = utility.points.length >= 2
+            ? utility.points
+            : utility.trail(utility.spawnMs, timeMs);
+        if (points.length < 2) return null;
+        return LineOccluder([
+          for (final point in points) projection.toWorld(point.x, point.y),
+        ]);
+    }
   }
 }

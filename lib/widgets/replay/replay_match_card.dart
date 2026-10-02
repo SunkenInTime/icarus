@@ -9,6 +9,7 @@ import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Where the match stands, and the one thing to do with it: capture the
@@ -106,13 +107,18 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.border),
       ),
-      child: ListenableBuilder(
+      // The round, the side and the score change a few times a round, not
+      // every frame.
+      child: ReplaySelect(
         listenable: widget.playback,
-        builder: (context, _) {
+        select: () => (
+          widget.playback.round,
+          _score(widget.playback),
+          widget.playback.frame.isAttack,
+        ),
+        builder: (context, shown) {
           final playback = widget.playback;
-          final round = playback.round;
-          final score = _score(playback);
-          final isAttack = playback.frame.isAttack;
+          final (round, score, isAttack) = shown;
           final captured = _capture.strategy?.pages.length ?? 0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

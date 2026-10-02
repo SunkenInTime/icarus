@@ -644,11 +644,52 @@ const observedMapped = <String, (AgentType, int)>{
       (AgentType.omen, 3),
   '/Game/Characters/Wushu/S0/Ability_4/GameObject_Wushu_4_SmokeZone.GameObject_Wushu_4_SmokeZone_C':
       (AgentType.jett, 0),
+  '/Game/Characters/AggroBot/S0/Ability_4/Projectile_Aggrobot_C_ExplodeyPatch.Projectile_Aggrobot_C_ExplodeyPatch_C':
+      (AgentType.gekko, 0),
+  '/Game/Characters/BountyHunter/S0/Ability_Q/Projectile_Q_BountyHunter_TetherGrenade_SphereExpansion.Projectile_Q_BountyHunter_TetherGrenade_SphereExpansion_C':
+      (AgentType.fade, 1),
+  '/Game/Characters/Breach/S0/Ability_4/Projectile_Breach_4_FusionBlast.Projectile_Breach_4_FusionBlast_C':
+      (AgentType.breach, 0),
+  '/Game/Characters/Cable/S0/Ability_4/Projectile_NetToss.Projectile_NetToss_C':
+      (AgentType.deadlock, 0),
+  '/Game/Characters/Cable/S0/Ability_E/Projectile_CableJam_InAir.Projectile_CableJam_InAir_C':
+      (AgentType.deadlock, 2),
+  '/Game/Characters/Hunter/S0/Ability_4/Projectile_Hunter_4_ExplosiveBolt.Projectile_Hunter_4_ExplosiveBolt_C':
+      (AgentType.sova, 1),
+  '/Game/Characters/Hunter/S0/Ability_Q/Projectile_Hunter_Q_RevealBolt.Projectile_Hunter_Q_RevealBolt_C':
+      (AgentType.sova, 2),
+  '/Game/Characters/Iris/S0/Ability_4/Projectile_Thumper_Concuss.Projectile_Thumper_Concuss_C':
+      (AgentType.miks, 0),
+  '/Game/Characters/Iris/S0/Ability_4/Projectile_Thumper_Heal.Projectile_Thumper_Heal_C':
+      (AgentType.miks, 1),
+  '/Game/Characters/Nox/S0/Ability_4/Projectile_Nox_BarbedWire.Projectile_Nox_BarbedWire_C':
+      (AgentType.vyse, 1),
+  '/Game/Characters/Phoenix/S0/Ability_4/Production/Projectile_Phoenix_4_Molotov_Production.Projectile_Phoenix_4_Molotov_Production_C':
+      (AgentType.pheonix, 2),
+  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced.Projectile_Phoenix_E_FlareCurve_Synced_C':
+      (AgentType.pheonix, 1),
+  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced_Right.Projectile_Phoenix_E_FlareCurve_Synced_Right_C':
+      (AgentType.pheonix, 1),
+  '/Game/Characters/Phoenix/S0/Ability_Q/Production/Projectile_Phoenix_Q_FlameWall_ThroughWall.Projectile_Phoenix_Q_FlameWall_ThroughWall_C':
+      (AgentType.pheonix, 0),
+  '/Game/Characters/Sarge/S0/Ability_Molotov/Projectile_Sarge_Q_Molotov_Production.Projectile_Sarge_Q_Molotov_Production_C':
+      (AgentType.brimstone, 1),
+  '/Game/Characters/Sarge/S0/Ability_SpeedStim/Projectile_Sarge_E_SpeedStim.Projectile_Sarge_E_SpeedStim_C':
+      (AgentType.brimstone, 0),
+  '/Game/Characters/Smonk/S0/Ability_Q/DebuffKnife/DecayLauncher/Projectile_Smonk_DecayNade.Projectile_Smonk_DecayNade_C':
+      (AgentType.clove, 1),
+  '/Game/Characters/Thorne/S0/Ability_4/Projectile_Thorne_4_SlowFIeld_Production.Projectile_Thorne_4_SlowFIeld_Production_C':
+      (AgentType.sage, 1),
+  '/Game/Characters/Vampire/S0/Ability_4/Projectile_Vampire_4_NearsightAoE.Projectile_Vampire_4_NearsightAoE_C':
+      (AgentType.reyna, 0),
+  '/Game/Characters/Wraith/S0/Ability_4/Projectile_Wraith_4_Smoke.Projectile_Wraith_4_Smoke_C':
+      (AgentType.omen, 2),
+  '/Game/Characters/Wushu/S0/Ability_4/Projectile_Wushu_4_Smoke.Projectile_Wushu_4_Smoke_C':
+      (AgentType.jett, 0),
 };
 
 const observedIgnored = <String>[
   '/Game/Characters/AggroBot/S0/Ability_4/Ability_Aggrobot_C_ExplodeyPatch.Ability_Aggrobot_C_ExplodeyPatch_C',
-  '/Game/Characters/AggroBot/S0/Ability_4/Projectile_Aggrobot_C_ExplodeyPatch.Projectile_Aggrobot_C_ExplodeyPatch_C',
   '/Game/Characters/AggroBot/S0/Ability_E/Ability_E_Aggrobot_DiscTurret.Ability_E_Aggrobot_DiscTurret_C',
   '/Game/Characters/AggroBot/S0/Ability_E/Projectile_Aggrobot_Zamboni_Rocket.Projectile_Aggrobot_Zamboni_Rocket_C',
   '/Game/Characters/AggroBot/S0/Ability_E/Projectile_E_Aggrobot_OrbSpawner.Projectile_E_Aggrobot_OrbSpawner_C',
@@ -663,20 +704,16 @@ const observedIgnored = <String>[
   '/Game/Characters/BountyHunter/S0/Ability_4/Ability_BountyHunter_4_WolfHoundBendable.Ability_BountyHunter_4_WolfHoundBendable_C',
   '/Game/Characters/BountyHunter/S0/Ability_E/Ability_E_BountyHunter_ReconDivebomb.Ability_E_BountyHunter_ReconDivebomb_C',
   '/Game/Characters/BountyHunter/S0/Ability_Q/Ability_Q_BountyHunter_TetherDivebomb.Ability_Q_BountyHunter_TetherDivebomb_C',
-  '/Game/Characters/BountyHunter/S0/Ability_Q/Projectile_Q_BountyHunter_TetherGrenade_SphereExpansion.Projectile_Q_BountyHunter_TetherGrenade_SphereExpansion_C',
   '/Game/Characters/BountyHunter/S0/Ability_X/Ability_BountyHunter_X_WaveForm.Ability_BountyHunter_X_WaveForm_C',
   '/Game/Characters/BountyHunter/S0/Global/Trails/Path_BountyHunter_Trail.Path_BountyHunter_Trail_C',
   '/Game/Characters/Breach/S0/Ability_4/Ability_Breach_4_FusionBlast.Ability_Breach_4_FusionBlast_C',
-  '/Game/Characters/Breach/S0/Ability_4/Projectile_Breach_4_FusionBlast.Projectile_Breach_4_FusionBlast_C',
   '/Game/Characters/Breach/S0/Ability_E/Ability_Breach_E_Fissure.Ability_Breach_E_Fissure_C',
   '/Game/Characters/Breach/S0/Ability_Q/Ability_Breach_Q_Flash.Ability_Breach_Q_Flash_C',
   '/Game/Characters/Breach/S0/Ability_X/Ability_Breach_X_Shockwave.Ability_Breach_X_Shockwave_C',
   '/Game/Characters/Cable/S0/Ability_4/Ability_Cable_4_NetToss.Ability_Cable_4_NetToss_C',
   '/Game/Characters/Cable/S0/Ability_4/NetTossRemovableDebuff.NetTossRemovableDebuff_C',
-  '/Game/Characters/Cable/S0/Ability_4/Projectile_NetToss.Projectile_NetToss_C',
   '/Game/Characters/Cable/S0/Ability_E/Ability_Cable_E_CableJam.Ability_Cable_E_CableJam_C',
   '/Game/Characters/Cable/S0/Ability_E/GameObject_CableJam_CableDeployer_Precomputed.GameObject_CableJam_CableDeployer_Precomputed_C',
-  '/Game/Characters/Cable/S0/Ability_E/Projectile_CableJam_InAir.Projectile_CableJam_InAir_C',
   '/Game/Characters/Cable/S0/Ability_Q/Ability_Cable_Q_SoundSensor.Ability_Cable_Q_SoundSensor_C',
   '/Game/Characters/Cable/S0/Ability_X/Ability_Cable_X_FishingHook.Ability_Cable_X_FishingHook_C',
   '/Game/Characters/Cable/S0/Ability_X/Actor_FishingHook.Actor_FishingHook_C',
@@ -728,16 +765,12 @@ const observedIgnored = <String>[
   '/Game/Characters/Gumshoe/S0/Ability_Q/Projectile_Gumshoe_Q_CameraTrackingDart.Projectile_Gumshoe_Q_CameraTrackingDart_C',
   '/Game/Characters/Gumshoe/S0/Ability_X/Ability_Gumshoe_X_InterrogateV2.Ability_Gumshoe_X_InterrogateV2_C',
   '/Game/Characters/Hunter/S0/Ability_4/Ability_Hunter_4_BoltExplosive.Ability_Hunter_4_BoltExplosive_C',
-  '/Game/Characters/Hunter/S0/Ability_4/Projectile_Hunter_4_ExplosiveBolt.Projectile_Hunter_4_ExplosiveBolt_C',
   '/Game/Characters/Hunter/S0/Ability_E/Drone/Ability_Hunter_E_DeployDrone.Ability_Hunter_E_DeployDrone_C',
   '/Game/Characters/Hunter/S0/Ability_E/Drone/Ability_Hunter_E_Drone_Abilities.Ability_Hunter_E_Drone_Abilities_C',
   '/Game/Characters/Hunter/S0/Ability_Q/Ability_Hunter_Q_RevealBolt_Signature.Ability_Hunter_Q_RevealBolt_Signature_C',
   '/Game/Characters/Hunter/S0/Ability_Q/GameObject_Hunter_Q_SonarPing.GameObject_Hunter_Q_SonarPing_C',
-  '/Game/Characters/Hunter/S0/Ability_Q/Projectile_Hunter_Q_RevealBolt.Projectile_Hunter_Q_RevealBolt_C',
   '/Game/Characters/Hunter/S0/Ability_X/Ability_Hunter_X_LaserMulti.Ability_Hunter_X_LaserMulti_C',
   '/Game/Characters/Iris/S0/Ability_4/Ability_Iris_Thumper.Ability_Iris_Thumper_C',
-  '/Game/Characters/Iris/S0/Ability_4/Projectile_Thumper_Concuss.Projectile_Thumper_Concuss_C',
-  '/Game/Characters/Iris/S0/Ability_4/Projectile_Thumper_Heal.Projectile_Thumper_Heal_C',
   '/Game/Characters/Iris/S0/Ability_E/Ability_Iris_E_MT_Smoke_Production.Ability_Iris_E_MT_Smoke_Production_C',
   '/Game/Characters/Iris/S0/Ability_Q/Ability_Iris_Harmonize.Ability_Iris_Harmonize_C',
   '/Game/Characters/Iris/S0/Ability_X/Ability_Iris_X_SonicWave.Ability_Iris_X_SonicWave_C',
@@ -748,25 +781,18 @@ const observedIgnored = <String>[
   '/Game/Characters/Killjoy/S0/Ability_X/Ability_Killjoy_X_Bomb.Ability_Killjoy_X_Bomb_C',
   '/Game/Characters/Killjoy/S0/Ability_X/GameObject_Killjoy_X_Shockwave.GameObject_Killjoy_X_Shockwave_C',
   '/Game/Characters/Nox/S0/Ability_4/Ability_Nox_BarbedWire.Ability_Nox_BarbedWire_C',
-  '/Game/Characters/Nox/S0/Ability_4/Projectile_Nox_BarbedWire.Projectile_Nox_BarbedWire_C',
   '/Game/Characters/Nox/S0/Ability_E/Ability_Nox_FlashTrap.Ability_Nox_FlashTrap_C',
   '/Game/Characters/Nox/S0/Ability_Q/Ability_Nox_Wall.Ability_Nox_Wall_C',
   '/Game/Characters/Nox/S0/Ability_X/Ability_Nox_DisarmPulse.Ability_Nox_DisarmPulse_C',
   '/Game/Characters/Phoenix/S0/Ability_4/Production/Ability_Phoenix_4_Molotov_Production.Ability_Phoenix_4_Molotov_Production_C',
-  '/Game/Characters/Phoenix/S0/Ability_4/Production/Projectile_Phoenix_4_Molotov_Production.Projectile_Phoenix_4_Molotov_Production_C',
   '/Game/Characters/Phoenix/S0/Ability_E/Production/Ability_Phoenix_E_FlareCurve_Production.Ability_Phoenix_E_FlareCurve_Production_C',
-  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced.Projectile_Phoenix_E_FlareCurve_Synced_C',
-  '/Game/Characters/Phoenix/S0/Ability_E/Production/Projectile_Phoenix_E_FlareCurve_Synced_Right.Projectile_Phoenix_E_FlareCurve_Synced_Right_C',
   '/Game/Characters/Phoenix/S0/Ability_Q/Production/Ability_Phoenix_Q_FireballWall_Production.Ability_Phoenix_Q_FireballWall_Production_C',
-  '/Game/Characters/Phoenix/S0/Ability_Q/Production/Projectile_Phoenix_Q_FlameWall_ThroughWall.Projectile_Phoenix_Q_FlameWall_ThroughWall_C',
   '/Game/Characters/Phoenix/S0/Ability_X/Production/Ability_Phoenix_X_SelfRes_Production.Ability_Phoenix_X_SelfRes_Production_C',
   '/Game/Characters/Sarge/S0/Ability_MapTargetSmoke/Ability_Sarge_4_MapTargetSmoke_Production.Ability_Sarge_4_MapTargetSmoke_Production_C',
   '/Game/Characters/Sarge/S0/Ability_MapTargetSmoke/GameObject_Sarge_4_SmokeManager_Production.GameObject_Sarge_4_SmokeManager_Production_C',
   '/Game/Characters/Sarge/S0/Ability_Molotov/Ability_Sarge_Q_Molotov_Production.Ability_Sarge_Q_Molotov_Production_C',
-  '/Game/Characters/Sarge/S0/Ability_Molotov/Projectile_Sarge_Q_Molotov_Production.Projectile_Sarge_Q_Molotov_Production_C',
   '/Game/Characters/Sarge/S0/Ability_OrbitalStrike/Ability_Sarge_X_OrbitalStrike.Ability_Sarge_X_OrbitalStrike_C',
   '/Game/Characters/Sarge/S0/Ability_SpeedStim/Ability_Sarge_E_SpeedStim.Ability_Sarge_E_SpeedStim_C',
-  '/Game/Characters/Sarge/S0/Ability_SpeedStim/Projectile_Sarge_E_SpeedStim.Projectile_Sarge_E_SpeedStim_C',
   '/Game/Characters/Sequoia/S0/Ability_4/Ability_Sequoia_4_Wave.Ability_Sequoia_4_Wave_C',
   '/Game/Characters/Sequoia/S0/Ability_E/WreckingBall/Ability_Sequoia_E_WreckingBall.Ability_Sequoia_E_WreckingBall_C',
   '/Game/Characters/Sequoia/S0/Ability_E/WreckingBall/GameObject_Sequoia_E_Shield.GameObject_Sequoia_E_Shield_C',
@@ -779,7 +805,6 @@ const observedIgnored = <String>[
   '/Game/Characters/Smonk/S0/Ability_E/MapTargetSmoke/Ability_Smonk_E_MapTargetSmokeV2.Ability_Smonk_E_MapTargetSmokeV2_C',
   '/Game/Characters/Smonk/S0/Ability_E/MapTargetSmoke/Ability_Smonk_E_PostDeath.Ability_Smonk_E_PostDeath_C',
   '/Game/Characters/Smonk/S0/Ability_Q/DebuffKnife/DecayLauncher/Ability_Q_Smonk_DebuffKnife.Ability_Q_Smonk_DebuffKnife_C',
-  '/Game/Characters/Smonk/S0/Ability_Q/DebuffKnife/DecayLauncher/Projectile_Smonk_DecayNade.Projectile_Smonk_DecayNade_C',
   '/Game/Characters/Smonk/S0/Ability_X/ReactiveRes/Ability_Smonk_X_PostDeath_ReactiveResStart.Ability_Smonk_X_PostDeath_ReactiveResStart_C',
   '/Game/Characters/Smonk/S0/Ability_X/ReactiveRes/Ability_Smonk_X_ReactiveRes_Engineering.Ability_Smonk_X_ReactiveRes_Engineering_C',
   '/Game/Characters/Smonk/S0/Global/PostDeath/Equippable_Smonk_PostDeath_Unarmed.Equippable_Smonk_PostDeath_Unarmed_C',
@@ -797,26 +822,22 @@ const observedIgnored = <String>[
   '/Game/Characters/Stealth/S0/Ability_Q/Ability_Stealth_Q_BounceFlash.Ability_Stealth_Q_BounceFlash_C',
   '/Game/Characters/Stealth/S0/Ability_X/Ability_Stealth_X_Cloak_Equip.Ability_Stealth_X_Cloak_Equip_C',
   '/Game/Characters/Thorne/S0/Ability_4/Ability_Thorne_4_SlowField_Production.Ability_Thorne_4_SlowField_Production_C',
-  '/Game/Characters/Thorne/S0/Ability_4/Projectile_Thorne_4_SlowFIeld_Production.Projectile_Thorne_4_SlowFIeld_Production_C',
   '/Game/Characters/Thorne/S0/Ability_E/Ability_Thorne_E_Wall_Fortifying.Ability_Thorne_E_Wall_Fortifying_C',
   '/Game/Characters/Thorne/S0/Ability_E/GameObject_Thorne_E_Wall_Segment_Fortifying.GameObject_Thorne_E_Wall_Segment_Fortifying_C',
   '/Game/Characters/Thorne/S0/Ability_Q/Ability_Thorne_Q_Heal_Production_New.Ability_Thorne_Q_Heal_Production_New_C',
   '/Game/Characters/Thorne/S0/Ability_X/Ability_Thorne_X_Resurrect_Production.Ability_Thorne_X_Resurrect_Production_C',
   '/Game/Characters/Vampire/S0/Ability_4/Ability_Vampire_4_NearsightAoE.Ability_Vampire_4_NearsightAoE_C',
-  '/Game/Characters/Vampire/S0/Ability_4/Projectile_Vampire_4_NearsightAoE.Projectile_Vampire_4_NearsightAoE_C',
   '/Game/Characters/Vampire/S0/Ability_E/Ability_Vampire_E_Escape.Ability_Vampire_E_Escape_C',
   '/Game/Characters/Vampire/S0/Ability_Q/Ability_Vampire_Q_Heal.Ability_Vampire_Q_Heal_C',
   '/Game/Characters/Vampire/S0/Ability_Q/GameObject_Vampire_Q_Heal_HealPool_AutoActivate.GameObject_Vampire_Q_Heal_HealPool_AutoActivate_C',
   '/Game/Characters/Vampire/S0/Ability_Q/GameObject_Vampire_Q_Heal_HealPool_High.GameObject_Vampire_Q_Heal_HealPool_High_C',
   '/Game/Characters/Vampire/S0/Ability_X/Ability_Vampire_X_Frenzy.Ability_Vampire_X_Frenzy_C',
   '/Game/Characters/Wraith/S0/Ability_4/Ability_Wraith_4_Smoke.Ability_Wraith_4_Smoke_C',
-  '/Game/Characters/Wraith/S0/Ability_4/Projectile_Wraith_4_Smoke.Projectile_Wraith_4_Smoke_C',
   '/Game/Characters/Wraith/S0/Ability_E/Ability_Wraith_E_ShortTeleport.Ability_Wraith_E_ShortTeleport_C',
   '/Game/Characters/Wraith/S0/Ability_Q/Ability_Wraith_Q_NearsightMissile.Ability_Wraith_Q_NearsightMissile_C',
   '/Game/Characters/Wraith/S0/Ability_Q/GameObject_Wraith_Q_NearsightMissile_TrajectoryWarning.GameObject_Wraith_Q_NearsightMissile_TrajectoryWarning_C',
   '/Game/Characters/Wraith/S0/Ability_X/Ability_Wraith_X_GlobalTeleport.Ability_Wraith_X_GlobalTeleport_C',
   '/Game/Characters/Wushu/S0/Ability_4/Ability_Wushu_4_Smoke.Ability_Wushu_4_Smoke_C',
-  '/Game/Characters/Wushu/S0/Ability_4/Projectile_Wushu_4_Smoke.Projectile_Wushu_4_Smoke_C',
   '/Game/Characters/Wushu/S0/Ability_E/Ability_Wushu_E_Dash.Ability_Wushu_E_Dash_C',
   '/Game/Characters/Wushu/S0/Ability_Q/Ability_Wushu_Q_CycloneBoost.Ability_Wushu_Q_CycloneBoost_C',
   '/Game/Characters/Wushu/S0/Ability_X/Ability_Wushu_X_Dagger_Production.Ability_Wushu_X_Dagger_Production_C',

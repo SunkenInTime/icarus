@@ -8,6 +8,7 @@ import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay/replay_weapons.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
+import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Both teams as they stand right now, then the round's kills.
@@ -28,8 +29,9 @@ class ReplayRoster extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.border),
       ),
-      child: ListenableBuilder(
+      child: ReplaySelect<List<Object?>>(
         listenable: playback,
+        select: _shown,
         builder: (context, _) {
           final perspective = playback.perspective;
           return Column(
@@ -53,6 +55,29 @@ class ReplayRoster extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+extension on ReplayRoster {
+  /// Everything the roster shows, coarsely: it rebuilds when this changes,
+  /// not on every frame.
+  List<Object?> _shown() {
+    final now = playback.timeMs;
+    final round = playback.round;
+    return [
+      playback.perspective,
+      round?.index,
+      for (final player in playback.document.players)
+        if (playback.frames.playerState(player, now) case final state) ...[
+          state.alive,
+          state.health?.round(),
+          state.armor?.round(),
+        ],
+      if (round != null)
+        playback.document.kills
+            .where((kill) => kill.timeMs >= round.startMs && kill.timeMs <= now)
+            .length,
+    ];
   }
 }
 
