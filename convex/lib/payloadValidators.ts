@@ -125,3 +125,28 @@ export const lineupPayloadValidator = v.object({
   payloadVersion: v.number(),
   data: cloudJsonObjectValidator,
 });
+
+// What a lineup op may carry as an argument: a lineup, or a row of the graph
+// clients on protocol 4 and earlier wrote. Convex checks arguments before
+// the handler runs, so refusing the old kinds here would answer an old
+// client with a validation error instead of CLIENT_UPGRADE_REQUIRED from the
+// protocol gate. The handler refuses them (see assertLineupPayload in
+// ops.ts) and storage takes only lineups.
+export const lineupOpPayloadValidator = v.union(
+  lineupPayloadValidator,
+  v.object({
+    kind: v.literal("lineupOrigin"),
+    payloadVersion: v.number(),
+    data: cloudJsonObjectValidator,
+  }),
+  v.object({
+    kind: v.literal("lineupLanding"),
+    payloadVersion: v.number(),
+    data: cloudJsonObjectValidator,
+  }),
+  v.object({
+    kind: v.literal("lineupLink"),
+    payloadVersion: v.number(),
+    data: cloudJsonObjectValidator,
+  }),
+);

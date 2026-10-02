@@ -341,7 +341,9 @@ function invalidLineupData(message: string) {
 
 /// Checks one lineup row before it is stored. A row is one whole lineup,
 /// keyed by its id, holding its origin and landing: every row can be drawn
-/// on its own, whatever other rows exist.
+/// on its own, whatever other rows exist. Each end carries its spot's
+/// version, which decides the copy drawn when lineups sharing the spot
+/// disagree (see lineUpGraphFromCloudRows on the client).
 function assertLineupPayload(
   payload: unknown,
   lineupPublicId: string,
@@ -349,8 +351,9 @@ function assertLineupPayload(
   if (!isRecord(payload)) {
     throw errorWithCode("MISSING_LINEUP_PAYLOAD", "Missing lineup payload");
   }
-  // Argument validation already refuses any other kind; this check keeps
-  // the rule where the row is written.
+  // Argument validation lets the graph rows of protocol 4 through, so an old
+  // client reaches the protocol gate (see lineupOpPayloadValidator); none is
+  // ever stored.
   if (payload.kind !== "lineup") {
     throw errorWithCode(
       "INVALID_LINEUP_PAYLOAD_KIND",
@@ -379,19 +382,36 @@ function assertLineupPayload(
   // The row must carry both ends hydration draws; a row without them would
   // load as nothing and read as a deletion nobody made.
   if (!hasEnd(data.origin, "agent") || !hasEnd(data.landing, "ability")) {
-    throw invalidLineupData("Lineup has no origin or landing");
+    throw invalidLineupData("Lineup has no versioned origin or landing");
   }
   return payload as LineupPayload;
 }
 
-/// Whether [end] is an origin or landing: an id and the marker it places
-/// under [markerKey].
+/// Whether [end] is an origin or landing: an id, the marker it places under
+/// [markerKey], and its spot's version (an integer from 1).
 function hasEnd(end: unknown, markerKey: "agent" | "ability"): boolean {
   return (
     isRecord(end) &&
     typeof end.id === "string" &&
     end.id.length > 0 &&
-    isRecord(end[markerKey])
+    isRecord(end[markerKey]) &&
+    typeof end.version === "number" &&
+    Number.isInteger(end.version) &&
+    end.version >= 1
+  );
+}
+
+/// A patch or reorder of a row a teammate deleted. Changing the tombstone
+/// would ack an edit nobody sees, so it is refused; an add expecting the
+/// tombstone's revision brings the row back instead ("Keep mine").
+function refuseChangeToDeleted(
+  row: Doc<"elements"> | Doc<"lineups">,
+): OperationResult | null {
+  if (!row.deleted) return null;
+  return rejected(
+    "deleted",
+    { revision: row.revision, payload: row.payload },
+    row.pageId,
   );
 }
 
@@ -624,6 +644,7 @@ function isRejectionReason(
 ): reason is Extract<PublicOperationResult, { status: "rejected" }>["reason"] {
   return (
     reason === "already_exists" ||
+    reason === "deleted" ||
     reason === "element_strategy_mismatch" ||
     reason === "lineup_strategy_mismatch" ||
     reason === "missing_expected_revision" ||
@@ -1182,6 +1203,8 @@ async function applyElementOp(
     return rejected("not_found");
   }
   await assertContentPageLive(ctx, existing.pageId);
+  const deleted = refuseChangeToDeleted(existing);
+  if (deleted !== null) return deleted;
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
   if (op.kind === "patch") {
@@ -1355,6 +1378,8 @@ async function applyLineupOp(
     return rejected("not_found");
   }
   await assertContentPageLive(ctx, existing.pageId);
+  const deleted = refuseChangeToDeleted(existing);
+  if (deleted !== null) return deleted;
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
   if (op.kind === "patch") {
@@ -1419,6 +1444,10 @@ async function applyLineupOp(
     updatedAt: Date.now(),
   });
   return { status: "ack", appliedRevision: revision, eventPageId };
+}
+
+function isAgentRow(row: Doc<"elements"> | Doc<"lineups"> | null): boolean {
+  return row !== null && "elementType" in row && row.elementType === "agent";
 }
 
 /// The element or lineup row an op targets in this strategy, if any.
@@ -1504,6 +1533,12 @@ export const applyBatch = mutation({
     // once the page is back. Older clients get the no-op a deleted page's
     // purged content gave them (see refuseDeleteOffLivePage).
     checkTrashedPageDeletes: v.optional(v.boolean()),
+    // Sent by clients on protocol 4, which stored lineups as origin,
+    // landing and link rows. Ignored: accepting them lets such a client
+    // reach the protocol gate (CLIENT_UPGRADE_REQUIRED) instead of failing
+    // argument validation.
+    checkLineupLinkEnds: v.optional(v.boolean()),
+    checkLineupEndDeletes: v.optional(v.boolean()),
     // Set by clients that bind a batch to the account whose outbox holds
     // it: that account's identity subject. A batch can reach the server
     // under a different sign-in than the one that queued it (the transport
@@ -1522,7 +1557,10 @@ export const applyBatch = mutation({
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
-    let contentChanged = false;
+    // Whether an accepted op may have changed which agents the strategy
+    // uses: a page added, moved to or out of the trash, an agent element,
+    // or a lineup.
+    let agentsMayHaveChanged = false;
     // Images deleted elements showed, whose upload placeholders may go once
     // the whole batch has applied and nothing shows them any more.
     const placeholderCandidates = new Set<string>();
@@ -1616,8 +1654,16 @@ export const applyBatch = mutation({
               args.checkTrashedPageDeletes === true,
             );
           }
-          if (result.status === "ack" && op.entityType !== "strategy") {
-            contentChanged = true;
+          if (
+            result.status === "ack" &&
+            (op.entityType === "page" ||
+              op.entityType === "lineup" ||
+              (op.entityType === "element" &&
+                (isAgentRow(rowBefore) ||
+                  (op.payload as { kind?: unknown } | undefined)?.kind ===
+                    "agent")))
+          ) {
+            agentsMayHaveChanged = true;
           }
           if (result.status === "ack") {
             await reconcileExpectedAssets(
@@ -1688,7 +1734,7 @@ export const applyBatch = mutation({
     // Checked against the batch's final state, once.
     await removeUploadPlaceholders(ctx, strategy._id, placeholderCandidates);
 
-    if (contentChanged) {
+    if (agentsMayHaveChanged) {
       await refreshStrategyAgentSummary(ctx, strategy._id);
     }
 

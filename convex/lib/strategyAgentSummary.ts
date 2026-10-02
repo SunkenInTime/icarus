@@ -23,10 +23,10 @@ export async function refreshStrategyAgentSummary(
   ctx: MutationCtx,
   strategyId: Id<"strategies">,
 ): Promise<void> {
-  // Only agent elements and live lineups carry an agent; reading just those
-  // keeps this cheap however large the strategy's other content is (it runs
-  // after every batch of content ops). A lineup row holds its images' ids,
-  // never their bytes.
+  // Only agent elements and live lineups carry an agent, so only they are
+  // read. That still reads every live lineup row, image ids and all (never
+  // image bytes), so callers refresh only when a change may have touched an
+  // agent: applyBatch skips batches without page, agent or lineup changes.
   const agents = await ctx.db
     .query("elements")
     .withIndex("by_strategyId_and_elementType", (q) =>

@@ -1,6 +1,7 @@
 import { v, type Infer } from "convex/values";
 import {
   elementPayloadValidator,
+  lineupOpPayloadValidator,
   lineupPayloadValidator,
   mapThemePaletteValidator,
   pagePayloadValidator,
@@ -97,7 +98,7 @@ const lineupAddOpValidator = v.object({
   type: v.literal("lineup.add"),
   lineupPublicId: v.string(),
   pagePublicId: v.string(),
-  payload: lineupPayloadValidator,
+  payload: lineupOpPayloadValidator,
   sortIndex: v.number(),
   expectedLineupRevision: v.optional(v.number()),
 });
@@ -107,7 +108,7 @@ const lineupPatchOpValidator = v.object({
   type: v.literal("lineup.patch"),
   lineupPublicId: v.string(),
   pagePublicId: v.optional(v.string()),
-  payload: v.optional(lineupPayloadValidator),
+  payload: v.optional(lineupOpPayloadValidator),
   sortIndex: v.optional(v.number()),
   expectedLineupRevision: v.number(),
 });
@@ -150,6 +151,9 @@ export type StrategyOp = Infer<typeof strategyOpValidator>;
 
 export const opRejectionReasonValidator = v.union(
   v.literal("already_exists"),
+  // A patch or reorder of a row a teammate deleted: only an add with the
+  // tombstone's revision brings it back.
+  v.literal("deleted"),
   v.literal("element_strategy_mismatch"),
   v.literal("lineup_strategy_mismatch"),
   v.literal("missing_expected_revision"),

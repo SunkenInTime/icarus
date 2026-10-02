@@ -9,7 +9,11 @@ import type { DataModel } from "./_generated/dataModel";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
-import { lineupPayload, type TestLineup } from "./testContent.helpers";
+import {
+  insertLineup,
+  lineupPayload,
+  type TestLineup,
+} from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -572,27 +576,218 @@ describe("a lineup row must be drawable on its own", () => {
     expect(row.payload).toEqual(fanIn[0]!.payload);
   });
 
-  test("a row of an old graph kind is refused by the contract", async () => {
+  test("a row of an old graph kind is refused by the handler, the legacy group by the contract", async () => {
     const { owner } = await createHarness();
-    for (const kind of ["lineupLink", "lineupOrigin", "lineupGroup"]) {
-      await expect(
-        apply(owner, "old-client", [
+    // Protocol 4's graph rows get past argument validation so an old client
+    // reaches the protocol gate; on protocol 5 the handler refuses each op.
+    const graphKinds = ["lineupOrigin", "lineupLanding", "lineupLink"];
+    const results = await apply(
+      owner,
+      "old-shapes",
+      graphKinds.map((kind) => ({
+        opId: `add-${kind}`,
+        type: "lineup.add",
+        lineupPublicId: `${kind}:k`,
+        pagePublicId,
+        payload: {
+          kind,
+          payloadVersion: 1,
+          data: { id: "k", originId: "o", landingId: "l", images: [] },
+        },
+        sortIndex: 0,
+      })),
+    );
+    expect(results).toHaveLength(graphKinds.length);
+    for (const [index, kind] of graphKinds.entries()) {
+      expect(results[index]).toMatchObject({
+        opId: `add-${kind}`,
+        status: "failed",
+        code: "INVALID_LINEUP_PAYLOAD_KIND",
+      });
+    }
+    // The group of protocol 3 and earlier is still refused whole.
+    await expect(
+      apply(owner, "old-client", [
+        {
+          opId: "add-lineupGroup",
+          type: "lineup.add",
+          lineupPublicId: "group",
+          pagePublicId,
+          payload: {
+            kind: "lineupGroup",
+            payloadVersion: 1,
+            data: { id: "group", items: [{ id: "item" }] },
+          },
+          sortIndex: 0,
+        },
+      ]),
+    ).rejects.toThrow(/Validator error|ArgumentValidationError/);
+    expect(await pageLineups(owner)).toEqual([]);
+  });
+
+  test("an end without a whole-number spot version of at least 1 is refused", async () => {
+    const { owner } = await createHarness();
+    const valid = lineupPayload("k");
+    // Each case puts [version] on one end (undefined drops the field).
+    const cases: Array<["origin" | "landing", unknown]> = [];
+    for (const end of ["origin", "landing"] as const) {
+      for (const version of [undefined, 0, -1, 1.5, "2", null]) {
+        cases.push([end, version]);
+      }
+    }
+    const ops = cases.map(([end, version], index) => {
+      const id = `bad-version-${index}`;
+      const payload = lineupPayload(id);
+      const withVersion: Record<string, unknown> = { ...payload.data[end] };
+      if (version === undefined) {
+        delete withVersion.version;
+      } else {
+        withVersion.version = version;
+      }
+      return {
+        ...addOp(lineup(id), index),
+        payload: { ...payload, data: { ...payload.data, [end]: withVersion } },
+      };
+    });
+    const results = await apply(owner, "owner-client", [
+      ...ops,
+      addOp({ key: "k", payload: valid }, cases.length),
+    ]);
+    expect(results).toHaveLength(cases.length + 1);
+    for (const result of results.slice(0, cases.length)) {
+      expect(result).toMatchObject({
+        status: "failed",
+        code: "INVALID_LINEUP_PAYLOAD_DATA",
+        message: "Lineup has no versioned origin or landing",
+      });
+    }
+    expect(results[cases.length]).toMatchObject({ status: "applied" });
+    expect(liveKeys(await pageLineups(owner))).toEqual(["k"]);
+
+    // A patch that drops a version is refused too, leaving the row as it was.
+    const { version: _version, ...unversioned } = valid.data.landing;
+    const patched = await apply(owner, "owner-client", [
+      {
+        ...patchOp("drop-version", { key: "k", payload: valid }, 1),
+        payload: { ...valid, data: { ...valid.data, landing: unversioned } },
+      },
+    ]);
+    expect(patched[0]).toMatchObject({
+      status: "failed",
+      code: "INVALID_LINEUP_PAYLOAD_DATA",
+    });
+    const row = (await pageLineups(owner))[0]!;
+    expect(row).toMatchObject({ revision: 1 });
+    expect(row.payload).toEqual(valid);
+  });
+
+  test("each end's spot version is stored and read back as written", async () => {
+    const { owner } = await createHarness();
+    const row = lineup("versioned", { originVersion: 4, landingVersion: 9 });
+    await apply(owner, "owner-client", [addOp(row, 0)]);
+    const stored = (await pageLineups(owner))[0]!;
+    expect(stored.payload.data).toMatchObject({
+      origin: { version: 4 },
+      landing: { version: 9 },
+    });
+  });
+});
+
+describe("clients on protocol 4", () => {
+  test("a protocol 4 batch with its lineup options and a link row is told to upgrade", async () => {
+    const { owner } = await createHarness();
+    const error = await owner
+      .mutation(applyBatch, {
+        strategyPublicId,
+        clientId: "protocol-4-client",
+        clientProtocolVersion: 4,
+        checkLineupLinkEnds: true,
+        checkLineupEndDeletes: true,
+        ops: [
           {
-            opId: `add-${kind}`,
+            opId: "add-link",
             type: "lineup.add",
-            lineupPublicId: `${kind}:k`,
+            lineupPublicId: "lineupLink:k",
             pagePublicId,
             payload: {
-              kind,
+              kind: "lineupLink",
               payloadVersion: 1,
               data: { id: "k", originId: "o", landingId: "l", images: [] },
             },
             sortIndex: 0,
           },
-        ]),
-      ).rejects.toThrow(/Validator error|ArgumentValidationError/);
-    }
+        ],
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught as { data?: unknown; message?: string },
+      );
+    expect(error).not.toBeNull();
+    // The protocol gate answered, not argument validation.
+    expect(error?.message ?? "").not.toMatch(
+      /Validator error|ArgumentValidationError/,
+    );
+    expect(typeof error?.data).toBe("string");
+    expect(JSON.parse(error?.data as string)).toMatchObject({
+      code: "CLIENT_UPGRADE_REQUIRED",
+    });
     expect(await pageLineups(owner)).toEqual([]);
+  });
+
+  test("a protocol 5 batch with an origin row fails that op and applies the rest", async () => {
+    const { owner } = await createHarness();
+    const response = (await owner.mutation(applyBatch, {
+      strategyPublicId,
+      clientId: "mixed-client",
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      // Still accepted (and ignored) on protocol 5.
+      checkLineupLinkEnds: true,
+      checkLineupEndDeletes: true,
+      ops: [
+        {
+          opId: "add-origin",
+          type: "lineup.add",
+          lineupPublicId: "lineupOrigin:o",
+          pagePublicId,
+          payload: {
+            kind: "lineupOrigin",
+            payloadVersion: 1,
+            data: { id: "o", agent: { type: "sova" } },
+          },
+          sortIndex: 0,
+        },
+        {
+          opId: "add-text",
+          type: "element.add",
+          elementPublicId: "note",
+          pagePublicId,
+          payload: {
+            kind: "text",
+            payloadVersion: 1,
+            data: { id: "note", elementType: "text", text: "Default" },
+          },
+          sortIndex: 0,
+        },
+      ],
+    })) as { results: Result[] };
+    expect(response.results).toMatchObject([
+      {
+        opId: "add-origin",
+        status: "failed",
+        code: "INVALID_LINEUP_PAYLOAD_KIND",
+      },
+      { opId: "add-text", status: "applied", appliedRevision: 1 },
+    ]);
+    const snapshot = (await owner.query(getPageSnapshot, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId,
+      pagePublicId,
+    })) as {
+      elements: Array<{ publicId: string }>;
+      lineups: LineupRow[];
+    };
+    expect(snapshot.elements.map((row) => row.publicId)).toEqual(["note"]);
+    expect(snapshot.lineups).toEqual([]);
   });
 });
 
@@ -806,4 +1001,129 @@ describe("agent summary", () => {
     ]);
     expect(await agentSummary(t)).toEqual(["viper"]);
   });
+
+  test("only a batch that may change the agents refreshes the summary", async () => {
+    const { t, owner } = await createHarness();
+    // A lineup written straight to the table leaves the stored summary
+    // stale, so a refresh shows as the summary catching up with it.
+    await seedLineupRow(t, "seeded-viper", "viper");
+    expect(await agentSummary(t)).toEqual([]);
+
+    // Drawings, utilities and text never carry an agent: no refresh.
+    const plain = await apply(owner, "owner-client", [
+      elementAdd("drawing-1", "drawing", 0),
+      elementAdd("utility-1", "utility", 1),
+      elementAdd("text-1", "text", 2),
+      {
+        opId: "patch-text-1",
+        type: "element.patch",
+        elementPublicId: "text-1",
+        pagePublicId,
+        payload: elementPayload("text-1", "text", { text: "Edited" }),
+        expectedElementRevision: 1,
+      },
+      {
+        opId: "delete-drawing-1",
+        type: "element.delete",
+        elementPublicId: "drawing-1",
+        pagePublicId,
+        expectedElementRevision: 1,
+      },
+    ]);
+    expect(plain.map((result) => result.status)).toEqual([
+      "applied",
+      "applied",
+      "applied",
+      "applied",
+      "applied",
+    ]);
+    expect(await agentSummary(t)).toEqual([]);
+
+    // Placing an agent does.
+    await apply(owner, "owner-client", [elementAdd("jett-1", "agent", 3)]);
+    expect(await agentSummary(t)).toEqual(["jett", "viper"]);
+
+    // Deleting an agent does too, though the op carries no payload.
+    await seedLineupRow(t, "seeded-astra", "astra");
+    expect(await agentSummary(t)).toEqual(["jett", "viper"]);
+    await apply(owner, "owner-client", [
+      {
+        opId: "delete-jett-1",
+        type: "element.delete",
+        elementPublicId: "jett-1",
+        pagePublicId,
+        expectedElementRevision: 1,
+      },
+    ]);
+    expect(await agentSummary(t)).toEqual(["astra", "viper"]);
+
+    // And so does any lineup change.
+    await seedLineupRow(t, "seeded-kayo", "kayo");
+    expect(await agentSummary(t)).toEqual(["astra", "viper"]);
+    await apply(owner, "owner-client", [
+      addOp(lineup("placed-sova", { agentType: "sova" }), 9),
+    ]);
+    expect(await agentSummary(t)).toEqual(["astra", "kayo", "sova", "viper"]);
+  });
 });
+
+function elementPayload(
+  id: string,
+  kind: "agent" | "drawing" | "text" | "utility",
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    kind,
+    payloadVersion: 1,
+    data: {
+      id,
+      elementType: kind,
+      ...(kind === "agent" ? { type: "jett" } : {}),
+      ...extra,
+    },
+  };
+}
+
+function elementAdd(
+  id: string,
+  kind: "agent" | "drawing" | "text" | "utility",
+  sortIndex: number,
+) {
+  return {
+    opId: `add-${id}`,
+    type: "element.add",
+    elementPublicId: id,
+    pagePublicId,
+    payload: elementPayload(id, kind),
+    sortIndex,
+  };
+}
+
+/// Writes a live lineup straight to the table, bypassing applyBatch and so
+/// the agent summary refresh.
+async function seedLineupRow(t: RootHarness, id: string, agentType: string) {
+  await t.run(async (ctx) => {
+    const strategy = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+      .unique();
+    const page = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy!._id))
+      .first();
+    const now = Date.now();
+    await insertLineup(ctx, {
+      publicId: id,
+      strategyId: strategy!._id,
+      pageId: page!._id,
+      payloadKind: "lineup",
+      payloadVersion: 1,
+      payload: lineupPayload(id, { agentType }),
+      sortIndex: 0,
+      revision: 1,
+      deleted: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+}

@@ -34,6 +34,11 @@ export type TestLineup = {
   agentType?: string;
   originPosition?: { dx: number; dy: number };
   landingPosition?: { dx: number; dy: number };
+  // Each end's spot version (default 1). Lineups sharing a spot draw it
+  // from the copy with the highest version, ties going to the greatest
+  // lineup id.
+  originVersion?: number;
+  landingVersion?: number;
   name?: string;
   youtubeLink?: string;
   notes?: string;
@@ -42,8 +47,9 @@ export type TestLineup = {
 
 /// A lineup row's payload as a client writes it: the lineup's details and
 /// whole copies of its origin (the agent) and landing (the ability), each
-/// marker's `lineUpID` naming its end. Lineups that share a spot pass the
-/// same originId or landingId. The row's key is [id].
+/// marker's `lineUpID` naming its end, and each end its spot's version.
+/// Lineups that share a spot pass the same originId or landingId. The row's
+/// key is [id].
 export function lineupPayload(id: string, lineup: TestLineup = {}) {
   const originId = lineup.originId ?? `${id}-origin`;
   const landingId = lineup.landingId ?? `${id}-landing`;
@@ -64,6 +70,7 @@ export function lineupPayload(id: string, lineup: TestLineup = {}) {
           position: lineup.originPosition ?? { dx: 0, dy: 0 },
           lineUpID: originId,
         },
+        version: lineup.originVersion ?? 1,
       },
       landing: {
         id: landingId,
@@ -72,6 +79,7 @@ export function lineupPayload(id: string, lineup: TestLineup = {}) {
           position: lineup.landingPosition ?? { dx: 0, dy: 0 },
           lineUpID: landingId,
         },
+        version: lineup.landingVersion ?? 1,
       },
     },
   };
