@@ -69,6 +69,9 @@ class ReplayConeWorker {
     responses.listen((message) {
       if (message is SendPort) {
         ready.complete(message);
+      } else if (message is String) {
+        // The models did not load; the worker has stopped.
+        if (!ready.isCompleted) ready.completeError(StateError(message));
       } else if (message is List && message.length == 2) {
         worker._answer(message[0] as int, message[1]);
       } else if (message is List && message.length == 3) {
@@ -86,7 +89,13 @@ class ReplayConeWorker {
       errorsAreFatal: false,
       debugName: 'replay cone worker',
     );
-    worker = ReplayConeWorker._(isolate, await ready.future, responses);
+    try {
+      worker = ReplayConeWorker._(isolate, await ready.future, responses);
+    } catch (_) {
+      responses.close();
+      isolate.kill(priority: Isolate.immediate);
+      rethrow;
+    }
     return worker;
   }
 
@@ -160,8 +169,14 @@ SvgHeightVisibility _model(TransferableTypedData bytes) {
 void _workerMain(
     (SendPort, TransferableTypedData, TransferableTypedData) setup) {
   final (replies, attackBytes, defenseBytes) = setup;
-  final attack = _model(attackBytes);
-  final defense = _model(defenseBytes);
+  final SvgHeightVisibility attack, defense;
+  try {
+    attack = _model(attackBytes);
+    defense = _model(defenseBytes);
+  } catch (error) {
+    replies.send('Could not load the height models: $error');
+    return;
+  }
   final requests = ReceivePort();
   replies.send(requests.sendPort);
   requests.listen((message) {

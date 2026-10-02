@@ -104,12 +104,23 @@ class LineOccluder extends VisionOccluder {
       final toA = a - origin, toB = b - origin;
       // Seen edge on, a segment hides nothing.
       if ((toA.dx * toB.dy - toA.dy * toB.dx).abs() < 1e-9) continue;
-      final far = reach + math.max(toA.distance, toB.distance);
+      // Out along both ends, then round between them at a radius past
+      // the cone's reach: a straight far edge between the two ends cuts
+      // back inside the reach when the wall is close.
+      final far = (reach + math.max(toA.distance, toB.distance)) * 2;
+      final fromAngle = math.atan2(toA.dy, toA.dx);
+      var sweep = math.atan2(toB.dy, toB.dx) - fromAngle;
+      if (sweep > math.pi) sweep -= 2 * math.pi;
+      if (sweep < -math.pi) sweep += 2 * math.pi;
+      final steps = math.max(1, (sweep.abs() / (math.pi / 36)).ceil());
       out.add([
         a,
         b,
-        origin + toB / toB.distance * (far * 2),
-        origin + toA / toA.distance * (far * 2),
+        for (var step = steps; step >= 0; step--)
+          origin +
+              Offset(math.cos(fromAngle + sweep * step / steps),
+                      math.sin(fromAngle + sweep * step / steps)) *
+                  far,
       ]);
     }
     return out;

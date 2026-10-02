@@ -63,29 +63,30 @@ class ReplayConesPainter extends CustomPainter {
       final origin = cut?.origin;
       if (cut == null || cone == null || origin == null) continue;
       if (cone.polygon.length < 3) continue;
-      // Carry the cut to where its agent is now, and turn it with them.
-      final moved = toScreen(_source(aim.origin, transform)) -
-          toScreen(_source(cut.aim.origin, transform));
+      final reach = _range(transform);
+      // Where the agent stands now, in height-model space. Smokes do not
+      // move with a lagging cut, so they are judged from here.
+      final standing = _source(aim.origin, transform);
+      final shadows =
+          occluders.isEmpty ? null : _shadows(standing, reach, transform);
+      if (shadows == _blind) continue;
+      // The cut's origin lands on the agent, turned to their facing: as the
+      // editor draws a cone, whose apex is the agent even when its cut was
+      // made from a point nudged out of wall ink.
+      final apex = toScreen(standing);
       final turn =
           coordinates.rotationForSide(aim.rotation, isAttack: isAttack) -
               coordinates.rotationForSide(cut.aim.rotation, isAttack: isAttack);
-      final apex = toScreen(origin) + moved;
-
+      final from = toScreen(origin);
+      if (shadows != null) {
+        canvas.saveLayer(
+            Rect.fromCircle(center: apex, radius: reach * scale), Paint());
+      }
       canvas.save();
       canvas.translate(apex.dx, apex.dy);
       canvas.rotate(turn);
-      canvas.translate(-apex.dx + moved.dx, -apex.dy + moved.dy);
+      canvas.translate(-from.dx, -from.dy);
       canvas.transform(sourceToScreen);
-
-      final reach = _range(transform);
-      final shadows =
-          occluders.isEmpty ? null : _shadows(origin, reach, transform);
-      if (shadows == _blind) {
-        canvas.restore();
-        continue;
-      }
-      final bounds = Rect.fromCircle(center: origin, radius: reach);
-      if (shadows != null) canvas.saveLayer(bounds, Paint());
       // The cut lies within reach, so filling it with the editor's gradient
       // is the editor's clipped circle, without a clip mask per cone.
       canvas.drawPath(
@@ -93,13 +94,16 @@ class ReplayConesPainter extends CustomPainter {
         Paint()
           ..shader = RadialGradient(
             colors: [_coneGrey.withValues(alpha: .5), Colors.transparent],
-          ).createShader(bounds),
+          ).createShader(Rect.fromCircle(center: origin, radius: reach)),
       );
+      canvas.restore();
       if (shadows != null) {
+        canvas.save();
+        canvas.transform(sourceToScreen);
         canvas.drawPath(shadows, Paint()..blendMode = BlendMode.clear);
         canvas.restore();
+        canvas.restore();
       }
-      canvas.restore();
     }
     canvas.restore();
   }

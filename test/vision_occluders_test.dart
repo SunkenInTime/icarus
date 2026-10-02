@@ -31,6 +31,16 @@ void main() {
     expect(hidden.contains(const Offset(60, 60)), isFalse);
   });
 
+  test('a smoke wall right in front of the eye hides all the way out', () {
+    final hidden = occluderShadows(Offset.zero, 100, const [
+      LineOccluder([Offset(1, -10), Offset(1, 10)])
+    ])!;
+    for (final point in const [Offset(50, 0), Offset(95, 0), Offset(95, 40)]) {
+      expect(hidden.contains(point), isTrue, reason: '$point');
+    }
+    expect(hidden.contains(const Offset(-50, 0)), isFalse);
+  });
+
   test('overlapping smokes both hide, whichever way they wind', () {
     final hidden = occluderShadows(Offset.zero, 100, const [
       smoke,

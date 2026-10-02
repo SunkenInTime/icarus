@@ -81,6 +81,10 @@ class ReplayConeCuts {
 
   final _latest = <String, ReplayConeCut>{};
   final _waiting = <String>{};
+
+  /// The aim each player's last cut failed at, so the same one is not asked
+  /// for again and again while paused.
+  final _failed = <String, ReplayConeAim>{};
   var _nextId = 0;
   var _disposed = false;
 
@@ -89,7 +93,11 @@ class ReplayConeCuts {
   /// Asks for [subject]'s cone at [aim], unless its latest cut is already
   /// there or another is on its way.
   void want(String subject, ReplayConeAim aim) {
-    if (_waiting.contains(subject) || _latest[subject]?.aim == aim) return;
+    if (_waiting.contains(subject) ||
+        _latest[subject]?.aim == aim ||
+        _failed[subject] == aim) {
+      return;
+    }
     _waiting.add(subject);
     worker.cut(_request(aim)).then((result) {
       _waiting.remove(subject);
@@ -103,6 +111,9 @@ class ReplayConeCuts {
       onCut();
     }, onError: (Object _) {
       _waiting.remove(subject);
+      if (_disposed) return;
+      _failed[subject] = aim;
+      onCut();
     });
   }
 

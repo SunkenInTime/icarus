@@ -455,6 +455,16 @@ void main() {
       expect(caughtUp.cut!.aim, caughtUp.aim);
     });
 
+    test('a worker whose models do not load says so', () async {
+      await expectLater(
+        ReplayConeWorker.start(
+          attackModel: Uint8List.fromList([1, 2, 3]),
+          defenseModel: Uint8List.fromList([4, 5, 6]),
+        ),
+        throwsStateError,
+      );
+    });
+
     test('playing stops at the end', () {
       final p = playback();
       p

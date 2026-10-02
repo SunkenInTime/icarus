@@ -176,7 +176,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                       Positioned.fill(
                         child: _UtilityLayer(
                           // How it is drawn, beyond the pieces themselves.
-                          look: (isAttack, abilitySize, mapScale),
+                          look: (isAttack, abilitySize, mapScale, height),
                           placed: [
                             for (final placed in widgets)
                               if (placed is! PlacedAgentNode) placed,
