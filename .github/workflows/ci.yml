@@ -7,6 +7,47 @@ on:
   pull_request:
 
 jobs:
+  native-replay:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native/replay
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/replay/target
+          key: ${{ runner.os }}-cargo-replay-${{ hashFiles('native/replay/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-replay-
+
+      # oozextract is GPL-derived: it must never enter the build
+      # (docs/adr/0006-replay-decoder.md).
+      - name: Keep oozextract out
+        run: |
+          if grep -q oozextract Cargo.lock; then
+            echo "::error::oozextract is in native/replay/Cargo.lock"
+            exit 1
+          fi
+
+      - name: Clippy
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features dev-vectors -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
   validate:
     runs-on: windows-latest
     env:

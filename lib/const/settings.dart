@@ -99,6 +99,11 @@ class Settings {
   static const Color enemyOutlineColor = Color.fromARGB(139, 255, 82, 82);
   static const Color allyOutlineColor = Color.fromARGB(106, 105, 240, 175);
 
+  // The outline hues at full strength, for team text and marks on panels:
+  // scores, the roster, killfeed and timeline ticks.
+  static const Color allyInk = Color.fromARGB(255, 105, 240, 175);
+  static const Color enemyInk = Color.fromARGB(255, 255, 82, 82);
+
   static Color neutralTeamShade(Color color) {
     return HSLColor.fromColor(color).withSaturation(0).toColor();
   }

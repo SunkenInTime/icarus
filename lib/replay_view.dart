@@ -1,0 +1,346 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/replay_library_provider.dart';
+import 'package:icarus/replay/replay_decoder.dart';
+import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_files.dart';
+import 'package:icarus/replay/replay_loader.dart';
+import 'package:icarus/replay/replay_map_projection.dart';
+import 'package:icarus/replay/replay_playback.dart';
+import 'package:icarus/widgets/replay/replay_canvas.dart';
+import 'package:icarus/widgets/replay/replay_dock.dart';
+import 'package:icarus/widgets/replay/replay_match_card.dart';
+import 'package:icarus/widgets/replay/replay_roster.dart';
+import 'package:icarus/widgets/window_chrome.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+/// Watches one Valorant replay on the Icarus map. The map, the players and
+/// their utility are the editor's own widgets, so whatever is on screen can
+/// be captured into a strategy as it stands.
+class ReplayView extends ConsumerStatefulWidget {
+  const ReplayView({super.key, required this.file, required this.probe});
+
+  final ReplayFile file;
+  final ReplayProbe probe;
+
+  static Route<void> route({
+    required ReplayFile file,
+    required ReplayProbe probe,
+  }) =>
+      PageRouteBuilder<void>(
+        pageBuilder: (_, __, ___) => ReplayView(file: file, probe: probe),
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
+        transitionsBuilder: (_, animation, __, child) =>
+            FadeTransition(opacity: animation, child: child),
+      );
+
+  @override
+  ConsumerState<ReplayView> createState() => _ReplayViewState();
+}
+
+class _ReplayViewState extends ConsumerState<ReplayView>
+    with SingleTickerProviderStateMixin {
+  late final ReplayLoader _loader;
+  late final Ticker _ticker;
+  Timer? _progressTimer;
+
+  ReplayPlayback? _playback;
+  ReplayDecodeException? _error;
+  Duration _lastTick = Duration.zero;
+  bool? _drawnAsAttack;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_onTick);
+    _loader = ReplayLoader(
+      files: ref.read(replayFilesProvider),
+      file: widget.file,
+      probe: widget.probe,
+    );
+    // Progress lives in native memory; repaint the bar while decoding.
+    _progressTimer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => setState(() {}),
+    );
+    _open();
+  }
+
+  Future<void> _open() async {
+    final projection = ReplayMapProjection.forMapPath(widget.probe.mapPath);
+    try {
+      if (projection == null) {
+        throw const ReplayDecodeException(
+          'unsupportedMap',
+          "This replay's map isn't in Icarus yet.",
+        );
+      }
+      final document = await _loader.load();
+      final perspective = await _defaultPerspective(document);
+      if (!mounted) return;
+      final playback = ReplayPlayback(
+        document: document,
+        projection: projection,
+        perspective: perspective,
+      )..addListener(_onPlaybackChanged);
+      setState(() => _playback = playback);
+      _syncMapSide(playback);
+      _ticker.start();
+    } on ReplayDecodeException catch (error) {
+      if (mounted) setState(() => _error = error);
+    } on FormatException catch (error) {
+      if (mounted) {
+        setState(
+            () => _error = ReplayDecodeException('corrupt', error.message));
+      }
+    } finally {
+      _progressTimer?.cancel();
+    }
+  }
+
+  /// The team of whoever played this match on this machine, else Red.
+  Future<ReplayTeam> _defaultPerspective(ReplayDocument document) async {
+    final local = await ref.read(replayFilesProvider).localSubjects();
+    for (final player in document.players) {
+      if (local.contains(player.subject.toLowerCase())) return player.team;
+    }
+    return ReplayTeam.red;
+  }
+
+  void _onTick(Duration elapsed) {
+    final delta = elapsed - _lastTick;
+    _lastTick = elapsed;
+    _playback?.advance(delta);
+  }
+
+  void _onPlaybackChanged() {
+    final playback = _playback;
+    if (playback != null) _syncMapSide(playback);
+  }
+
+  /// The editor's map widgets read the map and side from [mapProvider]; the
+  /// side follows the perspective team round by round.
+  void _syncMapSide(ReplayPlayback playback) {
+    final isAttack = playback.frame.isAttack;
+    if (_drawnAsAttack == isAttack) return;
+    _drawnAsAttack = isAttack;
+    ref.read(mapProvider.notifier).fromHive(
+          ReplayMapProjection.forMapPath(widget.probe.mapPath)!.map,
+          isAttack,
+        );
+  }
+
+  @override
+  void dispose() {
+    _progressTimer?.cancel();
+    _loader.cancel();
+    _ticker.dispose();
+    _playback
+      ?..removeListener(_onPlaybackChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final playback = _playback;
+    if (playback == null || event is KeyUpEvent) return KeyEventResult.ignored;
+    switch (event.logicalKey) {
+      case LogicalKeyboardKey.space:
+        if (event is KeyRepeatEvent) return KeyEventResult.handled;
+        playback.togglePlaying();
+      case LogicalKeyboardKey.arrowLeft:
+        playback.seek(playback.timeMs - 5000);
+      case LogicalKeyboardKey.arrowRight:
+        playback.seek(playback.timeMs + 5000);
+      case LogicalKeyboardKey.arrowUp:
+        playback.previousRound();
+      case LogicalKeyboardKey.arrowDown:
+        playback.nextRound();
+      default:
+        return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final playback = _playback;
+    final map = ReplayMapProjection.forMapPath(widget.probe.mapPath)?.map;
+    return Scaffold(
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: Column(
+          children: [
+            _ReplayStrip(map: map, probe: widget.probe),
+            Expanded(
+              child: playback != null
+                  ? _ReplayBench(playback: playback, map: map!)
+                  : _ReplayLoading(
+                      progress: _loader.progress,
+                      error: _error,
+                      onBack: () => Navigator.pop(context),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReplayStrip extends StatelessWidget {
+  const _ReplayStrip({required this.map, required this.probe});
+
+  final MapValue? map;
+  final ReplayProbe probe;
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    return AppWindowStrip(
+      child: Stack(
+        children: [
+          Row(
+            children: [
+              const SizedBox(width: 6),
+              ShadTooltip(
+                builder: (context) => const Text('Replays'),
+                child: ShadIconButton.ghost(
+                  width: 28,
+                  height: 28,
+                  foregroundColor: theme.mutedForeground,
+                  hoverForegroundColor: theme.foreground,
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(LucideIcons.house300, size: 18),
+                ),
+              ),
+              const IcarusWordmark(),
+              const Expanded(child: WindowDragArea(child: SizedBox.expand())),
+            ],
+          ),
+          Center(
+            child: IgnorePointer(
+              child: Text(
+                [
+                  if (map != null) replayMapName(map!),
+                  MaterialLocalizations.of(context).formatMediumDate(
+                    probe.recordedAt ?? DateTime.now(),
+                  ),
+                ].join(' · '),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: theme.foreground,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String replayMapName(MapValue map) {
+  final name = Maps.mapNames[map]!;
+  return name[0].toUpperCase() + name.substring(1);
+}
+
+/// The canvas with its three floating panels, laid out like the editor:
+/// match and actions top-left, roster on the right, timeline along the
+/// bottom.
+class _ReplayBench extends StatelessWidget {
+  const _ReplayBench({required this.playback, required this.map});
+
+  final ReplayPlayback playback;
+  final MapValue map;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: RepaintBoundary(
+            child: ReplayCanvas(
+              playback: playback,
+              map: map,
+              reservedRight: ReplayRoster.width + 16,
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: ReplayMatchCard(playback: playback, map: map),
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          bottom: 8,
+          child: ReplayRoster(playback: playback),
+        ),
+        Positioned(
+          left: 8,
+          right: ReplayRoster.width + 16,
+          bottom: 8,
+          child: Center(child: ReplayDock(playback: playback)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReplayLoading extends StatelessWidget {
+  const _ReplayLoading({
+    required this.progress,
+    required this.error,
+    required this.onBack,
+  });
+
+  final double progress;
+  final ReplayDecodeException? error;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final failure = error;
+    return Center(
+      child: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              failure == null ? 'Reading replay' : "Couldn't open this replay",
+              style: theme.textTheme.p,
+            ),
+            const SizedBox(height: 12),
+            if (failure == null)
+              ShadProgress(value: progress <= 0 ? null : progress)
+            else ...[
+              Text(failure.message, style: theme.textTheme.muted),
+              const SizedBox(height: 16),
+              ShadButton.secondary(
+                onPressed: onBack,
+                child: const Text('Back to replays'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

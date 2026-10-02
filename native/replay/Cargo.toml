@@ -1,0 +1,55 @@
+[package]
+name = "icarus_replay"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.86"
+license = "Apache-2.0"
+publish = false
+description = "Decodes Valorant .vrf replays into Icarus's decoded replay buffer (docs/replay-format.md)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Dev-only Oodle stand-in: looks archives up by sha256 in $ICARUS_OODLE_VECTORS.
+# Never on by default; a production build without a decoder reports
+# `unsupportedCompression`.
+dev-vectors = ["dep:sha2"]
+
+[[bin]]
+name = "icarus-replay-dump"
+path = "src/bin/icarus-replay-dump.rs"
+
+# vrfkit v0.2.5 (c4d6cc0). `vrf-container` keeps its `oodle` feature off so the
+# GPL-derived oozextract never enters the build; decompression is ours (src/oodle.rs).
+[dependencies]
+vrf-bitio = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
+vrf-container = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5", default-features = false, features = ["event"] }
+vrf-schema = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5", default-features = false }
+vrf-net = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
+vrf-frame = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
+vrf-movement = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
+vrf-decode = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
+vrf-transform = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
+vrf-export = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5", default-features = false }
+smallvec = { version = "1", features = ["union"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.10", optional = true }
+
+[dev-dependencies]
+vrf-testkit = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+
+# Corpus tests decode whole replays.
+[profile.test]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 2

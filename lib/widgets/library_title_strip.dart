@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/strip_status_icons.dart';
@@ -24,7 +27,7 @@ const double _menuItemGap = 8;
 const double _menuLabelLeftInset =
     _menuItemHorizontalPadding + _menuIconWidth + _menuItemGap;
 
-/// The library's only chrome: tabs on the left, search / sort / New on the
+/// The library's only chrome: tabs on the left, the open tab's actions on the
 /// right, all inside the window's title strip.
 class LibraryTitleStrip extends ConsumerStatefulWidget {
   const LibraryTitleStrip({
@@ -59,6 +62,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
 
   @override
   Widget build(BuildContext context) {
+    final tab = ref.watch(libraryTabProvider);
     return AppWindowStrip(
       child: Row(
         children: [
@@ -69,10 +73,29 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             icon: LucideIcons.folder,
             label: 'My Library',
             semanticsLabel: 'My Library',
-            selected: true,
-            onTap: () => ref.read(folderProvider.notifier).updateID(null),
+            selected: tab == LibraryTab.strategies,
+            onTap: () {
+              ref.read(libraryTabProvider.notifier).state =
+                  LibraryTab.strategies;
+              ref.read(folderProvider.notifier).updateID(null);
+            },
           ),
           const SizedBox(width: _tabGap),
+          if (!kIsWeb) ...[
+            _TabButton(
+              key: const ValueKey('library-tab-replays'),
+              icon: LucideIcons.film,
+              label: 'Replays',
+              semanticsLabel: 'Replays',
+              selected: tab == LibraryTab.replays,
+              onTap: () {
+                ref.read(libraryTabProvider.notifier).state =
+                    LibraryTab.replays;
+                ref.read(replayLibraryProvider.notifier).refresh();
+              },
+            ),
+            const SizedBox(width: _tabGap),
+          ],
           // Shared and Community have nowhere to go yet; they hold their
           // place so the library's shape does not move when they land.
           _TabButton(
@@ -106,23 +129,61 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           ),
           const WhatsNewIcon(),
           const SizedBox(width: 4),
-          const SizedBox(
-            height: _controlHeight,
-            child: SearchTextField(
-              key: ValueKey('library-search'),
-              collapsedWidth: _controlHeight,
-              expandedWidth: 220,
-              compact: true,
-              hintText: 'Search',
+          if (tab == LibraryTab.replays)
+            _buildAddReplayButton()
+          else ...[
+            const SizedBox(
+              height: _controlHeight,
+              child: SearchTextField(
+                key: ValueKey('library-search'),
+                collapsedWidth: _controlHeight,
+                expandedWidth: 220,
+                compact: true,
+                hintText: 'Search',
+              ),
             ),
-          ),
-          const SizedBox(width: 4),
-          _buildSortMenu(),
-          const SizedBox(width: 8),
-          _buildNewMenu(),
+            const SizedBox(width: 4),
+            _buildSortMenu(),
+            const SizedBox(width: 8),
+            _buildNewMenu(),
+          ],
           const SizedBox(width: 10),
         ],
       ),
+    );
+  }
+
+  /// Replays Valorant downloads list themselves; this brings in one saved
+  /// anywhere else.
+  Widget _buildAddReplayButton() {
+    return ShadButton(
+      key: const ValueKey('library-add-replay'),
+      height: _controlHeight,
+      padding: const EdgeInsets.only(left: 8, right: 10),
+      leading: const Icon(LucideIcons.plus, size: 16),
+      onPressed: () async {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: const ['vrf'],
+          allowMultiple: true,
+        );
+        if (result == null) return;
+        for (final file in result.files) {
+          final path = file.path;
+          if (path == null) continue;
+          try {
+            await ref.read(replayLibraryProvider.notifier).import(path);
+          } catch (error, stackTrace) {
+            AppErrorReporter.reportError(
+              "Couldn't add ${file.name}.",
+              error: error,
+              stackTrace: stackTrace,
+              source: 'LibraryTitleStrip.addReplay',
+            );
+          }
+        }
+      },
+      child: const Text('Add Replay'),
     );
   }
 
