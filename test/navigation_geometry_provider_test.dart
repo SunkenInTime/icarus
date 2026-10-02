@@ -36,15 +36,22 @@ Map<String, dynamic> navigationFixture() => {
 
 class _NavigationBundle extends CachingAssetBundle {
   _NavigationBundle(
-      {this.wrongMap = false, this.missingDefaults = false, this.damage});
+      {this.wrongMap = false,
+      this.missingDefaults = false,
+      this.damage,
+      this.catalogMatchesDamage = false});
   final bool wrongMap, missingDefaults;
   final String? damage;
+
+  /// Lets damaged bytes pass the catalog check so the gzip footer must
+  /// reject them.
+  final bool catalogMatchesDamage;
   final requested = <String>[];
   @override
   Future<ByteData> load(String key) async {
     requested.add(key);
     if (key.endsWith('/navigation_catalog.json')) {
-      final bytes = _navigationBytes();
+      final bytes = catalogMatchesDamage ? _assetBytes() : _navigationBytes();
       final hash = (await Sha256().hash(bytes))
           .bytes
           .map((value) => value.toRadixString(16).padLeft(2, '0'))
@@ -68,13 +75,16 @@ class _NavigationBundle extends CachingAssetBundle {
     if (!key.endsWith('_navigation.json.gz')) {
       throw StateError('Unexpected asset request: $key');
     }
+    return ByteData.sublistView(_assetBytes());
+  }
+
+  Uint8List _assetBytes() {
     final bytes = _navigationBytes();
     if (damage == 'checksum') bytes[bytes.length - 8] ^= 1;
     if (damage == 'truncated') {
-      return ByteData.sublistView(
-          Uint8List.sublistView(bytes, 0, bytes.length - 8));
+      return Uint8List.sublistView(bytes, 0, bytes.length - 8);
     }
-    return ByteData.sublistView(bytes);
+    return bytes;
   }
 
   Uint8List _navigationBytes() {
@@ -256,9 +266,23 @@ void main() {
       await expectLater(
           loadNavigationGeometry(MapValue.split,
               bundle: _NavigationBundle(damage: damage)),
-          throwsA(isA<Object>()),
+          throwsA(isA<FormatException>().having((error) => error.message,
+              'message', 'Navigation chart checksum mismatch.')),
           reason: damage);
     }
+    // zlib itself rejects a bad CRC, but it accepts a stream missing its
+    // footer; decodeWorldGzip's own length check has to catch that one.
+    await expectLater(
+        loadNavigationGeometry(MapValue.split,
+            bundle: _NavigationBundle(
+                damage: 'checksum', catalogMatchesDamage: true)),
+        throwsFormatException);
+    await expectLater(
+        loadNavigationGeometry(MapValue.split,
+            bundle: _NavigationBundle(
+                damage: 'truncated', catalogMatchesDamage: true)),
+        throwsA(isA<FormatException>().having((error) => error.message,
+            'message', 'Invalid world gzip checksum or length.')));
   });
   for (final requireNavigation in [false, true]) {
     test(

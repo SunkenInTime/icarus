@@ -55,7 +55,12 @@ void main() {
     expect(container.read(strategyProvider).isSaved, isFalse);
 
     final snapshot = container.read(utilityProvider.notifier).takeSnapshot();
+    container.read(utilityProvider.notifier).clearAll();
     container.read(utilityProvider.notifier).restoreSnapshot(snapshot);
+    expect(
+      container.read(utilityProvider).single.customColorValue,
+      0xffff0000,
+    );
 
     container.read(actionProvider.notifier).undoAction();
     expect(

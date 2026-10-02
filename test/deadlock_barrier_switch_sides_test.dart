@@ -87,12 +87,28 @@ void main() {
 
     test('stored default footprint remains independent of runtime size', () {
       final coordinateSystem = CoordinateSystem.instance;
-      final atMinimum = screenAnchorForAbility(
+      final storedAnchor = screenAnchorForAbility(
         ability: placedAbility,
         coordinateSystem: coordinateSystem,
         mapScale: mapScale,
         isAttack: false,
       );
+      for (final size in [Settings.abilitySizeMin, Settings.abilitySizeMax]) {
+        final renderedAnchor = screenPositionForWidget(
+              widget: placedAbility,
+              coordinateSystem: coordinateSystem,
+              mapScale: mapScale,
+              abilitySize: size,
+              isAttack: false,
+            ) +
+            abilityData
+                .getAnchorPoint(mapScale: mapScale, abilitySize: size)
+                .scale(
+                    coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+        expect(renderedAnchor.dx, closeTo(storedAnchor.dx, 0.0001));
+        expect(renderedAnchor.dy, closeTo(storedAnchor.dy, 0.0001));
+      }
+
       final restored = storedAbilityPositionForRenderedScreenPosition(
         ability: abilityData,
         coordinateSystem: coordinateSystem,
@@ -108,7 +124,6 @@ void main() {
         isAttack: false,
       );
 
-      expect(atMinimum, isNot(Offset.zero));
       expect(restored.dx, closeTo(placedAbility.position.dx, 0.0001));
       expect(restored.dy, closeTo(placedAbility.position.dy, 0.0001));
     });

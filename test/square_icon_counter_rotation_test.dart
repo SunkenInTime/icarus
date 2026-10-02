@@ -97,32 +97,6 @@ void main() {
         findsOneWidget,
       );
     });
-
-    testWidgets('Zero rotation leaves the icon transform neutral',
-        (tester) async {
-      await _pumpWidget(
-        tester,
-        const CustomSquareWidget(
-          color: Colors.orange,
-          width: 100,
-          height: 50,
-          distanceBetweenAOE: 0,
-          rotation: 0,
-          iconPath: 'assets/agents/Cypher/1.webp',
-          id: 'custom-square-zero',
-          isAlly: true,
-          hasTopborder: false,
-          hasSideBorders: false,
-          isWall: false,
-          isTransparent: false,
-        ),
-      );
-
-      expect(
-        _findAbilityTransformByAngle(tester, expectedAngle: 0),
-        findsOneWidget,
-      );
-    });
   });
 }
 

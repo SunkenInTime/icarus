@@ -242,10 +242,21 @@ void main() {
       ),
     );
     await tester.pump();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(10, 10));
+    addTearDown(mouse.removePointer);
+
+    await tester.tapAt(
+      tester.getCenter(find.image(const AssetImage('assets/eye.webp'))),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     // The cone still offers its sightline report on a legacy map; only the
     // elevation controls belong to the SVG-height runtime.
-    expect(find.byType(ShadContextMenuRegion), findsOneWidget);
+    expect(find.text('Copy sightline report'), findsOneWidget);
     expect(find.text('View elevation'), findsNothing);
     expect(find.text('Vision calibration'), findsNothing);
 
