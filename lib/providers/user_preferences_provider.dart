@@ -129,6 +129,10 @@ class AppPreferences extends HiveObject {
   final bool discordPresenceEnabled;
   final double videoExportStepDurationSeconds;
 
+  /// How strongly the dot grid behind maps and the library draws, from 0
+  /// (hidden) to 1 (the original look).
+  final double backgroundDotOpacity;
+
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
@@ -148,6 +152,7 @@ class AppPreferences extends HiveObject {
     this.drawingThickness = Settings.defaultStrokeThickness,
     this.discordPresenceEnabled = true,
     this.videoExportStepDurationSeconds = 3.0,
+    this.backgroundDotOpacity = 1.0,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -171,6 +176,7 @@ class AppPreferences extends HiveObject {
     double? drawingThickness,
     bool? discordPresenceEnabled,
     double? videoExportStepDurationSeconds,
+    double? backgroundDotOpacity,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -201,6 +207,7 @@ class AppPreferences extends HiveObject {
           discordPresenceEnabled ?? this.discordPresenceEnabled,
       videoExportStepDurationSeconds:
           videoExportStepDurationSeconds ?? this.videoExportStepDurationSeconds,
+      backgroundDotOpacity: backgroundDotOpacity ?? this.backgroundDotOpacity,
     );
   }
 }
@@ -652,6 +659,14 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     return _updatePreferences(
       (current) => current.copyWith(
         videoExportStepDurationSeconds: seconds.clamp(1.0, 30.0),
+      ),
+    );
+  }
+
+  Future<void> setBackgroundDotOpacity(double opacity) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        backgroundDotOpacity: opacity.clamp(0.0, 1.0),
       ),
     );
   }

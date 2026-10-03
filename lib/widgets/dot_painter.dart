@@ -51,25 +51,40 @@
 import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 
-class DotGrid extends StatelessWidget {
+class DotGrid extends ConsumerWidget {
   const DotGrid({
     super.key,
     this.isScreenshot = false,
+    this.opacity,
   });
   final bool isScreenshot;
+
+  /// Offscreen captures pass the opacity in because their isolated provider
+  /// container doesn't read Hive. Everywhere else the user's setting applies.
+  final double? opacity;
+
   @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: DotPainter(isScreenshot: isScreenshot));
+  Widget build(BuildContext context, WidgetRef ref) {
+    final double opacity = this.opacity ??
+        ref.watch(
+          appPreferencesProvider.select((prefs) => prefs.backgroundDotOpacity),
+        );
+    return CustomPaint(
+      painter: DotPainter(isScreenshot: isScreenshot, opacity: opacity),
+    );
   }
 }
 
 class DotPainter extends CustomPainter {
-  DotPainter({required this.isScreenshot});
+  DotPainter({required this.isScreenshot, required this.opacity});
 
   final bool isScreenshot;
+  final double opacity;
   Size? _cachedSize;
   List<Offset> _cachedPoints = const [];
 
@@ -79,8 +94,11 @@ class DotPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (opacity <= 0) return;
+
     final paint = Paint()
-      ..color = Settings.tacticalVioletTheme.border.withValues(alpha: 0.7)
+      ..color =
+          Settings.tacticalVioletTheme.border.withValues(alpha: 0.7 * opacity)
       ..strokeWidth = dotSize
       ..strokeCap = StrokeCap.round;
 
@@ -124,6 +142,7 @@ class DotPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(DotPainter oldDelegate) {
+    if (oldDelegate.opacity != opacity) return true;
     if (oldDelegate.isScreenshot != isScreenshot) {
       playAreaSize = isScreenshot
           ? CoordinateSystem.screenShotSize

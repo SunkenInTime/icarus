@@ -4,12 +4,15 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 
 /// A shader-driven replacement for [DotGrid] that reacts to the cursor:
 /// dots near the mouse brighten and swell while the rest of the field dims.
 /// Falls back to nothing while the shader is loading (a single frame).
-class HoverDotGrid extends StatefulWidget {
+/// Both colors scale with the user's background dot opacity.
+class HoverDotGrid extends ConsumerStatefulWidget {
   const HoverDotGrid({
     super.key,
     this.spacing = 9.5,
@@ -39,10 +42,10 @@ class HoverDotGrid extends StatefulWidget {
   }
 
   @override
-  State<HoverDotGrid> createState() => _HoverDotGridState();
+  ConsumerState<HoverDotGrid> createState() => _HoverDotGridState();
 }
 
-class _HoverDotGridState extends State<HoverDotGrid>
+class _HoverDotGridState extends ConsumerState<HoverDotGrid>
     with SingleTickerProviderStateMixin {
   ui.FragmentShader? _shader;
   late final Ticker _ticker;
@@ -158,9 +161,16 @@ class _HoverDotGridState extends State<HoverDotGrid>
   @override
   Widget build(BuildContext context) {
     final shader = _shader;
-    if (shader == null) {
+    final opacity = ref.watch(
+      appPreferencesProvider.select((prefs) => prefs.backgroundDotOpacity),
+    );
+    if (shader == null || opacity <= 0) {
       return const SizedBox.expand();
     }
+    final baseColor = widget.baseColor ??
+        Settings.tacticalVioletTheme.border.withValues(alpha: 0.7);
+    final glowColor = widget.glowColor ??
+        Settings.tacticalVioletTheme.foreground.withValues(alpha: 0.45);
 
     return CustomPaint(
       size: Size.infinite,
@@ -171,10 +181,8 @@ class _HoverDotGridState extends State<HoverDotGrid>
         spacing: widget.spacing,
         dotRadius: widget.dotRadius,
         glowRadius: widget.glowRadius,
-        baseColor: widget.baseColor ??
-            Settings.tacticalVioletTheme.border.withValues(alpha: 0.7),
-        glowColor: widget.glowColor ??
-            Settings.tacticalVioletTheme.foreground.withValues(alpha: 0.45),
+        baseColor: baseColor.withValues(alpha: baseColor.a * opacity),
+        glowColor: glowColor.withValues(alpha: glowColor.a * opacity),
       ),
     );
   }

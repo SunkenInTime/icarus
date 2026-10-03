@@ -45,6 +45,7 @@ class VideoExporter {
     required this.strategy,
     required this.strategyState,
     required this.mapState,
+    required this.backgroundDotOpacity,
     required this.geometry,
     this.navigation,
     this.requireNavigation = false,
@@ -53,6 +54,7 @@ class VideoExporter {
   final StrategyData strategy;
   final StrategyState strategyState;
   final MapState mapState;
+  final double backgroundDotOpacity;
   final VisionGeometryMap? geometry;
   final NavigationGeometryMap? navigation;
   final bool requireNavigation;
@@ -345,6 +347,7 @@ class VideoExporter {
       showSpawnBarrier: mapState.showSpawnBarrier,
       showRegionNames: mapState.showRegionNames,
       showUltOrbs: mapState.showUltOrbs,
+      backgroundDotOpacity: backgroundDotOpacity,
       agents: page.agentData,
       abilities: page.abilityData,
       text: page.textData,

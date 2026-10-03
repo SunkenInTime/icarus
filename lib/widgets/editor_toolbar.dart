@@ -12,6 +12,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
@@ -179,6 +180,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         showSpawnBarrier: mapState.showSpawnBarrier,
         showRegionNames: mapState.showRegionNames,
         showUltOrbs: mapState.showUltOrbs,
+        backgroundDotOpacity:
+            ref.read(appPreferencesProvider).backgroundDotOpacity,
         agents: activePage.agentData,
         abilities: activePage.abilityData,
         text: activePage.textData,

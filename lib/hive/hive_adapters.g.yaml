@@ -453,7 +453,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 19
+    nextIndex: 20
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -491,6 +491,8 @@ types:
         index: 17
       videoExportStepDurationSeconds:
         index: 18
+      backgroundDotOpacity:
+        index: 19
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 11

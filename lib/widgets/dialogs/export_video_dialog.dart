@@ -158,6 +158,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       strategy: doc,
       strategyState: ref.read(strategyProvider),
       mapState: mapState,
+      backgroundDotOpacity:
+          ref.read(appPreferencesProvider).backgroundDotOpacity,
       geometry: geometry,
       navigation: navigation,
       requireNavigation: requireNavigation,
