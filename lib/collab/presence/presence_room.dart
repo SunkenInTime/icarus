@@ -25,6 +25,7 @@ class PresenceRoom {
     required RoomPassIssuer issuePass,
     RoomSocketConnector? connect,
     this.cursorInterval = const Duration(milliseconds: 50),
+    this.editingInterval = const Duration(milliseconds: 150),
     this.keepAliveInterval = const Duration(seconds: 20),
     this.silenceLimit = const Duration(seconds: 50),
     this.maxRetryDelay = const Duration(seconds: 30),
@@ -34,6 +35,10 @@ class PresenceRoom {
   final RoomPassIssuer _issuePass;
   final RoomSocketConnector _connect;
   final Duration cursorInterval;
+
+  /// The room drops an editing message sent sooner than 100 ms after the
+  /// last; this keeps clear of it, and only the latest state goes out.
+  final Duration editingInterval;
   final Duration keepAliveInterval;
   final Duration silenceLimit;
   final Duration maxRetryDelay;
@@ -48,6 +53,8 @@ class PresenceRoom {
   Timer? _renewTimer;
   Timer? _keepAliveTimer;
   Timer? _cursorTimer;
+  Timer? _editingTimer;
+  DateTime? _lastEditingSentAt;
   int _failures = 0;
   DateTime _lastHeard = clock.now();
   DateTime _joinedAt = clock.now();
@@ -62,6 +69,10 @@ class PresenceRoom {
   PresenceCursor? _pendingCursor;
   PresenceCursor? _sentCursor;
   DateTime? _lastCursorSentAt;
+
+  /// The lineup groups this user is editing now, and what the room has.
+  PresenceEditing? _currentEditing;
+  PresenceEditing? _sentEditing;
 
   PresenceRoomState get state => _state;
   Stream<PresenceRoomState> get states => _states.stream;
@@ -96,12 +107,57 @@ class PresenceRoom {
     _send({'t': 'hide'});
   }
 
+  /// The lineup groups this user is editing now; null for none. Sent when it
+  /// changes, and again after a rejoin.
+  void setEditing(PresenceEditing? editing) {
+    _currentEditing = editing;
+    if (_editingTimer != null) return;
+    final lastSent = _lastEditingSentAt;
+    final wait = lastSent == null
+        ? Duration.zero
+        : editingInterval - clock.now().difference(lastSent);
+    if (wait <= Duration.zero) {
+      _flushEditing();
+    } else {
+      _editingTimer = Timer(wait, _flushEditing);
+    }
+  }
+
+  void _flushEditing() {
+    // A send can come early (a rejoin resends at once); a scheduled one
+    // must not follow it inside the room's interval.
+    _editingTimer?.cancel();
+    _editingTimer = null;
+    final editing = _currentEditing;
+    if (editing == _sentEditing) return;
+    final sent = _sentEditing;
+    // Clearing names the page it cleared, as the room expects a page.
+    final message = editing == null
+        ? (sent == null
+            ? null
+            : {'t': 'editing', 'page': sent.pageId, 'groups': const <String>[]})
+        : {
+            't': 'editing',
+            'page': editing.pageId,
+            // The room refuses more than eight; in practice it is one or
+            // two.
+            'groups': ([...editing.groupIds]..sort()).take(8).toList(),
+          };
+    if (message == null) {
+      _sentEditing = editing;
+    } else if (_send(message)) {
+      _sentEditing = editing;
+      _lastEditingSentAt = clock.now();
+    }
+  }
+
   void dispose() {
     _disposed = true;
     _generation++;
     _closeSocket();
     _retryTimer?.cancel();
     _cursorTimer?.cancel();
+    _editingTimer?.cancel();
     unawaited(_states.close());
   }
 
@@ -183,9 +239,12 @@ class PresenceRoom {
     final next = applyPresenceMessage(_state, decoded);
     if (decoded['t'] == 'welcome') {
       _failures = 0;
-      // After a rejoin the room has forgotten this cursor; send it again.
+      // After a rejoin the room has forgotten this cursor and what this user
+      // edits; send them again.
       final cursor = _currentCursor;
       if (cursor != null) moveCursor(cursor);
+      _sentEditing = null;
+      _flushEditing();
     }
     if (!identical(next, _state)) _emit(next);
   }
@@ -265,6 +324,7 @@ class PresenceRoom {
     _channel = null;
     if (channel != null) unawaited(channel.sink.close());
     _sentCursor = null;
+    _sentEditing = null;
   }
 
   void _emit(PresenceRoomState next) {
@@ -318,6 +378,15 @@ PresenceRoomState applyPresenceMessage(
       return state.copyWith(
         peers: {...state.peers, peer.sid: peer.withCursor(null)},
       );
+    case 'editing':
+      final peer = state.peers[message['sid']];
+      if (peer == null) return state;
+      return state.copyWith(
+        peers: {
+          ...state.peers,
+          peer.sid: peer.withEditing(_editingFrom(message))
+        },
+      );
     default:
       return state;
   }
@@ -334,6 +403,7 @@ PresencePeer? _peerFrom(Object? raw) {
   }
   final avatar = raw['avatar'];
   final cursor = raw['cursor'];
+  final editing = raw['editing'];
   return PresencePeer(
     sid: sid,
     uid: uid,
@@ -341,7 +411,21 @@ PresencePeer? _peerFrom(Object? raw) {
     avatarUrl: avatar is String && avatar.isNotEmpty ? avatar : null,
     role: role,
     cursor: cursor is Map ? _cursorFrom(cursor) : null,
+    editing: editing is Map ? _editingFrom(editing) : null,
   );
+}
+
+/// What a peer is editing; null when it is nothing, or unreadable.
+PresenceEditing? _editingFrom(Map<dynamic, dynamic> raw) {
+  final page = raw['page'];
+  final groups = raw['groups'];
+  if (page is! String || groups is! List) return null;
+  final groupIds = {
+    for (final group in groups)
+      if (group is String && group.isNotEmpty) group,
+  };
+  if (groupIds.isEmpty) return null;
+  return PresenceEditing(pageId: page, groupIds: groupIds);
 }
 
 PresenceCursor? _cursorFrom(Map<dynamic, dynamic> raw) {

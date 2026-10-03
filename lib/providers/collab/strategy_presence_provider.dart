@@ -3,6 +3,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/collab/presence/presence_room.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -46,6 +47,12 @@ class StrategyPresenceNotifier extends AutoDisposeNotifier<PresenceRoomState> {
       room.dispose();
     });
     room.start();
+    // What this user is editing goes out as it changes, and from the start.
+    ref.listen(
+      myLineupEditingProvider,
+      (_, editing) => room.setEditing(editing),
+      fireImmediately: true,
+    );
     return room.state;
   }
 

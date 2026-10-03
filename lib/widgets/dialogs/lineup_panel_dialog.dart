@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
+import 'package:icarus/widgets/lineup_editors_notice.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Opens the lineup panel for a landing spot or an origin: every lineup that
@@ -80,10 +82,21 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     _container ??= ProviderScope.containerOf(context, listen: false);
   }
 
+  /// The spot the panel is for, which names its lineup group.
+  String get _spotId => widget.landingId ?? widget.originId!;
+
   @override
   void initState() {
     super.initState();
     _selectedLinkId = widget.initialLinkId;
+    // Having the panel open counts as editing its lineups (see
+    // myLineupEditingProvider); providers change after this frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(openLineUpItemsProvider.notifier).open(_hoverOwnerToken, {
+        _spotId,
+      });
+    });
   }
 
   @override
@@ -94,6 +107,9 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
         container
             .read(hoveredLineUpTargetProvider.notifier)
             .clearIfOwned(_hoverOwnerToken);
+        container
+            .read(openLineUpItemsProvider.notifier)
+            .close(_hoverOwnerToken);
       });
     }
     super.dispose();
@@ -196,7 +212,14 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
         autofocus: true,
         child: ShadDialog(
           title: Text(title),
-          description: Text(subtitle),
+          description: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(subtitle),
+              LineUpEditorsNotice(itemId: _spotId, lineups: true),
+            ],
+          ),
           constraints: BoxConstraints(maxWidth: bodyWidth + 48),
           child: SizedBox(
             width: bodyWidth,

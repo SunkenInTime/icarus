@@ -70,6 +70,11 @@ class ActivePageLiveSyncState {
   }
 }
 
+/// Bumped whenever the lineup group memory learns a group (see
+/// [ActivePageLiveSyncNotifier.lineupGroupOf]), so what reads it can read it
+/// again.
+final lineupGroupMemoryRevisionProvider = StateProvider<int>((ref) => 0);
+
 final activePageLiveSyncProvider =
     NotifierProvider<ActivePageLiveSyncNotifier, ActivePageLiveSyncState>(
   ActivePageLiveSyncNotifier.new,
@@ -99,7 +104,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   /// Records the groups a canvas of [pageId] about to be drawn from cloud
   /// rows uses.
   void noteLineupGroups(String pageId, Map<String, String> groupOf) {
-    (_lineupGroupOfByPage[pageId] ??= {}).addAll(groupOf);
+    _rememberLineupGroups(_lineupGroupOfByPage[pageId] ??= {}, groupOf);
+  }
+
+  void _rememberLineupGroups(
+    Map<String, String> memory,
+    Map<String, String> groupOf,
+  ) {
+    var learned = false;
+    for (final MapEntry(:key, :value) in groupOf.entries) {
+      if (memory[key] != value) {
+        memory[key] = value;
+        learned = true;
+      }
+    }
+    if (learned) ref.read(lineupGroupMemoryRevisionProvider.notifier).state++;
   }
 
   /// The server's version of [key] the canvas was drawn from, which local
@@ -1038,7 +1057,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             key.entityId!,
       },
     );
-    lineupGroupOf.addAll(lineupRows.groupOf);
+    _rememberLineupGroups(lineupGroupOf, lineupRows.groupOf);
     for (final row in lineupRows.rows) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(

@@ -10,6 +10,7 @@ import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 
 import 'package:icarus/widgets/youtube_view.dart';
+import 'package:icarus/widgets/lineup_editors_notice.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Fullscreen viewer for one lineup's media, with delete and edit actions.
@@ -48,13 +49,17 @@ class LineUpMediaCarousel extends ConsumerWidget {
                   youtubeLink: link.youtubeLink,
                   padding: const EdgeInsets.all(56.0),
                 ),
+              // One row, so the notice gives way to the actions however
+              // narrow the window.
               Positioned(
                 top: 24,
+                left: 24,
                 right: 24,
                 child: SafeArea(
                   child: Row(
                     spacing: 8,
                     children: [
+                      Expanded(child: LineUpEditorsNotice(itemId: linkId)),
                       ShadIconButton.destructive(
                         icon: const Icon(LucideIcons.trash2),
                         decoration: ShadDecoration(
