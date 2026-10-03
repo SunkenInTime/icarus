@@ -16,17 +16,26 @@ final openLineUpItemsProvider =
 );
 
 class OpenLineUpItemsNotifier extends Notifier<Map<Object, Set<String>>> {
+  /// The page each dialog opened on: its items are that page's, and stay
+  /// so if the page on screen changes while it is open.
+  final Map<Object, String?> _pageOf = {};
+
   @override
   Map<Object, Set<String>> build() => const {};
 
   void open(Object owner, Set<String> itemIds) {
+    _pageOf[owner] = ref.read(strategyPageSessionProvider).activePageId;
     state = {...state, owner: itemIds};
   }
 
   void close(Object owner) {
+    _pageOf.remove(owner);
     if (!state.containsKey(owner)) return;
     state = {...state}..remove(owner);
   }
+
+  /// The page [owner] opened on.
+  String? pageOf(Object owner) => _pageOf[owner];
 }
 
 /// The lineup groups this user is editing on the page on screen: those of
@@ -39,6 +48,7 @@ final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
   final held = ref.watch(editorHeldEntitiesProvider) ?? const <String>{};
   final placement = ref.watch(lineUpProvider.select((s) => s.placement));
   final open = ref.watch(openLineUpItemsProvider);
+  final openNotifier = ref.read(openLineUpItemsProvider.notifier);
   ref.watch(lineupGroupMemoryRevisionProvider);
   final liveSync = ref.read(activePageLiveSyncProvider.notifier);
   final groupIds = {
@@ -46,7 +56,8 @@ final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
       ...held,
       if (placement?.pinnedOriginId case final id?) id,
       if (placement?.pinnedLandingId case final id?) id,
-      for (final ids in open.values) ...ids,
+      for (final MapEntry(key: owner, value: ids) in open.entries)
+        if (openNotifier.pageOf(owner) == pageId) ...ids,
     })
       if (liveSync.lineupGroupOf(pageId, id) case final group?) group,
   };
