@@ -513,6 +513,124 @@ the withdrawn void seal and changes nothing else:
 The reviewed sightline suite from the archive passes on the sealed models.
 `test/svg_void_window_test.dart` pins the Sunset case.
 
+## Bands checked from where players stand (2026-10-02)
+
+The ray probe above looks across the ink, half a metre either side. Where the
+real face sits further off the ink than that, it measured nothing and left
+the piece open. Lotus's defense platform wall (`p7-stroke-3-local-1`, 34
+units long) had no band below 20.75 m, so Chamber standing on the 3 m
+platform saw straight through it. Bind's B container outline had no bands at
+all.
+
+The archive's `scripts/truth/` checks the bundled models from the player's
+side instead. From every standable spot on an 8-unit grid, about 32,000 on
+both sides of all maps, it casts 720 horizontal rays at the runtime eye. Each
+ray runs twice: once against the painted walls active at that eye, once
+against the 3D scene's solid, non-decor, non-floor faces sliced at the eye.
+
+A painted piece is solid at an eye when, of the rays from that eye height
+that cross it, the scene stops at least 60% within a metre of it (and at
+least six). Where a piece the model leaves open is solid, its band is raised
+to the height of what those rays hit, cut short at the nearest eye heights
+where the scene lets most rays through. Bands only rise. Ids that record a
+decision about an opening (review, report, user section, opening, door,
+window, sill, jamb, header) are not changed; where the scene disagrees they
+are listed in the archive for review. A piece longer than 3 units that the
+scene stops only a fifth to three fifths of the rays through is a window in
+a longer wall, and is first cut into one-unit pieces (`-truth-cut-N`) so the
+solid part can rise without closing the window.
+
+Result on the bundled models (spots that see through a painted piece the
+scene says is solid, then rays): 11,054 to 5,905 spots and 337,158 to
+104,440 rays, with false shadows (painted walls blocking where the scene is
+open) up 0.7%. 1,397 pieces rose and 128 were cut into 1,910. Most of what
+the check still reports is not a data error. Of the remaining leak rays,
+68% cross pieces the scene leaves open at that eye, where a prop or frame
+near the piece stopped a few; 20% cross short pieces that really are partly
+open, such as railings. `test/svg_truth_bands_test.dart` pins the Lotus wall
+and the Bind container.
+
+Dara ruled on the 119 recorded-decision pieces from in-game renders on
+2026-10-03. 51 became solid at the measured heights. Most are the Abyss
+atrium wall's `user-section` strips. They were never a decision: the
+2026-09-12 screenshot pass (`scripts/review_reported_sightlines.py`)
+measured `p7-stroke-0` in half-unit strips against four source objects that
+did not include the atrium wall itself (object 4912), so every strip only it
+covered measured empty and stayed open, leaving centimetre holes along a
+solid wall. The 2026-09-14 pass added 4912 for eleven strips and missed the
+rest. All now block at 3.96 to 8.0 m. The other closures are the two
+Fracture corridor openings and Haven defense's
+`p3-stroke-10-gameplay-opening-0`, Mid Window, which had lost its sill; the
+attack side's `p3-stroke-12-gameplay-opening-0` gets the same measured sill. The Haven, Icebox and Pearl
+door and corridor openings stay open. The rulings are in the archive as
+`scripts/data/truth-bands-dara-review-2026-10-03.json`.
+
+### Holes in walls (2026-10-03)
+
+The Abyss strips were one case of a general fault: earlier passes measured
+walls in short strips against chosen objects, and a strip that missed them
+stayed open. The archive's `scripts/truth/notch.py` finds every hole
+directly. A hole is a piece no longer than a metre that is open over some
+height while touching pieces on both sides of it are solid there, up to
+40 m over its floor. Each is checked against every solid, non-decor face
+within half a metre of the piece. Where the scene is solid over at least
+80% of the hole, the hole is filled; where it is open, the hole stays and
+is listed for review. A piece whose top is lower than its neighbours' is a
+hole only when the scene is solid up to their height. Dara's rulings are
+never touched. Across both sides of all maps it found 5,343 holes and
+filled 4,096. The other 463 are open in the scene but are single pieces,
+a few tens of centimetres wide, between solid walls; renders from the
+standing spots that see them show mostly solid wall, its face more than
+half a metre off the ink. A real window or doorway spans several pieces,
+so these are filled too.
+
+### Reviewed openings put back (2026-10-03)
+
+The archive's acceptance suite (`scripts/truth/accept_at.sh`) holds the
+sightlines earlier reviews pinned. On the #240 models 7 of its tests fail
+(Split's crane, which #238 reverses, and fixture hashes); after the passes
+above, 26 did. Astra cast every new failure against the complete 3D scene
+(`scripts/truth/ray3d.py`) rather than a chosen object list. Six were clear
+in the scene: the hole fill had closed a gap at Corrode's 4801 pieces.
+Others contradicted a ruling or a recorded decision. `restore_reviewed.py`
+puts these pieces back to their #240 bands, uncutting any `-truth-cut-N`
+pieces:
+- the two Corrode pieces;
+- Haven's C Garage window walls, which Dara opened from the garage floor
+  on 2026-09-19;
+- Haven defense `p3-stroke-9`, whose raised band stopped a Mid sightline
+  where the scene is clear;
+- Icebox's zipline and ramp markings, which are symbols, not walls;
+- every piece named see-through.
+
+Seven failures remain, and each is deliberate. Four are the Haven Mid
+Window sill Dara ruled solid. The other three, Icebox's front window jamb
+and the boost-step box, pin sightlines the scene blocks.
+`test/svg_truth_bands_test.dart` pins the garage window. On the 3D check's
+current standing spots (`poses-240.json`), the restore takes leaks from
+5,565 spots and 100,106 rays to 5,679 and 104,153, mostly where the
+garage ruling opens the window.
+
+A rebuild of each drawn wall as two or three constant-height segments was
+tried and not used (`scripts/truth/segment_walls.py` records why). It
+removed 35k leak rays but added 160k false-shadow rays, because it closed
+pieces the scene shows mostly open. It also shut reviewed openings that the
+scene confirms are clear. One band set per piece cannot hold a window in
+part of a piece, and a vote across neighbours makes that worse.
+
+### Merged runtime outlines (2026-10-03)
+
+Each model now carries `runtimeWalls`: the touching pieces that share a
+floor, bands and unknown-height flag, merged offline into one outline by
+the archive's `scripts/truth/merge_runtime.py`. Cones are cast against these
+outlines, with 1.6 to 4 times fewer points than the pieces. The pieces remain
+the model. The loader checks that every piece is covered once and that
+every member of an outline has the same heights. Where an outline does not
+cover a piece's own edges (a bow tie, a sliver), those edges come along
+under the piece's heights (`heightsOf`). Merging seals cracks narrower than
+0.06 SVG units (under 2 cm) between pieces of one wall and changes nothing
+else; the cone areas it was checked on differ by at most 0.074%.
+
 ## Drag performance on Windows (2026-09-19)
 
 Dara's bar: dragging an agent with a cone must feel instant on Windows.
