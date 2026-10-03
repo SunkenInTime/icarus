@@ -578,6 +578,19 @@ void main() {
       expect(() => SvgHeightVisibility.fromJson(json), throwsFormatException);
     });
 
+    test('a piece's own edges can ride along under its heights', () {
+      // The outline covers only half the wall; the piece's raw ring comes
+      // along as extra edges, so the cone still stops at the whole wall.
+      final json = merged(ring: rectangle(10, -20, 11, 0))
+        ..['runtimeWalls'].add({
+          'heightsOf': pieces.last['id'],
+          'rings': [rectangle(10, 0, 11, 20)],
+          'fillRule': 'nonzero',
+        });
+      expect(area(cast(json).polygon),
+          closeTo(area(cast(data(pieces)).polygon), 1e-9));
+    });
+
     test('runtime walls must cover every wall', () {
       expect(
           () => SvgHeightVisibility.fromJson(merged(

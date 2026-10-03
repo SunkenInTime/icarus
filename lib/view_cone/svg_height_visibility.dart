@@ -180,6 +180,15 @@ class SvgHeightVisibility {
       runtimeWalls = [];
       for (final raw in _list(json['runtimeWalls'], 'runtimeWalls')) {
         final row = _map(raw);
+        // A piece's own edges where its outline does not cover them (a bow
+        // tie, a sliver): extra geometry under its heights, not a member.
+        if (row['heightsOf'] != null) {
+          final owner = index[row['heightsOf']] ??
+              (throw FormatException(
+                  'Runtime edges name missing wall ${row['heightsOf']}.'));
+          runtimeWalls.add(SvgRuntimeWall._(owner, _rings(row), _evenOdd(row)));
+          continue;
+        }
         final members = [
           for (final id in _list(row['walls'], 'runtime wall members'))
             index[id] ??
