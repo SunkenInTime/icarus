@@ -19,6 +19,13 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 static_assert(sizeof(ISHResult) == 72);
 static_assert(offsetof(ISHResult, points) == 8);
 static_assert(offsetof(ISHResult, queryMicros) == 64);
@@ -219,10 +226,34 @@ struct Crossing { Point point; uint32_t first, second; };
 // that run's count, fails the bounds test, and touches nothing; a claim
 // within range keeps the run alive until the chunk is done, so the callback
 // and the remaining counter it then reads belong to that run.
+// A query is a few milliseconds of work split across threads, and the
+// caller waits for every chunk. A thread the scheduler sets aside for a
+// time slice (15 ms on Windows) holding one chunk stalls the whole query, so
+// the threads doing a query run above normal priority while they do it.
+struct Boost {
+#ifdef _WIN32
+  Boost() : thread(GetCurrentThread()), previous(GetThreadPriority(thread)) {
+    if (previous < THREAD_PRIORITY_ABOVE_NORMAL)
+      SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
+  }
+  ~Boost() {
+    if (previous < THREAD_PRIORITY_ABOVE_NORMAL)
+      SetThreadPriority(thread, previous);
+  }
+  HANDLE thread;
+  int previous;
+#endif
+};
+
 struct Pool {
   explicit Pool(unsigned workers) {
     for (unsigned i = 0; i < workers; ++i)
-      threads.emplace_back([this] { loop(); });
+      threads.emplace_back([this] {
+#ifdef _WIN32
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
+        loop();
+      });
   }
   ~Pool() {
     {
@@ -601,6 +632,7 @@ int32_t ish_query(void *opaque, double originX, double originY,
     out->status = ISH_BUSY;
     return ISH_BUSY;
   }
+  Boost boost;
   const auto started = Clock::now();
   try {
     const double values[] = {originX, originY, directionRadians, range,
