@@ -286,6 +286,8 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
   static const String immutableDefaultProfileId = 'immutable-default-map-theme';
   static const String immutableValorantProfileId =
       'immutable-valorant-map-theme';
+  static const String immutableLotusMossProfileId =
+      'immutable-lotus-moss-map-theme';
   static const String appPreferencesSingletonKey = 'app_preferences';
   static const int customProfilesSoftCap = 10;
 
@@ -315,9 +317,25 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     isBuiltIn: true,
   );
 
+  static final MapThemePalette immutableLotusMossPalette = MapThemePalette(
+    baseColorValue: 0xFF18221A,
+    detailColorValue: 0xFF7FA36B,
+    highlightColorValue: 0xFFE3C567,
+  );
+
+  static final MapThemeProfile immutableLotusMossProfile = MapThemeProfile(
+    id: immutableLotusMossProfileId,
+    name: 'Lotus Moss',
+    palette: immutableLotusMossPalette,
+    isBuiltIn: true,
+  );
+
+  /// Every store gets each of these on launch ([bootstrap] writes any that
+  /// are missing), so adding one here ships it to existing users too.
   static final List<MapThemeProfile> immutableBuiltInProfiles = [
     immutableDefaultProfile,
     immutableValorantProfile,
+    immutableLotusMossProfile,
   ];
 
   @override
