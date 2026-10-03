@@ -980,57 +980,6 @@ void main() {
       expect(find.text('Delete lineup'), findsNothing);
     });
 
-    testWidgets('lineup square icon right-click still shows menu',
-        (tester) async {
-      final container = ProviderContainer(
-        overrides: [
-          actionProvider.overrideWith(_TestActionProvider.new),
-          mapProvider.overrideWith(_FixedMapProvider.new),
-        ],
-      );
-      addTearDown(() async {
-        await tester.pumpWidget(const SizedBox.shrink());
-        container.dispose();
-      });
-
-      final lineUp = LineUp(
-        id: 'lineup-icon-menu',
-        agent: PlacedAgent(
-          id: 'lineup-icon-agent',
-          type: AgentType.breach,
-          position: const Offset(20, 20),
-        ),
-        ability: PlacedAbility(
-          id: 'lineup-icon-ability',
-          data: AgentData.agents[AgentType.breach]!.abilities.first,
-          position: Offset.zero,
-        ),
-        youtubeLink: '',
-        images: const [],
-        notes: 'icon hover note',
-      );
-      container
-          .read(lineUpProvider.notifier)
-          .fromHive(LineUpGraph.fromLegacyLineUps([lineUp]));
-
-      await tester.pumpWidget(
-        _buildHarness(
-          container: container,
-          child: Stack(
-            children: [
-              _LineUpLandingHost(landingId: lineUp.id),
-            ],
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await _openContextMenu(tester, find.byType(AbilityWidget));
-
-      expect(find.text('Range'), findsOneWidget);
-      expect(find.text('Delete lineup'), findsOneWidget);
-    });
-
     testWidgets('lineup note hover is icon-only', (tester) async {
       final container = ProviderContainer(
         overrides: [

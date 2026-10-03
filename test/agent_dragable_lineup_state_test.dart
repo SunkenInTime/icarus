@@ -54,6 +54,15 @@ Future<void> _pumpHarness(
       ),
     ),
   );
+  // A tile takes its size from its icon, so it has no area to tap until the
+  // image decodes.
+  await tester.runAsync(() async {
+    final context = tester.element(find.byType(Row));
+    for (final type in [AgentType.breach, AgentType.sova]) {
+      await precacheImage(
+          AssetImage(AgentData.agents[type]!.iconPath), context);
+    }
+  });
   await tester.pumpAndSettle();
 }
 
@@ -125,17 +134,7 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    expect(
-      tester
-          .widget<IgnorePointer>(
-              _agentIgnorePointerFinder(AgentType.sova).first)
-          .ignoring,
-      isFalse,
-    );
-
-    final sovaTile = tester.widget<InkWell>(_agentTileFinder(AgentType.sova));
-    expect(sovaTile.onTap, isNotNull);
-    sovaTile.onTap!();
+    await tester.tap(_agentTileFinder(AgentType.sova));
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.sova);
@@ -231,8 +230,7 @@ void main() {
     expect(container.read(abilityBarProvider)?.type, AgentType.breach);
   });
 
-  testWidgets('pinned origin blocks non-active drag start',
-      (tester) async {
+  testWidgets('pinned origin blocks non-active drag start', (tester) async {
     final container = _createContainer();
     final group = LineUpGroup(
       id: 'breach-group',

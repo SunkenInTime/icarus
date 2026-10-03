@@ -126,10 +126,16 @@ void main() {
     test('drag conversion round-trips stable serialized positions', () {
       const mapScale = 0.91;
       final coordinateSystem = CoordinateSystem.instance;
+      // Circles snap to whole screen pixels, so they come back within half a
+      // pixel instead of exactly.
+      final halfPixel =
+          (coordinateSystem.screenToCoordinate(const Offset(1, 1)) -
+                  coordinateSystem.screenToCoordinate(Offset.zero)) /
+              2;
 
       for (final info in _representativeAbilityInfos()) {
         final placed = _placedAbility(info);
-        Offset? expectedStoredPosition;
+        final snaps = info.abilityData is CircleAbility;
         for (final size in <double>{
           Settings.abilitySizeMin,
           Settings.abilitySizeMax,
@@ -147,16 +153,15 @@ void main() {
             mapScale: mapScale,
             abilitySize: size,
           );
-          expectedStoredPosition ??= restored;
 
           expect(
             restored.dx,
-            closeTo(expectedStoredPosition.dx, 0.0001),
+            closeTo(placed.position.dx, snaps ? halfPixel.dx : 0.0001),
             reason: '${info.abilityData.runtimeType} x at size $size',
           );
           expect(
             restored.dy,
-            closeTo(expectedStoredPosition.dy, 0.0001),
+            closeTo(placed.position.dy, snaps ? halfPixel.dy : 0.0001),
             reason: '${info.abilityData.runtimeType} y at size $size',
           );
         }
@@ -226,7 +231,6 @@ void main() {
       final coordinateSystem = CoordinateSystem.instance;
 
       for (final agent in representativeAgents) {
-        Offset? expectedStoredPosition;
         for (final size in <double>{
           Settings.agentSizeMin,
           Settings.agentSizeMax,
@@ -241,10 +245,9 @@ void main() {
             renderedScreenPosition: renderedTopLeft,
             agentSize: size,
           );
-          expectedStoredPosition ??= restored;
 
-          expect(restored.dx, closeTo(expectedStoredPosition.dx, 0.0001));
-          expect(restored.dy, closeTo(expectedStoredPosition.dy, 0.0001));
+          expect(restored.dx, closeTo(agent.position.dx, 0.0001));
+          expect(restored.dy, closeTo(agent.position.dy, 0.0001));
         }
       }
     });
@@ -301,7 +304,6 @@ void main() {
         type: UtilityType.controller,
         position: const Offset(356.25, 194.5),
       );
-      Offset? expectedStoredPosition;
 
       for (final size in <double>{
         Settings.agentSizeMin,
@@ -322,10 +324,9 @@ void main() {
           agentSize: size,
           abilitySize: Settings.abilitySize,
         );
-        expectedStoredPosition ??= restored;
 
-        expect(restored.dx, closeTo(expectedStoredPosition.dx, 0.0001));
-        expect(restored.dy, closeTo(expectedStoredPosition.dy, 0.0001));
+        expect(restored.dx, closeTo(utility.position.dx, 0.0001));
+        expect(restored.dy, closeTo(utility.position.dy, 0.0001));
       }
     });
   });

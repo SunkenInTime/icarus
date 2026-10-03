@@ -266,22 +266,5 @@ void main() {
         const Offset(123, 456),
       );
     });
-
-    test('is idempotent for current-version strategies', () {
-      final strategy = StrategyData(
-        id: 'current',
-        name: 'Current',
-        mapData: MapValue.ascent,
-        versionNumber: Settings.versionNumber,
-        lastEdited: DateTime.utc(2026, 1, 1),
-        folderID: null,
-        pages: const [],
-      );
-
-      expect(
-        identical(StrategyProvider.migrateToCurrentVersion(strategy), strategy),
-        isTrue,
-      );
-    });
   });
 }

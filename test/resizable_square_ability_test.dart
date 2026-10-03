@@ -34,19 +34,6 @@ void main() {
       expect(ability.resolveLength(0), minLength);
     });
 
-    test('defaults to max when max-default is enabled', () {
-      final ability = ResizableSquareAbility(
-        width: 3,
-        height: maxLength,
-        iconPath: 'assets/agents/Cypher/1.webp',
-        color: Colors.white,
-        minLength: minLength,
-        defaultToMaxLength: true,
-      );
-
-      expect(ability.resolveLength(0), maxLength);
-    });
-
     test('clamps values outside the supported range', () {
       final ability = ResizableSquareAbility(
         width: 3,

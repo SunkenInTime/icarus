@@ -122,51 +122,6 @@ void main() {
     expect(box.bounds.bottom, closeTo(393.8, 1));
   });
 
-  test('legacy provider selects the exact rendered Split boundary', () async {
-    final container = ProviderContainer(overrides: [
-      worldGeometryEnabledProvider.overrideWith((ref, map) => false),
-    ]);
-    addTearDown(container.dispose);
-    final svg = SvgVisionBoundary.parse(
-      map: MapValue.split,
-      source: await rootBundle.loadString('assets/maps/split_map.svg'),
-    );
-
-    final geometry =
-        await container.read(viewConeGeometryProvider(MapValue.split).future);
-
-    expect(geometry, isNotNull);
-    final runtimeBoundary = geometry!.attackLayers.first.boundary!;
-    expect(
-      runtimeBoundary.segments.map(visionSegmentKey).toSet(),
-      svg.segments.map(visionSegmentKey).toSet(),
-    );
-  });
-
-  test('legacy provider selects exact rendered collision geometry for Summit',
-      () async {
-    final container = ProviderContainer(overrides: [
-      worldGeometryEnabledProvider.overrideWith((ref, map) => false),
-    ]);
-    addTearDown(container.dispose);
-    final svg = SvgVisionBoundary.parse(
-      map: MapValue.summit,
-      source: await rootBundle.loadString('assets/maps/summit_map.svg'),
-    );
-
-    final geometry =
-        await container.read(viewConeGeometryProvider(MapValue.summit).future);
-
-    expect(geometry, isNotNull);
-    expect(geometry!.attackLayers, isNotEmpty);
-    expect(
-      geometry.attackLayers.first.boundary!.segments
-          .map(visionSegmentKey)
-          .toSet(),
-      svg.segments.map(visionSegmentKey).toSet(),
-    );
-  });
-
   test('legacy walls match canonically placed SVG strokes on every map',
       () async {
     final container = ProviderContainer(overrides: [

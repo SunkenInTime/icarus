@@ -136,6 +136,7 @@ void main() {
     );
     expect(image.at(0, 0), _fill);
     expect(image.at(119, 39), _fill);
+    expect(image.at(60, 40).a, 0);
   });
 
   test('tweens from a plain rounded BoxDecoration', () {

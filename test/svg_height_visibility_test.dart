@@ -412,9 +412,7 @@ void main() {
     }
   });
 
-  test(
-      'reports measured query work without a hardware-dependent pass threshold',
-      () {
+  test('a dense cone query reports its ray and edge work', () {
     final model = SvgHeightVisibility.fromJson(data([
       for (var i = 0; i < 120; i++)
         wall('$i', [
@@ -422,20 +420,13 @@ void main() {
               (i % 12) * 8, (i ~/ 12) * 8, (i % 12) * 8 + 1, (i ~/ 12) * 8 + 4)
         ])
     ]));
-    SvgVisibilityCone? result;
-    for (var i = 0; i < 15; i++) {
-      result = model.cone(
-          origin: const Offset(3, 3),
-          directionRadians: .6,
-          range: 100,
-          apertureRadians: 1.8);
-    }
-    expect(result!.stats.edgeTests, greaterThan(0));
+    final result = model.cone(
+        origin: const Offset(3, 3),
+        directionRadians: .6,
+        range: 100,
+        apertureRadians: 1.8);
+    expect(result.stats.edgeTests, greaterThan(0));
     expect(result.stats.rayCount, greaterThan(96));
-    // This is a synthetic Flutter-test run, not a production frame-rate claim.
-    // ignore: avoid_print
-    print('SVG prototype: ${result.stats.elapsedMicroseconds}us, '
-        '${result.stats.rayCount} rays, ${result.stats.edgeTests} edge tests');
   });
 
   test('rejects missing confidence, invalid units and reversed intervals', () {

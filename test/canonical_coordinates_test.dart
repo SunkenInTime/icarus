@@ -408,14 +408,12 @@ void main() {
     expect(actual.height, closeTo(expectedScreen.height, 0.01));
   });
 
-  test('defense rotation is a half-turn without changing canonical rotation',
-      () {
+  test('defense rotation is a half-turn', () {
     const canonical = 0.42;
     final displayed = CoordinateSystem.instance.rotationForSide(
       canonical,
       isAttack: false,
     );
     expect(displayed, closeTo(canonical + math.pi, 0.0001));
-    expect(canonical, 0.42);
   });
 }

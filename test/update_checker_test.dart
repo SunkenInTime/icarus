@@ -1,8 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// The update status provider only asks the Store on Windows hosts.
+final _storeOnlyOnWindows =
+    Platform.isWindows ? false : 'Store update checks only run on Windows';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -186,7 +192,36 @@ void main() {
     expect(result.source, 'windows_store');
     expect(result.isUpdateAvailable, isTrue);
     expect(result.releaseNotes, 'Provider test release');
-  });
+  }, skip: _storeOnlyOnWindows);
+
+  test('provider never falls back to the remote check without the Store',
+      () async {
+    UpdateChecker.windowsStoreCheckOverride = () async {
+      return <String, dynamic>{
+        'source': 'windows_store',
+        'isSupported': false,
+        'isUpdateAvailable': false,
+        'message': 'No package identity',
+      };
+    };
+    UpdateChecker.fetchVersionInfoOverride = () async {
+      return <String, dynamic>{
+        'current_version': '9.9.9',
+        'current_version_number': '999',
+        'release_notes': 'Remote release',
+      };
+    };
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final result = await container.read(appUpdateStatusProvider.future);
+
+    expect(result.source, 'windows_store');
+    expect(result.isSupported, isFalse);
+    expect(result.isUpdateAvailable, isFalse);
+    expect(result.message, 'No package identity');
+  }, skip: _storeOnlyOnWindows);
 
   test('windows native checker exception returns safe non-crashing result',
       () async {

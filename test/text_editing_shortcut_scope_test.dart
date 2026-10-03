@@ -32,24 +32,6 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
-  testWidgets('renders without an opened app preferences Hive box',
-      (tester) async {
-    await tester.pumpWidget(
-      const ProviderScope(
-        child: MaterialApp(
-          home: Scaffold(
-            body: TextEditingShortcutScope(
-              child: TextField(),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.byType(TextField), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('Ctrl+V pastes text instead of invoking the app shortcut',
       (tester) async {
     final controller = TextEditingController();

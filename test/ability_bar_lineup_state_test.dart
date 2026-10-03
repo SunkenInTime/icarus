@@ -108,5 +108,9 @@ void main() {
     await _pumpHarness(tester, container: container);
 
     expect(find.byKey(const ValueKey('ability-bar-disabled')), findsNothing);
+    expect(
+      find.byType(Draggable<AbilityInfo>),
+      findsNWidgets(AgentData.agents[AgentType.sova]!.abilities.length),
+    );
   });
 }

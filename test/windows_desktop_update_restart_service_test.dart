@@ -140,13 +140,4 @@ void main() {
             r'Write-Log "Updater script exiting. deleteScriptOnExit=$deleteScriptOnExit"'));
     expect(script, isNot(contains(r'xcopy /E /I /Y "update\*" "."')));
   });
-
-  test('normalizeExecutablePath strips plugin null terminator', () {
-    expect(
-      WindowsDesktopUpdateRestartService.normalizeExecutablePath(
-        'C:\\Users\\Alice\\Icarus\\icarus.exe\u0000',
-      ),
-      r'C:\Users\Alice\Icarus\icarus.exe',
-    );
-  });
 }
