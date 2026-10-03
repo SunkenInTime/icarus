@@ -593,6 +593,17 @@ void main() {
           closeTo(area(cast(data(pieces)).polygon), 1e-9));
     });
 
+    test('edges carried under a piece heights name no members', () {
+      final json = merged()
+        ..['runtimeWalls'].add({
+          'heightsOf': pieces.first['id'],
+          'walls': [pieces.last['id']],
+          'rings': [rectangle(10, 0, 11, 20)],
+          'fillRule': 'nonzero',
+        });
+      expect(() => SvgHeightVisibility.fromJson(json), throwsFormatException);
+    });
+
     test('runtime walls must cover every wall', () {
       expect(
           () => SvgHeightVisibility.fromJson(merged(

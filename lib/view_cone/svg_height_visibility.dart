@@ -25,25 +25,19 @@ class SvgHeightVisibility {
                 SvgRuntimeWall._(i, walls[i].rings, walls[i].evenOdd)
             ]) {
     for (final shape in this.runtimeWalls) {
-      final wall = shape.wall;
-      for (final ring in shape.rings) {
-        final points = _runtimeRing(ring);
+      final sides = shape.sides;
+      var k = 0;
+      for (final points in shape.edgeRings) {
         for (var i = 0; i < points.length; i++) {
           final a = points[i], b = points[(i + 1) % points.length];
           if (a == b) continue;
-          // Which side the wall lies on, when a step either way tells: a
-          // wall thinner than the step is inside on neither side or both.
-          final mid = (a + b) / 2, along = (b - a) / (b - a).distance;
-          final left = Offset(along.dy, -along.dx) * 1e-6;
-          final inLeft = shape.contains(mid + left),
-              inRight = shape.contains(mid - left);
-          final edge = _Edge(a, b, wall,
-              interior: inLeft == inRight
+          final side = sides[k++];
+          _edges.add(_Edge(a, b, shape.wall,
+              interior: side == 0
                   ? null
-                  : inLeft
+                  : side > 0
                       ? _Side.left
-                      : _Side.right);
-          _edges.add(edge);
+                      : _Side.right));
         }
       }
     }
@@ -183,6 +177,10 @@ class SvgHeightVisibility {
         // A piece's own edges where its outline does not cover them (a bow
         // tie, a sliver): extra geometry under its heights, not a member.
         if (row['heightsOf'] != null) {
+          if (_list(row['walls'] ?? const [], 'walls').isNotEmpty) {
+            throw FormatException(
+                'Runtime edges of ${row['heightsOf']} also name members.');
+          }
           final owner = index[row['heightsOf']] ??
               (throw FormatException(
                   'Runtime edges name missing wall ${row['heightsOf']}.'));
@@ -252,8 +250,8 @@ class SvgHeightVisibility {
 
   late final _floorOccluders = [
     for (final shape in runtimeWalls)
-      SvgFloorOccluder(
-          shape.rings, shape.evenOdd, _absoluteBands(walls[shape.wall]))
+      SvgFloorOccluder(shape.edgeRings, shape.evenOdd,
+          _absoluteBands(walls[shape.wall]), shape.sides)
   ];
 
   static List<(double, double)> _absoluteBands(SvgHeightWall wall) => [
@@ -1147,6 +1145,15 @@ class SvgRuntimeWall extends _Footprint {
 
   /// The index in [SvgHeightVisibility.walls] whose heights it carries.
   final int wall;
+
+  /// [rings] without repeated points or points midway along straight
+  /// horizontal and vertical runs: the edges rays are cast against.
+  late final List<List<Offset>> edgeRings = [
+    for (final ring in rings) _runtimeRing(ring)
+  ];
+
+  /// The side of each edge of [edgeRings] the wall lies on.
+  late final Int8List sides = svgEdgeSides(edgeRings, evenOdd);
 }
 
 class SvgHeightWall extends _Footprint {

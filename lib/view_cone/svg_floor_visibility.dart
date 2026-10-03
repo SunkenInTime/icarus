@@ -4,54 +4,180 @@ import 'dart:ui';
 
 /// A painted footprint extruded through absolute source-height intervals.
 class SvgFloorOccluder {
-  SvgFloorOccluder(this.rings, this.evenOdd, this.bands)
-      : bounds = _bounds(rings.expand((ring) => ring));
+  SvgFloorOccluder(this.rings, this.evenOdd, this.bands, [Int8List? sides])
+      : bounds = _bounds(rings.expand((ring) => ring)),
+        _sides = sides;
 
   final List<List<Offset>> rings;
   final bool evenOdd;
   final List<(double, double)> bands;
   final Rect bounds;
 
+  final Int8List? _sides;
+
   /// Every edge as ax, ay, bx, by, inside: which side of a to b the
-  /// footprint lies on, 1 left, -1 right, 0 where a step either way cannot
-  /// tell (a sliver thinner than the step).
+  /// footprint lies on, 1 left, -1 right, 0 unknown (see [svgEdgeSides]).
   late final Float64List edges = () {
+    final sides = _sides ?? svgEdgeSides(rings, evenOdd);
     final out = <double>[];
+    var k = 0;
     for (final ring in rings) {
       for (var i = 0; i < ring.length; i++) {
         final a = ring[i], b = ring[(i + 1) % ring.length];
         if (a == b) continue;
-        final mid = (a + b) / 2, along = (b - a) / (b - a).distance;
-        final left = Offset(along.dy, -along.dx) * 1e-6;
-        final inLeft = _inside(mid + left), inRight = _inside(mid - left);
-        out.addAll([
-          a.dx,
-          a.dy,
-          b.dx,
-          b.dy,
-          inLeft == inRight
-              ? 0
-              : inLeft
-                  ? 1
-                  : -1
-        ]);
+        out.addAll([a.dx, a.dy, b.dx, b.dy, sides[k++].toDouble()]);
       }
     }
     return Float64List.fromList(out);
   }();
+}
 
-  bool _inside(Offset point) {
-    var winding = 0;
-    for (final ring in rings) {
-      for (var i = 0; i < ring.length; i++) {
-        final a = ring[i], b = ring[(i + 1) % ring.length];
-        final side = _cross(b - a, point - a);
-        if (a.dy <= point.dy && b.dy > point.dy && side > 0) winding++;
-        if (a.dy > point.dy && b.dy <= point.dy && side < 0) winding--;
+/// Which side of each edge a footprint lies on, edges in ring order skipping
+/// zero-length ones: 1 left, -1 right, 0 unknown.
+///
+/// Unknown where the side can change along the edge or a step either way
+/// cannot tell: the edge touches or crosses another edge (a bow tie, a ring
+/// meeting another), or the footprint is thinner than the step there. An
+/// unknown side only costs work, never blocking: no seam is skipped and no
+/// shadow face is culled on it. Along a run of a ring that nothing else comes
+/// near, the side cannot change, so one probe answers for the whole run.
+Int8List svgEdgeSides(List<List<Offset>> rings, bool evenOdd) {
+  const step = 1e-6, near = 2 * step;
+  final ax = <double>[], ay = <double>[], bx = <double>[], by = <double>[];
+  final ringOf = <int>[];
+  for (var r = 0; r < rings.length; r++) {
+    final ring = rings[r];
+    for (var i = 0; i < ring.length; i++) {
+      final a = ring[i], b = ring[(i + 1) % ring.length];
+      if (a == b) continue;
+      ax.add(a.dx);
+      ay.add(a.dy);
+      bx.add(b.dx);
+      by.add(b.dy);
+      ringOf.add(r);
+    }
+  }
+  final n = ax.length;
+  final ringStart = List.filled(rings.length, 0);
+  for (var e = n - 1; e >= 0; e--) {
+    ringStart[ringOf[e]] = e;
+  }
+
+  double toEdge(double px, double py, int e) {
+    final ex = bx[e] - ax[e], ey = by[e] - ay[e];
+    final t = (((px - ax[e]) * ex + (py - ay[e]) * ey) / (ex * ex + ey * ey))
+        .clamp(0.0, 1.0);
+    final dx = ax[e] + ex * t - px, dy = ay[e] + ey * t - py;
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  double side(double px, double py, int e) =>
+      (bx[e] - ax[e]) * (py - ay[e]) - (by[e] - ay[e]) * (px - ax[e]);
+  // Properly, each through the other's inside.
+  bool cross(int e, int f) =>
+      side(ax[f], ay[f], e) * side(bx[f], by[f], e) < 0 &&
+      side(ax[e], ay[e], f) * side(bx[e], by[e], f) < 0;
+  bool next(int e, int f) =>
+      ringOf[e] == ringOf[f] && bx[e] == ax[f] && by[e] == ay[f];
+  int following(int e) =>
+      e + 1 < n && ringOf[e + 1] == ringOf[e] ? e + 1 : ringStart[ringOf[e]];
+
+  // An edge something meets inside its length can change side there. Where
+  // something meets a ring only at a corner, each edge keeps its side, but
+  // the side can change at that corner.
+  final crowded = List.filled(n, false);
+  final cornerMet = List.filled(n, false); // at the edge's start
+  void meet(double px, double py, int e) {
+    if (toEdge(px, py, e) > near) return;
+    if ((Offset(px, py) - Offset(ax[e], ay[e])).distance <= near) {
+      cornerMet[e] = true;
+    } else if ((Offset(px, py) - Offset(bx[e], by[e])).distance <= near) {
+      cornerMet[following(e)] = true;
+    } else {
+      crowded[e] = true;
+    }
+  }
+
+  final order = List.generate(n, (i) => i)
+    ..sort((e, f) => math.min(ax[e], bx[e]).compareTo(math.min(ax[f], bx[f])));
+  final active = <int>[];
+  for (final e in order) {
+    final left = math.min(ax[e], bx[e]);
+    active.removeWhere((f) => math.max(ax[f], bx[f]) + near < left);
+    final top = math.min(ay[e], by[e]), bottom = math.max(ay[e], by[e]);
+    for (final f in active) {
+      if (math.min(ay[f], by[f]) > bottom + near ||
+          math.max(ay[f], by[f]) < top - near) {
+        continue;
       }
+      if (next(e, f) || next(f, e)) {
+        // Consecutive edges share a point by construction; they crowd each
+        // other only when one folds back along the other.
+        final (first, second) = next(e, f) ? (e, f) : (f, e);
+        if (toEdge(ax[first], ay[first], second) <= near ||
+            toEdge(bx[second], by[second], first) <= near) {
+          crowded[e] = crowded[f] = true;
+        }
+        continue;
+      }
+      if (cross(e, f)) crowded[e] = crowded[f] = true;
+      meet(ax[f], ay[f], e);
+      meet(bx[f], by[f], e);
+      meet(ax[e], ay[e], f);
+      meet(bx[e], by[e], f);
+    }
+    active.add(e);
+  }
+
+  bool inside(double px, double py) {
+    var winding = 0;
+    for (var e = 0; e < n; e++) {
+      final s = side(px, py, e);
+      if (ay[e] <= py && by[e] > py && s > 0) winding++;
+      if (ay[e] > py && by[e] <= py && s < 0) winding--;
     }
     return evenOdd ? winding.isOdd : winding != 0;
   }
+
+  int probe(int e) {
+    final ex = bx[e] - ax[e], ey = by[e] - ay[e];
+    final length = math.sqrt(ex * ex + ey * ey);
+    final lx = ey / length * step, ly = -ex / length * step;
+    final mx = (ax[e] + bx[e]) / 2, my = (ay[e] + by[e]) / 2;
+    final inLeft = inside(mx + lx, my + ly), inRight = inside(mx - lx, my - ly);
+    return inLeft == inRight
+        ? 0
+        : inLeft
+            ? 1
+            : -1;
+  }
+
+  final sides = Int8List(n);
+  for (var start = 0, end = 0; start < n; start = end) {
+    while (end < n && ringOf[end] == ringOf[start]) {
+      end++;
+    }
+    final count = end - start;
+    bool breaks(int e) =>
+        cornerMet[e] || crowded[e] || crowded[e == start ? end - 1 : e - 1];
+    // Walk the ring from a break, so a run never wraps past its start.
+    var first = 0;
+    while (first < count && !breaks(start + first)) {
+      first++;
+    }
+    if (first == count) first = 0;
+    int? runSide;
+    for (var i = 0; i < count; i++) {
+      final e = start + (first + i) % count;
+      if (crowded[e]) {
+        runSide = null;
+        continue;
+      }
+      if (runSide == null || breaks(e)) runSide = probe(e);
+      sides[e] = runSide;
+    }
+  }
+  return sides;
 }
 
 /// One measured destination floor as a cone overlooks it. Built from plain
@@ -334,8 +460,6 @@ List<Offset> _clip(List<Offset> points, double Function(Offset) distance) {
   }
   return result;
 }
-
-double _cross(Offset a, Offset b) => a.dx * b.dy - a.dy * b.dx;
 
 Rect _bounds(Iterable<Offset> points) {
   var left = double.infinity, top = double.infinity;
