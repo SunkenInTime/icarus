@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ class ReplayConesPainter extends CustomPainter {
     required this.model,
     required this.map,
     required this.isAttack,
+    required this.apertureDegrees,
   });
 
   final Iterable<ReplayConeSource> cones;
@@ -29,6 +31,9 @@ class ReplayConesPainter extends CustomPainter {
   final SvgHeightVisibility model;
   final MapValue map;
   final bool isAttack;
+
+  /// The cones' spread; cuts see all the way round.
+  final double apertureDegrees;
 
   static final _conePaths = Expando<Path>();
   static final _floors = Expando<(Size, Float64List, Path)>();
@@ -70,22 +75,22 @@ class ReplayConesPainter extends CustomPainter {
       final shadows =
           occluders.isEmpty ? null : _shadows(standing, reach, transform);
       if (shadows == _blind) continue;
-      // The cut's origin lands on the agent, turned to their facing: as the
-      // editor draws a cone, whose apex is the agent even when its cut was
-      // made from a point nudged out of wall ink.
+      // The cut's origin lands on the agent, as the editor draws a cone,
+      // whose apex is the agent even when its cut was made from a point
+      // nudged out of wall ink. The cut sees all the way round; the wedge
+      // the agent faces is cut from it here, so turning is never stale.
       final apex = toScreen(standing);
-      final turn =
-          coordinates.rotationForSide(aim.rotation, isAttack: isAttack) -
-              coordinates.rotationForSide(cut.aim.rotation, isAttack: isAttack);
       final from = toScreen(origin);
+      final facing =
+          coordinates.rotationForSide(aim.rotation, isAttack: isAttack) -
+              math.pi / 2;
       if (shadows != null) {
         canvas.saveLayer(
             Rect.fromCircle(center: apex, radius: reach * scale), Paint());
       }
       canvas.save();
-      canvas.translate(apex.dx, apex.dy);
-      canvas.rotate(turn);
-      canvas.translate(-from.dx, -from.dy);
+      canvas.clipPath(_wedge(apex, facing, reach * scale));
+      canvas.translate(apex.dx - from.dx, apex.dy - from.dy);
       canvas.transform(sourceToScreen);
       // The cut lies within reach, so filling it with the editor's gradient
       // is the editor's clipped circle, without a clip mask per cone.
@@ -110,6 +115,20 @@ class ReplayConesPainter extends CustomPainter {
       }
     }
     canvas.restore();
+  }
+
+  /// The sector an agent at [apex] facing [facing] sees, out to [radius].
+  Path _wedge(Offset apex, double facing, double radius) {
+    const steps = 48;
+    final aperture = apertureDegrees * math.pi / 180;
+    return Path()
+      ..addPolygon([
+        apex,
+        for (var i = 0; i <= steps; i++)
+          apex +
+              Offset.fromDirection(
+                  facing - aperture / 2 + aperture * i / steps, radius),
+      ], true);
   }
 
   /// A view cone's reach in height-model space.

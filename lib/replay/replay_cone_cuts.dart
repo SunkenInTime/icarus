@@ -8,7 +8,7 @@ import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
-/// Where a player's view cone is aimed: everything its cut depends on.
+/// Where a player's view cone is aimed.
 @immutable
 class ReplayConeAim {
   const ReplayConeAim({
@@ -36,6 +36,15 @@ class ReplayConeAim {
 
   @override
   int get hashCode => Object.hash(origin, rotation, isAttack, elevationCm);
+
+  /// Everything a cut depends on. A cut sees all the way round, so where the
+  /// player faces is applied when the cone is painted: turning never waits
+  /// for a cut, and a cut never swings through a wall while one is made.
+  ReplayConeAim get placed => ReplayConeAim(
+      origin: origin,
+      rotation: 0,
+      isAttack: isAttack,
+      elevationCm: elevationCm);
 }
 
 /// A finished cut: the [aim] it was made for, where the cone stands in
@@ -70,10 +79,11 @@ class ReplayConeCuts {
   final ReplayConeWorker worker;
   final MapValue map;
 
-  /// For the reviewed-floor pass, which only the root isolate can run.
+  /// The models the worker cuts against, for painting what it cut.
   final SvgHeightVisibility attackModel, defenseModel;
 
   /// The cones' length and spread, as the editor's view cones take them.
+  /// Cuts see all the way round; the spread is applied when painting.
   final double coneLength, apertureDegrees;
 
   /// Called when a cut arrives, so a paused frame can show it.
@@ -93,6 +103,7 @@ class ReplayConeCuts {
   /// Asks for [subject]'s cone at [aim], unless its latest cut is already
   /// there or another is on its way.
   void want(String subject, ReplayConeAim aim) {
+    aim = aim.placed;
     if (_waiting.contains(subject) ||
         _latest[subject]?.aim == aim ||
         _failed[subject] == aim) {
@@ -134,7 +145,7 @@ class ReplayConeCuts {
       directionRadians: rotation - math.pi / 2,
       range:
           CoordinateSystem.virtualLengthInWorld(coneLength) / transform.scale,
-      apertureRadians: apertureDegrees * math.pi / 180,
+      apertureRadians: 2 * math.pi,
       elevationCm: aim.elevationCm,
     );
   }

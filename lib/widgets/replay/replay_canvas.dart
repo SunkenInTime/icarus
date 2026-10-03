@@ -221,6 +221,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                                     : cuts.defenseModel,
                                 map: widget.map,
                                 isAttack: isAttack,
+                                apertureDegrees: cuts.apertureDegrees,
                               ),
                             ),
                           ),

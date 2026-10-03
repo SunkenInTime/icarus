@@ -440,7 +440,8 @@ void main() {
       }
       final cut = playback.frame.cones.values.single;
       expect(cut.cut!.cone!.polygon.length, greaterThanOrEqualTo(3));
-      expect(cut.cut!.aim, cut.aim, reason: 'paused: cut where they stand');
+      expect(cut.cut!.aim, cut.aim.placed,
+          reason: 'paused: cut where they stand');
 
       // Moving on, the agent moves at once; the old cut is drawn carried
       // along to it until the next one arrives.
@@ -452,7 +453,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 5));
       }
       final caughtUp = playback.frame.cones.values.single;
-      expect(caughtUp.cut!.aim, caughtUp.aim);
+      expect(caughtUp.cut!.aim, caughtUp.aim.placed);
     });
 
     test('a worker whose models do not load says so', () async {
