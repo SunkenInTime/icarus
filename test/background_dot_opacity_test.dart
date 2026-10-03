@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,7 @@ import 'package:icarus/hive/hive_adapters.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/hover_dot_grid.dart';
 
 /// Writes AppPreferences the way builds before the dot setting did: only the
 /// fields they knew about, so field 19 is absent on disk.
@@ -123,5 +125,36 @@ void main() {
         .setBackgroundDotOpacity(0));
     await tester.pump();
     expect(tester.renderObject(grid), paintsNothing);
+  });
+
+  testWidgets('a hidden library grid ignores the mouse', (tester) async {
+    Future<bool> hoverSchedulesFrames(double opacity) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await tester.runAsync(() => container
+          .read(appPreferencesProvider.notifier)
+          .setBackgroundDotOpacity(opacity));
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox(width: 200, height: 200, child: HoverDotGrid()),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(50, 50));
+      await mouse.moveTo(const Offset(80, 80));
+      final scheduled = tester.binding.hasScheduledFrame;
+      await mouse.removePointer();
+      await tester.pumpWidget(const SizedBox());
+      return scheduled;
+    }
+
+    expect(await hoverSchedulesFrames(1), isTrue);
+    expect(await hoverSchedulesFrames(0), isFalse);
   });
 }

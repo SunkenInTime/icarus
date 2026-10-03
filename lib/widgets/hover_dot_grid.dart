@@ -83,6 +83,8 @@ class _HoverDotGridState extends ConsumerState<HoverDotGrid>
 
   void _handleGlobalPointer(PointerEvent event) {
     if (event.kind != PointerDeviceKind.mouse) return;
+    // A hidden grid has no glow to animate.
+    if (ref.read(appPreferencesProvider).backgroundDotOpacity <= 0) return;
     if (event is PointerRemovedEvent) {
       _onExit();
       return;
