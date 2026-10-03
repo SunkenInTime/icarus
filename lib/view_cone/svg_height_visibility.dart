@@ -24,7 +24,10 @@ class SvgHeightVisibility {
         for (var i = 0; i < points.length; i++) {
           final a = points[i], b = points[(i + 1) % points.length];
           if (a == b) continue;
-          final edge = _Edge(a, b, wall);
+          final mid = (a + b) / 2, along = (b - a) / (b - a).distance;
+          final edge = _Edge(a, b, wall,
+              interiorLeft: walls[wall]
+                  .contains(mid + Offset(along.dy, -along.dx) * 1e-6));
           _edges.add(edge);
         }
       }
@@ -229,7 +232,13 @@ class SvgHeightVisibility {
     final cancelled = List.filled(live.length, false);
     for (var i = 0; i < live.length; i++) {
       for (var j = i + 1; j < live.length && !cancelled[i]; j++) {
-        if (!cancelled[j] && live[i].a == live[j].b && live[i].b == live[j].a) {
+        if (cancelled[j]) continue;
+        // A shared side only when the two walls lie on either side of it.
+        final first = live[i], second = live[j];
+        final same = first.a == second.a && first.b == second.b;
+        final reversed = first.a == second.b && first.b == second.a;
+        if ((same && first.interiorLeft != second.interiorLeft) ||
+            (reversed && first.interiorLeft == second.interiorLeft)) {
           cancelled[i] = cancelled[j] = true;
         }
       }
@@ -278,6 +287,8 @@ class SvgHeightVisibility {
     if (walls.any((wall) => wall.unknownHeight)) return false;
     _native = SvgHeightNative.tryOpen(
         wallIds: [for (final wall in walls) wall.id],
+        interiorLeft: Uint8List.fromList(
+            [for (final edge in _edges) edge.interiorLeft ? 1 : 0]),
         edgeRecords: Float64List.fromList([
           for (final edge in _edges) ...[
             edge.a.dx,
@@ -1205,7 +1216,16 @@ void paintSvgConeArea(Canvas canvas, SvgVisibilityCone cone, Path outline,
     return;
   }
   final sector = Path()..addPolygon(cone.sector!, true);
-  final clear = Paint()..blendMode = BlendMode.clear;
+  // The floor is cleared and refilled by the same pixel centres, without
+  // antialiasing: partial coverage cleared and partial coverage refilled
+  // would leave a faint seam along every floor edge inside the cone.
+  final clear = Paint()
+    ..blendMode = BlendMode.clear
+    ..isAntiAlias = false;
+  final floorFill = Paint()
+    ..shader = fill.shader
+    ..color = fill.color
+    ..isAntiAlias = false;
   canvas.saveLayer(bounds, Paint());
   canvas.drawPath(outline, fill);
   for (final layer in cone.floors) {
@@ -1214,7 +1234,7 @@ void paintSvgConeArea(Canvas canvas, SvgVisibilityCone cone, Path outline,
     canvas.drawPath(layer.floor, clear);
     canvas.saveLayer(bounds, Paint());
     canvas.clipPath(sector);
-    canvas.drawPath(layer.floor, fill);
+    canvas.drawPath(layer.floor, floorFill);
     layer.shadows.erase(canvas);
     canvas.restore();
   }
@@ -1280,16 +1300,14 @@ class _Footprint {
 }
 
 class _Edge {
-  _Edge(this.a, this.b, this.wall) : _slack = _endpointSlack / (b - a).distance;
+  _Edge(this.a, this.b, this.wall, {required this.interiorLeft})
+      : _inverseLength = 1 / (b - a).distance;
   final Offset a, b;
   final int wall;
 
-  // atan2/sin/cos can put a ray aimed at an exact corner a few ulps beyond
-  // both adjoining endpoints. Admit that much, measured along the wall in
-  // SVG units so a long wall admits no more than a short one: far less than
-  // the 1e-8 radian rays beside a corner pass it by, which must still pass.
-  static const _endpointSlack = 1e-10;
-  final double _slack;
+  /// Whether the edge's own wall lies to its left, going from [a] to [b].
+  final bool interiorLeft;
+  final double _inverseLength;
 
   double? intersection(Offset origin, Offset direction, double range) {
     final edge = b - a, relative = a - origin;
@@ -1303,10 +1321,15 @@ class _Edge {
     }
     final distance = _cross(relative, edge) / determinant;
     final along = _cross(relative, direction) / determinant;
+    // atan2/sin/cos can put a ray aimed at an exact corner a few ulps beyond
+    // both adjoining endpoints. Admit that much along the wall: a sliver of
+    // what the 1e-8 radian rays beside a corner pass it by at the same
+    // distance, which must still pass.
+    final slack = (1e-13 + distance * 1e-10) * _inverseLength;
     return distance >= 0 &&
             distance <= range &&
-            along >= -_slack &&
-            along <= 1 + _slack
+            along >= -slack &&
+            along <= 1 + slack
         ? distance
         : null;
   }

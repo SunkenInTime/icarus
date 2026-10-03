@@ -55,6 +55,12 @@ ISH_API int32_t ish_query(void *handle, double originX, double originY,
                           const uint8_t *activeWalls, uint32_t activeWallCount,
                           ISHResult *outResult);
 
+// interiorLeft holds one byte per edge, in record order: nonzero when the
+// edge's own wall lies to the left of it (a to b). Without it no vertex is
+// treated as a seam between touching pieces.
+ISH_API int32_t ish_set_interior_sides(void *handle, const uint8_t *interiorLeft,
+                                       uint32_t edgeCount);
+
 ISH_API int32_t ish_last_error(void *handle, char *error,
                                uint32_t errorCapacity);
 ISH_API int32_t ish_close(void *handle);
