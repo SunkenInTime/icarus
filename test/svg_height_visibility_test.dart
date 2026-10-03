@@ -551,7 +551,7 @@ void main() {
     ];
     Map<String, dynamic> merged({List<String>? members, List<double>? ring}) =>
         data(pieces)
-          ..['runtimeWalls'] = [
+          ..['runtimeWalls'] = <Map<String, dynamic>>[
             {
               'walls': members ?? [for (final p in pieces) p['id'] as String],
               'rings': [ring ?? rectangle(10, -20, 11, 20)],
