@@ -623,7 +623,7 @@ part of a piece, and a vote across neighbours makes that worse.
 Each model now carries `runtimeWalls`: the touching pieces that share a
 floor, bands and unknown-height flag, merged offline into one outline by
 the archive's `scripts/truth/merge_runtime.py`. Cones are cast against these
-outlines, with 2 to 3 times fewer points than the pieces. The pieces remain
+outlines, with 1.6 to 4 times fewer points than the pieces. The pieces remain
 the model. The loader checks that every piece is covered once and that
 every member of an outline has the same heights. Where an outline does not
 cover a piece's own edges (a bow tie, a sliver), those edges come along
