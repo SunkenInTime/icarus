@@ -560,7 +560,8 @@ covered measured empty and stayed open, leaving centimetre holes along a
 solid wall. The 2026-09-14 pass added 4912 for eleven strips and missed the
 rest. All now block at 3.96 to 8.0 m. The other closures are the two
 Fracture corridor openings and Haven defense's
-`p3-stroke-10-gameplay-opening-0`. The Haven, Icebox and Pearl
+`p3-stroke-10-gameplay-opening-0`, Mid Window, which had lost its sill; the
+attack side's `p3-stroke-12-gameplay-opening-0` gets the same measured sill. The Haven, Icebox and Pearl
 door and corridor openings stay open. The rulings are in the archive as
 `scripts/data/truth-bands-dara-review-2026-10-03.json`.
 
@@ -577,7 +578,11 @@ within half a metre of the piece. Where the scene is solid over at least
 is listed for review. A piece whose top is lower than its neighbours' is a
 hole only when the scene is solid up to their height. Dara's rulings are
 never touched. Across both sides of all maps it found 5,343 holes and
-filled 4,096; 463 are open in the scene and stay open.
+filled 4,096. The other 463 are open in the scene but are single pieces,
+a few tens of centimetres wide, between solid walls; renders from the
+standing spots that see them show mostly solid wall, its face more than
+half a metre off the ink. A real window or doorway spans several pieces,
+so these are filled too.
 
 ## Drag performance on Windows (2026-09-19)
 
