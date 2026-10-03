@@ -144,8 +144,8 @@ measured version 3 floors. All 8,335 scene objects have a resolved collision
 disposition, including 24 analytic capsules. Keep the 849 physical standing
 domains, with 206 exact exterior roof, roof-fixture and overhead-boundary
 domains reserved for explicit selection under the represented-interior rule.
-The independent crane and construction-panel standing surfaces remain automatic.
-The exact default review is `scripts/data/split-covered-interior-review-2026-09-15.json`.
+The crane and construction-panel surfaces were kept automatic here; the
+October 2 rule below took that back. The exact default review is `scripts/data/split-covered-interior-review-2026-09-15.json`.
 The source manifest and release certificate now require an independent source
 for Split as they do for every other map. No legacy source exemption remains.
 
@@ -266,6 +266,16 @@ after clipping each support against the SVG and higher walls; a tiny residual
 polygon or a horizontal face on a wall is insufficient evidence of a platform.
 When one source object contains several levels, record the selected floor faces
 and audit those faces; an overhead beam is not the height of the floor beneath it.
+
+No surface 10 m or more above the ground everywhere beneath it is a
+default level (Dara, 2026-10-02). Split's crane arm over Mid stood a
+dropped agent 30 m above the floor, and Lotus's B Main boundary top 14 m;
+both cones saw across half the map. Decoded replays put no player above
+13.6 m on Split or 9.5 m on Lotus, and no automatic surface on any map sat
+between 8.2 m and 10.4 m above its ground, so the line falls in a clear gap.
+Such surfaces keep their geometry and stay selectable by hand. The archive's
+`scripts/demote_far_above_ground_supports.py` applies the rule, and
+`test/svg_far_support_test.dart` holds every bundled model to it.
 
 Only emitted, first-covering physical ground can replace an explicit source
 level. Planned polygons and triangles hidden behind earlier ground cannot
@@ -478,6 +488,30 @@ walled on both sides, so the probe was missing a set-back wall and the
 blanket was right. `seal_void_walls.py` only existed to stop the leak that
 change caused. A reading of "nothing above the ceiling" on a covered
 passage is not evidence without Dara.
+
+## Windows into unplayable space (2026-10-02)
+
+Dara's rule: a hole no player could see or shoot through is not a hole in
+the tactical model. Sunset's Mid building showed why. Both long walls carry
+a measured window from about 6 to 7.6 m, the building's inside is not
+painted floor, and a cone from the shack roof beside it went in one window,
+across the empty interior and out of the other.
+
+A window is a gap of at most 3 m between two bands of one wall piece. Where
+a piece runs along unplayable space, the archive's
+`scripts/seal_windows_into_voids.py` fills its windows. It is narrower than
+the withdrawn void seal and changes nothing else:
+- An eye above a wall's top still sees over it.
+- A passage under a wall's lowest band stays open.
+- A gap taller than 3 m stays open. It is sky between a wall and something
+  far overhead, not a window.
+- A window with painted floor on both sides stays a window.
+- A gap that holds the eye of a player standing on a surface touching the
+  piece stays open, so an agent on a pillar still sees out of it.
+- Openings Dara reviewed as see-through keep their gaps.
+
+The reviewed sightline suite from the archive passes on the sealed models.
+`test/svg_void_window_test.dart` pins the Sunset case.
 
 ## Drag performance on Windows (2026-09-19)
 
