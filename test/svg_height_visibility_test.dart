@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -466,5 +467,148 @@ void main() {
     ]);
     expect(() => SvgHeightVisibility.fromJson(data([collinear])),
         throwsFormatException);
+  });
+
+  double area(List<Offset> polygon) {
+    var twice = 0.0;
+    for (var i = 0; i < polygon.length; i++) {
+      final a = polygon[i], b = polygon[(i + 1) % polygon.length];
+      twice += a.dx * b.dy - b.dx * a.dy;
+    }
+    return twice.abs() / 2;
+  }
+
+  SvgVisibilityCone coneOf(List<Map<String, dynamic>> walls,
+          {Offset origin = Offset.zero, double direction = 0}) =>
+      SvgHeightVisibility.fromJson(data(walls)).cone(
+          origin: origin,
+          directionRadians: direction,
+          range: 100,
+          apertureRadians: 1);
+
+  test('touching pieces of one wall cast the cone the whole wall casts', () {
+    final whole = coneOf([
+      wall('whole', [rectangle(10, -20, 11, 20)])
+    ]);
+    final pieces = coneOf([
+      for (var y = -20.0; y < 20; y += 1)
+        wall('piece-$y', [rectangle(10, y, 11, y + 1)])
+    ]);
+    expect(area(pieces.polygon), closeTo(area(whole.polygon), 1e-9));
+    expect(pieces.polygon.length, whole.polygon.length,
+        reason: 'seams between the pieces are not visibility events');
+  });
+
+  test('two walls over the same footprint keep their corners', () {
+    final ring = rectangle(10, 1.13, 11, 3.17);
+    final reversed = [
+      for (var i = ring.length - 2; i >= 0; i -= 2) ...[ring[i], ring[i + 1]]
+    ];
+    final once = coneOf([
+      wall('once', [ring])
+    ]);
+    final twice = coneOf([
+      wall('one', [ring]),
+      wall('other', [reversed]),
+    ]);
+    expect(area(twice.polygon), closeTo(area(once.polygon), 1e-9));
+  });
+
+  test('two walls over a footprint thinner than the side probe', () {
+    const ring = [10.0, 1.13, 10.0000005, 2.15, 10.0, 3.17, 9.9999995, 2.15];
+    const reversed = [
+      9.9999995,
+      2.15,
+      10.0,
+      3.17,
+      10.0000005,
+      2.15,
+      10.0,
+      1.13
+    ];
+    final once = coneOf([
+      wall('once', [ring])
+    ]);
+    final twice = coneOf([
+      wall('one', [ring]),
+      wall('other', [reversed]),
+    ]);
+    expect(area(twice.polygon), closeTo(area(once.polygon), 1e-9));
+  });
+
+  test('rays beside a corner pass it even from right next to it', () {
+    final cone = coneOf([
+      wall('corner', [rectangle(-2, 0, 0, 2)])
+    ], origin: const Offset(-0.001, -0.001), direction: math.pi / 4);
+    final beside = const Offset(-0.001, -0.001) +
+        Offset.fromDirection(math.pi / 4 - 0.002, 50);
+    expect((Path()..addPolygon(cone.polygon, true)).contains(beside), isTrue);
+  });
+
+  group('runtime walls', () {
+    final pieces = [
+      for (var y = -20.0; y < 20; y += 1)
+        wall('piece-$y', [rectangle(10, y, 11, y + 1)])
+    ];
+    Map<String, dynamic> merged({List<String>? members, List<double>? ring}) =>
+        data(pieces)
+          ..['runtimeWalls'] = <Map<String, dynamic>>[
+            {
+              'walls': members ?? [for (final p in pieces) p['id'] as String],
+              'rings': [ring ?? rectangle(10, -20, 11, 20)],
+              'fillRule': 'nonzero',
+            }
+          ];
+    SvgVisibilityCone cast(Map<String, dynamic> json) =>
+        SvgHeightVisibility.fromJson(json).cone(
+            origin: Offset.zero,
+            directionRadians: 0,
+            range: 100,
+            apertureRadians: 1);
+
+    test('a merged outline casts the cone its pieces cast', () {
+      expect(area(cast(merged()).polygon),
+          closeTo(area(cast(data(pieces)).polygon), 1e-9));
+    });
+
+    test('a merge of pieces with different heights is refused', () {
+      // A copy: the pieces are shared with the other tests.
+      final json = jsonDecode(jsonEncode(merged())) as Map<String, dynamic>;
+      (json['walls'] as List)[3]['bands'] = [
+        [0, 1]
+      ];
+      expect(() => SvgHeightVisibility.fromJson(json), throwsFormatException);
+    });
+
+    test('a piece keeps its own edges under its heights', () {
+      // The outline covers only half the wall; the piece's raw ring comes
+      // along as extra edges, so the cone still stops at the whole wall.
+      final json = merged(ring: rectangle(10, -20, 11, 0))
+        ..['runtimeWalls'].add({
+          'heightsOf': pieces.last['id'],
+          'rings': [rectangle(10, 0, 11, 20)],
+          'fillRule': 'nonzero',
+        });
+      expect(area(cast(json).polygon),
+          closeTo(area(cast(data(pieces)).polygon), 1e-9));
+    });
+
+    test('edges carried under a piece heights name no members', () {
+      final json = merged()
+        ..['runtimeWalls'].add({
+          'heightsOf': pieces.first['id'],
+          'walls': [pieces.last['id']],
+          'rings': [rectangle(10, 0, 11, 20)],
+          'fillRule': 'nonzero',
+        });
+      expect(() => SvgHeightVisibility.fromJson(json), throwsFormatException);
+    });
+
+    test('runtime walls must cover every wall', () {
+      expect(
+          () => SvgHeightVisibility.fromJson(merged(
+              members: [for (final p in pieces.skip(1)) p['id'] as String])),
+          throwsFormatException);
+    });
   });
 }
