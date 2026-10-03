@@ -17,8 +17,9 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
 bool _adaptersRegistered = false;
@@ -76,7 +77,7 @@ void main() {
     await _writeStrategyFile(File(path.join(childDir.path, 'a-site.ica')));
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -105,7 +106,7 @@ void main() {
         await Directory(path.join(emptyChild.path, 'Deep Empty')).create();
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -142,7 +143,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -182,7 +183,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -225,7 +226,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -279,7 +280,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -332,8 +333,7 @@ void main() {
     await _storeStrategy(name: 'default', folderID: rootFolder.id);
     await _storeStrategy(name: 'a-site', folderID: childFolder.id);
 
-    final exportDirectory = await container
-        .read(strategyProvider.notifier)
+    final exportDirectory = await StrategyImportExportService(container)
         .buildFolderExportDirectoryForTest(rootFolder.id);
 
     try {
@@ -368,7 +368,7 @@ void main() {
       await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
 
       final result =
-          await container.read(strategyProvider.notifier).loadFromFileDrop(
+          await StrategyImportExportService(container).loadFromFileDrop(
         [XFile(zipFile.path)],
       );
 
@@ -433,8 +433,7 @@ void main() {
       themeProfileId: customProfile.id,
     );
 
-    final exportDirectory = await container
-        .read(strategyProvider.notifier)
+    final exportDirectory = await StrategyImportExportService(container)
         .buildLibraryExportDirectoryForTest();
 
     try {
@@ -458,7 +457,7 @@ void main() {
       await MapThemeProfilesProvider.bootstrap();
 
       final result =
-          await container.read(strategyProvider.notifier).loadFromFileDrop(
+          await StrategyImportExportService(container).loadFromFileDrop(
         [XFile(zipFile.path)],
       );
 
@@ -499,6 +498,69 @@ void main() {
     }
   });
 
+  test('library backup without custom colors preserves current color library',
+      () async {
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setCustomColorValues(const [0xFF22C55E, 0xFF38BDF8]);
+    await _storeStrategy(
+      name: 'Legacy Backup',
+      folderID: null,
+    );
+
+    final exportDirectory = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+
+    try {
+      final rootDirectory = Directory(
+        path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+      );
+      final manifestFile =
+          File(path.join(rootDirectory.path, archiveMetadataFileName));
+      final decoded =
+          jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>;
+      final globals = Map<String, dynamic>.from(
+          decoded['globals'] as Map<dynamic, dynamic>);
+      final appPreferences = Map<String, dynamic>.from(
+          globals['appPreferences'] as Map<dynamic, dynamic>);
+      appPreferences.remove('customColorValues');
+      globals['appPreferences'] = appPreferences;
+      decoded['globals'] = globals;
+      await manifestFile.writeAsString(jsonEncode(decoded));
+
+      final zipFile = await _zipDirectory(
+        sourceDirectory: rootDirectory,
+        zipPath: path.join(tempDir.path, 'legacy-library-backup.zip'),
+      );
+
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
+      await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox).clear();
+      await MapThemeProfilesProvider.bootstrap();
+      await container
+          .read(appPreferencesProvider.notifier)
+          .setCustomColorValues(const [0xFFABCDEF, 0xFF123456]);
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      expect(result.globalStateRestored, isTrue);
+      expect(result.issues, isEmpty);
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.customColorValues,
+        const [0xFFABCDEF, 0xFF123456],
+      );
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
+  });
+
   test('batch import skips newer-version strategies and keeps valid siblings',
       () async {
     final sourceRoot =
@@ -511,7 +573,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -544,7 +606,7 @@ void main() {
     await _writeStrategyFile(file);
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(file.path)],
     );
 
@@ -580,7 +642,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -610,7 +672,7 @@ void main() {
     await nestedText.writeAsString('notes');
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -631,7 +693,7 @@ void main() {
     await file.writeAsString('not a strategy');
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(file.path)],
     );
 

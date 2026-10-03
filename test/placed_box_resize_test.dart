@@ -1,29 +1,15 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-class _FixedStorageStrategyProvider extends StrategyProvider {
-  @override
-  StrategyState build() => StrategyState(
-        isSaved: false,
-        stratName: null,
-        id: 'placed-box-resize-test',
-        storageDirectory: Directory.systemTemp.path,
-      );
-}
 
 void main() {
   const playArea = Size(1600, 900);
@@ -40,18 +26,7 @@ void main() {
     addTearDown(tester.view.reset);
     CoordinateSystem(playAreaSize: playArea);
 
-    // Images read the strategy's storage folder and, for their tag menu, the
-    // color library, which lives in Hive.
-    final container = ProviderContainer(
-      overrides: [
-        strategyProvider.overrideWith(_FixedStorageStrategyProvider.new),
-        colorLibraryProvider.overrideWith(
-          (ref) => const [
-            ColorLibraryEntry(color: Colors.white, isCustom: false),
-          ],
-        ),
-      ],
-    );
+    final container = ProviderContainer();
     addTearDown(container.dispose);
     seed(container);
 

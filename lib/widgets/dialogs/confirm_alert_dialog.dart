@@ -10,42 +10,64 @@ class ConfirmAlertDialog extends ConsumerWidget {
     this.confirmText = "Confirm",
     this.cancelText = "Cancel",
     this.isDestructive = false,
+    this.body,
   });
 
   final String title;
   final String content;
+
+  /// Shown instead of [content] when the message needs styling.
+  final Widget? body;
   final String confirmText;
   final String cancelText;
   final bool isDestructive; // For dangerous actions like delete
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    void cancel() => Navigator.of(context).pop(false);
+    void confirm() => Navigator.of(context).pop(true);
+
     return ShadDialog.alert(
       title: Text(title),
       description: Padding(
         padding: const EdgeInsets.all(8.0),
-        child: Text(content),
+        child: body ?? Text(content),
       ),
       actions: [
-        ShadButton.secondary(
-          child: Text(cancelText),
-          onPressed: () {
-            Navigator.of(context).pop(false);
-          },
+        Semantics(
+          key: const ValueKey('confirm-alert-cancel'),
+          label: cancelText,
+          button: true,
+          onTap: cancel,
+          excludeSemantics: true,
+          child: ShadButton.secondary(
+            onPressed: cancel,
+            child: Text(cancelText),
+          ),
         ),
         if (isDestructive)
-          ShadButton.destructive(
-            child: Text(confirmText),
-            onPressed: () {
-              Navigator.of(context).pop(true);
-            },
+          Semantics(
+            key: const ValueKey('confirm-alert-confirm'),
+            label: confirmText,
+            button: true,
+            onTap: confirm,
+            excludeSemantics: true,
+            child: ShadButton.destructive(
+              onPressed: confirm,
+              child: Text(confirmText),
+            ),
           )
         else
-          ShadButton(
-            child: Text(confirmText),
-            onPressed: () {
-              Navigator.of(context).pop(true);
-            },
+          Semantics(
+            key: const ValueKey('confirm-alert-confirm'),
+            label: confirmText,
+            button: true,
+            onTap: confirm,
+            excludeSemantics: true,
+            child: ShadButton(
+              onPressed: confirm,
+              child: Text(confirmText),
+            ),
           ),
       ],
     );
@@ -59,6 +81,7 @@ class ConfirmAlertDialog extends ConsumerWidget {
     String confirmText = "Confirm",
     String cancelText = "Cancel",
     bool isDestructive = false,
+    Widget? body,
   }) async {
     final result = await showShadDialog<bool>(
       context: context,
@@ -68,6 +91,7 @@ class ConfirmAlertDialog extends ConsumerWidget {
         confirmText: confirmText,
         cancelText: cancelText,
         isDestructive: isDestructive,
+        body: body,
       ),
     );
 

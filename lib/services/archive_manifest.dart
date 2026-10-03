@@ -210,6 +210,7 @@ class ArchiveGlobals {
     required this.showUltOrbs,
     required this.showRegionNames,
     required this.customColorValues,
+    this.hasCustomColorValues = true,
     required this.favoriteAgents,
   });
 
@@ -219,6 +220,7 @@ class ArchiveGlobals {
   final bool? showUltOrbs;
   final bool? showRegionNames;
   final List<int> customColorValues;
+  final bool hasCustomColorValues;
   final List<String> favoriteAgents;
 
   Map<String, dynamic> toJson() {
@@ -242,6 +244,8 @@ class ArchiveGlobals {
     final appPreferencesMap = appPreferences is Map
         ? Map<String, dynamic>.from(appPreferences)
         : null;
+    final hasCustomColorValues =
+        appPreferencesMap?.containsKey('customColorValues') ?? false;
 
     return ArchiveGlobals(
       themeProfiles: _readRequiredList(json, 'themeProfiles')
@@ -268,6 +272,7 @@ class ArchiveGlobals {
           : _readOptionalList(appPreferencesMap, 'customColorValues')
               .map(_readIntValue)
               .toList(growable: false),
+      hasCustomColorValues: hasCustomColorValues,
       favoriteAgents: _readRequiredList(json, 'favoriteAgents')
           .map((entry) => entry.toString())
           .toList(growable: false),

@@ -400,22 +400,22 @@ class PageTransitionEntry {
     required this.from,
     required this.to,
     this.order = 0,
-  }) : kind = TransitionKind.move,
-       id = to!.id;
+  })  : kind = TransitionKind.move,
+        id = to!.id;
   PageTransitionEntry.appear({required this.to, this.order = 0})
-    : kind = TransitionKind.appear,
-      id = to!.id,
-      from = null;
+      : kind = TransitionKind.appear,
+        id = to!.id,
+        from = null;
   PageTransitionEntry.disappear({required this.from, this.order = 0})
-    : kind = TransitionKind.disappear,
-      id = from!.id,
-      to = null;
+      : kind = TransitionKind.disappear,
+        id = from!.id,
+        to = null;
   // For unchanged items we still want to render during the transition
   // so they remain visible while the base view is hidden.
   PageTransitionEntry.none({required this.to, this.order = 0})
-    : kind = TransitionKind.none,
-      id = to!.id,
-      from = null;
+      : kind = TransitionKind.none,
+        id = to!.id,
+        from = null;
 
   final String id;
   final TransitionKind kind;

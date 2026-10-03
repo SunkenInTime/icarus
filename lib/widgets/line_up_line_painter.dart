@@ -10,8 +10,8 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 
 final lineUpCanvasResizeProvider =
     NotifierProvider<LineUpCanvasResizeNotifier, int>(
-      LineUpCanvasResizeNotifier.new,
-    );
+  LineUpCanvasResizeNotifier.new,
+);
 
 class LineUpCanvasResizeNotifier extends Notifier<int> {
   @override

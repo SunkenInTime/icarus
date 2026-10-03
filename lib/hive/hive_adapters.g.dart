@@ -144,122 +144,6 @@ class PlacedWidgetAdapter extends TypeAdapter<PlacedWidget> {
           typeId == other.typeId;
 }
 
-class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
-  @override
-  final typeId = 2;
-
-  @override
-  PlacedAgent read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return PlacedAgent(
-      type: fields[0] as AgentType,
-      position: fields[4] as Offset,
-      id: fields[2] as String,
-      isAlly: fields[1] == null ? true : fields[1] as bool,
-      lineUpID: fields[5] as String?,
-      state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
-      weapon: fields[7] == null ? WeaponType.none : fields[7] as WeaponType,
-    )..isDeleted = fields[3] as bool;
-  }
-
-  @override
-  void write(BinaryWriter writer, PlacedAgent obj) {
-    writer
-      ..writeByte(8)
-      ..writeByte(0)
-      ..write(obj.type)
-      ..writeByte(1)
-      ..write(obj.isAlly)
-      ..writeByte(2)
-      ..write(obj.id)
-      ..writeByte(3)
-      ..write(obj.isDeleted)
-      ..writeByte(4)
-      ..write(obj.position)
-      ..writeByte(5)
-      ..write(obj.lineUpID)
-      ..writeByte(6)
-      ..write(obj.state)
-      ..writeByte(7)
-      ..write(obj.weapon);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is PlacedAgentAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
-class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
-  @override
-  final typeId = 3;
-
-  @override
-  PlacedAbility read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return PlacedAbility(
-      data: fields[0] as AbilityInfo,
-      position: fields[5] as Offset,
-      id: fields[3] as String,
-      isAlly: fields[1] == null ? true : fields[1] as bool,
-      length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
-      lineUpID: fields[7] as String?,
-      rotation: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
-      visualState: fields[9] == null
-          ? const AbilityVisualState()
-          : fields[9] as AbilityVisualState,
-      armLengthsMeters: (fields[8] as List?)?.cast<double>(),
-    )..isDeleted = fields[4] as bool;
-  }
-
-  @override
-  void write(BinaryWriter writer, PlacedAbility obj) {
-    writer
-      ..writeByte(10)
-      ..writeByte(0)
-      ..write(obj.data)
-      ..writeByte(1)
-      ..write(obj.isAlly)
-      ..writeByte(2)
-      ..write(obj.rotation)
-      ..writeByte(3)
-      ..write(obj.id)
-      ..writeByte(4)
-      ..write(obj.isDeleted)
-      ..writeByte(5)
-      ..write(obj.position)
-      ..writeByte(6)
-      ..write(obj.length)
-      ..writeByte(7)
-      ..write(obj.lineUpID)
-      ..writeByte(8)
-      ..write(obj.armLengthsMeters)
-      ..writeByte(9)
-      ..write(obj.visualState);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is PlacedAbilityAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
 class PlacedTextAdapter extends TypeAdapter<PlacedText> {
   @override
   final typeId = 4;
@@ -333,9 +217,8 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       fileExtension: fields[8] as String?,
       sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
-    )
-      ..link = fields[3] as String
-      ..isDeleted = fields[5] as bool;
+      link: fields[3] == null ? '' : fields[3] as String,
+    )..isDeleted = fields[5] as bool;
   }
 
   @override
@@ -958,97 +841,6 @@ class FolderColorAdapter extends TypeAdapter<FolderColor> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is FolderColorAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
-class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
-  @override
-  final typeId = 20;
-
-  @override
-  StrategyPage read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return StrategyPage(
-      id: fields[0] as String,
-      name: fields[2] as String,
-      isAutoNamed: fields[14] as bool?,
-      drawingData: (fields[3] as List).cast<DrawingElement>(),
-      agentData: (fields[4] as List).cast<PlacedAgentNode>(),
-      abilityData: (fields[5] as List).cast<PlacedAbility>(),
-      textData: (fields[6] as List).cast<PlacedText>(),
-      imageData: (fields[7] as List).cast<PlacedImage>(),
-      utilityData: (fields[8] as List).cast<PlacedUtility>(),
-      sortIndex: (fields[1] as num).toInt(),
-      isAttack: fields[9] as bool,
-      settings: fields[10] as StrategySettings,
-      lineUpOrigins: fields[15] == null
-          ? const []
-          : (fields[15] as List).cast<LineUpOrigin>(),
-      lineUpLandings: fields[16] == null
-          ? const []
-          : (fields[16] as List).cast<LineUpLanding>(),
-      lineUpLinks: fields[17] == null
-          ? const []
-          : (fields[17] as List).cast<LineUpLink>(),
-      lineUpGroups: fields[12] == null
-          ? const []
-          : (fields[12] as List).cast<LineUpGroup>(),
-      lineUps:
-          fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, StrategyPage obj) {
-    writer
-      ..writeByte(17)
-      ..writeByte(0)
-      ..write(obj.id)
-      ..writeByte(1)
-      ..write(obj.sortIndex)
-      ..writeByte(2)
-      ..write(obj.name)
-      ..writeByte(3)
-      ..write(obj.drawingData)
-      ..writeByte(4)
-      ..write(obj.agentData)
-      ..writeByte(5)
-      ..write(obj.abilityData)
-      ..writeByte(6)
-      ..write(obj.textData)
-      ..writeByte(7)
-      ..write(obj.imageData)
-      ..writeByte(8)
-      ..write(obj.utilityData)
-      ..writeByte(9)
-      ..write(obj.isAttack)
-      ..writeByte(10)
-      ..write(obj.settings)
-      ..writeByte(11)
-      ..write(obj.lineUps)
-      ..writeByte(12)
-      ..write(obj.lineUpGroups)
-      ..writeByte(14)
-      ..write(obj.isAutoNamed)
-      ..writeByte(15)
-      ..write(obj.lineUpOrigins)
-      ..writeByte(16)
-      ..write(obj.lineUpLandings)
-      ..writeByte(17)
-      ..write(obj.lineUpLinks);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is StrategyPageAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
@@ -1894,6 +1686,47 @@ class WeaponTypeAdapter extends TypeAdapter<WeaponType> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is WeaponTypeAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class CloudMediaJobStateAdapter extends TypeAdapter<CloudMediaJobState> {
+  @override
+  final typeId = 39;
+
+  @override
+  CloudMediaJobState read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return CloudMediaJobState.pendingUpload;
+      case 1:
+        return CloudMediaJobState.pendingAttach;
+      case 2:
+        return CloudMediaJobState.failed;
+      default:
+        return CloudMediaJobState.pendingUpload;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, CloudMediaJobState obj) {
+    switch (obj) {
+      case CloudMediaJobState.pendingUpload:
+        writer.writeByte(0);
+      case CloudMediaJobState.pendingAttach:
+        writer.writeByte(1);
+      case CloudMediaJobState.failed:
+        writer.writeByte(2);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CloudMediaJobStateAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

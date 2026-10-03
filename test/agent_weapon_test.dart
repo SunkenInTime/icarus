@@ -29,6 +29,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 
 class _TestStrategyProvider extends StrategyProvider {
   @override
@@ -398,7 +399,7 @@ void main() {
     box = await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
     _expectWeapons(box.get('firearm-strategy')!);
 
-    final notifier = container.read(strategyProvider.notifier);
+    final notifier = StrategyImportExportService(container);
     final exported = await notifier.zipStrategy(
       id: 'firearm-strategy',
       saveDir: directory,

@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 
 abstract final class PlacedMediaGeometry {
   static const double _referencePixelsPerWorldUnit = 1080 / 1000;
@@ -45,13 +45,11 @@ abstract final class PlacedMediaGeometry {
     final rawWidth = image.usesWorldSize
         ? image.scale
         : image.scale * _legacyWidthToWorldFactor;
-    final width = ImageScalePolicy.clamp(rawWidth);
-    final widthInPixels = width * _referencePixelsPerWorldUnit;
-    const leftChromeWidth = 12.0;
-    final cardWidth = math.max(1, widthInPixels - leftChromeWidth);
-    final aspectRatio = image.aspectRatio <= 0 ? 1.0 : image.aspectRatio;
-    final heightInPixels = (cardWidth - 10) / aspectRatio + 10;
-
-    return Size(width, heightInPixels / _referencePixelsPerWorldUnit);
+    final screenSize = PlacedImageDimensions.sizeForPixelsPerWorldUnit(
+      pixelsPerWorldUnit: _referencePixelsPerWorldUnit,
+      scale: rawWidth,
+      aspectRatio: image.aspectRatio,
+    );
+    return screenSize / _referencePixelsPerWorldUnit;
   }
 }

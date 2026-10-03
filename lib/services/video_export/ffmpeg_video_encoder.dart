@@ -3,18 +3,11 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:path/path.dart' as p;
 
-class VideoExportCancelled implements Exception {}
-
-class VideoExportException implements Exception {
-  VideoExportException(this.message);
-  final String message;
-
-  @override
-  String toString() => 'VideoExportException: $message';
-}
+export 'package:icarus/services/video_export/video_export_errors.dart';
 
 /// Windows' save dialog does not guarantee that the selected extension is
 /// appended, even when FilePicker is restricted to MP4 files.

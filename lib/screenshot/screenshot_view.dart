@@ -79,7 +79,6 @@ class ScreenshotView extends ConsumerWidget {
   /// surface that assertion.
   void hydrateProviders(ProviderContainer container) {
     CoordinateSystem.instance.setIsScreenshot(true);
-    container.read(strategyProvider.notifier).setFromState(strategyState);
     container.read(agentProvider.notifier).fromHive(agents);
     container.read(screenshotProvider.notifier).setIsScreenShot(true);
     container.read(abilityProvider.notifier).fromHive(abilities);
@@ -99,6 +98,9 @@ class ScreenshotView extends ConsumerWidget {
     container
         .read(drawingProvider.notifier)
         .rebuildAllPaths(CoordinateSystem.instance);
+    // Keep the strategy closed while its dependent providers are hydrated so
+    // their listeners cannot mistake capture setup for user edits.
+    container.read(strategyProvider.notifier).setFromState(strategyState);
   }
 
   @override

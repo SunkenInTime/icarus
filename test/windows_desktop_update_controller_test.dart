@@ -23,7 +23,8 @@ void main() {
       () async {
     final installDirectory =
         await Directory.systemTemp.createTemp('icarus_update_install_');
-    final executablePath = '${installDirectory.path}\\icarus.exe';
+    final executablePath =
+        [installDirectory.path, 'icarus.exe'].join(Platform.pathSeparator);
     await File(executablePath).writeAsBytes(utf8.encode('old exe'));
 
     final remoteFiles = <String, List<int>>{
@@ -117,7 +118,11 @@ void main() {
           ...WindowsDesktopUpdateController.splitRelativePath(file.filePath),
         ].join(Platform.pathSeparator),
       );
-      expect(await stagedFile.exists(), isTrue);
+      expect(
+        await stagedFile.exists(),
+        isTrue,
+        reason: 'Expected staged update file at ${stagedFile.path}',
+      );
       expect(await stagedFile.readAsBytes(), remoteFiles[file.filePath]);
     }
 
@@ -129,7 +134,8 @@ void main() {
   test('downloadUpdate preserves verification errors during cleanup', () async {
     final installDirectory =
         await Directory.systemTemp.createTemp('icarus_update_cleanup_');
-    final executablePath = '${installDirectory.path}\\icarus.exe';
+    final executablePath =
+        [installDirectory.path, 'icarus.exe'].join(Platform.pathSeparator);
     await File(executablePath).writeAsBytes(utf8.encode('old exe'));
     addTearDown(() async {
       if (await installDirectory.exists()) {

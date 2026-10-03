@@ -2,18 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
+import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/widgets/account_avatar.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
+import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -26,6 +34,7 @@ enum _SettingsMode {
 enum _SettingsSection {
   strategyObjects,
   strategyMapTheme,
+  globalAccount,
   globalDefaults,
   globalSaving,
   globalMapVisibility,
@@ -104,10 +113,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     child: SingleChildScrollView(
                       controller: _scrollController,
                       child: switch (_mode) {
-                        _SettingsMode.strategy => _StrategySettingsSections(
-                            key: const ValueKey('strategy-settings'),
-                            sectionKeys: _sectionKeys,
-                            strategySettings: strategySettings,
+                        _SettingsMode.strategy => StrategyEditBoundary(
+                            disabledOpacity: 0.55,
+                            child: _StrategySettingsSections(
+                              key: const ValueKey('strategy-settings'),
+                              sectionKeys: _sectionKeys,
+                              strategySettings: strategySettings,
+                            ),
                           ),
                         _SettingsMode.global => _GlobalSettingsSections(
                             key: const ValueKey('global-settings'),
@@ -161,6 +173,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       case _SettingsSection.strategyObjects:
       case _SettingsSection.strategyMapTheme:
         return _SettingsMode.strategy;
+      case _SettingsSection.globalAccount:
       case _SettingsSection.globalDefaults:
       case _SettingsSection.globalSaving:
       case _SettingsSection.globalMapVisibility:
@@ -299,6 +312,12 @@ class _GlobalSettingsSections extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        AccountSettingsSection(
+          key: sectionKeys[_SettingsSection.globalAccount],
+        ),
+        const SizedBox(height: 20),
+        const _SettingsItemDivider(),
+        const SizedBox(height: 20),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalDefaults],
           title: "New strategy defaults",
@@ -1012,6 +1031,203 @@ class _ShortcutEmptySearch extends StatelessWidget {
   }
 }
 
+class AccountSettingsSection extends ConsumerWidget {
+  const AccountSettingsSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+
+    return SettingsScopeCard(
+      title: 'Account',
+      description: authState.isAuthenticated
+          ? 'Your cloud identity and sync connection.'
+          : 'Sign in to sync strategies to the cloud and share them.',
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeOutCubic,
+        child: authState.isAuthenticated
+            ? _SignedInAccountRow(
+                key: const ValueKey('account-signed-in'),
+                authState: authState,
+              )
+            : Padding(
+                key: const ValueKey('account-signed-out'),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.cloudOff,
+                      size: 18,
+                      color: Settings.tacticalVioletTheme.mutedForeground,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Not signed in',
+                        style: TextStyle(
+                          color: Settings.tacticalVioletTheme.mutedForeground,
+                        ),
+                      ),
+                    ),
+                    ShadButton(
+                      size: ShadButtonSize.sm,
+                      onPressed: authState.isLoading
+                          ? null
+                          : () {
+                              showDialog<void>(
+                                context: context,
+                                builder: (_) => const AuthDialog(),
+                              );
+                            },
+                      child: const Text('Log In'),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _SignedInAccountRow extends ConsumerWidget {
+  const _SignedInAccountRow({super.key, required this.authState});
+
+  final AppAuthState authState;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    const theme = Settings.tacticalVioletTheme;
+    final email = authState.user?.email;
+    final avatarUrl = authState.avatarUrl;
+    // The server refuses this build. Reconnecting can't help; reloading or
+    // updating can, so this row says what the sync button says.
+    final needsNewerIcarus = ref.watch(clientUpgradeRequiredProvider);
+
+    final (String statusLabel, IconData statusIcon, Color statusColor) =
+        needsNewerIcarus
+            ? (
+                'Cloud sync needs a newer Icarus',
+                LucideIcons.circleAlert,
+                theme.destructive,
+              )
+            : switch (authState.convexAuthStatus) {
+                ConvexAuthStatus.ready => (
+                    'Cloud sync active',
+                    LucideIcons.cloudCheck,
+                    theme.mutedForeground,
+                  ),
+                ConvexAuthStatus.configuring => (
+                    'Connecting to cloud…',
+                    LucideIcons.refreshCw,
+                    theme.mutedForeground,
+                  ),
+                ConvexAuthStatus.incident => (
+                    'Cloud connection needs attention',
+                    LucideIcons.circleAlert,
+                    theme.destructive,
+                  ),
+                ConvexAuthStatus.signedOut => (
+                    'Cloud sync inactive',
+                    LucideIcons.cloudOff,
+                    theme.mutedForeground,
+                  ),
+              };
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          AccountAvatar(
+            radius: 16,
+            backgroundColor: theme.muted,
+            avatarUrl: avatarUrl,
+            fallback: Text(
+              authState.displayName.characters.first.toUpperCase(),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: theme.foreground,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  authState.displayName,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (email != null && email != authState.displayName)
+                  Text(
+                    email,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.mutedForeground,
+                      fontSize: 12,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(statusIcon, size: 13, color: statusColor),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        statusLabel,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (needsNewerIcarus) ...[
+            ClientUpgradeNotice(
+              buttonSize: ShadButtonSize.sm,
+              builder: (context, message, action) =>
+                  action ?? const SizedBox.shrink(),
+            ),
+            const SizedBox(width: 8),
+          ] else if (authState.convexAuthStatus ==
+              ConvexAuthStatus.incident) ...[
+            ShadButton(
+              size: ShadButtonSize.sm,
+              onPressed: () {
+                ref
+                    .read(authProvider.notifier)
+                    .reinitializeConvexAuth(source: 'settings_account');
+              },
+              child: const Text('Reconnect'),
+            ),
+            const SizedBox(width: 8),
+          ],
+          ShadButton.outline(
+            key: const ValueKey('settings-sign-out'),
+            size: ShadButtonSize.sm,
+            onPressed: authState.isLoading
+                ? null
+                : () async {
+                    await ref.read(guardedSignOutRequestProvider)(context);
+                  },
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SettingsNavigationRail extends StatelessWidget {
   const _SettingsNavigationRail({
     required this.selectedSection,
@@ -1055,6 +1271,12 @@ class _SettingsNavigationRail extends StatelessWidget {
           const SizedBox(height: 20),
           const _SettingsNavHeader(label: "App-wide"),
           const SizedBox(height: 4),
+          _SettingsNavItem(
+            icon: LucideIcons.user,
+            label: "Account",
+            isSelected: selectedSection == _SettingsSection.globalAccount,
+            onTap: () => onSectionSelected(_SettingsSection.globalAccount),
+          ),
           _SettingsNavItem(
             icon: LucideIcons.wandSparkles,
             label: "Defaults",
@@ -1422,13 +1644,17 @@ class _PageMarkerSizesSyncBannerState
   @override
   Widget build(BuildContext context) {
     final stratState = ref.watch(strategyProvider);
+    final activePageId = ref.watch(
+        strategyPageSessionProvider.select((state) => state.activePageId));
     final liveSettings = ref.watch(strategySettingsProvider);
-    final strategy =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(stratState.id);
-    final showCta = stratState.stratName != null &&
+    final strategyId = stratState.strategyId;
+    final strategy = strategyId == null
+        ? null
+        : Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+    final showCta = stratState.strategyName != null &&
         markerSizesDifferAcrossPages(
           strategy: strategy,
-          activePageId: stratState.activePageId,
+          activePageId: activePageId,
           liveSettings: liveSettings,
         );
 

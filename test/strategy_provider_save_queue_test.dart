@@ -10,7 +10,7 @@ class _ControlledSaveStrategyProvider extends StrategyProvider {
   int saveCalls = 0;
 
   @override
-  StrategyState build() => StrategyState(
+  StrategyState build() => const StrategyState(
         isSaved: false,
         stratName: 'Strategy',
         id: 'strategy-id',

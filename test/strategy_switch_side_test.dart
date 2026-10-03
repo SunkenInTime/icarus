@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
@@ -60,6 +60,12 @@ void main() {
   setUpAll(() async {
     CoordinateSystem(playAreaSize: const Size(1920, 1080));
     tempDir = await Directory.systemTemp.createTemp('icarus-switch-side');
+    // Opening a local strategy resolves its image storage directory.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (call) async => tempDir.path,
+    );
     Hive.init(tempDir.path);
     if (!Hive.isAdapterRegistered(20)) {
       registerIcarusAdapters(Hive);
@@ -94,7 +100,7 @@ void main() {
 
     container = ProviderContainer();
     final notifier = container.read(strategyProvider.notifier);
-    await notifier.renameStrategy(_strategyId, 'Mixed');
+    await notifier.loadFromHive(_strategyId);
     await notifier.setActivePage('p2');
   });
 
@@ -120,9 +126,7 @@ void main() {
   test('switching side on all pages unifies a mixed strategy', () async {
     expect(container.read(mapProvider).isAttack, isFalse);
 
-    await container
-        .read(strategyProvider.notifier)
-        .switchSide(allPages: true);
+    await container.read(strategyProvider.notifier).switchSide(allPages: true);
 
     expect(container.read(mapProvider).isAttack, isTrue);
     expect(container.read(strategyProvider).isSaved, isFalse);
@@ -133,7 +137,7 @@ void main() {
     );
 
     final notifier = container.read(strategyProvider.notifier);
-    await notifier.forceSaveNow(container.read(strategyProvider).id);
+    await notifier.forceSaveNow(_strategyId);
     var pages = storedPages();
     expect(pages.map((p) => p.isAttack), everyElement(isTrue));
     expect(
@@ -151,9 +155,7 @@ void main() {
   });
 
   test('switching side on this page leaves the other pages alone', () async {
-    await container
-        .read(strategyProvider.notifier)
-        .switchSide(allPages: false);
+    await container.read(strategyProvider.notifier).switchSide(allPages: false);
 
     expect(container.read(mapProvider).isAttack, isTrue);
     expect(container.read(strategyProvider).isSaved, isFalse);

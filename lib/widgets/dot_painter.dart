@@ -51,7 +51,6 @@
 import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 
 class DotGrid extends StatelessWidget {
@@ -73,7 +72,6 @@ class DotPainter extends CustomPainter {
   Size? _cachedSize;
   List<Offset> _cachedPoints = const [];
 
-  Size playAreaSize = CoordinateSystem.instance.playAreaSize;
   static const double dotSize = 3; // Size of each dot
   static const double dotSpacing = 9.5;
 
@@ -124,15 +122,6 @@ class DotPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(DotPainter oldDelegate) {
-    if (oldDelegate.isScreenshot != isScreenshot) {
-      playAreaSize = isScreenshot
-          ? CoordinateSystem.screenShotSize
-          : CoordinateSystem.instance.playAreaSize;
-      return true;
-    }
-    // if (oldDelegate.playAreaSize != playAreaSize) {
-    //   return true;
-    // }
-    return false;
+    return oldDelegate.isScreenshot != isScreenshot;
   }
 }

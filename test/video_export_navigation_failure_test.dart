@@ -9,6 +9,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
+import 'package:icarus/services/video_export/ffmpeg_video_sink.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_exporter.dart';
 
@@ -66,8 +67,11 @@ void main() {
           exporter.export(
             pages: pages,
             stepDuration: const Duration(seconds: 1),
-            ffmpegBinary: 'must-not-run',
-            outputPath: 'must-not-create.mp4',
+            sink: FfmpegVideoSink(
+              binary: 'must-not-run',
+              outputPath: 'must-not-create.mp4',
+              quality: VideoExportQuality.social,
+            ),
             quality: VideoExportQuality.social,
             onProgress: (_, label) {
               startedPreparing = true;
