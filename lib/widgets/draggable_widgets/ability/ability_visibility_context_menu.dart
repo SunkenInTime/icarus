@@ -8,12 +8,13 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool supportsAbilityVisibilityMenu(Ability? ability) {
@@ -82,10 +83,11 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
 
   return [
     ShadContextMenuItem(
-      leading: const Icon(LucideIcons.plus),
+      leading: const Icon(LucideIcons.plus, size: 16),
       child: const Text('Add lineup here'),
       onPressed: () {
         if (landing == null) return;
+        if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) return;
         ref
             .read(abilityBarProvider.notifier)
             .updateData(AgentData.agents[landing.ability.data.type]!);
@@ -96,7 +98,7 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
       },
     ),
     ShadContextMenuItem(
-      leading: const Icon(LucideIcons.pencil),
+      leading: const Icon(LucideIcons.pencil, size: 16),
       child: Text(links.length > 1 ? 'Show lineups' : 'Edit media'),
       onPressed: () {
         if (context == null) return;
@@ -293,15 +295,10 @@ void _updateVisualState(
   String? landingId,
 }) {
   if (landingId != null) {
-    ref.read(actionProvider.notifier).performTransaction(
-      groups: const [ActionGroup.lineUp],
-      mutation: () {
-        ref.read(lineUpProvider.notifier).updateLandingAbilityVisualState(
-              landingId: landingId,
-              visualState: visualState,
-            );
-      },
-    );
+    ref.read(lineUpProvider.notifier).updateLandingAbilityVisualState(
+          landingId: landingId,
+          visualState: visualState,
+        );
     return;
   }
 

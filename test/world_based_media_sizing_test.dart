@@ -41,7 +41,8 @@ void main() {
     );
   });
 
-  test('text JSON migration converts legacy pixel width and font sizing once', () {
+  test('text JSON migration converts legacy pixel width and font sizing once',
+      () {
     final migrated = TextProvider.fromJson(jsonEncode([
       {
         'id': 'text-1',
@@ -82,7 +83,6 @@ void main() {
           'scale': 200,
           'fileExtension': null,
           'tagColorValue': null,
-          'link': '',
         }
       ]),
       strategyID: 'strategy-id',
@@ -103,7 +103,6 @@ void main() {
           'sizeVersion': worldSizedMediaVersion,
           'fileExtension': null,
           'tagColorValue': null,
-          'link': '',
         }
       ]),
       strategyID: 'strategy-id',

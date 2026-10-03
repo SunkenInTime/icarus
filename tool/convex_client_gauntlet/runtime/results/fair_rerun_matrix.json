@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 2,
+  "evaluation": "convex_dart_client_fair_rerun",
+  "harnessCommit": "fb83488c0924f8daf57c4bdfc48d7a4a5ff0c8f5",
+  "deployment": "local:127.0.0.1:3210",
+  "baseFixture": {
+    "path": "test/fixtures/strategy_integrity/base-test-v43.ica",
+    "sha256": "8544873d608a0ad885b2e6042a383596a0b1dc37514034281b4e4eec6168756a"
+  },
+  "tooling": {
+    "dartvex": {
+      "version": "0.2.0",
+      "strictGatePassed": true,
+      "explicitResultRenameCaught": true,
+      "missingReturnRejectedByIcarusWrapper": true,
+      "unsupportedValidatorRejectedByIcarusWrapper": true,
+      "deterministicGeneration": true,
+      "stableReturnSurfaceCompleteForRuntime": false
+    },
+    "convex_flutter": {
+      "version": "3.0.1 + Icarus patch",
+      "convexRustVersion": "0.10.4 + Icarus patch",
+      "generatedContractBoundary": false,
+      "flutterRustBridgeVersion": "2.11.1 pinned",
+      "authCallbackOwnedByConvexStateMachine": true,
+      "realManualReconnect": true,
+      "vendoredPackageRequired": true,
+      "vendoredConvexRustRequired": true
+    }
+  },
+  "correctness": {
+    "equivalentSeedZeroTrace": true,
+    "equivalentSeedZeroFaultSchedule": true,
+    "dartvex": {
+      "status": "passed",
+      "seedsCompleted": 50,
+      "operationsCompleted": 50000,
+      "acknowledged": 45500,
+      "visibleRevisionRejects": 4500,
+      "unresolved": 0,
+      "authRefreshAccepted": true,
+      "queuedBatchReplayedExactlyOnce": true,
+      "processRestartRecovered": true,
+      "allCanonicalVerifierHashesPassed": true,
+      "allIcaRoundTripsPassed": true,
+      "reportSha256": "df57f96fca7393df0097d70dfefcb58d6de6aeb375eba739f5ea3db69edbbd9a"
+    },
+    "convex_flutter": {
+      "status": "passed",
+      "seedsCompleted": 50,
+      "operationsCompleted": 50000,
+      "acknowledged": 45500,
+      "visibleRevisionRejects": 4500,
+      "unresolved": 0,
+      "authRefreshAccepted": true,
+      "queuedBatchReplayedExactlyOnce": true,
+      "processRestartRecovered": true,
+      "allCanonicalVerifierHashesPassed": true,
+      "allIcaRoundTripsPassed": true,
+      "reportSha256": "72cae3ed8f244f4122de1394008587da89057e44d102c9c2968315dd951e7b3f"
+    }
+  },
+  "profile": {
+    "status": "passed",
+    "buildMode": "Flutter macOS profile",
+    "pairedTrialsPerAdapter": 10,
+    "totalCandidateRuns": 20,
+    "orderAlternated": true,
+    "pairedProfileReportSha256": "b1242bbdb567751648acb3c17c2e05161eae0db2dae60488d144bcfdac8b06c2",
+    "dartvexMedian": {
+      "remoteConvergenceMs": 7.3035,
+      "reconnectToLiveMs": 110.8925,
+      "authFreshTokenAcceptedMs": 9.1435,
+      "authRecoveryMs": 147.8825,
+      "maxRssBytes": 134406144,
+      "averageProcessCpuPercent": 9.248290046558877,
+      "transferredBytes": 1439001,
+      "runnerWallClockMs": 2749.5435
+    },
+    "convexFlutterMedian": {
+      "remoteConvergenceMs": 7.459,
+      "reconnectToLiveMs": 73.2425,
+      "authFreshTokenAcceptedMs": 127.134,
+      "authRecoveryMs": 205.734,
+      "maxRssBytes": 141312000,
+      "averageProcessCpuPercent": 14.533420361788625,
+      "transferredBytes": 1652716,
+      "runnerWallClockMs": 1873.387
+    },
+    "tradeoff": {
+      "convexFlutterRunnerWallClockFasterPercent": 31.865526040959157,
+      "convexFlutterReconnectFasterPercent": 33.95180016682823,
+      "convexFlutterRssHigherPercent": 5.138050831961971,
+      "convexFlutterCpuHigherPercent": 57.147108153212066,
+      "convexFlutterTransferHigherPercent": 14.851622757732619
+    },
+    "desktopTargetsMeasured": ["macos"],
+    "desktopTargetsNotMeasuredOnThisHost": ["windows", "linux"]
+  },
+  "verdict": {
+    "correctnessWinner": null,
+    "correctnessResult": "tie",
+    "performanceWinner": null,
+    "performanceResult": "convex_flutter is faster in wall time and reconnect; Dartvex uses less CPU, RSS, and transfer",
+    "adoptionDecision": "keep_convex_flutter",
+    "applicationClientChanged": false,
+    "applicationDependencyPatched": true,
+    "reason": "Both clients are correct. Migrating to Dartvex is not justified while its stable generated runtime return surface is incomplete; convex_flutter remains the current client but now carries a local package and Rust maintenance burden.",
+    "nextStep": "Upstream the convex_flutter and convex-rs fixes, and separately complete Dartvex's generated return surface before reconsidering a migration."
+  }
+}

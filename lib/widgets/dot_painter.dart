@@ -52,7 +52,6 @@ import 'dart:ui' show PointMode;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 
@@ -88,7 +87,6 @@ class DotPainter extends CustomPainter {
   Size? _cachedSize;
   List<Offset> _cachedPoints = const [];
 
-  Size playAreaSize = CoordinateSystem.instance.playAreaSize;
   static const double dotSize = 3; // Size of each dot
   static const double dotSpacing = 9.5;
 
@@ -142,16 +140,7 @@ class DotPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(DotPainter oldDelegate) {
-    if (oldDelegate.opacity != opacity) return true;
-    if (oldDelegate.isScreenshot != isScreenshot) {
-      playAreaSize = isScreenshot
-          ? CoordinateSystem.screenShotSize
-          : CoordinateSystem.instance.playAreaSize;
-      return true;
-    }
-    // if (oldDelegate.playAreaSize != playAreaSize) {
-    //   return true;
-    // }
-    return false;
+    return oldDelegate.opacity != opacity ||
+        oldDelegate.isScreenshot != isScreenshot;
   }
 }

@@ -1,0 +1,499 @@
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/canonical_json.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/strategy_capabilities.dart';
+import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:uuid/uuid.dart';
+
+abstract class StrategyPageSource {
+  RemoteEditorSnapshot? get loadedRemoteSnapshot;
+  Future<List<String>> listPageIds();
+  Future<StrategyEditorPageData> loadPage(String pageId);
+  Future<void> flushCurrentPage();
+}
+
+class LocalStrategyPageSource implements StrategyPageSource {
+  LocalStrategyPageSource(
+    this.ref, {
+    required this.strategyId,
+    required this.activePageId,
+  });
+
+  final Ref ref;
+  final String strategyId;
+  final String? Function() activePageId;
+
+  @override
+  RemoteEditorSnapshot? get loadedRemoteSnapshot => null;
+
+  @override
+  Future<List<String>> listPageIds() async {
+    final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
+      strategyId,
+    );
+    if (strategy == null) {
+      return const [];
+    }
+    final pages = [...strategy.pages]
+      ..sortBySortIndex((item) => item.sortIndex);
+    return pages.map((page) => page.id).toList(growable: false);
+  }
+
+  @override
+  Future<StrategyEditorPageData> loadPage(String pageId) async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final current = box.get(strategyId);
+    if (current == null) {
+      throw StateError('Strategy $strategyId not found.');
+    }
+
+    final migrated = StrategyMigrator.migrateToCurrentVersion(current);
+    if (!identical(current, migrated)) {
+      await box.put(migrated.id, migrated);
+    }
+
+    final orderedPages = [...migrated.pages]
+      ..sortBySortIndex((item) => item.sortIndex);
+    final page = orderedPages.firstWhere(
+      (entry) => entry.id == pageId,
+      orElse: () => orderedPages.first,
+    );
+
+    return StrategyEditorPageData(
+      pageId: page.id,
+      pageName: page.name,
+      isAttack: page.isAttack,
+      map: migrated.mapData,
+      settings: page.settings,
+      agents: page.agentData,
+      abilities: page.abilityData,
+      drawings: page.drawingData,
+      texts: page.textData,
+      images: page.imageData,
+      utilities: page.utilityData,
+      lineUpGraph: page.lineUpGraph,
+    );
+  }
+
+  @override
+  Future<void> flushCurrentPage() async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strategy = box.get(strategyId);
+    if (strategy == null || strategy.pages.isEmpty) {
+      return;
+    }
+
+    final pageId = activePageId() ?? strategy.pages.first.id;
+    final index = strategy.pages.indexWhere((page) => page.id == pageId);
+    if (index < 0) {
+      return;
+    }
+
+    final updatedPage = strategy.pages[index].copyWith(
+      drawingData: ref.read(drawingProvider).elements,
+      agentData: ref.read(agentProvider),
+      abilityData: ref.read(abilityProvider),
+      textData: ref.read(textProvider.notifier).snapshotForPersistence(),
+      imageData: ref.read(placedImageProvider).images,
+      utilityData: ref.read(utilityProvider),
+      isAttack: ref.read(mapProvider).isAttack,
+      settings: ref.read(strategySettingsProvider),
+      lineUpGraph: ref.read(lineUpProvider).graph,
+    );
+
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final updatedPages = [...strategy.pages]..[index] = updatedPage;
+    final updated = strategy.copyWith(
+      pages: updatedPages,
+      mapData: ref.read(mapProvider).currentMap,
+      themeProfileId: strategyTheme.profileId,
+      clearThemeProfileId: strategyTheme.profileId == null,
+      themeOverridePalette: strategyTheme.overridePalette,
+      clearThemeOverridePalette: strategyTheme.overridePalette == null,
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
+  }
+}
+
+class CloudStrategyPageSource implements StrategyPageSource {
+  CloudStrategyPageSource(
+    this.ref, {
+    required this.strategyId,
+    required this.activePageId,
+  });
+
+  final Ref ref;
+  final String strategyId;
+  final String? Function() activePageId;
+  RemoteEditorSnapshot? _loadedRemoteSnapshot;
+
+  @override
+  RemoteEditorSnapshot? get loadedRemoteSnapshot => _loadedRemoteSnapshot;
+
+  RemoteEditorSnapshot get _snapshot {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null) {
+      throw StateError('Remote snapshot unavailable for $strategyId.');
+    }
+    return snapshot;
+  }
+
+  @override
+  Future<List<String>> listPageIds() async {
+    final pages = [..._snapshot.pages]
+      ..sortBySortIndex((item) => item.sortIndex);
+    return pages.map((page) => page.publicId).toList(growable: false);
+  }
+
+  @override
+  Future<StrategyEditorPageData> loadPage(String pageId) => _loadPage(pageId);
+
+  Future<StrategyEditorPageData> loadAuthoritativePage(
+    String pageId, {
+    required Set<EntitySyncKey> discardedEntities,
+  }) =>
+      _loadPage(pageId, excludedOverlays: discardedEntities);
+
+  Future<StrategyEditorPageData> _loadPage(
+    String pageId, {
+    Set<EntitySyncKey> excludedOverlays = const {},
+  }) async {
+    if (ref
+            .read(remoteEditorSnapshotProvider)
+            .valueOrNull
+            ?.activePage
+            ?.page
+            .publicId !=
+        pageId) {
+      await ref
+          .read(remoteEditorSnapshotProvider.notifier)
+          .setActivePage(pageId);
+    }
+    final snapshot = _snapshot;
+    _loadedRemoteSnapshot = snapshot;
+    final pages = [...snapshot.pages]
+      ..sortBySortIndex((item) => item.sortIndex);
+    final page = pages.firstWhere(
+      (entry) => entry.publicId == pageId,
+      orElse: () => pages.first,
+    );
+
+    ref.read(activePageLiveSyncProvider.notifier).dropSatisfiedOverlays(
+          page.publicId,
+        );
+    final projected =
+        ref.read(activePageLiveSyncProvider.notifier).projectPageState(
+              strategyPublicId: strategyId,
+              pageId: page.publicId,
+              excludedOverlays: excludedOverlays,
+            );
+    if (projected != null &&
+        (page.publicId == activePageId() ||
+            ref
+                .read(activePageLiveSyncProvider.notifier)
+                .hasOverlayForPage(page.publicId))) {
+      return _hydrateProjectedPage(snapshot, page, projected);
+    }
+
+    final pageSnapshot = snapshot.activePage;
+    if (pageSnapshot == null || pageSnapshot.page.publicId != page.publicId) {
+      throw StateError(
+          'Remote page snapshot unavailable for ${page.publicId}.');
+    }
+    final elements = pageSnapshot.elements;
+    final lineups = pageSnapshot.lineups;
+
+    final agents = <PlacedAgentNode>[];
+    final abilities = <PlacedAbility>[];
+    final drawings = <DrawingElement>[];
+    final texts = <PlacedText>[];
+    final images = <PlacedImage>[];
+    final utilities = <PlacedUtility>[];
+
+    for (final element in elements) {
+      if (element.deleted) {
+        continue;
+      }
+      final payload = element.decodedPayload();
+      try {
+        switch (element.elementType) {
+          case 'agent':
+            agents.add(PlacedAgentNode.fromJson(payload));
+            break;
+          case 'ability':
+            abilities.add(PlacedAbility.fromJson(payload));
+            break;
+          case 'drawing':
+            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
+            if (decoded.isNotEmpty) {
+              drawings.add(decoded.first);
+            }
+            break;
+          case 'text':
+            texts.add(PlacedText.fromJson(payload));
+            break;
+          case 'image':
+            final hydrated = PlacedImage.fromJson(payload);
+            final remoteAsset = snapshot.assetsById[hydrated.id];
+            images.add(hydrated);
+            if (remoteAsset != null) {
+              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
+                    strategyId: strategyId,
+                    strategyPublicId: strategyId,
+                    asset: remoteAsset,
+                  );
+            }
+            break;
+          case 'utility':
+            utilities.add(PlacedUtility.fromJson(payload));
+            break;
+        }
+      } catch (_) {
+        // Ignore malformed payloads during hydration.
+      }
+    }
+
+    final cloudLineups = lineUpGraphFromCloudRows([
+      for (final lineup in lineups)
+        if (!lineup.deleted) CloudLineupRow.remote(lineup),
+    ]);
+    ref
+        .read(activePageLiveSyncProvider.notifier)
+        .noteLineupGroups(page.publicId, cloudLineups.groupOf);
+
+    final mapValue = Maps.mapNames.entries.firstWhere(
+      (entry) => entry.value == snapshot.header.mapData,
+      orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
+    );
+
+    StrategySettings pageSettings = StrategySettings();
+    final settingsPayload = pageSnapshot.content.settings;
+    if (settingsPayload != null && settingsPayload.isNotEmpty) {
+      try {
+        pageSettings = StrategySettings.fromJson(settingsPayload);
+      } catch (_) {
+        pageSettings = StrategySettings();
+      }
+    }
+
+    return StrategyEditorPageData(
+      pageId: page.publicId,
+      pageName: page.name,
+      isAttack: page.isAttack,
+      map: mapValue.key,
+      settings: pageSettings,
+      agents: agents,
+      abilities: abilities,
+      drawings: drawings,
+      texts: texts,
+      images: images,
+      utilities: utilities,
+      lineUpGraph: cloudLineups.graph,
+    );
+  }
+
+  @override
+  Future<void> flushCurrentPage() async {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null ||
+        snapshot.header.publicId != strategyId ||
+        !StrategyCapabilities.fromCloudRole(snapshot.header.role)
+            .canEditPages) {
+      return;
+    }
+    final pageId = activePageId();
+    if (pageId == null) {
+      return;
+    }
+
+    await _syncStrategyMetadata();
+
+    final desiredOpsByEntityKey =
+        ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: strategyId,
+              pageId: pageId,
+            );
+    if (desiredOpsByEntityKey == null) {
+      return;
+    }
+    await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+          pageId: pageId,
+          desiredOpsByEntityKey: desiredOpsByEntityKey,
+          flushImmediately: false,
+        );
+  }
+
+  Future<void> _syncStrategyMetadata() async {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null) {
+      return;
+    }
+
+    final currentMapData = Maps.mapNames[ref.read(mapProvider).currentMap];
+    if (currentMapData == null) {
+      return;
+    }
+
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final desiredThemeOverride = strategyTheme.overridePalette?.toJson();
+    final header = snapshot.header;
+
+    final mapMatches = header.mapData == currentMapData;
+    final themeProfileMatches =
+        header.themeProfileId == strategyTheme.profileId;
+    final themeOverrideMatches =
+        cloudJsonEquivalent(header.themeOverridePalette, desiredThemeOverride);
+
+    if (mapMatches && themeProfileMatches && themeOverrideMatches) {
+      await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+            entityKey: const EntitySyncKey.strategy(),
+            desiredOp: null,
+            flushImmediately: false,
+          );
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'mapData': currentMapData,
+      if (strategyTheme.profileId != null)
+        'themeProfileId': strategyTheme.profileId
+      else
+        'clearThemeProfileId': true,
+      if (desiredThemeOverride != null)
+        'themeOverridePalette': desiredThemeOverride
+      else
+        'clearThemeOverridePalette': true,
+    };
+
+    await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+          entityKey: const EntitySyncKey.strategy(),
+          desiredOp: StrategyPatchOp(
+            opId: const Uuid().v4(),
+            payload: payload,
+            expectedStrategyRevision: header.revision,
+          ),
+          flushImmediately: false,
+        );
+  }
+
+  StrategyEditorPageData _hydrateProjectedPage(
+    RemoteEditorSnapshot snapshot,
+    RemotePage page,
+    ActivePageProjectedState projected,
+  ) {
+    final agents = <PlacedAgentNode>[];
+    final abilities = <PlacedAbility>[];
+    final drawings = <DrawingElement>[];
+    final texts = <PlacedText>[];
+    final images = <PlacedImage>[];
+    final utilities = <PlacedUtility>[];
+
+    for (final element in projected.elements) {
+      final payload = cloudPayloadData(element.payload);
+      try {
+        switch (element.elementType) {
+          case 'agent':
+            agents.add(PlacedAgentNode.fromJson(payload));
+            break;
+          case 'ability':
+            abilities.add(PlacedAbility.fromJson(payload));
+            break;
+          case 'drawing':
+            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
+            if (decoded.isNotEmpty) {
+              drawings.add(decoded.first);
+            }
+            break;
+          case 'text':
+            texts.add(PlacedText.fromJson(payload));
+            break;
+          case 'image':
+            final hydrated = PlacedImage.fromJson(payload);
+            final remoteAsset = snapshot.assetsById[hydrated.id];
+            images.add(hydrated);
+            if (remoteAsset != null) {
+              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
+                    strategyId: strategyId,
+                    strategyPublicId: strategyId,
+                    asset: remoteAsset,
+                  );
+            }
+            break;
+          case 'utility':
+            utilities.add(PlacedUtility.fromJson(payload));
+            break;
+        }
+      } catch (_) {
+        // Ignore malformed payloads during hydration.
+      }
+    }
+
+    final cloudLineups = lineUpGraphFromCloudRows([
+      for (final lineup in projected.lineups)
+        CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
+    ]);
+    ref
+        .read(activePageLiveSyncProvider.notifier)
+        .noteLineupGroups(page.publicId, cloudLineups.groupOf);
+
+    final mapValue = Maps.mapNames.entries.firstWhere(
+      (entry) => entry.value == snapshot.header.mapData,
+      orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
+    );
+
+    final settings = _parsePageSettings(projected.settingsPayload);
+
+    return StrategyEditorPageData(
+      pageId: projected.pageId,
+      pageName: page.name,
+      isAttack: projected.isAttack,
+      map: mapValue.key,
+      settings: settings,
+      agents: agents,
+      abilities: abilities,
+      drawings: drawings,
+      texts: texts,
+      images: images,
+      utilities: utilities,
+      lineUpGraph: cloudLineups.graph,
+    );
+  }
+
+  StrategySettings _parsePageSettings(Map<String, dynamic>? settingsPayload) {
+    if (settingsPayload == null) {
+      return StrategySettings();
+    }
+    try {
+      return StrategySettings.fromJson(settingsPayload);
+    } catch (_) {
+      return StrategySettings();
+    }
+  }
+}

@@ -735,6 +735,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   }
 
   AppPreferences _readFromHive() {
+    if (!Hive.isBoxOpen(HiveBoxNames.appPreferencesBox)) {
+      return AppPreferences(
+        defaultThemeProfileIdForNewStrategies:
+            MapThemeProfilesProvider.immutableDefaultProfileId,
+      );
+    }
     return Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).get(
           MapThemeProfilesProvider.appPreferencesSingletonKey,
         ) ??

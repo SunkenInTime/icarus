@@ -1,0 +1,17 @@
+# Flutter does not hash its output filenames, so these files keep the same URL
+# across deploys. no-cache makes browsers revalidate them on every load, so
+# testers get a new deploy on refresh. Everything else keeps Cloudflare's
+# default caching. `/` is listed because the app loads from the root, not
+# from /index.html.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/flutter_bootstrap.js
+  Cache-Control: no-cache
+/flutter_service_worker.js
+  Cache-Control: no-cache
+/main.dart.js
+  Cache-Control: no-cache
+/manifest.json
+  Cache-Control: no-cache

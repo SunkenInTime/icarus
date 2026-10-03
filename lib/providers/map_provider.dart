@@ -51,7 +51,9 @@ class MapProvider extends Notifier<MapState> {
     );
   }
 
-  void updateMap(MapValue map) => state = state.copyWith(currentMap: map);
+  void updateMap(MapValue map) {
+    state = state.copyWith(currentMap: map);
+  }
 
   void fromHive(MapValue map, bool isAttack) {
     state = state.copyWith(currentMap: map, isAttack: isAttack);
@@ -95,9 +97,8 @@ class MapProvider extends Notifier<MapState> {
   static MapValue fromJson(String json) {
     final mapName = jsonDecode(json);
 
-    final mapValue = Maps.mapNames.entries
-        .firstWhere((entry) => entry.value == mapName)
-        .key;
+    final mapValue =
+        Maps.mapNames.entries.firstWhere((entry) => entry.value == mapName).key;
 
     return mapValue;
   }

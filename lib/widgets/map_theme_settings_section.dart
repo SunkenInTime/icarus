@@ -43,7 +43,7 @@ class _ThemeProfilesList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profilesState = ref.watch(mapThemeProfilesProvider);
     final strategyTheme = ref.watch(strategyThemeProvider);
-    final hasActiveStrategy = ref.watch(strategyProvider).stratName != null;
+    final hasActiveStrategy = ref.watch(strategyProvider).strategyName != null;
 
     final overridePalette =
         hasActiveStrategy ? strategyTheme.overridePalette : null;

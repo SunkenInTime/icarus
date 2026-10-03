@@ -79,12 +79,14 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
   final _tapGroup = Object();
   final _portalController = OverlayPortalController();
   bool _editing = false;
+  bool _syncingController = false;
 
   @override
   void initState() {
     super.initState();
     _draftNotifier = ref.read(textDraftProvider.notifier);
-    _controller = MarkupTextEditingController(text: _effectiveText());
+    _controller = MarkupTextEditingController(text: _effectiveText())
+      ..addListener(_onControllerChanged);
     _focusNode = FocusNode()..addListener(_onFocusChange);
     _draftSubscription = ref.listenManual<Map<String, String>>(
       textDraftProvider,
@@ -114,7 +116,9 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     _focusNode
       ..removeListener(_onFocusChange)
       ..dispose();
-    _controller.dispose();
+    _controller
+      ..removeListener(_onControllerChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -130,6 +134,15 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     _portalController.hide();
   }
 
+  /// Every text change reaches the draft, whether it came from typing, the
+  /// format bar, or accessibility, so sync and save never miss an edit.
+  void _onControllerChanged() {
+    if (_syncingController) return;
+    final nextText = _controller.text;
+    if (nextText == _effectiveText()) return;
+    _draftNotifier.setDraft(widget.id, nextText);
+  }
+
   void _syncControllerWithExternalState() {
     if (!_controller.value.isComposingRangeValid) {
       _controller.clearComposing();
@@ -140,12 +153,17 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     final baseOffset = selection.baseOffset.clamp(0, nextText.length).toInt();
     final extentOffset =
         selection.extentOffset.clamp(0, nextText.length).toInt();
-    _controller.value = TextEditingValue(
-      text: nextText,
-      selection: selection.isValid
-          ? TextSelection(baseOffset: baseOffset, extentOffset: extentOffset)
-          : TextSelection.collapsed(offset: nextText.length),
-    );
+    _syncingController = true;
+    try {
+      _controller.value = TextEditingValue(
+        text: nextText,
+        selection: selection.isValid
+            ? TextSelection(baseOffset: baseOffset, extentOffset: extentOffset)
+            : TextSelection.collapsed(offset: nextText.length),
+      );
+    } finally {
+      _syncingController = false;
+    }
   }
 
   TextStyle _bodyStyle(BuildContext context) {
@@ -158,7 +176,6 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
 
   void _applyValue(TextEditingValue value) {
     _controller.value = value;
-    _draftNotifier.setDraft(widget.id, value.text);
   }
 
   void _enterEditing() {
@@ -196,19 +213,22 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
                     'Write here...',
                     style: bodyStyle.copyWith(color: Colors.grey),
                   ),
-                TextField(
-                  focusNode: _focusNode,
-                  controller: _controller,
-                  inputFormatters: [ListContinuationFormatter()],
-                  groupId: _tapGroup,
-                  style: bodyStyle,
-                  decoration: null,
-                  maxLines: null,
-                  minLines: null,
-                  expands: false,
-                  onChanged: (value) =>
-                      _draftNotifier.setDraft(widget.id, value),
-                  onTapOutside: (_) => _focusNode.unfocus(),
+                MergeSemantics(
+                  child: Semantics(
+                    label: 'Placed text',
+                    child: TextField(
+                      focusNode: _focusNode,
+                      controller: _controller,
+                      inputFormatters: [ListContinuationFormatter()],
+                      groupId: _tapGroup,
+                      style: bodyStyle,
+                      decoration: null,
+                      maxLines: null,
+                      minLines: null,
+                      expands: false,
+                      onTapOutside: (_) => _focusNode.unfocus(),
+                    ),
+                  ),
                 ),
               ],
             ),

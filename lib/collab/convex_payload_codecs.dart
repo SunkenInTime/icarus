@@ -1,0 +1,170 @@
+import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
+
+export 'package:icarus/collab/collab_models.dart' show CloudPayload;
+
+final class ConvexPayload {
+  const ConvexPayload(this.tag);
+
+  final String tag;
+}
+
+abstract interface class ConvexPayloadCodec<T> {
+  const ConvexPayloadCodec();
+
+  ConvexValue encode(T value);
+
+  T decode(ConvexValue value);
+}
+
+CloudPayload _decodePayload(ConvexValue value, String expectedTag) {
+  if (value is! ConvexObject) {
+    throw FormatException('Expected $expectedTag payload object');
+  }
+  final decoded = value.toDart();
+  if (decoded['kind'] != expectedTag) {
+    throw FormatException(
+      'Expected payload kind $expectedTag, received ${decoded['kind']}',
+    );
+  }
+  if (decoded['payloadVersion'] is! num || decoded['data'] is! Map) {
+    throw FormatException('Invalid $expectedTag payload envelope');
+  }
+  return Map<String, dynamic>.from(
+    canonicalCloudJsonValue(decoded) as Map,
+  );
+}
+
+ConvexValue _encodePayload(CloudPayload value, String expectedTag) {
+  if (value['kind'] != expectedTag) {
+    throw FormatException(
+      'Expected payload kind $expectedTag, received ${value['kind']}',
+    );
+  }
+  return ConvexValue.fromDart(canonicalCloudJsonValue(value));
+}
+
+@ConvexPayload('agent')
+final class AgentConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const AgentConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'agent');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'agent');
+}
+
+@ConvexPayload('ability')
+final class AbilityConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const AbilityConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'ability');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'ability');
+}
+
+@ConvexPayload('drawing')
+final class DrawingConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const DrawingConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'drawing');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'drawing');
+}
+
+@ConvexPayload('text')
+final class TextConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const TextConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'text');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'text');
+}
+
+@ConvexPayload('image')
+final class ImageConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const ImageConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'image');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'image');
+}
+
+@ConvexPayload('utility')
+final class UtilityConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const UtilityConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'utility');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'utility');
+}
+
+// One lineup group: the lineups on a page joined through shared spots.
+@ConvexPayload('lineups')
+final class LineupsConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const LineupsConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'lineups');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineups');
+}
+
+// The origin, landing and link rows of protocol 4. The server still takes
+// them as lineup op arguments, so an old client reaches its protocol gate
+// instead of failing argument validation, and refuses them in the handler
+// (see lineupOpPayloadValidator in convex/lib/payloadValidators.ts). This
+// build never sends them: an outbox record holding one waits in attention
+// (see isRetiredCloudLineupOp).
+
+@ConvexPayload('lineupOrigin')
+final class LineupOriginConvexCodec
+    implements ConvexPayloadCodec<CloudPayload> {
+  const LineupOriginConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) =>
+      _decodePayload(value, 'lineupOrigin');
+
+  @override
+  ConvexValue encode(CloudPayload value) =>
+      _encodePayload(value, 'lineupOrigin');
+}
+
+@ConvexPayload('lineupLanding')
+final class LineupLandingConvexCodec
+    implements ConvexPayloadCodec<CloudPayload> {
+  const LineupLandingConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) =>
+      _decodePayload(value, 'lineupLanding');
+
+  @override
+  ConvexValue encode(CloudPayload value) =>
+      _encodePayload(value, 'lineupLanding');
+}
+
+@ConvexPayload('lineupLink')
+final class LineupLinkConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const LineupLinkConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'lineupLink');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineupLink');
+}

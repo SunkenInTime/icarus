@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +10,7 @@ import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -17,12 +18,11 @@ import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
-import 'package:icarus/services/video_export/ffmpeg_png_sequence_writer.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
+import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
-import 'package:path/path.dart' as p;
 
 @visibleForTesting
 Future<T> runPreservingScreenshotMode<T>(
@@ -47,6 +47,7 @@ class VideoExporter {
     required this.mapState,
     required this.backgroundDotOpacity,
     required this.geometry,
+    this.imageSources = const {},
     this.navigation,
     this.requireNavigation = false,
   });
@@ -56,6 +57,10 @@ class VideoExporter {
   final MapState mapState;
   final double backgroundDotOpacity;
   final VisionGeometryMap? geometry;
+
+  /// What each image on the exported pages paints, by image id; see
+  /// [captureImageSourcesProvider].
+  final Map<String, StrategyImageSource> imageSources;
   final NavigationGeometryMap? navigation;
   final bool requireNavigation;
 
@@ -82,22 +87,20 @@ class VideoExporter {
   static const double _renderWeight = 0.85;
 
   bool _cancelled = false;
-  final FfmpegVideoEncoder _encoder = FfmpegVideoEncoder();
-  FfmpegPngSequenceWriter? _frameWriter;
+  VideoFrameSink? _sink;
 
   void cancel() {
     _cancelled = true;
-    // export()'s cleanup awaits the writer's termination; here we only need
-    // to interrupt the processes.
-    unawaited(_frameWriter?.cancel());
-    _encoder.cancel();
+    _sink?.cancel();
   }
 
-  Future<void> export({
+  /// Renders [pages] into [sink]. Returns the finished video when [sink]
+  /// keeps it in memory (the browser), or null once it is written to its
+  /// file (desktop).
+  Future<Uint8List?> export({
     required List<StrategyPage> pages,
     required Duration stepDuration,
-    required String ffmpegBinary,
-    required String outputPath,
+    required VideoFrameSink sink,
     required VideoExportQuality quality,
     void Function(double fraction, String label)? onProgress,
   }) async {
@@ -121,23 +124,21 @@ class VideoExporter {
       }
     }
 
-    await runPreservingScreenshotMode(
+    return runPreservingScreenshotMode(
       () => _export(
         pages: pages,
         stepDuration: stepDuration,
-        ffmpegBinary: ffmpegBinary,
-        outputPath: outputPath,
+        sink: sink,
         quality: quality,
         onProgress: onProgress,
       ),
     );
   }
 
-  Future<void> _export({
+  Future<Uint8List?> _export({
     required List<StrategyPage> pages,
     required Duration stepDuration,
-    required String ffmpegBinary,
-    required String outputPath,
+    required VideoFrameSink sink,
     required VideoExportQuality quality,
     void Function(double fraction, String label)? onProgress,
   }) async {
@@ -152,15 +153,12 @@ class VideoExporter {
       fps: fps,
     );
 
-    final tempDir = await Directory.systemTemp.createTemp(
-      'icarus_video_export_',
-    );
     ProviderContainer? captureContainer;
     CaptureGeometryLease? captureGeometry;
     PersistentOffscreenRenderer? renderer;
-    FfmpegPngSequenceWriter? frameWriter;
+    _sink = sink;
     try {
-      final offscreenContainer = ProviderContainer();
+      final offscreenContainer = createCaptureContainer(images: imageSources);
       captureContainer = offscreenContainer;
       onProgress?.call(0, 'Preparing map');
       captureGeometry = await prepareCaptureGeometry(
@@ -175,20 +173,13 @@ class VideoExporter {
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: offscreenContainer),
       );
-      frameWriter = FfmpegPngSequenceWriter();
-      _frameWriter = frameWriter;
-      await frameWriter.start(
-        binary: ffmpegBinary,
-        workingDirectory: tempDir.path,
+      await sink.start(
         width: CoordinateSystem.screenShotSize.width.round(),
         height: CoordinateSystem.screenShotSize.height.round(),
-        fps: fps,
         totalFrames: totalFrames,
+        totalSeconds: totalSeconds,
       );
-      final concatLines = <String>['ffconcat version 1.0'];
-      var frameIndex = 0;
       var renderedFrames = 0;
-      String? lastFrameFile;
 
       Future<void> renderFrame(
         ScreenshotView view,
@@ -197,13 +188,7 @@ class VideoExporter {
         if (_cancelled) throw VideoExportCancelled();
         view.hydrateProviders(offscreenContainer);
         final bytes = await renderer!.captureRawRgba(view);
-        final fileName = 'frame_${frameIndex.toString().padLeft(5, '0')}.png';
-        await frameWriter!.writeFrame(bytes);
-        frameIndex++;
-        concatLines
-          ..add("file '$fileName'")
-          ..add('duration ${durationSeconds.toStringAsFixed(6)}');
-        lastFrameFile = fileName;
+        await sink.addFrame(bytes, durationSeconds);
         renderedFrames++;
         onProgress?.call(
           renderedFrames / totalFrames * _renderWeight,
@@ -266,47 +251,22 @@ class VideoExporter {
         }
       }
 
-      await frameWriter.finish();
-      _frameWriter = null;
-
-      // The concat demuxer ignores the duration of the final entry unless the
-      // last file is repeated.
-      if (lastFrameFile != null) {
-        concatLines.add("file '$lastFrameFile'");
-      }
-      final concatFile = File(p.join(tempDir.path, 'frames.ffconcat'));
-      await concatFile.writeAsString(concatLines.join('\n'));
-
       if (_cancelled) throw VideoExportCancelled();
       onProgress?.call(_renderWeight, 'Encoding video');
-      await _encoder.encode(
-        binary: ffmpegBinary,
-        workingDirectory: tempDir.path,
-        concatListFileName: 'frames.ffconcat',
-        outputPath: outputPath,
-        totalSeconds: totalSeconds,
-        quality: quality,
+      return await sink.finish(
         onProgress: (fraction) => onProgress?.call(
           _renderWeight + fraction * (1 - _renderWeight),
           'Encoding video',
         ),
       );
     } finally {
-      // Wait for ffmpeg to exit before deleting the directory it writes into;
-      // on Windows the delete races a still-exiting process otherwise.
-      await frameWriter?.cancel();
-      _frameWriter = null;
+      _sink = null;
       try {
+        await sink.close();
         await renderer?.dispose();
       } finally {
         captureGeometry?.close();
         captureContainer?.dispose();
-        try {
-          await tempDir.delete(recursive: true);
-        } on Object {
-          // Leaving orphaned temp frames behind is preferable to masking the
-          // original export result.
-        }
       }
     }
   }
