@@ -551,10 +551,16 @@ open, such as railings. `test/svg_truth_bands_test.dart` pins the Lotus wall
 and the Bind container.
 
 Dara ruled on the 119 recorded-decision pieces from in-game renders on
-2026-10-03. 51 became solid at the measured heights: the Abyss atrium wall
-sections the 2026-09-14 review had left open beside the eleven it confirmed
-(both get 3.96 to 8.0 m), the two Fracture corridor openings and Haven
-defense's `p3-stroke-10-gameplay-opening-0`. The Haven, Icebox and Pearl
+2026-10-03. 51 became solid at the measured heights. Most are the Abyss
+atrium wall's `user-section` strips. They were never a decision: the
+2026-09-12 screenshot pass (`scripts/review_reported_sightlines.py`)
+measured `p7-stroke-0` in half-unit strips against four source objects that
+did not include the atrium wall itself (object 4912), so every strip only it
+covered measured empty and stayed open, leaving centimetre holes along a
+solid wall. The 2026-09-14 pass added 4912 for eleven strips and missed the
+rest. All now block at 3.96 to 8.0 m. The other closures are the two
+Fracture corridor openings and Haven defense's
+`p3-stroke-10-gameplay-opening-0`. The Haven, Icebox and Pearl
 door and corridor openings stay open. The rulings are in the archive as
 `scripts/data/truth-bands-dara-review-2026-10-03.json`.
 
