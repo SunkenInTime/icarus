@@ -9,6 +9,7 @@ import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
@@ -22,6 +23,7 @@ import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
+import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderNavigator extends ConsumerStatefulWidget {
@@ -254,25 +256,27 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 onExportLibrary: handleExportLibrary,
               ),
               Expanded(
-                child: ShadContextMenuRegion(
-                  controller: _backgroundMenuController,
-                  items: [
-                    ShadContextMenuItem(
-                      leading: const Icon(LucideIcons.folderPlus),
-                      onPressed: showCreateFolderDialog,
-                      child: const Text('Create Folder'),
-                    ),
-                    ShadContextMenuItem(
-                      leading: const Icon(LucideIcons.filePlus),
-                      onPressed: showCreateDialog,
-                      child: const Text('Create Strategy'),
-                    ),
-                  ],
-                  child: FolderContent(
-                    folder: currentFolder,
-                    onCreateStrategy: showCreateDialog,
-                  ),
-                ),
+                child: ref.watch(libraryTabProvider) == LibraryTab.replays
+                    ? const ReplayLibraryContent()
+                    : ShadContextMenuRegion(
+                        controller: _backgroundMenuController,
+                        items: [
+                          ShadContextMenuItem(
+                            leading: const Icon(LucideIcons.folderPlus),
+                            onPressed: showCreateFolderDialog,
+                            child: const Text('Create Folder'),
+                          ),
+                          ShadContextMenuItem(
+                            leading: const Icon(LucideIcons.filePlus),
+                            onPressed: showCreateDialog,
+                            child: const Text('Create Strategy'),
+                          ),
+                        ],
+                        child: FolderContent(
+                          folder: currentFolder,
+                          onCreateStrategy: showCreateDialog,
+                        ),
+                      ),
               ),
             ],
           ),

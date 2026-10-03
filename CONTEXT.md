@@ -49,3 +49,19 @@ into lineup groups.
 Icarus's zip-based strategy interchange format for import/export of whole
 strategies. Unrelated to video export.
 _Avoid_: archive (ambiguous with library backups)
+
+**Replay**:
+A Valorant match recording (a `.vrf` file) that Valorant downloads from a
+player's career page. Icarus plays it back on the map. Replays are files, not
+part of the library; decoding one only fills a rebuildable cache.
+_Avoid_: demo, VOD, recording
+
+**Perspective**:
+The team a replay is watched from. Its players are allies, the other team's
+are enemies, and its side each round decides which way up the map is drawn.
+_Avoid_: point of view, team view
+
+**Capture**:
+Saving the replay's current moment as a page of a strategy: players, their
+facing, and the utility on the map at that instant.
+_Avoid_: snapshot, export

@@ -61,6 +61,20 @@ class SplitSvgMapTransform {
       _transform.sideWorldFromSource(point, isAttack: isAttack);
 }
 
+/// Marks view cones below as drawn by someone else. The replay viewer
+/// paints every cone in one layer from cuts made off the UI thread; the
+/// agents it places would otherwise each cut and paint their own again.
+class ViewConesDrawnElsewhere extends InheritedWidget {
+  const ViewConesDrawnElsewhere({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<ViewConesDrawnElsewhere>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(ViewConesDrawnElsewhere oldWidget) => false;
+}
+
 /// A mounted child owns one cache key. Preview cones with no persisted ID still
 /// remain independent, and unmounting removes only that observer's cached cone.
 class SvgHeightViewCone extends StatefulWidget {
@@ -112,6 +126,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
 
   @override
   Widget build(BuildContext context) {
+    if (ViewConesDrawnElsewhere.of(context)) return const SizedBox.expand();
     final coordinates = CoordinateSystem.instance;
     final model = widget.runtime.model(widget.isAttack);
     final mapTransform = SvgHeightMapTransform.forMap(widget.runtime.map);
@@ -193,13 +208,15 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
     }
     _paintInputs = paintInputs;
     _painter = SvgHeightViewConePainter.fromPaths(
-      visibility: result.cone.visibilityPath?.transform(transform) ??
-          result.cone.outlinePath(transform),
+      visibility: result.cone.outlinePath(transform),
       receiver: _rotatedReceiver!,
       receiverOffset: Offset(transform[12], transform[13]),
       apex: apex,
       radius: coordinates.worldHeightToScreen(widget.range),
       opacity: widget.opacity,
+      floors: result.cone.floors.isEmpty
+          ? null
+          : (result.cone, transform, widget.range / mapTransform.scale),
     );
     return RepaintBoundary(child: CustomPaint(size: size, painter: _painter));
   }
@@ -227,7 +244,8 @@ class SvgHeightViewConePainter extends CustomPainter {
     this.opacity = 1,
   })  : receiverOffset = Offset.zero,
         _visibility = null,
-        _receiver = null;
+        _receiver = null,
+        floors = null;
 
   const SvgHeightViewConePainter.fromPaths(
       {required Path visibility,
@@ -235,7 +253,8 @@ class SvgHeightViewConePainter extends CustomPainter {
       required this.apex,
       required this.radius,
       this.receiverOffset = Offset.zero,
-      this.opacity = 1})
+      this.opacity = 1,
+      this.floors})
       : _visibility = visibility,
         _receiver = receiver,
         visibilityPolygon = const [],
@@ -254,6 +273,11 @@ class SvgHeightViewConePainter extends CustomPainter {
   /// Translation applied to [_receiver] at paint time; see the widget.
   final Offset receiverOffset;
 
+  /// A cone that overlooks measured floors, with its source-to-canvas
+  /// transform and range in source units. Its lit area is composed in source
+  /// coordinates by [paintSvgConeArea] instead of clipped to [_visibility].
+  final (SvgVisibilityCone, Float64List, double)? floors;
+
   @override
   void paint(Canvas canvas, Size size) {
     if ((_visibility == null && visibilityPolygon.length < 3) ||
@@ -263,23 +287,44 @@ class SvgHeightViewConePainter extends CustomPainter {
     final receiver =
         _receiver ?? _path(receiverRings, evenOdd: receiverEvenOdd);
     canvas.save();
-    canvas.clipPath(visibility);
     // Receiver fill is the last geometric clip. No cone pixels can appear in
     // the SVG's blank exterior or in authored holes in the playable fill.
     canvas.translate(receiverOffset.dx, receiverOffset.dy);
     canvas.clipPath(receiver);
     canvas.translate(-receiverOffset.dx, -receiverOffset.dy);
-    final paint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color.fromARGB(255, 147, 147, 147).withValues(alpha: .5 * opacity),
-          Colors.transparent,
-        ],
-        stops: const [0, 1],
-      ).createShader(Rect.fromCircle(center: apex, radius: radius));
-    canvas.drawCircle(apex, radius, paint);
+    final floors = this.floors;
+    if (floors == null) {
+      canvas.clipPath(visibility);
+      canvas.drawCircle(apex, radius, _fill(apex, radius));
+    } else {
+      final (cone, sourceToCanvas, range) = floors;
+      final origin = cone.sector!.first;
+      canvas.transform(sourceToCanvas);
+      paintSvgConeArea(canvas, cone, cone.outlinePath(_identity),
+          _fill(origin, range), Rect.fromCircle(center: origin, radius: range));
+    }
     canvas.restore();
   }
+
+  /// [rings] as a path, the way cones are clipped by them.
+  static Path ringsPath(List<List<Offset>> rings, {required bool evenOdd}) =>
+      _path(rings, evenOdd: evenOdd);
+
+  static final _identity = Float64List(16)
+    ..[0] = 1
+    ..[5] = 1
+    ..[10] = 1
+    ..[15] = 1;
+
+  Paint _fill(Offset center, double radius) => Paint()
+    ..shader = RadialGradient(
+      colors: [
+        const Color.fromARGB(255, 147, 147, 147)
+            .withValues(alpha: .5 * opacity),
+        Colors.transparent,
+      ],
+      stops: const [0, 1],
+    ).createShader(Rect.fromCircle(center: center, radius: radius));
 
   static Path _path(List<List<Offset>> rings, {required bool evenOdd}) {
     final path = Path()
@@ -305,5 +350,6 @@ class SvgHeightViewConePainter extends CustomPainter {
       oldDelegate.apex != apex ||
       oldDelegate.radius != radius ||
       oldDelegate.receiverOffset != receiverOffset ||
-      oldDelegate.opacity != opacity;
+      oldDelegate.opacity != opacity ||
+      oldDelegate.floors != floors;
 }

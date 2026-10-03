@@ -55,6 +55,12 @@ ISH_API int32_t ish_query(void *handle, double originX, double originY,
                           const uint8_t *activeWalls, uint32_t activeWallCount,
                           ISHResult *outResult);
 
+// sides holds one byte per edge, in record order: the side of the edge (a to
+// b) its own wall lies on, 0 right, 1 left, 2 unknown. Without it no vertex is
+// treated as a seam between touching pieces, nor at an edge of unknown side.
+ISH_API int32_t ish_set_interior_sides(void *handle, const uint8_t *sides,
+                                       uint32_t edgeCount);
+
 ISH_API int32_t ish_last_error(void *handle, char *error,
                                uint32_t errorCapacity);
 ISH_API int32_t ish_close(void *handle);

@@ -1,0 +1,8 @@
+# The toolchain the replay decoder is built and tested with, everywhere:
+# rustup reads this file from native/replay, which every cargo call runs in
+# (CI, windows/CMakeLists.txt, build_macos.sh). Bump it together with the
+# `dtolnay/rust-toolchain@<version>` steps in .github/workflows.
+[toolchain]
+channel = "1.96.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

@@ -1545,7 +1545,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePageAnimated(newPage.id);
   }
 
-  Future<void> loadFromHive(String id) async {
+  /// Opens strategy [id] on its first page, or on [pageId] when given.
+  Future<void> loadFromHive(String id, {String? pageId}) async {
     cancelPendingSave();
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
@@ -1577,7 +1578,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     // We clear previous data to avoid artifacts when loading a new strategy
     final migratedStrategy = migrateToCurrentVersion(newStrat);
-    final page = migratedStrategy.pages.first;
+    final page = migratedStrategy.pages.firstWhere(
+      (page) => page.id == pageId,
+      orElse: () => migratedStrategy.pages.first,
+    );
 
     if (migratedStrategy != newStrat) {
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)

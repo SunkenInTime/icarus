@@ -35,6 +35,7 @@ class StrategyView extends ConsumerStatefulWidget {
     this.initialStrategyName,
     this.initialMapValue,
     this.initialIsAttack = true,
+    this.initialPageId,
   });
 
   final String? initialStrategyId;
@@ -42,11 +43,15 @@ class StrategyView extends ConsumerStatefulWidget {
   final MapValue? initialMapValue;
   final bool initialIsAttack;
 
+  /// The page to open on; the first when null.
+  final String? initialPageId;
+
   static PageRoute<void> route({
     String? initialStrategyId,
     String? initialStrategyName,
     MapValue? initialMapValue,
     bool initialIsAttack = true,
+    String? initialPageId,
   }) {
     return PageRouteBuilder<void>(
       settings: const RouteSettings(name: Routes.strategyView),
@@ -57,6 +62,7 @@ class StrategyView extends ConsumerStatefulWidget {
         initialStrategyName: initialStrategyName,
         initialMapValue: initialMapValue,
         initialIsAttack: initialIsAttack,
+        initialPageId: initialPageId,
       ),
       transitionsBuilder: (context, animation, _, child) {
         return FadeTransition(
@@ -121,7 +127,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     }
 
     try {
-      await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
+      await ref
+          .read(strategyProvider.notifier)
+          .loadFromHive(strategyId, pageId: widget.initialPageId);
       final loadedStrategy = ref.read(strategyProvider);
       if (loadedStrategy.id != strategyId || loadedStrategy.stratName == null) {
         throw StateError('Strategy "$strategyId" was not found.');
