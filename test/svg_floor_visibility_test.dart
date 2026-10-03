@@ -59,4 +59,45 @@ void main() {
     expect(visible(1, 4.75, walls: [overhead]).contains(const Offset(20, 0)),
         isTrue);
   });
+
+  test('a bow tie still shades the floor behind its crossing', () {
+    // The diagonals cross, so neither keeps one side along its length: a
+    // face culled as facing away would leave the lower lobe see-through.
+    final bowTie = SvgFloorOccluder(
+        [
+          const [Offset(0, 0), Offset(2.5, 2.5), Offset(0, 4), Offset(2, 0)]
+        ],
+        false,
+        [(0, 3)]);
+    final result = visibleSvgFloor(
+        floor: Path()..addRect(const Rect.fromLTRB(-2, 0, 0, 1)),
+        sector: Path()..addRect(const Rect.fromLTRB(-30, -30, 30, 30)),
+        origin: const Offset(3, 0.5),
+        observerEye: 2,
+        targetEye: 1,
+        walls: [bowTie]);
+    expect(result.contains(const Offset(-1, 0.5)), isFalse);
+  });
+
+  test('edge sides are known only where nothing crowds the edge', () {
+    final square = rectangle(const Rect.fromLTRB(0, 0, 1, 1));
+    expect(svgEdgeSides([square], false), [-1, -1, -1, -1]);
+    expect(svgEdgeSides([square.reversed.toList()], false), [1, 1, 1, 1]);
+    // A hole is inside on the other side of its edges.
+    expect(
+        svgEdgeSides(
+            [rectangle(const Rect.fromLTRB(-1, -1, 2, 2)), square], true),
+        [-1, -1, -1, -1, 1, 1, 1, 1]);
+    // The crossing diagonals of a bow tie are unknown, its others are not.
+    expect(
+        svgEdgeSides([
+          const [Offset(0, 0), Offset(2.5, 2.5), Offset(0, 4), Offset(2, 0)]
+        ], false),
+        [0, isNot(0), 0, isNot(0)]);
+    // Squares sharing an edge: along it the side is in on both.
+    expect(
+        svgEdgeSides(
+            [square, rectangle(const Rect.fromLTRB(1, 0, 2, 1))], false),
+        [-1, 0, -1, -1, -1, -1, -1, 0]);
+  });
 }
