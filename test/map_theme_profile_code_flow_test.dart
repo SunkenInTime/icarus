@@ -8,6 +8,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/map_theme_profile_code.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
@@ -19,6 +20,7 @@ void main() {
 
   late Directory tempDir;
   late String clipboardText;
+  late bool clipboardFails;
   late ProviderContainer container;
 
   final nightMarket = MapThemePalette(
@@ -45,10 +47,14 @@ void main() {
     await MapThemeProfilesProvider.bootstrap();
 
     clipboardText = '';
+    clipboardFails = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
       switch (call.method) {
         case 'Clipboard.getData':
+          if (clipboardFails) {
+            throw PlatformException(code: 'denied');
+          }
           return <String, dynamic>{'text': clipboardText};
         case 'Clipboard.setData':
           final arguments = call.arguments as Map<dynamic, dynamic>;
@@ -73,17 +79,29 @@ void main() {
     if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
 
+  // Flip to false to take the section down while the app (and its toasts)
+  // stay up, the way closing Settings does.
+  final showSection = ValueNotifier(true);
+
   Future<void> pumpSection(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    showSection.value = true;
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const ToastificationWrapper(
+        child: ToastificationWrapper(
           child: ShadApp(
             home: Scaffold(
-              body: SingleChildScrollView(child: MapThemeSettingsSection()),
+              body: ValueListenableBuilder(
+                valueListenable: showSection,
+                builder: (context, show, _) => show
+                    ? const SingleChildScrollView(
+                        child: MapThemeSettingsSection(),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
@@ -119,14 +137,14 @@ void main() {
     expect(copied, isA<MapThemeProfileCodeValid>());
     copied as MapThemeProfileCodeValid;
     expect(copied.name, 'Night Market');
-    expect(copied.palette, nightMarket);
+    expect(MapThemePalette.fromJson(copied.colors), nightMarket);
     expect(find.text('Profile code copied'), findsOneWidget);
     await finishToasts(tester);
   });
 
   testWidgets('a code on the clipboard imports in two clicks', (tester) async {
     clipboardText = 'try ours: '
-        '${MapThemeProfileCode.encode(name: 'Haven Dusk', palette: havenDusk)}';
+        '${MapThemeProfileCode.encode(name: 'Haven Dusk', colors: havenDusk.toJson())}';
     await pumpSection(tester);
 
     await tester.tap(find.text('Import profile code'));
@@ -157,9 +175,64 @@ void main() {
     await finishToasts(tester);
   });
 
+  testWidgets('Use it still applies the profile after Settings closes',
+      (tester) async {
+    // Applying a theme marks the strategy unsaved; this test has no
+    // strategy box for an autosave to write to.
+    await tester.runAsync(() => container
+        .read(appPreferencesProvider.notifier)
+        .setAutosaveEnabled(false));
+    container.read(strategyProvider.notifier).setFromState(
+          const StrategyState(
+            strategyId: 'strategy-id',
+            strategyName: 'Split execute',
+            storageDirectory: null,
+            isOpen: true,
+          ),
+        );
+    clipboardText = MapThemeProfileCode.encode(
+        name: 'Haven Dusk', colors: havenDusk.toJson());
+    await pumpSection(tester);
+
+    await tester.tap(find.text('Import profile code'));
+    await settle(tester);
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Add profile'));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await settle(tester);
+
+    showSection.value = false;
+    // Let the toast finish sliding in.
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(find.byType(MapThemeSettingsSection), findsNothing);
+
+    await tester.tap(find.text('Use it'));
+    await tester.pump();
+    final added = container
+        .read(mapThemeProfilesProvider)
+        .profiles
+        .singleWhere((profile) => profile.name == 'Haven Dusk');
+    expect(container.read(strategyThemeProvider).profileId, added.id);
+    await finishToasts(tester);
+  });
+
+  testWidgets('a clipboard that cannot be read still opens the dialog',
+      (tester) async {
+    clipboardFails = true;
+    await pumpSection(tester);
+
+    await tester.tap(find.text('Import profile code'));
+    await settle(tester);
+
+    expect(find.text('Import profile code'), findsWidgets);
+    expect(find.text('The colors show here once you paste a code.'),
+        findsOneWidget);
+  });
+
   testWidgets('colors you already have cannot be added twice', (tester) async {
     clipboardText =
-        MapThemeProfileCode.encode(name: 'Copy', palette: nightMarket);
+        MapThemeProfileCode.encode(name: 'Copy', colors: nightMarket.toJson());
     await pumpSection(tester);
 
     await tester.tap(find.text('Import profile code'));
@@ -189,5 +262,15 @@ void main() {
     await tester.enterText(find.byType(EditableText), 'hello');
     await tester.pump();
     expect(find.text("That isn't an Icarus profile code."), findsOneWidget);
+
+    // The longest message wraps onto a second line instead of clipping.
+    await tester.enterText(
+      find.byType(EditableText),
+      '${MapThemeProfileCode.prefix}eyJ2IjoyfQ',
+    );
+    await tester.pump();
+    const newer =
+        'This code is from a newer version of Icarus. Update Icarus to import it.';
+    expect(tester.getSize(find.text(newer)).height, greaterThan(16));
   });
 }

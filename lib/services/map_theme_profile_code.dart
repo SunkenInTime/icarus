@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:icarus/providers/user_preferences_provider.dart';
-
 /// A map theme profile as one line of text, so players can paste their map
 /// colors into Discord and a teammate can import them.
 ///
@@ -9,6 +7,10 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 /// versioned JSON object:
 ///
 ///     {"v":1,"name":"Lotus Moss","base":"#18221A","detail":"#7FA36B","highlight":"#E3C567"}
+///
+/// Colors are `#RRGGBB` strings, the same shape `MapThemePalette.toJson`
+/// writes. The codec depends on nothing but `dart:convert`, so any client or
+/// server can read the format.
 ///
 /// Parsing finds the code anywhere in the pasted text, so a code copied
 /// together with the message around it still imports.
@@ -22,14 +24,17 @@ class MapThemeProfileCode {
   static final RegExp _codePattern = RegExp(r'icarus-theme:([A-Za-z0-9_-]+)');
   static final RegExp _hexColor = RegExp(r'^#[0-9a-fA-F]{6}$');
 
+  /// [colors] holds `base`, `detail`, and `highlight` as `#RRGGBB`.
   static String encode({
     required String name,
-    required MapThemePalette palette,
+    required Map<String, dynamic> colors,
   }) {
     final json = jsonEncode({
       'v': version,
       'name': name,
-      ...palette.toJson(),
+      'base': colors['base'],
+      'detail': colors['detail'],
+      'highlight': colors['highlight'],
     });
     final encoded = base64Url.encode(utf8.encode(json)).replaceAll('=', '');
     return '$prefix$encoded';
@@ -59,21 +64,30 @@ class MapThemeProfileCode {
     final codeVersion = decoded['v'];
     if (codeVersion is! int) return const MapThemeProfileCodeInvalid();
     if (codeVersion > version) return const MapThemeProfileCodeNewerVersion();
+    if (codeVersion != version) return const MapThemeProfileCodeInvalid();
 
-    final colors = [decoded['base'], decoded['detail'], decoded['highlight']];
-    if (!colors.every((c) => c is String && _hexColor.hasMatch(c))) {
+    final base = decoded['base'];
+    final detail = decoded['detail'];
+    final highlight = decoded['highlight'];
+    if (![base, detail, highlight]
+        .every((c) => c is String && _hexColor.hasMatch(c))) {
       return const MapThemeProfileCodeIncomplete();
     }
 
     final rawName = decoded['name'];
     final trimmedName = rawName is String ? rawName.trim() : '';
+    // Cap by code point so an emoji at the limit is never cut in half.
     final name = trimmedName.isEmpty
         ? 'Shared profile'
-        : trimmedName.substring(0, trimmedName.length.clamp(0, maxNameLength));
+        : String.fromCharCodes(trimmedName.runes.take(maxNameLength));
 
     return MapThemeProfileCodeValid(
       name: name,
-      palette: MapThemePalette.fromJson(decoded),
+      colors: {
+        'base': (base as String).toUpperCase(),
+        'detail': (detail as String).toUpperCase(),
+        'highlight': (highlight as String).toUpperCase(),
+      },
     );
   }
 
@@ -86,10 +100,13 @@ sealed class MapThemeProfileCodeResult {
 }
 
 class MapThemeProfileCodeValid extends MapThemeProfileCodeResult {
-  const MapThemeProfileCodeValid({required this.name, required this.palette});
+  const MapThemeProfileCodeValid({required this.name, required this.colors});
 
   final String name;
-  final MapThemePalette palette;
+
+  /// `base`, `detail`, and `highlight` as `#RRGGBB`, ready for
+  /// `MapThemePalette.fromJson`.
+  final Map<String, String> colors;
 }
 
 /// Nothing pasted yet.

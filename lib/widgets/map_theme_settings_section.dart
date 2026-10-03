@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -157,21 +158,15 @@ class _ThemeProfilesList extends ConsumerWidget {
     if (added == null || !context.mounted) return;
 
     final hasActiveStrategy = ref.read(strategyProvider).strategyName != null;
+    // The toast outlives this section when Settings closes or the pane
+    // changes, so its action reads the app's container, not this ref.
+    final container = ProviderScope.containerOf(context, listen: false);
     Settings.showToast(
       message: "${added.name} added",
       backgroundColor: Settings.tacticalVioletTheme.primary,
       actionLabel: hasActiveStrategy ? "Use it" : null,
       onActionPressed: hasActiveStrategy
-          ? () {
-              if (!context.mounted) return;
-              _selectProfile(
-                context,
-                ref,
-                profile: added,
-                hasOverride:
-                    ref.read(strategyThemeProvider).overridePalette != null,
-              );
-            }
+          ? () => _useImportedProfile(container, added)
           : null,
     );
   }
@@ -183,14 +178,7 @@ class _ThemeProfilesList extends ConsumerWidget {
     required bool hasOverride,
   }) async {
     if (hasOverride) {
-      final confirmed = await ConfirmAlertDialog.show(
-        context: context,
-        title: "Discard custom colors?",
-        content:
-            "This strategy's custom colors will be replaced with \"${profile.name}\" and can't be brought back.",
-        confirmText: "Discard",
-        isDestructive: true,
-      );
+      final confirmed = await _confirmDiscardCustomColors(context, profile);
       if (!confirmed || !context.mounted) return;
     }
     ref
@@ -397,7 +385,7 @@ class _ProfileContextMenuButtonState
       ClipboardData(
         text: MapThemeProfileCode.encode(
           name: widget.profile.name,
-          palette: widget.profile.palette,
+          colors: widget.profile.palette.toJson(),
         ),
       ),
     );
@@ -626,8 +614,12 @@ Future<MapThemeProfile?> _showImportProfileCodeDialog(
 ) async {
   // A code already on the clipboard fills the field, so the usual import is
   // Import profile code, then Add profile.
-  final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
-  final clipboardCode = MapThemeProfileCode.find(clipboard?.text ?? '');
+  // Reading it can fail (a browser can deny it); the field still works.
+  String? clipboardCode;
+  try {
+    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+    clipboardCode = MapThemeProfileCode.find(clipboard?.text ?? '');
+  } catch (_) {}
   if (!context.mounted) return null;
 
   return showShadDialog<MapThemeProfile>(
@@ -674,7 +666,7 @@ class _ImportProfileCodeDialogState
         : ref
             .watch(mapThemeProfilesProvider)
             .profiles
-            .where((profile) => profile.palette == code.palette)
+            .where((profile) => profile.palette == code.toPalette())
             .firstOrNull;
 
     final (String? message, bool isError) = switch (result) {
@@ -739,8 +731,8 @@ class _ImportProfileCodeDialogState
                 },
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                height: 16,
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 16),
                 child: message == null
                     ? null
                     : Text(
@@ -764,11 +756,15 @@ class _ImportProfileCodeDialogState
 
   Future<void> _add(MapThemeProfileCodeValid code) async {
     setState(() => _adding = true);
-    final created =
-        await ref.read(mapThemeProfilesProvider.notifier).createProfile(
-              name: code.name,
-              palette: code.palette,
-            );
+    MapThemeProfile? created;
+    try {
+      created = await ref.read(mapThemeProfilesProvider.notifier).createProfile(
+            name: code.name,
+            palette: code.toPalette(),
+          );
+    } catch (_) {
+      created = null;
+    }
     if (!mounted) return;
     if (created == null) {
       setState(() => _adding = false);
@@ -838,7 +834,7 @@ class _ProfileCodePreview extends ConsumerWidget {
                         child: SvgPicture.asset(
                           mapAsset,
                           colorMapper:
-                              MapSvgColorMapper.forPalette(code.palette),
+                              MapSvgColorMapper.forPalette(code.toPalette()),
                           fit: BoxFit.contain,
                           semanticsLabel: 'Profile code preview',
                         ),
@@ -861,7 +857,7 @@ class _ProfileCodePreview extends ConsumerWidget {
                   Expanded(
                     child: Text(code.name, overflow: TextOverflow.ellipsis),
                   ),
-                  _PaletteSwatches(palette: code.palette),
+                  _PaletteSwatches(palette: code.toPalette()),
                 ],
               ),
             ),
@@ -869,4 +865,40 @@ class _ProfileCodePreview extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<bool> _confirmDiscardCustomColors(
+  BuildContext context,
+  MapThemeProfile profile,
+) {
+  return ConfirmAlertDialog.show(
+    context: context,
+    title: "Discard custom colors?",
+    content:
+        "This strategy's custom colors will be replaced with \"${profile.name}\" and can't be brought back.",
+    confirmText: "Discard",
+    isDestructive: true,
+  );
+}
+
+/// The "Use it" action on an import toast: applies [profile] to the open
+/// strategy, asking first when that would discard its custom colors.
+Future<void> _useImportedProfile(
+  ProviderContainer container,
+  MapThemeProfile profile,
+) async {
+  if (container.read(strategyProvider).strategyName == null) return;
+  if (container.read(strategyThemeProvider).overridePalette != null) {
+    final context = appNavigatorKey.currentContext;
+    if (context == null) return;
+    final confirmed = await _confirmDiscardCustomColors(context, profile);
+    if (!confirmed) return;
+  }
+  container
+      .read(strategyProvider.notifier)
+      .setThemeProfileForCurrentStrategy(profile.id);
+}
+
+extension on MapThemeProfileCodeValid {
+  MapThemePalette toPalette() => MapThemePalette.fromJson(colors);
 }
