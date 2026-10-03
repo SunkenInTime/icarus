@@ -42,11 +42,13 @@ class SvgHeightNative {
   factory SvgHeightNative.open(
           {required List<String> wallIds,
           required Float64List edgeRecords,
+          Uint8List? interiorLeft,
           String? libraryPath}) =>
       throw UnsupportedError('Native acceleration is unavailable on web.');
   static SvgHeightNative? tryOpen(
           {required List<String> wallIds,
           required Float64List edgeRecords,
+          Uint8List? interiorLeft,
           String? libraryPath}) =>
       null;
   SvgHeightNativeCone query(

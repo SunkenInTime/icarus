@@ -467,4 +467,58 @@ void main() {
     expect(() => SvgHeightVisibility.fromJson(data([collinear])),
         throwsFormatException);
   });
+
+  double area(List<Offset> polygon) {
+    var twice = 0.0;
+    for (var i = 0; i < polygon.length; i++) {
+      final a = polygon[i], b = polygon[(i + 1) % polygon.length];
+      twice += a.dx * b.dy - b.dx * a.dy;
+    }
+    return twice.abs() / 2;
+  }
+
+  SvgVisibilityCone coneOf(List<Map<String, dynamic>> walls,
+          {Offset origin = Offset.zero, double direction = 0}) =>
+      SvgHeightVisibility.fromJson(data(walls)).cone(
+          origin: origin,
+          directionRadians: direction,
+          range: 100,
+          apertureRadians: 1);
+
+  test('touching pieces of one wall cast the cone the whole wall casts', () {
+    final whole = coneOf([
+      wall('whole', [rectangle(10, -20, 11, 20)])
+    ]);
+    final pieces = coneOf([
+      for (var y = -20.0; y < 20; y += 1)
+        wall('piece-$y', [rectangle(10, y, 11, y + 1)])
+    ]);
+    expect(area(pieces.polygon), closeTo(area(whole.polygon), 1e-9));
+    expect(pieces.polygon.length, whole.polygon.length,
+        reason: 'seams between the pieces are not visibility events');
+  });
+
+  test('two walls over the same footprint keep their corners', () {
+    final ring = rectangle(10, 1.13, 11, 3.17);
+    final reversed = [
+      for (var i = ring.length - 2; i >= 0; i -= 2) ...[ring[i], ring[i + 1]]
+    ];
+    final once = coneOf([
+      wall('once', [ring])
+    ]);
+    final twice = coneOf([
+      wall('one', [ring]),
+      wall('other', [reversed]),
+    ]);
+    expect(area(twice.polygon), closeTo(area(once.polygon), 1e-9));
+  });
+
+  test('rays beside a corner pass it even from right next to it', () {
+    final cone = coneOf([
+      wall('corner', [rectangle(-2, 0, 0, 2)])
+    ], origin: const Offset(-0.001, -0.001), direction: math.pi / 4);
+    final beside = const Offset(-0.001, -0.001) +
+        Offset.fromDirection(math.pi / 4 - 0.002, 50);
+    expect((Path()..addPolygon(cone.polygon, true)).contains(beside), isTrue);
+  });
 }

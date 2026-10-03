@@ -62,9 +62,9 @@ struct Edge {
   Point a, b;
   uint32_t wall;
   uint32_t aVertex = 0, bVertex = 0;
-  // See the Dart _Edge: corner roundoff admitted along the wall, as a
-  // fraction of this edge, from 1e-10 SVG units.
-  double slack = 0;
+  // See the Dart _Edge: corner roundoff admitted along the wall.
+  double inverseLength = 0;
+  bool interiorLeft = false;
 
   bool intersection(Point origin, Point direction, double range,
                     double &distance) const {
@@ -87,6 +87,7 @@ struct Edge {
     const double along = cross(relative, direction) / determinant;
     // Admit floating-point endpoint roundoff, matching the Dart oracle. The
     // supporting line and reported intersection distance remain unchanged.
+    const double slack = (1e-13 + rayDistance * 1e-10) * inverseLength;
     if (rayDistance >= 0 && rayDistance <= range &&
         along >= -slack && along <= 1 + slack) {
       distance = rayDistance;
@@ -321,6 +322,7 @@ struct Handle {
   // The edges meeting at each vertex, to tell a corner from a seam.
   std::vector<std::vector<uint32_t>> vertexEdges;
   std::vector<Point> vertexPoints;
+  bool interiorSides = false;
   Pool pool{poolWorkers()};
   std::mutex mutex;
   std::string error;
@@ -342,7 +344,7 @@ struct Handle {
       edge.aVertex = id(edge.a);
       edge.bVertex = id(edge.b);
       const Point delta = edge.b - edge.a;
-      edge.slack = 1e-10 / std::sqrt(dot(delta, delta));
+      edge.inverseLength = 1 / std::sqrt(dot(delta, delta));
     }
     vertexEdges.resize(vertices.size());
     vertexPoints.resize(vertices.size());
@@ -394,6 +396,7 @@ struct Handle {
 // A ray there meets the wall the rays beside it meet, so it is not an event.
 // Pieces cut along one stroke leave such seams every metre or so.
 bool seam(const Handle &handle, uint32_t vertex, const uint8_t *active) {
+  if (!handle.interiorSides) return false;
   std::array<uint32_t, 8> live{};
   size_t count = 0;
   for (uint32_t id : handle.vertexEdges[vertex]) {
@@ -407,7 +410,11 @@ bool seam(const Handle &handle, uint32_t vertex, const uint8_t *active) {
     for (size_t j = i + 1; j < count && !cancelled[i]; ++j) {
       if (cancelled[j]) continue;
       const Edge &second = handle.edges[live[j]];
-      if (first.aVertex == second.bVertex && first.bVertex == second.aVertex)
+      // A shared side only when the two walls lie on either side of it.
+      const bool same = first.aVertex == second.aVertex && first.bVertex == second.bVertex;
+      const bool reversed = first.aVertex == second.bVertex && first.bVertex == second.aVertex;
+      if ((same && first.interiorLeft != second.interiorLeft) ||
+          (reversed && first.interiorLeft == second.interiorLeft))
         cancelled[i] = cancelled[j] = true;
     }
   }
@@ -553,6 +560,18 @@ void *ish_open(const double *records, uint32_t edgeCount, uint32_t wallCount,
     copyText("unknown SVG native initialization error", error, errorCapacity);
     return nullptr;
   }
+}
+
+int32_t ish_set_interior_sides(void *opaque, const uint8_t *interiorLeft,
+                               uint32_t edgeCount) {
+  if (!opaque || !interiorLeft) return ISH_INVALID;
+  auto &handle = *static_cast<Handle *>(opaque);
+  std::lock_guard<std::mutex> lock(handle.mutex);
+  if (edgeCount != handle.edges.size()) return ISH_INVALID;
+  for (uint32_t i = 0; i < edgeCount; ++i)
+    handle.edges[i].interiorLeft = interiorLeft[i] != 0;
+  handle.interiorSides = true;
+  return ISH_OK;
 }
 
 uint8_t *ish_active_wall_buffer(void *opaque) {
