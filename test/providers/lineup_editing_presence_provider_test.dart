@@ -164,7 +164,7 @@ void main() {
     );
   });
 
-  test('groups are those of the page on screen', () {
+  test('a dialog edits the groups of the page it opened on, only there', () {
     container
         .read(openLineUpItemsProvider.notifier)
         .open(Object(), {'landing-a', 'landing-b'});
@@ -172,6 +172,13 @@ void main() {
     session.setStateForTest(
       container.read(strategyPageSessionProvider).copyWith(activePageId: 'p2'),
     );
+    // Page 2 has lineups under the same ids, in other groups; the dialog
+    // still shows page 1's, so it edits nothing here.
+    expect(editing(), isNull);
+
+    container
+        .read(openLineUpItemsProvider.notifier)
+        .open(Object(), {'landing-a'});
     expect(
       editing(),
       const PresenceEditing(pageId: 'p2', groupIds: {'group-a2'}),

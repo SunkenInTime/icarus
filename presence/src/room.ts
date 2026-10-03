@@ -192,8 +192,13 @@ export class PresenceRoom extends DurableObject<Env> {
           this.drop(ws, self, CLOSE_PASS_EXPIRED, "Invalid renewal");
           return;
         }
+        // Verifying awaited: the cursor or what is being edited may have
+        // changed meanwhile, or the socket closed. Renew what it holds now,
+        // never the state from before the wait.
+        const current = attachmentOf(ws);
+        if (current === null) return;
         const renewed: Attachment = {
-          ...self,
+          ...current,
           lastRenewAt: now,
           exp: claims.exp,
           name: claims.name,
@@ -205,9 +210,9 @@ export class PresenceRoom extends DurableObject<Env> {
         // Name, avatar, or role may have changed since the last pass; a join
         // for a known sid replaces that peer.
         if (
-          renewed.name !== self.name ||
-          renewed.avatar !== self.avatar ||
-          renewed.role !== self.role
+          renewed.name !== current.name ||
+          renewed.avatar !== current.avatar ||
+          renewed.role !== current.role
         ) {
           this.broadcast({ t: "join", peer: toPeer(renewed) }, ws);
         }
