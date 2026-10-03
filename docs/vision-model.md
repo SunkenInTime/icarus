@@ -584,6 +584,53 @@ standing spots that see them show mostly solid wall, its face more than
 half a metre off the ink. A real window or doorway spans several pieces,
 so these are filled too.
 
+### Reviewed openings put back (2026-10-03)
+
+The archive's acceptance suite (`scripts/truth/accept_at.sh`) holds the
+sightlines earlier reviews pinned. On the #240 models 7 of its tests fail
+(Split's crane, which #238 reverses, and fixture hashes); after the passes
+above, 26 did. Astra cast every new failure against the complete 3D scene
+(`scripts/truth/ray3d.py`) rather than a chosen object list. Six were clear
+in the scene: the hole fill had closed a gap at Corrode's 4801 pieces.
+Others contradicted a ruling or a recorded decision. `restore_reviewed.py`
+puts these pieces back to their #240 bands, uncutting any `-truth-cut-N`
+pieces:
+- the two Corrode pieces;
+- Haven's C Garage window walls, which Dara opened from the garage floor
+  on 2026-09-19;
+- Haven defense `p3-stroke-9`, whose raised band stopped a Mid sightline
+  where the scene is clear;
+- Icebox's zipline and ramp markings, which are symbols, not walls;
+- every piece named see-through.
+
+Seven failures remain, and each is deliberate. Four are the Haven Mid
+Window sill Dara ruled solid. The other three, Icebox's front window jamb
+and the boost-step box, pin sightlines the scene blocks.
+`test/svg_truth_bands_test.dart` pins the garage window. On the 3D check's
+current standing spots (`poses-240.json`), the restore takes leaks from
+5,565 spots and 100,106 rays to 5,679 and 104,153, mostly where the
+garage ruling opens the window.
+
+A rebuild of each drawn wall as two or three constant-height segments was
+tried and not used (`scripts/truth/segment_walls.py` records why). It
+removed 35k leak rays but added 160k false-shadow rays, because it closed
+pieces the scene shows mostly open. It also shut reviewed openings that the
+scene confirms are clear. One band set per piece cannot hold a window in
+part of a piece, and a vote across neighbours makes that worse.
+
+### Merged runtime outlines (2026-10-03)
+
+Each model now carries `runtimeWalls`: the touching pieces that share a
+floor, bands and unknown-height flag, merged offline into one outline by
+the archive's `scripts/truth/merge_runtime.py`. Cones are cast against these
+outlines, with 2 to 3 times fewer points than the pieces. The pieces remain
+the model. The loader checks that every piece is covered once and that
+every member of an outline has the same heights. Where an outline does not
+cover a piece's own edges (a bow tie, a sliver), those edges come along
+under the piece's heights (`heightsOf`). Merging seals cracks narrower than
+0.06 SVG units (under 2 cm) between pieces of one wall and changes nothing
+else; the cone areas it was checked on differ by at most 0.074%.
+
 ## Drag performance on Windows (2026-09-19)
 
 Dara's bar: dragging an agent with a cone must feel instant on Windows.

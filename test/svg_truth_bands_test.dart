@@ -54,4 +54,15 @@ void main() {
         _sees(model, const Offset(107.5, 158.5), const Offset(70, 140)), isTrue,
         reason: 'the floor past the end of the container stays lit');
   });
+
+  test('the Haven garage window stays open from the garage floor', () {
+    // Dara, 2026-09-19: as a simplification the C Garage window is
+    // see-through from the floor. The truth pass raised its sill from the
+    // 3D scene; reviewed rulings are put back (restore_reviewed.py).
+    final model = _model('haven', 'attack');
+    expect(
+        _sees(model, const Offset(131.651, 246.013),
+            const Offset(137.17, 202.36)),
+        isTrue);
+  });
 }
