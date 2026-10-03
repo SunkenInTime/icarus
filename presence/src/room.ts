@@ -158,9 +158,13 @@ export class PresenceRoom extends DurableObject<Env> {
       case "editing": {
         const editing = parseEditing(m);
         const now = Date.now();
+        // A clear always goes through: dropped, it would leave the notice
+        // on everyone's screen. It only broadcasts after an accepted change,
+        // so it cannot flood the room.
         if (
           editing === undefined ||
-          now - self.lastEditingAt < MIN_EDITING_INTERVAL_MS ||
+          (editing !== null &&
+            now - self.lastEditingAt < MIN_EDITING_INTERVAL_MS) ||
           sameEditing(editing, self.editing)
         ) {
           return;

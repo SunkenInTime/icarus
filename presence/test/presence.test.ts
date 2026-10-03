@@ -367,6 +367,15 @@ describe("editing", () => {
     expect(await ana.next("editing")).toMatchObject({ groups: ["g3"] });
   });
 
+  it("relays a clear however soon it follows a change", async () => {
+    const { ana, ben } = await anaAndBen();
+    // Sent 150 ms apart, but the network delivered them together.
+    ben.ws.send(editing("p1", ["g1"]));
+    ben.ws.send(editing("p1", []));
+    expect(await ana.next("editing")).toMatchObject({ groups: ["g1"] });
+    expect(await ana.next("editing")).toMatchObject({ page: null, groups: [] });
+  });
+
   it("doesn't rebroadcast an unchanged editing", async () => {
     const { ana, ben } = await anaAndBen();
     ben.ws.send(editing("p1", ["g1", "g2"]));

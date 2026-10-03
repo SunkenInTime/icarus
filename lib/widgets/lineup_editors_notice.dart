@@ -29,7 +29,7 @@ class LineUpEditorsNotice extends ConsumerWidget {
     if (editors.isEmpty) return const SizedBox.shrink();
     final theme = ShadTheme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 8),
       child: Row(
         children: [
           Container(
@@ -44,9 +44,11 @@ class LineUpEditorsNotice extends ConsumerWidget {
           Flexible(
             child: Text(
               lineUpEditorsText(editors, lineups: lineups),
+              // The label role: 12px/600.
               style: theme.textTheme.small.copyWith(
                 color: theme.colorScheme.mutedForeground,
                 fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),

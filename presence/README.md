@@ -31,10 +31,12 @@ refused.
 `editing` names the lineup groups a session is editing on one page: at most 8
 group ids of at most 128 characters each. An empty `groups` means editing
 nothing, and the room relays it as `{page: null, groups: []}`. The room sorts
-the ids, drops duplicates, relays only a change, and ignores an `editing` that
-arrives within 100 ms of the last one it accepted. An ignored `editing` is
-dropped, not delayed, so a client that changes faster than that must hold the
-latest state and send it once 100 ms have passed. Each peer in `welcome` and `join`
+the ids, drops duplicates, relays only a change, and ignores a non-empty
+`editing` that arrives within 100 ms of the last one it accepted. An ignored
+`editing` is dropped, not delayed, so a client that changes faster than that
+must hold the latest state and send it once 100 ms have passed. A clear (empty
+`groups`) always goes through, however soon it arrives: dropped, it would
+leave the notice on everyone's screen. Each peer in `welcome` and `join`
 carries `editing` as `{page, groups}` or null. Clients and rooms that predate
 `editing` ignore it, so either side can deploy first.
 

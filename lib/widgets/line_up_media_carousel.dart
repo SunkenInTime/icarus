@@ -49,19 +49,17 @@ class LineUpMediaCarousel extends ConsumerWidget {
                   youtubeLink: link.youtubeLink,
                   padding: const EdgeInsets.all(56.0),
                 ),
+              // One row, so the notice gives way to the actions however
+              // narrow the window.
               Positioned(
                 top: 24,
                 left: 24,
-                right: 120,
-                child: SafeArea(child: LineUpEditorsNotice(itemId: linkId)),
-              ),
-              Positioned(
-                top: 24,
                 right: 24,
                 child: SafeArea(
                   child: Row(
                     spacing: 8,
                     children: [
+                      Expanded(child: LineUpEditorsNotice(itemId: linkId)),
                       ShadIconButton.destructive(
                         icon: const Icon(LucideIcons.trash2),
                         decoration: ShadDecoration(
