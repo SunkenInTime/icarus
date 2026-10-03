@@ -111,6 +111,25 @@ final class UtilityConvexCodec implements ConvexPayloadCodec<CloudPayload> {
   ConvexValue encode(CloudPayload value) => _encodePayload(value, 'utility');
 }
 
+// One lineup group: the lineups on a page joined through shared spots.
+@ConvexPayload('lineups')
+final class LineupsConvexCodec implements ConvexPayloadCodec<CloudPayload> {
+  const LineupsConvexCodec();
+
+  @override
+  CloudPayload decode(ConvexValue value) => _decodePayload(value, 'lineups');
+
+  @override
+  ConvexValue encode(CloudPayload value) => _encodePayload(value, 'lineups');
+}
+
+// The origin, landing and link rows of protocol 4. The server still takes
+// them as lineup op arguments, so an old client reaches its protocol gate
+// instead of failing argument validation, and refuses them in the handler
+// (see lineupOpPayloadValidator in convex/lib/payloadValidators.ts). This
+// build never sends them: an outbox record holding one waits in attention
+// (see isRetiredCloudLineupOp).
+
 @ConvexPayload('lineupOrigin')
 final class LineupOriginConvexCodec
     implements ConvexPayloadCodec<CloudPayload> {

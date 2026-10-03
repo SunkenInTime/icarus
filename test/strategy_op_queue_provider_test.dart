@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -937,180 +936,73 @@ void main() {
       expect(store.load().records.single.pending.op.opId, op.opId);
     });
 
-    test('a lineup link waits for the origin and landing still to be sent',
-        () async {
-      final store = MemoryDurableStrategyOutboxStore();
-      DurableOutboxRecord record(StrategyOp op, String clientId) =>
-          DurableOutboxRecord(
-            accountId: 'account-a',
-            strategyPublicId: 'strategy-1',
-            entityKey: EntitySyncKey.forStrategyOp(op)!,
-            pending: PendingOp(op: op, clientId: clientId),
-            status: DurableOutboxStatus.queued,
-            createdAt: DateTime(2026),
-            updatedAt: DateTime(2026),
-          );
-      LineupAddOp add(String kind, Map<String, dynamic> data) => LineupAddOp(
-            opId: 'add-$kind',
-            lineupPublicId: cloudLineupRowId(kind, data['id'] as String),
-            pagePublicId: 'page-1',
-            payload: cloudLineupPayload(kind: kind, data: data),
-            sortIndex: 0,
-          );
-      // As an outbox reloads after a restart: by key, so the link comes
-      // before the origin, and the origin was queued by an earlier session
-      // under another client id.
-      await store.put(record(_cloudElementOp(), 'client-b'));
-      await store.put(record(
-        add(CloudLineupKind.landing, {'id': 'l', 'ability': {}}),
-        'client-b',
-      ));
-      await store.put(record(
-        add(CloudLineupKind.link, {
-          'id': 'k',
-          'originId': 'o',
-          'landingId': 'l',
-        }),
-        'client-b',
-      ));
-      await store.put(record(
-        add(CloudLineupKind.origin, {'id': 'o', 'agent': {}}),
-        'client-a',
-      ));
-      final repository = _RecordingAckRepository();
-      final container = _cloudQueueContainer(
-        store: store,
-        repository: repository,
-      );
-      addTearDown(container.dispose);
-      final notifier = container.read(strategyOpQueueProvider.notifier)
-        ..setActiveStrategy('strategy-1', accountId: 'account-a');
-
-      await notifier.flushNow();
-      for (var i = 0; i < 50 && repository.calls.length < 3; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
-
-      expect(
-        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
-        [
-          ['op-1', 'add-${CloudLineupKind.landing}'],
-          ['add-${CloudLineupKind.origin}'],
-          ['add-${CloudLineupKind.link}'],
-        ],
-      );
-      expect(store.load().records, isEmpty);
-    });
-
-    test('keep mine re-sends a link refused for a missing end as it was',
-        () async {
-      final store = MemoryDurableStrategyOutboxStore();
-      LineupAddOp link(String id, {int? expectedRevision}) => LineupAddOp(
-            opId: 'refused-$id',
-            lineupPublicId: cloudLineupRowId(CloudLineupKind.link, id),
-            pagePublicId: 'page-1',
-            payload: cloudLineupPayload(
-              kind: CloudLineupKind.link,
-              data: {'id': id, 'originId': 'o', 'landingId': 'l'},
-            ),
-            sortIndex: 0,
-            expectedLineupRevision: expectedRevision,
-          );
-      // A new link, and a deleted one being restored.
-      final refused = [link('new'), link('restored', expectedRevision: 3)];
-      for (final op in refused) {
-        await store.put(DurableOutboxRecord(
-          accountId: 'account-a',
-          strategyPublicId: 'strategy-1',
-          entityKey: EntitySyncKey.forStrategyOp(op)!,
-          pending: PendingOp(op: op, clientId: 'client-a'),
-          status: DurableOutboxStatus.attention,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-          lastError: lineupLinkEndMissingMessage,
-        ));
-      }
-      final container = _cloudQueueContainer(
-        store: store,
-        repository: _RecordingAckRepository(),
-      );
-      addTearDown(container.dispose);
-      final notifier = container.read(strategyOpQueueProvider.notifier)
-        ..setActiveStrategy('strategy-1', accountId: 'account-a');
-
-      await notifier.retryRejected(flushImmediately: false);
-
-      final current = container.read(strategyOpQueueProvider);
-      expect(current.attentionByEntityKey, isEmpty);
-      for (final op in refused) {
-        final retried = current
-            .queuedByEntityKey[EntitySyncKey.forStrategyOp(op)!]!.pending.op;
-        expect(retried, isA<LineupAddOp>());
-        expect(retried.opId, isNot(op.opId));
-        expect(retried.expectedRevision, op.expectedRevision);
-        expect(retried.payload, op.payload);
-      }
-    });
-
-    test('a link refused for a missing end stays saved and needs attention',
+    test('a lineup refused for another page stays saved and keeps that reason',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
       final container = _cloudQueueContainer(
         store: store,
-        repository: _MissingLinkEndRepository(),
+        repository: _FailingLineupRepository(),
       );
       addTearDown(container.dispose);
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      final link = LineupAddOp(
-        opId: 'add-link',
-        lineupPublicId: cloudLineupRowId(CloudLineupKind.link, 'k'),
-        pagePublicId: 'page-1',
-        payload: cloudLineupPayload(
-          kind: CloudLineupKind.link,
-          data: {'id': 'k', 'originId': 'deleted', 'landingId': 'l'},
-        ),
-        sortIndex: 0,
-      );
-      final key = EntitySyncKey.forStrategyOp(link)!;
+      final lineup = _lineupAdd(opId: 'add-lineup', pageId: 'page-2');
+      final key = EntitySyncKey.forStrategyOp(lineup)!;
 
-      await notifier.enqueue(link, flushImmediately: false);
+      await notifier.enqueue(lineup, flushImmediately: false);
       await notifier.flushNow();
 
       final current = container.read(strategyOpQueueProvider);
-      expect(current.attentionByEntityKey[key]!.pending.op.opId, 'add-link');
+      expect(current.attentionByEntityKey[key]!.pending.op.opId, 'add-lineup');
       expect(current.needsAttention, isTrue);
       // The sync button explains the refusal, not a generic conflict.
-      expect(current.lastError, lineupLinkEndMissingMessage);
+      expect(current.lastError, lineupPageMismatchMessage);
+      expect(isSpecificAttentionReason(current.lastError!), isTrue);
       final durable = store.load().records.single;
       expect(durable.status, DurableOutboxStatus.attention);
       expect(
         friendlyCloudSyncError(durable.lastError!),
-        contains('on this page in the cloud'),
+        contains('clashes with one on another page'),
       );
+    });
+
+    test(
+        'a lineup group refused for overlapping another stays saved and keeps '
+        'that reason', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _FailingLineupRepository(
+          code: 'INVALID_LINEUP_PAYLOAD_DATA',
+          message: lineupOverlapMessage,
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      final lineup = _lineupAdd(opId: 'add-group');
+      final key = EntitySyncKey.forStrategyOp(lineup)!;
+
+      await notifier.enqueue(lineup, flushImmediately: false);
+      await notifier.flushNow();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey[key]!.pending.op.opId, 'add-group');
+      expect(current.lastError, lineupOverlapMessage);
+      expect(isSpecificAttentionReason(current.lastError!), isTrue);
+      final durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.lastError, lineupOverlapMessage);
+      expect(friendlyCloudSyncError(durable.lastError!),
+          contains('shares a spot'));
     });
 
     test('opening a strategy shows its saved lineup refusal', () async {
       final store = MemoryDurableStrategyOutboxStore();
-      final link = LineupAddOp(
-        opId: 'refused-link',
-        lineupPublicId: cloudLineupRowId(CloudLineupKind.link, 'k'),
-        pagePublicId: 'page-1',
-        payload: cloudLineupPayload(
-          kind: CloudLineupKind.link,
-          data: {'id': 'k', 'originId': 'o', 'landingId': 'l'},
-        ),
-        sortIndex: 0,
-      );
-      await store.put(DurableOutboxRecord(
-        accountId: 'account-a',
-        strategyPublicId: 'strategy-1',
-        entityKey: EntitySyncKey.forStrategyOp(link)!,
-        pending: PendingOp(op: link, clientId: 'client-a'),
+      await store.put(_savedRecord(
+        _lineupAdd(opId: 'refused-lineup'),
         status: DurableOutboxStatus.attention,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-        lastError: lineupLinkEndMissingMessage,
+        lastError: lineupPageMismatchMessage,
       ));
       final container = _cloudQueueContainer(
         store: store,
@@ -1123,13 +1015,13 @@ void main() {
       notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
       expect(
         container.read(strategyOpQueueProvider).lastError,
-        lineupLinkEndMissingMessage,
+        lineupPageMismatchMessage,
       );
       notifier.setActiveStrategy('strategy-2', accountId: 'account-a');
       notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
       expect(
         container.read(strategyOpQueueProvider).lastError,
-        lineupLinkEndMissingMessage,
+        lineupPageMismatchMessage,
       );
     });
 
@@ -1138,52 +1030,32 @@ void main() {
       final store = MemoryDurableStrategyOutboxStore();
       final container = _cloudQueueContainer(
         store: store,
-        repository: _MissingLinkEndRepository(),
+        repository: _FailingLineupRepository(),
       );
       addTearDown(container.dispose);
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      LineupAddOp link(String name) => LineupAddOp(
-            opId: 'add-$name',
-            lineupPublicId: cloudLineupRowId(CloudLineupKind.link, 'k'),
-            pagePublicId: 'page-1',
-            payload: cloudLineupPayload(
-              kind: CloudLineupKind.link,
-              data: {
-                'id': 'k',
-                'originId': 'o',
-                'landingId': 'l',
-                'name': name,
-              },
-            ),
-            sortIndex: 0,
-          );
-      final key = EntitySyncKey.forStrategyOp(link('first'))!;
+      LineupAddOp lineup(String name) =>
+          _lineupAdd(opId: 'add-$name', name: name);
+      final key = EntitySyncKey.forStrategyOp(lineup('first'))!;
 
-      await notifier.enqueue(link('first'), flushImmediately: false);
+      await notifier.enqueue(lineup('first'), flushImmediately: false);
       await notifier.flushNow();
       await notifier.syncDesiredGenericOp(
         entityKey: key,
-        desiredOp: link('edited'),
+        desiredOp: lineup('edited'),
       );
       expect(container.read(strategyOpQueueProvider).successorByEntityKey,
           contains(key));
       await notifier.syncDesiredGenericOp(
         entityKey: key,
-        desiredOp: link('first'),
+        desiredOp: lineup('first'),
       );
 
       final current = container.read(strategyOpQueueProvider);
       expect(current.successorByEntityKey, isEmpty);
-      expect(current.lastError, lineupLinkEndMissingMessage);
-      expect(
-          store.load().records.single.lastError, lineupLinkEndMissingMessage);
-
-      // Keep mine still re-sends it as it was.
-      await notifier.retryRejected(flushImmediately: false);
-      final retried = container.read(strategyOpQueueProvider);
-      expect(retried.attentionByEntityKey, isEmpty);
-      expect(retried.queuedByEntityKey[key]!.pending.op, isA<LineupAddOp>());
+      expect(current.lastError, lineupPageMismatchMessage);
+      expect(store.load().records.single.lastError, lineupPageMismatchMessage);
     });
 
     // A conflict, and a failed validation that is not one.
@@ -1194,16 +1066,6 @@ void main() {
       test('a lineup refusal beside other refused work notes it ($otherReason)',
           () async {
         final store = MemoryDurableStrategyOutboxStore();
-        final link = LineupAddOp(
-          opId: 'refused-link',
-          lineupPublicId: cloudLineupRowId(CloudLineupKind.link, 'k'),
-          pagePublicId: 'page-1',
-          payload: cloudLineupPayload(
-            kind: CloudLineupKind.link,
-            data: {'id': 'k', 'originId': 'o', 'landingId': 'l'},
-          ),
-          sortIndex: 0,
-        );
         const element = ElementPatchOp(
           opId: 'stale-element',
           elementPublicId: 'element-1',
@@ -1212,17 +1074,12 @@ void main() {
           expectedElementRevision: 1,
         );
         for (final (StrategyOp op, reason) in [
-          (link, lineupLinkEndMissingMessage),
+          (_lineupAdd(opId: 'refused-lineup'), lineupPageMismatchMessage),
           (element, otherReason),
         ]) {
-          await store.put(DurableOutboxRecord(
-            accountId: 'account-a',
-            strategyPublicId: 'strategy-1',
-            entityKey: EntitySyncKey.forStrategyOp(op)!,
-            pending: PendingOp(op: op, clientId: 'client-a'),
+          await store.put(_savedRecord(
+            op,
             status: DurableOutboxStatus.attention,
-            createdAt: DateTime(2026),
-            updatedAt: DateTime(2026),
             lastError: reason,
             latestServerRevision: 2,
           ));
@@ -1238,198 +1095,277 @@ void main() {
             .setActiveStrategy('strategy-1', accountId: 'account-a');
 
         final error = container.read(strategyOpQueueProvider).lastError!;
-        expect(error, contains(lineupLinkEndMissingMessage));
+        expect(error, contains(lineupPageMismatchMessage));
         expect(error, contains(otherWorkNeedsAttentionNote));
       });
     }
 
-    test('a lineup refused for another page keeps that reason', () async {
-      final container = _cloudQueueContainer(
-        store: MemoryDurableStrategyOutboxStore(),
-        repository: _MissingLinkEndRepository(
-          code: 'LINEUP_PAGE_MISMATCH',
-          message: lineupPageMismatchMessage,
-        ),
-      );
-      addTearDown(container.dispose);
-      final notifier = container.read(strategyOpQueueProvider.notifier)
-        ..setActiveStrategy('strategy-1', accountId: 'account-a');
-
-      await notifier.enqueue(
-        LineupPatchOp(
-          opId: 'patch-origin',
-          lineupPublicId: cloudLineupRowId(CloudLineupKind.origin, 'o'),
-          pagePublicId: 'page-2',
-          payload: cloudLineupPayload(
-            kind: CloudLineupKind.origin,
-            data: {'id': 'o', 'agent': <String, dynamic>{}},
-          ),
-          expectedLineupRevision: 1,
-        ),
-        flushImmediately: false,
-      );
-      await notifier.flushNow();
-
-      final current = container.read(strategyOpQueueProvider);
-      expect(current.needsAttention, isTrue);
-      expect(current.lastError, lineupPageMismatchMessage);
-    });
-
-    test('a lineup delete sends its link before its origin and landing',
+    test('an old-format lineup add is shown, never sent, and kept on restart',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
-      LineupDeleteOp delete(String kind, String id) => LineupDeleteOp(
-            opId: 'delete-$kind',
-            lineupPublicId: cloudLineupRowId(kind, id),
-            pagePublicId: 'page-1',
-            expectedLineupRevision: 1,
-          );
-      // As an outbox reloads after a restart: by key, so the landing comes
-      // before the link.
-      for (final op in [
-        delete(CloudLineupKind.landing, 'l'),
-        delete(CloudLineupKind.link, 'k'),
-        delete(CloudLineupKind.origin, 'o'),
-      ]) {
+      final retired = _retiredLinkAdd();
+      final retiredKey = EntitySyncKey.forStrategyOp(retired)!;
+      await store.put(_savedRecord(_cloudElementOp()));
+      await store.put(_savedRecord(retired));
+      var repository = _RecordingAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      // Shown from the moment the strategy opens, before anything is sent.
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey.keys, [
+        EntitySyncKey.forStrategyOp(_cloudElementOp()),
+      ]);
+      expect(current.attentionByEntityKey.keys, [retiredKey]);
+      expect(current.lastError, retiredLineupOpMessage);
+
+      await notifier.flushNow();
+      await _settle();
+
+      // The rest of the strategy's work lands; the old change never leaves
+      // the device.
+      expect(
+        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
+        [
+          ['op-1'],
+        ],
+      );
+      current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(current.attentionByEntityKey.keys, [retiredKey]);
+      expect(current.needsAttention, isTrue);
+      expect(current.lastError, retiredLineupOpMessage);
+      expect(isSpecificAttentionReason(current.lastError!), isTrue);
+      expect(
+        friendlyCloudSyncError(current.lastError!),
+        contains('older version of Icarus'),
+      );
+      // Only the copy in memory changed: the saved record is as the older
+      // build left it.
+      final durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.queued);
+      expect(durable.pending.op.opId, retired.opId);
+      expect(durable.pending.op.payload, retired.payload);
+
+      // After a restart it is still there, still explained, still unsent.
+      container.dispose();
+      repository = _RecordingAckRepository();
+      container = _cloudQueueContainer(store: store, repository: repository);
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+      await _settle();
+
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey.keys, [retiredKey]);
+      expect(current.lastError, retiredLineupOpMessage);
+      expect(repository.calls, isEmpty);
+      expect(store.load().records.single.pending.op.opId, retired.opId);
+    });
+
+    // B4: whatever state an older build left an old-format record in, it
+    // waits in attention from the moment the outbox loads, where the
+    // canvas's reconciliation never reaches it. Left queued, paused or in
+    // flight it would otherwise be reconciled away (or sent) by the first
+    // sync of its page.
+    for (final (status, attempts, lastError) in [
+      (DurableOutboxStatus.queued, 0, null),
+      // Paused after transport failures, with no successor.
+      (DurableOutboxStatus.paused, 8, 'Connection lost while sending'),
+      (DurableOutboxStatus.inFlight, 1, null),
+      // Refused by an older build for a reason of its own.
+      (
+        DurableOutboxStatus.attention,
+        1,
+        "This lineup's origin or landing spot is no longer on the page",
+      ),
+    ]) {
+      test(
+          'an old-format lineup add left ${status.name} waits in attention '
+          'from load, through a sync of its page', () async {
+        final store = MemoryDurableStrategyOutboxStore();
+        final retired = _retiredLinkAdd();
+        final retiredKey = EntitySyncKey.forStrategyOp(retired)!;
         await store.put(DurableOutboxRecord(
           accountId: 'account-a',
           strategyPublicId: 'strategy-1',
-          entityKey: EntitySyncKey.forStrategyOp(op)!,
-          pending: PendingOp(op: op, clientId: 'client-a'),
-          status: DurableOutboxStatus.queued,
+          entityKey: retiredKey,
+          pending: PendingOp(
+            op: retired,
+            clientId: 'client-a',
+            attempts: attempts,
+            lastAttemptAt: attempts == 0 ? null : DateTime(2026),
+          ),
+          status: status,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
+          lastError: lastError,
         ));
-      }
-      final repository = _RecordingAckRepository();
-      final container = _cloudQueueContainer(
-        store: store,
-        repository: repository,
-      );
-      addTearDown(container.dispose);
-      final notifier = container.read(strategyOpQueueProvider.notifier)
-        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+        final repository = _RecordingAckRepository();
+        final container = _cloudQueueContainer(
+          store: store,
+          repository: repository,
+        );
+        addTearDown(container.dispose);
+        final notifier = container.read(strategyOpQueueProvider.notifier)
+          ..setActiveStrategy('strategy-1', accountId: 'account-a');
 
-      await notifier.flushNow();
-      for (var i = 0; i < 50 && repository.calls.isEmpty; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+        var current = container.read(strategyOpQueueProvider);
+        expect(current.attentionByEntityKey.keys, [retiredKey]);
+        expect(current.queuedByEntityKey, isEmpty);
+        expect(current.pausedByEntityKey, isEmpty);
+        expect(current.inFlightByEntityKey, isEmpty);
+        expect(current.lastError, retiredLineupOpMessage);
 
-      expect(
-        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
-        [
-          [
-            'delete-${CloudLineupKind.link}',
-            'delete-${CloudLineupKind.landing}',
-            'delete-${CloudLineupKind.origin}',
-          ],
-        ],
-      );
-      expect(store.load().records, isEmpty);
-    });
+        // The canvas syncs the page with other work, clearing what it no
+        // longer has.
+        const element = ElementAddOp(
+          opId: 'element-add',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {'value': 'new'},
+          sortIndex: 0,
+        );
+        await notifier.syncDesiredOpsForPage(
+          pageId: 'page-1',
+          desiredOpsByEntityKey: {
+            EntitySyncKey.forStrategyOp(element)!: element,
+          },
+          clearMissing: true,
+        );
+        await notifier.flushNow();
+        await _settle();
 
-    test('an origin delete waits for a link delete still to be sent', () async {
-      final store = MemoryDurableStrategyOutboxStore();
-      DurableOutboxRecord record(StrategyOp op, String clientId) =>
-          DurableOutboxRecord(
-            accountId: 'account-a',
-            strategyPublicId: 'strategy-1',
-            entityKey: EntitySyncKey.forStrategyOp(op)!,
-            pending: PendingOp(op: op, clientId: clientId),
-            status: DurableOutboxStatus.queued,
-            createdAt: DateTime(2026),
-            updatedAt: DateTime(2026),
-          );
-      LineupDeleteOp delete(String kind, String id, {String? pageId}) =>
-          LineupDeleteOp(
-            opId: 'delete-$kind-$id',
-            lineupPublicId: cloudLineupRowId(kind, id),
-            pagePublicId: pageId ?? 'page-1',
-            expectedLineupRevision: 1,
-          );
-      // The link delete was queued by an earlier session under another
-      // client id, so it cannot share the origin's batch. An origin on
-      // another page does not wait for it.
-      await store.put(record(_cloudElementOp(), 'client-a'));
-      await store.put(record(delete(CloudLineupKind.origin, 'o'), 'client-a'));
-      await store.put(record(
-        delete(CloudLineupKind.origin, 'p2', pageId: 'page-2'),
-        'client-a',
-      ));
-      await store.put(record(delete(CloudLineupKind.link, 'k'), 'client-b'));
-      final repository = _RecordingAckRepository();
-      final container = _cloudQueueContainer(
-        store: store,
-        repository: repository,
-      );
-      addTearDown(container.dispose);
-      final notifier = container.read(strategyOpQueueProvider.notifier)
-        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+        current = container.read(strategyOpQueueProvider);
+        expect(current.attentionByEntityKey.keys, [retiredKey]);
+        expect(
+          current.attentionByEntityKey[retiredKey]!.pending.op.opId,
+          retired.opId,
+        );
+        expect(current.lastError, retiredLineupOpMessage);
+        expect(
+          repository.calls.expand((ops) => ops).map((op) => op.opId),
+          ['element-add'],
+        );
+        // The element landed and left the outbox; the old change is still
+        // saved, exactly as the older build saved it.
+        final durable = store.load().records.single;
+        expect(durable.entityKey, retiredKey);
+        expect(durable.pending.op.opId, retired.opId);
+        expect(durable.pending.op.payload, retired.payload);
+        expect(durable.status, status);
+      });
+    }
 
-      await notifier.flushNow();
-      for (var i = 0; i < 50 && repository.calls.length < 2; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
-
-      expect(
-        repository.calls.map((ops) => ops.map((op) => op.opId).toList()),
-        [
-          ['delete-${CloudLineupKind.link}-k'],
-          [
-            'op-1',
-            'delete-${CloudLineupKind.origin}-o',
-            'delete-${CloudLineupKind.origin}-p2',
-          ],
-        ],
-      );
-      expect(store.load().records, isEmpty);
-    });
-
-    test('an end delete refused because a lineup uses it needs attention',
+    test('an old-format lineup delete is shown, and alone sends nothing',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
-      final container = _cloudQueueContainer(
-        store: store,
-        repository: _MissingLinkEndRepository(
-          code: 'LINEUP_END_IN_USE',
-          message: lineupEndInUseMessage,
-        ),
-      );
-      addTearDown(container.dispose);
-      final notifier = container.read(strategyOpQueueProvider.notifier)
-        ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      final delete = LineupDeleteOp(
-        opId: 'delete-origin',
-        lineupPublicId: cloudLineupRowId(CloudLineupKind.origin, 'o'),
+      const retired = LineupDeleteOp(
+        opId: 'old-origin-delete',
+        lineupPublicId: 'lineupOrigin:o',
         pagePublicId: 'page-1',
         expectedLineupRevision: 1,
       );
-      final key = EntitySyncKey.forStrategyOp(delete)!;
+      final retiredKey = EntitySyncKey.forStrategyOp(retired)!;
+      await store.put(_savedRecord(retired));
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
 
-      await notifier.enqueue(delete, flushImmediately: false);
       await notifier.flushNow();
+      await _settle();
 
-      var current = container.read(strategyOpQueueProvider);
-      expect(current.attentionByEntityKey[key]!.pending.op.opId, delete.opId);
-      expect(current.needsAttention, isTrue);
-      // The sync button explains the refusal, not a generic conflict.
-      expect(current.lastError, lineupEndInUseMessage);
-      expect(isSpecificAttentionReason(current.lastError!), isTrue);
+      expect(repository.calls, isEmpty);
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(current.attentionByEntityKey.keys, [retiredKey]);
+      expect(current.lastError, retiredLineupOpMessage);
       final durable = store.load().records.single;
-      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, retired.opId);
+    });
+
+    test('keep mine leaves an old-format lineup change waiting; discard drops',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final retired = _retiredLinkAdd();
+      final retiredKey = EntitySyncKey.forStrategyOp(retired)!;
+      const element = ElementPatchOp(
+        opId: 'stale-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'mine'},
+        expectedElementRevision: 1,
+      );
+      final elementKey = EntitySyncKey.forStrategyOp(element)!;
+      await store.put(_savedRecord(
+        element,
+        status: DurableOutboxStatus.attention,
+        lastError: 'revision_mismatch',
+        latestServerRevision: 2,
+      ));
+      await store.put(_savedRecord(retired));
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+      await _settle();
+      expect(repository.calls, isEmpty);
       expect(
-        friendlyCloudSyncError(durable.lastError!),
-        contains('still uses this origin or landing spot'),
+        container.read(strategyOpQueueProvider).lastError,
+        '$retiredLineupOpMessage. $otherWorkNeedsAttentionNote',
       );
 
-      // Keep mine asks again: the delete lands once that lineup is gone.
+      // Keep mine re-sends the conflict and leaves the old change, however
+      // often it is chosen.
       await notifier.retryRejected(flushImmediately: false);
-
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey.keys, [elementKey]);
+      expect(current.attentionByEntityKey.keys, [retiredKey]);
+      expect(current.lastError, retiredLineupOpMessage);
+      await notifier.retryRejected(flushImmediately: false);
       current = container.read(strategyOpQueueProvider);
-      final retried = current.queuedByEntityKey[key]!.pending.op;
-      expect(retried, isA<LineupDeleteOp>());
-      expect(retried.opId, isNot(delete.opId));
-      expect(retried.expectedRevision, delete.expectedRevision);
+      expect(current.queuedByEntityKey, isNot(contains(retiredKey)));
+      // Alone in attention it still says why, not that no revision matched.
+      expect(current.lastError, retiredLineupOpMessage);
+      expect(
+        current.attentionByEntityKey[retiredKey]!.pending.op.opId,
+        retired.opId,
+      );
+      final durable = store.load().records.singleWhere(
+            (record) => record.entityKey == retiredKey,
+          );
+      expect(durable.pending.op.opId, retired.opId);
+      expect(durable.pending.op.payload, retired.payload);
+      expect(
+        repository.calls.expand((ops) => ops).map((op) => op.opId),
+        isNot(contains(retired.opId)),
+      );
+
+      final discarded = await notifier.discardRejected({retiredKey});
+
+      expect(discarded, {retiredKey});
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.lastError, isNull);
+      expect(
+        store.load().records.map((record) => record.entityKey),
+        isNot(contains(retiredKey)),
+      );
     });
 
     test('an oversized op is durably parked while independent work lands',
@@ -2238,6 +2174,83 @@ void main() {
       expect(store.values, isEmpty);
     });
 
+    test('a replayed predecessor rebases its successor where it was applied',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'first-edit',
+        value: 'first',
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'second-edit',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+      );
+
+      // The server applied first-edit at 2, its ack was lost, and a
+      // teammate's edit took the row to 3 before first-edit was sent again.
+      // The replay is answered as a noop at the revision first-edit was
+      // applied at, not the row's revision now.
+      repository.completeFirst(const NoopOpAck(
+        opId: 'first-edit',
+        currentRevision: 2,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final promoted = repository.calls[1].single as ElementPatchOp;
+      expect(promoted.payload, {'value': 'second'});
+      expect(promoted.expectedElementRevision, 2);
+
+      // So the server, its row at 3, refuses it rather than letting it
+      // overwrite the teammate's edit unseen.
+      repository.completeSecond(
+        promoted.expectedElementRevision == 3
+            ? AppliedOpAck(opId: promoted.opId, revision: 4)
+            : RejectedOpAck(
+                opId: promoted.opId,
+                rejectionReason: OpRejectionReason.revisionMismatch,
+                current: const ElementCurrentSnapshot(
+                  revision: 3,
+                  value: {'value': 'teammate'},
+                ),
+              ),
+      );
+      await repository.secondCompleted.future;
+      await _settle();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(current.successorByEntityKey, isEmpty);
+      expect(
+        current.attentionByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final record = store.load().records.single;
+      expect(record.status, DurableOutboxStatus.attention);
+      expect(record.pending.op.opId, promoted.opId);
+      expect(record.lastError, OpRejectionReason.revisionMismatch.wireName);
+      expect(record.latestServerRevision, 3);
+    });
+
     test('restart replays an element predecessor before its successor',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
@@ -2730,26 +2743,22 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.lineup('page-1', 'lineup-1');
 
-      await notifier.enqueue(const LineupAddOp(
+      final successor = _lineupAdd(
+        opId: 'lineup-add-successor',
+        id: 'lineup-1',
+        name: 'second',
+      );
+
+      await notifier.enqueue(_lineupAdd(
         opId: 'lineup-add-in-flight',
-        lineupPublicId: 'lineup-1',
-        pagePublicId: 'page-1',
-        payload: {'value': 'first'},
-        sortIndex: 0,
+        id: 'lineup-1',
+        name: 'first',
       ));
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
         pageId: 'page-1',
-        desiredOpsByEntityKey: {
-          key: const LineupAddOp(
-            opId: 'lineup-add-successor',
-            lineupPublicId: 'lineup-1',
-            pagePublicId: 'page-1',
-            payload: {'value': 'second'},
-            sortIndex: 0,
-          ),
-        },
+        desiredOpsByEntityKey: {key: successor},
       );
 
       repository.completeFirst(const AppliedOpAck(
@@ -2760,7 +2769,8 @@ void main() {
       await repository.secondStarted.future;
 
       final finalEdit = repository.calls[1].single as LineupPatchOp;
-      expect(finalEdit.payload, {'value': 'second'});
+      expect(finalEdit.lineupPublicId, 'lineup-1');
+      expect(finalEdit.payload, successor.payload);
       expect(finalEdit.expectedLineupRevision, 1);
       repository.completeSecond(AppliedOpAck(
         opId: finalEdit.opId,
@@ -2900,12 +2910,10 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.lineup('page-1', 'lineup-1');
 
-      await notifier.enqueue(const LineupAddOp(
+      await notifier.enqueue(_lineupAdd(
         opId: 'lineup-add-in-flight',
-        lineupPublicId: 'lineup-1',
-        pagePublicId: 'page-1',
-        payload: {'value': 'first'},
-        sortIndex: 0,
+        id: 'lineup-1',
+        name: 'first',
       ));
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
@@ -2913,12 +2921,10 @@ void main() {
       await notifier.syncDesiredOpsForPage(
         pageId: 'page-1',
         desiredOpsByEntityKey: {
-          key: const LineupAddOp(
+          key: _lineupAdd(
             opId: 'lineup-add-successor',
-            lineupPublicId: 'lineup-1',
-            pagePublicId: 'page-1',
-            payload: {'value': 'second'},
-            sortIndex: 0,
+            id: 'lineup-1',
+            name: 'second',
           ),
         },
       );
@@ -2954,6 +2960,469 @@ void main() {
         revision: 2,
       ));
       await repository.secondCompleted.future;
+    });
+  });
+
+  group('keep mine after a teammate deleted the row', () {
+    Future<(ProviderContainer, StrategyOpQueueNotifier)> refused(
+      _TombstoneRepository repository,
+      MemoryDurableStrategyOutboxStore store,
+      List<StrategyOp> ops,
+    ) async {
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      for (final op in ops) {
+        await notifier.enqueue(op, flushImmediately: false);
+      }
+      await notifier.flushNow();
+      await _settle();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(
+        current.attentionByEntityKey.keys,
+        unorderedEquals(
+            [for (final op in ops) EntitySyncKey.forStrategyOp(op)]),
+      );
+      for (final record in store.load().records) {
+        expect(record.status, DurableOutboxStatus.attention);
+        expect(record.lastError, OpRejectionReason.deleted.wireName);
+        expect(record.latestServerRevision, 2);
+      }
+      return (container, notifier);
+    }
+
+    test('an element edit comes back as an add over the tombstone', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      const patch = ElementPatchOp(
+        opId: 'move-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      final key = EntitySyncKey.forStrategyOp(patch)!;
+      final (container, notifier) = await refused(repository, store, [patch]);
+
+      await notifier.retryRejected(flushImmediately: false);
+
+      final restore =
+          container.read(strategyOpQueueProvider).queuedByEntityKey[key]!;
+      expect(
+        restore.pending.op,
+        isA<ElementAddOp>()
+            .having((op) => op.elementPublicId, 'elementPublicId', 'element-1')
+            .having((op) => op.pagePublicId, 'pagePublicId', 'page-1')
+            .having((op) => op.payload, 'payload', {'value': 'moved'})
+            .having((op) => op.sortIndex, 'sortIndex', 4)
+            .having(
+              (op) => op.expectedElementRevision,
+              'expectedElementRevision',
+              2,
+            ),
+      );
+      expect(restore.pending.op.opId, isNot(patch.opId));
+      expect(
+        store.load().records.single.pending.op.opId,
+        restore.pending.op.opId,
+      );
+
+      await notifier.flushNow();
+      await _settle();
+
+      expect(repository.restored.keys, ['element-1']);
+      expect(repository.restored['element-1']!.opId, restore.pending.op.opId);
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(current.lastError, isNull);
+      expect(store.load().records, isEmpty);
+    });
+
+    test('a lineup edit comes back as an add over the tombstone', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      final payload = _lineupAdd(opId: 'unused', name: 'moved').payload;
+      final patch = LineupPatchOp(
+        opId: 'move-lineup',
+        lineupPublicId: 'k',
+        pagePublicId: 'page-1',
+        payload: payload,
+        sortIndex: 3,
+        expectedLineupRevision: 1,
+      );
+      final key = EntitySyncKey.forStrategyOp(patch)!;
+      final (container, notifier) = await refused(repository, store, [patch]);
+
+      await notifier.retryRejected(flushImmediately: false);
+
+      final restore =
+          container.read(strategyOpQueueProvider).queuedByEntityKey[key]!;
+      expect(
+        restore.pending.op,
+        isA<LineupAddOp>()
+            .having((op) => op.lineupPublicId, 'lineupPublicId', 'k')
+            .having((op) => op.pagePublicId, 'pagePublicId', 'page-1')
+            .having((op) => op.payload, 'payload', payload)
+            .having((op) => op.sortIndex, 'sortIndex', 3)
+            .having(
+              (op) => op.expectedLineupRevision,
+              'expectedLineupRevision',
+              2,
+            ),
+      );
+      expect(restore.pending.op.opId, isNot(patch.opId));
+
+      await notifier.flushNow();
+      await _settle();
+
+      expect(repository.restored.keys, ['k']);
+      expect(repository.restored['k']!.opId, restore.pending.op.opId);
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(store.load().records, isEmpty);
+    });
+
+    test('a reorder, or an edit without its place, cannot come back', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      final ops = <StrategyOp>[
+        const ElementReorderOp(
+          opId: 'reorder-element',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          sortIndex: 2,
+          expectedElementRevision: 1,
+        ),
+        const LineupReorderOp(
+          opId: 'reorder-lineup',
+          lineupPublicId: 'k',
+          pagePublicId: 'page-1',
+          sortIndex: 2,
+          expectedLineupRevision: 1,
+        ),
+        // A patch that does not say where the element sits.
+        const ElementPatchOp(
+          opId: 'patch-no-sort',
+          elementPublicId: 'element-2',
+          pagePublicId: 'page-1',
+          payload: {'value': 'moved'},
+          expectedElementRevision: 1,
+        ),
+      ];
+      final (container, notifier) = await refused(repository, store, ops);
+
+      await notifier.retryRejected(flushImmediately: false);
+      // Keep mine says why it could not help, not that a revision is missing.
+      expect(
+        container.read(strategyOpQueueProvider).lastError,
+        teammateDeletedCannotRestoreMessage,
+      );
+      await notifier.flushNow();
+      await _settle();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(
+        {
+          for (final intent in current.attentionByEntityKey.values)
+            intent.pending.op.opId,
+        },
+        {for (final op in ops) op.opId},
+      );
+      expect(current.lastError, isNotNull);
+      expect(repository.calls, hasLength(1));
+      expect(repository.restored, isEmpty);
+      final durable = store.load().records;
+      expect(
+        {for (final record in durable) record.pending.op.opId},
+        {for (final op in ops) op.opId},
+      );
+      for (final record in durable) {
+        expect(record.status, DurableOutboxStatus.attention);
+        expect(record.lastError, OpRejectionReason.deleted.wireName);
+      }
+    });
+
+    test(
+        'work deleted on both sides is settled, and keep mine cannot revive it',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      const elementPatch = ElementPatchOp(
+        opId: 'move-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      final lineupPatch = LineupPatchOp(
+        opId: 'move-lineup',
+        lineupPublicId: 'k',
+        pagePublicId: 'page-1',
+        payload: _lineupAdd(opId: 'unused', name: 'moved').payload,
+        sortIndex: 3,
+        expectedLineupRevision: 1,
+      );
+      // Refused alongside them, and not deleted on the canvas.
+      const unrelatedPatch = ElementPatchOp(
+        opId: 'move-other',
+        elementPublicId: 'element-2',
+        pagePublicId: 'page-1',
+        payload: {'value': 'other'},
+        sortIndex: 5,
+        expectedElementRevision: 1,
+      );
+      final elementKey = EntitySyncKey.forStrategyOp(elementPatch)!;
+      final lineupKey = EntitySyncKey.forStrategyOp(lineupPatch)!;
+      final unrelatedKey = EntitySyncKey.forStrategyOp(unrelatedPatch)!;
+      final (container, notifier) = await refused(
+        repository,
+        store,
+        [elementPatch, lineupPatch, unrelatedPatch],
+      );
+
+      // The user deleted element-1 and lineup k on the canvas.
+      final settled = await notifier.settleAttention({elementKey, lineupKey});
+
+      expect(settled, {elementKey, lineupKey});
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+        [unrelatedKey],
+      );
+      expect(
+        [for (final record in store.load().records) record.entityKey],
+        [unrelatedKey],
+      );
+
+      // Keep mine brings back only the work still in attention.
+      await notifier.retryRejected(flushImmediately: false);
+      expect(
+        container.read(strategyOpQueueProvider).queuedByEntityKey.keys,
+        [unrelatedKey],
+      );
+      await notifier.flushNow();
+      await _settle();
+      expect(repository.restored.keys, ['element-2']);
+      expect(repository.calls, hasLength(2));
+      expect(
+        [for (final op in repository.calls.last) op.entityPublicId],
+        ['element-2'],
+      );
+
+      // Settling adopts nothing from the server: a later edit to a settled
+      // entity is queued and sent as any other.
+      const restore = ElementAddOp(
+        opId: 'add-again',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'again'},
+        sortIndex: 4,
+        expectedElementRevision: 2,
+      );
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {elementKey: restore},
+        clearMissing: false,
+      );
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .queuedByEntityKey[elementKey]!
+            .pending
+            .op
+            .payload,
+        {'value': 'again'},
+      );
+      await notifier.flushNow();
+      await _settle();
+      expect(repository.restored.keys, ['element-2', 'element-1']);
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(store.load().records, isEmpty);
+    });
+
+    test(
+        'work deleted on both sides stays in attention when its refusal was '
+        'not a deletion', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      // Refused as deleted: a teammate deleted element-1.
+      const elementPatch = ElementPatchOp(
+        opId: 'move-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      // Refused as a revision mismatch: an add of lineup group k against a
+      // revision it no longer has. That says nothing about whether the
+      // server deleted k, never had it, or holds it elsewhere.
+      final staleAdd = LineupAddOp(
+        opId: 'stale-add',
+        lineupPublicId: 'k',
+        pagePublicId: 'page-1',
+        payload: _lineupAdd(opId: 'unused').payload,
+        sortIndex: 0,
+        expectedLineupRevision: 1,
+      );
+      final elementKey = EntitySyncKey.forStrategyOp(elementPatch)!;
+      final lineupKey = EntitySyncKey.forStrategyOp(staleAdd)!;
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(elementPatch, flushImmediately: false);
+      await notifier.enqueue(staleAdd, flushImmediately: false);
+      await notifier.flushNow();
+      await _settle();
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+        unorderedEquals([elementKey, lineupKey]),
+      );
+      expect(notifier.refusedAsDeleted(elementKey), isTrue);
+      expect(notifier.refusedAsDeleted(lineupKey), isFalse);
+
+      // The user deleted both on the canvas.
+      final settled = await notifier.settleAttention({elementKey, lineupKey});
+
+      // Only the work refused as deleted is dropped; the other still waits,
+      // in memory and on disk, for the user to choose.
+      expect(settled, {elementKey});
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+        [lineupKey],
+      );
+      expect(container.read(strategyOpQueueProvider).needsAttention, isTrue);
+      final records = store.load().records;
+      expect([for (final record in records) record.entityKey], [lineupKey]);
+      expect(records.single.status, DurableOutboxStatus.attention);
+      expect(records.single.lastError,
+          OpRejectionReason.revisionMismatch.wireName);
+    });
+
+    test('a conditional discard drops only the work still as the user saw it',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      const first = ElementPatchOp(
+        opId: 'move-1',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      const second = ElementPatchOp(
+        opId: 'move-2',
+        elementPublicId: 'element-2',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 5,
+        expectedElementRevision: 1,
+      );
+      final firstKey = EntitySyncKey.forStrategyOp(first)!;
+      final secondKey = EntitySyncKey.forStrategyOp(second)!;
+      final (container, notifier) =
+          await refused(repository, store, [first, second]);
+      // What the user chose to discard: both refused edits, nothing behind.
+      final seen = {
+        firstKey: ('move-1', null),
+        secondKey: ('move-2', null),
+      };
+
+      // Then the user edits element-2 again; it waits behind the refusal.
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          secondKey: const ElementPatchOp(
+            opId: 'newer',
+            elementPublicId: 'element-2',
+            pagePublicId: 'page-1',
+            payload: {'value': 'newer'},
+            sortIndex: 5,
+            expectedElementRevision: 1,
+          ),
+        },
+        clearMissing: false,
+      );
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .successorByEntityKey[secondKey]!
+            .pending
+            .op
+            .opId,
+        'newer',
+      );
+
+      final discarded =
+          await notifier.discardRejected({firstKey, secondKey}, onlyIf: seen);
+
+      // element-1's work is as seen, so it goes; element-2's changed, so it
+      // stays, the newer edit with it, in memory and on disk.
+      expect(discarded, {firstKey});
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey.keys, [secondKey]);
+      expect(current.successorByEntityKey[secondKey]!.pending.op.opId, 'newer');
+      final records = store.load().records;
+      expect([for (final record in records) record.entityKey], [secondKey]);
+      expect(records.single.pending.op.opId, 'move-2');
+      expect(records.single.successorPending!.op.opId, 'newer');
+    });
+
+    test('discarding instead waits for the server copy to be adopted',
+        () async {
+      // The contrast that makes settling distinct: after Use cloud the
+      // canvas is about to be redrawn from the server, so desired work for
+      // the entity is ignored until adoption completes.
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _TombstoneRepository();
+      const elementPatch = ElementPatchOp(
+        opId: 'move-element',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'moved'},
+        sortIndex: 4,
+        expectedElementRevision: 1,
+      );
+      final key = EntitySyncKey.forStrategyOp(elementPatch)!;
+      final (container, notifier) =
+          await refused(repository, store, [elementPatch]);
+
+      await notifier.discardRejected({key});
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'add-again',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'again'},
+            sortIndex: 4,
+            expectedElementRevision: 2,
+          ),
+        },
+        clearMissing: false,
+      );
+
+      expect(
+        container.read(strategyOpQueueProvider).queuedByEntityKey,
+        isEmpty,
+      );
     });
   });
 
@@ -3182,6 +3651,69 @@ ElementPatchOp _cloudElementOp() {
   );
 }
 
+/// An add of lineup [id] as one row, the shape this build sends.
+LineupAddOp _lineupAdd({
+  required String opId,
+  String id = 'k',
+  String pageId = 'page-1',
+  String name = 'lineup',
+}) {
+  return LineupAddOp(
+    opId: opId,
+    lineupPublicId: id,
+    pagePublicId: pageId,
+    payload: cloudLineupsPayload({
+      'id': id,
+      'origins': [
+        {'id': 'o', 'agent': <String, dynamic>{}},
+      ],
+      'landings': [
+        {'id': 'l', 'ability': <String, dynamic>{}},
+      ],
+      'links': [
+        {'id': id, 'originId': 'o', 'landingId': 'l', 'name': name},
+      ],
+    }),
+    sortIndex: 0,
+  );
+}
+
+/// A link add as builds before one row per lineup wrote it to their outbox:
+/// its own row, keyed `lineupLink:<id>`, naming its origin and landing.
+LineupAddOp _retiredLinkAdd() {
+  return const LineupAddOp(
+    opId: 'old-link-add',
+    lineupPublicId: 'lineupLink:k',
+    pagePublicId: 'page-1',
+    payload: {
+      'kind': 'lineupLink',
+      'payloadVersion': 1,
+      'data': {'id': 'k', 'originId': 'o', 'landingId': 'l'},
+    },
+    sortIndex: 0,
+  );
+}
+
+/// [op] as saved in the durable outbox of account-a's strategy-1.
+DurableOutboxRecord _savedRecord(
+  StrategyOp op, {
+  DurableOutboxStatus status = DurableOutboxStatus.queued,
+  String? lastError,
+  int? latestServerRevision,
+}) {
+  return DurableOutboxRecord(
+    accountId: 'account-a',
+    strategyPublicId: 'strategy-1',
+    entityKey: EntitySyncKey.forStrategyOp(op)!,
+    pending: PendingOp(op: op, clientId: 'client-a'),
+    status: status,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+    lastError: lastError,
+    latestServerRevision: latestServerRevision,
+  );
+}
+
 PagePatchOp _pageSideOp({
   required String opId,
   required bool isAttack,
@@ -3305,12 +3837,12 @@ class _RecordingAckRepository extends ConvexStrategyRepository {
   }
 }
 
-/// Refuses every op as the server refuses a link whose origin or landing is
-/// gone, or with another lineup refusal.
-class _MissingLinkEndRepository extends ConvexStrategyRepository {
-  _MissingLinkEndRepository({
-    this.code = 'LINEUP_LINK_END_MISSING',
-    this.message = lineupLinkEndMissingMessage,
+/// Refuses every op as the server refuses a lineup whose row lives on
+/// another page.
+class _FailingLineupRepository extends ConvexStrategyRepository {
+  _FailingLineupRepository({
+    this.code = 'LINEUP_PAGE_MISMATCH',
+    this.message = lineupPageMismatchMessage,
   }) : super(IcarusConvexApi(_UnusedTransport()));
 
   final String code;
@@ -3332,6 +3864,50 @@ class _MissingLinkEndRepository extends ConvexStrategyRepository {
           message: message,
         ),
     ];
+  }
+}
+
+/// A server on which a teammate deleted elements element-1 and element-2 and
+/// lineup k, each tombstone at revision 2. A patch or reorder of a deleted
+/// row is refused as deleted; an add expecting the tombstone's revision
+/// brings the row back.
+class _TombstoneRepository extends ConvexStrategyRepository {
+  _TombstoneRepository() : super(IcarusConvexApi(_UnusedTransport()));
+
+  final List<List<StrategyOp>> calls = [];
+  final _deleted = {'element-1', 'element-2', 'k'};
+
+  /// The add that restored each row, by its id.
+  final Map<String, StrategyOp> restored = {};
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+    String? accountSubject,
+  }) async {
+    calls.add(List<StrategyOp>.from(ops));
+    return [for (final op in ops) _apply(op)];
+  }
+
+  OpAck _apply(StrategyOp op) {
+    final id = op.entityPublicId!;
+    if (!_deleted.contains(id)) return AppliedOpAck(opId: op.opId, revision: 2);
+    if (op.kind == StrategyOpKind.add && op.expectedRevision == 2) {
+      _deleted.remove(id);
+      restored[id] = op;
+      return AppliedOpAck(opId: op.opId, revision: 3);
+    }
+    return RejectedOpAck(
+      opId: op.opId,
+      rejectionReason: op.kind == StrategyOpKind.add
+          ? OpRejectionReason.revisionMismatch
+          : OpRejectionReason.deleted,
+      current: op.entityType == StrategyOpEntityType.lineup
+          ? const LineupCurrentSnapshot(revision: 2, value: {})
+          : const ElementCurrentSnapshot(revision: 2, value: {}),
+    );
   }
 }
 

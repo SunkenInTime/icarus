@@ -52,38 +52,28 @@ export function collectAssetIdFromElementPayload(
   return typeof payload.data.id === "string" ? payload.data.id : null;
 }
 
+/// The images a lineup group shows: links[*].images[*].id, across every
+/// lineup in it. Its origins and landings hold none.
 export function collectAssetIdsFromLineupPayload(
   payload: Doc<"lineups">["payload"],
 ): Set<string> {
   const assetIds = new Set<string>();
-
-  const addImages = (rawImages: unknown) => {
-    if (!Array.isArray(rawImages)) {
-      return;
-    }
-    for (const image of rawImages) {
-      if (
-        typeof image === "object" &&
-        image !== null &&
-        typeof (image as { id?: unknown }).id === "string"
-      ) {
-        assetIds.add((image as { id: string }).id);
+  const links = payload.data.links;
+  if (!Array.isArray(links)) return assetIds;
+  for (const link of links) {
+    const images = isObject(link) ? link.images : undefined;
+    if (!Array.isArray(images)) continue;
+    for (const image of images) {
+      if (isObject(image) && typeof image.id === "string") {
+        assetIds.add(image.id);
       }
     }
-  };
-
-  switch (payload.kind) {
-    case "lineupLink":
-      // A link holds its images: data.images[*].id. Origins and landings
-      // hold none.
-      addImages(payload.data.images);
-      break;
-    case "lineupOrigin":
-    case "lineupLanding":
-      break;
   }
-
   return assetIds;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function collectReferencedAssetIds(

@@ -239,7 +239,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final loaded = _store.load();
     _recordsByStorageKey = {
       for (final record in loaded.records)
-        record.storageKey: _resumedAfterUpgrade(record),
+        record.storageKey: _retiredAsAttention(_resumedAfterUpgrade(record)),
     };
     ref.onDispose(() {
       _isDisposed = true;
@@ -286,6 +286,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ? null
           : 'The cloud outbox contains unreadable saved work.',
       accountOutbox: _accountSummary(session.accountId),
+    );
+  }
+
+  /// [record] waiting in attention when it holds a lineup change in the
+  /// cloud format before one row per lineup, whatever state an older build
+  /// left it in (queued, paused, refused for another reason). It can never
+  /// be sent; in attention it is shown, with its reason, and nothing but the
+  /// user's discard removes it: reconciling the canvas's work never touches
+  /// attention. Like [_resumedAfterUpgrade], only the copy in memory changes.
+  static DurableOutboxRecord _retiredAsAttention(DurableOutboxRecord record) {
+    if (!isRetiredCloudLineupOp(record.pending.op) ||
+        (record.status == DurableOutboxStatus.attention &&
+            record.lastError == retiredLineupOpMessage)) {
+      return record;
+    }
+    return record.copyWith(
+      status: DurableOutboxStatus.attention,
+      lastError: retiredLineupOpMessage,
     );
   }
 
@@ -975,17 +993,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final rejectedOp = rejected.op;
           final successor = record?.successorPending;
           final retryOp = successor?.op ?? rejectedOp;
+          // No server takes a lineup change in the old cloud format; sending
+          // it again would only bring it back here.
+          if (isRetiredCloudLineupOp(retryOp)) continue;
           final isPayloadPolicyAttention =
               record?.lastError == cloudOperationTooLargeMessage ||
                   cloudOperationExceedsPolicy(rejectedOp);
-          // Nothing moved on the server: the link is re-sent as it was,
-          // add or patch, once its ends are back; a change to a page in the
-          // trash, once the page is restored.
-          final isMissingLinkEnd =
-              record?.lastError == lineupLinkEndMissingMessage;
+          // Nothing moved on the server: a change to a page in the trash is
+          // re-sent as it was once the page is restored.
           final isOnDeletedPage = record?.lastError == pageDeletedMessage;
-          final retriesAsSent =
-              isPayloadPolicyAttention || isMissingLinkEnd || isOnDeletedPage;
+          final retriesAsSent = isPayloadPolicyAttention || isOnDeletedPage;
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
           if (!retriesAsSent && retryRevision == null) continue;
@@ -993,13 +1010,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (retryOp is ElementAddOp || retryOp is LineupAddOp) &&
                   (record?.lastError == 'missing_expected_revision' ||
                       record?.lastError == 'revision_mismatch');
-          final rebasedOp = retriesAsSent
-              ? retryOp.withOpId(const Uuid().v4())
-              : _rebaseRejectedOp(
-                  retryOp,
-                  retryRevision!,
-                  preserveAdd: isTombstoneRestore,
-                );
+          // A teammate deleted what this change edits. Keeping mine brings
+          // it back as the user has it: an add over the tombstone.
+          final restoresDeleted =
+              record?.lastError == OpRejectionReason.deleted.wireName;
+          final StrategyOp rebasedOp;
+          if (retriesAsSent) {
+            rebasedOp = retryOp.withOpId(const Uuid().v4());
+          } else if (restoresDeleted) {
+            final restore = _restoreOp(retryOp, retryRevision!);
+            if (restore == null) continue;
+            rebasedOp = restore;
+          } else {
+            rebasedOp = _rebaseRejectedOp(
+              retryOp,
+              retryRevision!,
+              preserveAdd: isTombstoneRestore,
+            );
+          }
           _keepCanvasWritten(retryOp, rebasedOp);
           final pending = PendingOp(
             op: rebasedOp,
@@ -1042,9 +1070,30 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       if (!changed) {
         if (only != null) return;
+        // Old-format lineup changes are skipped on purpose, and keep their
+        // own reason.
+        final onlyRetired = attention.values.every(
+          (intent) => isRetiredCloudLineupOp(intent.pending.op),
+        );
+        // Changes a teammate's delete refused that hold nothing to bring
+        // the item back with.
+        final cannotRestore = attention.keys.any(
+          (key) =>
+              _recordForActiveKey(key)?.lastError ==
+              OpRejectionReason.deleted.wireName,
+        );
         state = state.copyWith(
-          lastError: 'Some retained cloud work cannot be retried '
-              'automatically because the server has no matching revision.',
+          lastError: onlyRetired
+              ? _loadedAttentionMessage(
+                  loadIssues: state.loadIssues,
+                  paused: state.pausedByEntityKey,
+                  attention: attention,
+                )
+              : cannotRestore
+                  ? teammateDeletedCannotRestoreMessage
+                  : 'Some retained cloud work cannot be retried '
+                      'automatically because the server has no matching '
+                      'revision.',
         );
         return;
       }
@@ -1074,9 +1123,43 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// Each durable record contains both the rejected predecessor and any newer
   /// successor for that entity. Removing the record discards both, without
   /// changing unrelated queued, in-flight, paused, or rejected work.
+  ///
+  /// Given [onlyIf] (the refused op id and successor op id of each key, as
+  /// the user last saw them), a key whose waiting work has changed since is
+  /// left as it is: the user chose to discard that work, not a newer edit.
   Future<Set<EntitySyncKey>> discardRejected(
-    Set<EntitySyncKey> entityKeys,
-  ) {
+    Set<EntitySyncKey> entityKeys, {
+    Map<EntitySyncKey, (String, String?)>? onlyIf,
+  }) =>
+      _dropAttention(entityKeys, adoptRemote: true, onlyIf: onlyIf);
+
+  /// Whether the server refused [key]'s waiting work because a teammate
+  /// deleted what it edits (rejection reason `deleted`).
+  bool refusedAsDeleted(EntitySyncKey key) =>
+      _recordForActiveKey(key)?.lastError == OpRejectionReason.deleted.wireName;
+
+  /// Drops the refused work of entities the user has since deleted on the
+  /// canvas, when the server refused it because a teammate deleted them
+  /// ([refusedAsDeleted]). Both sides agree they are gone, so nothing is
+  /// left to keep, and Keep mine must not bring them back. Work refused for
+  /// any other reason stays: only that refusal says the server deleted the
+  /// item, rather than never having it or holding it elsewhere. Unlike
+  /// [discardRejected] the canvas is already the truth: there is nothing to
+  /// adopt.
+  Future<Set<EntitySyncKey>> settleAttention(Set<EntitySyncKey> entityKeys) =>
+      _dropAttention(
+        {
+          for (final key in entityKeys)
+            if (refusedAsDeleted(key)) key
+        },
+        adoptRemote: false,
+      );
+
+  Future<Set<EntitySyncKey>> _dropAttention(
+    Set<EntitySyncKey> entityKeys, {
+    required bool adoptRemote,
+    Map<EntitySyncKey, (String, String?)>? onlyIf,
+  }) {
     return _serializeWrite(() async {
       final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
         state.attentionByEntityKey,
@@ -1093,6 +1176,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final accountId = state.accountId;
         final strategyPublicId = state.strategyPublicId;
         if (rejected == null || accountId == null || strategyPublicId == null) {
+          continue;
+        }
+        if (onlyIf != null &&
+            onlyIf[key] !=
+                (
+                  rejected.pending.op.opId,
+                  successors[key]?.pending.op.opId,
+                )) {
           continue;
         }
         final storageKey = DurableOutboxRecord.createStorageKey(
@@ -1119,7 +1210,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           _uncertainOversizedParking.remove(storageKey);
           attention.remove(key);
           successors.remove(key);
-          _awaitingRemoteAdoption.add(key);
+          if (adoptRemote) _awaitingRemoteAdoption.add(key);
           discarded.add(key);
         } catch (error, stackTrace) {
           persistenceError = error;
@@ -1425,75 +1516,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
   }
 
-  /// The origin and landing rows a lineup link add or patch names; empty
-  /// for any other op.
-  static Set<EntitySyncKey> _lineupLinkEndKeys(StrategyOp op) {
-    final pageId = op.pagePublicId;
-    final payload = op.payload;
-    final data = payload is Map ? payload['data'] : null;
-    if (op.entityType != StrategyOpEntityType.lineup ||
-        payload is! Map ||
-        payload['kind'] != CloudLineupKind.link ||
-        pageId == null ||
-        data is! Map) {
-      return const {};
-    }
-    return {
-      EntitySyncKey.lineup(
-        pageId,
-        cloudLineupRowId(CloudLineupKind.origin, '${data['originId']}'),
-      ),
-      EntitySyncKey.lineup(
-        pageId,
-        cloudLineupRowId(CloudLineupKind.landing, '${data['landingId']}'),
-      ),
-    };
-  }
-
-  /// Whether [op] deletes a lineup row of one of [kinds].
-  static bool _deletesLineupRow(StrategyOp op, List<String> kinds) =>
-      op is LineupDeleteOp &&
-      kinds.any((kind) => op.lineupPublicId.startsWith('$kind:'));
-
-  /// Whether [record] is a lineup op that must wait for another one still
-  /// queued or in flight (queued behind it, past a batch cap, under another
-  /// client id, backing off) outside [sentWith], the batch being claimed.
-  /// The server refuses a link whose origin or landing is not live, so a
-  /// link add or patch waits for the records of the ends it names. It also
-  /// refuses deleting an origin or landing a live link names, so an end
-  /// delete waits for every link delete on its page. Either is due once the
-  /// record it waits for has been sent.
-  bool _waitsForLineupOrder(
-    DurableOutboxRecord record, {
-    Set<EntitySyncKey> sentWith = const {},
-  }) {
-    bool isUnsent(DurableOutboxRecord other) =>
-        !sentWith.contains(other.entityKey) &&
-        (other.status == DurableOutboxStatus.queued ||
-            other.status == DurableOutboxStatus.inFlight);
-
-    final op = record.pending.op;
-    if (_deletesLineupRow(
-      op,
-      const [CloudLineupKind.origin, CloudLineupKind.landing],
-    )) {
-      return _recordsByStorageKey.values.any((other) =>
-          other.accountId == record.accountId &&
-          other.strategyPublicId == record.strategyPublicId &&
-          other.entityKey.pageId == record.entityKey.pageId &&
-          _deletesLineupRow(other.pending.op, const [CloudLineupKind.link]) &&
-          isUnsent(other));
-    }
-    return _lineupLinkEndKeys(op).any((endKey) {
-      final end = _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
-        accountId: record.accountId,
-        strategyPublicId: record.strategyPublicId,
-        entityKey: endKey,
-      )];
-      return end != null && isUnsent(end);
-    });
-  }
-
   Future<List<DurableOutboxRecord>> _claimBatch({
     required String accountId,
     required String strategyPublicId,
@@ -1512,26 +1534,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
-      // Link deletes go first, so the origin and landing deletes of a whole
-      // lineup can follow them in the same batch.
-      bool deletesLink(DurableOutboxRecord record) => _deletesLineupRow(
-            record.pending.op,
-            const [CloudLineupKind.link],
-          );
-      final ordered = [
-        ...candidates.where(deletesLink),
-        ...candidates.where((record) => !deletesLink(record)),
-      ];
       final selected = <DurableOutboxRecord>[];
-      final selectedKeys = <EntitySyncKey>{};
-      bool mustWait(DurableOutboxRecord record) =>
-          _waitsForLineupOrder(record, sentWith: selectedKeys);
-      final sendable = ordered.where((record) => !mustWait(record));
-      if (sendable.isEmpty) return const <DurableOutboxRecord>[];
-      final batchClientId = sendable.first.pending.clientId;
-      for (final candidate in ordered) {
+      final batchClientId = candidates.first.pending.clientId;
+      for (final candidate in candidates) {
         if (candidate.pending.clientId != batchClientId) continue;
-        if (mustWait(candidate)) continue;
         if (selected.length >= _maxBatchSize) break;
         final nextSelection = <DurableOutboxRecord>[...selected, candidate];
         final byteSize = serializedCloudBatchUtf8Bytes(
@@ -1541,7 +1547,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
         if (byteSize > maxCloudBatchBytes) break;
         selected.add(candidate);
-        selectedKeys.add(candidate.entityKey);
       }
       final claimed = <DurableOutboxRecord>[];
       for (final record in selected) {
@@ -2354,7 +2359,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   bool get _hasDurabilityFailureForCurrentAccount =>
       _hasDurabilityFailureForAccount(state.accountId);
 
+  /// How many times writing the outbox has failed, so a caller can tell
+  /// whether its own save failed rather than an earlier one.
+  int get persistenceFailureCount => _persistenceFailureCount;
+  int _persistenceFailureCount = 0;
+
   void _recordPersistenceFailure(Object error, StackTrace stackTrace) {
+    _persistenceFailureCount++;
     log('Durable outbox persistence failed: $error',
         name: 'strategy_outbox', error: error, stackTrace: stackTrace);
     if (_isDisposed) return;
@@ -2424,8 +2435,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             (record.status == DurableOutboxStatus.queued ||
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
-            !cloudOperationExceedsPolicy(record.pending.op) &&
-            !_waitsForLineupOrder(record))
+            !cloudOperationExceedsPolicy(record.pending.op))
         .toList(growable: false);
     if (candidates.isEmpty) return;
     final nextAttempt = candidates
@@ -2469,7 +2479,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.status == DurableOutboxStatus.inFlight) &&
             !_uncertainDurableRecords.contains(record.storageKey) &&
             !cloudOperationExceedsPolicy(record.pending.op) &&
-            !_waitsForLineupOrder(record) &&
             (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
         .toList(growable: false)
       ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));
@@ -2632,6 +2641,57 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         if (record.successorPending case final successor?) successor.op.opId,
       ],
     });
+  }
+
+  /// [op] as an add bringing its element or lineup back over the tombstone
+  /// at [revision], with the payload and place the user has. Null for a
+  /// change that does not hold them (a reorder, a delete); live sync's
+  /// patches always do.
+  static StrategyOp? _restoreOp(StrategyOp op, int revision) {
+    final opId = const Uuid().v4();
+    return switch (op) {
+      ElementAddOp(
+        :final elementPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) ||
+      ElementPatchOp(
+        :final elementPublicId,
+        pagePublicId: final pagePublicId?,
+        payload: final payload?,
+        sortIndex: final sortIndex?,
+      ) =>
+        ElementAddOp(
+          opId: opId,
+          elementPublicId: elementPublicId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          sortIndex: sortIndex,
+          expectedElementRevision: revision,
+        ),
+      LineupAddOp(
+        :final lineupPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) ||
+      LineupPatchOp(
+        :final lineupPublicId,
+        pagePublicId: final pagePublicId?,
+        payload: final payload?,
+        sortIndex: final sortIndex?,
+      ) =>
+        LineupAddOp(
+          opId: opId,
+          lineupPublicId: lineupPublicId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          sortIndex: sortIndex,
+          expectedLineupRevision: revision,
+        ),
+      _ => null,
+    };
   }
 
   StrategyOp _rebaseRejectedOp(
@@ -2840,13 +2900,22 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       var hasOtherWork = false;
       for (final entry in attention.entries) {
         final record = recordFor(entry.key);
-        final reason = record?.pending.op.opId == entry.value.pending.op.opId
+        final lastError = record?.pending.op.opId == entry.value.pending.op.opId
             ? record?.lastError
             : null;
-        if (reason == lineupLinkEndMissingMessage ||
-            reason == lineupPageMismatchMessage ||
-            reason == lineupEndInUseMessage ||
+        final reason = lastError == OpRejectionReason.deleted.wireName
+            ? teammateDeletedMessage
+            : lastError;
+        if (reason == lineupPageMismatchMessage ||
+            reason == lineupOverlapMessage ||
+            reason == teammateDeletedMessage ||
+            reason == retiredLineupOpMessage ||
             reason == pageDeletedMessage) {
+          // A second, different reason is other work too: one explanation
+          // must not stand for both.
+          if (specificReason != null && reason != specificReason) {
+            hasOtherWork = true;
+          }
           specificReason ??= reason;
         } else {
           hasOtherWork = true;

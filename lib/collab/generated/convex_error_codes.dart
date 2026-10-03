@@ -22,8 +22,6 @@ enum ConvexErrorCode {
   invalidPayload('INVALID_PAYLOAD'),
   inviteExpired('INVITE_EXPIRED'),
   inviteRevoked('INVITE_REVOKED'),
-  lineupEndInUse('LINEUP_END_IN_USE'),
-  lineupLinkEndMissing('LINEUP_LINK_END_MISSING'),
   lineupPageMismatch('LINEUP_PAGE_MISMATCH'),
   lineupStrategyMismatch('LINEUP_STRATEGY_MISMATCH'),
   missingAddElementArgs('MISSING_ADD_ELEMENT_ARGS'),

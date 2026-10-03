@@ -105,9 +105,13 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    // Graph rows are keyed `<payloadKind>:<entity id>`; see ops.ts. A key is
-    // unique within its strategy, not across strategies: a copied strategy
-    // may reuse its original's entity ids.
+    // One row per lineup group: the lineups on one page joined through
+    // shared spots, holding its origins, landings and links. Keyed by the
+    // group's id (payload.data.id). A key is unique within its strategy, not
+    // across strategies: a strategy copied on a device keeps its original's
+    // lineup ids.
+    // This shape replaced the origin/landing/link rows with no migration:
+    // production and dev held no lineup rows when it shipped (2026-10-02).
     payloadKind: lineupPayloadKindValidator,
     payloadVersion: v.number(),
     payload: lineupPayloadValidator,
@@ -119,16 +123,33 @@ export default defineSchema({
   })
     .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_pageId", ["pageId"])
-    .index("by_strategyId", ["strategyId"])
-    .index("by_strategyId_and_payloadKind", ["strategyId", "payloadKind"])
-    // Live links on a page, read when an origin or landing is deleted (see
-    // assertLineupEndUnused in ops.ts).
-    .index("by_pageId_and_payloadKind_and_deleted", [
-      "pageId",
-      "payloadKind",
-      "deleted",
-    ])
     .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
+  // The agents a live lineup group starts from: one small row per origin in
+  // the group, kept in step with every lineup write (see
+  // lib/strategyAgentSummary.ts). The strategy's agent summary reads these
+  // instead of the lineup rows, whose image lists can make reading them all
+  // exceed a transaction's limits.
+  lineupAgents: defineTable({
+    strategyId: v.id("strategies"),
+    pageId: v.id("pages"),
+    lineupId: v.id("lineups"),
+    originId: v.string(),
+    agentType: v.string(),
+  })
+    .index("by_strategyId", ["strategyId"])
+    .index("by_lineupId", ["lineupId"]),
+  // The lineups and spots each live lineup group holds, one small row per
+  // item (`origin:<id>`, `landing:<id>` or `link:<id>`), kept in step with
+  // every lineup write (see lib/lineupItems.ts). A write is refused if it
+  // would put an item in two groups of a page; the check reads these rows
+  // instead of the lineup rows, whose image lists can be large.
+  lineupItems: defineTable({
+    pageId: v.id("pages"),
+    lineupId: v.id("lineups"),
+    item: v.string(),
+  })
+    .index("by_pageId_and_item", ["pageId", "item"])
+    .index("by_lineupId", ["lineupId"]),
   // Which content rows show which images: one small row per (element or
   // lineup row, image id it shows), kept in step with every content write
   // (see lib/assetReferences.ts). Media cleanup checks an image's references

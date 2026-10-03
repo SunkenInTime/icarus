@@ -16,7 +16,6 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -2398,7 +2397,7 @@ class StrategyImportExportService {
         assetIds.add(element.publicId);
       }
 
-      final lineups = _cloudLineupGraph(
+      final lineups = lineUpGraphFromRemoteLineups(
         snapshot.lineupsByPage[page.publicId] ?? const [],
       );
       for (final link in lineups.links) {
@@ -2516,7 +2515,7 @@ class StrategyImportExportService {
         }
       }
 
-      final lineUpGraph = _cloudLineupGraph(lineups);
+      final lineUpGraph = lineUpGraphFromRemoteLineups(lineups);
 
       StrategySettings settings = StrategySettings();
       final settingsPayload = fullPage.content.settings;
@@ -2584,13 +2583,4 @@ class StrategyImportExportService {
       pages: pages,
     );
   }
-}
-
-/// A cloud page's live lineup rows as the graph its canvas draws.
-LineUpGraph _cloudLineupGraph(Iterable<RemoteLineup> lineups) {
-  return lineUpGraphFromCloudRows([
-    for (final lineup in lineups)
-      if (!lineup.deleted)
-        CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
-  ]).graph;
 }

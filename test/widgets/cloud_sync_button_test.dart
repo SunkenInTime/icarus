@@ -13,6 +13,7 @@ import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/lineup_conflicts_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
@@ -21,6 +22,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
+import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
@@ -188,11 +190,15 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
 }
 
 class _ConflictSession extends StrategyPageSessionNotifier {
-  _ConflictSession({this.result = true, this.failure});
+  _ConflictSession({this.result = true, this.failure, this.keepBoth});
 
   final bool result;
   final Object? failure;
+
+  /// What Keep both answers; by default what [result] says.
+  final KeepBothOutcome? keepBoth;
   int useCloudCount = 0;
+  int keepBothCount = 0;
 
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
@@ -207,6 +213,14 @@ class _ConflictSession extends StrategyPageSessionNotifier {
     useCloudCount += 1;
     if (failure != null) throw failure!;
     return result;
+  }
+
+  @override
+  Future<KeepBothOutcome> keepBothForRejected() async {
+    keepBothCount += 1;
+    if (failure != null) throw failure!;
+    return keepBoth ??
+        (result ? KeepBothOutcome.kept : KeepBothOutcome.unchanged);
   }
 }
 
@@ -295,12 +309,14 @@ ProviderContainer _createContainer({
 ProviderContainer _createConflictContainer({
   required _AttentionOpQueue queue,
   required _ConflictSession session,
+  List<LineupGroupConflict>? lineupConflicts,
 }) {
   return ProviderContainer(
     overrides: [
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
       strategyOpQueueProvider.overrideWith(() => queue),
       strategyPageSessionProvider.overrideWith(() => session),
+      lineupConflictsProvider.overrideWithValue(lineupConflicts),
       cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
       cloudMediaAccountIdProvider.overrideWithValue('account-a'),
       convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
@@ -369,20 +385,6 @@ void main() {
           ),
         ],
         isProcessing: false,
-      ),
-    );
-    addTearDown(container.dispose);
-    await container.read(convexConnectionProvider.future);
-
-    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
-  });
-
-  test('a lineup live sync refused to send shows attention', () async {
-    final container = _createContainer(
-      liveSyncState: ActivePageLiveSyncState(
-        unsyncableLineupKeys: {
-          const EntitySyncKey.lineup('page-1', 'lineup-1')
-        },
       ),
     );
     addTearDown(container.dispose);
@@ -925,6 +927,10 @@ void main() {
       find.textContaining('applies to all 2 conflicting changes'),
       findsOneWidget,
     );
+    // An element conflict has no lineup changes to list and nothing to keep
+    // beside the cloud's version.
+    expect(find.text('Keep both'), findsNothing);
+    expect(find.text('Your changes'), findsNothing);
 
     await tester.tap(find.text('Use cloud'));
     await tester.pumpAndSettle();
@@ -932,6 +938,173 @@ void main() {
     expect(session.useCloudCount, 1);
     expect(queue.retryRejectedCount, 0);
     expect(queue.flushNowCount, 0);
+  });
+
+  group('lineup conflicts', () {
+    LineupChange change(String label, String description) =>
+        LineupChange(label: label, description: description);
+
+    final conflicts = [
+      LineupGroupConflict(
+        key: const EntitySyncKey.lineup('page-1', 'link-a'),
+        yours: [change('Heaven', 'notes edited')],
+        cloud: [
+          change('Mid', 'renamed'),
+          change('Short', 'added'),
+          change('Long', 'landing moved'),
+          change('Deep', 'deleted'),
+          change('Sova lineup', 'images changed'),
+        ],
+      ),
+    ];
+
+    Future<void> openPopover(
+        WidgetTester tester, ProviderContainer container) async {
+      // The test font sets every glyph a full em wide, so the lists wrap far
+      // more than in the app; a desktop-sized window gives them the room.
+      tester.view.physicalSize = const Size(1280, 1024);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+                body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(_syncButton('attention'));
+      await tester.pumpAndSettle();
+    }
+
+    Finder line(String text) => find.text(text, findRichText: true);
+
+    testWidgets(
+        'without the version both sides started from, list one section of '
+        'how yours differs from the cloud', (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession();
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: [
+          LineupGroupConflict(
+            key: const EntitySyncKey.lineup('page-1', 'link-a'),
+            yours: [
+              change('Heaven', 'notes edited'),
+              change('Mid', 'notes edited'),
+            ],
+            cloud: null,
+          ),
+          // One conflict without that version is enough to show none of
+          // the sides' changes apart.
+          LineupGroupConflict(
+            key: const EntitySyncKey.lineup('page-1', 'link-z'),
+            yours: [change('Long', 'landing moved')],
+            cloud: [change('Short', 'added')],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      expect(
+          find.text('How your version differs from the cloud'), findsOneWidget);
+      expect(line('Heaven · notes edited'), findsOneWidget);
+      expect(line('Mid · notes edited'), findsOneWidget);
+      expect(line('Long · landing moved'), findsOneWidget);
+      expect(find.text('Your changes'), findsNothing);
+      expect(find.text('Cloud changes'), findsNothing);
+      expect(line('Short · added'), findsNothing);
+      expect(find.text('Keep both'), findsOneWidget);
+    });
+
+    testWidgets('list what each side changed and offer Keep both',
+        (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession();
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: conflicts,
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      expect(
+        find.textContaining('A teammate changed these lineups'),
+        findsOneWidget,
+      );
+      expect(find.text('Your changes'), findsOneWidget);
+      expect(line('Heaven · notes edited'), findsOneWidget);
+      expect(find.text('Cloud changes'), findsOneWidget);
+      expect(line('Mid · renamed'), findsOneWidget);
+      expect(line('Short · added'), findsOneWidget);
+      expect(line('Long · landing moved'), findsOneWidget);
+      expect(line('Deep · deleted'), findsOneWidget);
+      // Past four lines the rest are counted.
+      expect(line('Sova lineup · images changed'), findsNothing);
+      expect(find.text('and 1 more lineup'), findsOneWidget);
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep mine'), findsOneWidget);
+      expect(find.text('Keep both'), findsOneWidget);
+
+      await tester.tap(find.text('Keep both'));
+      await tester.pumpAndSettle();
+
+      expect(session.keepBothCount, 1);
+      expect(session.useCloudCount, 0);
+      expect(queue.retryRejectedCount, 0);
+      expect(queue.flushNowCount, 0);
+    });
+
+    testWidgets('a Keep both that cannot load the cloud version says so',
+        (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession(result: false);
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: conflicts,
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      await tester.tap(find.text('Keep both'));
+      await tester.pumpAndSettle();
+
+      expect(session.keepBothCount, 1);
+      expect(
+        find.text('Could not load the cloud version. Nothing was changed.'),
+        findsOneWidget,
+      );
+      expect(find.text('Keep both'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a Keep both that copied but could not resolve says the conflict '
+        'is still open', (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession(keepBoth: KeepBothOutcome.copiesOnly);
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: conflicts,
+      );
+      addTearDown(container.dispose);
+      await openPopover(tester, container);
+
+      await tester.tap(find.text('Keep both'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Your version was added as a copy'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('the conflict is still open'), findsOneWidget);
+    });
   });
 
   testWidgets(
@@ -1041,19 +1214,14 @@ void main() {
 
   for (final (name, reason, expected) in [
     (
-      'a missing origin or landing',
-      lineupLinkEndMissingMessage,
-      "origin or landing spot isn't on this page in the cloud",
-    ),
-    (
       'another page',
       lineupPageMismatchMessage,
       'clashes with one on another page',
     ),
     (
-      'an origin or landing another lineup uses',
-      lineupEndInUseMessage,
-      'still uses this origin or landing spot, so it was not deleted',
+      'its old cloud format',
+      retiredLineupOpMessage,
+      'saved by an older version of Icarus',
     ),
   ]) {
     testWidgets('a lineup refused for $name says why, not "another edit"',
@@ -1091,17 +1259,28 @@ void main() {
   }
 
   testWidgets(
-      'a lineup refusal among several changes says the choice covers all '
-      'of them', (tester) async {
-    final queue = _AttentionOpQueue(2);
+      'a lineup group the server refused as overlapping another says why, '
+      'not that a teammate changed it', (tester) async {
+    tester.view.physicalSize = const Size(1280, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final queue = _AttentionOpQueue(1);
     final container = _createConflictContainer(
       queue: queue,
       session: _ConflictSession(),
+      // Even with lineup changes to list, the specific reason comes first.
+      lineupConflicts: const [
+        LineupGroupConflict(
+          key: EntitySyncKey.lineup('page-1', 'link-a'),
+          yours: [LineupChange(label: 'Heaven', description: 'added')],
+          cloud: [],
+        ),
+      ],
     );
     addTearDown(container.dispose);
     container
         .read(strategySaveStateProvider.notifier)
-        .setCloudSyncError(lineupLinkEndMissingMessage);
+        .setCloudSyncError(lineupOverlapMessage);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -1116,7 +1295,97 @@ void main() {
     await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+    expect(
+      find.textContaining('shares a spot with lineups saved separately'),
+      findsOneWidget,
+    );
+    expect(
+        find.textContaining('Keep mine replaces their changes'), findsNothing);
+    expect(
+        find.textContaining('A teammate changed these lineups'), findsNothing);
+    expect(find.textContaining('Another edit reached'), findsNothing);
+    expect(find.text('Your changes'), findsNothing);
+    expect(find.text('Keep both'), findsNothing);
+    expect(find.text('Use cloud'), findsOneWidget);
+  });
+
+  for (final (name, error, keepMine) in [
+    ('alone', lineupOverlapMessage, true),
+    (
+      'beside other work',
+      '$lineupOverlapMessage. $otherWorkNeedsAttentionNote',
+      true,
+    ),
+  ]) {
+    testWidgets(
+        'an overlap refusal $name still offers Keep mine, saying when it '
+        'helps', (tester) async {
+      final queue = _AttentionOpQueue(keepMine ? 2 : 1);
+      final container = _createConflictContainer(
+        queue: queue,
+        session: _ConflictSession(),
+      );
+      addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).setCloudSyncError(
+            error,
+          );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+              body: CloudSyncButton(style: kEditorToolbarButtonStyle),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(_syncButton('attention'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('shares a spot with lineups saved separately'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('refused while the spot is still shared'),
+        findsOneWidget,
+      );
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep mine'), keepMine ? findsOneWidget : findsNothing);
+      expect(find.text('Retry sync'), findsNothing);
+      expect(find.text('Keep both'), findsNothing);
+    });
+  }
+
+  testWidgets(
+      'a lineup refusal among several changes says the choice covers all '
+      'of them', (tester) async {
+    final queue = _AttentionOpQueue(2);
+    final container = _createConflictContainer(
+      queue: queue,
+      session: _ConflictSession(),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(strategySaveStateProvider.notifier)
+        .setCloudSyncError(lineupPageMismatchMessage);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(_syncButton('attention'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('another page'), findsOneWidget);
     expect(
       find.textContaining('applies to all 2 changes that need attention'),
       findsOneWidget,
@@ -1132,7 +1401,7 @@ void main() {
     );
     addTearDown(container.dispose);
     container.read(strategySaveStateProvider.notifier).setCloudSyncError(
-          '$lineupLinkEndMissingMessage. $otherWorkNeedsAttentionNote',
+          '$lineupPageMismatchMessage. $otherWorkNeedsAttentionNote',
         );
 
     await tester.pumpWidget(
@@ -1148,7 +1417,7 @@ void main() {
     await tester.tap(_syncButton('attention'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+    expect(find.textContaining('another page'), findsOneWidget);
     expect(
       find.textContaining('Other changes here were not saved either'),
       findsOneWidget,
@@ -1201,14 +1470,14 @@ void main() {
             const ConflictResolution(
               type: ConflictResolutionType.rebase,
               opId: 'refused-link',
-              message: lineupLinkEndMissingMessage,
+              message: lineupPageMismatchMessage,
             ),
           );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(
-        toast(friendlyCloudSyncError(lineupLinkEndMissingMessage)),
+        toast(friendlyCloudSyncError(lineupPageMismatchMessage)),
         findsOneWidget,
       );
       expect(

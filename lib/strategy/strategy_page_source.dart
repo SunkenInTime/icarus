@@ -280,11 +280,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final lineUpGraph = lineUpGraphFromCloudRows([
+    final cloudLineups = lineUpGraphFromCloudRows([
       for (final lineup in lineups)
-        if (!lineup.deleted)
-          CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
-    ]).graph;
+        if (!lineup.deleted) CloudLineupRow.remote(lineup),
+    ]);
+    ref
+        .read(activePageLiveSyncProvider.notifier)
+        .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,
@@ -313,7 +315,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineUpGraph: lineUpGraph,
+      lineUpGraph: cloudLineups.graph,
     );
   }
 
@@ -453,10 +455,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final lineUpGraph = lineUpGraphFromCloudRows([
+    final cloudLineups = lineUpGraphFromCloudRows([
       for (final lineup in projected.lineups)
         CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
-    ]).graph;
+    ]);
+    ref
+        .read(activePageLiveSyncProvider.notifier)
+        .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
       (entry) => entry.value == snapshot.header.mapData,
@@ -477,7 +482,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineUpGraph: lineUpGraph,
+      lineUpGraph: cloudLineups.graph,
     );
   }
 

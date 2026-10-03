@@ -1,22 +1,26 @@
-import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
 
-/// The payload version of a row holding a Paranoia, as an ability or a
-/// lineup landing, drawn at its in-game size (data version 104). Every other
-/// row stays at [currentCloudPayloadVersion]: nothing else changed shape.
+/// The payload version of an ability row holding a Paranoia drawn at its
+/// in-game size (data version 104). Every other row stays at
+/// [currentCloudPayloadVersion]: nothing else changed shape.
 ///
-/// A Paranoia row below this version was written by a client that drew the
-/// old 25 m Paranoia. It is corrected as it is read, never rewritten on the
-/// server, so every client reads it the same way until someone edits it.
+/// A Paranoia ability row below this version was written by a client that
+/// drew the old 25 m Paranoia. It is corrected as it is read, never
+/// rewritten on the server, so every client reads it the same way until
+/// someone edits it.
+///
+/// Lineup rows are never corrected. The lineup group row (protocol 5) came
+/// after data version 104, so every lineup row holds its Paranoia at the
+/// in-game size already; correcting one would move it twice.
 const paranoiaCloudPayloadVersion = 2;
 
-/// [payload] with its Paranoia, if any, at the in-game size on [map].
-/// Payloads without a Paranoia, and those already corrected, come back as
-/// they are.
+/// Ability [payload] with its Paranoia, if any, at the in-game size on
+/// [map]. Payloads without a Paranoia, those already corrected, and those of
+/// any other kind come back as they are.
 CloudPayload upgradeCloudPayload(CloudPayload payload, MapValue map) {
   final version = payload['payloadVersion'];
   if (version is num && version >= paranoiaCloudPayloadVersion) {
@@ -24,11 +28,8 @@ CloudPayload upgradeCloudPayload(CloudPayload payload, MapValue map) {
   }
   final data = payload['data'];
   if (data is! Map<String, dynamic>) return payload;
-  final upgraded = switch (payload['kind']) {
-    'ability' => _upgradeAbilityJson(data, map),
-    CloudLineupKind.landing => _upgradeLandingJson(data, map),
-    _ => data,
-  };
+  if (payload['kind'] != 'ability') return payload;
+  final upgraded = _upgradeAbilityJson(data, map);
   if (identical(upgraded, data)) return payload;
   return {
     ...payload,
@@ -37,14 +38,9 @@ CloudPayload upgradeCloudPayload(CloudPayload payload, MapValue map) {
   };
 }
 
-/// The version a client writes [data] of [kind] at.
+/// The version a client writes element [data] of [kind] at.
 int cloudPayloadVersionFor(String kind, Map<String, dynamic> data) {
-  final ability = switch (kind) {
-    'ability' => data,
-    CloudLineupKind.landing => data['ability'],
-    _ => null,
-  };
-  return ability is Map<String, dynamic> && _isParanoiaJson(ability)
+  return kind == 'ability' && _isParanoiaJson(data)
       ? paranoiaCloudPayloadVersion
       : currentCloudPayloadVersion;
 }
@@ -60,7 +56,7 @@ RemotePageSnapshot upgradeRemotePageSnapshot(
     page: page.page,
     content: page.content,
     elements: [for (final e in page.elements) _upgradeElement(e, map)],
-    lineups: [for (final l in page.lineups) _upgradeLineup(l, map)],
+    lineups: page.lineups,
     assetsById: page.assetsById,
   );
 }
@@ -78,10 +74,7 @@ RemoteFullStrategySnapshot upgradeRemoteFullSnapshot(
       for (final MapEntry(:key, :value) in snapshot.elementsByPage.entries)
         key: [for (final e in value) _upgradeElement(e, map)],
     },
-    lineupsByPage: {
-      for (final MapEntry(:key, :value) in snapshot.lineupsByPage.entries)
-        key: [for (final l in value) _upgradeLineup(l, map)],
-    },
+    lineupsByPage: snapshot.lineupsByPage,
     assetsById: snapshot.assetsById,
   );
 }
@@ -101,20 +94,6 @@ RemoteElement _upgradeElement(RemoteElement element, MapValue map) {
   );
 }
 
-RemoteLineup _upgradeLineup(RemoteLineup lineup, MapValue map) {
-  final payload = upgradeCloudPayload(lineup.payload, map);
-  if (identical(payload, lineup.payload)) return lineup;
-  return RemoteLineup(
-    publicId: lineup.publicId,
-    strategyPublicId: lineup.strategyPublicId,
-    pagePublicId: lineup.pagePublicId,
-    payload: payload,
-    sortIndex: lineup.sortIndex,
-    revision: lineup.revision,
-    deleted: lineup.deleted,
-  );
-}
-
 /// A map this build does not know cannot be drawn, so its rows stay as the
 /// server holds them.
 MapValue? _mapValueOrNull(String wireName) {
@@ -129,16 +108,6 @@ bool _isParanoiaJson(Map<String, dynamic> ability) {
   return info is Map &&
       info['type'] == AgentType.omen.name &&
       info['index'] == 1;
-}
-
-Map<String, dynamic> _upgradeLandingJson(
-  Map<String, dynamic> landing,
-  MapValue map,
-) {
-  final ability = landing['ability'];
-  if (ability is! Map<String, dynamic>) return landing;
-  final moved = _upgradeAbilityJson(ability, map);
-  return identical(moved, ability) ? landing : {...landing, 'ability': moved};
 }
 
 /// [ability] with only its position moved, or [ability] itself when it is

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:math' show max;
@@ -5,7 +6,6 @@ import 'dart:math' show max;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/const/sort_index_order.dart';
-import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
@@ -15,6 +15,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -33,7 +34,6 @@ class ActivePageLiveSyncState {
     this.remoteBaseRevisionByEntity = const <EntitySyncKey, int>{},
     this.overlayByEntityKey = const <EntitySyncKey, ActivePageOverlayEntry>{},
     this.lastAckBatch = const <AckedEntityIntent>[],
-    this.unsyncableLineupKeys = const <EntitySyncKey>{},
   });
 
   final String? strategyPublicId;
@@ -43,14 +43,6 @@ class ActivePageLiveSyncState {
   final Map<EntitySyncKey, int> remoteBaseRevisionByEntity;
   final Map<EntitySyncKey, ActivePageOverlayEntry> overlayByEntityKey;
   final List<AckedEntityIntent> lastAckBatch;
-
-  /// Lineup rows live sync refused to send because the canvas holds a broken
-  /// lineup: rows hydration would not draw back (a link whose origin or
-  /// landing is missing, an origin or landing no link uses) and the missing
-  /// ends themselves. Sending them would store rows every reader skips or
-  /// half-delete the lineup, so the sync status shows attention while any
-  /// remain.
-  final Set<EntitySyncKey> unsyncableLineupKeys;
 
   ActivePageLiveSyncState copyWith({
     String? strategyPublicId,
@@ -62,7 +54,6 @@ class ActivePageLiveSyncState {
     Map<EntitySyncKey, int>? remoteBaseRevisionByEntity,
     Map<EntitySyncKey, ActivePageOverlayEntry>? overlayByEntityKey,
     List<AckedEntityIntent>? lastAckBatch,
-    Set<EntitySyncKey>? unsyncableLineupKeys,
   }) {
     return ActivePageLiveSyncState(
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
@@ -75,7 +66,6 @@ class ActivePageLiveSyncState {
           remoteBaseRevisionByEntity ?? this.remoteBaseRevisionByEntity,
       overlayByEntityKey: overlayByEntityKey ?? this.overlayByEntityKey,
       lastAckBatch: lastAckBatch ?? this.lastAckBatch,
-      unsyncableLineupKeys: unsyncableLineupKeys ?? this.unsyncableLineupKeys,
     );
   }
 }
@@ -98,6 +88,36 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   /// Items the user holds that the server deleted: still on screen until the
   /// hold ends, but no longer ordered against anything on the server.
   final Set<EntitySyncKey> _heldDeletedKeys = {};
+
+  /// Per page, the lineup group each lineup and spot was last drawn from or
+  /// written to (see cloudLineupRows), so a group keeps its id and its
+  /// lineups while the canvas changes under it. Per page because a page
+  /// duplicated before cloud sync repeats its lineup ids. Never forgotten:
+  /// an undo can bring back a lineup long after its row moved on.
+  final Map<String, Map<String, String>> _lineupGroupOfByPage = {};
+
+  /// Records the groups a canvas of [pageId] about to be drawn from cloud
+  /// rows uses.
+  void noteLineupGroups(String pageId, Map<String, String> groupOf) {
+    (_lineupGroupOfByPage[pageId] ??= {}).addAll(groupOf);
+  }
+
+  /// The server's version of [key] the canvas was drawn from, which local
+  /// edits to it were made against: its revision, and its payload (null
+  /// when it was deleted). Null when the canvas was drawn without it.
+  ({int revision, Object? payload})? hydratedBase(EntitySyncKey key) {
+    final base = _hydratedBaseByEntityKey[key];
+    if (base == null) return null;
+    return (
+      revision: base.revision,
+      payload: base.deleted ? null : base.payload
+    );
+  }
+
+  /// The lineup group [itemId] (a lineup, origin or landing) on [pageId]
+  /// was last in.
+  String? lineupGroupOf(String pageId, String itemId) =>
+      _lineupGroupOfByPage[pageId]?[itemId];
 
   @override
   ActivePageLiveSyncState build() {
@@ -173,15 +193,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
     final matchesPage = snapshot.header.publicId == strategyPublicId &&
         snapshot.activePage?.page.publicId == pageId;
-    // The base is what the canvas drew. A lineup row hydration skipped was
-    // never shown, so no outbound diff may change or delete it.
-    final undrawnLineups = matchesPage
-        ? _undrawnRemoteLineups(snapshot, pageId)
-        : const <EntitySyncKey>{};
     final remoteEntities = {
-      if (matchesPage)
-        for (final entry in _normalizedRemoteEntities(snapshot, pageId).entries)
-          if (!undrawnLineups.contains(entry.key)) entry.key: entry.value,
+      if (matchesPage) ..._normalizedRemoteEntities(snapshot, pageId),
     };
     _heldDeletedKeys
       ..removeWhere((key) => key.pageId == pageId)
@@ -248,7 +261,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     RemoteEditorSnapshot snapshot,
     String pageId,
   ) {
-    final undrawn = _undrawnRemoteLineups(snapshot, pageId);
     _NormalizedEntity? live(_NormalizedEntity? entity) =>
         entity == null || entity.deleted ? null : entity;
     final remote = _normalizedRemoteEntities(snapshot, pageId);
@@ -258,10 +270,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     };
     return {
       for (final key in keys)
-        // A row the canvas cannot draw counts as gone on the server side
-        // only: the base is what the canvas did draw.
-        if (undrawn.contains(key) ? null : live(remote[key]) case final now
-            when !_sameLiveEntity(now, live(_hydratedBaseByEntityKey[key])))
+        if (!_sameLiveEntity(
+          live(remote[key]),
+          live(_hydratedBaseByEntityKey[key]),
+        ))
           key,
     };
   }
@@ -536,13 +548,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       state.overlayByEntityKey,
     );
     final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
-    final heldBackLineups = _heldBackLineups(pageId);
-    final restoredLineupEnds = _lineupEndsToRestore(
-      pageId: pageId,
-      localEntities: localEntities,
-      remoteEntities: remoteEntities,
-    );
-    final unsyncableLineups = <EntitySyncKey>{};
+    final settledAttention = <EntitySyncKey>{};
 
     for (final key in pageKeys) {
       if (_remoteAdoptionPending.contains(key)) {
@@ -561,41 +567,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           queueState.inFlightByEntityKey[key]?.pending.op ??
           queueState.queuedByEntityKey[key]?.pending.op;
 
-      // Never author a lineup row that hydration would not draw (every
-      // reader skips it, so it reads as a deletion nobody made), nor delete
-      // an end a local link still names. Keep what is already overlaid or
-      // queued for it and show attention instead.
-      if (heldBackLineups.contains(key)) {
-        unsyncableLineups.add(key);
-        if (!state.unsyncableLineupKeys.contains(key)) {
-          AppErrorReporter.reportError(
-            'A lineup could not be synced because its origin or landing '
-            'spot is missing ($key).',
-            source: 'active_page_live_sync:empty_lineup',
-            promptUser: false,
-          );
-        }
-        if (existingOverlay == null && retainedOp != null) {
-          retainedDesiredOps[key] = retainedOp;
-        }
-        continue;
-      }
-
-      if (restoredLineupEnds.contains(key)) {
-        nextOverlay[key] = ActivePageOverlayEntry(
-          entityKey: key,
-          entityType: ActivePageOverlayEntityType.lineup,
-          desiredPayload: local!.payload,
-          desiredSortIndex: local.sortIndex,
-          deletion: false,
-          baseRevision: remote?.revision,
-          baseDeleted: true,
-          dirtyAt: DateTime.now(),
-        );
-        _debugLog('overlay.upsert $key reason=restore_deleted_lineup_end');
-        continue;
-      }
-
       final shouldPreserveTouched = hasQueued || hasInFlight || hasSuccessor;
       final matchesRemote = _entitiesEquivalent(local, remote);
       final matchesHydratedBase = _entitiesEquivalent(local, hydratedBase);
@@ -610,6 +581,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         retainedDesiredOps[key] = retainedOp;
         _debugLog('overlay.keep $key reason=durable_queue_only');
         continue;
+      }
+
+      // The user deleted, on the canvas, an item whose change the server
+      // refused because a teammate deleted it: both sides have it deleted,
+      // so the refused change has nothing left to keep, and Keep mine must
+      // not bring the item back.
+      if (local == null &&
+          existingOverlay != null &&
+          (remote == null || remote.deleted) &&
+          queueState.attentionByEntityKey.containsKey(key) &&
+          ref.read(strategyOpQueueProvider.notifier).refusedAsDeleted(key)) {
+        settledAttention.add(key);
       }
 
       if (matchesHydratedBase && !shouldPreserveTouched) {
@@ -696,6 +679,20 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
+    if (settledAttention.isNotEmpty) {
+      // A refusal still waiting to be announced is moot too, as when the
+      // user chooses Use cloud.
+      for (final key in settledAttention) {
+        final refused = queueState.attentionByEntityKey[key]!.pending.op.opId;
+        ref.read(strategyConflictProvider.notifier).clear(refused);
+      }
+      unawaited(
+        ref
+            .read(strategyOpQueueProvider.notifier)
+            .settleAttention(settledAttention),
+      );
+    }
+
     final desiredOpsByEntityKey = <EntitySyncKey, StrategyOp>{
       ...retainedDesiredOps,
     };
@@ -725,10 +722,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       strategyPublicId: strategyPublicId,
       activePageId: pageId,
       overlayByEntityKey: nextOverlay,
-      unsyncableLineupKeys: {
-        ...state.unsyncableLineupKeys.where((key) => key.pageId != pageId),
-        ...unsyncableLineups,
-      },
     );
 
     return desiredOpsByEntityKey;
@@ -1027,9 +1020,26 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    // One row per origin, landing and link.
+    // One row per lineup group, holding its lineups and their spots as the
+    // canvas draws them. A group nobody changed matches its stored row, so
+    // it is never written. A new group never takes the id of a row this page
+    // has or had, so it never lands on a teammate's group or a deleted one.
     final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
-    for (final row in cloudLineupRows(ref.read(lineUpProvider).graph)) {
+    final lineupGroupOf = _lineupGroupOfByPage[pageId] ??= {};
+    final lineupRows = cloudLineupRows(
+      ref.read(lineUpProvider).graph,
+      groupOf: lineupGroupOf,
+      takenGroupIds: {
+        for (final key in [
+          ..._hydratedBaseByEntityKey.keys,
+          ...state.overlayByEntityKey.keys,
+        ])
+          if (key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup)
+            key.entityId!,
+      },
+    );
+    lineupGroupOf.addAll(lineupRows.groupOf);
+    for (final row in lineupRows.rows) {
       final key = EntitySyncKey.lineup(pageId, row.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
@@ -1040,91 +1050,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         deleted: false,
       );
     }
-
     return entities;
-  }
-
-  /// Lineup rows live sync holds back from a broken local graph: rows the
-  /// canvas holds that hydration would not draw back (a link whose origin or
-  /// landing is missing, an origin or landing no link uses), judged by the
-  /// reader hydration uses, and the missing ends such a link still names, so
-  /// a broken lineup is neither half-written nor half-deleted.
-  Set<EntitySyncKey> _heldBackLineups(String pageId) {
-    EntitySyncKey key(String rowId) => EntitySyncKey.lineup(pageId, rowId);
-    final graph = ref.read(lineUpProvider).graph;
-    final rows = cloudLineupRows(graph);
-    final drawn = lineUpGraphFromCloudRows(rows).drawnRowIds;
-    final originIds = {for (final origin in graph.origins) origin.id};
-    final landingIds = {for (final landing in graph.landings) landing.id};
-    return {
-      for (final row in rows)
-        if (!drawn.contains(row.publicId)) key(row.publicId),
-      for (final link in graph.links) ...[
-        if (!originIds.contains(link.originId))
-          key(cloudLineupRowId(CloudLineupKind.origin, link.originId)),
-        if (!landingIds.contains(link.landingId))
-          key(cloudLineupRowId(CloudLineupKind.landing, link.landingId)),
-      ],
-    };
-  }
-
-  /// Origins and landings a teammate deleted after this canvas drew them,
-  /// which a link the user is placing or editing still names. They are added
-  /// back with the link: the server refuses a link whose ends are gone, and
-  /// the lineup the user just made would not save. A link the teammate
-  /// deleted too is left to the conflict flow.
-  Set<EntitySyncKey> _lineupEndsToRestore({
-    required String pageId,
-    required Map<EntitySyncKey, _NormalizedEntity> localEntities,
-    required Map<EntitySyncKey, _NormalizedEntity> remoteEntities,
-  }) {
-    EntitySyncKey key(String kind, String id) =>
-        EntitySyncKey.lineup(pageId, cloudLineupRowId(kind, id));
-    bool deletedSinceDrawn(EntitySyncKey endKey) {
-      final drawn = _hydratedBaseByEntityKey[endKey];
-      final remote = remoteEntities[endKey];
-      return localEntities.containsKey(endKey) &&
-          drawn != null &&
-          !drawn.deleted &&
-          (remote == null || remote.deleted);
-    }
-
-    final ends = <EntitySyncKey>{};
-    for (final link in ref.read(lineUpProvider).graph.links) {
-      final linkKey = key(CloudLineupKind.link, link.id);
-      final isAuthored = !_entitiesEquivalent(
-        localEntities[linkKey],
-        _hydratedBaseByEntityKey[linkKey],
-      );
-      final isDeletedRemotely = remoteEntities[linkKey]?.deleted ?? false;
-      if (!isAuthored || isDeletedRemotely) continue;
-      for (final endKey in [
-        key(CloudLineupKind.origin, link.originId),
-        key(CloudLineupKind.landing, link.landingId),
-      ]) {
-        if (deletedSinceDrawn(endKey)) ends.add(endKey);
-      }
-    }
-    return ends;
-  }
-
-  /// The page's live lineup rows that hydration skipped.
-  Set<EntitySyncKey> _undrawnRemoteLineups(
-    RemoteEditorSnapshot snapshot,
-    String pageId,
-  ) {
-    final live = [
-      for (final lineup
-          in snapshot.lineupsByPage[pageId] ?? const <RemoteLineup>[])
-        if (!lineup.deleted)
-          CloudLineupRow(publicId: lineup.publicId, payload: lineup.payload),
-    ];
-    final drawn = lineUpGraphFromCloudRows(live).drawnRowIds;
-    return {
-      for (final row in live)
-        if (!drawn.contains(row.publicId))
-          EntitySyncKey.lineup(pageId, row.publicId),
-    };
   }
 
   List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {

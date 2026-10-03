@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
@@ -94,24 +93,34 @@ void main() {
     expect(expected.position, isNot(paranoia.position));
   });
 
-  test('a version 1 lineup landing moves its Paranoia', () {
-    final landing = LineUpLanding(id: 'landing', ability: _placed('l', 1));
-    final upgraded = upgradeCloudPayload(
-      {
-        ...cloudLineupPayload(
-          kind: CloudLineupKind.landing,
-          data: landing.toJson(),
+  test('a lineup carrying a Paranoia is never moved', () {
+    // Every lineup row was written at the in-game size: correcting one would
+    // move its Paranoia twice.
+    final lineup = cloudLineupRows(LineUpGraph(
+      origins: [
+        LineUpOrigin(
+          id: 'origin',
+          agent: PlacedAgent(
+            id: 'omen',
+            type: AgentType.omen,
+            position: const Offset(340, 210),
+            lineUpID: 'origin',
+          ),
         ),
-        'payloadVersion': 1,
-      },
-      _map,
-    );
+      ],
+      landings: [LineUpLanding(id: 'landing', ability: _placed('l', 1))],
+      links: [
+        LineUpLink(id: 'lineup', originId: 'origin', landingId: 'landing'),
+      ],
+    )).rows.single.payload;
 
-    expect(upgraded['payloadVersion'], paranoiaCloudPayloadVersion);
-    expect(
-      LineUpLanding.fromJson(cloudPayloadData(upgraded)).ability.position,
-      ParanoiaRangeMigration.migrateAbility(landing.ability, _map).position,
+    expect(lineup['payloadVersion'], currentCloudPayloadVersion);
+    expect(identical(upgradeCloudPayload(lineup, _map), lineup), isTrue);
+    final page = upgradeRemotePageSnapshot(
+      _page([_v1('ability', _placed('paranoia', 1).toJson())], [lineup]),
+      Maps.mapNames[_map]!,
     );
+    expect(identical(page.lineups.single.payload, lineup), isTrue);
   });
 
   test('rows without a Paranoia are left exactly as the server holds them', () {

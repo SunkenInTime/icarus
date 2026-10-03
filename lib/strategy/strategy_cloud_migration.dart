@@ -73,15 +73,17 @@ void appendMigratedPageOps(
         buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
-  // [usedLineupIds] holds row ids. An entity whose row id another page
-  // already took (a page duplicated before cloud sync) gets a fresh id, and
-  // the links and markers that name it follow along.
-  final graph = lineUpGraphWithIds(
+  // One row per lineup group. A group's id must be unique in the strategy,
+  // so one whose id another page already took (a page duplicated before
+  // cloud sync repeats its lineup ids) takes another of its lineup ids.
+  // Ids inside a row only need to be unique in the row, so they stay.
+  final rows = cloudLineupRows(
     page.lineUpGraph,
-    (kind, id) => _uniqueLineupEntityId(kind, id, usedLineupIds),
-  );
+    takenGroupIds: usedLineupIds,
+  ).rows;
+  usedLineupIds.addAll([for (final row in rows) row.publicId]);
   var lineupOrder = 0;
-  for (final row in cloudLineupRows(graph)) {
+  for (final row in rows) {
     ops.add(
       LineupAddOp(
         opId: const Uuid().v4(),
@@ -92,14 +94,6 @@ void appendMigratedPageOps(
       ),
     );
   }
-}
-
-String _uniqueLineupEntityId(String kind, String id, Set<String> usedRowIds) {
-  var candidate = id;
-  while (!usedRowIds.add(cloudLineupRowId(kind, candidate))) {
-    candidate = const Uuid().v4();
-  }
-  return candidate;
 }
 
 String nextUniqueMigrationId(String preferredId, Set<String> usedIds) {

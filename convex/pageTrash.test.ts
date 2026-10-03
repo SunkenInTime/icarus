@@ -11,6 +11,7 @@ import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import { UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 import schema from "./schema";
+import { lineupsPayload, oneLineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -107,30 +108,27 @@ function imagePayload(assetPublicId: string) {
   };
 }
 
+/// Two lineup groups: one of two lineups thrown from one sova origin, the
+/// first showing an image, and one of a single lineup from another.
 const lineupRows = [
   {
-    lineupPublicId: "lineupOrigin:o",
-    payload: {
-      kind: "lineupOrigin" as const,
-      payloadVersion: 1,
-      data: { id: "o", agent: { id: "agent-o", type: "sova", lineUpID: "o" } },
-    },
+    lineupPublicId: "k",
+    payload: lineupsPayload("k", {
+      origins: [{ id: "o", agentType: "sova" }],
+      landings: [{ id: "l" }, { id: "l2" }],
+      links: [
+        { id: "k", originId: "o", landingId: "l", images: [{ id: "k-shot" }] },
+        { id: "k-2", originId: "o", landingId: "l2" },
+      ],
+    }),
   },
   {
-    lineupPublicId: "lineupLanding:l",
-    payload: {
-      kind: "lineupLanding" as const,
-      payloadVersion: 1,
-      data: { id: "l", ability: { id: "ability-l" } },
-    },
-  },
-  {
-    lineupPublicId: "lineupLink:k",
-    payload: {
-      kind: "lineupLink" as const,
-      payloadVersion: 1,
-      data: { id: "k", originId: "o", landingId: "l", images: [{ id: "k-shot" }] },
-    },
+    lineupPublicId: "k2",
+    payload: oneLineupPayload("k2", {
+      originId: "o2",
+      landingId: "l3",
+      agentType: "sova",
+    }),
   },
 ];
 
@@ -327,6 +325,9 @@ async function rowsOnPage(t: RootHarness, pageId: Id<"pages">) {
     references: (await ctx.db.query("assetReferences").collect()).filter(
       (reference) => reference.pageId === pageId,
     ),
+    lineupAgents: (await ctx.db.query("lineupAgents").collect()).filter(
+      (row) => row.pageId === pageId,
+    ),
   }));
 }
 
@@ -368,10 +369,15 @@ describe("page trash", () => {
     expect(trashed?.deletedAt).toEqual(expect.any(Number));
     const kept = await rowsOnPage(t, trashed!._id);
     expect(kept.elements).toHaveLength(3);
-    expect(kept.lineups).toHaveLength(3);
+    expect(kept.lineups).toHaveLength(2);
     expect(kept.contents).toHaveLength(1);
     expect(kept.references.map((reference) => reference.assetPublicId).sort())
       .toEqual(["b-image", "k-shot"]);
+    // The lineups' agent rows stay with them for a restore; the summary
+    // below leaves them out because their page is in the trash.
+    expect(kept.lineupAgents.map((row) => row.lineupId).sort()).toEqual(
+      kept.lineups.map((row) => row._id).sort(),
+    );
 
     const shell = (await owner.query(getShell, {
       ...protocol,
@@ -543,28 +549,30 @@ describe("page trash", () => {
       },
       {
         type: "lineup.add",
-        lineupPublicId: "lineupLanding:l2",
+        lineupPublicId: "k3",
         pagePublicId: pageB,
-        payload: {
-          kind: "lineupLanding",
-          payloadVersion: 1,
-          data: { id: "l2", ability: { id: "ability-l2" } },
-        },
+        payload: oneLineupPayload("k3", { originId: "o3", landingId: "l4" }),
         sortIndex: 3,
       },
       {
         type: "lineup.patch",
-        lineupPublicId: "lineupLink:k",
+        lineupPublicId: "k",
         pagePublicId: pageB,
         payload: {
-          ...lineupRows[2]!.payload,
-          data: { ...lineupRows[2]!.payload.data, name: "edited" },
+          ...lineupRows[0]!.payload,
+          data: {
+            ...lineupRows[0]!.payload.data,
+            links: lineupRows[0]!.payload.data.links.map((link) => ({
+              ...link,
+              name: "edited",
+            })),
+          },
         },
         expectedLineupRevision: 1,
       },
       {
         type: "lineup.delete",
-        lineupPublicId: "lineupLink:k",
+        lineupPublicId: "k",
         pagePublicId: pageB,
         expectedLineupRevision: 1,
       },
@@ -785,7 +793,7 @@ describe("page trash", () => {
         },
         {
           type: "lineup.delete",
-          lineupPublicId: "lineupLink:k",
+          lineupPublicId: "k",
           pagePublicId: pageB,
           expectedLineupRevision: 1,
         },
@@ -884,6 +892,7 @@ describe("page trash", () => {
       lineups: [],
       contents: [],
       references: [],
+      lineupAgents: [],
     });
     expect(await rowsOnPage(t, liveA!._id)).toEqual(aRows);
     expect(await livePageIds(owner)).toEqual([pageA, pageC]);
@@ -1068,6 +1077,7 @@ describe("page trash", () => {
       lineups: [],
       contents: [],
       references: [],
+      lineupAgents: [],
     });
   });
 });

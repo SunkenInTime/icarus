@@ -9,6 +9,7 @@ import type { DataModel } from "./_generated/dataModel";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
+import { oneLineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -106,18 +107,9 @@ async function seed(t: RootHarness): Promise<Harness> {
     },
     {
       type: "lineup.add",
-      lineupPublicId: "lineupLink:k",
+      lineupPublicId: "k",
       pagePublicId,
-      payload: {
-        kind: "lineupLink" as const,
-        payloadVersion: 1,
-        data: {
-          id: "k",
-          originId: "o",
-          landingId: "l",
-          images: [{ id: "shot" }],
-        },
-      },
+      payload: oneLineupPayload("k", { images: [{ id: "shot" }] }),
       sortIndex: 0,
     },
   ]);

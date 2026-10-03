@@ -8,7 +8,12 @@ import { v } from "convex/values";
 // public query that returns element or lineup payloads, and the shell the
 // editor opens with, takes the protocol too: a client that cannot read a
 // row must not see one.
-export const CURRENT_CLOUD_PROTOCOL_VERSION = 4;
+// 5: one row per lineup group, of kind "lineups": the lineups on a page
+// joined through shared spots, with their origins, landings and links,
+// replacing the origin, landing and link rows of 4. A client on 4 cannot
+// read the new rows and writes rows the server no longer takes, so it is
+// refused until it reloads into 5.
+export const CURRENT_CLOUD_PROTOCOL_VERSION = 5;
 export const MAX_CLOUD_OPERATION_BYTES = 900 * 1024;
 export const MAX_CLOUD_ARRAY_ENTRIES = 8_000;
 export const CLOUD_OPERATION_TOO_LARGE_MESSAGE =

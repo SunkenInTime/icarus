@@ -14,6 +14,8 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 Future<void> applyStrategyEditorPageData(
@@ -91,23 +93,20 @@ Set<EntitySyncKey> mergeRemoteStrategyEditorPageData(
   ref.read(placedImageProvider.notifier).mergeRemote(data.images, keep);
   ref.read(utilityProvider.notifier).mergeRemote(data.utilities, keep);
 
-  // Links name their origin and landing, so the lineup graph changes as one
-  // piece: all of it, or none while the user holds part of it.
-  final lineupChanges = {
+  final liveSync = ref.read(activePageLiveSyncProvider.notifier);
+  final (lineUpGraph, heldGroups) = mergeHeldLineups(
+    local: ref.read(lineUpProvider).graph,
+    remote: data.lineUpGraph.deepCopy(),
+    holding: holding,
+    groupOf: (id) => liveSync.lineupGroupOf(data.pageId, id),
+  );
+  ref.read(lineUpProvider.notifier).mergeRemote(lineUpGraph);
+  heldBack.addAll({
     for (final key in changed)
-      if (key.kind == EntitySyncKeyKind.lineup) key,
-  };
-  final graph = ref.read(lineUpProvider).graph;
-  final lineupIds = {
-    for (final origin in graph.origins) origin.id,
-    for (final landing in graph.landings) landing.id,
-    for (final link in graph.links) link.id,
-  };
-  if (!holding.any(lineupIds.contains)) {
-    ref.read(lineUpProvider.notifier).fromHive(data.lineUpGraph);
-  } else {
-    heldBack.addAll(lineupChanges);
-  }
+      if (key.kind == EntitySyncKeyKind.lineup &&
+          heldGroups.contains(key.entityId))
+        key,
+  });
 
   ref
       .read(mapProvider.notifier)

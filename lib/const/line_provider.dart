@@ -1438,6 +1438,29 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  /// Takes [graph] as the server's lineups merged with the ones the user
+  /// holds (see mergeHeldLineups). Held objects stay the ones on screen.
+  void mergeRemote(LineUpGraph graph) {
+    state = state.copyWith(
+      origins: [...graph.origins],
+      landings: [...graph.landings],
+      links: [...graph.links],
+    );
+  }
+
+  /// Puts [graph]'s lineups on the canvas beside the ones there: the user's
+  /// version of a conflicting lineup group, kept as a copy (see
+  /// forkLineUpGraph). A recovery step rather than an edit, so it is not
+  /// undoable, as taking the cloud's version is not.
+  void addRecovered(LineUpGraph graph) {
+    final copy = graph.deepCopy();
+    state = state.copyWith(
+      origins: [...state.origins, ...copy.origins],
+      landings: [...state.landings, ...copy.landings],
+      links: [...state.links, ...copy.links],
+    );
+  }
+
   static String objectToJson(LineUpGraph graph) {
     return jsonEncode(graph.toJson());
   }

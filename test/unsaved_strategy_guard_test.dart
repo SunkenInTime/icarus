@@ -594,7 +594,7 @@ void main() {
           clientId: 'guard-client',
           attentionByEntityKey: {_guardEntityKey: _guardPendingIntent},
           durableLoaded: true,
-          lastError: lineupLinkEndMissingMessage,
+          lastError: lineupPageMismatchMessage,
         ),
       );
       container = ProviderContainer(
@@ -618,7 +618,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Leave anyway'), findsOneWidget);
-      expect(find.textContaining('on this page in the cloud'), findsOneWidget);
+      expect(find.textContaining('another page'), findsOneWidget);
       expect(find.textContaining('from the sync button'), findsOneWidget);
       expect(find.textContaining('retry it later'), findsNothing);
       await tester.tap(find.text('Leave anyway'));

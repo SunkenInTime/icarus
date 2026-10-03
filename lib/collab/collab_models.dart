@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/sort_index_order.dart';
 
-const currentCloudProtocolVersion = 4;
+const currentCloudProtocolVersion = 5;
 const currentCloudPayloadVersion = 1;
 const maxCloudOperationBytes = 900 * 1024;
 const maxCloudBatchBytes = 15 * 1024 * 1024;
@@ -18,22 +18,35 @@ const cloudOperationTooLargeMessage =
 const cloudStrategyDeletedMessage =
     'This strategy was deleted, so its unsent changes cannot be saved.';
 
-/// The server's message when it refuses a lineup link whose origin or
-/// landing is not live on its page (LINEUP_LINK_END_MISSING). "Keep mine"
-/// re-sends such a link as it was.
-const lineupLinkEndMissingMessage =
-    "This lineup's origin or landing spot is no longer on the page";
-
 /// The server's message when it refuses a lineup whose row already lives on
 /// another page (LINEUP_PAGE_MISMATCH).
 const lineupPageMismatchMessage =
     'This lineup belongs to another page and cannot be moved';
 
-/// The server's message when it refuses to delete an origin or landing that
-/// a live link on its page still names (LINEUP_END_IN_USE), such as a
-/// teammate's lineup this device has not drawn yet.
-const lineupEndInUseMessage =
-    'Another lineup still uses this origin or landing spot';
+/// The server's message when it refuses a lineup group row holding a
+/// lineup or spot another group of the page holds (see assertLineupGroupAlone
+/// in convex/lib/lineupItems.ts). Sending it again cannot help.
+const lineupOverlapMessage =
+    'A lineup or spot in this group is already in another group';
+
+/// Marks an outbox record holding a lineup change in the cloud format before
+/// one row per lineup (an origin, landing or link row). No server takes it
+/// any more, so it is never sent; it waits in attention until the user
+/// discards it.
+const retiredLineupOpMessage =
+    'This lineup change was saved in an older cloud format and cannot be '
+    'sent';
+
+/// Why saved work waits when the server refused it because a teammate
+/// deleted what it edits (rejection reason `deleted`). Keep mine brings the
+/// item back as the user has it.
+const teammateDeletedMessage = 'A teammate deleted what this change edits';
+
+/// Why such work stays after Keep mine: a reorder, say, holds nothing to
+/// bring the item back with.
+const teammateDeletedCannotRestoreMessage =
+    'A teammate deleted what this change edits, and this change cannot '
+    'bring it back';
 
 /// The server's message when it refuses a change to a page in its trash
 /// (PAGE_DELETED). Such a change lands if the page is restored and it is
@@ -61,17 +74,17 @@ CloudPayload cloudElementPayload({
   };
 }
 
-/// One lineup row's payload; [kind] is a [CloudLineupKind] (see
-/// cloud_lineup_rows.dart).
-CloudPayload cloudLineupPayload({
-  required String kind,
-  required Map<String, dynamic> data,
-}) {
-  final normalized = _normalizeCloudPayloadData(data);
+/// The payload kind of a lineup group row (see cloud_lineup_rows.dart).
+const cloudLineupsPayloadKind = 'lineups';
+
+/// One lineup group row's payload. Lineup rows are never corrected on read
+/// (see cloud_payload_upgrade.dart), so they all stay at the current
+/// version.
+CloudPayload cloudLineupsPayload(Map<String, dynamic> data) {
   return <String, dynamic>{
-    'kind': kind,
-    'payloadVersion': cloudPayloadVersionFor(kind, normalized),
-    'data': normalized,
+    'kind': cloudLineupsPayloadKind,
+    'payloadVersion': currentCloudPayloadVersion,
+    'data': _normalizeCloudPayloadData(data),
   };
 }
 
@@ -1039,6 +1052,7 @@ class PendingOp {
 
 enum OpRejectionReason {
   alreadyExists('already_exists'),
+  deleted('deleted'),
   elementStrategyMismatch('element_strategy_mismatch'),
   lineupStrategyMismatch('lineup_strategy_mismatch'),
   missingExpectedRevision('missing_expected_revision'),

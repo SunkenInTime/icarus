@@ -21,6 +21,7 @@ import type * as lib_cloudProtocol from "../lib/cloudProtocol.js";
 import type * as lib_entities from "../lib/entities.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_imageAssets from "../lib/imageAssets.js";
+import type * as lib_lineupItems from "../lib/lineupItems.js";
 import type * as lib_opTypes from "../lib/opTypes.js";
 import type * as lib_payloadValidators from "../lib/payloadValidators.js";
 import type * as lib_profile from "../lib/profile.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "lib/entities": typeof lib_entities;
   "lib/errors": typeof lib_errors;
   "lib/imageAssets": typeof lib_imageAssets;
+  "lib/lineupItems": typeof lib_lineupItems;
   "lib/opTypes": typeof lib_opTypes;
   "lib/payloadValidators": typeof lib_payloadValidators;
   "lib/profile": typeof lib_profile;
