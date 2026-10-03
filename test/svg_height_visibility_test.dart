@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -571,7 +572,8 @@ void main() {
     });
 
     test('a merge of pieces with different heights is refused', () {
-      final json = merged();
+      // A copy: the pieces are shared with the other tests.
+      final json = jsonDecode(jsonEncode(merged())) as Map<String, dynamic>;
       (json['walls'] as List)[3]['bands'] = [
         [0, 1]
       ];
