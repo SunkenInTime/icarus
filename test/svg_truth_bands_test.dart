@@ -37,10 +37,11 @@ void main() {
     // Dara's replay, round 2 at 0:11: Chamber on the 3 m platform looked
     // through p7-stroke-3-local-1, which had no band below 20.75 m.
     final model = _model('lotus', 'defense');
-    expect(_sees(model, const Offset(425, 325.4), const Offset(425, 346)),
-        isFalse);
-    expect(
-        _sees(model, const Offset(425, 325.4), const Offset(425, 335)), isTrue,
+    const platform = Offset(425, 325.4);
+    expect(model.automaticSupportAt(platform)?.surfaceElevationAt(platform),
+        closeTo(3.0, 0.05));
+    expect(_sees(model, platform, const Offset(425, 346)), isFalse);
+    expect(_sees(model, platform, const Offset(425, 335)), isTrue,
         reason: 'the platform in front of the wall stays lit');
   });
 
