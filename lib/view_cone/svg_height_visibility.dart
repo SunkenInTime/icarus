@@ -24,10 +24,18 @@ class SvgHeightVisibility {
         for (var i = 0; i < points.length; i++) {
           final a = points[i], b = points[(i + 1) % points.length];
           if (a == b) continue;
+          // Which side the wall lies on, when a step either way tells: a
+          // wall thinner than the step is inside on neither side or both.
           final mid = (a + b) / 2, along = (b - a) / (b - a).distance;
+          final left = Offset(along.dy, -along.dx) * 1e-6;
+          final inLeft = walls[wall].contains(mid + left),
+              inRight = walls[wall].contains(mid - left);
           final edge = _Edge(a, b, wall,
-              interiorLeft: walls[wall]
-                  .contains(mid + Offset(along.dy, -along.dx) * 1e-6));
+              interior: inLeft == inRight
+                  ? null
+                  : inLeft
+                      ? _Side.left
+                      : _Side.right);
           _edges.add(edge);
         }
       }
@@ -235,10 +243,11 @@ class SvgHeightVisibility {
         if (cancelled[j]) continue;
         // A shared side only when the two walls lie on either side of it.
         final first = live[i], second = live[j];
+        if (first.interior == null || second.interior == null) continue;
         final same = first.a == second.a && first.b == second.b;
         final reversed = first.a == second.b && first.b == second.a;
-        if ((same && first.interiorLeft != second.interiorLeft) ||
-            (reversed && first.interiorLeft == second.interiorLeft)) {
+        if ((same && first.interior != second.interior) ||
+            (reversed && first.interior == second.interior)) {
           cancelled[i] = cancelled[j] = true;
         }
       }
@@ -287,8 +296,14 @@ class SvgHeightVisibility {
     if (walls.any((wall) => wall.unknownHeight)) return false;
     _native = SvgHeightNative.tryOpen(
         wallIds: [for (final wall in walls) wall.id],
-        interiorLeft: Uint8List.fromList(
-            [for (final edge in _edges) edge.interiorLeft ? 1 : 0]),
+        interiorSides: Uint8List.fromList([
+          for (final edge in _edges)
+            switch (edge.interior) {
+              _Side.right => 0,
+              _Side.left => 1,
+              null => 2,
+            }
+        ]),
         edgeRecords: Float64List.fromList([
           for (final edge in _edges) ...[
             edge.a.dx,
@@ -1190,25 +1205,20 @@ void paintSvgConeArea(Canvas canvas, SvgVisibilityCone cone, Path outline,
     return;
   }
   final sector = Path()..addPolygon(cone.sector!, true);
-  // The floor is cleared and refilled by the same pixel centres, without
-  // antialiasing: partial coverage cleared and partial coverage refilled
-  // would leave a faint seam along every floor edge inside the cone.
-  final clear = Paint()
-    ..blendMode = BlendMode.clear
-    ..isAntiAlias = false;
-  final floorFill = Paint()
-    ..shader = fill.shader
-    ..color = fill.color
-    ..isAntiAlias = false;
+  final clear = Paint()..blendMode = BlendMode.clear;
+  // Where a floor edge crosses lit ground, the cleared pixel keeps 1 - c of
+  // the cut and the floor brings c; adding them, rather than laying one over
+  // the other, restores the fill exactly, with every edge antialiased.
+  final add = Paint()..blendMode = BlendMode.plus;
   canvas.saveLayer(bounds, Paint());
   canvas.drawPath(outline, fill);
   for (final layer in cone.floors) {
     // A floor replaces the horizontal cut where it lies, as the later of
     // two overlapping floors replaces the earlier.
     canvas.drawPath(layer.floor, clear);
-    canvas.saveLayer(bounds, Paint());
+    canvas.saveLayer(bounds, add);
     canvas.clipPath(sector);
-    canvas.drawPath(layer.floor, floorFill);
+    canvas.drawPath(layer.floor, fill);
     layer.shadows.erase(canvas);
     canvas.restore();
   }
@@ -1273,14 +1283,17 @@ class _Footprint {
   }
 }
 
+enum _Side { left, right }
+
 class _Edge {
-  _Edge(this.a, this.b, this.wall, {required this.interiorLeft})
+  _Edge(this.a, this.b, this.wall, {required this.interior})
       : _inverseLength = 1 / (b - a).distance;
   final Offset a, b;
   final int wall;
 
-  /// Whether the edge's own wall lies to its left, going from [a] to [b].
-  final bool interiorLeft;
+  /// The side of the edge, going from [a] to [b], its own wall lies on; null
+  /// when that could not be told.
+  final _Side? interior;
   final double _inverseLength;
 
   double? intersection(Offset origin, Offset direction, double range) {

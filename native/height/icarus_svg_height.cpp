@@ -64,7 +64,8 @@ struct Edge {
   uint32_t aVertex = 0, bVertex = 0;
   // See the Dart _Edge: corner roundoff admitted along the wall.
   double inverseLength = 0;
-  bool interiorLeft = false;
+  // The side its own wall lies on, going a to b: 0 right, 1 left, 2 unknown.
+  uint8_t interior = 2;
 
   bool intersection(Point origin, Point direction, double range,
                     double &distance) const {
@@ -413,8 +414,9 @@ bool seam(const Handle &handle, uint32_t vertex, const uint8_t *active) {
       // A shared side only when the two walls lie on either side of it.
       const bool same = first.aVertex == second.aVertex && first.bVertex == second.bVertex;
       const bool reversed = first.aVertex == second.bVertex && first.bVertex == second.aVertex;
-      if ((same && first.interiorLeft != second.interiorLeft) ||
-          (reversed && first.interiorLeft == second.interiorLeft))
+      if (first.interior > 1 || second.interior > 1) continue;
+      if ((same && first.interior != second.interior) ||
+          (reversed && first.interior == second.interior))
         cancelled[i] = cancelled[j] = true;
     }
   }
@@ -562,14 +564,16 @@ void *ish_open(const double *records, uint32_t edgeCount, uint32_t wallCount,
   }
 }
 
-int32_t ish_set_interior_sides(void *opaque, const uint8_t *interiorLeft,
+int32_t ish_set_interior_sides(void *opaque, const uint8_t *sides,
                                uint32_t edgeCount) {
-  if (!opaque || !interiorLeft) return ISH_INVALID;
+  if (!opaque || !sides) return ISH_INVALID;
   auto &handle = *static_cast<Handle *>(opaque);
   std::lock_guard<std::mutex> lock(handle.mutex);
   if (edgeCount != handle.edges.size()) return ISH_INVALID;
   for (uint32_t i = 0; i < edgeCount; ++i)
-    handle.edges[i].interiorLeft = interiorLeft[i] != 0;
+    if (sides[i] > 2) return ISH_INVALID;
+  for (uint32_t i = 0; i < edgeCount; ++i)
+    handle.edges[i].interior = sides[i];
   handle.interiorSides = true;
   return ISH_OK;
 }

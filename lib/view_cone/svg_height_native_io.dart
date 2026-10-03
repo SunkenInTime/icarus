@@ -119,17 +119,18 @@ class SvgHeightNative implements Finalizable {
 
   static const int _maximumPointCount = 1 << 22;
 
-  /// [interiorLeft], one byte per edge, says which side of it its own wall
-  /// lies on; with it the query skips seams between touching pieces.
+  /// [interiorSides], one byte per edge, says which side of it its own wall
+  /// lies on (0 right, 1 left, 2 unknown); with it the query skips seams
+  /// between touching pieces.
   factory SvgHeightNative.open({
     required List<String> wallIds,
     required Float64List edgeRecords,
-    Uint8List? interiorLeft,
+    Uint8List? interiorSides,
     String? libraryPath,
   }) {
     final edgeCount = edgeRecords.length ~/ 5;
     if (edgeRecords.length % 5 != 0 ||
-        (interiorLeft != null && interiorLeft.length != edgeCount) ||
+        (interiorSides != null && interiorSides.length != edgeCount) ||
         wallIds.length > 1 << 20 ||
         edgeCount > 1 << 19) {
       throw ArgumentError('SVG native geometry exceeds its bounded capacity.');
@@ -182,11 +183,11 @@ class SvgHeightNative implements Finalizable {
         close(handle);
         throw StateError('SVG native context has no query buffers.');
       }
-      if (interiorLeft != null && interiorLeft.isNotEmpty) {
-        final sides = calloc<Uint8>(interiorLeft.length);
+      if (interiorSides != null && interiorSides.isNotEmpty) {
+        final sides = calloc<Uint8>(interiorSides.length);
         try {
-          sides.asTypedList(interiorLeft.length).setAll(0, interiorLeft);
-          if (setSides(handle, sides, interiorLeft.length) != 0) {
+          sides.asTypedList(interiorSides.length).setAll(0, interiorSides);
+          if (setSides(handle, sides, interiorSides.length) != 0) {
             close(handle);
             throw StateError('SVG native context refused the wall sides.');
           }
@@ -207,7 +208,7 @@ class SvgHeightNative implements Finalizable {
   static SvgHeightNative? tryOpen({
     required List<String> wallIds,
     required Float64List edgeRecords,
-    Uint8List? interiorLeft,
+    Uint8List? interiorSides,
     String? libraryPath,
   }) {
     // Validate through the public constructor. DynamicLibrary.open and symbol
@@ -216,7 +217,7 @@ class SvgHeightNative implements Finalizable {
       return SvgHeightNative.open(
           wallIds: wallIds,
           edgeRecords: edgeRecords,
-          interiorLeft: interiorLeft,
+          interiorSides: interiorSides,
           libraryPath: libraryPath);
     } on UnsupportedError {
       return null;

@@ -513,6 +513,28 @@ void main() {
     expect(area(twice.polygon), closeTo(area(once.polygon), 1e-9));
   });
 
+  test('two walls over a footprint thinner than the side probe', () {
+    const ring = [10.0, 1.13, 10.0000005, 2.15, 10.0, 3.17, 9.9999995, 2.15];
+    const reversed = [
+      9.9999995,
+      2.15,
+      10.0,
+      3.17,
+      10.0000005,
+      2.15,
+      10.0,
+      1.13
+    ];
+    final once = coneOf([
+      wall('once', [ring])
+    ]);
+    final twice = coneOf([
+      wall('one', [ring]),
+      wall('other', [reversed]),
+    ]);
+    expect(area(twice.polygon), closeTo(area(once.polygon), 1e-9));
+  });
+
   test('rays beside a corner pass it even from right next to it', () {
     final cone = coneOf([
       wall('corner', [rectangle(-2, 0, 0, 2)])
