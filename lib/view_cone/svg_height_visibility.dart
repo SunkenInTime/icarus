@@ -173,9 +173,6 @@ class SvgHeightVisibility {
   final SvgGroundHeight? ground;
   final bool requiresPhysicalGround;
   final List<SvgHeightSupport> sightlineFloors;
-  late final _floorPaths = [
-    for (final floor in sightlineFloors) _footprintPath(floor)
-  ];
   late final _floorOccluders = [
     for (final wall in walls)
       SvgFloorOccluder(wall.rings, wall.evenOdd, [
@@ -656,11 +653,12 @@ class SvgHeightVisibility {
       final targetEye = sightlineFloors[i].surfaceElevationMeters! +
           (cameraHeightMeters ?? defaultCameraHeightMeters);
       if (targetEye == eye) continue;
-      final floor = _floorPaths[i];
-      final bounds = floor.getBounds().intersect(reach);
+      final floor = sightlineFloors[i];
+      final bounds = floor.bounds.intersect(reach);
       if (bounds.width <= 0 || bounds.height <= 0) continue;
       floors.add(SvgFloorLayer(
-          floor,
+          floor.rings,
+          floor.evenOdd,
           svgFloorShadows(
               bounds: bounds,
               origin: origin,
@@ -1167,16 +1165,6 @@ class SvgVisibilityCone {
     path.close();
     return path;
   }
-}
-
-Path _footprintPath(_Footprint footprint) {
-  final path = Path()
-    ..fillType =
-        footprint.evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
-  for (final ring in footprint.rings) {
-    path.addPolygon(ring, true);
-  }
-  return path;
 }
 
 /// Fills the lit area of [cone] with [fill], in source coordinates:

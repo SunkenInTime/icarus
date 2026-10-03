@@ -12,13 +12,19 @@ class SvgFloorOccluder {
   final Rect bounds;
 }
 
-/// One measured destination floor as a cone overlooks it.
+/// One measured destination floor as a cone overlooks it. Built from plain
+/// geometry, so a worker isolate can make one; paths are made when painted.
 class SvgFloorLayer {
-  const SvgFloorLayer(this.floor, this.shadows);
+  SvgFloorLayer(this.rings, this.evenOdd, this.shadows);
 
   /// The floor's footprint, in source coordinates.
-  final Path floor;
+  final List<List<Offset>> rings;
+  final bool evenOdd;
   final SvgFloorShadows shadows;
+
+  late final Path floor = Path()
+    ..fillType = evenOdd ? PathFillType.evenOdd : PathFillType.nonZero
+    ..addPolygonRings(rings);
 }
 
 /// The shadows the SVG wall volumes cast onto one measured, horizontal floor,
