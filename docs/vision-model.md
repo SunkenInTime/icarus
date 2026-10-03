@@ -550,6 +550,14 @@ near the piece stopped a few; 20% cross short pieces that really are partly
 open, such as railings. `test/svg_truth_bands_test.dart` pins the Lotus wall
 and the Bind container.
 
+Dara ruled on the 119 recorded-decision pieces from in-game renders on
+2026-10-03. 51 became solid at the measured heights: the Abyss atrium wall
+sections the 2026-09-14 review had left open beside the eleven it confirmed
+(both get 3.96 to 8.0 m), the two Fracture corridor openings and Haven
+defense's `p3-stroke-10-gameplay-opening-0`. The Haven, Icebox and Pearl
+door and corridor openings stay open. The rulings are in the archive as
+`scripts/data/truth-bands-dara-review-2026-10-03.json`.
+
 ## Drag performance on Windows (2026-09-19)
 
 Dara's bar: dragging an agent with a cone must feel instant on Windows.

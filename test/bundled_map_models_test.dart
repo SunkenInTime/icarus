@@ -11,9 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// with a deliberate update to this table.
 const _modelChecksums = <String, String>{
   'abyss_svg_height_attack.json.gz':
-      '92070b65d21a8670d6ec3e5ed1f47d256715af4eb1146877a0d89d76b5326bd4',
+      'f5d8ad886d8a15f4582b9552e0d28a36cc5ca590da1c8da1857037c93a3f1944',
   'abyss_svg_height_defense.json.gz':
-      '4af0c4e940b32d30cf32ba8882416ed893be07a8a3f8a1222bd2765c47974866',
+      'bb7c9b85bac16b37fa0b8d2fd21e24e2f5b43f2cd1d56c0a6ae08c1e48b8574f',
   'ascent_svg_height_attack.json.gz':
       '1dc1fa567cb68fe822f51c0de77e945192958929281b9afca97411a4525fcd7c',
   'ascent_svg_height_defense.json.gz':
@@ -31,13 +31,13 @@ const _modelChecksums = <String, String>{
   'corrode_svg_height_defense.json.gz':
       '38255c92671399baa1f57bed0fb7fadd7a2475bb2b19fb85fac5db0f3128e7ee',
   'fracture_svg_height_attack.json.gz':
-      'c38c94d1077b523f045c3cf62d6f8986ff356b102d9725f8fa2ab5ef96958e5f',
+      '4c8a90612e6e0f66a2ef9c88753caf6be63285e1b426e341f7545efa76094378',
   'fracture_svg_height_defense.json.gz':
-      '67fe4146de83b00bb9d3c93e80cd885cfa73a968727eff2f45eaa4aff461b708',
+      '61a2c827b1eefc653e1381f7d681246e772f24c6b79b32c43e022f87650b3aba',
   'haven_svg_height_attack.json.gz':
       '6f5c35ca4a1245baa29fe11dab0acdcf7173eb141d801b2df70dcabb31951bdb',
   'haven_svg_height_defense.json.gz':
-      'cad19fe927c3f32ccd0904f1d2c5e75f4511b70fd632c67c0787f558cf995585',
+      'a5b39ba5faaac82bbf19fd7e7899ad45352739985f3218dda2e71c1836a5d7d3',
   'icebox_svg_height_attack.json.gz':
       '0621530d21eeaa8ac67f2044b123fa395e0d16d76ba44926e6091d5aafea07d9',
   'icebox_svg_height_defense.json.gz':
