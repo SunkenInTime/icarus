@@ -89,12 +89,16 @@ class ReplayConesPainter extends CustomPainter {
       canvas.transform(sourceToScreen);
       // The cut lies within reach, so filling it with the editor's gradient
       // is the editor's clipped circle, without a clip mask per cone.
-      canvas.drawPath(
-        _conePaths[cone] ??= _conePath(cone),
+      final reachRect = Rect.fromCircle(center: origin, radius: reach);
+      paintSvgConeArea(
+        canvas,
+        cone,
+        _conePaths[cone] ??= Path()..addPolygon(cone.polygon, true),
         Paint()
           ..shader = RadialGradient(
             colors: [_coneGrey.withValues(alpha: .5), Colors.transparent],
-          ).createShader(Rect.fromCircle(center: origin, radius: reach)),
+          ).createShader(reachRect),
+        reachRect,
       );
       canvas.restore();
       if (shadows != null) {
@@ -140,9 +144,6 @@ class ReplayConesPainter extends CustomPainter {
     if (standsInsideSmoke(origin, near)) return _blind;
     return occluderShadows(origin, reach, near);
   }
-
-  static Path _conePath(SvgVisibilityCone cone) =>
-      cone.visibilityPath ?? (Path()..addPolygon(cone.polygon, true));
 
   /// The painted floor on the canvas, built once per canvas size and side.
   Path _floor(Size size, Float64List sourceToScreen) {

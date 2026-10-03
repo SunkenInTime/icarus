@@ -106,7 +106,7 @@ class ReplayConeCuts {
         _nextId++,
         aim,
         result.origin,
-        _withFloors(aim, result),
+        result.cone,
       );
       onCut();
     }, onError: (Object _) {
@@ -136,23 +136,6 @@ class ReplayConeCuts {
           CoordinateSystem.virtualLengthInWorld(coneLength) / transform.scale,
       apertureRadians: apertureDegrees * math.pi / 180,
       elevationCm: aim.elevationCm,
-    );
-  }
-
-  SvgVisibilityCone? _withFloors(ReplayConeAim aim, ReplayConeResult result) {
-    final cone = result.cone;
-    final origin = result.origin;
-    final model = aim.isAttack ? attackModel : defenseModel;
-    if (cone == null || origin == null || !model.hasSightlineFloors) {
-      return cone;
-    }
-    final request = _request(aim);
-    return model.withSightlineFloors(
-      cone,
-      origin: origin,
-      directionRadians: request.directionRadians,
-      range: request.range,
-      apertureRadians: request.apertureRadians,
     );
   }
 

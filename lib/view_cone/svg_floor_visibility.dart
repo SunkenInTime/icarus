@@ -12,21 +12,99 @@ class SvgFloorOccluder {
   final Rect bounds;
 }
 
-/// Projects the same SVG wall volumes onto one measured, horizontal floor.
-/// A target stands on that floor, so its eye can differ from the observer's.
-/// Clipping projected faces in double precision keeps distant shadows out of
-/// Skia's float coordinates and preserves holes in the painted footprints.
-Path visibleSvgFloor({
-  required Path floor,
-  required Path sector,
+/// One measured destination floor as a cone overlooks it. Built from plain
+/// geometry, so a worker isolate can make one; paths are made when painted.
+class SvgFloorLayer {
+  SvgFloorLayer(this.rings, this.evenOdd, this.shadows);
+
+  /// The floor's footprint, in source coordinates.
+  final List<List<Offset>> rings;
+  final bool evenOdd;
+  final SvgFloorShadows shadows;
+
+  late final Path floor = Path()
+    ..fillType = evenOdd ? PathFillType.evenOdd : PathFillType.nonZero
+    ..addPolygonRings(rings);
+}
+
+/// The shadows the SVG wall volumes cast onto one measured, horizontal floor,
+/// for a target standing on it, whose eye can differ from the observer's.
+///
+/// They are kept as shapes rather than subtracted: a painter fills the floor
+/// and erases them, so a cone costs no path operations however many walls
+/// stand between it and the floor. Faces are wound one way, so their nonzero
+/// union is their shadow; caps keep their footprint's fill rule and holes.
+class SvgFloorShadows {
+  SvgFloorShadows._(this.faces, this.caps);
+
+  final List<List<Offset>> faces;
+  final List<(List<List<Offset>>, bool)> caps;
+
+  late final Path facesPath = () {
+    final path = Path()..fillType = PathFillType.nonZero;
+    for (final face in faces) {
+      path.addPolygon(face, true);
+    }
+    return path;
+  }();
+
+  late final List<Path> capPaths = [
+    for (final (rings, evenOdd) in caps)
+      Path()
+        ..fillType = evenOdd ? PathFillType.evenOdd : PathFillType.nonZero
+        ..addPolygonRings(rings)
+  ];
+
+  /// Erases the shadows from what [canvas] has drawn so far in this layer.
+  void erase(Canvas canvas) {
+    final clear = Paint()..blendMode = BlendMode.clear;
+    for (final cap in capPaths) {
+      canvas.drawPath(cap, clear);
+    }
+    canvas.drawPath(facesPath, clear);
+  }
+
+  /// [area] less the shadows, as one path. Each shadow is subtracted on its
+  /// own: near a wall endpoint, overlapping thin contours in one path can
+  /// make Skia's path operation fail. Slow; for reports and tests.
+  Path subtractFrom(Path area) {
+    var visible = area;
+    for (final cap in capPaths) {
+      if (!cap.getBounds().isEmpty) {
+        visible = Path.combine(PathOperation.difference, visible, cap);
+      }
+    }
+    for (final face in faces) {
+      final side = Path()..addPolygon(face, true);
+      if (!side.getBounds().isEmpty) {
+        visible = Path.combine(PathOperation.difference, visible, side);
+      }
+    }
+    return visible;
+  }
+}
+
+extension on Path {
+  void addPolygonRings(List<List<Offset>> rings) {
+    for (final ring in rings) {
+      addPolygon(ring, true);
+    }
+  }
+}
+
+/// Projects the wall volumes onto a target standing anywhere in [bounds].
+/// Clipping projected faces to [bounds] in double precision keeps distant
+/// shadows out of Skia's float coordinates.
+SvgFloorShadows svgFloorShadows({
+  required Rect bounds,
   required Offset origin,
   required double observerEye,
   required double targetEye,
   required Iterable<SvgFloorOccluder> walls,
 }) {
-  var visible = Path.combine(PathOperation.intersect, floor, sector);
-  final bounds = visible.getBounds();
-  if (bounds.isEmpty) return visible;
+  final faces = <List<Offset>>[];
+  final caps = <(List<List<Offset>>, bool)>[];
+  if (bounds.isEmpty) return SvgFloorShadows._(faces, caps);
   final influence = bounds.expandToInclude(Rect.fromPoints(origin, origin));
   final delta = targetEye - observerEye;
   for (final wall in walls) {
@@ -47,19 +125,13 @@ Path visibleSvgFloor({
       final near = 1 / last;
       final far = first == 0 ? null : 1 / first;
       // Horizontal caps matter when an eye starts below an overhead footprint.
-      // Subtraction distributes over their union; even-odd holes stay intact.
       for (final factor in [near, if (far != null && far != near) far]) {
-        final cap = Path()
-          ..fillType =
-              wall.evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
-        for (final ring in wall.rings) {
-          final clipped = _clipRect(
-              [for (final p in ring) origin + (p - origin) * factor], bounds);
-          if (clipped.length >= 3) cap.addPolygon(clipped, true);
-        }
-        if (!cap.getBounds().isEmpty) {
-          visible = Path.combine(PathOperation.difference, visible, cap);
-        }
+        final rings = [
+          for (final ring in wall.rings)
+            _clipRect(
+                [for (final p in ring) origin + (p - origin) * factor], bounds)
+        ].where((ring) => ring.length >= 3).toList();
+        if (rings.isNotEmpty) caps.add((rings, wall.evenOdd));
       }
       for (final ring in wall.rings) {
         for (var i = 0; i < ring.length; i++) {
@@ -78,20 +150,42 @@ Path visibleSvgFloor({
             face = _clip(
                 face, (p) => sign * _cross(edge, p - (origin + av * far)));
           }
-          if (face.length >= 3) {
-            // Subtraction distributes over the union of projected faces.
-            // Keep each face simple: near a wall endpoint, overlapping thin
-            // contours in one path can make Skia's path operation fail.
-            final side = Path()..addPolygon(face, true);
-            if (!side.getBounds().isEmpty) {
-              visible = Path.combine(PathOperation.difference, visible, side);
-            }
-          }
+          if (face.length >= 3) faces.add(_counterClockwise(face));
         }
       }
     }
   }
-  return visible;
+  return SvgFloorShadows._(faces, caps);
+}
+
+/// [floor] inside [sector], less the shadows the walls cast on a target
+/// standing on it. The boolean form of what [SvgFloorShadows] paints.
+Path visibleSvgFloor({
+  required Path floor,
+  required Path sector,
+  required Offset origin,
+  required double observerEye,
+  required double targetEye,
+  required Iterable<SvgFloorOccluder> walls,
+}) {
+  final visible = Path.combine(PathOperation.intersect, floor, sector);
+  final bounds = visible.getBounds();
+  if (bounds.isEmpty) return visible;
+  return svgFloorShadows(
+          bounds: bounds,
+          origin: origin,
+          observerEye: observerEye,
+          targetEye: targetEye,
+          walls: walls)
+      .subtractFrom(visible);
+}
+
+List<Offset> _counterClockwise(List<Offset> points) {
+  var twiceArea = 0.0;
+  for (var i = 0; i < points.length; i++) {
+    twiceArea += _cross(points[i], points[(i + 1) % points.length]);
+  }
+  return twiceArea < 0 ? points.reversed.toList() : points;
 }
 
 List<Offset> _rectangle(Rect r) =>

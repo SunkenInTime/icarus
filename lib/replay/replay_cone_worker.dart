@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:icarus/view_cone/svg_floor_visibility.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
 
@@ -44,9 +45,9 @@ class ReplayConeResult {
 /// of both sides' height models (and its own native acceleration); it
 /// answers in the order asked.
 ///
-/// The cut is [SvgHeightVisibility.horizontalCone]. Where a map overlooks
-/// reviewed floors (`withSightlineFloors`), that pass uses `dart:ui` paths
-/// and is left to the caller on the root isolate.
+/// The cut is the editor's: [SvgHeightVisibility.horizontalCone], and where
+/// a map overlooks reviewed floors, [SvgHeightVisibility.withSightlineFloors].
+/// Both are plain geometry; paths are made only when a cone is painted.
 class ReplayConeWorker {
   ReplayConeWorker._(this._isolate, this._requests, this._responses);
 
@@ -74,6 +75,10 @@ class ReplayConeWorker {
         if (!ready.isCompleted) ready.completeError(StateError(message));
       } else if (message is List && message.length == 2) {
         worker._answer(message[0] as int, message[1]);
+      } else if (message is List && message.length == 4) {
+        worker._answer(message[0] as int, message[1],
+            floors: message[2] as List<SvgFloorLayer>,
+            sector: message[3] as List<Offset>);
       } else if (message is List && message.length == 3) {
         // [error, stack, ticket]: a bad request, not a dead worker.
         worker._fail(message[2] as int?, message[0] as String);
@@ -118,7 +123,8 @@ class ReplayConeWorker {
     return completer.future;
   }
 
-  void _answer(int ticket, Object? payload) {
+  void _answer(int ticket, Object? payload,
+      {List<SvgFloorLayer> floors = const [], List<Offset>? sector}) {
     final completer = _pending.remove(ticket);
     if (completer == null) return;
     if (payload is! Float64List) {
@@ -137,6 +143,8 @@ class ReplayConeWorker {
         payload[2],
         const SvgVisibilityStats(0, 0, 0, 0, 0),
         eyeElevationMeters: payload[3].isNaN ? null : payload[3],
+        floors: floors,
+        sector: sector,
       ),
     ));
   }
@@ -192,12 +200,18 @@ void _workerMain(
       final elevation = request[7];
       final support = model.standingSupportAt(standing,
           savedEyeElevationCm: elevation.isNaN ? null : elevation);
-      final cone = model.horizontalCone(
+      final cone = model.withSightlineFloors(
+        model.horizontalCone(
+          origin: standing,
+          directionRadians: request[4],
+          range: request[5],
+          apertureRadians: request[6],
+          supportId: support?.id,
+        ),
         origin: standing,
         directionRadians: request[4],
         range: request[5],
         apertureRadians: request[6],
-        supportId: support?.id,
       );
       final polygon = cone.polygon;
       final payload = Float64List(4 + polygon.length * 2)
@@ -209,7 +223,9 @@ void _workerMain(
         payload[4 + i * 2] = polygon[i].dx;
         payload[5 + i * 2] = polygon[i].dy;
       }
-      replies.send([ticket, payload]);
+      replies.send(cone.floors.isEmpty
+          ? [ticket, payload]
+          : [ticket, payload, cone.floors, cone.sector]);
     } catch (error, stack) {
       replies.send(['$error', '$stack', ticket]);
     }
