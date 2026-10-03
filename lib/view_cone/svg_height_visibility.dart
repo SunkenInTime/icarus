@@ -285,14 +285,15 @@ class SvgHeightVisibility {
         // a seam with the next piece of the same wall, or face the unplayable
         // side of a building, and stepping across either lands back in ink.
         // Failing that, step across the nearest edge and try again from there.
-        target = _steppedAcross(current, wall.rings, 0.02,
+        target = _steppedAcross(current, wall.rings, _inkClearance,
                 inside: wall.contains,
                 reach: maxDistance - (current - point).distance,
                 accept: (p) =>
                     (p - point).distance <= maxDistance &&
                     _blockingWallAt(p) == null &&
                     receiverContains(p)) ??
-            _steppedAcross(current, wall.rings, 0.02, inside: wall.contains);
+            _steppedAcross(current, wall.rings, _inkClearance,
+                inside: wall.contains);
       } else {
         target = _pulledIn(current, 0.02);
       }
@@ -303,13 +304,21 @@ class SvgHeightVisibility {
     return null;
   }
 
+  /// How close to blocking ink still counts as in it. Two strokes drawn a
+  /// couple of centimetres apart leave a slit no agent stands in; a cone
+  /// from inside one is a hairline running down it.
+  static const _inkMargin = 0.05;
+
+  /// How far past the ink a nudged agent stands: clear of [_inkMargin].
+  static const _inkClearance = 0.06;
+
   SvgHeightWall? _blockingWallAt(Offset point) {
     // A wall that does not block a standing eye (a kerb, a floor mark) is
     // not something an agent stands inside of.
     final floor = ground?.heightAt(point);
     final eye = (floor ?? 0) + defaultCameraHeightMeters;
     for (final wall in walls) {
-      if (wall.contains(point) && wall.blocks(eye)) return wall;
+      if (wall._contains(point, _inkMargin) && wall.blocks(eye)) return wall;
     }
     return null;
   }

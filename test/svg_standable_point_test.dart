@@ -76,4 +76,18 @@ void main() {
     expect((moved! - start).distance, lessThanOrEqualTo(2.5));
     expect(boxed.walls.where((w) => w.contains(moved)), isEmpty);
   });
+
+  test('a slit between two walls is not somewhere to stand', () {
+    // Two walls drawn 0.02 apart, as Breeze attack has them at y 107.6.
+    final slit = SvgHeightVisibility.fromJson(data(
+      [
+        wall('north', [rectangle(0, 9, 100, 10)]),
+        wall('south', [rectangle(0, 10.02, 100, 11)]),
+      ],
+      receiver: [_floor(rectangle(0, 0, 100, 100))],
+    ));
+    final moved = slit.standablePointNear(const Offset(50, 10.01))!;
+    expect(moved.dy < 9 || moved.dy > 11, isTrue,
+        reason: 'stepped out to open floor, not left in the slit: $moved');
+  });
 }
