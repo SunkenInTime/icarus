@@ -578,7 +578,7 @@ void main() {
       expect(() => SvgHeightVisibility.fromJson(json), throwsFormatException);
     });
 
-    test('a piece's own edges can ride along under its heights', () {
+    test('a piece keeps its own edges under its heights', () {
       // The outline covers only half the wall; the piece's raw ring comes
       // along as extra edges, so the cone still stops at the whole wall.
       final json = merged(ring: rectangle(10, -20, 11, 0))
