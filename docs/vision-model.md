@@ -564,6 +564,21 @@ Fracture corridor openings and Haven defense's
 door and corridor openings stay open. The rulings are in the archive as
 `scripts/data/truth-bands-dara-review-2026-10-03.json`.
 
+### Holes in walls (2026-10-03)
+
+The Abyss strips were one case of a general fault: earlier passes measured
+walls in short strips against chosen objects, and a strip that missed them
+stayed open. The archive's `scripts/truth/notch.py` finds every hole
+directly. A hole is a piece no longer than a metre that is open over some
+height while touching pieces on both sides of it are solid there, up to
+40 m over its floor. Each is checked against every solid, non-decor face
+within half a metre of the piece. Where the scene is solid over at least
+80% of the hole, the hole is filled; where it is open, the hole stays and
+is listed for review. A piece whose top is lower than its neighbours' is a
+hole only when the scene is solid up to their height. Dara's rulings are
+never touched. Across both sides of all maps it found 5,343 holes and
+filled 4,096; 463 are open in the scene and stay open.
+
 ## Drag performance on Windows (2026-09-19)
 
 Dara's bar: dragging an agent with a cone must feel instant on Windows.
