@@ -467,6 +467,25 @@ bool seam(const Handle &handle, uint32_t vertex, const uint8_t *active) {
          std::abs(cross(away[0], away[1])) <= 1e-12 * lengths;
 }
 
+// Whether the wall runs straight across the ray at a vertex: its two active
+// edges there leave to either side of the ray's line. Rays just beside such
+// a vertex meet those two edges, so only the vertex ray adds a corner. Rays
+// beside the vertex matter where the wall turns back (a silhouette) and
+// something further can show past it.
+bool passThrough(const Handle &handle, uint32_t vertex, Point delta,
+                 const uint8_t *active) {
+  std::array<double, 2> sides{};
+  size_t count = 0;
+  const Point at = handle.vertexPoints[vertex];
+  for (uint32_t id : handle.vertexEdges[vertex]) {
+    const Edge &edge = handle.edges[id];
+    if (!active[edge.wall]) continue;
+    if (count == sides.size()) return false;
+    sides[count++] = cross(delta, (edge.aVertex == vertex ? edge.b : edge.a) - at);
+  }
+  return count == 2 && sides[0] * sides[1] < 0;
+}
+
 Hit castRay(const Handle &handle, Point origin, Point direction, double range,
             const uint8_t *active, Counters &counters) {
   Hit result;
@@ -734,8 +753,9 @@ int32_t ish_query(void *opaque, double originX, double originY,
         std::vector<double> &angles, &vertex, &outAngles, &outVertex;
         ~Store() { outAngles = std::move(angles); outVertex = std::move(vertex); }
       } store{localAngles, localVertex, handle.chunkAngles[chunk], handle.chunkVertexAngles[chunk]};
-      auto emit = [&](double angle, bool vertex) {
+      auto emit = [&](double angle, bool vertex, bool beside = true) {
         for (double event : {angle - cornerOffset, angle, angle + cornerOffset}) {
+          if (event != angle && !beside) continue;
           if (event >= -half && event <= half) {
             localAngles.push_back(event);
             if (vertex && event == angle) localVertex.push_back(event);
@@ -819,7 +839,8 @@ int32_t ish_query(void *opaque, double originX, double originY,
               continue;
           }
         }
-        emit(angle, true);
+        emit(angle, true,
+             !passThrough(handle, endpointVertices[endpoint], delta, active));
       }
       }
     });
