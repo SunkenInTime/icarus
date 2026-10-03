@@ -15,6 +15,8 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
+import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/widgets/lineup_editors_notice.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
@@ -182,11 +184,35 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         _imagePaths.addAll(link.images);
         _initialImageIds.addAll(link.images.map((image) => image.id));
       }
+      // Editing a lineup counts as editing its group (see
+      // myLineupEditingProvider); providers change after this frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref
+            .read(openLineUpItemsProvider.notifier)
+            .open(_openToken, {widget.linkId!});
+      });
     }
+  }
+
+  /// Names this dialog in openLineUpItemsProvider.
+  final Object _openToken = Object();
+  ProviderContainer? _container;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _container ??= ProviderScope.containerOf(context, listen: false);
   }
 
   @override
   void dispose() {
+    final container = _container;
+    if (container != null && _isEditing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        container.read(openLineUpItemsProvider.notifier).close(_openToken);
+      });
+    }
     _nameController.dispose();
     _youtubeLinkController.dispose();
     _notesController.dispose();
@@ -292,6 +318,8 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       },
       child: ShadDialog(
         title: Text(_isEditing ? "Edit Lineup" : "Create Lineup"),
+        description:
+            _isEditing ? LineUpEditorsNotice(itemId: widget.linkId!) : null,
         // The close button pops directly, past PopScope, so it steps aside
         // while Save is queuing.
         closeIcon: _saving ? const SizedBox.shrink() : null,

@@ -1,10 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { verifyPass, type PassClaims, type PassRole } from "./pass";
 
-// One room per strategy. The room is a relay: it remembers who is connected
-// and where their cursor last was, only for as long as they are connected.
-// Nothing here is written to storage; a cursor is worth nothing a second
-// after it moves.
+// One room per strategy. The room is a relay: it remembers who is connected,
+// where their cursor last was, and which lineup groups they are editing, only
+// for as long as they are connected. Nothing here is written to storage; a
+// cursor is worth nothing a second after it moves.
 
 export interface Env {
   PRESENCE_ROOM: DurableObjectNamespace<PresenceRoom>;
@@ -17,6 +17,12 @@ export interface Cursor {
   y: number;
 }
 
+/** The lineup groups one session is editing on one page. Never empty. */
+export interface Editing {
+  page: string;
+  groups: string[];
+}
+
 export interface Peer {
   sid: string;
   uid: string;
@@ -24,6 +30,7 @@ export interface Peer {
   avatar: string | null;
   role: PassRole;
   cursor: Cursor | null;
+  editing: Editing | null;
 }
 
 /** Everything the room knows about one socket. Survives hibernation. */
@@ -31,6 +38,7 @@ interface Attachment extends Peer {
   room: string;
   exp: number;
   lastCursorAt: number;
+  lastEditingAt: number;
   lastRenewAt: number;
 }
 
@@ -41,10 +49,14 @@ export const MAX_SESSIONS_PER_USER = 4;
 export const SWEEP_INTERVAL_MS = 30_000;
 /** Faster than any client sends (20/s); only a misbehaving client hits it. */
 const MIN_CURSOR_INTERVAL_MS = 25;
+/** Editing follows clicks, not pointer motion; anything faster is ignored. */
+const MIN_EDITING_INTERVAL_MS = 100;
 /** Clients renew once a minute; anything faster is ignored unverified. */
 const MIN_RENEW_INTERVAL_MS = 10_000;
 const MAX_MESSAGE_CHARS = 2048;
 const MAX_PAGE_ID_CHARS = 128;
+const MAX_GROUP_ID_CHARS = 128;
+const MAX_EDITING_GROUPS = 8;
 /** The map is 1000 units tall and 1778 wide; allow the margin around it. */
 const COORDINATE_LIMIT = 10_000;
 
@@ -87,9 +99,11 @@ export class PresenceRoom extends DurableObject<Env> {
       avatar: claims.avatar,
       role: claims.role,
       cursor: null,
+      editing: null,
       room: claims.room,
       exp: claims.exp,
       lastCursorAt: 0,
+      lastEditingAt: 0,
       lastRenewAt: 0,
     };
     server.serializeAttachment(self);
@@ -139,6 +153,25 @@ export class PresenceRoom extends DurableObject<Env> {
         if (self.cursor === null) return;
         ws.serializeAttachment({ ...self, cursor: null });
         this.broadcast({ t: "hide", sid: self.sid }, ws);
+        return;
+      }
+      case "editing": {
+        const editing = parseEditing(m);
+        const now = Date.now();
+        if (
+          editing === undefined ||
+          now - self.lastEditingAt < MIN_EDITING_INTERVAL_MS ||
+          sameEditing(editing, self.editing)
+        ) {
+          return;
+        }
+        ws.serializeAttachment({ ...self, editing, lastEditingAt: now });
+        this.broadcast(
+          editing === null
+            ? { t: "editing", sid: self.sid, page: null, groups: [] }
+            : { t: "editing", sid: self.sid, ...editing },
+          ws,
+        );
         return;
       }
       case "renew": {
@@ -280,6 +313,7 @@ function toPeer(a: Attachment): Peer {
     avatar: a.avatar,
     role: a.role,
     cursor: a.cursor,
+    editing: a.editing,
   };
 }
 
@@ -299,6 +333,43 @@ function parseCursor(m: Record<string, unknown>): Cursor | null {
     return null;
   }
   return { page, x, y };
+}
+
+/**
+ * The groups an `editing` message names, sorted with duplicates dropped, or
+ * null when it names none. Undefined when the message is malformed.
+ */
+function parseEditing(m: Record<string, unknown>): Editing | null | undefined {
+  const { page, groups } = m;
+  if (
+    typeof page !== "string" ||
+    page.length === 0 ||
+    page.length > MAX_PAGE_ID_CHARS ||
+    !Array.isArray(groups) ||
+    !groups.every(isGroupId)
+  ) {
+    return undefined;
+  }
+  const unique = [...new Set(groups)].sort();
+  if (unique.length > MAX_EDITING_GROUPS) return undefined;
+  return unique.length === 0 ? null : { page, groups: unique };
+}
+
+function isGroupId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_GROUP_ID_CHARS
+  );
+}
+
+function sameEditing(a: Editing | null, b: Editing | null): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.page === b.page &&
+    a.groups.length === b.groups.length &&
+    a.groups.every((group, i) => group === b.groups[i])
+  );
 }
 
 function isCoordinate(value: unknown): value is number {

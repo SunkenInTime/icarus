@@ -269,3 +269,146 @@ describe("room", () => {
     expect(ana.messages).toEqual([]);
   });
 });
+
+describe("editing", () => {
+  // Longer than the room's 100 ms editing interval.
+  const PAST_INTERVAL_MS = 150;
+
+  /** Ana and Ben in one room, with every arrival message already consumed. */
+  async function anaAndBen() {
+    const ana = await connect(await signPass(claims(), SECRET));
+    await ana.next("welcome");
+    const ben = await connect(await signPass(claims({ uid: "u-ben", name: "Ben" }), SECRET));
+    const benSid = (await ben.next("welcome")).self as string;
+    await ana.next("join");
+    return { ana, ben, benSid };
+  }
+
+  function editing(page: unknown, groups: unknown): string {
+    return JSON.stringify({ t: "editing", page, groups });
+  }
+
+  it("relays editing to others without echoing it back", async () => {
+    const { ana, ben, benSid } = await anaAndBen();
+    ben.ws.send(editing("p1", ["g2", "g1", "g2"]));
+    expect(await ana.next("editing")).toEqual({
+      t: "editing",
+      sid: benSid,
+      page: "p1",
+      groups: ["g1", "g2"],
+    });
+    await sleep(100);
+    expect(ben.messages).toEqual([]);
+  });
+
+  it("tells a newcomer what everyone is editing", async () => {
+    const { ana, ben, benSid } = await anaAndBen();
+    ben.ws.send(editing("p1", ["g1"]));
+    await ana.next("editing");
+
+    const cy = await connect(await signPass(claims({ uid: "u-cy", name: "Cy" }), SECRET));
+    const peers = (await cy.next("welcome")).peers;
+    expect(peers.find((p: any) => p.sid === benSid).editing).toEqual({
+      page: "p1",
+      groups: ["g1"],
+    });
+    expect(peers.find((p: any) => p.name === "Ana").editing).toBeNull();
+    // Peers already in the room hear about Cy, who is editing nothing.
+    expect((await ana.next("join")).peer.editing).toBeNull();
+  });
+
+  it("broadcasts a clear and forgets it", async () => {
+    const { ana, ben, benSid } = await anaAndBen();
+    ben.ws.send(editing("p1", ["g1"]));
+    await ana.next("editing");
+    await sleep(PAST_INTERVAL_MS);
+
+    ben.ws.send(editing("p1", []));
+    expect(await ana.next("editing")).toEqual({
+      t: "editing",
+      sid: benSid,
+      page: null,
+      groups: [],
+    });
+    const cy = await connect(await signPass(claims({ uid: "u-cy", name: "Cy" }), SECRET));
+    const peers = (await cy.next("welcome")).peers;
+    expect(peers.find((p: any) => p.sid === benSid).editing).toBeNull();
+  });
+
+  it("ignores malformed editing", async () => {
+    const { ana, ben } = await anaAndBen();
+    const long = "g".repeat(129);
+    const nine = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    ben.ws.send(editing("p".repeat(129), ["g1"]));
+    ben.ws.send(editing("p1", [long]));
+    ben.ws.send(editing("p1", nine));
+    ben.ws.send(editing("p1", "g1"));
+    ben.ws.send(editing("p1", { 0: "g1" }));
+    ben.ws.send(editing("p1", [""]));
+    ben.ws.send(editing("p1", ["g1", 2]));
+    ben.ws.send(JSON.stringify({ t: "editing", groups: ["g1"] }));
+    ben.ws.send(editing("", ["g1"]));
+    ben.ws.send(editing(7, ["g1"]));
+    // Malformed messages don't start the rate limit, so this one lands.
+    ben.ws.send(editing("p1", ["g1", "g1", "g1", "g1", "g1", "g1", "g1", "g1", "g2"]));
+    expect(await ana.next("editing")).toMatchObject({ page: "p1", groups: ["g1", "g2"] });
+    expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
+  });
+
+  it("ignores editing faster than one per 100 ms", async () => {
+    const { ana, ben } = await anaAndBen();
+    ben.ws.send(editing("p1", ["g1"]));
+    ben.ws.send(editing("p1", ["g2"]));
+    expect(await ana.next("editing")).toMatchObject({ groups: ["g1"] });
+    await sleep(PAST_INTERVAL_MS);
+    expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
+
+    ben.ws.send(editing("p1", ["g3"]));
+    expect(await ana.next("editing")).toMatchObject({ groups: ["g3"] });
+  });
+
+  it("doesn't rebroadcast an unchanged editing", async () => {
+    const { ana, ben } = await anaAndBen();
+    ben.ws.send(editing("p1", ["g1", "g2"]));
+    await ana.next("editing");
+    await sleep(PAST_INTERVAL_MS);
+    // The same set in another order is the same editing.
+    ben.ws.send(editing("p1", ["g2", "g1"]));
+    await sleep(PAST_INTERVAL_MS);
+    expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
+
+    // Neither is an empty clear while editing nothing.
+    ben.ws.send(editing("p1", []));
+    expect(await ana.next("editing")).toMatchObject({ page: null, groups: [] });
+    await sleep(PAST_INTERVAL_MS);
+    ben.ws.send(editing("p2", []));
+    await sleep(PAST_INTERVAL_MS);
+    expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
+
+    // The same groups on another page is a change.
+    ben.ws.send(editing("p2", ["g1", "g2"]));
+    expect(await ana.next("editing")).toMatchObject({ page: "p2", groups: ["g1", "g2"] });
+  });
+
+  it("keeps editing through a renewal and its profile refresh", async () => {
+    const { ana, ben, benSid } = await anaAndBen();
+    ben.ws.send(editing("p1", ["g1"]));
+    await ana.next("editing");
+
+    const pass = await signPass(claims({ uid: "u-ben", name: "Benjamin" }), SECRET);
+    ben.ws.send(JSON.stringify({ t: "renew", pass }));
+    await ben.next("renewed");
+    expect((await ana.next("join")).peer).toMatchObject({
+      sid: benSid,
+      name: "Benjamin",
+      editing: { page: "p1", groups: ["g1"] },
+    });
+
+    const cy = await connect(await signPass(claims({ uid: "u-cy", name: "Cy" }), SECRET));
+    const peers = (await cy.next("welcome")).peers;
+    expect(peers.find((p: any) => p.sid === benSid).editing).toEqual({
+      page: "p1",
+      groups: ["g1"],
+    });
+  });
+});
