@@ -17,9 +17,16 @@ class SvgHeightVisibility {
       this.cellSize,
       this.ground,
       this.requiresPhysicalGround,
-      this.sightlineFloors) {
-    for (var wall = 0; wall < walls.length; wall++) {
-      for (final ring in walls[wall].rings) {
+      this.sightlineFloors,
+      [List<SvgRuntimeWall>? runtimeWalls])
+      : runtimeWalls = runtimeWalls ??
+            List.unmodifiable([
+              for (var i = 0; i < walls.length; i++)
+                SvgRuntimeWall._(i, walls[i].rings, walls[i].evenOdd)
+            ]) {
+    for (final shape in this.runtimeWalls) {
+      final wall = shape.wall;
+      for (final ring in shape.rings) {
         final points = _runtimeRing(ring);
         for (var i = 0; i < points.length; i++) {
           final a = points[i], b = points[(i + 1) % points.length];
@@ -28,8 +35,8 @@ class SvgHeightVisibility {
           // wall thinner than the step is inside on neither side or both.
           final mid = (a + b) / 2, along = (b - a) / (b - a).distance;
           final left = Offset(along.dy, -along.dx) * 1e-6;
-          final inLeft = walls[wall].contains(mid + left),
-              inRight = walls[wall].contains(mid - left);
+          final inLeft = shape.contains(mid + left),
+              inRight = shape.contains(mid - left);
           final edge = _Edge(a, b, wall,
               interior: inLeft == inRight
                   ? null
@@ -164,6 +171,42 @@ class SvgHeightVisibility {
       }
       sightlineFloors.add(support);
     }
+    // Touching pieces with the same heights, merged offline into one outline
+    // each: what cones are cast against. The pieces stay the model.
+    List<SvgRuntimeWall>? runtimeWalls;
+    if (json['runtimeWalls'] != null) {
+      final index = {for (var i = 0; i < walls.length; i++) walls[i].id: i};
+      final covered = List.filled(walls.length, false);
+      runtimeWalls = [];
+      for (final raw in _list(json['runtimeWalls'], 'runtimeWalls')) {
+        final row = _map(raw);
+        final members = [
+          for (final id in _list(row['walls'], 'runtime wall members'))
+            index[id] ??
+                (throw FormatException('Runtime wall names missing wall $id.'))
+        ];
+        if (members.isEmpty) {
+          throw const FormatException('Runtime wall has no members.');
+        }
+        final first = walls[members.first];
+        for (final member in members) {
+          final wall = walls[member];
+          if (covered[member] ||
+              wall.floorElevationMeters != first.floorElevationMeters ||
+              wall.unknownHeight != first.unknownHeight ||
+              !_sameBands(wall.bands, first.bands)) {
+            throw FormatException(
+                'Runtime wall merges ${wall.id} with different heights.');
+          }
+          covered[member] = true;
+        }
+        runtimeWalls
+            .add(SvgRuntimeWall._(members.first, _rings(row), _evenOdd(row)));
+      }
+      if (covered.contains(false)) {
+        throw const FormatException('Runtime walls leave a wall out.');
+      }
+    }
     return SvgHeightVisibility._(
         List.unmodifiable(walls),
         List.unmodifiable(supports),
@@ -174,7 +217,16 @@ class SvgHeightVisibility {
             ? null
             : SvgGroundHeight.fromJson(_map(json['ground'])),
         physicalGround,
-        List.unmodifiable(sightlineFloors));
+        List.unmodifiable(sightlineFloors),
+        runtimeWalls == null ? null : List.unmodifiable(runtimeWalls));
+  }
+
+  static bool _sameBands(List<SvgHeightBand> a, List<SvgHeightBand> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].bottom != b[i].bottom || a[i].top != b[i].top) return false;
+    }
+    return true;
   }
 
   final List<SvgHeightWall> walls;
@@ -184,9 +236,18 @@ class SvgHeightVisibility {
   final SvgGroundHeight? ground;
   final bool requiresPhysicalGround;
   final List<SvgHeightSupport> sightlineFloors;
+
+  /// The outlines cones are cast against: [walls] themselves, or touching
+  /// pieces with the same heights merged into one outline each.
+  final List<SvgRuntimeWall> runtimeWalls;
+
   late final _floorOccluders = [
-    for (final wall in walls)
-      SvgFloorOccluder(wall.rings, wall.evenOdd, [
+    for (final shape in runtimeWalls)
+      SvgFloorOccluder(
+          shape.rings, shape.evenOdd, _absoluteBands(walls[shape.wall]))
+  ];
+
+  static List<(double, double)> _absoluteBands(SvgHeightWall wall) => [
         if (wall.unknownHeight)
           (double.negativeInfinity, double.infinity)
         else
@@ -197,8 +258,7 @@ class SvgHeightVisibility {
                   : (wall.floorElevationMeters ?? 0) + band.bottom,
               (wall.floorElevationMeters ?? 0) + band.top
             )
-      ])
-  ];
+      ];
   final _edges = <_Edge>[];
   _EdgeNode? _tree;
   SvgHeightNative? _native;
@@ -1043,6 +1103,15 @@ class SvgHeightBand {
   final double bottom, top;
   // The top itself is solid. A camera above a box top clears it naturally.
   bool contains(double height) => height >= bottom && height <= top;
+}
+
+/// One outline cones are cast against, standing for [wall] and every piece
+/// with the same heights merged into it.
+class SvgRuntimeWall extends _Footprint {
+  SvgRuntimeWall._(this.wall, super.rings, super.evenOdd);
+
+  /// The index in [SvgHeightVisibility.walls] whose heights it carries.
+  final int wall;
 }
 
 class SvgHeightWall extends _Footprint {

@@ -543,4 +543,46 @@ void main() {
         Offset.fromDirection(math.pi / 4 - 0.002, 50);
     expect((Path()..addPolygon(cone.polygon, true)).contains(beside), isTrue);
   });
+
+  group('runtime walls', () {
+    final pieces = [
+      for (var y = -20.0; y < 20; y += 1)
+        wall('piece-$y', [rectangle(10, y, 11, y + 1)])
+    ];
+    Map<String, dynamic> merged({List<String>? members, List<double>? ring}) =>
+        data(pieces)
+          ..['runtimeWalls'] = [
+            {
+              'walls': members ?? [for (final p in pieces) p['id'] as String],
+              'rings': [ring ?? rectangle(10, -20, 11, 20)],
+              'fillRule': 'nonzero',
+            }
+          ];
+    SvgVisibilityCone cast(Map<String, dynamic> json) =>
+        SvgHeightVisibility.fromJson(json).cone(
+            origin: Offset.zero,
+            directionRadians: 0,
+            range: 100,
+            apertureRadians: 1);
+
+    test('a merged outline casts the cone its pieces cast', () {
+      expect(area(cast(merged()).polygon),
+          closeTo(area(cast(data(pieces)).polygon), 1e-9));
+    });
+
+    test('a merge of pieces with different heights is refused', () {
+      final json = merged();
+      (json['walls'] as List)[3]['bands'] = [
+        [0, 1]
+      ];
+      expect(() => SvgHeightVisibility.fromJson(json), throwsFormatException);
+    });
+
+    test('runtime walls must cover every wall', () {
+      expect(
+          () => SvgHeightVisibility.fromJson(merged(
+              members: [for (final p in pieces.skip(1)) p['id'] as String])),
+          throwsFormatException);
+    });
+  });
 }
