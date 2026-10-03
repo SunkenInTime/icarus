@@ -513,6 +513,43 @@ the withdrawn void seal and changes nothing else:
 The reviewed sightline suite from the archive passes on the sealed models.
 `test/svg_void_window_test.dart` pins the Sunset case.
 
+## Bands checked from where players stand (2026-10-02)
+
+The ray probe above looks across the ink, half a metre either side. Where the
+real face sits further off the ink than that, it measured nothing and left
+the piece open. Lotus's defense platform wall (`p7-stroke-3-local-1`, 34
+units long) had no band below 20.75 m, so Chamber standing on the 3 m
+platform saw straight through it. Bind's B container outline had no bands at
+all.
+
+The archive's `scripts/truth/` checks the bundled models from the player's
+side instead. From every standable spot on an 8-unit grid, about 32,000 on
+both sides of all maps, it casts 720 horizontal rays at the runtime eye. Each
+ray runs twice: once against the painted walls active at that eye, once
+against the 3D scene's solid, non-decor, non-floor faces sliced at the eye.
+
+A painted piece is solid at an eye when, of the rays from that eye height
+that cross it, the scene stops at least 60% within a metre of it (and at
+least six). Where a piece the model leaves open is solid, its band is raised
+to the height of what those rays hit, cut short at the nearest eye heights
+where the scene lets most rays through. Bands only rise. Ids that record a
+decision about an opening (review, report, user section, opening, door,
+window, sill, jamb, header) are not changed; where the scene disagrees they
+are listed in the archive for review. A piece longer than 3 units that the
+scene stops only a fifth to three fifths of the rays through is a window in
+a longer wall, and is first cut into one-unit pieces (`-truth-cut-N`) so the
+solid part can rise without closing the window.
+
+Result on the bundled models (spots that see through a painted piece the
+scene says is solid, then rays): 11,054 to 5,905 spots and 337,158 to
+104,440 rays, with false shadows (painted walls blocking where the scene is
+open) up 0.7%. 1,397 pieces rose and 128 were cut into 1,910. Most of what
+the check still reports is not a data error. Of the remaining leak rays,
+68% cross pieces the scene leaves open at that eye, where a prop or frame
+near the piece stopped a few; 20% cross short pieces that really are partly
+open, such as railings. `test/svg_truth_bands_test.dart` pins the Lotus wall
+and the Bind container.
+
 ## Drag performance on Windows (2026-09-19)
 
 Dara's bar: dragging an agent with a cone must feel instant on Windows.
