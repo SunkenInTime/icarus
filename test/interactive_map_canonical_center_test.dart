@@ -13,6 +13,14 @@ import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+class _FixedPreferences extends AppPreferencesNotifier {
+  @override
+  AppPreferences build() => AppPreferences(
+        defaultThemeProfileIdForNewStrategies:
+            MapThemeProfilesProvider.immutableDefaultProfileId,
+      );
+}
+
 class _FixedMapProvider extends MapProvider {
   @override
   MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
@@ -55,6 +63,7 @@ void main() {
 
     final container = ProviderContainer(
       overrides: [
+        appPreferencesProvider.overrideWith(_FixedPreferences.new),
         mapProvider.overrideWith(_FixedMapProvider.new),
         drawingProvider.overrideWith(_EmptyDrawingProvider.new),
         penProvider.overrideWith(_FixedPenProvider.new),

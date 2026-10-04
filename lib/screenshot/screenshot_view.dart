@@ -31,6 +31,7 @@ class ScreenshotView extends ConsumerWidget {
     required this.showSpawnBarrier,
     required this.showRegionNames,
     required this.showUltOrbs,
+    required this.backgroundDotOpacity,
     required this.agents,
     required this.abilities,
     required this.text,
@@ -52,6 +53,7 @@ class ScreenshotView extends ConsumerWidget {
   final bool showSpawnBarrier;
   final bool showRegionNames;
   final bool showUltOrbs;
+  final double backgroundDotOpacity;
   final List<PlacedAgentNode> agents;
   final List<PlacedAbility> abilities;
   final List<PlacedText> text;
@@ -134,10 +136,10 @@ class ScreenshotView extends ConsumerWidget {
       width: CoordinateSystem.screenShotSize.width,
       child: Stack(
         children: [
-          const Positioned.fill(
+          Positioned.fill(
               child: Padding(
-            padding: EdgeInsets.all(4.0),
-            child: DotGrid(isScreenshot: true),
+            padding: const EdgeInsets.all(4.0),
+            child: DotGrid(isScreenshot: true, opacity: backgroundDotOpacity),
           )),
           Positioned(
             left: mapLeft,

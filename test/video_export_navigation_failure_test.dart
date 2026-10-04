@@ -57,6 +57,7 @@ void main() {
             id: 'test',
             storageDirectory: null),
         mapState: MapState(currentMap: MapValue.split, isAttack: true),
+        backgroundDotOpacity: 1,
         geometry: null,
         requireNavigation: requireNavigation,
       );

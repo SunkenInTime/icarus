@@ -1140,13 +1140,15 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       discordPresenceEnabled: fields[17] == null ? true : fields[17] as bool,
       videoExportStepDurationSeconds:
           fields[18] == null ? 3.0 : (fields[18] as num).toDouble(),
+      backgroundDotOpacity:
+          fields[19] == null ? 1.0 : (fields[19] as num).toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(18)
+      ..writeByte(19)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1182,7 +1184,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(17)
       ..write(obj.discordPresenceEnabled)
       ..writeByte(18)
-      ..write(obj.videoExportStepDurationSeconds);
+      ..write(obj.videoExportStepDurationSeconds)
+      ..writeByte(19)
+      ..write(obj.backgroundDotOpacity);
   }
 
   @override

@@ -76,6 +76,7 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
     showSpawnBarrier: mapState.showSpawnBarrier,
     showRegionNames: mapState.showRegionNames,
     showUltOrbs: mapState.showUltOrbs,
+    backgroundDotOpacity: ref.read(appPreferencesProvider).backgroundDotOpacity,
     agents: page.agentData,
     abilities: page.abilityData,
     text: page.textData,

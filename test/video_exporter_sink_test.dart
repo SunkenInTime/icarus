@@ -145,6 +145,7 @@ VideoExporter _exporter(List<StrategyPage> pages) {
       isOpen: true,
     ),
     mapState: MapState(currentMap: MapValue.ascent, isAttack: true),
+    backgroundDotOpacity: 1,
     geometry: null,
     imageSources: {'image-1': ImageBytes(_magentaPng)},
   );

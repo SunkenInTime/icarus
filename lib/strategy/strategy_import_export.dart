@@ -1757,6 +1757,8 @@ class StrategyImportExportService {
         showUltOrbs: globals.showUltOrbs ?? currentPreferences.showUltOrbs,
         showRegionNames:
             globals.showRegionNames ?? currentPreferences.showRegionNames,
+        backgroundDotOpacity: globals.backgroundDotOpacity?.clamp(0.0, 1.0) ??
+            currentPreferences.backgroundDotOpacity,
         customColorValues: globals.hasCustomColorValues
             ? globals.customColorValues
             : currentPreferences.customColorValues,
@@ -2262,6 +2264,7 @@ class StrategyImportExportService {
       showSpawnBarrier: appPreferences?.showSpawnBarrier,
       showUltOrbs: appPreferences?.showUltOrbs,
       showRegionNames: appPreferences?.showRegionNames,
+      backgroundDotOpacity: appPreferences?.backgroundDotOpacity,
       customColorValues: appPreferences?.customColorValues ?? const [],
       favoriteAgents: favoriteAgents,
     );

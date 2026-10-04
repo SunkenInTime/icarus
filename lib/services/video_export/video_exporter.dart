@@ -45,6 +45,7 @@ class VideoExporter {
     required this.strategy,
     required this.strategyState,
     required this.mapState,
+    required this.backgroundDotOpacity,
     required this.geometry,
     this.imageSources = const {},
     this.navigation,
@@ -54,6 +55,7 @@ class VideoExporter {
   final StrategyData strategy;
   final StrategyState strategyState;
   final MapState mapState;
+  final double backgroundDotOpacity;
   final VisionGeometryMap? geometry;
 
   /// What each image on the exported pages paints, by image id; see
@@ -305,6 +307,7 @@ class VideoExporter {
       showSpawnBarrier: mapState.showSpawnBarrier,
       showRegionNames: mapState.showRegionNames,
       showUltOrbs: mapState.showUltOrbs,
+      backgroundDotOpacity: backgroundDotOpacity,
       agents: page.agentData,
       abilities: page.abilityData,
       text: page.textData,

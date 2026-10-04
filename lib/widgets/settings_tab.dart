@@ -451,6 +451,24 @@ class _GlobalSettingsSections extends ConsumerWidget {
                   ref.read(mapProvider.notifier).updateUltOrbs(value);
                 },
               ),
+              _SettingsSliderTile(
+                icon: LucideIcons.grip,
+                iconColor: Settings.settingsMapAccent,
+                title: "Background dots",
+                description:
+                    "How strongly the dot grid shows behind the map and your library. 0% hides it.",
+                value: appPreferences.backgroundDotOpacity,
+                min: 0,
+                max: 1,
+                divisions: 20,
+                accentColor: Settings.accentInk,
+                valueLabel: (value) => "${(value * 100).round()}%",
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setBackgroundDotOpacity(value);
+                },
+              ),
             ],
           ),
         ),
@@ -1451,6 +1469,7 @@ class _SettingsSliderTile extends StatefulWidget {
     required this.accentColor,
     required this.onChanged,
     this.onChangeCommitted,
+    this.valueLabel,
   });
 
   final IconData icon;
@@ -1464,6 +1483,7 @@ class _SettingsSliderTile extends StatefulWidget {
   final Color accentColor;
   final ValueChanged<double> onChanged;
   final void Function(double start, double end)? onChangeCommitted;
+  final String Function(double value)? valueLabel;
 
   @override
   State<_SettingsSliderTile> createState() => _SettingsSliderTileState();
@@ -1511,7 +1531,8 @@ class _SettingsSliderTileState extends State<_SettingsSliderTile> {
               ),
               const SizedBox(width: 12),
               Text(
-                widget.value.toStringAsFixed(0),
+                widget.valueLabel?.call(widget.value) ??
+                    widget.value.toStringAsFixed(0),
                 style: ShadTheme.of(context).textTheme.small.copyWith(
                   color: Settings.tacticalVioletTheme.foreground,
                   fontFeatures: const [FontFeature.tabularFigures()],

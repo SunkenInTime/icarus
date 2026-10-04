@@ -414,6 +414,9 @@ void main() {
         .read(appPreferencesProvider.notifier)
         .setCustomColorValues(const [0xFF22C55E, 0xFF38BDF8]);
     await container
+        .read(appPreferencesProvider.notifier)
+        .setBackgroundDotOpacity(0.25);
+    await container
         .read(favoriteAgentsProvider.notifier)
         .toggleFavorite(AgentType.jett);
 
@@ -488,6 +491,12 @@ void main() {
         const [0xFF22C55E, 0xFF38BDF8],
       );
       expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.backgroundDotOpacity,
+        0.25,
+      );
+      expect(
         Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).containsKey('jett'),
         isTrue,
       );
@@ -523,7 +532,9 @@ void main() {
           decoded['globals'] as Map<dynamic, dynamic>);
       final appPreferences = Map<String, dynamic>.from(
           globals['appPreferences'] as Map<dynamic, dynamic>);
+      // Backups from before these settings existed have neither key.
       appPreferences.remove('customColorValues');
+      appPreferences.remove('backgroundDotOpacity');
       globals['appPreferences'] = appPreferences;
       decoded['globals'] = globals;
       await manifestFile.writeAsString(jsonEncode(decoded));
@@ -540,6 +551,9 @@ void main() {
       await container
           .read(appPreferencesProvider.notifier)
           .setCustomColorValues(const [0xFFABCDEF, 0xFF123456]);
+      await container
+          .read(appPreferencesProvider.notifier)
+          .setBackgroundDotOpacity(0.6);
 
       final result =
           await StrategyImportExportService(container).loadFromFileDrop(
@@ -553,6 +567,12 @@ void main() {
             .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
             ?.customColorValues,
         const [0xFFABCDEF, 0xFF123456],
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.backgroundDotOpacity,
+        0.6,
       );
     } finally {
       if (await exportDirectory.exists()) {

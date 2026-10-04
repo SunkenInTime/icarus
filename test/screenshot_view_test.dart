@@ -21,6 +21,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
+import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 
 class _NoopAgentProvider extends AgentProvider {
@@ -177,6 +178,7 @@ void main() {
     bool showSpawnBarrier = false,
     bool showRegionNames = false,
     bool showUltOrbs = false,
+    double backgroundDotOpacity = 1,
     String? pageName,
   }) {
     const strategyState = StrategyState(
@@ -218,6 +220,7 @@ void main() {
             showSpawnBarrier: showSpawnBarrier,
             showRegionNames: showRegionNames,
             showUltOrbs: showUltOrbs,
+            backgroundDotOpacity: backgroundDotOpacity,
             agents: const [],
             abilities: const [],
             text: const [],
@@ -280,6 +283,7 @@ void main() {
       showSpawnBarrier: false,
       showRegionNames: false,
       showUltOrbs: false,
+      backgroundDotOpacity: 1,
       agents: const [],
       abilities: const [],
       text: const [],
@@ -402,6 +406,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(findSemanticsLabel('Ult Orbs'), findsNothing);
+  });
+
+  testWidgets('background dots follow the opacity the capture was given',
+      (tester) async {
+    Finder dotLayer() => find.descendant(
+          of: find.byType(DotGrid),
+          matching: find.byType(CustomPaint),
+        );
+
+    await tester.pumpWidget(buildHarness(isAttack: true));
+    await tester.pumpAndSettle();
+    expect(
+      tester.renderObject(dotLayer()),
+      paints..something((method, _) => method == #drawPoints),
+    );
+
+    await tester.pumpWidget(
+      buildHarness(isAttack: true, backgroundDotOpacity: 0),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.renderObject(dotLayer()), paintsNothing);
   });
 
   testWidgets('defense helper overlays flip for barriers and ult orbs',
