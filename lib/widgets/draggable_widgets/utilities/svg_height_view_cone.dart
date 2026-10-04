@@ -171,12 +171,14 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       ..[5] = cosine * sy
       ..[10] = 1
       ..[15] = 1;
-    transform[12] = apex.dx -
-        transform[0] * sourceOrigin.dx -
-        transform[4] * sourceOrigin.dy;
-    transform[13] = apex.dy -
-        transform[1] * sourceOrigin.dx -
-        transform[5] * sourceOrigin.dy;
+    // The agent stands at the apex, so the map is placed by where it really
+    // is. The cone was cast from the nudged origin and lands there, a hair
+    // off the apex; placing it by the nudged origin instead would shift every
+    // edge off the drawn walls by the nudge.
+    transform[12] =
+        apex.dx - transform[0] * rawOrigin.dx - transform[4] * rawOrigin.dy;
+    transform[13] =
+        apex.dy - transform[1] * rawOrigin.dx - transform[5] * rawOrigin.dy;
     // During a drag only the translation changes frame to frame. Keep the
     // rotated, scaled receiver path and translate it on the canvas, so the
     // clip path object stays the same and the raster cache can keep it.
