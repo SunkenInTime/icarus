@@ -9,6 +9,90 @@
 > `assets/maps/*_svg_height_*.json.gz` models, `tool/check_bundled_wall_heights.dart`
 > and this document.
 
+## Blocking from VALORANT's minimap lines (2026-10-04)
+
+The bundled models no longer carry band data measured from the 3D map. Each
+wall now takes its heights from VALORANT's minimap vision lines, the 2D line
+set the game uses for its own minimap cones. The sections after this one
+describe the measured model these walls replace. They still explain the
+file format, supports, and how the runtime casts.
+
+**Source.** `AresWorldSettings.MinimapVisionOccluders` names a
+`DataTable<VisionGeometry>` for each map. Each row is one layer. `g` holds the
+line count and the layer's threshold in centimetres, `v` holds minimap uv
+points, and `l` holds index pairs. The thresholds are absolute heights in
+world space. Uv points convert to UE world space through the map's
+`XMultiplier`/`XScalarToAdd` and `YMultiplier`/`YScalarToAdd`. They then go to
+scene metres as `(X, -Y) / 100` and through the map's `nativeTo{Side}Svg`
+affine.
+
+**Layer rule.** This rule is inferred; the assets do not state it. A viewer
+uses layer k when its capsule centre, floor + 0.98 m, lies in
+`[th_k, th_k+1)`. The 98 cm capsule half-height is in the assets. A scan of
+where each line's obstacle top falls peaks sharply at 0.98–0.99 m; feet and
+eye height both score worse. Icarus casts from floor + 1.75 m, so each layer
+is stored as an eye band shifted up by 0.77 m.
+
+**Walls are our art.** Riot's lines sit centimetres to a metre off the drawn
+walls, which left visible gaps. So the lines decide only how tall a wall is,
+and the art decides where it is:
+- Every edge of the wall-art outline, in 0.5-unit pieces, takes the union of
+  layers of every Riot line running alongside it (|cos| ≥ 0.7, within 2 SVG
+  units). This keeps both lines on walls that carry a ground line and an
+  upper one. A bevel with no parallel line takes the nearest line's layers.
+- Runs of equal layers become one-sided strips, 0.01 thick, inside the art.
+  The art is closed by 0.03 first, so hairline cracks between strokes don't
+  leak. Strips with the same heights are merged into `runtimeWalls`
+  outlines. Without the merge, each strip's ends are silhouettes and a cone
+  grows to about 10,000 points.
+- A stretch of Riot line with no art beside it (glass, railings, crates the
+  art doesn't draw) stays as a thin wall on Riot's own line.
+- Lines Riot lacks are added by hand in the vision-lines review data
+  (`added` in `<map>.edits.json`). The only one so far is the Lotus defense
+  platform wall, which the 3D map shows solid from 3.0 to 5.1 m.
+- The receiver is the floor minus the wall art, so a cone never paints over
+  a wall.
+
+`sightlineFloorSupportIds` is dropped. Riot's layers already decide which
+floors a viewer sees over. Each model stores the thresholds as
+`riotVisionLayers`, and `test/svg_riot_vision_test.dart` checks that every
+band edge is one of them.
+
+**Built by.** `scripts/riot/build_art.py` in the icarus-vision-pipeline
+archive, run on the models from #242. The review tool and its line data are in
+`tools/vision-lines`.
+
+**Checked against the 3D map.** This used 240 standing poses per map side and
+cast against the extracted geometry. Leak counts include only leaks a wall
+should have stopped. Riot's own minimap lets some of these through on
+purpose, so this check is stricter than the game.
+
+| | measured model | Riot lines as-is | art + Riot heights |
+|---|---|---|---|
+| poses with a leak | 5,679 | 6,308 | 4,088 |
+| leak rays | 104,153 | 185,014 | 140,425 |
+| false-shadow rays | 2,891,945 | −4.9% | +2.6% |
+
+Ascent (254 → 51 leak poses), Pearl (276 → 29), Breeze (115 → 12), Summit
+(65 → 12) and Corrode (121 → 30) improve the most. Split (180 → 330), Lotus
+(176 → 220) and Icebox (666 → 691) leak more, because Riot's own lines are
+sparse there.
+
+Riot blocks three places the measured model left open. Their tests now follow
+Riot:
+- the floor past the end of Bind's B container;
+- Breeze Mid's slanted-roof opening;
+- the Haven C Garage window from the garage floor. This reverses the
+  2026-09-19 ruling, so its test is skipped pending a decision.
+
+**Rejected.**
+- Riot's lines as they come: they leave gaps beside the art.
+- Snapping the lines onto the art: tracing closes real openings, and
+  receiver-edge snapping lands under walls.
+- Our measured pieces with Riot heights.
+- A measured-height fallback for edges with no Riot line: it adds 4–8% false
+  shadow.
+
 Before declaring a visibility change complete, apply the acceptance contract
 (`docs/vision-acceptance-contract.md` in the archive). It defines source
 accounting, independent expectations, and the evidence required for completion.
@@ -547,7 +631,7 @@ open) up 0.7%. 1,397 pieces rose and 128 were cut into 1,910. Most of what
 the check still reports is not a data error. Of the remaining leak rays,
 68% cross pieces the scene leaves open at that eye, where a prop or frame
 near the piece stopped a few; 20% cross short pieces that really are partly
-open, such as railings. `test/svg_truth_bands_test.dart` pins the Lotus wall
+open, such as railings. `test/svg_truth_bands_test.dart` (now `svg_riot_vision_test.dart`) pinned the Lotus wall
 and the Bind container.
 
 Dara ruled on the 119 recorded-decision pieces from in-game renders on
@@ -606,7 +690,7 @@ pieces:
 Seven failures remain, and each is deliberate. Four are the Haven Mid
 Window sill Dara ruled solid. The other three, Icebox's front window jamb
 and the boost-step box, pin sightlines the scene blocks.
-`test/svg_truth_bands_test.dart` pins the garage window. On the 3D check's
+`test/svg_truth_bands_test.dart` (now `svg_riot_vision_test.dart`) pinned the garage window. On the 3D check's
 current standing spots (`poses-240.json`), the restore takes leaks from
 5,565 spots and 100,106 rays to 5,679 and 104,153, mostly where the
 garage ruling opens the window.
