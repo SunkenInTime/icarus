@@ -80,6 +80,7 @@ class _ThemeProfilesList extends ConsumerWidget {
               children: [
                 ShadButton.ghost(
                   size: ShadButtonSize.sm,
+                  enabled: canCreate,
                   onPressed: canCreate
                       ? () => showMapThemeEditorDialog(
                             context,

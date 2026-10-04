@@ -217,6 +217,36 @@ void main() {
     await finishToasts(tester);
   });
 
+  testWidgets('at the custom profile cap, Save as profile looks disabled',
+      (tester) async {
+    await tester.runAsync(() => container
+        .read(appPreferencesProvider.notifier)
+        .setAutosaveEnabled(false));
+    final profiles = container.read(mapThemeProfilesProvider.notifier);
+    for (var i = 2; i <= MapThemeProfilesProvider.customProfilesSoftCap; i++) {
+      await tester.runAsync(() => profiles.createProfile(
+            name: 'Profile $i',
+            palette: nightMarket.copyWith(baseColorValue: 0xFF000000 + i),
+          ));
+    }
+    container.read(strategyProvider.notifier).setFromState(
+          const StrategyState(
+            strategyId: 'strategy-id',
+            strategyName: 'Split execute',
+            storageDirectory: null,
+            isOpen: true,
+          ),
+        );
+    container.read(strategyThemeProvider.notifier).setOverride(havenDusk);
+    await pumpSection(tester);
+
+    final save = tester.widget<ShadButton>(find.ancestor(
+      of: find.text('Save as profile'),
+      matching: find.byType(ShadButton),
+    ));
+    expect(save.enabled, isFalse);
+  });
+
   testWidgets('a clipboard that cannot be read still opens the dialog',
       (tester) async {
     clipboardFails = true;
