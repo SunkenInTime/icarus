@@ -361,9 +361,12 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
         .toList(growable: false);
     final builtInProfileIds =
         builtInProfiles.map((profile) => profile.id).toSet();
+    // Oldest first, so a new or imported profile lands at the end of the
+    // list. Box order follows the random profile ids.
     final customProfiles = allProfiles
         .where((profile) => !builtInProfileIds.contains(profile.id))
-        .toList(growable: false);
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final sortedProfiles = [
       ...builtInProfiles,
       ...customProfiles,
