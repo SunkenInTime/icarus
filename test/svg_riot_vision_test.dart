@@ -41,7 +41,8 @@ void main() {
   test('every wall blocks a run of Riot layers and nothing else', () {
     // A wall in layer k blocks a viewer whose capsule centre (floor + 0.98 m)
     // stands in [th_k, th_k+1); stored as eye heights (capsule + 0.77 m)
-    // over a floor 100 m down. Every band edge is one of those.
+    // over a floor 100 m down. Every band edge is one of those, a hair
+    // below it so a viewer exactly on a threshold gets the layer above.
     for (final name in _maps) {
       for (final side in ['attack', 'defense']) {
         final json = _json(name, side);
@@ -49,6 +50,7 @@ void main() {
         final edges = {for (final t in layers) (t + 0.77 + 100).toDouble()};
         for (final wall in (json['walls'] as List).cast<Map>()) {
           expect(wall['floorElevationMeters'], -100.0);
+          expect(wall['bands'], isNotEmpty, reason: '${wall['id']}');
           for (final band in (wall['bands'] as List).cast<List>()) {
             for (final edge in band) {
               if (edge == null || edge == 0) continue;
@@ -59,6 +61,40 @@ void main() {
         }
       }
     }
+  });
+
+  test('a viewer standing exactly on a threshold gets the layer above', () {
+    // Ascent has floors at 5.02 m: a capsule centre of exactly 6.0 m, the
+    // threshold between two layers. Riot's layers are open at the top.
+    final json = _json('ascent', 'attack');
+    final model = SvgHeightVisibility.fromJson(json);
+    final layers = (json['riotVisionLayers'] as List).cast<num>();
+    var checked = 0;
+    for (final wall in model.walls) {
+      for (final t in layers.skip(1)) {
+        final eye = t - 0.98 + 1.75;
+        final top = wall.bands.any((b) => (b.top - (t + 100.77)).abs() < 1e-3);
+        final bottom =
+            wall.bands.any((b) => (b.bottom - (t + 100.77)).abs() < 1e-3);
+        if (top) {
+          expect(wall.blocks(eye), isFalse, reason: '${wall.id} at $t');
+          expect(wall.blocks(eye - 0.001), isTrue, reason: '${wall.id} at $t');
+          checked++;
+        }
+        if (bottom) {
+          expect(wall.blocks(eye), isTrue, reason: '${wall.id} at $t');
+          expect(wall.blocks(eye - 0.001), isFalse, reason: '${wall.id} at $t');
+          checked++;
+        }
+      }
+    }
+    expect(checked, greaterThan(0));
+  });
+
+  test('a hole in a wall stays floor', () {
+    // Haven's p5-stroke-10 is drawn even-odd with floor inside it.
+    final model = _model('haven', 'attack');
+    expect(model.receiverContains(const Offset(198.4425, 184.726)), isTrue);
   });
 
   test('the Lotus defense platform wall stops a standing cone', () {
@@ -79,6 +115,16 @@ void main() {
     expect(
         _sees(model, const Offset(107.5, 158.5), const Offset(71.59, 147.35)),
         isFalse);
+  });
+
+  test('Breeze Mid blocks the slanted-roof opening from the perch', () {
+    // The 3D scene clears a ray from the 10 m perch through the opening
+    // to a standing eye on the crate across Mid; Riot's lines block it.
+    final model = _model('breeze', 'attack');
+    const perch = Offset(160, 190);
+    expect(model.automaticSupportAt(perch)?.surfaceElevationAt(perch),
+        closeTo(10.0, 0.1));
+    expect(_sees(model, perch, const Offset(213.49, 183.84)), isFalse);
   });
 
   test('the Haven garage window stays open from the garage floor', () {

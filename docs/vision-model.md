@@ -31,11 +31,16 @@ uses layer k when its capsule centre, floor + 0.98 m, lies in
 `[th_k, th_k+1)`. The 98 cm capsule half-height is in the assets. A scan of
 where each line's obstacle top falls peaks sharply at 0.98–0.99 m; feet and
 eye height both score worse. Icarus casts from floor + 1.75 m, so each layer
-is stored as an eye band shifted up by 0.77 m.
+is stored as an eye band shifted up by 0.77 m. The runtime treats a band as
+closed at both ends, but a layer is open at the top. So every band edge sits
+1e-6 m below its threshold, and a viewer exactly on a threshold gets the
+layer above. Ascent has floors at 5.02 m, under a 6.0 m threshold.
 
 **Walls are our art.** Riot's lines sit centimetres to a metre off the drawn
 walls, which left visible gaps. So the lines decide only how tall a wall is,
 and the art decides where it is:
+- The wall art is each wall's footprint by its own fill rule, so a hole
+  drawn inside a wall stays floor.
 - Every edge of the wall-art outline, in 0.5-unit pieces, takes the union of
   layers of every Riot line running alongside it (|cos| ≥ 0.7, within 2 SVG
   units). This keeps both lines on walls that carry a ground line and an
@@ -46,7 +51,9 @@ and the art decides where it is:
   outlines. Without the merge, each strip's ends are silhouettes and a cone
   grows to about 10,000 points.
 - A stretch of Riot line with no art beside it (glass, railings, crates the
-  art doesn't draw) stays as a thin wall on Riot's own line.
+  art doesn't draw) stays as a thin wall on Riot's own line. Where the
+  stretch was cut because the art beside it takes over, its end is joined
+  to the nearest art, so no ray slips between the line and the wall.
 - Lines Riot lacks are added by hand in the vision-lines review data
   (`added` in `<map>.edits.json`). The only one so far is the Lotus defense
   platform wall, which the 3D map shows solid from 3.0 to 5.1 m.
@@ -69,14 +76,17 @@ purpose, so this check is stricter than the game.
 
 | | measured model | Riot lines as-is | art + Riot heights |
 |---|---|---|---|
-| poses with a leak | 5,679 | 6,308 | 4,088 |
-| leak rays | 104,153 | 185,014 | 140,425 |
-| false-shadow rays | 2,891,945 | −4.9% | +2.6% |
+| poses with a leak | 5,679 | 6,308 | 3,694 |
+| leak rays | 104,153 | 185,014 | 136,455 |
+| false-shadow rays | 2,891,945 | −4.9% | +3.1% |
 
-Ascent (254 → 51 leak poses), Pearl (276 → 29), Breeze (115 → 12), Summit
-(65 → 12) and Corrode (121 → 30) improve the most. Split (180 → 330), Lotus
-(176 → 220) and Icebox (666 → 691) leak more, because Riot's own lines are
-sparse there.
+Both sides together, Ascent (515 → 89 leak poses), Breeze (227 → 9), Pearl
+(468 → 44), Summit (124 → 19) and Fracture (1,016 → 405) improve the most.
+Split (361 → 603) and Lotus (316 → 424) leak more, because Riot's own lines
+are sparse there; Icebox is level (1,330 → 1,306).
+
+Cones stay within 165 fps: on a drag across every map side, frame build is
+at most 5.57 ms at p99 (budget 6.06 ms) and raster at most 2.04 ms.
 
 Riot blocks three places the measured model left open. Their tests now follow
 Riot:
