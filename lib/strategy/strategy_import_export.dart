@@ -1896,10 +1896,21 @@ class StrategyImportExportService {
               rawImportedThemeProfileId.isNotEmpty
           ? rawImportedThemeProfileId
           : null;
-      final resolvedThemeProfileId = importedThemeProfileId == null
+      final remappedThemeProfileId = importedThemeProfileId == null
           ? null
           : (themeProfileIdRemap[importedThemeProfileId] ??
               importedThemeProfileId);
+      // A profile this machine doesn't have (someone else's custom profile,
+      // or a built-in from a newer Icarus) would draw in Default colors. The
+      // file carries the palette, so the strategy keeps it as its own.
+      final profileIsHere = remappedThemeProfileId != null &&
+          Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
+                  .get(remappedThemeProfileId) !=
+              null;
+      final resolvedThemeProfileId =
+          profileIsHere || importedThemeOverridePalette == null
+              ? remappedThemeProfileId
+              : null;
 
       final pages = json['pages'] != null
           ? await StrategyPage.listFromJson(

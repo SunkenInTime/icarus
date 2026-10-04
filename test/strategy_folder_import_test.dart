@@ -590,6 +590,66 @@ void main() {
     );
   });
 
+  test('a shared .ica keeps its colors when the receiver lacks the profile',
+      () async {
+    final palette = MapThemePalette(
+      baseColorValue: 0xFF2A1B2E,
+      detailColorValue: 0xFFC78B5A,
+      highlightColorValue: 0xFF6FD3C4,
+    );
+    final profile = await container
+        .read(mapThemeProfilesProvider.notifier)
+        .createProfile(name: 'Haven Dusk', palette: palette);
+    await _storeStrategy(
+      name: 'Sender copy',
+      folderID: null,
+      themeProfileId: profile!.id,
+    );
+    final file = File(path.join(tempDir.path, 'shared.ica'));
+    await StrategyImportExportService(container).zipStrategyData(
+      strategy: _strategyByName('Sender copy'),
+      outputFilePath: file.path,
+    );
+    // The receiver's machine has never seen this custom profile.
+    await container
+        .read(mapThemeProfilesProvider.notifier)
+        .deleteProfile(profile.id);
+
+    final result =
+        await StrategyImportExportService(container).loadFromFileDrop(
+      [XFile(file.path)],
+    );
+
+    expect(result.strategiesImported, 1);
+    final imported = _strategyByName('shared');
+    expect(imported.themeProfileId, isNull);
+    expect(imported.themeOverridePalette, palette);
+  });
+
+  test('an .ica using a built-in theme still points at the built-in', () async {
+    await _storeStrategy(
+      name: 'Valorant colors',
+      folderID: null,
+      themeProfileId: MapThemeProfilesProvider.immutableValorantProfileId,
+    );
+    final file = File(path.join(tempDir.path, 'builtin.ica'));
+    await StrategyImportExportService(container).zipStrategyData(
+      strategy: _strategyByName('Valorant colors'),
+      outputFilePath: file.path,
+    );
+
+    await StrategyImportExportService(container).loadFromFileDrop(
+      [XFile(file.path)],
+    );
+
+    final imported = _strategyByName('builtin');
+    expect(
+      imported.themeProfileId,
+      MapThemeProfilesProvider.immutableValorantProfileId,
+    );
+    expect(imported.themeOverridePalette, isNull);
+  });
+
   test('standalone .ica drop imports into the current folder', () async {
     final parentFolder = await _createFolder(
       container,
