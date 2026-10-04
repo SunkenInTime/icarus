@@ -59,7 +59,7 @@ floors a viewer sees over. Each model stores the thresholds as
 band edge is one of them.
 
 **Built by.** `scripts/riot/build_art.py` in the icarus-vision-pipeline
-archive, run on the models from #242. The review tool and its line data are in
+archive, run on the bundled models at commit `0497bec`. The review tool and its line data are in
 `tools/vision-lines`.
 
 **Checked against the 3D map.** This used 240 standing poses per map side and
