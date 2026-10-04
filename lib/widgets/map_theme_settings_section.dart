@@ -382,14 +382,22 @@ class _ProfileContextMenuButtonState
   }
 
   Future<void> _copyProfileCode() async {
-    await Clipboard.setData(
-      ClipboardData(
-        text: MapThemeProfileCode.encode(
-          name: widget.profile.name,
-          colors: widget.profile.palette.toJson(),
+    try {
+      await Clipboard.setData(
+        ClipboardData(
+          text: MapThemeProfileCode.encode(
+            name: widget.profile.name,
+            colors: widget.profile.palette.toJson(),
+          ),
         ),
-      ),
-    );
+      );
+    } catch (_) {
+      Settings.showToast(
+        message: "Couldn't copy the profile code.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
     if (!mounted) return;
 
     Settings.showToast(
@@ -894,6 +902,19 @@ Future<void> _useImportedProfile(
     if (context == null) return;
     final confirmed = await _confirmDiscardCustomColors(context, profile);
     if (!confirmed) return;
+  }
+  // The toast outlives the profile if it was deleted in the meantime; never
+  // point the strategy at a profile that no longer exists.
+  final stillThere = container
+      .read(mapThemeProfilesProvider)
+      .profiles
+      .any((existing) => existing.id == profile.id);
+  if (!stillThere) {
+    Settings.showToast(
+      message: "${profile.name} was deleted.",
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+    return;
   }
   container
       .read(strategyProvider.notifier)

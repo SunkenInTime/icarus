@@ -21,6 +21,7 @@ void main() {
   late Directory tempDir;
   late String clipboardText;
   late bool clipboardFails;
+  late bool clipboardWriteFails;
   late ProviderContainer container;
 
   final nightMarket = MapThemePalette(
@@ -48,6 +49,7 @@ void main() {
 
     clipboardText = '';
     clipboardFails = false;
+    clipboardWriteFails = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
       switch (call.method) {
@@ -57,6 +59,9 @@ void main() {
           }
           return <String, dynamic>{'text': clipboardText};
         case 'Clipboard.setData':
+          if (clipboardWriteFails) {
+            throw PlatformException(code: 'busy');
+          }
           final arguments = call.arguments as Map<dynamic, dynamic>;
           clipboardText = arguments['text'] as String? ?? '';
         case 'Clipboard.hasStrings':
@@ -214,6 +219,61 @@ void main() {
         .profiles
         .singleWhere((profile) => profile.name == 'Haven Dusk');
     expect(container.read(strategyThemeProvider).profileId, added.id);
+    await finishToasts(tester);
+  });
+
+  testWidgets('a clipboard that refuses the copy says so', (tester) async {
+    clipboardWriteFails = true;
+    await pumpSection(tester);
+
+    await tester.tap(find.byIcon(LucideIcons.ellipsisVertical).last);
+    await settle(tester);
+    await tester.tap(find.text('Copy profile code'));
+    await settle(tester);
+
+    expect(find.text("Couldn't copy the profile code."), findsOneWidget);
+    expect(find.text('Profile code copied'), findsNothing);
+    await finishToasts(tester);
+  });
+
+  testWidgets('Use it does nothing once the profile was deleted',
+      (tester) async {
+    await tester.runAsync(() => container
+        .read(appPreferencesProvider.notifier)
+        .setAutosaveEnabled(false));
+    container.read(strategyProvider.notifier).setFromState(
+          const StrategyState(
+            strategyId: 'strategy-id',
+            strategyName: 'Split execute',
+            storageDirectory: null,
+            isOpen: true,
+          ),
+        );
+    clipboardText = MapThemeProfileCode.encode(
+        name: 'Haven Dusk', colors: havenDusk.toJson());
+    await pumpSection(tester);
+
+    await tester.tap(find.text('Import profile code'));
+    await settle(tester);
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Add profile'));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await settle(tester);
+
+    final added = container
+        .read(mapThemeProfilesProvider)
+        .profiles
+        .singleWhere((profile) => profile.name == 'Haven Dusk');
+    await tester.runAsync(() => container
+        .read(mapThemeProfilesProvider.notifier)
+        .deleteProfile(added.id));
+    await tester.pump(const Duration(milliseconds: 700));
+
+    await tester.tap(find.text('Use it'));
+    await settle(tester);
+    expect(container.read(strategyThemeProvider).profileId, isNull);
+    expect(find.text('Haven Dusk was deleted.'), findsOneWidget);
     await finishToasts(tester);
   });
 
