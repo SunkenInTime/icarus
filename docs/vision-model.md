@@ -44,7 +44,11 @@ and the art decides where it is:
 - Every edge of the wall-art outline, in 0.5-unit pieces, takes the union of
   layers of every Riot line running alongside it (|cos| ≥ 0.7, within 2 SVG
   units). This keeps both lines on walls that carry a ground line and an
-  upper one. A bevel with no parallel line takes the nearest line's layers.
+  upper one. A short stretch with no parallel line (a bevel, a jog, a
+  wall's end; at most 4 units, between edges that have one) takes the
+  nearest line's layers. A longer one takes none: a drawn ring or box that
+  only touches a wall is not part of it, and borrowing the wall's line there
+  cut cones beside it into slivers.
 - Runs of equal layers become one-sided strips, 0.01 thick, inside the art.
   The art is closed by 0.03 first, so hairline cracks between strokes don't
   leak. Strips with the same heights are merged into `runtimeWalls`
@@ -70,23 +74,31 @@ archive, run on the bundled models at commit `0497bec`. The review tool and its 
 `tools/vision-lines`.
 
 **Checked against the 3D map.** This used 240 standing poses per map side and
-cast against the extracted geometry. Leak counts include only leaks a wall
-should have stopped. Riot's own minimap lets some of these through on
-purpose, so this check is stricter than the game.
+cast against the extracted geometry. Only the part of each ray that lands on
+floor the app draws counts. Rays leaving the map are never drawn, and
+counting them made Pearl look worse than it is. A leak is a stretch the
+model sees that the 3D map says is hidden; a false shadow is the reverse.
+The check is stricter than the game. Riot's minimap ignores props (crates,
+poles, low walls) the 3D map has, and the cones beside them look normal.
 
-| | measured model | Riot lines as-is | art + Riot heights |
-|---|---|---|---|
-| poses with a leak | 5,679 | 6,308 | 3,694 |
-| leak rays | 104,153 | 185,014 | 136,455 |
-| false-shadow rays | 2,891,945 | −4.9% | +3.1% |
+| visible floor, both sides | measured model | art + Riot heights |
+|---|---|---|
+| leaked length | 1,747,007 | 2,327,130 (+33%) |
+| false-shadow length | 32,714,287 | 33,824,793 (+3.4%) |
 
-Both sides together, Ascent (515 → 89 leak poses), Breeze (227 → 9), Pearl
-(468 → 44), Summit (124 → 19) and Fracture (1,016 → 405) improve the most.
-Split (361 → 603) and Lotus (316 → 424) leak more, because Riot's own lines
-are sparse there; Icebox is level (1,330 → 1,306).
+Pearl (−88% leaked), Summit (−90%), Breeze (−65%), Ascent (−63%), Corrode
+(−52%) and Haven (−43%) improve. Abyss, Fracture, Icebox and Sunset leak
+about twice as much or more, and Split and Bind about a quarter more, where
+Riot's lines are sparse or ignore props.
 
 Cones stay within 165 fps: on a drag across every map side, frame build is
-at most 5.57 ms at p99 (budget 6.06 ms) and raster at most 2.04 ms.
+at most 5.57 ms at p99 (budget 6.06 ms) and raster at most 2.04 ms. That was
+measured before the short-stretch rule, which only removes walls.
+
+Walling off everything that is neither floor nor wall was tried. Rays
+leaving the map are never drawn, so it changed nothing visible on Pearl. On
+Abyss and Icebox it blocked real sightlines across drops and gaps (+54% and
++34% false shadow on visible floor). It was not kept.
 
 Riot blocks three places the measured model left open. Their tests now follow
 Riot:

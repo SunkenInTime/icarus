@@ -97,6 +97,28 @@ void main() {
     expect(model.receiverContains(const Offset(198.4425, 184.726)), isTrue);
   });
 
+  test('a drawn ring by a wall does not slice a cone into slivers', () {
+    // Split's ring against the B wall: Riot has no line for it, so it does
+    // not block. Its curve near the wall used to borrow the wall's line and
+    // cut a cone from just inside it into slivers.
+    final model = _model('split', 'attack');
+    final origin = model.standablePointNear(const Offset(76.757, 246.138))!;
+    const direction = 2.32;
+    final cone = model.cone(
+      origin: origin,
+      directionRadians: direction,
+      range: 120,
+      apertureRadians: math.pi / 3,
+      supportId: model.standingSupportAt(origin)?.id,
+    );
+    final visible =
+        cone.visibilityPath ?? (Path()..addPolygon(cone.polygon, true));
+    for (var a = direction - 0.45; a <= direction + 0.45; a += 0.05) {
+      final target = origin + Offset(math.cos(a), math.sin(a)) * 12;
+      expect(visible.contains(target), isTrue, reason: 'angle $a');
+    }
+  });
+
   test('the Lotus defense platform wall stops a standing cone', () {
     // Dara's replay, round 2 at 0:11: Chamber on the 3 m platform looked
     // through this wall. Riot has no line along it; ours (an added line in
