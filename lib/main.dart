@@ -358,7 +358,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   StreamSubscription<List<String>>? _secondInstanceSub;
   StreamSubscription<Uri>? _deepLinkSub;
   final Set<String> _processedDeepLinks = <String>{};
-  late final DiscordPresenceService _discordPresence;
+  late final DiscordPresenceWorker _discordPresence;
   ProviderSubscription<StrategyState>? _discordStrategySub;
   ProviderSubscription<MapState>? _discordMapSub;
   ProviderSubscription<AppPreferences>? _discordPreferencesSub;
@@ -436,7 +436,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(cloudMediaUploadQueueProvider);
     ref.read(cloudMediaCacheProvider);
 
-    _discordPresence = DiscordPresenceService();
+    _discordPresence = DiscordPresenceWorker();
     _discordStrategySub = ref.listenManual(
       strategyProvider,
       (_, __) => _scheduleDiscordSync(),
