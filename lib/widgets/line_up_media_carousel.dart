@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,12 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 
 import 'package:icarus/widgets/youtube_view.dart';
-import 'package:path/path.dart' as path;
+import 'package:icarus/widgets/lineup_editors_notice.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Fullscreen viewer for one lineup's media, with delete and edit actions.
@@ -51,13 +49,17 @@ class LineUpMediaCarousel extends ConsumerWidget {
                   youtubeLink: link.youtubeLink,
                   padding: const EdgeInsets.all(56.0),
                 ),
+              // One row, so the notice gives way to the actions however
+              // narrow the window.
               Positioned(
                 top: 24,
+                left: 24,
                 right: 24,
                 child: SafeArea(
                   child: Row(
                     spacing: 8,
                     children: [
+                      Expanded(child: LineUpEditorsNotice(itemId: linkId)),
                       ShadIconButton.destructive(
                         icon: const Icon(LucideIcons.trash2),
                         decoration: ShadDecoration(
@@ -122,8 +124,6 @@ class LineUpMediaPages extends ConsumerStatefulWidget {
 
 class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
     with AutomaticKeepAliveClientMixin {
-  Directory? imageFolderPath;
-
   @override
   bool get wantKeepAlive => true;
 
@@ -135,17 +135,6 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
   void initState() {
     super.initState();
     keepAlive = InAppWebViewKeepAlive();
-    _loadDirectory();
-  }
-
-  Future<void> _loadDirectory() async {
-    final strategyID = ref.read(strategyProvider).id;
-    final dir = await PlacedImageProvider.getImageFolder(strategyID);
-    if (mounted) {
-      setState(() {
-        imageFolderPath = dir;
-      });
-    }
   }
 
   @override
@@ -167,9 +156,6 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    if (imageFolderPath == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
 
     Widget content;
     if (widget.images.isEmpty && widget.youtubeLink.isEmpty) {
@@ -203,23 +189,25 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                 }
 
                 final image = widget.images[imageIndex];
-                final fullPath = path.join(
-                    imageFolderPath!.path, image.id + image.fileExtension);
-                final file = File(fullPath);
-
-                if (!file.existsSync()) {
-                  return const Center(
-                      child: Icon(LucideIcons.imageOff, color: Colors.white));
-                }
-
-                return InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4.0,
-                  child: Image.file(
-                    file,
-                    fit: BoxFit.contain,
-                  ),
+                final source = watchStrategyImageSource(
+                  ref,
+                  (id: image.id, fileExtension: image.fileExtension),
                 );
+                return switch (source.imageProvider) {
+                  final imageProvider? => InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 4.0,
+                      child: Image(
+                        key: ValueKey(image.id),
+                        image: imageProvider,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  null => const Center(
+                      child: Icon(LucideIcons.imageOff, color: Colors.white),
+                    ),
+                };
               },
             ),
           ),

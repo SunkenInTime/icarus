@@ -1,0 +1,11 @@
+{
+  "functions": [
+    {
+      "args": { "type": "object", "value": {} },
+      "functionType": "Query",
+      "identifier": "fixture.js:missingReturn",
+      "returns": null,
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

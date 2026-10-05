@@ -1,0 +1,95 @@
+import { ConvexError } from 'convex/values';
+
+export const errorCodes = [
+  "CLIENT_UPGRADE_REQUIRED",
+  "CONFLICT",
+  "ELEMENT_STRATEGY_MISMATCH",
+  "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH",
+  "FORBIDDEN",
+  "INTERNAL_ERROR",
+  "INVALID_ELEMENT_PAYLOAD_DATA",
+  "INVALID_ELEMENT_PAYLOAD_KIND",
+  "INVALID_ELEMENT_PAYLOAD_VERSION",
+  "INVALID_LINEUP_PAYLOAD_DATA",
+  "INVALID_LINEUP_PAYLOAD_KIND",
+  "INVALID_LINEUP_PAYLOAD_VERSION",
+  "INVALID_OP",
+  "INVALID_PAGE_CONTENT_COUNT",
+  "INVALID_PAYLOAD",
+  "INVITE_EXPIRED",
+  "INVITE_REVOKED",
+  "LINEUP_PAGE_MISMATCH",
+  "LINEUP_STRATEGY_MISMATCH",
+  "MISSING_ADD_ELEMENT_ARGS",
+  "MISSING_ADD_LINEUP_ARGS",
+  "MISSING_ELEMENT_PAYLOAD",
+  "MISSING_ENTITY_PUBLIC_ID",
+  "MISSING_LINEUP_PAYLOAD",
+  "MISSING_PAGE_ID",
+  "MISSING_PAGE_PUBLIC_ID",
+  "NOT_FOUND",
+  "PAGE_DELETED",
+  "PAGE_DESCRIPTOR_REQUIRES_PAGE_OP",
+  "PAGE_SETTINGS_REQUIRE_PAGE_CONTENT",
+  "PAGE_STRATEGY_MISMATCH",
+  "R2_OBJECT_KEY_MISMATCH",
+  "SHARE_LINK_REVOKED",
+  "STRATEGY_TOO_LARGE_TO_DUPLICATE",
+  "UNAUTHENTICATED",
+  "UNSUPPORTED_OP",
+  "UPLOAD_INTENT_NOT_FOUND",
+] as const;
+
+export type ErrorCode = (typeof errorCodes)[number];
+
+type ErrorData = {
+  code: ErrorCode;
+  message: string;
+};
+
+function makeError(code: ErrorCode, message: string): ConvexError<ErrorData> {
+  return new ConvexError({ code, message });
+}
+
+export function unauthenticatedError(): ConvexError<ErrorData> {
+  return makeError("UNAUTHENTICATED", "Unauthenticated");
+}
+
+export function forbiddenError(): ConvexError<ErrorData> {
+  return makeError("FORBIDDEN", "Forbidden");
+}
+
+export function notFoundError(entity: string, id: string): ConvexError<ErrorData> {
+  return makeError("NOT_FOUND", `${entity} not found: ${id}`);
+}
+
+/// A change to a page in the trash, refused until the page is restored. The
+/// client matches this text (pageDeletedMessage) to send the change again
+/// once it is.
+export function pageDeletedError(): ConvexError<ErrorData> {
+  return makeError("PAGE_DELETED", "This page was deleted");
+}
+
+export function clientUpgradeRequiredError(): ConvexError<ErrorData> {
+  return makeError("CLIENT_UPGRADE_REQUIRED", "Client upgrade required");
+}
+
+export function invalidPayloadError(detail: string): ConvexError<ErrorData> {
+  return makeError("INVALID_PAYLOAD", detail);
+}
+
+export function conflictError(detail: string): ConvexError<ErrorData> {
+  return makeError("CONFLICT", detail);
+}
+
+export function invalidOpError(detail: string): ConvexError<ErrorData> {
+  return makeError("INVALID_OP", detail);
+}
+
+export function internalError(detail: string): ConvexError<ErrorData> {
+  return makeError("INTERNAL_ERROR", detail);
+}
+
+export function errorWithCode(code: ErrorCode, detail: string): ConvexError<ErrorData> {
+  return makeError(code, detail);
+}

@@ -3,7 +3,7 @@ import FlutterMacOS
 
 public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
   private var caches: Dictionary = [String: NSCursor]();
-    
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "custom_mouse_cursor", binaryMessenger: registrar.messenger)
     let instance = CustomMouseCursorPlugin()
@@ -66,7 +66,7 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
     caches[name] = cursor;
     return name
   }
-    
+
   private func setCustomCursor(_ arguments: Dictionary<String,Any>) -> Bool {
     let name = arguments["name"] as! String
     let cursor = caches[name];
@@ -76,7 +76,7 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
     cursor!.set()
     return true
   }
-    
+
   private func deleteCustomCursor(_ arguments: Dictionary<String,Any>) -> Bool {
     let name = arguments["name"] as! String
     let cursor = caches[name];
@@ -86,7 +86,7 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
     caches.removeValue(forKey: name)
     return true
   }
-    
+
     private func activateMemoryImageCursor(_ arguments: Dictionary<String,Any>) {
         let buffer = arguments["buffer"] as! FlutterStandardTypedData
         let byte = [UInt8](buffer.data);
@@ -101,7 +101,7 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
         let cursor = getCursorFromImage(image: image!, x: arguments["x"] as? Double, y: arguments["y"] as? Double)
         cursor.set()
     }
- 
+
     private func activeCursor(_ arguments: Dictionary<String,Any>) {
         let path = arguments["path"] as! String
         let fullPath = Bundle.main.bundlePath + "/Contents/Frameworks/App.framework/Resources/flutter_assets/" + path
@@ -110,7 +110,7 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
                                y:arguments["y"] as? Double)
         cursor?.set()
     }
-    
+
     private func resize(image: NSImage, w: Int, h: Int) -> NSImage {
 //        var destSize = NSMakeSize(CGFloat(w), CGFloat(h))
 //        var newImage = NSImage(size: destSize)
@@ -120,8 +120,8 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
 //        newImage.size = destSize
         return image
     }
-    
-    
+
+
     private func getCursorFromFile(path:String,x:Double?,y:Double?) -> NSCursor? {
         var cursor = caches[path]
         if(cursor != nil) {
@@ -135,7 +135,7 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
         caches[path] = cursor
         return cursor!
     }
-    
+
     private func getCursorFromImage(image: NSImage,x:Double?,y:Double?) -> NSCursor {
         var dx = x;
         var dy = y;
@@ -149,11 +149,11 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
                                hotSpot:NSMakePoint(CGFloat(dx!),CGFloat(dy!)))
         return cursor
     }
-    
+
     private func imageFromFile(named:String) -> NSImage?{
         return NSImage.init(contentsOfFile:"\(named)");
     }
-    
+
     private func memoryFromImage(data: Data) -> NSImage? {
         return NSImage.init(data: data)
     }

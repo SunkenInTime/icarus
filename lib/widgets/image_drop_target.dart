@@ -1,9 +1,11 @@
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ImageDropTarget extends ConsumerStatefulWidget {
@@ -19,25 +21,34 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
 
   @override
   Widget build(BuildContext context) {
+    final canEditPages = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
+    // Only invite a drop that can land.
+    final canDrop = canEditPages &&
+        ref.watch(platformPolicyProvider).supports(PlatformFeature.fileDrop);
+
     return DropTarget(
       onDragEntered: (details) {
+        if (!canDrop) return;
         setState(() {
           isDragging = true;
         });
       },
       onDragExited: (details) {
+        if (!canDrop) return;
         setState(() {
           isDragging = false;
         });
       },
       onDragDone: (details) async {
-        if (kIsWeb) {
-          Settings.showToast(
-            message: 'This feature is only supported in the Windows version.',
-            backgroundColor: Settings.tacticalVioletTheme.destructive,
-          );
+        if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
           return;
         }
+        if (!ensureFeatureAvailable(ref, PlatformFeature.fileDrop)) return;
+        if (!ensureFeatureAvailable(ref, PlatformFeature.addImages)) return;
         isDragging = false;
         final files = details.files;
 
@@ -48,9 +59,13 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
           if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp']
               .contains(rawExtension)) {
             final fileExtension = '.$rawExtension';
+            final strategyState = ref.read(strategyProvider);
             await ref.read(placedImageProvider.notifier).addImage(
-                imageBytes: await file.readAsBytes(),
-                fileExtension: fileExtension);
+                  imageBytes: await file.readAsBytes(),
+                  strategyId: strategyState.strategyId,
+                  strategySource: strategyState.source,
+                  fileExtension: fileExtension,
+                );
           }
         }
       },

@@ -4,9 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+class _FixedPreferences extends AppPreferencesNotifier {
+  @override
+  AppPreferences build() => AppPreferences(
+        defaultThemeProfileIdForNewStrategies:
+            MapThemeProfilesProvider.immutableDefaultProfileId,
+      );
+}
 
 void main() {
   testWidgets('loading skeleton fits the minimum desktop window',
@@ -20,6 +29,9 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [
+            appPreferencesProvider.overrideWith(_FixedPreferences.new),
+          ],
           child: ShadApp(
             themeMode: ThemeMode.dark,
             darkTheme: ShadThemeData(

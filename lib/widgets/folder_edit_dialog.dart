@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
@@ -24,8 +27,12 @@ class FolderEditDialog extends ConsumerStatefulWidget {
   const FolderEditDialog({
     super.key,
     this.folder,
+    this.store,
   });
   final Folder? folder;
+
+  /// The store to write to. Defaults to the active workspace.
+  final LibraryWorkspace? store;
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
       _FolderEditDialogState();
@@ -38,6 +45,68 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   FolderColor _selectedColor = FolderColor.red;
   Color? _customColor;
   _FolderIconFilter _iconFilter = _FolderIconFilter.all;
+  bool _isSubmitting = false;
+  String? _failureMessage;
+
+  /// Saves the folder and closes the dialog; Enter in the name field and the
+  /// Done button both land here, and a second submit while one is in flight
+  /// is ignored. A failed cloud write keeps the dialog open with the reason.
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    setState(() {
+      _isSubmitting = true;
+      _failureMessage = null;
+    });
+
+    final name = _folderNameController.text.isEmpty
+        ? 'New Folder'
+        : _folderNameController.text;
+    CloudLibraryActionResult? result;
+    try {
+      if (widget.folder != null) {
+        result = await ref.read(folderProvider.notifier).editFolder(
+              folder: widget.folder!,
+              newName: name,
+              newIconId: _selectedIconId,
+              newColor: _selectedColor,
+              newCustomColor: _customColor,
+              workspace: widget.store,
+            );
+      } else {
+        await ref.read(folderProvider.notifier).createFolder(
+              name: name,
+              iconId: _selectedIconId,
+              color: _selectedColor,
+              customColor: _customColor,
+              workspace: widget.store,
+            );
+        result = CloudLibraryActionResult.succeeded;
+      }
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to save a library folder.',
+        source: 'folder_dialog:save',
+        error: error,
+        stackTrace: stackTrace,
+        promptUser: false,
+      );
+      if (mounted) {
+        setState(() {
+          _failureMessage = "Couldn't save this folder. Try again.";
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+    if (!mounted) return;
+    if (result?.didSucceed == true) {
+      Navigator.of(context).pop();
+    } else if (result != null) {
+      setState(() => _failureMessage =
+          result!.userMessage ?? "Couldn't save this folder. Try again.");
+    }
+  }
+
   @override
   void dispose() {
     _folderNameController.dispose();
@@ -57,40 +126,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
     _folderNameController.addListener(() {
       setState(() {});
     });
-  }
-
-  bool _isSubmitting = false;
-
-  /// Saves the folder and closes the dialog; Enter in the name field and the
-  /// Done button both land here, and a second submit while one is in flight
-  /// is ignored.
-  Future<void> _submit() async {
-    if (_isSubmitting) return;
-    setState(() => _isSubmitting = true);
-    final name = _folderNameController.text.isEmpty
-        ? "New Folder"
-        : _folderNameController.text;
-    try {
-      if (widget.folder != null) {
-        ref.read(folderProvider.notifier).editFolder(
-              folder: widget.folder!,
-              newName: name,
-              newIconId: _selectedIconId,
-              newColor: _selectedColor,
-              newCustomColor: _customColor,
-            );
-      } else {
-        await ref.read(folderProvider.notifier).createFolder(
-              name: name,
-              iconId: _selectedIconId,
-              color: _selectedColor,
-              customColor: _customColor,
-            );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -113,17 +148,28 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: ShadButton(
-            leading: const Icon(LucideIcons.check),
+            key: const ValueKey('folder-edit-submit'),
+            leading: _isSubmitting ? null : const Icon(LucideIcons.check),
             onPressed: _isSubmitting ? null : _submit,
-            child: const Text("Done"),
+            child: Text(_isSubmitting ? 'Saving...' : 'Done'),
           ),
-        )
+        ),
       ],
       child: SizedBox(
         width: 358,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (_failureMessage != null) ...[
+              Text(
+                _failureMessage!,
+                key: const ValueKey('folder-edit-failure'),
+                style: TextStyle(
+                  color: Settings.tacticalVioletTheme.destructive,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             Container(
               height: 220,
               width: 358,
@@ -195,6 +241,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         onTap: () {
                           setState(() {
                             _selectedColor = color;
+                            _customColor = null;
                           });
                           // ref.read(penProvider.notifier).setColor(index);
                         },

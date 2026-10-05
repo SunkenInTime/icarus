@@ -1,0 +1,289 @@
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
+import 'package:icarus/widgets/library_title_strip.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+void main() {
+  testWidgets('shared text fields expose live editable semantics',
+      (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
+    final controller = TextEditingController(text: 'child-final');
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _testApp(
+        CustomTextField(
+          key: const ValueKey('shared-editable-field'),
+          controller: controller,
+          hintText: 'Folder Name',
+        ),
+      ),
+    );
+
+    final node = tester.getSemantics(
+      find.byKey(const ValueKey('shared-editable-field')),
+    );
+    expect(node.flagsCollection.isEnabled, ui.Tristate.isTrue);
+    expect(node.getSemanticsData().hasAction(SemanticsAction.setText), isTrue);
+    expect(node.label, 'Folder Name');
+    expect(node.value, 'child-final');
+
+    tester.semantics.performAction(
+      find.semantics.byLabel('Folder Name'),
+      SemanticsAction.setText,
+      args: 'child-renamed-web',
+    );
+    await tester.pump();
+
+    expect(controller.text, 'child-renamed-web');
+    expect(
+      tester
+          .getSemantics(find.byKey(const ValueKey('shared-editable-field')))
+          .value,
+      'child-renamed-web',
+    );
+    semanticsHandle.dispose();
+  });
+
+  testWidgets('auth dialog exposes stable fields and actions', (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_testApp(const AuthDialog()));
+
+    expect(find.byKey(const ValueKey('auth-email-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-password-field')), findsOneWidget);
+    expect(_semanticsLabel('Email'), findsOneWidget);
+    expect(_semanticsLabel('Password'), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-mode-switch')), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-discord-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-submit-button')), findsOneWidget);
+    expect(_textFieldNodes(tester), hasLength(2));
+    expect(
+      _textFieldNodes(tester).map((node) => node.flagsCollection.isEnabled),
+      everyElement(ui.Tristate.isTrue),
+    );
+    expect(
+      _textFieldNodes(tester).map(
+        (node) => node.getSemanticsData().hasAction(SemanticsAction.setText),
+      ),
+      everyElement(isTrue),
+    );
+    tester.semantics.performAction(
+      find.semantics.byLabel('Email'),
+      SemanticsAction.setText,
+      args: 'coach@example.com',
+    );
+    await tester.pump();
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('auth-email-field'))).value,
+      'coach@example.com',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('auth-mode-switch')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('auth-confirm-password-field')),
+      findsOneWidget,
+    );
+    expect(_semanticsLabel('Confirm password'), findsOneWidget);
+    expect(find.text('Create account'), findsAtLeastNWidgets(1));
+    expect(_textFieldNodes(tester), hasLength(3));
+    semanticsHandle.dispose();
+  });
+
+  testWidgets('library strip exposes stable destinations while signed out',
+      (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_testApp(_strip()));
+
+    expect(find.byKey(const ValueKey('library-tab-library')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-tab-shared')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('library-tab-community')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-account-action')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('library-new-menu')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-sort-menu')), findsOneWidget);
+    expect(_semanticsLabel('My Library'), findsOneWidget);
+    expect(_semanticsLabel('Shared library'), findsOneWidget);
+    expect(_semanticsLabel('Community library'), findsOneWidget);
+    expect(_semanticsLabel('Log in to Icarus'), findsOneWidget);
+    expect(_semantics('My Library').properties.onTap, isNotNull);
+    expect(_semantics('Community library').properties.onTap, isNotNull);
+    expect(_semantics('Log in to Icarus').properties.onTap, isNotNull);
+  });
+
+  testWidgets('signed-out Shared tab opens login', (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_testApp(_strip()));
+
+    await tester.tap(find.byKey(const ValueKey('library-tab-shared')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AuthDialog), findsOneWidget);
+    expect(find.text('Sign in'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('New menu offers a strategy and a folder', (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var created = 0;
+    await tester.pumpWidget(
+      _testApp(_strip(onCreateStrategy: () => created++)),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('library-new-menu')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('library-new-strategy')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-new-folder')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('library-new-strategy')));
+    await tester.pumpAndSettle();
+
+    expect(created, 1);
+  });
+  testWidgets('library account action uses guarded sign out', (tester) async {
+    // The strip needs a desktop-width window; the test font is wide.
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var requests = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authProvider.overrideWith(_SignedInAuthProvider.new),
+          guardedSignOutRequestProvider.overrideWithValue((context) async {
+            requests += 1;
+            return true;
+          }),
+        ],
+        child: ShadApp(home: Scaffold(body: _strip())),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('library-account-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sign Out'));
+    await tester.pumpAndSettle();
+    expect(requests, 1);
+  });
+}
+
+Widget _strip({VoidCallback? onCreateStrategy}) {
+  return SizedBox(
+    width: 1200,
+    height: 40,
+    child: LibraryTitleStrip(
+      onCreateStrategy: onCreateStrategy ?? () {},
+      onCreateFolder: () {},
+      onImportIca: () {},
+      onImportBackup: () {},
+      onExportLibrary: () {},
+    ),
+  );
+}
+
+Semantics _semantics(String label) {
+  return _semanticsLabel(label).evaluate().single.widget as Semantics;
+}
+
+List<SemanticsNode> _textFieldNodes(WidgetTester tester) {
+  final nodes = <SemanticsNode>[];
+
+  void visit(SemanticsNode node) {
+    if (node.flagsCollection.isTextField) {
+      nodes.add(node);
+    }
+    node.visitChildren((child) {
+      visit(child);
+      return true;
+    });
+  }
+
+  final root = tester
+      .binding.renderViews.single.owner!.semanticsOwner!.rootSemanticsNode;
+  if (root != null) {
+    visit(root);
+  }
+  return nodes;
+}
+
+Finder _semanticsLabel(String label) {
+  return find.byWidgetPredicate(
+    (widget) => widget is Semantics && widget.properties.label == label,
+  );
+}
+
+Widget _testApp(Widget child) {
+  return ProviderScope(
+    overrides: [
+      authProvider.overrideWith(_SignedOutAuthProvider.new),
+    ],
+    child: ShadApp(
+      home: Scaffold(body: child),
+    ),
+  );
+}
+
+class _SignedOutAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.signedOut,
+        user: null,
+      );
+}
+
+class _SignedInAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: 'account-a',
+          appMetadata: <String, dynamic>{},
+          userMetadata: <String, dynamic>{'full_name': 'Coach'},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
+}

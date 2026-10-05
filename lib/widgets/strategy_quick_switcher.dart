@@ -4,13 +4,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
@@ -77,7 +82,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   Future<void> _switchStrategy(String strategyId) async {
     if (_isSwitching || _isEditingName) return;
     final currentStrategy = ref.read(strategyProvider);
-    if (currentStrategy.id == strategyId) return;
+    if (currentStrategy.strategyId == strategyId) return;
 
     _closePortal();
     setState(() => _isSwitching = true);
@@ -111,8 +116,11 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
 
   void _startEditingName() {
     final currentStrategy = ref.read(strategyProvider);
-    final currentName = currentStrategy.stratName;
+    final currentName = currentStrategy.strategyName;
     if (_isSwitching || _isEditingName || currentName == null) return;
+    if (!ref.read(currentStrategyCapabilitiesProvider).canRenameStrategy) {
+      return;
+    }
 
     _closePortal();
     _originalName = currentName;
@@ -178,7 +186,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     try {
       await ref
           .read(strategyProvider.notifier)
-          .renameStrategy(ref.read(strategyProvider).id, nextName);
+          .renameStrategy(ref.read(strategyProvider).strategyId!, nextName);
       if (!mounted) return;
       _originalName = null;
       setState(() {
@@ -186,10 +194,23 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
         _isRenaming = false;
       });
       _nameFocusNode.unfocus();
-    } catch (_) {
-      if (!mounted) rethrow;
-      setState(() => _isRenaming = false);
-      rethrow;
+    } catch (error, stackTrace) {
+      // The rename did not happen: put the name back, leave edit mode (so
+      // focus changes do not submit it again), and say so once.
+      AppErrorReporter.reportWarning(
+        'Strategy rename failed',
+        source: 'strategy_quick_switcher.rename',
+        error: redactSyncDiagnosticText(error),
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      _cancelEditingName();
+      Settings.showToast(
+        message: isTypedConvexForbiddenError(error)
+            ? "You can't rename this strategy."
+            : friendlyCloudSyncError('$error'),
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
     }
   }
 
@@ -255,9 +276,16 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   @override
   Widget build(BuildContext context) {
     final currentStrategy = ref.watch(strategyProvider);
-    final currentStrategyId = currentStrategy.id;
-    final strategyName = currentStrategy.stratName ?? 'Untitled Strategy';
+    final currentStrategyId = currentStrategy.strategyId;
+    if (currentStrategyId == null) {
+      return const SizedBox.shrink();
+    }
+    final strategyName = currentStrategy.strategyName ?? 'Untitled Strategy';
+    final canRename = currentStrategy.strategyName != null &&
+        ref.watch(currentStrategyCapabilitiesProvider).canRenameStrategy;
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final allowsLocalLibrary =
+        ref.watch(platformPolicyProvider).allowsLocalLibrary;
 
     return Padding(
       padding: _displayMargin,
@@ -266,10 +294,14 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
         child: ValueListenableBuilder<Box<StrategyData>>(
           valueListenable: strategiesBox.listenable(),
           builder: (context, box, _) {
-            final recents = _recentStrategies(
-              box: box,
-              currentStrategyId: currentStrategyId,
-            );
+            // Recents come from the on-device library, which this platform
+            // may keep hidden.
+            final recents = allowsLocalLibrary
+                ? _recentStrategies(
+                    box: box,
+                    currentStrategyId: currentStrategyId,
+                  )
+                : const <StrategyData>[];
 
             return OverlayPortal.overlayChildLayoutBuilder(
               controller: _controller,
@@ -442,19 +474,19 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                             )
                           : ShadTooltip(
                               builder: (context) => Text(
-                                currentStrategy.stratName == null
+                                currentStrategy.strategyName == null
                                     ? 'Load a strategy to rename it'
-                                    : 'Rename strategy',
+                                    : canRename
+                                        ? 'Rename strategy'
+                                        : "You can view this strategy but not rename it",
                               ),
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  onTap: currentStrategy.stratName == null
-                                      ? null
-                                      : _startEditingName,
-                                  mouseCursor: currentStrategy.stratName == null
-                                      ? SystemMouseCursors.basic
-                                      : SystemMouseCursors.click,
+                                  onTap: canRename ? _startEditingName : null,
+                                  mouseCursor: canRename
+                                      ? SystemMouseCursors.click
+                                      : SystemMouseCursors.basic,
                                   hoverColor:
                                       Settings.tacticalVioletTheme.accent,
                                   child: Center(

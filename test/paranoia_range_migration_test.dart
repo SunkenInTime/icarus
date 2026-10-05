@@ -10,7 +10,8 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
 const _virtualToWorld = 1000 / 831;
@@ -117,7 +118,7 @@ void main() {
 
   test('v103 Paranoias keep their Omen end on both sides and in lineups', () {
     final source = _strategy();
-    final result = StrategyProvider.migrateToCurrentVersion(source);
+    final result = StrategyMigrator.migrateToCurrentVersion(source);
     expect(result.versionNumber, Settings.versionNumber);
     for (var i = 0; i < source.pages.length; i++) {
       final before = source.pages[i];
@@ -132,7 +133,7 @@ void main() {
       expect(after.agentData.single.toJson(), before.agentData.single.toJson());
     }
     expect(
-      identical(StrategyProvider.migrateToCurrentVersion(result), result),
+      identical(StrategyMigrator.migrateToCurrentVersion(result), result),
       isTrue,
     );
   });
@@ -147,14 +148,14 @@ void main() {
         ),
       ),
     ]);
-    final result = StrategyProvider.migrateToCurrentVersion(source);
+    final result = StrategyMigrator.migrateToCurrentVersion(source);
     expect(identical(result.pages, source.pages), isTrue);
     expect(result.lastEdited, source.lastEdited);
     expect(result.versionNumber, Settings.versionNumber);
   });
 
   test('the far end moves out by 3 m', () {
-    final result = StrategyProvider.migrateToCurrentVersion(_strategy());
+    final result = StrategyMigrator.migrateToCurrentVersion(_strategy());
     final before = _strategy().pages.first.abilityData.first;
     final after = result.pages.first.abilityData.first;
     // Unrotated local frame: the Omen end is the bottom centre, the far end
@@ -170,7 +171,7 @@ void main() {
   });
 
   test('zip export/import does not shift Paranoia a second time', () async {
-    final migrated = await StrategyProvider.migrateLegacyData(_strategy());
+    final migrated = await StrategyMigrator.migrateLegacyData(_strategy());
     final exportedPages =
         migrated.pages.map((p) => p.toJson(migrated.id)).toList();
     final bytes = utf8.encode(
@@ -195,7 +196,7 @@ void main() {
       strategyID: migrated.id,
       isZip: true,
     );
-    final restored = await StrategyProvider.migrateLegacyData(
+    final restored = await StrategyMigrator.migrateLegacyData(
       migrated.copyWith(
         versionNumber: int.parse(decoded['versionNumber'] as String),
         pages: pages,

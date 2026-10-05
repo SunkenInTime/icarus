@@ -27,6 +27,8 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:path/path.dart' as path;
 
 class _IcaFixture {
@@ -100,7 +102,8 @@ Future<Map<String, dynamic>> _readIcaJson(File file) async {
 class _IcaHarness {
   _IcaHarness._(this.directory, this.container);
 
-  static const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  static const _pathProvider =
+      MethodChannel('plugins.flutter.io/path_provider');
 
   final Directory directory;
   final ProviderContainer container;
@@ -143,7 +146,7 @@ class _IcaHarness {
   /// Imports [file] the way opening an .ica does and returns what was saved.
   Future<StrategyData> importIca(File file) async {
     final before = strategies.keys.toSet();
-    await container.read(strategyProvider.notifier).loadFromFilePath(file.path);
+    await StrategyImportExportService(container).loadFromFilePath(file.path);
     final added = strategies.keys.where((key) => !before.contains(key));
     expect(added, hasLength(1), reason: path.basename(file.path));
     return strategies.get(added.single)!;
@@ -161,8 +164,7 @@ class _IcaHarness {
     if (!strategies.containsKey(strategy.id)) {
       await strategies.put(strategy.id, strategy);
     }
-    final exported = await container
-        .read(strategyProvider.notifier)
+    final exported = await StrategyImportExportService(container)
         .zipStrategy(id: strategy.id, saveDir: directory);
     return File(exported);
   }
@@ -337,7 +339,8 @@ void main() {
       }
     });
 
-    test('every historical fixture imports to the current schema and round-trips',
+    test(
+        'every historical fixture imports to the current schema and round-trips',
         () async {
       final harness = await _IcaHarness.open();
       addTearDown(harness.close);
@@ -362,8 +365,8 @@ void main() {
         final reExported = await harness.exportIca(reImported);
         expect(await _readIcaJson(reExported), await _readIcaJson(exported),
             reason: fixture.name);
-        expect(await _icaAttachments(reExported),
-            await _icaAttachments(exported),
+        expect(
+            await _icaAttachments(reExported), await _icaAttachments(exported),
             reason: '${fixture.name} images');
       }
     });
@@ -611,8 +614,7 @@ void main() {
       );
 
       for (final invalidValue in <Object?>['true', 'yes', 1, null]) {
-        final json = page.toJson('strategy-id')
-          ..['isAutoNamed'] = invalidValue;
+        final json = page.toJson('strategy-id')..['isAutoNamed'] = invalidValue;
 
         await expectLater(
           StrategyPage.fromJson(
@@ -698,7 +700,6 @@ void main() {
                 'fileExtension': '.png',
                 'scale': 220.0,
                 'tagColorValue': null,
-                'link': '',
               },
             ],
             'utilityData': [
@@ -761,7 +762,8 @@ void main() {
         containsPair('showTraversalTime', true),
       );
       final reImported = await harness.importIca(exportedFile);
-      final reExported = await _readIcaJson(await harness.exportIca(reImported));
+      final reExported =
+          await _readIcaJson(await harness.exportIca(reImported));
 
       _expectCustomShapes(
         reImported,
@@ -826,7 +828,6 @@ void main() {
                 'aspectRatio': 1.0,
                 'fileExtension': '.png',
                 'scale': 9999.0,
-                'link': '',
               },
             ],
             'utilityData': <PlacedUtility>[],
@@ -918,7 +919,7 @@ void main() {
         ],
       );
 
-      final migrated = StrategyProvider.migrateToWorld16x9(source, force: true);
+      final migrated = StrategyMigrator.migrateToWorld16x9(source, force: true);
       final page = migrated.pages.single;
 
       final migratedLine = page.drawingData.first as Line;
@@ -970,8 +971,7 @@ void main() {
       });
 
       await expectLater(
-        harness.container
-            .read(strategyProvider.notifier)
+        StrategyImportExportService(harness.container)
             .loadFromFilePath(file.path),
         throwsA(isA<StateError>()),
       );
@@ -988,8 +988,7 @@ void main() {
       });
 
       await expectLater(
-        harness.container
-            .read(strategyProvider.notifier)
+        StrategyImportExportService(harness.container)
             .loadFromFilePath(file.path),
         throwsA(anyOf(isA<TypeError>(), isA<FormatException>())),
       );

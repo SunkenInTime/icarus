@@ -46,6 +46,15 @@ class UpdateChecker {
   @visibleForTesting
   static Future<Map<String, dynamic>> Function()? windowsStoreCheckOverride;
 
+  /// The web build is always the deployed version; it has no updater, so it
+  /// never fetches the desktop version file.
+  static const _webResult = UpdateCheckResult(
+    isSupported: false,
+    isUpdateAvailable: false,
+    source: 'web',
+    message: 'The web build updates itself on reload.',
+  );
+
   static Future<Map<String, dynamic>?> fetchVersionInfo() async {
     final fetchOverride = fetchVersionInfoOverride;
     if (fetchOverride != null) return fetchOverride();
@@ -69,7 +78,9 @@ class UpdateChecker {
     bool? isWindowsOverride,
   }) async {
     final bool isWeb = isWebOverride ?? kIsWeb;
-    final bool isWindows = isWindowsOverride ?? (!isWeb && Platform.isWindows);
+    if (isWeb) return _webResult;
+    final bool isWindows = isWindowsOverride ??
+        ((!isWeb && Platform.isWindows) || windowsStoreCheckOverride != null);
 
     if (isWindows) {
       final windowsResult = await _checkWindowsStoreSignal();
@@ -95,7 +106,9 @@ class UpdateChecker {
     bool? isWindowsOverride,
   }) async {
     final bool isWeb = isWebOverride ?? kIsWeb;
-    final bool isWindows = isWindowsOverride ?? (!isWeb && Platform.isWindows);
+    if (isWeb) return _webResult;
+    final bool isWindows = isWindowsOverride ??
+        ((!isWeb && Platform.isWindows) || windowsStoreCheckOverride != null);
 
     if (!isWindows) {
       return _checkRemoteVersionSignal();

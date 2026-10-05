@@ -13,6 +13,7 @@ import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
 const _oldScale = 0.9502102049421427;
@@ -187,7 +188,7 @@ void main() {
     final before = jsonEncode(
       source.pages.map((p) => p.toJson(source.id)).toList(),
     );
-    final result = StrategyProvider.migrateToCurrentVersion(source);
+    final result = StrategyMigrator.migrateToCurrentVersion(source);
     expect(Maps.mapScale[MapValue.sunset], _newScale);
     expect(result.versionNumber, Settings.versionNumber);
     expect(result.folderID, source.folderID);
@@ -200,14 +201,14 @@ void main() {
       before,
     );
     expect(
-      identical(StrategyProvider.migrateToCurrentVersion(result), result),
+      identical(StrategyMigrator.migrateToCurrentVersion(result), result),
       isTrue,
     );
   });
 
   test('other maps keep their pages unchanged', () {
     final source = _strategy(map: MapValue.split);
-    final result = StrategyProvider.migrateSunsetScale(source, force: true);
+    final result = StrategyMigrator.migrateSunsetScale(source, force: true);
     expect(identical(result.pages, source.pages), isTrue);
   });
 
@@ -215,7 +216,7 @@ void main() {
     final source = _strategy(version: 96, pages: [_page(false)]);
     final before = source.pages.single.abilityData
         .firstWhere((a) => a.data.name == 'Crosscut');
-    final result = StrategyProvider.migrateToCurrentVersion(source);
+    final result = StrategyMigrator.migrateToCurrentVersion(source);
     final after =
         result.pages.single.abilityData.firstWhere((a) => a.id == before.id);
     final oldCenter = before.position +
@@ -260,42 +261,42 @@ void main() {
       () async {
         final source = _strategy(version: version);
         // Explicit historical stages provide the pre-98 placement reference.
-        var historical = StrategyProvider.migrateToWorld16x9(source);
+        var historical = StrategyMigrator.migrateToWorld16x9(source);
         if (version < 39)
-          historical = StrategyProvider.migrateAbilityScale(
+          historical = StrategyMigrator.migrateAbilityScale(
             historical,
             force: true,
           );
         if (version < 40)
-          historical = StrategyProvider.migrateSquareAoeCenter(
+          historical = StrategyMigrator.migrateSquareAoeCenter(
             historical,
             force: true,
           );
         if (version < 45)
-          historical = StrategyProvider.migrateCustomCircleWrapper(
+          historical = StrategyMigrator.migrateCustomCircleWrapper(
             historical,
             force: true,
           );
         if (version < 61)
-          historical = StrategyProvider.migrateLineUpGroups(
+          historical = StrategyMigrator.migrateLineUpGroups(
             historical,
             force: true,
           );
         if (version < 95)
-          historical = StrategyProvider.migrateAbilityVisionCones(
+          historical = StrategyMigrator.migrateAbilityVisionCones(
             historical,
             force: true,
           );
         if (version < 95)
-          historical = StrategyProvider.migratePageNameProvenance(
+          historical = StrategyMigrator.migratePageNameProvenance(
             historical,
             force: true,
           );
-        historical = StrategyProvider.migrateCanonicalCoordinates(
+        historical = StrategyMigrator.migrateCanonicalCoordinates(
           historical,
           force: true,
         );
-        final result = await StrategyProvider.migrateLegacyData(source);
+        final result = await StrategyMigrator.migrateLegacyData(source);
         for (var i = 0; i < historical.pages.length; i++) {
           _expectAnchors(historical.pages[i], result.pages[i]);
         }
@@ -313,8 +314,8 @@ void main() {
         agentData: page.agentData.cast<PlacedAgent>(),
         isAttack: false,
       );
-      final result = await StrategyProvider.migrateLegacyData(old);
-      final paged = await StrategyProvider.migrateLegacyData(
+      final result = await StrategyMigrator.migrateLegacyData(old);
+      final paged = await StrategyMigrator.migrateLegacyData(
         _strategy(version: 15, pages: [page.copyWith(lineUpGroups: [])]),
       );
       expect(
@@ -332,7 +333,7 @@ void main() {
   test(
     'zip JSON export/import preserves migrated placements without a second shift',
     () async {
-      final migrated = await StrategyProvider.migrateLegacyData(_strategy());
+      final migrated = await StrategyMigrator.migrateLegacyData(_strategy());
       final exportedPages =
           migrated.pages.map((p) => p.toJson(migrated.id)).toList();
       final bytes = utf8.encode(
@@ -354,7 +355,7 @@ void main() {
         strategyID: migrated.id,
         isZip: true,
       );
-      final restored = await StrategyProvider.migrateLegacyData(
+      final restored = await StrategyMigrator.migrateLegacyData(
         migrated.copyWith(
           versionNumber: int.parse(decoded['versionNumber'] as String),
           pages: pages,
