@@ -495,8 +495,35 @@ void main() {
         wall('piece-$y', [rectangle(10, y, 11, y + 1)])
     ]);
     expect(area(pieces.polygon), closeTo(area(whole.polygon), 1e-9));
-    expect(pieces.polygon.length, whole.polygon.length,
+    // Rays, not outline points: one wall's face collapses to its two ends,
+    // while each piece keeps its own edge in the outline.
+    expect(pieces.stats.rayCount, whole.stats.rayCount,
         reason: 'seams between the pieces are not visibility events');
+  });
+
+  test('a seam at one eye height is a corner at another', () {
+    // Below 2 m the low wall and the tall wall meet along y = 0, so their
+    // shared corners are seams. Above it only the tall wall blocks, and the
+    // same points are its corners.
+    final walls = [
+      wall('low', [rectangle(10, -5, 11, 0)],
+          bands: [
+            [0, 2]
+          ]),
+      wall('tall', [rectangle(10, 0, 11, 5)]),
+    ];
+    SvgVisibilityCone at(SvgHeightVisibility model, double camera) =>
+        model.cone(
+            origin: Offset.zero,
+            directionRadians: 0,
+            range: 100,
+            apertureRadians: 1.5,
+            cameraHeightMeters: camera);
+    final reused = SvgHeightVisibility.fromJson(data(walls));
+    at(reused, 1.75);
+    final fresh = SvgHeightVisibility.fromJson(data(walls));
+    expect(at(reused, 3).polygon, at(fresh, 3).polygon);
+    expect(at(reused, 1.75).polygon, at(fresh, 1.75).polygon);
   });
 
   test('two walls over the same footprint keep their corners', () {

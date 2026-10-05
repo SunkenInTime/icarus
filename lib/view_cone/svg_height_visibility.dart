@@ -275,53 +275,79 @@ class SvgHeightVisibility {
   double? _activeEye;
   List<bool>? _activeWalls;
   List<bool> _activeWallsAt(double eye) {
-    if (_activeEye == eye && _activeWalls != null) return _activeWalls!;
-    final active =
-        List<bool>.unmodifiable([for (final wall in walls) wall.blocks(eye)]);
+    final previous = _activeWalls;
+    if (_activeEye == eye && previous != null) return previous;
     _activeEye = eye;
-    _activeWalls = active;
-    return active;
+    final active = [for (final wall in walls) wall.blocks(eye)];
+    // On a ramp the eye moves every frame while the mask rarely changes;
+    // keeping the same list keeps what is cached against it.
+    if (previous != null) {
+      var same = true;
+      for (var i = 0; i < active.length && same; i++) {
+        same = active[i] == previous[i];
+      }
+      if (same) return previous;
+    }
+    return _activeWalls = List.unmodifiable(active);
   }
 
   // Static SVG topology, computed only if the Dart fallback is used.
   late final _crossings = _findCrossings();
-  late final _vertexEdges = () {
-    final result = <Offset, List<int>>{};
-    for (var i = 0; i < _edges.length; i++) {
-      (result[_edges[i].a] ??= []).add(i);
-      (result[_edges[i].b] ??= []).add(i);
-    }
-    return result;
-  }();
+  late final _topology = _VertexTopology(_edges);
 
-  /// Whether no active boundary turns at [point]: the edges two touching
+  /// Rays one either side of each vertex ray, resolving the two sides of a
+  /// corner; the native query's offset.
+  static const _cornerOffset = 1e-8;
+
+  /// Whether no active boundary turns at [vertex]: the edges two touching
   /// pieces share cancel, and what remains runs straight through it, or
   /// nothing does. A ray there meets the wall the rays beside it meet, so it
   /// is not a visibility event. Pieces cut along one stroke leave such seams
   /// every metre or so; skipping them is most of a cone's rays.
-  bool _seam(Offset point, List<bool> active) {
+  bool _seam(int vertex, List<bool> active) {
+    if (!identical(active, _seamMask)) {
+      _seamMask = active;
+      _seams = Int8List(_topology.points.length);
+    }
+    final seams = _seams!;
+    if (seams[vertex] == 0) seams[vertex] = _findSeam(vertex, active) ? 1 : 2;
+    return seams[vertex] == 1;
+  }
+
+  // Whether a vertex is a seam depends only on the active walls, which stay
+  // the same while a cone is dragged across one floor: 0 not yet known,
+  // 1 a seam, 2 not.
+  List<bool>? _seamMask;
+  Int8List? _seams;
+
+  bool _findSeam(int vertex, List<bool> active) {
+    final topology = _topology;
     final live = [
-      for (final id in _vertexEdges[point] ?? const <int>[])
-        if (active[_edges[id].wall]) _edges[id]
+      for (final id in topology.edgesAt[vertex])
+        if (active[_edges[id].wall]) id
     ];
     final cancelled = List.filled(live.length, false);
     for (var i = 0; i < live.length; i++) {
       for (var j = i + 1; j < live.length && !cancelled[i]; j++) {
         if (cancelled[j]) continue;
         // A shared side only when the two walls lie on either side of it.
-        final first = live[i], second = live[j];
+        final first = _edges[live[i]], second = _edges[live[j]];
         if (first.interior == null || second.interior == null) continue;
-        final same = first.a == second.a && first.b == second.b;
-        final reversed = first.a == second.b && first.b == second.a;
+        final same = topology.aVertex[live[i]] == topology.aVertex[live[j]] &&
+            topology.bVertex[live[i]] == topology.bVertex[live[j]];
+        final reversed =
+            topology.aVertex[live[i]] == topology.bVertex[live[j]] &&
+                topology.bVertex[live[i]] == topology.aVertex[live[j]];
         if ((same && first.interior != second.interior) ||
             (reversed && first.interior == second.interior)) {
           cancelled[i] = cancelled[j] = true;
         }
       }
     }
+    final at = topology.points[vertex];
     final away = [
       for (var i = 0; i < live.length; i++)
-        if (!cancelled[i]) (live[i].a == point ? live[i].b : live[i].a) - point
+        if (!cancelled[i]) _away(live[i], vertex) - at
     ];
     if (away.isEmpty) return true;
     if (away.length != 2) return false;
@@ -329,6 +355,32 @@ class SvgHeightVisibility {
         _cross(away[0], away[1]).abs() <=
             1e-12 * away[0].distance * away[1].distance;
   }
+
+  /// Whether the wall runs straight across the ray at [vertex], [delta]
+  /// from the origin: its two active edges there leave to either side of the
+  /// ray's line. Rays just beside such a vertex meet those two edges, so only
+  /// the vertex ray adds a corner. Rays beside the vertex matter where the
+  /// wall turns back (a silhouette) and something further can show past it.
+  bool _passThrough(int vertex, Offset delta, List<bool> active) {
+    final at = _topology.points[vertex];
+    var count = 0;
+    var first = 0.0;
+    for (final id in _topology.edgesAt[vertex]) {
+      if (!active[_edges[id].wall]) continue;
+      if (++count > 2) return false;
+      final side = _cross(delta, _away(id, vertex) - at);
+      if (count == 1) {
+        first = side;
+      } else if (first * side >= 0) {
+        return false;
+      }
+    }
+    return count == 2;
+  }
+
+  /// The far end of edge [id] from [vertex].
+  Offset _away(int id, int vertex) =>
+      _topology.aVertex[id] == vertex ? _edges[id].b : _edges[id].a;
 
   List<(Offset, int, int)> _findCrossings() {
     double cross(Offset a, Offset b) => a.dx * b.dy - a.dy * b.dx;
@@ -903,14 +955,15 @@ class SvgHeightVisibility {
               nativeMicros: result.queryMicros),
           eyeElevationMeters: ground == null ? null : eye);
     }
+    // The native query's algorithm, in Dart for the web: the same events,
+    // rays and outline as ish_query in native/height. Every structure is a
+    // list or an index: hashing points and angles dominated the cost once
+    // Dart is compiled to JavaScript.
     final half = apertureRadians / 2;
-    final angles = <double>{
-      for (var i = 0; i <= arcSteps; i++)
-        -half + apertureRadians * i / arcSteps,
-    };
-    final arcAngles = [
-      for (var i = 0; i <= arcSteps; i++) -half + apertureRadians * i / arcSteps
-    ];
+    final arcAngles = Float64List(arcSteps + 1);
+    for (var i = 0; i <= arcSteps; i++) {
+      arcAngles[i] = -half + apertureRadians * i / arcSteps;
+    }
     final arcHits = <SvgVisibilityHit?>[
       for (final angle in arcAngles)
         _cast(
@@ -921,9 +974,6 @@ class SvgHeightVisibility {
             active,
             stats),
     ];
-    final arcResults = <double, SvgVisibilityHit?>{
-      for (var i = 0; i < arcAngles.length; i++) arcAngles[i]: arcHits[i],
-    };
     bool hiddenEvent(double angle, Offset delta) {
       if (apertureRadians / arcSteps >= math.pi ||
           angle <= -half ||
@@ -934,33 +984,61 @@ class SvgHeightVisibility {
       final first = arcHits[interval]?._edgeIndex;
       if (first == null ||
           first != arcHits[interval + 1]?._edgeIndex ||
-          angle - 1e-8 < arcAngles[interval] ||
-          angle + 1e-8 > arcAngles[interval + 1]) return false;
+          angle - _cornerOffset < arcAngles[interval] ||
+          angle + _cornerOffset > arcAngles[interval + 1]) return false;
       final distance = delta.distance;
       final hit =
           _edges[first].intersection(origin, delta / distance, distance);
       return hit != null && hit < distance - 1e-7;
     }
 
+    final angles = <double>[...arcAngles];
+    // Rays aimed at a vertex or at a wall's crossing of the range circle
+    // stay in the outline even when their neighbours meet the same edge.
+    final vertexAngles = <double>[];
+    void add(double event, {required bool vertex}) {
+      if (event < -half || event > half) return;
+      angles.add(event);
+      if (vertex) vertexAngles.add(event);
+    }
+
+    void emit(double angle, {bool beside = true}) {
+      if (beside) add(angle - _cornerOffset, vertex: false);
+      add(angle, vertex: true);
+      if (beside) add(angle + _cornerOffset, vertex: false);
+    }
+
+    // A vertex outside the aperture, with slack for the corner offsets,
+    // cannot start a ray inside it: skip its trigonometry.
+    final facing =
+        Offset(math.cos(directionRadians), math.sin(directionRadians));
+    final cullSector = half + 1e-6 < math.pi;
+    final cosSlack = math.cos(math.min(math.pi, half + 1e-6));
+    bool inSector(Offset delta) =>
+        !cullSector || _dot(delta, facing) >= cosSlack * delta.distance;
+    double angleOf(Offset delta) {
+      final relative = math.atan2(delta.dy, delta.dx) - directionRadians;
+      return math.atan2(math.sin(relative), math.cos(relative));
+    }
+
+    final rangeSquared = range * range;
     // Overlapping painted strokes create visibility corners at their crossing.
     // Events behind a proven nearer straight wall cannot change the boundary.
     for (final crossing in _crossings) {
       if (!active[crossing.$2] || !active[crossing.$3]) continue;
       final delta = crossing.$1 - origin;
-      if (delta.distanceSquared > range * range || delta == Offset.zero)
+      if (delta.distanceSquared > rangeSquared || delta == Offset.zero) {
         continue;
-      final relative = math.atan2(delta.dy, delta.dx) - directionRadians;
-      final angle = math.atan2(math.sin(relative), math.cos(relative));
-      if (hiddenEvent(angle, delta)) continue;
-      for (final offset in [-1e-8, 0.0, 1e-8]) {
-        if (angle + offset >= -half && angle + offset <= half)
-          angles.add(angle + offset);
       }
+      if (!inSector(delta)) continue;
+      final angle = angleOf(delta);
+      if (hiddenEvent(angle, delta)) continue;
+      emit(angle);
     }
     final preparationMicros = timer.elapsedMicroseconds;
     final candidates = <int>[];
     _tree?.query(Rect.fromCircle(center: origin, radius: range), candidates);
-    final seenPoints = <Offset>{};
+    final topology = _topology;
     for (final id in candidates) {
       final edge = _edges[id];
       if (!active[edge.wall]) continue;
@@ -974,28 +1052,28 @@ class SvgHeightVisibility {
           -(relative.dx * segment.dx + relative.dy * segment.dy) /
               lengthSquared;
       final closest = relative + segment * projection;
-      final remaining = range * range - closest.distanceSquared;
+      final remaining = rangeSquared - closest.distanceSquared;
       if (remaining >= 0) {
         final offset = math.sqrt(remaining / lengthSquared);
         for (final t in [projection - offset, projection + offset]) {
           if (t < 0 || t > 1) continue;
           final delta = relative + segment * t;
-          final relativeAngle =
-              math.atan2(delta.dy, delta.dx) - directionRadians;
-          final angle =
-              math.atan2(math.sin(relativeAngle), math.cos(relativeAngle));
-          if (angle >= -half && angle <= half && !hiddenEvent(angle, delta))
+          if (!inSector(delta)) continue;
+          final angle = angleOf(delta);
+          if (angle >= -half && angle <= half && !hiddenEvent(angle, delta)) {
             angles.add(angle);
+            vertexAngles.add(angle);
+          }
         }
       }
-      for (final point in [edge.a, edge.b]) {
-        if (!seenPoints.add(point) || _seam(point, active)) continue;
-        final delta = point - origin;
-        if (delta.distanceSquared > range * range || delta == Offset.zero)
-          continue;
-        final relativeAngle = math.atan2(delta.dy, delta.dx) - directionRadians;
-        final angle =
-            math.atan2(math.sin(relativeAngle), math.cos(relativeAngle));
+      for (var end = 0; end < 2; end++) {
+        final vertex = end == 0 ? topology.aVertex[id] : topology.bVertex[id];
+        if (_seam(vertex, active)) continue;
+        final delta = (end == 0 ? edge.a : edge.b) - origin;
+        final distanceSquared = delta.distanceSquared;
+        if (distanceSquared > rangeSquared || delta == Offset.zero) continue;
+        if (!inSector(delta)) continue;
+        final angle = angleOf(delta);
         // If both bounding arc rays hit the same straight segment, that
         // segment covers the angular interval. A vertex strictly behind it
         // cannot change the visible boundary. Nearer corners still add rays.
@@ -1009,32 +1087,58 @@ class SvgHeightVisibility {
           final last = arcHits[interval + 1]?._edgeIndex;
           if (first != null &&
               first == last &&
-              angle - 1e-8 >= arcAngles[interval] &&
-              angle + 1e-8 <= arcAngles[interval + 1]) {
-            final distance = delta.distance;
+              angle - _cornerOffset >= arcAngles[interval] &&
+              angle + _cornerOffset <= arcAngles[interval + 1]) {
+            final distance = math.sqrt(distanceSquared);
             final hit =
                 _edges[first].intersection(origin, delta / distance, distance);
             if (hit != null && hit < distance - 1e-7) continue;
           }
         }
-        // Adjacent rays resolve the two sides of a corner. They do not offset
-        // wall contacts: every endpoint still intersects the actual footprint.
-        for (final offset in [-1e-8, 0.0, 1e-8]) {
-          final value = angle + offset;
-          if (value >= -half && value <= half) angles.add(value);
-        }
+        // Rays just beside a vertex the wall runs straight across meet its
+        // two edges, so only the vertex ray adds a corner.
+        emit(angle, beside: !_passThrough(vertex, delta, active));
       }
     }
-    final sorted = angles.toList()..sort();
+    final sorted = _sortedUnique(angles);
+    final vertexSorted = _sortedUnique(vertexAngles);
     final candidateMicros = timer.elapsedMicroseconds - preparationMicros;
+
     final polygon = <Offset>[origin];
+    SvgVisibilityHit? previousHit;
+    var sameEdgeRun = 0;
+    var runAnchor = Offset.zero;
     for (final angle in sorted) {
       final direction = Offset(math.cos(directionRadians + angle),
           math.sin(directionRadians + angle));
-      final hit = arcResults.containsKey(angle)
-          ? arcResults[angle]
+      final arc = _indexOf(arcAngles, angle);
+      final hit = arc >= 0
+          ? arcHits[arc]
           : _cast(origin, direction, range, active, stats);
-      polygon.add(hit?.point ?? origin + direction * range);
+      final point = hit?.point ?? origin + direction * range;
+      // Rays meeting the same edge in a row lie on one straight line; the
+      // middle ones add nothing to the outline. Vertex rays always stay.
+      if (_indexOf(vertexSorted, angle) < 0 &&
+          hit != null &&
+          previousHit != null &&
+          hit._edgeIndex == previousHit._edgeIndex) {
+        sameEdgeRun++;
+        if (sameEdgeRun == 2) {
+          polygon.add(point);
+        } else if (_betweenOnSameLine(runAnchor, polygon.last, point)) {
+          polygon[polygon.length - 1] = point;
+        } else {
+          // Endpoint roundoff can give an excursion the same edge as its
+          // neighbours; keep it unless the points prove it redundant.
+          runAnchor = polygon.last;
+          polygon.add(point);
+        }
+      } else {
+        previousHit = hit;
+        sameEdgeRun = 1;
+        runAnchor = point;
+        polygon.add(point);
+      }
     }
     return SvgVisibilityCone(
         List.unmodifiable(polygon),
@@ -1094,11 +1198,17 @@ class SvgHeightVisibility {
     if (tree == null || range == 0) return null;
     var best = range;
     int? wall, bestEdge;
+    final rootEntry = tree.entry(origin, direction, best);
+    if (rootEntry == null) return null;
+    // Each node with where the ray enters its bounds. A nearer hit found
+    // since it was pushed rules it out once the entry lies beyond it.
     final stack = <_EdgeNode>[tree];
+    final entries = <double>[rootEntry];
     while (stack.isNotEmpty) {
       final node = stack.removeLast();
+      final entry = entries.removeLast();
       stats.cells++;
-      if (node.entry(origin, direction, best) == null) continue;
+      if (entry > best) continue;
       final ids = node.ids;
       if (ids != null) {
         for (final id in ids) {
@@ -1119,16 +1229,26 @@ class SvgHeightVisibility {
         // Visit the nearer branch first so its hit prunes the farther one.
         if (a != null && b != null) {
           if (a <= b) {
-            stack.add(right);
-            stack.add(left);
+            stack
+              ..add(right)
+              ..add(left);
+            entries
+              ..add(b)
+              ..add(a);
           } else {
-            stack.add(left);
-            stack.add(right);
+            stack
+              ..add(left)
+              ..add(right);
+            entries
+              ..add(a)
+              ..add(b);
           }
         } else if (a != null) {
           stack.add(left);
+          entries.add(a);
         } else if (b != null) {
           stack.add(right);
+          entries.add(b);
         }
       }
     }
@@ -1309,32 +1429,21 @@ class SvgVisibilityCone {
           return visibility;
         }();
 
-  /// The cone outline under a 4x4 column-major affine [transform], built
-  /// without allocating a point object per vertex.
+  /// The cone outline under a 4x4 column-major affine [transform]. One
+  /// polygon rather than a line per point: on the web each line is a call
+  /// into CanvasKit, repeated every frame the outline is drawn.
   Path outlinePath(Float64List transform) {
-    final path = Path()..fillType = PathFillType.nonZero;
     final points = xy;
-    if (points == null) {
-      final source = _polygon!;
-      for (var i = 0; i < source.length; i++) {
-        final p = source[i];
-        final x = transform[0] * p.dx + transform[4] * p.dy + transform[12];
-        final y = transform[1] * p.dx + transform[5] * p.dy + transform[13];
-        i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
-      }
-    } else {
-      for (var i = 0; i < points.length; i += 2) {
-        final x = transform[0] * points[i] +
-            transform[4] * points[i + 1] +
-            transform[12];
-        final y = transform[1] * points[i] +
-            transform[5] * points[i + 1] +
-            transform[13];
-        i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
-      }
-    }
-    path.close();
-    return path;
+    final count = points == null ? _polygon!.length : points.length ~/ 2;
+    return Path()
+      ..addPolygon(
+          List.generate(count, (i) {
+            final x = points == null ? _polygon![i].dx : points[2 * i];
+            final y = points == null ? _polygon![i].dy : points[2 * i + 1];
+            return Offset(transform[0] * x + transform[4] * y + transform[12],
+                transform[1] * x + transform[5] * y + transform[13]);
+          }),
+          true);
   }
 }
 
@@ -1472,7 +1581,9 @@ enum _Side { left, right }
 
 class _Edge {
   _Edge(this.a, this.b, this.wall, {required this.interior})
-      : _inverseLength = 1 / (b - a).distance;
+      : _inverseLength = 1 / (b - a).distance,
+        _ex = b.dx - a.dx,
+        _ey = b.dy - a.dy;
   final Offset a, b;
   final int wall;
 
@@ -1481,18 +1592,24 @@ class _Edge {
   final _Side? interior;
   final double _inverseLength;
 
+  /// `b - a`, kept as numbers: every ray tests many edges, and on the web
+  /// each intermediate [Offset] is an allocation.
+  final double _ex, _ey;
+
   double? intersection(Offset origin, Offset direction, double range) {
-    final edge = b - a, relative = a - origin;
-    final determinant = _cross(direction, edge);
+    final dx = direction.dx, dy = direction.dy;
+    final rx = a.dx - origin.dx, ry = a.dy - origin.dy;
+    final determinant = dx * _ey - dy * _ex;
     if (determinant == 0) {
+      final relative = a - origin;
       if (_cross(relative, direction) != 0) return null;
       final first = _dot(relative, direction),
           last = _dot(b - origin, direction);
       final entry = math.max(0.0, math.min(first, last));
       return math.max(first, last) >= 0 && entry <= range ? entry : null;
     }
-    final distance = _cross(relative, edge) / determinant;
-    final along = _cross(relative, direction) / determinant;
+    final distance = (rx * _ey - ry * _ex) / determinant;
+    final along = (rx * dy - ry * dx) / determinant;
     // atan2/sin/cos can put a ray aimed at an exact corner a few ulps beyond
     // both adjoining endpoints. Admit that much along the wall: a sliver of
     // what the 1e-8 radian rays beside a corner pass it by at the same
@@ -1640,4 +1757,75 @@ List<List<Offset>> _rings(Map<String, dynamic> row) {
   }
   if (result.isEmpty) throw const FormatException('Empty footprint.');
   return List.unmodifiable(result);
+}
+
+/// The edges' endpoints as vertex ids, the edges meeting at each vertex and
+/// where each vertex is. Built once, so a cone query never hashes a point.
+class _VertexTopology {
+  factory _VertexTopology(List<_Edge> edges) {
+    final ids = <Offset, int>{};
+    final points = <Offset>[];
+    int id(Offset point) => ids.putIfAbsent(point, () {
+          points.add(point);
+          return points.length - 1;
+        });
+    final a = Int32List(edges.length), b = Int32List(edges.length);
+    for (var i = 0; i < edges.length; i++) {
+      a[i] = id(edges[i].a);
+      b[i] = id(edges[i].b);
+    }
+    final at = List.generate(points.length, (_) => <int>[]);
+    for (var i = 0; i < edges.length; i++) {
+      at[a[i]].add(i);
+      at[b[i]].add(i);
+    }
+    return _VertexTopology._(
+        a, b, [for (final list in at) Int32List.fromList(list)], points);
+  }
+
+  _VertexTopology._(this.aVertex, this.bVertex, this.edgesAt, this.points);
+
+  final Int32List aVertex, bVertex;
+  final List<Int32List> edgesAt;
+  final List<Offset> points;
+}
+
+/// [values] sorted, with exact repeats removed.
+List<double> _sortedUnique(List<double> values) {
+  values.sort();
+  final out = <double>[];
+  for (final value in values) {
+    if (out.isEmpty || out.last != value) out.add(value);
+  }
+  return out;
+}
+
+/// Where [value] is in the sorted [values], or -1.
+int _indexOf(List<double> values, double value) {
+  var low = 0, high = values.length - 1;
+  while (low <= high) {
+    final middle = (low + high) >> 1;
+    final candidate = values[middle];
+    if (candidate < value) {
+      low = middle + 1;
+    } else if (candidate > value) {
+      high = middle - 1;
+    } else {
+      return middle;
+    }
+  }
+  return -1;
+}
+
+/// Whether [middle] lies on the segment from [first] to [last], up to
+/// roundoff: the native query's test for a redundant outline point.
+bool _betweenOnSameLine(Offset first, Offset middle, Offset last) {
+  final span = last - first;
+  final offset = middle - first;
+  final lengthSquared = _dot(span, span);
+  final along = _dot(offset, span);
+  if (lengthSquared == 0 || along < 0 || along > lengthSquared) return false;
+  final length = math.sqrt(lengthSquared);
+  final roundoff = 64 * 2.220446049250313e-16 * math.max(1.0, length);
+  return _cross(offset, span).abs() <= roundoff * length;
 }
