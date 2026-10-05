@@ -291,6 +291,75 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('a cone nudged out of wall ink still stops on the drawn walls',
+      (tester) async {
+    // An agent standing on a wall's ink is cast from just outside it. The
+    // cone must still be drawn where the walls are, not shifted by that
+    // nudge.
+    CoordinateSystem(playAreaSize: const Size(1920, 1080));
+    Map<String, dynamic> wall(String id, double top, double bottom) => {
+          'id': id,
+          'rings': [
+            [100, top, 300, top, 300, bottom, 100, bottom]
+          ],
+          'bands': [
+            [0, 10]
+          ],
+          'unknownHeight': false,
+        };
+    final model = SvgHeightVisibility.fromJson(
+        _fixture(walls: [wall('ledge', 199, 203.5), wall('far', 170, 180)]));
+    final runtime = SplitSvgHeightRuntime(model, model);
+    const raw = Offset(200, 201);
+    final nudged = model.standablePointNear(raw)!;
+    final scale = CoordinateSystem.instance.worldHeightToScreen(
+        SvgHeightMapTransform.forMap(MapValue.split).scale);
+    expect((raw - nudged).distance * scale, greaterThan(3),
+        reason: 'the nudge must be visible for this test to mean anything');
+    await tester.pumpWidget(Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+            width: 400,
+            height: 300,
+            child: SvgHeightViewCone(
+              runtime: runtime,
+              canonicalOrigin:
+                  SplitSvgMapTransform.sideWorldFromSource(raw, isAttack: true),
+              rotation: 0,
+              range: 100,
+              angle: math.pi / 4,
+              isAttack: true,
+            ))));
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((p) => p.painter)
+        .whereType<SvgHeightViewConePainter>()
+        .single;
+    const size = Size(400, 300);
+    final bytes = (await tester.runAsync(() async {
+      final recorder = ui.PictureRecorder();
+      painter.paint(Canvas(recorder), size);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(400, 300);
+      final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!
+          .buffer
+          .asUint8List();
+      image.dispose();
+      picture.dispose();
+      return data;
+    }))!;
+    // Up the apex column from where the cone was cast, the lit area ends at
+    // the far wall's near face.
+    final x = painter.apex.dx.round();
+    var top = (painter.apex.dy - (raw.dy - nudged.dy) * scale).round() - 2;
+    while (top > 0 && bytes[((top - 1) * 400 + x) * 4 + 3] > 0) {
+      top--;
+    }
+    final face = painter.apex.dy - (raw.dy - 180) * scale;
+    expect(top, closeTo(face, 1.5));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('mounted anonymous cones own separate cache entries',
       (tester) async {
     CoordinateSystem(playAreaSize: const Size(1920, 1080));
