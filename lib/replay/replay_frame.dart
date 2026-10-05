@@ -474,11 +474,15 @@ class ReplayFrameBuilder {
     );
   }
 
-  /// How far an ability reaches from its centre, world units: a circle's
-  /// radius as drawn, otherwise about an icon's width.
+  /// How far an ability reaches from its centre, world units: half of a
+  /// circle or image as drawn (smoke art fills its square to the edge),
+  /// otherwise about an icon's width.
   static double _radiusOf(ReplayAbilityEntry entry, double mapScale) {
-    final shape = entry.ability.abilityData;
-    final virtual = shape is CircleAbility ? shape.size * mapScale / 2 : 18.0;
+    final virtual = switch (entry.ability.abilityData) {
+      CircleAbility(:final size) || ImageAbility(:final size) =>
+        size * mapScale / 2,
+      _ => 18.0,
+    };
     return CoordinateSystem.virtualLengthInWorld(virtual);
   }
 

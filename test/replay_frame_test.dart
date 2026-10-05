@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_cone_worker.dart';
@@ -270,11 +271,16 @@ void main() {
           'position': [0, 0, 100],
         };
 
-    test('a smoke blocks sight while it is up', () {
+    test('a smoke blocks sight while it is up, as wide as it is drawn', () {
       final frames = builder(document(utility: [smoke()]));
       final up = frames.frameAt(2000, perspective: ReplayTeam.red);
       expect(up.occluders.single, isA<CircleOccluder>());
-      expect((up.occluders.single as CircleOccluder).radius, greaterThan(0));
+      // Omen's smoke is drawn as an image that fills its square; a cone's
+      // shadow must leave from the edge of that image, not from inside it.
+      final drawn = up.abilities.single.data.abilityData!
+          .getSize(mapScale: Maps.mapScale[projection.map]!, abilitySize: 0);
+      expect((up.occluders.single as CircleOccluder).radius,
+          closeTo(CoordinateSystem.virtualLengthInWorld(drawn.dx / 2), 1e-9));
       expect(
           frames.frameAt(9600, perspective: ReplayTeam.red).occluders, isEmpty);
     });
