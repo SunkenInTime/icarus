@@ -1197,7 +1197,12 @@ class _Footprint {
 
   /// The largest boundary tolerance [_contains] is asked for.
   static const _maxTolerance = 0.05;
-  static const _rowHeight = 1.0;
+
+  /// Rows are a unit tall, or taller for a footprint so tall that unit rows
+  /// would number more than this.
+  static const _maxRows = 4096;
+  late final double _rowHeight =
+      math.max(1.0, (bounds.height + 2 * _maxTolerance) / _maxRows);
 
   /// Every edge, as its ring and first point's index, filed under each
   /// [_rowHeight] row its height, grown by [_maxTolerance], reaches. Only
@@ -1230,10 +1235,11 @@ class _Footprint {
 
   bool _contains(Offset point, double boundaryTolerance) {
     assert(boundaryTolerance <= _maxTolerance);
-    if (point.dx < bounds.left - boundaryTolerance ||
-        point.dx > bounds.right + boundaryTolerance ||
-        point.dy < bounds.top - boundaryTolerance ||
-        point.dy > bounds.bottom + boundaryTolerance) return false;
+    // Written so a NaN coordinate fails it, as it failed every edge before.
+    if (!(point.dx >= bounds.left - boundaryTolerance &&
+        point.dx <= bounds.right + boundaryTolerance &&
+        point.dy >= bounds.top - boundaryTolerance &&
+        point.dy <= bounds.bottom + boundaryTolerance)) return false;
     var winding = 0;
     final row = _rows[_row(point.dy)];
     for (var e = 0; e < row.length; e += 2) {

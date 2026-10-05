@@ -25,6 +25,20 @@ void main() {
         model.standablePointNear(const Offset(20, 20)), const Offset(20, 20));
   });
 
+  test('a point within the ink margin below a wall is pushed out', () {
+    // 54.96 is 0.02 below the wall, inside the 0.05 margin that counts as
+    // ink, and in the next unit row down from the wall's bottom edge.
+    final low = SvgHeightVisibility.fromJson(data(
+      [
+        wall('pillar', [rectangle(45, 45, 55, 54.94)])
+      ],
+      receiver: [_floor(rectangle(0, 0, 100, 100))],
+    ));
+    final moved = low.standablePointNear(const Offset(50, 54.96));
+    expect(moved, isNotNull);
+    expect(moved!.dy, greaterThan(54.99));
+  });
+
   test('a point inside wall ink is pushed just outside the wall', () {
     final moved = model.standablePointNear(const Offset(46, 50));
     expect(moved, isNotNull);

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
@@ -45,15 +44,16 @@ void main() {
           ],
     ];
     final footprints = [
-      for (final wall in model.walls) (wall.rings, wall.evenOdd, wall.contains),
-      for (final receiver in model.receivers)
-        (receiver.rings, receiver.evenOdd, receiver.contains),
+      for (final wall in model.walls)
+        (wall.id, wall.rings, wall.evenOdd, wall.contains),
+      for (final (i, receiver) in model.receivers.indexed)
+        ('receiver $i', receiver.rings, receiver.evenOdd, receiver.contains),
     ];
     var inside = 0;
     for (final point in points) {
-      for (final (rings, evenOdd, contains) in footprints) {
+      for (final (id, rings, evenOdd, contains) in footprints) {
         final expected = _everyEdge(rings, evenOdd, point);
-        expect(contains(point), expected, reason: '$point');
+        expect(contains(point), expected, reason: '$id at $point');
         if (expected) inside++;
       }
     }
