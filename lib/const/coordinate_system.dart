@@ -6,7 +6,7 @@ class CoordinateSystem {
   // System parameters
 
   CoordinateSystem._({required Size playAreaSize})
-    : _playAreaSize = playAreaSize;
+      : _playAreaSize = playAreaSize;
 
   final Size _playAreaSize;
   Size get playAreaSize => _playAreaSize;

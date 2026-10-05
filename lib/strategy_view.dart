@@ -4,24 +4,33 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart'
+    show isShareLinkRevokedError;
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/delete_capture.dart';
-import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
+import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
+import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -33,6 +42,7 @@ class StrategyView extends ConsumerStatefulWidget {
     super.key,
     this.initialStrategyId,
     this.initialStrategyName,
+    this.initialStrategySource = StrategySource.local,
     this.initialMapValue,
     this.initialIsAttack = true,
     this.initialPageId,
@@ -41,6 +51,7 @@ class StrategyView extends ConsumerStatefulWidget {
 
   final String? initialStrategyId;
   final String? initialStrategyName;
+  final StrategySource initialStrategySource;
   final MapValue? initialMapValue;
   final bool initialIsAttack;
 
@@ -55,6 +66,7 @@ class StrategyView extends ConsumerStatefulWidget {
   static PageRoute<void> route({
     String? initialStrategyId,
     String? initialStrategyName,
+    StrategySource initialStrategySource = StrategySource.local,
     MapValue? initialMapValue,
     bool initialIsAttack = true,
     String? initialPageId,
@@ -67,6 +79,7 @@ class StrategyView extends ConsumerStatefulWidget {
       pageBuilder: (context, animation, _) => StrategyView(
         initialStrategyId: initialStrategyId,
         initialStrategyName: initialStrategyName,
+        initialStrategySource: initialStrategySource,
         initialMapValue: initialMapValue,
         initialIsAttack: initialIsAttack,
         initialPageId: initialPageId,
@@ -85,6 +98,25 @@ class StrategyView extends ConsumerStatefulWidget {
         );
       },
     );
+  }
+
+  /// The editor for the named route [Routes.strategyView], which is what a
+  /// web page reload inside the editor restarts on. The route name carries no
+  /// strategy, so this reopens the cloud strategy the tab last had open
+  /// ([openCloudStrategyId]). With nothing to reopen it returns an empty
+  /// editor only where a local library exists; elsewhere (the web beta) it
+  /// returns null, and the navigator falls back to the library.
+  static PageRoute<void>? restoredRoute({
+    required String? openCloudStrategyId,
+    required bool allowsLocalLibrary,
+  }) {
+    if (openCloudStrategyId != null) {
+      return route(
+        initialStrategyId: openCloudStrategyId,
+        initialStrategySource: StrategySource.cloud,
+      );
+    }
+    return allowsLocalLibrary ? route() : null;
   }
 
   @override
@@ -127,6 +159,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
   Future<void> _loadInitialStrategy() async {
     final strategyId = widget.initialStrategyId;
+    final source = widget.initialStrategySource;
     if (strategyId == null) {
       if (mounted) {
         setState(() => _isInitialLoadPending = false);
@@ -135,11 +168,27 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     }
 
     try {
-      await ref
-          .read(strategyProvider.notifier)
-          .loadFromHive(strategyId, pageId: widget.initialPageId);
+      switch (source) {
+        case StrategySource.local:
+          await ref
+              .read(strategyProvider.notifier)
+              .loadFromHive(strategyId, pageId: widget.initialPageId);
+        case StrategySource.cloud:
+          final viewingThroughLink =
+              ref.read(shareLinkViewProvider)?.strategyPublicId == strategyId;
+          if (!viewingThroughLink && !await _waitForCloudWorkspace()) {
+            // Signed out, or the cloud is unreachable: nothing failed to
+            // load, and the library says which, so go back without an error.
+            if (mounted) Navigator.maybePop(context);
+            return;
+          }
+          await ref.read(strategyProvider.notifier).openCloudStrategy(
+                strategyId,
+              );
+      }
       final loadedStrategy = ref.read(strategyProvider);
-      if (loadedStrategy.id != strategyId || loadedStrategy.stratName == null) {
+      if (loadedStrategy.strategyId != strategyId ||
+          loadedStrategy.strategyName == null) {
         throw StateError('Strategy "$strategyId" was not found.');
       }
       _hasInitialLoadCompleted = true;
@@ -164,6 +213,21 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     }
   }
 
+  /// Resolves [cloudWorkspaceOutcomeProvider] once it settles. After a page
+  /// reload the editor can open before sign-in is restored, so a cloud
+  /// strategy waits here rather than failing on an unready backend.
+  Future<bool> _waitForCloudWorkspace() {
+    final settled = Completer<bool>();
+    final subscription = ref.listenManual<bool?>(
+      cloudWorkspaceOutcomeProvider,
+      (_, outcome) {
+        if (outcome != null && !settled.isCompleted) settled.complete(outcome);
+      },
+      fireImmediately: true,
+    );
+    return settled.future.whenComplete(subscription.close);
+  }
+
   Future<void> _leaveToLibrary() async {
     await guardUnsavedStrategyExit(
       context: context,
@@ -177,23 +241,41 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .read(agentFilterProvider.notifier)
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
-        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
         if (mounted) {
           Navigator.pop(context);
         }
+        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
       },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(openCloudStrategyRecorderProvider);
+    // A reader who is here only through a share link loses the strategy the
+    // moment its owner disables the link.
+    ref.listen(remoteEditorSnapshotProvider, (_, next) {
+      final error = next.error;
+      if (error == null ||
+          !isShareLinkRevokedError(error) ||
+          ref.read(shareLinkViewProvider) == null) {
+        return;
+      }
+      ref.read(shareLinkControllerProvider.notifier).forgetViewedLink();
+      Settings.showToast(
+        message: 'This share link was disabled by its owner.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      unawaited(_leaveToLibrary());
+    });
     final strategyState = ref.watch(strategyProvider);
+    final viewOnly = ref.watch(isViewOnlyStrategyProvider);
     final initialStrategyId = widget.initialStrategyId;
     final showSkeleton = _isInitialLoadPending ||
         (!_hasInitialLoadCompleted &&
             initialStrategyId != null &&
-            (strategyState.stratName == null ||
-                strategyState.id != initialStrategyId));
+            (!strategyState.isOpen ||
+                strategyState.strategyId != initialStrategyId));
 
     if (showSkeleton) {
       return Scaffold(
@@ -238,14 +320,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       ),
                     ),
                     const IcarusWordmark(),
-                    if (kIsWeb)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0),
-                        child: DemoTag(),
-                      ),
                     const Expanded(
                       child: WindowDragArea(child: SizedBox.expand()),
                     ),
+                    // Who else has this strategy open. Beside the strategy's
+                    // own name, where you look to see what you're in.
+                    const StrategyPresenceAvatars(),
                     const _DiscordLink(),
                     const SizedBox(width: 10),
                   ],
@@ -256,16 +336,18 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           ),
           // The canvas runs right up to the strip; each floating panel keeps
           // its own 8px of air so no bare band shows between the two.
-          const Expanded(
+          Expanded(
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Positioned.fill(child: DeleteCapture()),
-                Align(
+                const Positioned.fill(
+                  child: StrategyEditBoundary(child: DeleteCapture()),
+                ),
+                const Align(
                   alignment: Alignment.centerLeft,
                   child: RepaintBoundary(child: InteractiveMap()),
                 ),
-                Align(
+                const Align(
                   alignment: Alignment.topLeft,
                   child: Padding(
                     padding: EdgeInsets.all(8),
@@ -273,21 +355,33 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        MapSelector(),
+                        StrategyEditBoundary(
+                          disabledOpacity: 0.55,
+                          child: MapSelector(),
+                        ),
                         SizedBox(height: 8),
                         EditorToolbar(),
                       ],
                     ),
                   ),
                 ),
-                Align(
+                const Align(
                   alignment: Alignment.bottomLeft,
                   child: Padding(
                     padding: EdgeInsets.all(8.0),
                     child: PagesBar(),
                   ),
                 ),
-                Align(alignment: Alignment.centerRight, child: SideBarUI()),
+                // Tools and agents only place things; a view-only reader
+                // gets the map in their place.
+                if (!viewOnly)
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: StrategyEditBoundary(
+                      disabledOpacity: 0.55,
+                      child: SideBarUI(),
+                    ),
+                  ),
               ],
             ),
           ),

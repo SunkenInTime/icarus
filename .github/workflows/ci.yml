@@ -5,6 +5,21 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a PR makes its older run pointless, so it is cancelled.
+# Each push to main gets a full run of its own.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  FVM_HOME: ${{ github.workspace }}/.fvm_cache
+  PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
 jobs:
   native-replay:
@@ -56,56 +71,341 @@ jobs:
           cargo test --locked
           cargo test --locked --features dev-vectors
 
-  validate:
-    runs-on: windows-latest
-    env:
-      FVM_HOME: ${{ github.workspace }}/.fvm_cache
-      PUB_CACHE: ${{ github.workspace }}/.pub-cache
-
+  # Decides which lanes a run needs. Every lane runs for manual runs, PRs into
+  # main, PRs that change CI itself, and PRs whose files can't be listed.
+  # Pushes run every lane but the desktop builds: the release runs the upgrade
+  # and rollback test on its signed installer before publishing. Otherwise a
+  # PR runs the always-on lanes (analyze, test, web) plus the lanes its
+  # changed files reach.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      convex: ${{ steps.lanes.outputs.convex }}
+      presence: ${{ steps.lanes.outputs.presence }}
+      contract: ${{ steps.lanes.outputs.contract }}
+      rust: ${{ steps.lanes.outputs.rust }}
+      desktop: ${{ steps.lanes.outputs.desktop }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dart-lang/setup-dart@v1
-
-      - name: Cache Pub Packages
-        uses: actions/cache@v4
-        with:
-          path: .pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-
-      - name: Cache FVM SDK
-        uses: actions/cache@v4
-        with:
-          path: .fvm_cache
-          key: ${{ runner.os }}-fvm-${{ hashFiles('.fvmrc') }}
-          restore-keys: |
-            ${{ runner.os }}-fvm-
-
-      - name: Add Pub Cache To PATH
-        shell: pwsh
+      - name: Pick lanes from changed files
+        id: lanes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          "$env:PUB_CACHE\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          full=false
+          merged=false
+          files=""
+          if [[ "$EVENT" == "push" ]]; then
+            merged=true
+          elif [[ "$EVENT" != "pull_request" || "$BASE_REF" == "main" ]]; then
+            full=true
+          elif ! files=$(gh pr diff "$PR" --repo "$REPO" --name-only); then
+            echo "Could not list the PR's files; running every lane."
+            full=true
+          elif grep -qE '^\.github/' <<<"$files"; then
+            full=true
+          fi
 
-      - name: Install FVM
-        shell: pwsh
-        run: dart pub global activate fvm
+          lane() {
+            if [[ "$full" == true ]] ||
+              { [[ "$merged" == true ]] && [[ "$1" != desktop ]]; } ||
+              grep -qE "$2" <<<"$files"; then
+              echo "$1=true" >> "$GITHUB_OUTPUT"
+              echo "$1: runs"
+            else
+              echo "$1=false" >> "$GITHUB_OUTPUT"
+              echo "$1: skipped, no matching files"
+            fi
+          }
+          # The contract scripts in tool/ run in this lane, against its preview.
+          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$)'
+          lane presence '^presence/'
+          lane contract '^(convex/|tool/|lib/collab/)'
+          lane rust '^third_party/'
+          # The desktop builds and the upgrade/rollback test, for changes to
+          # what a shipped build finds in its Hive store, the installer, the
+          # release scripts, or the test itself. The release runs the same
+          # test on every signed installer; this catches a break on its PR.
+          lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$'
 
-      - name: Install Flutter SDK
-        shell: pwsh
-        run: fvm install
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
 
-      - name: Get Dependencies
-        shell: pwsh
-        run: fvm flutter pub get
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check Convex Web Binding Against The Browser Bundle
+        run: node tool/check_convex_web_binding.mjs
+
+      - uses: ./.github/actions/setup-flutter
 
       - name: Analyze
-        shell: pwsh
         run: fvm flutter analyze --no-fatal-infos
 
-      - name: Validate PowerShell Scripts
+      - name: Check Bundled Wall Heights
+        run: fvm dart run tool/check_bundled_wall_heights.dart
+
+  test:
+    name: test (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Run Tests
+        run: fvm flutter test --total-shards 2 --shard-index ${{ matrix.shard }}
+
+  # Same flags as "Build Web Client" in deploy-web.yml, which ships the beta
+  # against the production Convex deployment instead of development.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Build Web Client
+        run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
+
+  convex:
+    needs: changes
+    if: needs.changes.outputs.convex == 'true'
+    runs-on: ubuntu-latest
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
+      # One preview name per PR or branch. The job deletes its preview when it
+      # finishes, so previews never count against the team deployment quota
+      # after the run.
+      CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.event.pull_request.number || github.ref_name }}
+
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Require Convex preview deploy key
+        shell: bash
+        run: |
+          if [[ -z "$CONVEX_DEPLOY_KEY" ]]; then
+            echo "Add the CONVEX_PREVIEW_DEPLOY_KEY repository secret so CI can create an isolated contract deployment."
+            exit 1
+          fi
+
+      - name: Install Convex dependencies
+        run: npm ci
+
+      - name: Check Convex Types
+        run: npx tsc --noEmit
+
+      - name: Run Convex Tests
+        run: npm run test:convex
+
+      # `--cmd` runs right after Convex claims the preview and before the push,
+      # so the preview URL is recorded even when typecheck or the push fails.
+      - name: Deploy isolated Convex contract
+        run: >-
+          npx convex deploy --preview-create "$CONVEX_PREVIEW_NAME" --typecheck enable
+          --cmd-url-env-var-name CONVEX_PREVIEW_URL
+          --cmd 'echo "CONVEX_PREVIEW_URL=$CONVEX_PREVIEW_URL" >> "$GITHUB_ENV"'
+
+      # Convex keeps previews for days by default and counts them against the
+      # team's deployment quota. Cap this one at an hour in case the delete
+      # below never runs (runner lost, job killed).
+      - name: Expire contract preview within an hour
+        if: always() && env.CONVEX_PREVIEW_URL != ''
+        shell: bash
+        run: |
+          name="${CONVEX_PREVIEW_URL#https://}"; name="${name%%.*}"
+          expires_at=$(( ($(date +%s) + 3600) * 1000 ))
+          curl --fail-with-body -sS -X PATCH \
+            -H "Authorization: Bearer $CONVEX_DEPLOY_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"expiresAt\": $expires_at}" \
+            "https://api.convex.dev/v1/deployments/$name"
+
+      - name: Compare fresh scrubbed contract
+        run: |
+          npm run snapshot:convex-contract:check
+          npm run audit:convex-contract
+          git diff --exit-code -- convex/function_spec.json convex/error_codes.json convex/_generated
+
+      # The preview only exists for this run's contract check. A preview deploy
+      # key may delete preview deployments in its own project.
+      - name: Delete contract preview
+        if: always() && env.CONVEX_PREVIEW_URL != ''
+        shell: bash
+        run: |
+          name="${CONVEX_PREVIEW_URL#https://}"; name="${name%%.*}"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $CONVEX_DEPLOY_KEY" \
+            "https://api.convex.dev/v1/deployments/$name/delete"
+          echo "Deleted Convex preview $name"
+
+  presence-worker:
+    needs: changes
+    if: needs.changes.outputs.presence == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: presence
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: presence/package-lock.json
+
+      - name: Install Presence Worker Dependencies
+        run: npm ci
+
+      - name: Typecheck Presence Worker
+        run: npm run typecheck
+
+      # Runs the Worker and its Durable Object in the real Workers runtime.
+      - name: Test Presence Worker
+        run: npm test
+
+  # The generated Convex client and the gates around it.
+  client-contract:
+    needs: changes
+    if: needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          # The contract gate records the merge base with origin/main.
+          # Fetch all branch history so that ref exists on PR and push runs.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Validate Convex Client Contract Gate
+        working-directory: tool/convex_client_gauntlet
+        run: |
+          fvm dart pub get
+          fvm dart test
+          # Analyze this package only. The nested runtime fixtures are separate
+          # Flutter packages, validated by the workload step below after their
+          # own dependencies have been resolved.
+          fvm dart analyze bin lib test
+
+      - name: Validate Icarus Convex Generator
+        working-directory: tool/icarus_convex_codegen
+        run: |
+          fvm dart pub get
+          fvm dart analyze
+          fvm dart test
+
+      - name: Validate Protocol V3 Gauntlet Workload
+        working-directory: tool/convex_client_gauntlet/runtime
+        run: |
+          fvm flutter pub get
+          fvm dart analyze lib test tool
+          fvm flutter test test/workload_test.dart
+
+      - name: Reject Generated Client Drift
+        run: |
+          fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+          fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+          git diff --exit-code -- lib/collab/generated
+
+  native-bridge:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - name: Test Native Convex Bridge
+        run: |
+          cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
+          cargo test --manifest-path third_party/convex_rs/Cargo.toml
+
+  linux-build:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - uses: ./.github/actions/setup-flutter
+
+      # Cargokit builds the Rust bridge into the plugin's build folder. Its
+      # compiled dependencies are cached; the bridge crate itself rebuilds.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/convex_flutter/rust -> ../../../build/linux/x64/release/plugins/convex_flutter/cargokit_build
+
+      - name: Build Linux Client
+        run: fvm flutter build linux --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
+
+  # Builds the Windows installer the way a release does and upgrades the last
+  # public release to it, then rolls back.
+  windows-build:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: windows-latest
+    defaults:
+      run:
         shell: pwsh
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - name: Test Release Safety Policy
+        run: powershell -ExecutionPolicy Bypass -File scripts/test_release_safety.ps1
+
+      - name: Validate PowerShell Scripts
         run: |
           $parseErrors = @(
             Get-ChildItem -Path scripts, installer -Filter "*.ps1" -File | ForEach-Object {
@@ -124,12 +424,66 @@ jobs:
             throw "PowerShell parse errors: $($parseErrors.Message -join ', ')"
           }
 
-      - name: Check Bundled Wall Heights
-        shell: pwsh
-        run: fvm dart run tool/check_bundled_wall_heights.dart
       - name: Test Release Signing Gates
         shell: powershell
         run: ./scripts/test_release_signing.ps1
-      - name: Run Tests
+
+      - uses: ./.github/actions/setup-flutter
+
+      # Cargokit builds the Rust bridge into the plugin's build folder. Its
+      # compiled dependencies are cached; the bridge crate itself rebuilds.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/convex_flutter/rust -> ../../../build/windows/x64/plugins/convex_flutter/cargokit_build
+
+      - name: Build Windows Client
+        run: fvm flutter build windows --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
+
+      - name: Build Windows Installer
+        run: powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1 -Configuration Release
+
+      - name: Test Public Upgrade And Rollback
+        run: |
+          $installer = Get-ChildItem -Path build/installer -Filter 'icarus-setup-*.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "Release-candidate installer was not built."
+          }
+          powershell -ExecutionPolicy Bypass -File scripts/test_online_beta_windows_upgrade.ps1 `
+            -ReleaseCandidateInstaller $installer.FullName
+
+      - name: Upload Windows Release Candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: icarus-windows-rc-${{ env.RELEASE_SOURCE_SHA }}
+          path: |
+            build/installer/icarus-setup-*.exe
+            ${{ runner.temp }}/icarus-online-beta-windows-smoke/evidence.json
+          if-no-files-found: error
+
+  # The suite on the platform we ship, for the same changes as windows-build.
+  windows-test:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: windows-latest
+    defaults:
+      run:
         shell: pwsh
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Run Tests
         run: fvm flutter test
+
+      - name: Test Native Convex Bridge
+        if: needs.changes.outputs.rust == 'true'
+        run: |
+          cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path third_party/convex_rs/Cargo.toml

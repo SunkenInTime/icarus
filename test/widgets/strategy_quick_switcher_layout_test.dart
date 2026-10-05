@@ -8,6 +8,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -79,11 +80,11 @@ void main() {
 class _OpenStrategyProvider extends StrategyProvider {
   @override
   StrategyState build() {
-    return StrategyState(
-      isSaved: true,
-      stratName: 'afeaf',
-      id: 'strategy-1',
-      storageDirectory: null,
+    return const StrategyState(
+      strategyId: 'strategy-1',
+      strategyName: 'afeaf',
+      source: StrategySource.local,
+      isOpen: true,
     );
   }
 }

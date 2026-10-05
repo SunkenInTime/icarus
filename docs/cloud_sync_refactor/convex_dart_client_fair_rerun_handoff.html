@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Rerun the Dart client gauntlet with the missing control</title>
+  <script>
+    /* Runs before first paint so the theme never flashes. Keep it in <head>. */
+    (() => {
+      /* ?theme=light|dark forces a theme — used for automated verification. */
+      const forced = new URLSearchParams(location.search).get("theme");
+      let stored = null;
+      try { stored = localStorage.getItem("blueprint-theme"); } catch {}
+      const system = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      document.documentElement.dataset.theme = forced || stored || system;
+    })();
+  </script>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+    /* ---- palette ----------------------------------------------------------
+       Dark is the default. The inline <head> script sets data-theme from
+       localStorage or the system preference before first paint; the light
+       block below is the only override. Never hardcode a hex outside here —
+       inline SVG included. ------------------------------------------------ */
+    :root {
+      color-scheme: dark;
+
+      /* background ramp, darkest to lightest: sunken · bg · tint · inset · hover · raised */
+      --bg-sunken: #000;
+      --bg: #050505;
+      --bg-tint: #0a0a09;
+      --bg-inset: #0d0d0d;
+      --bg-hover: #141414;
+      --bg-raised: #1b1b19;
+      --bg-translucent: rgba(5, 5, 5, .96);
+      --track: #111;
+
+      --fg: #d6d3cc;
+      --fg-strong: #f1efe8;
+      --fg-muted: #8b8983;
+      --fg-faint: #7a7872;
+
+      --line: #222;
+      --line-strong: #3d3d3d;
+
+      --accent: #7b96ff;
+      --ok: #6fcf8f;
+      --warn: #e8b866;
+      --danger: #ff7b72;
+
+      /* diagram series, ramping toward the accent */
+      --series-1: #44527f;
+      --series-2: #566ba9;
+      --series-3: #7b96ff;
+      --series-4: #817b9f;
+      --on-fill: #f1efe8;    /* label sitting on a series bar */
+      --on-accent: #050505;  /* label sitting on the accent bar */
+
+      /* theme-independent */
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      --hatch: repeating-linear-gradient(-45deg, transparent, transparent 8px, var(--line) 8px, var(--line) 9px);
+      --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    :root[data-theme="light"] {
+      color-scheme: light;
+
+      /* background ramp, lightest page to deepest surface — warm greige paper,
+         not white. Separation from #fff comes from lightness (~1.28:1), not
+         hue: subtle off-whites flatten to pure white on cool-white-point
+         external monitors, but a genuinely darker page survives any display.
+         Don't lighten it back toward #f4f1e9. */
+      --bg-sunken: #ddd6c8;
+      --bg: #e8e3d9;
+      --bg-tint: #e3ddd1;
+      --bg-inset: #dfd8ca;
+      --bg-hover: #d6cebc;
+      --bg-raised: #cdc4af;
+      --bg-translucent: rgba(232, 227, 217, .96);
+      --track: #dbd4c4;
+
+      --fg: #3d3b35;
+      --fg-strong: #14130f;
+      --fg-muted: #5c5a52;
+      --fg-faint: #67635a;
+
+      --line: #d0c9b8;
+      --line-strong: #a09a8a;
+
+      --accent: #3849b8;
+      --ok: #256a41;
+      --warn: #7d540d;
+      --danger: #a52f27;
+
+      --series-1: #6a739b;
+      --series-2: #4f5d9e;
+      --series-3: #3849b8;
+      --series-4: #6f6890;
+      --on-fill: #fff;
+      --on-accent: #fff;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scrollbar-width: none; }
+    html::-webkit-scrollbar { display: none; }
+    body { margin: 0; min-height: 100vh; overflow-x: clip; background: var(--bg); color: var(--fg); font: 400 1rem/1.75 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    a { color: inherit; }
+    button { color: inherit; font: inherit; }
+    :focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+
+    /* ---- ruled page grid: rail | content, hairlines run the full height ---- */
+    .page-grid { display: grid; grid-template-columns: minmax(1rem, 1fr) 13rem minmax(0, 56rem) minmax(1rem, 1fr); }
+    .topbar { position: relative; z-index: 20; border-bottom: 1px solid var(--line); background: var(--bg-translucent); }
+    .topbar-grid::before, .hatch-grid::before { content: ""; grid-area: 1 / 2; border-left: 1px solid var(--line); pointer-events: none; }
+    .topbar-row { grid-column: 3; min-height: 3rem; display: flex; align-items: stretch; justify-content: space-between; border-inline: 1px solid var(--line); }
+    .wordmark { display: inline-flex; align-items: center; gap: .55rem; padding: 0 1.75rem; color: var(--fg-strong); font: 600 .7rem/1 var(--mono); letter-spacing: .18em; text-decoration: none; }
+    .wordmark-mark { color: var(--accent); font-size: .8rem; }
+    .top-actions { display: flex; align-items: stretch; }
+    .top-action { display: inline-flex; align-items: center; padding: 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-decoration: none; }
+    .top-action:hover, .top-action:focus-visible { color: var(--fg-strong); background: var(--bg-hover); outline-offset: -1px; }
+    .hatch { height: 1.4rem; border-bottom: 1px solid var(--line); background: var(--hatch); }
+    .hatch-grid { height: 100%; }
+    .hatch-cell { grid-column: 3; height: 100%; border-inline: 1px solid var(--line); }
+    .body-grid { align-items: stretch; min-height: calc(100vh - 4.4rem); }
+
+    /* ---- sticky rail ---- */
+    .rail { grid-column: 2; min-width: 0; border-left: 1px solid var(--line); }
+    .rail-sticky { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; scrollbar-width: none; }
+    .rail-sticky::-webkit-scrollbar { display: none; }
+    .rail-block { padding: 1.1rem; border-bottom: 1px solid var(--line); }
+    .rail-label, .kicker { margin: 0 0 .75rem; color: var(--fg-faint); font: 400 .68rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    .outline-list { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+    .outline-link { margin-left: -1px; padding: .25rem 0 .25rem .75rem; border-left: 1px solid transparent; color: var(--fg-muted); font: 400 .75rem/1.45 var(--mono); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .outline-link[data-level="3"] { padding-left: 1.45rem; color: var(--fg-faint); }
+    .outline-link:hover, .outline-link.active { color: var(--fg-strong); border-left-color: var(--accent); }
+    .rail-text { margin: 0; color: var(--fg-muted); font-size: .8rem; line-height: 1.55; overflow-wrap: anywhere; }
+    .rail-text + .rail-text { margin-top: .45rem; }
+    .rail-metric { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; margin: 0; padding: .22rem 0; color: var(--fg-muted); font: 400 .66rem/1.5 var(--mono); }
+    .rail-metric span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .rail-metric + .rail-metric { border-top: 1px solid var(--line); }
+    .rail-metric b { color: var(--fg-strong); font-weight: 600; white-space: nowrap; }
+    .rail-metric b.good { color: var(--ok); }
+    .rail-metric b.bad { color: var(--danger); }
+    .rail-metric b.warn { color: var(--warn); }
+    .rail-artifact { display: flex; align-items: baseline; gap: .45rem; padding: .3rem 0; color: var(--fg-muted); font: 400 .68rem/1.5 var(--mono); text-decoration: none; }
+    .rail-artifact + .rail-artifact { border-top: 1px solid var(--line); }
+    .rail-artifact .ext { flex: none; padding: 0 .3rem; border: 1px solid var(--line-strong); color: var(--fg-faint); font-size: .56rem; letter-spacing: .1em; }
+    .rail-artifact .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .rail-artifact::after { content: "↓"; flex: none; color: var(--fg-faint); }
+    .rail-artifact:hover { color: var(--fg-strong); }
+    .rail-artifact:hover::after, .rail-artifact:hover .ext { color: var(--accent); border-color: var(--accent); }
+
+    /* ---- document flow: prose inside --pad, blocks bleed past it ---- */
+    .content { --pad: min(1.4rem, 5vw); grid-column: 3; min-width: 0; padding: 1.4rem var(--pad) 3rem; border-inline: 1px solid var(--line); }
+    .document-flow { min-width: 0; }
+    h1, h2, h3 { color: var(--fg-strong); font-family: var(--mono); text-wrap: pretty; scroll-margin-top: 5rem; }
+    h1 { margin: 0 calc(-1 * var(--pad)) 1.4rem; padding: 0 var(--pad) 1.4rem; border-bottom: 1px solid var(--line); font-size: clamp(1.35rem, 3vw, 1.5rem); font-weight: 600; line-height: 1.35; letter-spacing: -.02em; }
+    h2 { margin: 1.4rem calc(-1 * var(--pad)); padding: 0 var(--pad); font-size: 1.15rem; font-weight: 600; line-height: 1.4; letter-spacing: -.01em; }
+    h2::before { content: ""; display: block; height: 1.1rem; margin: 0 calc(-1 * var(--pad)) 1.4rem; border-block: 1px solid var(--line); background: var(--hatch); }
+    .document-flow > section:first-of-type h2::before { display: none; }
+    h3 { margin: 1.8rem 0 .7rem; font-size: 1rem; font-weight: 600; line-height: 1.45; }
+    /* Prose measure stays readable: paragraphs cap at ~72ch while tables,
+       charts, diffs, and pre keep the full column. Structural p's (titles,
+       colophon) span fully so their border rules reach the column lines. */
+    p, ul, ol, blockquote { max-width: 72ch; }
+    .diff-title, .diagram-title, .colophon, .source { max-width: none; }
+    p { margin: 1rem 0; text-wrap: pretty; }
+    .lede { color: var(--fg); font-size: 1.02rem; }
+    strong { color: var(--fg-strong); font-weight: 600; }
+    ul, ol { margin: .9rem 0; padding-left: 1.4rem; }
+    li { margin: .3rem 0; }
+    li::marker { color: var(--fg-faint); }
+    code, pre { font-family: var(--mono); }
+    code { padding: .1em .35em; border-radius: 2px; background: var(--bg-hover); color: var(--fg-strong); font-size: .85em; }
+    pre { margin: 1.4rem calc(-1 * var(--pad)); padding: 1rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); color: var(--fg); font-size: .82rem; line-height: 1.7; }
+    pre code { padding: 0; background: transparent; color: inherit; font-size: 1em; }
+    blockquote, .callout { margin: 1.2rem 0; padding: .1rem 0 .1rem 1rem; border-left: 2px solid var(--line-strong); color: var(--fg-muted); }
+    .callout { border-left-color: var(--accent); color: var(--fg); }
+
+    /* ---- tables ---- */
+    .table-wrap { margin: 1.4rem calc(-1 * var(--pad)); overflow-x: auto; border-block: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; background: var(--bg-tint); font-size: .85rem; }
+    tbody tr:hover { background: var(--bg-hover); }
+    th, td { padding: .55rem .7rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th:first-child, td:first-child { border-left: 0; padding-left: var(--pad); }
+    th:last-child, td:last-child { border-right: 0; padding-right: var(--pad); }
+    th { background: var(--bg-raised); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); white-space: nowrap; }
+
+    /* ---- diagrams ---- */
+    .diagram { margin: 1.4rem calc(-1 * var(--pad)); padding: 1.2rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); }
+    .diagram svg { display: block; width: 100%; min-width: 43rem; height: auto; font-family: var(--mono); }
+    .diagram-title { margin: 0 0 .35rem; color: var(--fg-strong); font: 500 .78rem/1.45 var(--mono); }
+    .diagram-note, .caption { margin: .35rem 0 0; color: var(--fg-muted); font-size: .78rem; line-height: 1.55; }
+    .source { margin: .35rem 0 0; color: var(--fg-faint); font: 400 .68rem/1.6 var(--mono); }
+    .table-wrap + .source, .diagram + .source, pre + .source { margin-top: -.9rem; margin-bottom: 1.4rem; }
+    .legend { display: flex; flex-wrap: wrap; gap: .45rem 1rem; margin: .8rem 0 0; color: var(--fg-muted); font: 400 .7rem/1.4 var(--mono); }
+    .legend span { display: inline-flex; align-items: center; gap: .38rem; }
+    .legend i { width: .65rem; height: .65rem; border-radius: 1px; background: var(--legend, var(--accent)); }
+
+    /* ---- chart hover ----
+       Any element inside .diagram carrying data-tip gets a hover highlight and
+       a fixed-position tooltip (the skeleton script positions #chart-tip). */
+    .diagram [data-tip] { cursor: help; }
+    .diagram [data-tip]:hover { filter: brightness(1.22); }
+    .diagram rect[data-guide]:hover { fill: var(--accent-soft); filter: none; }
+    .hover-guide line { stroke: var(--line-strong); stroke-dasharray: 3 3; }
+    .hover-guide circle { fill: var(--accent); stroke: var(--bg-inset); stroke-width: 1.5; }
+    .chart-tip { position: fixed; z-index: 60; max-width: 22rem; padding: .45rem .65rem; border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--fg-strong); font: 400 .68rem/1.55 var(--mono); white-space: pre-line; pointer-events: none; visibility: hidden; }
+
+    /* ---- headline metrics ---- */
+    .metric-line { display: flex; flex-wrap: wrap; gap: 0; margin: 1.35rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); }
+
+    /* ---- code diffs ----
+       Preferred: @pierre/diffs rendered into .diff-block (see SKILL.md).
+       Fallback when the doc must stay fully offline: pre.diff with one span
+       per line, classed add / del / hunk. */
+    .diff-block { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-inset); font-size: .8rem; }
+    .diff-block .diff-title { display: flex; align-items: center; gap: 1rem; margin: 0; padding: .55rem var(--pad); border-bottom: 1px solid var(--line); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); }
+    .diff-toggle { align-self: stretch; margin-left: auto; padding: 0 0 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    .diff-toggle:hover, .diff-toggle:focus-visible { color: var(--fg-strong); }
+    .diff-note { margin: 0; padding: .45rem var(--pad); border-block: 1px solid var(--line); background: var(--bg-tint); color: var(--fg-muted); font: 400 .72rem/1.55 var(--mono); }
+    .diff-note::before { content: "// "; color: var(--accent); }
+    .diff-block pre { margin: 0; border-block: 0; background: transparent; }
+    pre.diff span { display: block; margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad); }
+    pre.diff .add { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--fg-strong); }
+    pre.diff .del { background: color-mix(in srgb, var(--danger) 11%, transparent); color: var(--fg-muted); }
+    pre.diff .hunk { color: var(--accent); }
+    .metric { flex: 1 1 11rem; min-width: 0; padding: .8rem var(--pad); border-right: 1px solid var(--line); background: var(--bg-tint); }
+    .metric:hover { background: var(--bg-hover); }
+    .metric:last-child { border-right: 0; }
+    .metric-value { display: block; color: var(--fg-strong); font: 600 1.15rem/1.25 var(--mono); }
+    .metric-label { display: block; margin-top: .25rem; color: var(--fg-muted); font: 400 .68rem/1.45 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+
+    /* ---- verdict colors ---- */
+    .good { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--danger); }
+    .nowrap { white-space: nowrap; }
+
+    /* ---- numbers: digits align in columns and metrics ---- */
+    .metric-value, .rail-metric b, th, td { font-variant-numeric: tabular-nums; }
+
+    /* ---- status chips: uppercase mono state markers ---- */
+    .chip { display: inline-block; vertical-align: baseline; padding: .05rem .45rem; border: 1px solid var(--line-strong); color: var(--fg-muted); font: 500 .6rem/1.6 var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+    .chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+    .chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+    .chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+    .chip.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+    /* ---- appendix: collapsed raw evidence ---- */
+    details.appendix { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-tint); }
+    details.appendix > summary { padding: .6rem var(--pad); cursor: pointer; color: var(--fg-muted); font: 500 .68rem/1.5 var(--mono); letter-spacing: .14em; text-transform: uppercase; list-style: none; }
+    details.appendix > summary::-webkit-details-marker { display: none; }
+    details.appendix > summary::before { content: "+ "; color: var(--accent); }
+    details.appendix[open] > summary::before { content: "− "; }
+    details.appendix > summary:hover { background: var(--bg-hover); color: var(--fg-strong); }
+    details.appendix pre, details.appendix .table-wrap { margin: 0; border-block-end: 0; border-top: 1px solid var(--line); }
+    details.appendix p, details.appendix .source { margin: .6rem var(--pad) .9rem; }
+
+    /* ---- colophon: document provenance footer ---- */
+    .colophon { margin: 2.5rem calc(-1 * var(--pad)) 0; padding: .8rem var(--pad) 0; border-top: 1px solid var(--line); color: var(--fg-faint); font: 400 .68rem/1.7 var(--mono); }
+    .colophon a { color: var(--fg-muted); }
+
+    /* ---- heading anchors: hover a heading to grab its link ---- */
+    .anchor-link { margin-left: .55rem; color: var(--fg-faint); font-size: .8em; font-weight: 400; text-decoration: none; opacity: 0; }
+    h2:hover .anchor-link, h3:hover .anchor-link, .anchor-link:focus-visible { opacity: 1; }
+    .anchor-link:hover { color: var(--accent); }
+
+    .reading-progress { position: fixed; z-index: 50; inset: 0 0 0 auto; width: 4px; background: var(--track); pointer-events: none; }
+    .reading-progress-fill { width: 100%; height: 100%; transform: scaleY(0); transform-origin: top; background: var(--line-strong); }
+
+    @media (max-width: 1159px) {
+      .page-grid { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+      .rail { display: none; }
+      .topbar-row, .hatch-cell, .content { border-inline: 0; }
+    }
+    @media (max-width: 699px) {
+      .top-action[data-optional] { display: none; }
+      .wordmark { padding-inline: 1.25rem; }
+      .content { padding-top: 1.5rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+    @media print {
+      .topbar, .hatch, .rail, .reading-progress { display: none; }
+      .content { border-inline: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="reading-progress" aria-hidden="true"><div class="reading-progress-fill"></div></div>
+  <div class="chart-tip" id="chart-tip" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="page-grid topbar-grid">
+      <div class="topbar-row">
+        <!-- Wordmark: one glyph + one uppercase word naming the document class (PLAN, REPORT, SPEC, RFC). -->
+        <a class="wordmark" href="#top"><span class="wordmark-mark">◆</span> HANDOFF</a>
+        <nav class="top-actions" aria-label="Document actions">
+          <button class="top-action" type="button" id="toggle-theme" aria-live="polite">LIGHT</button>
+          <button class="top-action" type="button" id="copy-link">COPY LINK</button>
+          <a class="top-action" data-optional href="#top">TOP</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hatch" aria-hidden="true">
+    <div class="page-grid hatch-grid"><div class="hatch-cell"></div></div>
+  </div>
+
+  <div class="page-grid body-grid">
+    <aside class="rail" aria-label="Document rail">
+      <div class="rail-sticky">
+        <div class="rail-block" id="outline-block">
+          <p class="rail-label">Outline</p>
+          <nav class="outline-list" id="outline-list" aria-label="Document outline"></nav>
+        </div>
+        <div class="rail-block" id="rail-metrics-block" hidden>
+          <p class="rail-label">Key figures</p>
+          <div id="rail-metrics"></div>
+        </div>
+        <div class="rail-block" id="rail-artifacts-block" hidden>
+          <p class="rail-label">Artifacts</p>
+          <nav id="rail-artifacts" aria-label="Referenced artifacts"></nav>
+        </div>
+        <div class="rail-block">
+          <p class="rail-label">Document</p>
+          <p class="rail-text" id="rail-title"></p>
+          <p class="rail-text" id="rail-status"></p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content" id="document">
+      <article class="document-flow">
+        <p class="kicker">Icarus cloud · Ready to rerun · Decision reopened</p>
+        <h1 id="top">Rerun the Dart client gauntlet with the missing control</h1>
+        <p class="lede">The first gate found a real Dartvex strictness gap, but it did not settle Dartvex versus <code>convex_flutter</code>. Its result-field leg regenerated the same fixture, whose return contract was <code>null</code>, instead of testing an actual result rename. A diagnostic control with an explicit return schema did catch the rename at analysis time. The fair next step is to make the server contract explicit, add a thin fail-closed Icarus wrapper, and then run the same runtime faults against both clients.</p>
+
+        <section>
+          <h2 id="decision">Decision now</h2>
+
+          <div class="metric-line" aria-label="Key measurements">
+            <div class="metric"><span class="metric-value bad">1</span><span class="metric-label">missing result mutation</span></div>
+            <div class="metric"><span class="metric-value warn">0</span><span class="metric-label">runtime seeds completed</span></div>
+            <div class="metric"><span class="metric-value good">3</span><span class="metric-label">analyzer exit on real rename</span></div>
+            <div class="metric"><span class="metric-value">50</span><span class="metric-label">rerun seeds required</span></div>
+          </div>
+
+          <blockquote class="callout"><p><strong>No client winner yet.</strong> Keep the first gate as evidence that Dartvex 0.2.0 is not fail-closed by default. Reopen the runtime decision because neither client has completed the symmetric chaos test.</p></blockquote>
+
+          <p>The goal is still less JSON plumbing and stronger generated Dart APIs. The first run shows that Dartvex can supply useful function and argument types, but Icarus must enforce complete public return validators and reject degraded output. That compensation is small enough to test before writing a generator or forking another package.</p>
+        </section>
+
+        <section>
+          <h2 id="first-gate">What the first gate proved</h2>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Check</th><th>Observed</th><th>Meaning</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>Function rename</td><td>Old method failed analysis with exit 3</td><td>Generated function names protect callers</td><td><span class="chip ok">proved</span></td></tr>
+                <tr><td>Argument rename</td><td>Old named argument failed analysis with exit 3</td><td>Generated arguments protect callers</td><td><span class="chip ok">proved</span></td></tr>
+                <tr><td>Result-field rename</td><td>Baseline fixture regenerated; <code>returns</code> stayed <code>null</code></td><td>No result mutation was exercised</td><td><span class="chip bad">invalid leg</span></td></tr>
+                <tr><td>Missing return schema</td><td>Dartvex emitted <code>Future&lt;dynamic&gt;</code></td><td>Unspecified server output cannot become a typed Dart result</td><td><span class="chip warn">real gap</span></td></tr>
+                <tr><td>Unknown validator</td><td>Warning, exit 0, field degraded to <code>dynamic</code></td><td>Default generation is not fail-closed</td><td><span class="chip warn">real gap</span></td></tr>
+                <tr><td>Determinism</td><td>Second baseline generation produced no diff</td><td>Same input generated the same output</td><td><span class="chip ok">proved</span></td></tr>
+                <tr><td>Runtime chaos and profile</td><td>Skipped by the original stop rule</td><td>No correctness, latency, memory, reconnect, or auth comparison exists</td><td><span class="chip bad">not run</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Evidence: <a href="../../tool/convex_client_gauntlet/lib/contract_gate.dart">contract_gate.dart</a>, <a href="../../tool/convex_client_gauntlet/fixtures/folders_list_for_parent.json">baseline function spec</a>, <a href="../../tool/convex_client_gauntlet/results/contract_gate.json">contract_gate.json</a>, and <a href="convex_dart_client_gauntlet_result.md">the first result note</a>.</p>
+
+          <h3 id="fairness-failure">The exact fairness failure</h3>
+          <p>In <code>contract_gate.dart</code>, the result-field leg calls <code>generate('folders_list_for_parent.json')</code> again. The fixture contains <code>"returns": null</code>. The real <code>folders:listForParent</code> query also has no explicit <code>returns:</code> validator. The old caller therefore remained valid because there was no typed result contract to rename.</p>
+
+          <p>A diagnostic control supplied an explicit object return, generated the typed caller, then changed <code>publicId</code> to <code>folderPublicId</code>. Baseline analysis exited 0; analysis against the renamed result exited 3 with an undefined getter. That does not make Dartvex the winner. It proves the missing control can reverse the narrow conclusion about result-drift detection.</p>
+        </section>
+
+        <section>
+          <h2 id="architecture">The neutral test boundary</h2>
+
+          <div class="diagram" role="img" aria-label="The fair rerun flows an explicit Convex contract through a strict generation gate, then compares Dartvex and convex_flutter behind the same Icarus transport boundary and verifies both against one deployment.">
+            <p class="diagram-title">One Icarus contract · two replaceable client adapters · one verifier</p>
+            <svg viewBox="0 0 760 278" aria-hidden="true">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--line-strong)"/></marker>
+              </defs>
+              <rect x="18" y="22" width="156" height="48" rx="3" fill="var(--series-1)" data-tip="Public Convex functions must declare explicit args and returns validators."/>
+              <text x="96" y="42" fill="var(--on-fill)" font-size="10" text-anchor="middle">explicit Convex</text><text x="96" y="57" fill="var(--on-fill)" font-size="10" text-anchor="middle">args + returns</text>
+              <line x1="174" y1="46" x2="215" y2="46" stroke="var(--line-strong)" marker-end="url(#arrow)"/>
+              <rect x="216" y="22" width="156" height="48" rx="3" fill="var(--series-2)" data-tip="The scrubbed function spec is committed as deterministic test input."/>
+              <text x="294" y="42" fill="var(--on-fill)" font-size="10" text-anchor="middle">scrubbed function spec</text><text x="294" y="57" fill="var(--on-fill)" font-size="10" text-anchor="middle">deterministic fixture</text>
+              <line x1="372" y1="46" x2="413" y2="46" stroke="var(--line-strong)" marker-end="url(#arrow)"/>
+              <rect x="414" y="22" width="156" height="48" rx="3" fill="var(--series-3)" data-tip="Generation must fail on warnings, unsupported validators, or unexpected dynamic in stable modules."/>
+              <text x="492" y="42" fill="var(--on-accent)" font-size="10" text-anchor="middle">Icarus strict gate</text><text x="492" y="57" fill="var(--on-accent)" font-size="10" text-anchor="middle">warnings + dynamic fail</text>
+              <line x1="570" y1="46" x2="611" y2="46" stroke="var(--line-strong)" marker-end="url(#arrow)"/>
+              <rect x="612" y="22" width="130" height="48" rx="3" fill="var(--series-4)" data-tip="The app sees one typed interface. Package-specific shapes stay behind adapters."/>
+              <text x="677" y="42" fill="var(--on-fill)" font-size="10" text-anchor="middle">neutral typed</text><text x="677" y="57" fill="var(--on-fill)" font-size="10" text-anchor="middle">Icarus API</text>
+
+              <line x1="677" y1="70" x2="677" y2="98" stroke="var(--line-strong)"/>
+              <line x1="677" y1="98" x2="300" y2="98" stroke="var(--line-strong)"/>
+              <line x1="300" y1="98" x2="300" y2="118" stroke="var(--line-strong)" marker-end="url(#arrow)"/>
+              <line x1="677" y1="98" x2="560" y2="98" stroke="var(--line-strong)"/>
+              <line x1="560" y1="98" x2="560" y2="118" stroke="var(--line-strong)" marker-end="url(#arrow)"/>
+              <rect x="218" y="120" width="164" height="48" rx="3" fill="var(--series-3)" data-tip="Dartvex gets generated types plus the Icarus strict gate. No package fork is allowed in this phase."/>
+              <text x="300" y="140" fill="var(--on-accent)" font-size="10" text-anchor="middle">Dartvex adapter</text><text x="300" y="155" fill="var(--on-accent)" font-size="10" text-anchor="middle">generated boundary</text>
+              <rect x="478" y="120" width="164" height="48" rx="3" fill="var(--series-2)" data-tip="convex_flutter keeps its JSON transport but must expose the same typed neutral interface to the runner."/>
+              <text x="560" y="140" fill="var(--on-fill)" font-size="10" text-anchor="middle">convex_flutter adapter</text><text x="560" y="155" fill="var(--on-fill)" font-size="10" text-anchor="middle">typed Icarus wrapper</text>
+              <line x1="300" y1="168" x2="300" y2="196" stroke="var(--line-strong)"/>
+              <line x1="560" y1="168" x2="560" y2="196" stroke="var(--line-strong)"/>
+              <line x1="300" y1="196" x2="430" y2="196" stroke="var(--line-strong)"/>
+              <line x1="560" y1="196" x2="430" y2="196" stroke="var(--line-strong)"/>
+              <line x1="430" y1="196" x2="430" y2="216" stroke="var(--line-strong)" marker-end="url(#arrow)"/>
+              <rect x="326" y="218" width="208" height="42" rx="3" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Both candidates hit the same deployment, same accounts, same operation trace, and same clean verifier."/>
+              <text x="430" y="243" fill="var(--fg-strong)" font-size="10" text-anchor="middle">same deployment + clean verifier</text>
+            </svg>
+            <div class="legend">
+              <span><i style="--legend:var(--series-1)"></i>server contract</span>
+              <span><i style="--legend:var(--series-3)"></i>strict generated path</span>
+              <span><i style="--legend:var(--series-2)"></i>existing package path</span>
+              <span><i style="--legend:var(--bg-raised)"></i>shared Icarus proof</span>
+            </div>
+          </div>
+
+          <p>Icarus continues to own the outbox, <code>clientId</code>/<code>opId</code> identity, revision and conflict rules, canonical JSON, and <code>.ica</code> round-trip. A client package is transport and tooling, not the owner of those promises. This is also why adopting either package unchanged would be the wrong abstraction boundary.</p>
+          <p class="source">Before touching server sync boundaries, read <a href="server_side_sync_boundaries_handoff.md">server_side_sync_boundaries_handoff.md</a>.</p>
+        </section>
+
+        <section>
+          <h2 id="rerun-plan">Fair rerun plan</h2>
+
+          <h3 id="phase-1">Phase 1: repair the contract gate</h3>
+          <ol>
+            <li>Add explicit <code>returns:</code> validators to the stable public Convex functions used by the comparison. Match the real payload exactly; do not create a test-only fantasy type.</li>
+            <li>Regenerate a scrubbed baseline fixture and add a separate result-renamed fixture where <code>publicId</code> becomes <code>folderPublicId</code>.</li>
+            <li>Compile the unchanged caller against both. Baseline must exit 0. The renamed fixture must exit nonzero and identify the old getter.</li>
+            <li>Add an Icarus-owned wrapper around Dartvex generation. It fails if generation logs <code>Warning:</code>, if a stable public module contains unexpected <code>dynamic</code>, or if the generator exits nonzero.</li>
+            <li>Keep the unknown-validator mutation. It must fail the wrapper with the function and field path.</li>
+            <li>Run generation twice and require a clean repository diff.</li>
+          </ol>
+          <blockquote><p><strong>Boundary:</strong> do not fork Dartvex or write a replacement generator in this phase. First prove whether explicit server schemas plus a thin strict wrapper deliver the typed API we want.</p></blockquote>
+
+          <h3 id="phase-2">Phase 2: make the runtime comparison symmetric</h3>
+          <p>Define one small typed Icarus transport interface for the operations used by the gauntlet. Implement it once with Dartvex and once with <code>convex_flutter</code>. Both adapters must receive the same serialized operations, tokens, reconnect schedule, timeouts, and deployment. Package-specific convenience APIs cannot change the workload.</p>
+          <p>Keep two scorecards. The tooling score covers generated coverage, compile-time mutation catches, determinism, warnings, diff size, and maintenance. The runtime score covers correctness, convergence, recovery, latency, CPU, memory, and platform builds. A tooling loss cannot masquerade as a runtime loss, and a fast runtime cannot excuse corrupted library state.</p>
+
+          <h3 id="phase-3">Phase 3: run correctness before performance</h3>
+          <ul>
+            <li>Run <strong>50 deterministic seeds × 1,000 operations</strong> for each adapter.</li>
+            <li>Use editors A and B plus a clean verifier C. Begin every seed from <a href="../../test/fixtures/strategy_integrity/base-test-v43.ica">base-test-v43.ica</a>.</li>
+            <li>Exercise offline edits, delayed and duplicated delivery, reconnect, subscription restart, delete/recreate, revision conflict, and bounded retries.</li>
+            <li>Exercise an expired or rejected access token, call the current Supabase Flutter <code>refreshSession()</code> path, reconnect, and prove the queued op lands exactly once.</li>
+            <li>Persist the runner ledger and reuse identical <code>clientId</code>/<code>opId</code> values for both adapters so a process restart does not give one client an easier test.</li>
+            <li>After every seed, verifier C exports canonical state. Compare strategies, pages, folders, lineups, order, revisions, and round-trip output. Never compare timestamps or transport-only metadata that the product does not promise.</li>
+          </ul>
+          <p>Use disposable test accounts and publishable client credentials. Never put a Supabase secret or <code>service_role</code> key in Flutter, fixtures, committed output, or logs. The current <a href="https://supabase.com/docs/reference/dart/auth-refreshsession">Supabase Dart API documents <code>refreshSession()</code></a> as refreshing and returning a new session even when the current session is not expired; the fault injector should assert the session actually changes or is accepted before replaying the op.</p>
+
+          <h3 id="phase-4">Phase 4: profile only after both are correct</h3>
+          <p>Run at least 10 paired profile-build trials, alternating which adapter runs first. Report median and p95 remote convergence, reconnect-to-live time, peak RSS, steady-state CPU, transferred bytes, and build size on every supported desktop target. Record raw samples, tool versions, machine state, commit, and deployment identity.</p>
+        </section>
+
+        <section>
+          <h2 id="win-conditions">What settles the gauntlet</h2>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Condition</th><th>Dartvex consequence</th><th>convex_flutter consequence</th></tr></thead>
+              <tbody>
+                <tr><td>Any dropped, duplicated, misordered, or silently conflicted library change</td><td colspan="2" class="bad">Immediate loss, regardless of speed</td></tr>
+                <tr><td>Cannot recover queued work after auth refresh or reconnect</td><td colspan="2" class="bad">Immediate loss</td></tr>
+                <tr><td>Generated stable API contains unexpected <code>dynamic</code></td><td class="bad">Loss unless the thin strict gate rejects it before commit</td><td>Not a generated-code criterion</td></tr>
+                <tr><td>Both complete all 50 seeds with canonical equality</td><td colspan="2">Compare profile results, API clarity, adapter size, dependency health, and maintenance cost</td></tr>
+                <tr><td>Runtime is tied within measurement noise</td><td class="good">Wins if the generated boundary materially removes JSON plumbing</td><td class="good">Wins if Dartvex still needs broad custom generation or fragile patches</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>The expected best outcome is not “Dartvex untouched.” It is Dartvex plus a narrow Icarus strictness policy. If that produces complete, deterministic types and passes the same runtime gauntlet, Dartvex earns the win because it moves contract failures into analysis and removes hand-written JSON decoding. If the compensation grows into a package fork, a second generator, or recurring patches for common Convex validators, <code>convex_flutter</code> remains the more honest base.</p>
+        </section>
+
+        <section>
+          <h2 id="remote-handoff">Remote machine handoff</h2>
+
+          <h3 id="start-here">Start here</h3>
+          <ol>
+            <li>Check out <code>t3code/convex-client-gauntlet</code> and pull the latest commit.</li>
+            <li>Read this handoff, the first <a href="convex_dart_client_gauntlet_result.md">result note</a>, and the <a href="server_side_sync_boundaries_handoff.md">server sync boundary handoff</a>.</li>
+            <li>Reproduce the committed first gate before changing fixtures.</li>
+            <li>Implement Phase 1 as a distinct commit. Do not begin runtime work until every repaired contract check is green.</li>
+            <li>Implement the neutral interface and two adapters without changing local Hive models, <code>.ica</code>, UI, outbox semantics, revision rules, or server payload semantics.</li>
+            <li>Run correctness, then profile. Commit raw machine-readable results and a short human verdict. Leave the old result file intact as historical evidence.</li>
+          </ol>
+
+          <h3 id="current-commands">Current commands that exist</h3>
+          <pre><code>git switch t3code/convex-client-gauntlet
+git pull --ff-only
+
+cd tool/convex_client_gauntlet
+fvm dart pub get
+fvm dart run bin/run.dart
+fvm dart test
+fvm dart analyze
+
+cd ../..
+npx tsc --noEmit
+npm run test:convex
+fvm flutter test
+fvm flutter analyze --no-fatal-infos
+fvm flutter build web --no-tree-shake-icons</code></pre>
+          <p class="caption">These reproduce the committed first gate and repository baseline. Add named contract-v2, runtime, and profile entry points as part of the rerun; document their exact commands beside the resulting artifacts rather than pretending they already exist.</p>
+
+          <h3 id="required-artifacts">Required artifacts from the rerun</h3>
+          <ul>
+            <li>Explicit-return baseline and actual result-renamed fixtures.</li>
+            <li>A strict wrapper test proving warnings and unexpected <code>dynamic</code> fail with a useful path.</li>
+            <li>Generated-output snapshots or hashes proving determinism.</li>
+            <li>Per-seed runtime JSON for both adapters, including fault schedule and canonical verifier hash.</li>
+            <li>Paired profile samples with run order, machine, build mode, and package versions.</li>
+            <li>A final matrix that distinguishes compile-time safety, runtime correctness, performance, and maintenance.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 id="verification">Acceptance checklist</h2>
+          <ul>
+            <li>The result rename mutates a return field, not the function name, argument, caller, or baseline fixture.</li>
+            <li>The stable public Convex functions in scope have explicit return validators that match real payloads.</li>
+            <li>Dartvex baseline generation is warning-free and contains no unexpected <code>dynamic</code>.</li>
+            <li>The unchanged caller fails analysis for function, argument, and result renames.</li>
+            <li>Unsupported validators fail before generated code can be committed.</li>
+            <li>Both adapters receive byte-for-byte equivalent operation traces and fault schedules.</li>
+            <li>All 50 seeds end with exact canonical equality and no unresolved op.</li>
+            <li>Auth refresh is performed with the client session only; no elevated credential appears anywhere.</li>
+            <li>All exported strategies and library backups still round-trip.</li>
+            <li>No winner is declared from the tooling gate alone.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 id="appendix">Appendix</h2>
+          <details class="appendix">
+            <summary>Raw fairness evidence · first gate and diagnostic control</summary>
+            <pre><code>Committed first gate
+  result-field step: generate('folders_list_for_parent.json')
+  baseline fixture: "returns": null
+  runtime seeds: 0
+
+Diagnostic missing control
+  explicit typed baseline analysis: exit 0
+  publicId -&gt; folderPublicId analysis: exit 3
+  failure: undefined getter on the unchanged caller
+
+Correct interpretation
+  Dartvex 0.2.0 is not fail-closed by default.
+  The original test did not compare runtime clients.
+  A complete result schema lets the generated caller catch result drift.</code></pre>
+            <p class="source">Captured 2026-08-26 against branch base <code>df9f1934bbc7ab71e144208036f385b8f73c77aa</code>. The diagnostic fixture was intentionally not committed; the fair implementation must add a reviewed equivalent.</p>
+          </details>
+        </section>
+
+        <p class="colophon">Generated 2026-08-26 · Icarus cloud client evaluation · base df9f193 · Dartvex 0.2.0 · convex_flutter 3.0.1 · Supabase Flutter auth guidance checked 2026-08-26 · revision v1</p>
+      </article>
+    </main>
+  </div>
+
+  <script>
+    const title = document.querySelector("h1");
+    const status = document.querySelector(".kicker");
+    document.title = title?.textContent || "Document";
+    document.getElementById("rail-title").textContent = title?.textContent || "Document";
+    document.getElementById("rail-status").textContent = status?.textContent || "";
+
+    const themeButton = document.getElementById("toggle-theme");
+    const paintTheme = () => {
+      const light = document.documentElement.dataset.theme === "light";
+      themeButton.textContent = light ? "DARK" : "LIGHT";
+      themeButton.setAttribute("aria-label", `Switch to ${light ? "dark" : "light"} theme`);
+    };
+    paintTheme();
+    themeButton.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("blueprint-theme", next); } catch {}
+      paintTheme();
+    });
+
+    /* The rail earns its width: mirror the headline metrics so key figures
+       stay visible while scrolling, and drop the outline when the document
+       is too short for it to help. */
+    const railMetrics = document.getElementById("rail-metrics");
+    const firstMetrics = [...document.querySelectorAll("#document .metric-line .metric")].slice(0, 4);
+    firstMetrics.forEach((metric) => {
+      const value = metric.querySelector(".metric-value");
+      const label = metric.querySelector(".metric-label");
+      if (!value || !label) return;
+      const row = document.createElement("p");
+      row.className = "rail-metric";
+      const name = document.createElement("span");
+      name.textContent = label.textContent;
+      const figure = document.createElement("b");
+      figure.textContent = value.textContent;
+      for (const verdict of ["good", "warn", "bad"]) {
+        if (value.classList.contains(verdict)) figure.classList.add(verdict);
+      }
+      row.append(name, figure);
+      railMetrics.appendChild(row);
+    });
+    document.getElementById("rail-metrics-block").hidden = !railMetrics.childElementCount;
+
+    /* Artifacts: every file the document references, collected into rail
+       download links. Links and images are picked up automatically by
+       extension; force-include anything else with data-artifact (empty on
+       an <a> to use its href, or data-artifact="url" on any element).
+       Override the display name with data-artifact-name. */
+    const railArtifacts = document.getElementById("rail-artifacts");
+    const ARTIFACT_EXT = /\.(zip|tar|tar\.gz|tgz|gz|7z|csv|tsv|json|jsonl|ndjson|parquet|xlsx|pdf|png|jpe?g|gif|svg|webp|mp4|txt|log|sql|patch|diff|ipynb|js|ts|sh|py|ya?ml|toml|md)(?=$|[?#])/i;
+    const seenArtifacts = new Set();
+    document.querySelectorAll("#document a[href], #document img[src], #document [data-artifact]").forEach((el) => {
+      const url = el.dataset?.artifact || el.getAttribute("href") || el.getAttribute("src") || "";
+      if (!url || url.startsWith("#") || url.startsWith("data:") || url.startsWith("javascript:")) return;
+      if (!el.hasAttribute("data-artifact") && !ARTIFACT_EXT.test(url)) return;
+      if (seenArtifacts.has(url)) return;
+      seenArtifacts.add(url);
+      const name = el.dataset.artifactName
+        || decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() || url);
+      const ext = (name.match(/\.([a-z0-9]+)$/i)?.[1] || "file").toUpperCase();
+      const row = document.createElement("a");
+      row.className = "rail-artifact";
+      row.href = url;
+      row.setAttribute("download", "");
+      const tag = document.createElement("span");
+      tag.className = "ext";
+      tag.textContent = ext;
+      const label = document.createElement("span");
+      label.className = "name";
+      label.textContent = name;
+      row.append(tag, label);
+      railArtifacts.appendChild(row);
+    });
+    document.getElementById("rail-artifacts-block").hidden = !railArtifacts.childElementCount;
+
+    const outline = document.getElementById("outline-list");
+    const headings = [...document.querySelectorAll("#document h2[id], #document h3[id]")];
+    if (headings.length < 3) document.getElementById("outline-block").hidden = true;
+    const links = headings.map((heading) => {
+      const link = document.createElement("a");
+      link.className = "outline-link";
+      link.href = `#${heading.id}`;
+      link.textContent = heading.textContent;
+      link.dataset.level = heading.tagName.slice(1);
+      outline.appendChild(link);
+
+      /* hover anchor: click navigates and copies the absolute link */
+      const anchor = document.createElement("a");
+      anchor.className = "anchor-link";
+      anchor.href = `#${heading.id}`;
+      anchor.textContent = "§";
+      anchor.setAttribute("aria-label", `Copy link to ${heading.textContent}`);
+      anchor.addEventListener("click", () => {
+        const url = `${location.origin}${location.pathname}#${heading.id}`;
+        try { navigator.clipboard.writeText(url); } catch {}
+      });
+      heading.appendChild(anchor);
+      return link;
+    });
+
+    /* Chart tooltips: any [data-tip] inside a .diagram shows its text in a
+       fixed tooltip that follows the pointer. Newlines in data-tip render
+       as line breaks (white-space: pre-line). */
+    const chartTip = document.getElementById("chart-tip");
+    /* Line indicator: a hit rect carrying data-guide (the series' y at that
+       interval, in viewBox units; space-separate several ys for several
+       series) gets a dashed vertical guide plus a dot per y on hover.
+       data-guide-fill="var(--danger)" colors the dots; default accent. */
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const hideGuides = () => document.querySelectorAll(".hover-guide").forEach((g) => g.setAttribute("visibility", "hidden"));
+    const showGuide = (mark) => {
+      const svg = mark.ownerSVGElement;
+      if (!svg || mark.dataset.guide === undefined || mark.tagName !== "rect") return;
+      let guide = svg.querySelector(".hover-guide");
+      if (!guide) {
+        guide = document.createElementNS(SVG_NS, "g");
+        guide.setAttribute("class", "hover-guide");
+        guide.setAttribute("pointer-events", "none");
+        guide.appendChild(document.createElementNS(SVG_NS, "line"));
+        svg.appendChild(guide);
+      }
+      const x = mark.dataset.guideX !== undefined
+        ? +mark.dataset.guideX
+        : +mark.getAttribute("x") + +mark.getAttribute("width") / 2;
+      const line = guide.querySelector("line");
+      line.setAttribute("x1", x);
+      line.setAttribute("x2", x);
+      line.setAttribute("y1", mark.getAttribute("y"));
+      line.setAttribute("y2", +mark.getAttribute("y") + +mark.getAttribute("height"));
+      guide.querySelectorAll("circle").forEach((dot) => dot.remove());
+      mark.dataset.guide.trim().split(/\s+/).filter(Boolean).forEach((cy) => {
+        const dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", cy);
+        dot.setAttribute("r", 3);
+        if (mark.dataset.guideFill) dot.style.fill = mark.dataset.guideFill;
+        guide.appendChild(dot);
+      });
+      guide.setAttribute("visibility", "visible");
+    };
+    const moveTip = (event) => {
+      const mark = event.target.closest("[data-tip]");
+      hideGuides();
+      if (!mark) { chartTip.style.visibility = "hidden"; return; }
+      chartTip.textContent = mark.dataset.tip;
+      chartTip.style.visibility = "visible";
+      const x = Math.min(event.clientX + 14, innerWidth - chartTip.offsetWidth - 8);
+      const y = Math.min(event.clientY + 14, innerHeight - chartTip.offsetHeight - 8);
+      chartTip.style.left = `${x}px`;
+      chartTip.style.top = `${y}px`;
+      showGuide(mark);
+    };
+    document.querySelectorAll(".diagram").forEach((diagram) => {
+      diagram.addEventListener("mousemove", moveTip);
+      diagram.addEventListener("mouseleave", () => { chartTip.style.visibility = "hidden"; hideGuides(); });
+    });
+
+    const progress = document.querySelector(".reading-progress-fill");
+    const updateProgress = () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const ratio = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+      progress.style.transform = `scaleY(${ratio})`;
+    };
+
+    const activateOutline = () => {
+      if (!headings.length) return;
+      const current = headings.reduce((active, heading) =>
+        heading.getBoundingClientRect().top <= 120 ? heading : active, headings[0]);
+      links.forEach((link) => link.classList.toggle("active", link.hash === `#${current.id}`));
+    };
+
+    const updateScrollState = () => {
+      updateProgress();
+      activateOutline();
+    };
+    addEventListener("scroll", updateScrollState, { passive: true });
+    addEventListener("resize", updateProgress, { passive: true });
+    updateScrollState();
+
+    document.getElementById("copy-link").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(location.href);
+        button.textContent = "COPIED";
+      } catch {
+        button.textContent = "COPY FAILED";
+      }
+      setTimeout(() => { button.textContent = "COPY LINK"; }, 1400);
+    });
+  </script>
+</body>
+</html>

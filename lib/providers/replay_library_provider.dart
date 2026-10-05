@@ -2,13 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/replay/replay_decoder.dart';
 import 'package:icarus/replay/replay_files.dart';
 
-/// Which collection the library screen shows.
-enum LibraryTab { strategies, replays }
-
-final libraryTabProvider = StateProvider<LibraryTab>(
-  (ref) => LibraryTab.strategies,
-);
-
 final replayFilesProvider = Provider<ReplayFiles>((ref) => ReplayFiles());
 
 /// One replay in the Replays tab: its file and what its header says.
@@ -33,7 +26,8 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   /// What each file's header said, by file cache key, so a refresh only
   /// probes files it hasn't seen. The listing itself is rebuilt each time
   /// from the file as it is now.
-  final _probes = <String, ({ReplayProbe? probe, ReplayDecodeException? error})>{};
+  final _probes =
+      <String, ({ReplayProbe? probe, ReplayDecodeException? error})>{};
 
   @override
   Future<List<ReplayListing>> build() => _load();

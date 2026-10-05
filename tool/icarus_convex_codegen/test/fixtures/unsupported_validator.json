@@ -1,0 +1,11 @@
+{
+  "functions": [
+    {
+      "args": { "type": "object", "value": { "future": { "fieldType": { "type": "future-validator" }, "optional": false } } },
+      "functionType": "Query",
+      "identifier": "fixture.js:unsupported",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

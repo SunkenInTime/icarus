@@ -217,12 +217,10 @@ class _PlacedDeadlockBarrierMeshWidgetState
                 final shouldDuplicate =
                     !widget.isLineUp && ref.read(duplicateDragModifierProvider);
                 final duplicateId = shouldDuplicate
-                    ? ref
-                          .read(abilityProvider.notifier)
-                          .duplicateAbilityAt(
-                            sourceId: abilityRef.id,
-                            position: abilityRef.position,
-                          )
+                    ? ref.read(abilityProvider.notifier).duplicateAbilityAt(
+                          sourceId: abilityRef.id,
+                          position: abilityRef.position,
+                        )
                     : null;
                 setState(() {
                   _isDragging = true;
@@ -555,8 +553,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
       _activeArm = arm;
       _hoveredArm = arm;
       _resizeStartArmLengthsMeters = List<double>.from(currentArmLengths);
-      _armDragOffsetMeters =
-          currentArmLengths[arm.index] -
+      _armDragOffsetMeters = currentArmLengths[arm.index] -
           _estimateArmLengthMeters(globalPosition, arm, mapScale, abilitySize);
     });
     _animationController.forward();

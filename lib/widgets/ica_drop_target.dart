@@ -2,7 +2,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -96,9 +96,10 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
           });
         }
         try {
-          final result = await ref
-              .read(strategyProvider.notifier)
-              .loadFromFileDrop(details.files);
+          final result =
+              await StrategyImportExportService(ref).loadFromFileDrop(
+            details.files,
+          );
 
           if (result.hasImports || result.issues.isNotEmpty) {
             final message = buildImportSummaryMessage(result);

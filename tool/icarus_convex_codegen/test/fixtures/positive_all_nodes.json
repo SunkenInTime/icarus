@@ -1,0 +1,33 @@
+{
+  "functions": [
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "arrayValue": { "fieldType": { "type": "array", "value": { "type": "string" } }, "optional": false },
+          "bigintValue": { "fieldType": { "type": "bigint" }, "optional": false },
+          "booleanValue": { "fieldType": { "type": "boolean" }, "optional": false },
+          "bytesValue": { "fieldType": { "type": "bytes" }, "optional": false },
+          "literalValue": { "fieldType": { "type": "literal", "value": "fixed" }, "optional": false },
+          "nullValue": { "fieldType": { "type": "null" }, "optional": false },
+          "numberValue": { "fieldType": { "type": "number" }, "optional": false },
+          "objectValue": { "fieldType": { "type": "object", "value": { "name": { "fieldType": { "type": "string" }, "optional": false } } }, "optional": false },
+          "optionalValue": { "fieldType": { "type": "string" }, "optional": true },
+          "recordValue": { "fieldType": { "type": "record", "keys": { "type": "string" }, "values": { "fieldType": { "type": "number" }, "optional": false } }, "optional": false },
+          "stringValue": { "fieldType": { "type": "string" }, "optional": false },
+          "unionValue": { "fieldType": { "type": "union", "value": [ { "type": "literal", "value": "first" }, { "type": "literal", "value": "second" } ] }, "optional": false }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "fixture.js:allNodes",
+      "returns": {
+        "type": "union",
+        "value": [
+          { "type": "object", "value": { "kind": { "fieldType": { "type": "literal", "value": "ready" }, "optional": false }, "value": { "fieldType": { "type": "string" }, "optional": false } } },
+          { "type": "object", "value": { "kind": { "fieldType": { "type": "literal", "value": "waiting" }, "optional": false }, "remaining": { "fieldType": { "type": "number" }, "optional": false } } }
+        ]
+      },
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

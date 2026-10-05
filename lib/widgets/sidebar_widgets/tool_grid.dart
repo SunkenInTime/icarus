@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -14,6 +13,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -23,6 +23,8 @@ import 'package:icarus/widgets/sidebar_widgets/custom_shape_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/text_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
@@ -192,6 +194,12 @@ class ToolGrid extends ConsumerWidget {
                 builder: (context) => const Text("Add Image"),
                 child: ShadIconButton.secondary(
                   onPressed: () async {
+                    if (!ensureFeatureAvailable(
+                      ref,
+                      PlatformFeature.addImages,
+                    )) {
+                      return;
+                    }
                     ref
                         .read(interactionStateProvider.notifier)
                         .update(InteractionState.navigation);
@@ -214,19 +222,10 @@ class ToolGrid extends ConsumerWidget {
                       return;
                     }
 
-                    if (kIsWeb) {
-                      Settings.showToast(
-                        message:
-                            'This feature is only supported in the Windows version.',
-                        backgroundColor:
-                            Settings.tacticalVioletTheme.destructive,
-                      );
-                      return;
-                    }
-
                     final aspectRatio = await ref
                         .read(placedImageProvider.notifier)
                         .getImageAspectRatio(imageBytes);
+                    final strategyState = ref.read(strategyProvider);
                     final placementCenter = ref.read(placementCenterProvider);
                     final imageHeight = _defaultImageSpawnWidth / aspectRatio;
                     final centeredTopLeft =
@@ -238,6 +237,8 @@ class ToolGrid extends ConsumerWidget {
 
                     ref.read(placedImageProvider.notifier).addImage(
                           imageBytes: imageBytes,
+                          strategyId: strategyState.strategyId,
+                          strategySource: strategyState.source,
                           fileExtension: fileExtension,
                           aspectRatio: aspectRatio,
                           position: centeredTopLeft,
@@ -251,12 +252,10 @@ class ToolGrid extends ConsumerWidget {
                 tooltip: "Add Lineup",
                 shortcutLabel: shortcutLabel(IcarusShortcutAction.addLineup),
                 onPressed: () async {
-                  if (kIsWeb) {
-                    Settings.showToast(
-                      message:
-                          'This feature is only supported in the Windows version.',
-                      backgroundColor: Settings.tacticalVioletTheme.destructive,
-                    );
+                  if (!ensureFeatureAvailable(
+                    ref,
+                    PlatformFeature.addLineups,
+                  )) {
                     return;
                   }
 

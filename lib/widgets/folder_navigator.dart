@@ -1,29 +1,33 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/replay_library_provider.dart';
-import 'package:icarus/const/maps.dart';
+import 'package:icarus/providers/library_navigation_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
-import 'package:icarus/widgets/demo_dialog.dart';
-import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
+import 'package:icarus/widgets/cloud_outbox_summary_banner.dart';
+import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
-import 'package:icarus/widgets/replay/replay_library_content.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderNavigator extends ConsumerStatefulWidget {
@@ -40,6 +44,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   final ShadContextMenuController _backgroundMenuController =
       ShadContextMenuController();
 
+  bool get _isWindowsDesktop =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
   @override
   void dispose() {
     _backgroundMenuController.dispose();
@@ -50,21 +57,23 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   void initState() {
     super.initState();
 
-    // Show the demo warning only once after the first frame on web.
+    // Warn about a missing WebView only once, after the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _followCloudAvailability(ref.read(isCloudWorkspaceAvailableProvider));
       if (!_warnedOnce) {
         _warnedOnce = true;
 
         _warnWebView();
-
-        _warnDemo();
       }
     });
   }
 
   void _warnWebView() async {
     if (kIsWeb) return;
-    if (!Platform.isWindows) return;
+    if (!_isWindowsDesktop) return;
+    await warmUpWebViewEnvironment();
+    if (!mounted) return;
     if (isWebViewInitialized) return;
     await showShadDialog<void>(
       context: context,
@@ -74,30 +83,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     );
   }
 
-  void _warnDemo() async {
-    if (!kIsWeb) return;
-    await showShadDialog<void>(
-      context: context,
-      builder: (context) {
-        return const DemoDialog();
-      },
-    );
-  }
-
-  void _showDesktopOnlyToast() {
-    Settings.showToast(
-      message: 'This feature is only supported in the Windows version.',
-      backgroundColor: Settings.tacticalVioletTheme.destructive,
-    );
-  }
-
   Future<void> handleImportIca() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
     try {
-      await ref.read(strategyProvider.notifier).loadFromFilePicker();
+      await StrategyImportExportService(ref).loadFromFilePicker();
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,
@@ -116,14 +105,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 
   Future<void> handleImportBackup() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
     try {
-      final result = await ref
-          .read(strategyProvider.notifier)
-          .importBackupFromFilePicker();
+      final result =
+          await StrategyImportExportService(ref).importBackupFromFilePicker();
       if (result.hasImports || result.issues.isNotEmpty) {
         final message = buildImportSummaryMessage(result);
         if (result.hasImports) {
@@ -155,12 +140,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 
   Future<void> handleExportLibrary() async {
-    if (kIsWeb) {
-      _showDesktopOnlyToast();
-      return;
-    }
+    if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) return;
     try {
-      await ref.read(strategyProvider.notifier).exportLibrary();
+      await StrategyImportExportService(ref).exportLibrary();
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Failed to export library.',
@@ -171,8 +153,22 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     }
   }
 
+  /// Signed in, My Library writes to the cloud. Auth restores after the
+  /// first frame, so re-land on the tab's root once the cloud is reachable.
+  void _followCloudAvailability(bool available) {
+    if (!available) return;
+    if (ref.read(libraryTabProvider) != LibraryTab.library) return;
+    if (ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud) return;
+    if (ref.read(folderProvider) != null) return;
+    ref.read(libraryNavigationProvider).showLibrary();
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<bool>(
+      isCloudWorkspaceAvailableProvider,
+      (_, available) => _followCloudAvailability(available),
+    );
     ref.listen<AsyncValue<UpdateCheckResult>>(appUpdateStatusProvider,
         (_, next) {
       next.whenData((result) {
@@ -197,10 +193,23 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
     CoordinateSystem(playAreaSize: playAreaSize);
+    final tab = ref.watch(libraryTabProvider);
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final isCloudWorkspace = workspace == LibraryWorkspace.cloud;
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null
-        ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
+        ? isCloudWorkspace
+            ? ref.read(folderProvider.notifier).findCloudFolderByID(
+                  currentFolderId,
+                  ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [],
+                )
+            : ref
+                .read(folderProvider.notifier)
+                .findLocalFolderByID(currentFolderId)
         : null;
+    final canCreate =
+        tab == LibraryTab.library && !ref.watch(librarySignInRequiredProvider);
+
     Future<void> showCreateFolderDialog() async {
       await showDialog<String>(
         context: context,
@@ -210,8 +219,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       );
     }
 
-    /// Pick a map, then go straight to the editor: the view paints on the
-    /// chosen map at once and loads the new strategy inside itself.
+    /// Pick a map, then go straight to the editor. A local strategy paints
+    /// on the chosen map at once and loads inside the view; a cloud strategy
+    /// is already open once the server has created it.
     void showCreateDialog() async {
       final map = await showDialog<MapValue>(
         context: context,
@@ -219,6 +229,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       );
       if (map == null || !context.mounted) return;
 
+      final isCloud =
+          ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
       final StrategyData strategy;
       try {
         strategy = await ref
@@ -226,7 +238,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             .createNewStrategy(map: map);
       } catch (_) {
         Settings.showToast(
-          message: "Couldn't create strategy right now.",
+          message: isCloud
+              ? "Couldn't create cloud strategy right now. Please try logging in again."
+              : "Couldn't create strategy right now.",
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return;
@@ -235,11 +249,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
       Navigator.push(
         context,
-        StrategyView.route(
-          initialStrategyId: strategy.id,
-          initialStrategyName: strategy.name,
-          initialMapValue: strategy.mapData,
-        ),
+        isCloud
+            ? StrategyView.route()
+            : StrategyView.route(
+                initialStrategyId: strategy.id,
+                initialStrategyName: strategy.name,
+                initialStrategySource: StrategySource.local,
+                initialMapValue: strategy.mapData,
+              ),
       );
     }
 
@@ -256,11 +273,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 onExportLibrary: handleExportLibrary,
               ),
               Expanded(
-                child: ref.watch(libraryTabProvider) == LibraryTab.replays
-                    ? const ReplayLibraryContent()
-                    : ShadContextMenuRegion(
-                        controller: _backgroundMenuController,
-                        items: [
+                child: ShadContextMenuRegion(
+                  controller: _backgroundMenuController,
+                  items: !canCreate
+                      ? const []
+                      : [
                           ShadContextMenuItem(
                             leading: const Icon(LucideIcons.folderPlus),
                             onPressed: showCreateFolderDialog,
@@ -272,15 +289,27 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                             child: const Text('Create Strategy'),
                           ),
                         ],
-                        child: FolderContent(
-                          folder: currentFolder,
-                          onCreateStrategy: showCreateDialog,
-                        ),
-                      ),
+                  // Tabs are navigation, so the destination appears on the
+                  // next frame. FolderContent owns loading transitions after
+                  // the selected destination is already visible.
+                  child: FolderContent(
+                    key: ValueKey('library-tab-body-${tab.name}'),
+                    folder: currentFolder,
+                    onCreateStrategy: showCreateDialog,
+                  ),
+                ),
               ),
             ],
           ),
         ),
+        // Cloud sync status floats over the library's corner so it never
+        // pushes the grid.
+        if (tab != LibraryTab.community)
+          const Positioned(
+            right: 16,
+            bottom: 16,
+            child: CloudOutboxSummaryBanner(),
+          ),
         if (desktopUpdateController != null)
           DesktopUpdateDialogListener(controller: desktopUpdateController),
       ],
@@ -288,16 +317,29 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 }
 
-sealed class GridItem {}
+/// Something the user can drag around the library grid.
+sealed class GridItem {
+  /// The store the item lives in. Drops across stores are refused.
+  LibraryWorkspace get store;
+}
 
 class FolderItem extends GridItem {
   final Folder folder;
+  @override
+  final LibraryWorkspace store;
 
-  FolderItem(this.folder);
+  FolderItem(this.folder, {required this.store});
 }
 
 class StrategyItem extends GridItem {
-  final StrategyData strategy;
+  final String strategyId;
+  final StrategyData? strategy;
 
-  StrategyItem(this.strategy);
+  StrategyItem.local(this.strategy) : strategyId = strategy!.id;
+
+  StrategyItem.cloud(this.strategyId) : strategy = null;
+
+  @override
+  LibraryWorkspace get store =>
+      strategy == null ? LibraryWorkspace.cloud : LibraryWorkspace.local;
 }

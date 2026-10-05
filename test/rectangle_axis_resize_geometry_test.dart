@@ -13,7 +13,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_axis_resize
 class _NoopStrategyProvider extends StrategyProvider {
   @override
   StrategyState build() {
-    return StrategyState(
+    return const StrategyState(
       isSaved: true,
       stratName: null,
       id: 'axis-resize-test',

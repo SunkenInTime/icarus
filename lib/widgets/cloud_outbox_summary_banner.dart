@@ -1,0 +1,270 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/client_upgrade_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+class CloudOutboxSummaryBanner extends ConsumerWidget {
+  const CloudOutboxSummaryBanner({super.key, this.onOpenStrategy});
+
+  final ValueChanged<String>? onOpenStrategy;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(libraryWorkspaceProvider) != LibraryWorkspace.cloud) {
+      return const SizedBox.shrink();
+    }
+    final opQueue = ref.watch(strategyOpQueueProvider);
+    final mediaQueue = ref.watch(cloudMediaUploadQueueProvider);
+    final auth = ref.watch(authProvider);
+    final strategyNames = ref.watch(cloudStrategyNamesProvider);
+    final connected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
+    final strategyIds = <String>{
+      ...opQueue.accountOutbox.strategies.keys,
+      for (final job in mediaQueue.jobs) job.strategyPublicId,
+    };
+    final workCount = opQueue.accountOutbox.workCount + mediaQueue.jobs.length;
+    final failedMediaByStrategy = <String, int>{};
+    for (final job in mediaQueue.jobs.where((job) => job.isFailed)) {
+      failedMediaByStrategy.update(
+        job.strategyPublicId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+    final attentionIds = <String>{
+      for (final summary in opQueue.accountOutbox.strategies.values)
+        if (summary.needsAttention) summary.strategyPublicId,
+      ...failedMediaByStrategy.keys,
+    };
+    // Unsent changes to strategies the server no longer has: never sent,
+    // only discarded (each is a separate action below).
+    final deletedStrategies = opQueue.accountOutbox.deletedStrategies;
+    final deletedChangeCount =
+        deletedStrategies.values.fold<int>(0, (total, count) => total + count);
+    final hasDurabilityProblem = !opQueue.outboxIsReliable ||
+        !mediaQueue.outboxIsReliable ||
+        opQueue.loadIssues.isNotEmpty ||
+        mediaQueue.loadIssues.isNotEmpty;
+    final authBlocked = workCount > 0 &&
+        (auth.hasActiveAuthIncident || !auth.isConvexUserReady);
+    // The server refuses this build, so none of the work is being sent. Work
+    // that may not be on this device still outranks it.
+    final heldForUpgrade = workCount > 0 &&
+        !hasDurabilityProblem &&
+        ref.watch(clientUpgradeRequiredProvider);
+    if (workCount == 0 && !hasDurabilityProblem && deletedStrategies.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    if (heldForUpgrade) {
+      return ClientUpgradeNotice(
+        buttonSize: ShadButtonSize.sm,
+        builder: (context, message, action) => _card(
+          context,
+          needsAttention: true,
+          connected: connected,
+          title: 'Cloud work is waiting for a newer Icarus',
+          detail: '$workCount saved '
+              '${workCount == 1 ? 'change is' : 'changes are'} kept on this '
+              'device. $message',
+          actions: [if (action != null) action],
+        ),
+      );
+    }
+
+    final needsAttention = hasDurabilityProblem ||
+        authBlocked ||
+        attentionIds.isNotEmpty ||
+        deletedStrategies.isNotEmpty;
+    final title = needsAttention
+        ? 'Cloud work needs attention'
+        : connected
+            ? 'Syncing cloud work'
+            : 'Working offline';
+    final detail = hasDurabilityProblem
+        ? 'Icarus cannot read some saved cloud work on this device. Stay '
+            'signed in and review it.'
+        : authBlocked
+            ? 'Reconnect this account before Icarus can send its saved work.'
+            : workCount == 0 && deletedStrategies.isNotEmpty
+                ? '$deletedChangeCount unsent '
+                    '${deletedChangeCount == 1 ? 'change' : 'changes'} to a '
+                    'strategy that was deleted cannot be saved. Discard '
+                    '${deletedChangeCount == 1 ? 'it' : 'them'} to clear this.'
+                : needsAttention
+                    ? '$workCount saved ${workCount == 1 ? 'change needs' : 'changes need'} '
+                        'review across ${strategyIds.length} '
+                        '${strategyIds.length == 1 ? 'strategy' : 'strategies'}.'
+                    : connected
+                        ? '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
+                            'being sent from ${strategyIds.length} '
+                            '${strategyIds.length == 1 ? 'strategy' : 'strategies'}.'
+                        : '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
+                            'waiting on this device and will resume when the '
+                            'connection returns.';
+    return _card(
+      context,
+      needsAttention: needsAttention,
+      connected: connected,
+      title: title,
+      detail: detail,
+      actions: [
+        for (final strategyId in attentionIds)
+          ShadButton.secondary(
+            size: ShadButtonSize.sm,
+            onPressed: () => _openStrategy(context, strategyId),
+            child: Flexible(
+              child: Text(
+                _attentionLabel(
+                  strategyId,
+                  strategyNames[strategyId],
+                  opQueue.accountOutbox.strategies[strategyId]?.reason,
+                  failedMediaByStrategy[strategyId] ?? 0,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        for (final strategyId in deletedStrategies.keys)
+          ShadButton.outline(
+            size: ShadButtonSize.sm,
+            onPressed: () => _discardDeleted(ref, strategyId),
+            child: Flexible(
+              child: Text(
+                'Discard changes to '
+                '${strategyNames[strategyId]?.trim().isNotEmpty == true ? strategyNames[strategyId]!.trim() : 'the deleted strategy'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// A floating status card, not a banner: it sits over the library's
+  /// corner like a floating menu and never moves the grid. The parent
+  /// positions it.
+  Widget _card(
+    BuildContext context, {
+    required bool needsAttention,
+    required bool connected,
+    required String title,
+    required String detail,
+    required List<Widget> actions,
+  }) {
+    final theme = ShadTheme.of(context);
+    return Container(
+      key: const ValueKey('cloud-outbox-summary'),
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.popover,
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [Settings.floatingMenuShadow],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              needsAttention
+                  ? LucideIcons.circleAlert
+                  : connected
+                      ? LucideIcons.cloudUpload
+                      : LucideIcons.cloudOff,
+              size: 16,
+              color: needsAttention
+                  ? theme.colorScheme.destructive
+                  : theme.colorScheme.mutedForeground,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.foreground,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  detail,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: theme.colorScheme.mutedForeground,
+                  ),
+                ),
+                if (actions.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 8, children: actions),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _discardDeleted(WidgetRef ref, String strategyId) async {
+    await ref
+        .read(strategyOpQueueProvider.notifier)
+        .discardDeletedStrategy(strategyId);
+    await ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .clearJobsForStrategy(strategyId);
+  }
+
+  void _openStrategy(BuildContext context, String strategyId) {
+    final callback = onOpenStrategy;
+    if (callback != null) {
+      callback(strategyId);
+      return;
+    }
+    Navigator.of(context).push(
+      StrategyView.route(
+        initialStrategyId: strategyId,
+        initialStrategySource: StrategySource.cloud,
+      ),
+    );
+  }
+
+  String _attentionLabel(
+    String id,
+    String? strategyName,
+    String? reason,
+    int failedMediaCount,
+  ) {
+    final label = strategyName?.trim().isNotEmpty == true
+        ? strategyName!.trim()
+        : 'A cloud strategy';
+    if (reason != null && reason.isNotEmpty) {
+      return '$label: review sync';
+    }
+    if (failedMediaCount > 0) {
+      return '$label: $failedMediaCount '
+          '${failedMediaCount == 1 ? 'image failed' : 'images failed'}';
+    }
+    return '$label: review';
+  }
+}

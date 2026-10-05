@@ -16,13 +16,13 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _FixedMapProvider extends MapProvider {
   @override
