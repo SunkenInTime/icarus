@@ -408,6 +408,14 @@ class SvgHeightVisibility {
 
   bool get usesNativeAcceleration => _native != null;
 
+  /// Builds the wall crossings and topology the Dart cone query reads, which
+  /// it would otherwise build on its first cone: a frame-long stall the
+  /// first time a cone is dragged on the web.
+  void prepareDartQuery() {
+    _crossings;
+    _topology;
+  }
+
   /// Height selection and SVG footprints remain owned by this model. Native
   /// acceleration executes the same two-dimensional edge query only.
   bool enableNativeAcceleration({String? libraryPath}) {
