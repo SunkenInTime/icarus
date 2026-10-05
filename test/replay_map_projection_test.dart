@@ -264,14 +264,13 @@ void main() {
       expect(elevation(MapValue.sunset, -4621.59, 719.23, 300.3), isNull);
     });
 
-    test('Split: under an automatic roof support, the floor', () {
-      // c8989335 at 1913.0 s: the default stands the eye on a support 37 m
-      // up; the player's feet are at 6.3 m on 6.5 m ground.
+    test('Split: under the crane arm the default is already the floor', () {
+      // c8989335 at 1913.0 s: the player's feet are at 6.3 m on 6.5 m
+      // ground under the 36.5 m crane arm. No surface 10 m or more above
+      // its ground is a default (#238), so the floor needs no saved height.
       final (x, y, z) = (2548.0, -4509.0, 730.0);
-      expect(surfaceUnder(MapValue.split, x, y, null), greaterThan(37));
-      final saved = elevation(MapValue.split, x, y, z);
-      expect(saved, closeTo(825, .5));
-      expect(surfaceUnder(MapValue.split, x, y, saved), closeTo(6.5, .01));
+      expect(surfaceUnder(MapValue.split, x, y, null), closeTo(6.5, .01));
+      expect(elevation(MapValue.split, x, y, z), isNull);
     });
 
     test('Lotus: under a 9.5 m platform, the floor beneath it', () {
@@ -311,7 +310,6 @@ void main() {
 
     test('the defense side resolves the same level', () {
       for (final (map, x, y, z) in const [
-        (MapValue.split, 2548.0, -4509.0, 730.0),
         (MapValue.lotus, 8347.0, 4240.0, 439.0),
         (MapValue.sunset, 2619.0, -3652.0, 800.0),
         (MapValue.split, -198.90, -5402.98, 600.0),
