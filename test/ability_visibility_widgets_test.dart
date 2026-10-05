@@ -14,6 +14,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.dart';
@@ -243,6 +244,55 @@ void main() {
       expect(
         tester.widget<RotatableWidget>(find.byType(RotatableWidget)).showHandle,
         isFalse,
+      );
+    });
+
+    testWidgets('a faint range fades the range and never the icon',
+        (tester) async {
+      final container = ProviderContainer();
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final circle = CircleAbility(
+        iconPath: 'assets/agents/Cypher/1.webp',
+        size: 10,
+        rangeOutlineColor: Colors.white,
+        hasCenterDot: true,
+      );
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Center(
+            child: AbilityRangeOpacity(
+              opacity: 0.3,
+              child: circle.createWidget(
+                id: 'faint-circle',
+                isAlly: true,
+                mapScale: 1,
+                watchMouse: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final layer in [
+        'circle-range-fill-layer',
+        'circle-range-outline-layer',
+      ]) {
+        expect(tester.widget<Opacity>(find.byKey(ValueKey(layer))).opacity,
+            0.3);
+      }
+      expect(
+        find.ancestor(
+          of: find.byType(AbilityWidget),
+          matching: find.byWidgetPredicate(
+              (widget) => widget is Opacity && widget.opacity < 1),
+        ),
+        findsNothing,
       );
     });
 

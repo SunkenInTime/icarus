@@ -5,6 +5,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ResizableSquareWidget extends ConsumerWidget {
@@ -51,6 +52,7 @@ class ResizableSquareWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final double scaledWidth;
@@ -99,7 +101,7 @@ class ResizableSquareWidget extends ConsumerWidget {
             left: isWall ? ((scaledWidth - width) / 2) : 0,
             child: Opacity(
               key: const ValueKey('square-range-body'),
-              opacity: showRangeFill ? 1 : 0,
+              opacity: showRangeFill ? rangeOpacity : 0,
               child: IgnorePointer(
                 child: CustomBorderContainer(
                   height: scaledLength,

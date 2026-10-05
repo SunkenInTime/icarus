@@ -10,6 +10,7 @@ import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
@@ -37,13 +38,13 @@ class ReplayCanvas extends ConsumerStatefulWidget {
 }
 
 /// How strongly ranges and areas players stand in are drawn, so the agents
-/// and cones beneath stay readable.
+/// and cones beneath stay readable. Their icons stay solid.
 const _rangeOpacity = 0.3;
 
-/// [view] drawn at [opacity]. A placed widget comes back positioned on the
-/// canvas, so the fade goes inside its position.
-Widget _faded(Widget view, double opacity) {
-  if (view is! Positioned) return Opacity(opacity: opacity, child: view);
+/// [view] with [wrap] around it. A placed widget comes back positioned on
+/// the canvas, so the wrapper goes inside its position.
+Widget _inside(Widget view, Widget Function(Widget) wrap) {
+  if (view is! Positioned) return wrap(view);
   return Positioned(
     key: view.key,
     left: view.left,
@@ -52,9 +53,17 @@ Widget _faded(Widget view, double opacity) {
     bottom: view.bottom,
     width: view.width,
     height: view.height,
-    child: Opacity(opacity: opacity, child: view.child),
+    child: wrap(view.child),
   );
 }
+
+/// [view] drawn at [opacity].
+Widget _faded(Widget view, double opacity) =>
+    _inside(view, (child) => Opacity(opacity: opacity, child: child));
+
+/// [view] with its range drawn faint and its icon solid.
+Widget _faintRange(Widget view) => _inside(
+    view, (child) => AbilityRangeOpacity(opacity: _rangeOpacity, child: child));
 
 class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
   final _controller = TransformationController();
@@ -187,9 +196,10 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                       ),
                       for (final exit in exits)
                         _faded(
-                          view(exit.ability),
-                          (1 - exit.progress) *
-                              (exit.dimmed ? _rangeOpacity : 1),
+                          exit.dimmed
+                              ? _faintRange(view(exit.ability))
+                              : view(exit.ability),
+                          1 - exit.progress,
                         ),
                       Positioned.fill(
                         child: IgnorePointer(
@@ -296,7 +306,7 @@ class _UtilityLayerState extends State<_UtilityLayer> {
           children: [
             for (final placed in widget.placed)
               widget.dimmed.contains(placed.id)
-                  ? _faded(widget.view(placed), _rangeOpacity)
+                  ? _faintRange(widget.view(placed))
                   : widget.view(placed),
           ],
         ),

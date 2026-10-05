@@ -4,6 +4,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CenterSquareWidget extends ConsumerWidget {
@@ -35,6 +36,7 @@ class CenterSquareWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final totalWidth = coordinateSystem.scale(abilitySize);
@@ -49,7 +51,7 @@ class CenterSquareWidget extends ConsumerWidget {
           Positioned(
             child: Opacity(
               key: const ValueKey('square-range-body'),
-              opacity: showRangeFill ? 1 : 0,
+              opacity: showRangeFill ? rangeOpacity : 0,
               child: Align(
                 alignment: Alignment.center,
                 child: IgnorePointer(
