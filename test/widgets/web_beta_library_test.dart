@@ -18,6 +18,7 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -348,6 +349,32 @@ void main() {
       expect(find.text('Cloud Plan'), findsOneWidget);
       expect(find.text('Local Plan'), findsOneWidget);
       expect(find.byKey(const ValueKey('web-beta-tag')), findsNothing);
+    });
+
+    testWidgets('signed in, a replay capture still starts a local strategy',
+        (tester) async {
+      final library = await _pumpLibrary(
+        tester,
+        policy: PlatformPolicy.desktop,
+        auth: _ready,
+      );
+      expect(library.workspace, LibraryWorkspace.cloud);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(FolderNavigator)),
+      );
+
+      // Capture writes its pages into the local library, so the strategy
+      // it starts must be there too, not a blank one on the server.
+      final strategy = (await tester.runAsync(() => container
+          .read(strategyProvider.notifier)
+          .createNewStrategy(
+              map: MapValue.ascent, name: 'Ascent replay', local: true)))!;
+
+      expect(library.repository.calls, isEmpty);
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategy.id),
+        isNotNull,
+      );
     });
   });
 

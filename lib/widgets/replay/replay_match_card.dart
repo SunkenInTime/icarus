@@ -37,7 +37,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
   late final ReplayCapture _capture = ReplayCapture(
     createStrategy: (map, name) => ref
         .read(strategyProvider.notifier)
-        .createNewStrategy(map: map, name: name),
+        .createNewStrategy(map: map, name: name, local: true),
     map: widget.map,
     name: '${replayMapName(widget.map)} replay · '
         '${_dateLabel(widget.playback.document.match.recordedAt)}',
