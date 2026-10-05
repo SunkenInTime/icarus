@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:discord_rich_presence/discord_rich_presence.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
@@ -224,4 +225,65 @@ class DiscordPresenceService {
 
   @visibleForTesting
   DiscordPresenceData? get lastPublished => _lastPublished;
+}
+
+/// Runs a [DiscordPresenceService] on its own isolate.
+///
+/// discord_rich_presence's Windows transport polls the Discord pipe once a
+/// second and sleeps 50 ms on the calling isolate in every poll. On the UI
+/// isolate that froze the app for 50 ms each second while Discord was
+/// running, which showed as a hitch in every drag and animation.
+class DiscordPresenceWorker {
+  Future<SendPort>? _inbox;
+  Isolate? _isolate;
+  bool _disposed = false;
+
+  Future<void> update(DiscordPresenceData presence) =>
+      _send(('update', presence));
+
+  Future<void> clear() => _send(('clear', null));
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    final inbox = _inbox;
+    if (inbox == null) return;
+    final done = ReceivePort();
+    (await inbox).send(('dispose', done.sendPort));
+    await done.first;
+    done.close();
+    _isolate?.kill();
+  }
+
+  Future<void> _send(Object message) async {
+    if (!DiscordPresenceService.isSupported || _disposed) return;
+    (await (_inbox ??= _start())).send(message);
+  }
+
+  Future<SendPort> _start() async {
+    final ready = ReceivePort();
+    _isolate = await Isolate.spawn(_run, ready.sendPort,
+        debugName: 'discord-presence');
+    final inbox = await ready.first as SendPort;
+    ready.close();
+    return inbox;
+  }
+
+  static void _run(SendPort ready) {
+    final service = DiscordPresenceService();
+    final inbox = ReceivePort();
+    ready.send(inbox.sendPort);
+    inbox.listen((message) async {
+      switch (message) {
+        case ('update', final DiscordPresenceData presence):
+          unawaited(service.update(presence));
+        case ('clear', _):
+          unawaited(service.clear());
+        case ('dispose', final SendPort done):
+          await service.dispose();
+          done.send(null);
+          inbox.close();
+      }
+    });
+  }
 }
