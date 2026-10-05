@@ -19,13 +19,153 @@ Keep them separate. Run the workflow for the channel you actually want to publis
 
 ## Before Any Release
 
-1. Make sure the branch contains the changes you want to ship.
+1. Check the branch. Stable desktop and every Store build must run from
+   `main`. The release scripts stop before a version bump or build on any other
+   branch. The scripts still build an unsigned desktop prerelease from a
+   feature branch for local testing, but the signed `Release Desktop` workflow
+   runs only from `main`.
 2. Run the focused validation locally:
    - `fvm flutter test test/update_checker_test.dart`
+   - `fvm flutter test test/cloud_build_config_test.dart`
+   - `powershell -ExecutionPolicy Bypass -File scripts/test_release_safety.ps1`
    - `fvm flutter analyze`
 3. Check `pubspec.yaml` and confirm the version you want to release.
 4. Create or update the matching release metadata file in `release/metadata/`.
 5. Write player-facing release notes in that metadata file.
+
+## Cloud build configuration
+
+Icarus has one named development Convex configuration in source. Local
+development, CI, and desktop prerelease builds select it with
+`ICARUS_CLOUD_ENVIRONMENT=development`.
+
+An ordinary debug run defaults to development. A release-mode app with no
+`ICARUS_CLOUD_ENVIRONMENT` stops during startup, so any new release entry point
+must choose `development` or `production` deliberately.
+
+Stable desktop and Store builds select `production` and require both of these
+GitHub repository variables:
+
+- `ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL`
+- `ICARUS_PRODUCTION_CONVEX_CLIENT_ID`
+
+The production URL and client ID are public build inputs, not deploy keys. The
+release scripts pass them to Flutter through a temporary Dart-defines file and
+delete that file after the build. A missing value, invalid URL, or the known
+development deployment stops the release before Flutter runs.
+
+Use the deployment's canonical `https://<deployment>.convex.cloud` client URL.
+The release validator does not accept custom domains, and `.convex.site` is the
+HTTP Actions URL rather than the client deployment URL. See Convex's
+[deployment URL guide](https://docs.convex.dev/client/react/deployment-urls)
+and [system environment URL definitions](https://docs.convex.dev/production/environment-variables).
+
+Stable desktop, Store, and production backend workflows all enter the protected
+GitHub `Production` environment before they can build or publish. Desktop
+prerelease skips that environment.
+
+For a local stable build, set the same two environment variables in the shell
+before running `scripts/release_desktop.ps1`. Never put a Convex deploy key in a
+Dart define or repository variable.
+
+## One-time production Convex setup
+
+No production deployment or key is checked into this repository. Before the
+first production release:
+
+1. Create or select the Icarus production deployment in Convex. Record its
+   `.convex.cloud` client URL in the repository variable above.
+2. Create a deployment-scoped production deploy key with only the permissions
+   needed to deploy. Convex supports this in the deployment settings or with
+   `npx convex deployment token create github-production --deployment prod`.
+   See the [Convex deploy-key documentation](https://docs.convex.dev/cli/deploy-key-types).
+3. Create a GitHub environment named `Production`. Restrict its deployment
+   branches to `main`, add any required reviewers, and add the secret
+   `CONVEX_PRODUCTION_DEPLOY_KEY`.
+4. Add the public production URL and a stable client identifier, such as the
+   identifier chosen for the shipped Icarus client, to the two GitHub repository
+   variables in the previous section.
+5. Configure the production deployment's required R2 environment values before
+   testing cloud media. The backend reports the exact missing names if they are
+   absent.
+
+Run the manual `Deploy Convex Production` workflow from `main` and type
+`deploy-production`. The workflow enters the GitHub `Production` environment,
+requires a `prod:` deploy key, installs locked dependencies, runs TypeScript and
+Convex tests, then runs `npx convex deploy --typecheck enable`. Convex documents
+that `CONVEX_DEPLOY_KEY` selects the deployment associated with that key. See
+the [`convex deploy` reference](https://docs.convex.dev/cli/reference/deploy).
+
+The production workflow never reads `CONVEX_PREVIEW_DEPLOY_KEY`. That secret is
+only for the isolated contract deployment in CI.
+
+Each `convex-contract` run creates one preview deployment named
+`typed-wrapper-contract-<PR number or branch>` and deletes it in its last step,
+through the Convex Management API (`POST /v1/deployments/<name>/delete`) with
+the same preview deploy key. Right after creating it, the job also sets the
+preview to expire in one hour, which covers runs that die before the delete
+step. Previews count against the team's deployment quota (40), and when the
+quota is full every PR fails with `DeploymentQuotaReached`. To clear leftovers
+by hand, list the project's deployments with
+`GET /v1/projects/<project id>/list_deployments` using the token in
+`~/.convex/config.json`. Then delete only `preview` deployments whose PR is
+closed. Never delete `majestic-eel-413` (dev) or the production deployment.
+
+## Web beta deploy
+
+The web beta lives at `https://beta.icarusstrats.com`, served by the Cloudflare
+Pages project `icarus-web` (also reachable at `https://icarus-web-a50.pages.dev`).
+It runs against the **production** Convex deployment (`basic-dove-69`), because
+it is public. The development deployment (`majestic-eel-413`) stays the place
+to try server changes by hand; never test on production.
+
+- A push to `main` that changes `lib/`, `web/`, `assets/`, `shaders/`,
+  `convex/`, a path package (`packages/`, `third_party/convex_flutter/`),
+  `pubspec.yaml`, `pubspec.lock`, `package.json`, `package-lock.json`, or
+  `.fvmrc` deploys automatically: first the Convex server to production, then
+  the web build. If the server deploy fails, nothing is published.
+- Because production updates on merge, a PR that changes the Convex contract
+  must stay compatible with the web build already live (additive first; see
+  the deploy order in each server PR).
+- To redeploy by hand: `Actions` > `Deploy Web` > `Run workflow` on
+  `main`.
+- The run summary links the deployment. To roll back, promote an earlier
+  deployment in the Cloudflare dashboard under the project's `Deployments`.
+
+The workflow builds with the same flags as CI's `Build Web Client` step, but
+with `ICARUS_CLOUD_ENVIRONMENT=production` and the production URL and client ID
+from the repository variables, and uploads `build/web` with `wrangler pages deploy --branch=main`. `main` is the
+Pages project's production branch, and the custom domain follows production.
+Share links and the auth callback load because Pages serves `index.html` for
+unknown paths whenever `build/web` has no top-level `404.html`, so never add
+one. `web/_headers` makes browsers revalidate Flutter's unhashed entry
+files, so testers get a new deploy on refresh.
+
+GitHub repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`: the Cloudflare API token `icarus-web-pages-deploy`,
+  scoped to the Icarus account with `Account` > `Cloudflare Pages` > `Edit`
+  (the web build) and `Account` > `Workers Scripts` > `Edit` (the presence
+  Worker, `presence/README.md`).
+- `CLOUDFLARE_ACCOUNT_ID`: the account ID shown on the account's Workers & Pages
+  overview.
+- `CONVEX_PRODUCTION_DEPLOY_KEY`: a `prod:` deploy key for `basic-dove-69`
+  (`npx convex deployment token create <name> --prod`).
+
+GitHub repository variables: `ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL`
+(`https://basic-dove-69.convex.cloud`) and `ICARUS_PRODUCTION_CONVEX_CLIENT_ID`
+(`prod:basic-dove-69`). The production deployment needs the same R2
+environment values as development (`npx convex env list --prod`).
+
+One-time Cloudflare setup:
+
+1. Create the direct-upload project with production branch `main`:
+   `npx wrangler pages project create icarus-web --production-branch=main`
+   (after `npx wrangler login`). The dashboard path is `Workers & Pages` >
+   `Create` > `Pages` > `Upload assets`, named `icarus-web`.
+2. In the project, open `Custom domains` > `Set up a custom domain`, enter
+   `beta.icarusstrats.com`, and activate it. Cloudflare adds the DNS record when
+   `icarusstrats.com` is on the same account.
 
 ## Desktop Release Checklist
 
@@ -33,7 +173,7 @@ Use this when you want to publish the direct installer channel.
 
 1. Go to `Actions` in GitHub.
 2. Open `Release Desktop`.
-3. Click `Run workflow` and select `main`.
+3. Confirm the selected branch is `main`, then click `Run workflow`.
 4. Choose:
    - `version_bump`: `none` if the version is already correct, otherwise `patch`, `minor`, or `major`
    - `channel`: `stable`
@@ -82,7 +222,7 @@ Use this when you want to publish the Microsoft Store channel.
 
 1. Go to `Actions` in GitHub.
 2. Open `Release Store`.
-3. Click `Run workflow`.
+3. Confirm the selected branch is `main`, then click `Run workflow`.
 4. Choose:
    - `version_bump`: `none` if the version is already correct, otherwise `patch`, `minor`, or `major`
    - `publish_to_store`: `false` for a dry run, `true` when you are ready to submit
@@ -117,6 +257,9 @@ Use this when you want to publish the Microsoft Store channel.
   - The shared scripts verify EXE and DLL signatures before packaging, staging, and pushing Pages content. Manual phased releases require signing between build and package, then signing the installer before stage.
   - GitHub Pages should be configured to serve `gh-pages` from `/ (root)`.
   - No extra Pages deploy workflow is needed for prerelease testing.
+- `release/metadata/4.6.1+97.json` is prerelease-only while the online beta
+  checks remain open. Do not add `stable` to its channels to make a stable
+  manifest build pass.
 - Direct desktop installs now use a per-user install path and per-user registry registration.
 - Store installs should continue to use the Microsoft Store update path only.
 - The metadata file should not be a generic `template.json` in the live metadata folder, because the manifest generator treats every JSON file there as a real release entry.

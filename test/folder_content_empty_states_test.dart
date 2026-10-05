@@ -7,8 +7,9 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/folder_content.dart';
@@ -39,6 +40,7 @@ void main() {
   Future<void> pumpRoot(WidgetTester tester, VoidCallback onCreate) {
     return tester.pumpWidget(
       ProviderScope(
+        overrides: [authProvider.overrideWith(_SignedOutAuthProvider.new)],
         child: ShadApp(
           themeMode: ThemeMode.dark,
           darkTheme: ShadThemeData(
@@ -67,7 +69,7 @@ void main() {
 
     expect(find.byType(FolderCard), findsOneWidget);
     expect(find.text('No strategies in this folder'), findsNothing);
-    expect(find.text('No strategies yet'), findsNothing);
+    expect(find.text('Your library is empty'), findsNothing);
   });
 
   testWidgets('an empty view offers to create a strategy', (tester) async {
@@ -75,8 +77,22 @@ void main() {
     await pumpRoot(tester, () => created++);
     await tester.pump();
 
-    expect(find.text('No strategies yet'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('library-empty-new-strategy')));
+    expect(find.text('Your library is empty'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('library-empty-create-strategy')),
+    );
     expect(created, 1);
   });
+}
+
+/// Signed out: the library shows only what is on this computer.
+class _SignedOutAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.signedOut,
+        user: null,
+      );
 }

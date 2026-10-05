@@ -2,11 +2,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -25,6 +27,7 @@ import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
+import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
@@ -124,6 +127,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   @override
   Widget build(BuildContext context) {
     bool isAttack = ref.watch(mapProvider).isAttack;
+    final canEditPages = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
     final transitionPresentation = ref.watch(
       transitionProvider.select(
         (state) => (
@@ -133,6 +141,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         ),
       ),
     );
+    // A view-only reader has no sidebar, so the map takes its width.
+    final viewOnly = ref.watch(isViewOnlyStrategyProvider);
+    final double sideBarWidth = viewOnly ? 0 : Settings.sideBarReservedWidth;
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
     final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
 
@@ -152,9 +163,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         final Size playAreaSize = Size(worldWidth, height);
         CoordinateSystem(playAreaSize: playAreaSize);
         final coordinateSystem = CoordinateSystem.instance;
-        final double viewportWidth =
-            (constraints.maxWidth - Settings.sideBarReservedWidth)
-                .clamp(0.0, constraints.maxWidth);
+        final double viewportWidth = (constraints.maxWidth - sideBarWidth)
+            .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
         final dimensionsChanged = _lastViewportSize != viewportSize ||
             _lastPlayAreaSize != playAreaSize;
@@ -234,162 +244,193 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                               coordinateSystem: coordinateSystem,
                             );
                           },
-                          child: SizedBox(
-                            width: worldWidth,
-                            height: height,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                // Dot Grid
-                                Positioned.fill(
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.translucent,
-                                    onTap: () {
-                                      ref
-                                          .read(abilityBarProvider.notifier)
-                                          .updateData(null);
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(4.0),
-                                      child: RepaintBoundary(child: DotGrid()),
+                          child: EditorCanvasRegion(
+                            child: SizedBox(
+                              width: worldWidth,
+                              height: height,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  // Dot Grid
+                                  Positioned.fill(
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.translucent,
+                                      onTap: () {
+                                        ref
+                                            .read(abilityBarProvider.notifier)
+                                            .updateData(null);
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4.0),
+                                        child:
+                                            RepaintBoundary(child: DotGrid()),
+                                      ),
                                     ),
                                   ),
-                                ),
-                                // Map SVG
-                                Positioned(
-                                  left: mapLeft,
-                                  top: 0,
-                                  width: mapWidth,
-                                  height: height,
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.translucent,
-                                    onTap: () {
-                                      ref
-                                          .read(abilityBarProvider.notifier)
-                                          .updateData(null);
-                                    },
-                                    child: RepaintBoundary(
-                                      child: CanonicalMapArtwork(
-                                        map: ref.watch(mapProvider).currentMap,
-                                        isAttack: isAttack,
+                                  // Map SVG
+                                  Positioned(
+                                    left: mapLeft,
+                                    top: 0,
+                                    width: mapWidth,
+                                    height: height,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.translucent,
+                                      onTap: () {
+                                        ref
+                                            .read(abilityBarProvider.notifier)
+                                            .updateData(null);
+                                      },
+                                      child: RepaintBoundary(
+                                        child: CanonicalMapArtwork(
+                                          map:
+                                              ref.watch(mapProvider).currentMap,
+                                          isAttack: isAttack,
+                                          child: SvgPicture.asset(
+                                            assetName,
+                                            colorMapper: mapColorMapper,
+                                            semanticsLabel: 'Map',
+                                            fit: BoxFit.contain,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (ref.watch(mapProvider).showSpawnBarrier)
+                                    Positioned(
+                                      left: mapLeft,
+                                      top: 0,
+                                      width: mapWidth,
+                                      height: height,
+                                      child: Transform.flip(
+                                        flipX: !isAttack,
+                                        flipY: !isAttack,
                                         child: SvgPicture.asset(
-                                          assetName,
-                                          colorMapper: mapColorMapper,
-                                          semanticsLabel: 'Map',
+                                          barrierAssetName,
+                                          semanticsLabel: 'Barrier',
                                           fit: BoxFit.contain,
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                                if (ref.watch(mapProvider).showSpawnBarrier)
-                                  Positioned(
-                                    left: mapLeft,
-                                    top: 0,
-                                    width: mapWidth,
-                                    height: height,
-                                    child: Transform.flip(
-                                      flipX: !isAttack,
-                                      flipY: !isAttack,
+                                  if (ref.watch(mapProvider).showRegionNames)
+                                    Positioned(
+                                      left: mapLeft,
+                                      top: 0,
+                                      width: mapWidth,
+                                      height: height,
                                       child: SvgPicture.asset(
-                                        barrierAssetName,
-                                        semanticsLabel: 'Barrier',
+                                        calloutsAssetName,
+                                        semanticsLabel: 'Callouts',
                                         fit: BoxFit.contain,
                                       ),
                                     ),
-                                  ),
-                                if (ref.watch(mapProvider).showRegionNames)
-                                  Positioned(
-                                    left: mapLeft,
-                                    top: 0,
-                                    width: mapWidth,
-                                    height: height,
-                                    child: SvgPicture.asset(
-                                      calloutsAssetName,
-                                      semanticsLabel: 'Callouts',
-                                      fit: BoxFit.contain,
-                                    ),
-                                  ),
-                                if (ref.watch(mapProvider).showUltOrbs)
-                                  Positioned(
-                                    left: mapLeft,
-                                    top: 0,
-                                    width: mapWidth,
-                                    height: height,
-                                    child: Transform.flip(
-                                      flipX: !isAttack,
-                                      flipY: !isAttack,
-                                      child: SvgPicture.asset(
-                                        ultOrbsAssetName,
-                                        semanticsLabel: 'Ult Orbs',
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ),
-                                  ),
-                                Positioned.fill(
-                                  child: transitionPresentation.hideView
-                                      ? SizedBox.shrink()
-                                      : Opacity(
-                                          opacity: ref.watch(
-                                                      interactionStateProvider) ==
-                                                  InteractionState.lineUpPlacing
-                                              ? 0.2
-                                              : 1.0,
-                                          child: PlacedWidgetBuilder(),
+                                  if (ref.watch(mapProvider).showUltOrbs)
+                                    Positioned(
+                                      left: mapLeft,
+                                      top: 0,
+                                      width: mapWidth,
+                                      height: height,
+                                      child: Transform.flip(
+                                        flipX: !isAttack,
+                                        flipY: !isAttack,
+                                        child: SvgPicture.asset(
+                                          ultOrbsAssetName,
+                                          semanticsLabel: 'Ult Orbs',
+                                          fit: BoxFit.contain,
                                         ),
-                                ),
-                                Positioned.fill(
-                                  child: transitionPresentation.hideView
-                                      ? IgnorePointer(
-                                          child: LineUpOverlay(),
-                                        )
-                                      : SizedBox.shrink(),
-                                ),
-                                Positioned.fill(
-                                  child: transitionPresentation.active
-                                      ? RepaintBoundary(
-                                          child: PageTransitionOverlay(),
-                                        )
-                                      : SizedBox.shrink(),
-                                ),
-                                Positioned.fill(
-                                  child: transitionPresentation.hideView &&
-                                          transitionPresentation.phase ==
-                                              PageTransitionPhase.preparing
-                                      ? TemporaryWidgetBuilder()
-                                      : SizedBox.shrink(),
-                                ),
-                                // Painting
-                                Positioned.fill(
-                                  // Nested Consumer so the per-frame fade-in
-                                  // progress only rebuilds the drawing layer.
-                                  child: Consumer(
-                                    builder: (context, ref, _) {
-                                      final transitionOpacity = ref.watch(
-                                        drawingsTransitionOpacityProvider,
-                                      );
-                                      final lineUpOpacity =
-                                          ref.watch(interactionStateProvider) ==
-                                                  InteractionState.lineUpPlacing
-                                              ? 0.2
-                                              : 1.0;
-                                      return Opacity(
-                                        opacity:
-                                            transitionOpacity * lineUpOpacity,
-                                        child: Transform.flip(
-                                            flipX: !isAttack,
-                                            flipY: !isAttack,
-                                            child: InteractivePainter()),
-                                      );
-                                    },
+                                      ),
+                                    ),
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      key: const ValueKey(
+                                        'strategy-canvas-object-editor',
+                                      ),
+                                      ignoring: !canEditPages,
+                                      child: ExcludeFocus(
+                                        excluding: !canEditPages,
+                                        child: transitionPresentation.hideView
+                                            ? SizedBox.shrink()
+                                            : Opacity(
+                                                opacity: ref.watch(
+                                                            interactionStateProvider) ==
+                                                        InteractionState
+                                                            .lineUpPlacing
+                                                    ? 0.2
+                                                    : 1.0,
+                                                child: PlacedWidgetBuilder(),
+                                              ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                if (ref.watch(interactionStateProvider) ==
-                                    InteractionState.lineUpPlacing)
-                                  const Positioned.fill(
-                                    child: LineupPositionWidget(),
+                                  Positioned.fill(
+                                    child: transitionPresentation.hideView
+                                        ? IgnorePointer(
+                                            child: LineUpOverlay(),
+                                          )
+                                        : SizedBox.shrink(),
                                   ),
-                              ],
+                                  Positioned.fill(
+                                    child: transitionPresentation.active
+                                        ? RepaintBoundary(
+                                            child: PageTransitionOverlay(),
+                                          )
+                                        : SizedBox.shrink(),
+                                  ),
+                                  Positioned.fill(
+                                    child: transitionPresentation.hideView &&
+                                            transitionPresentation.phase ==
+                                                PageTransitionPhase.preparing
+                                        ? TemporaryWidgetBuilder()
+                                        : SizedBox.shrink(),
+                                  ),
+                                  // Painting
+                                  Positioned.fill(
+                                    // Nested Consumer so the per-frame fade-in
+                                    // progress only rebuilds the drawing layer.
+                                    child: Consumer(
+                                      builder: (context, ref, _) {
+                                        final transitionOpacity = ref.watch(
+                                          drawingsTransitionOpacityProvider,
+                                        );
+                                        final lineUpOpacity = ref.watch(
+                                                    interactionStateProvider) ==
+                                                InteractionState.lineUpPlacing
+                                            ? 0.2
+                                            : 1.0;
+                                        return IgnorePointer(
+                                          key: const ValueKey(
+                                            'strategy-canvas-drawing-editor',
+                                          ),
+                                          ignoring: !canEditPages,
+                                          child: Opacity(
+                                            opacity: transitionOpacity *
+                                                lineUpOpacity,
+                                            child: Transform.flip(
+                                                flipX: !isAttack,
+                                                flipY: !isAttack,
+                                                child: InteractivePainter()),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  if (ref.watch(interactionStateProvider) ==
+                                      InteractionState.lineUpPlacing)
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        ignoring: !canEditPages,
+                                        child: const LineupPositionWidget(),
+                                      ),
+                                    ),
+                                  // Teammates' cursors ride above everything
+                                  // they point at.
+                                  Positioned.fill(
+                                    child: RemoteCursorsLayer(
+                                      coordinateSystem: coordinateSystem,
+                                      isAttack: isAttack,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -400,15 +441,30 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            HoveredMapItemNameCard(),
-                            DeleteArea(),
+                          children: [
+                            const HoveredMapItemNameCard(),
+                            if (!viewOnly)
+                              IgnorePointer(
+                                ignoring: !canEditPages,
+                                child: const DeleteArea(),
+                              ),
                           ],
                         ),
                       ),
                       Align(
                         alignment: Alignment.bottomRight,
-                        child: const LineupControlButtons(),
+                        child: IgnorePointer(
+                          ignoring: !canEditPages,
+                          child: const LineupControlButtons(),
+                        ),
+                      ),
+                      // Watches the pointer without taking it from anything.
+                      Positioned.fill(
+                        child: PresenceCursorReporter(
+                          transformationController: controller,
+                          coordinateSystem: coordinateSystem,
+                          isAttack: isAttack,
+                        ),
                       ),
                     ],
                   ),
@@ -416,7 +472,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
               ),
             ),
             SizedBox(
-              width: Settings.sideBarReservedWidth,
+              width: sideBarWidth,
               height: height,
             ),
           ],

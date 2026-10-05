@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
+import 'package:icarus/widgets/role_badge.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _agentIconSize = 27;
@@ -17,17 +20,46 @@ const List<AgentRole> _strategyTileRoleOrder = [
 ];
 
 class StrategyTileViewData {
-  StrategyTileViewData(this.strategy)
-      : name = strategy.name,
-        mapName = _mapName(strategy.mapData),
-        attackLabel = _attackLabel(strategy.pages),
-        attackColor = _attackColor(strategy.pages),
-        thumbnailAsset =
-            'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
-        lastEditedLabel = _timeAgo(strategy.lastEdited),
-        agentTypes = _collectAgentTypes(strategy.pages);
+  const StrategyTileViewData({
+    required this.name,
+    required this.mapName,
+    required this.attackLabel,
+    required this.attackColor,
+    required this.thumbnailAsset,
+    required this.lastEditedLabel,
+    required this.agentTypes,
+    this.cloudBadge,
+  });
 
-  final StrategyData strategy;
+  factory StrategyTileViewData.fromStrategy(StrategyData strategy) {
+    return StrategyTileViewData(
+      name: strategy.name,
+      mapName: _mapName(strategy.mapData),
+      attackLabel: _attackLabel(strategy.pages),
+      attackColor: _attackColor(_attackLabel(strategy.pages)),
+      thumbnailAsset:
+          'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
+      lastEditedLabel: _timeAgo(strategy.lastEdited),
+      agentTypes: _collectAgentTypes(strategy.pages),
+    );
+  }
+
+  factory StrategyTileViewData.fromCloudEntry(CloudStrategyEntry entry) {
+    final strategy = entry.strategy;
+    final attackLabel = entry.attackLabel;
+    return StrategyTileViewData(
+      name: strategy.name,
+      mapName: _mapName(strategy.mapData),
+      attackLabel: attackLabel,
+      attackColor: _attackColor(attackLabel),
+      thumbnailAsset:
+          'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
+      lastEditedLabel: _timeAgo(strategy.lastEdited),
+      agentTypes: const [],
+      cloudBadge: cloudBadgeKindForRole(entry.role),
+    );
+  }
+
   final String name;
   final String mapName;
   final String attackLabel;
@@ -36,8 +68,19 @@ class StrategyTileViewData {
   final String lastEditedLabel;
   final List<AgentType> agentTypes;
 
-  static String _mapName(MapValue map) {
-    final raw = Maps.mapNames[map];
+  /// Non-null only for cloud strategies. Owned strategies render no badge;
+  /// shared ones show their role over the thumbnail.
+  final CloudBadgeKind? cloudBadge;
+
+  /// The pill drawn over the thumbnail, if this strategy needs one.
+  Widget? get sharedBadge {
+    final kind = cloudBadge;
+    if (kind == null || kind == CloudBadgeKind.owned) return null;
+    return CloudRoleBadge(kind: kind);
+  }
+
+  static String _mapName(MapValue? map) {
+    final raw = map == null ? null : Maps.mapNames[map];
     if (raw == null || raw.isEmpty) {
       return 'Unknown';
     }
@@ -54,15 +97,14 @@ class StrategyTileViewData {
     return first ? 'Attack' : 'Defend';
   }
 
-  static Color _attackColor(List<StrategyPage> pages) {
-    final label = _attackLabel(pages);
+  static Color _attackColor(String label) {
     switch (label) {
       case 'Attack':
-        return Colors.redAccent;
+        return Settings.attackColor;
       case 'Defend':
-        return Colors.lightBlueAccent;
+        return Settings.defenderColor;
       default:
-        return Colors.orangeAccent;
+        return Settings.mixedStrategyColor;
     }
   }
 
@@ -116,12 +158,16 @@ class StrategyTileThumbnail extends StatelessWidget {
     this.height,
     this.width,
     this.borderRadius = 16,
+    this.overlay,
   });
 
   final String assetPath;
   final double? height;
   final double? width;
   final double borderRadius;
+
+  /// Drawn over the bottom-left corner of the map, e.g. a sync badge.
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -130,6 +176,15 @@ class StrategyTileThumbnail extends StatelessWidget {
       image = SizedBox(height: height, width: width, child: image);
     } else {
       image = SizedBox.expand(child: image);
+    }
+    if (overlay != null) {
+      image = Stack(
+        fit: StackFit.passthrough,
+        children: [
+          image,
+          Positioned(left: 8, bottom: 8, child: overlay!),
+        ],
+      );
     }
 
     return ClipRRect(
@@ -171,12 +226,20 @@ class StrategyTileDetails extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 130),
-                      child: OverflowTooltipText(
-                        data.name,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 130),
+                            child: OverflowTooltipText(
+                              data.name,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 5),
                     Text(data.mapName),

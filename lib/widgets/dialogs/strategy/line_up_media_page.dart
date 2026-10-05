@@ -1,13 +1,9 @@
-import 'dart:io' show File, Directory;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
-import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
@@ -36,13 +32,6 @@ class LineupMediaPage extends ConsumerStatefulWidget {
 }
 
 class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
-  Directory? imageFolderPath;
-
-  Future<void> _setImageDirectory(String strategyID) async {
-    if (imageFolderPath != null) return;
-    imageFolderPath = await PlacedImageProvider.getImageFolder(strategyID);
-  }
-
   @override
   void initState() {
     super.initState();
@@ -62,7 +51,10 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
       children: [
         if (widget.header != null) widget.header!,
         if (widget.nameController != null) ...[
-          const Text("Name", style: TextStyle(color: Colors.white)),
+          Text(
+            "Name",
+            style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
+          ),
           const SizedBox(height: 8),
           CustomTextField(
             controller: widget.nameController!,
@@ -71,14 +63,20 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           ),
           const SizedBox(height: 24),
         ],
-        const Text("Youtube link", style: TextStyle(color: Colors.white)),
+        Text(
+          "Youtube link",
+          style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
+        ),
         const SizedBox(height: 8),
         CustomTextField(
           controller: widget.youtubeLinkController,
           hintText: "Paste YouTube link here...",
         ),
         const SizedBox(height: 24),
-        const Text("Images", style: TextStyle(color: Colors.white)),
+        Text(
+          "Images",
+          style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: Container(
@@ -92,9 +90,12 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                 widget.images.isEmpty ? _buildEmptyState() : _buildImageGrid(),
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8.0),
-          child: Text("Notes", style: TextStyle(color: Colors.white)),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Text(
+            "Notes",
+            style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
+          ),
         ),
         CustomTextField(
           hintText: "Add any notes here...",
@@ -141,36 +142,25 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageGrid() {
-    return FutureBuilder(
-        future: _setImageDirectory(ref.read(strategyProvider).id),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemCount: widget.images.length + 2, // +1 for Add, +1 for Paste
+      itemBuilder: (context, index) {
+        if (index == widget.images.length + 1) {
+          return _buildAddButton();
+        }
+        if (index == widget.images.length) {
+          return _buildPasteButton();
+        }
 
-          return GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 1,
-            ),
-            itemCount: widget.images.length + 2, // +1 for Add, +1 for Paste
-            itemBuilder: (context, index) {
-              if (index == widget.images.length + 1) {
-                return _buildAddButton();
-              }
-              if (index == widget.images.length) {
-                return _buildPasteButton();
-              }
-
-              return _buildImageTile(index);
-            },
-          );
-        });
+        return _buildImageTile(index);
+      },
+    );
   }
 
   Widget _buildAddButton() {
@@ -184,7 +174,10 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: const Icon(LucideIcons.plus, color: Colors.white),
+          child: Icon(
+            LucideIcons.plus,
+            color: Settings.tacticalVioletTheme.secondaryForeground,
+          ),
         ),
       ),
     );
@@ -201,14 +194,20 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: const Column(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(LucideIcons.clipboardPaste, color: Colors.white),
-              SizedBox(height: 4),
+              Icon(
+                LucideIcons.clipboardPaste,
+                color: Settings.tacticalVioletTheme.secondaryForeground,
+              ),
+              const SizedBox(height: 4),
               Text(
                 "Paste",
-                style: TextStyle(color: Colors.white, fontSize: 12),
+                style: TextStyle(
+                  color: Settings.tacticalVioletTheme.secondaryForeground,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -229,14 +228,20 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(LucideIcons.clipboardPaste, color: Colors.white, size: 16),
-              SizedBox(width: 6),
+              Icon(
+                LucideIcons.clipboardPaste,
+                color: Settings.tacticalVioletTheme.secondaryForeground,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
               Text(
                 "Paste from clipboard",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Settings.tacticalVioletTheme.secondaryForeground,
+                ),
               ),
             ],
           ),
@@ -246,20 +251,40 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageTile(int index) {
-    final String fullImagePath = path.join(imageFolderPath!.path,
-        widget.images[index].id + widget.images[index].fileExtension);
-    final file = File(fullImagePath);
+    final image = widget.images[index];
+    final imageProvider = watchStrategyImageSource(
+      ref,
+      (id: image.id, fileExtension: image.fileExtension),
+    ).imageProvider;
 
+    // Keyed by asset: when a removal shifts another image into this slot, it
+    // must not inherit this one's frame. Gapless playback is only for the
+    // same asset moving from its pending bytes to its cloud URL.
     return Stack(
+      key: ValueKey(image.id),
+      fit: StackFit.expand,
       children: [
+        // An Image, not a DecorationImage: on web a cloud image may paint
+        // through an <img> element, which a decoration cannot draw.
         Container(
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            image: DecorationImage(
-              image: FileImage(file), // Placeholder
-              fit: BoxFit.cover,
-            ),
+            color: Settings.tacticalVioletTheme.secondary,
           ),
+          child: imageProvider == null
+              ? Center(
+                  child: Icon(
+                    LucideIcons.imageOff,
+                    color: Settings.tacticalVioletTheme.secondaryForeground,
+                  ),
+                )
+              : Image(
+                  key: ValueKey(image.id),
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
         ),
         Positioned(
           top: 4,

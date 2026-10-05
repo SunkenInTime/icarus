@@ -1,18 +1,15 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
-import 'package:path/path.dart' as path;
+import 'package:icarus/widgets/lineup_editors_notice.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Opens the lineup panel for a landing spot or an origin: every lineup that
@@ -77,7 +74,6 @@ class LineUpPanelDialog extends ConsumerStatefulWidget {
 class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
   String? _selectedLinkId;
   final Object _hoverOwnerToken = Object();
-  Directory? _imageFolder;
   ProviderContainer? _container;
 
   @override
@@ -86,13 +82,20 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     _container ??= ProviderScope.containerOf(context, listen: false);
   }
 
+  /// The spot the panel is for, which names its lineup group.
+  String get _spotId => widget.landingId ?? widget.originId!;
+
   @override
   void initState() {
     super.initState();
     _selectedLinkId = widget.initialLinkId;
-    PlacedImageProvider.getImageFolder(ref.read(strategyProvider).id)
-        .then((dir) {
-      if (mounted) setState(() => _imageFolder = dir);
+    // Having the panel open counts as editing its lineups (see
+    // myLineupEditingProvider); providers change after this frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(openLineUpItemsProvider.notifier).open(_hoverOwnerToken, {
+        _spotId,
+      });
     });
   }
 
@@ -104,6 +107,9 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
         container
             .read(hoveredLineUpTargetProvider.notifier)
             .clearIfOwned(_hoverOwnerToken);
+        container
+            .read(openLineUpItemsProvider.notifier)
+            .close(_hoverOwnerToken);
       });
     }
     super.dispose();
@@ -156,12 +162,7 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     );
     controller.dispose();
     if (name == null || name == link.name) return;
-    ref.read(actionProvider.notifier).performTransaction(
-      groups: const [ActionGroup.lineUp],
-      mutation: () {
-        ref.read(lineUpProvider.notifier).updateLink(link.copyWith(name: name));
-      },
-    );
+    ref.read(lineUpProvider.notifier).updateLink(link.copyWith(name: name));
   }
 
   @override
@@ -211,7 +212,14 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
         autofocus: true,
         child: ShadDialog(
           title: Text(title),
-          description: Text(subtitle),
+          description: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(subtitle),
+              LineUpEditorsNotice(itemId: _spotId, lineups: true),
+            ],
+          ),
           constraints: BoxConstraints(maxWidth: bodyWidth + 48),
           child: SizedBox(
             width: bodyWidth,
@@ -238,7 +246,6 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
                                       .type]
                                   ?.name ??
                               '',
-                          imageFolder: _imageFolder,
                           isSelected: link.id == selected.id,
                           onTap: () =>
                               setState(() => _selectedLinkId = link.id),
@@ -299,7 +306,6 @@ class _LineUpRow extends StatefulWidget {
     required this.link,
     required this.label,
     required this.agentName,
-    required this.imageFolder,
     required this.isSelected,
     required this.onTap,
     required this.onHoverEnter,
@@ -312,7 +318,6 @@ class _LineUpRow extends StatefulWidget {
   final LineUpLink link;
   final String label;
   final String agentName;
-  final Directory? imageFolder;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onHoverEnter;
@@ -333,14 +338,6 @@ class _LineUpRowState extends State<_LineUpRow> {
     const theme = Settings.tacticalVioletTheme;
     final firstImage =
         widget.link.images.isEmpty ? null : widget.link.images.first;
-    final file = firstImage == null || widget.imageFolder == null
-        ? null
-        : File(
-            path.join(
-              widget.imageFolder!.path,
-              firstImage.id + firstImage.fileExtension,
-            ),
-          );
 
     return ShadContextMenuRegion(
       items: [
@@ -389,16 +386,7 @@ class _LineUpRowState extends State<_LineUpRow> {
                   child: SizedBox(
                     width: 72,
                     height: 44,
-                    child: file != null && file.existsSync()
-                        ? Image.file(file, fit: BoxFit.cover)
-                        : Container(
-                            color: theme.secondary,
-                            child: Icon(
-                              LucideIcons.image,
-                              size: 18,
-                              color: theme.mutedForeground,
-                            ),
-                          ),
+                    child: _LineUpThumbnail(image: firstImage),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -433,6 +421,41 @@ class _LineUpRowState extends State<_LineUpRow> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The first image of a lineup, or a muted glyph when it has none to show.
+class _LineUpThumbnail extends ConsumerWidget {
+  const _LineUpThumbnail({required this.image});
+
+  final SimpleImageData? image;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final image = this.image;
+    final imageProvider = image == null
+        ? null
+        : watchStrategyImageSource(
+            ref,
+            (id: image.id, fileExtension: image.fileExtension),
+          ).imageProvider;
+    if (imageProvider != null) {
+      return Image(
+        key: ValueKey(image!.id),
+        image: imageProvider,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      );
+    }
+    const theme = Settings.tacticalVioletTheme;
+    return Container(
+      color: theme.secondary,
+      child: Icon(
+        LucideIcons.image,
+        size: 18,
+        color: theme.mutedForeground,
       ),
     );
   }

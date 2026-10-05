@@ -1,0 +1,1485 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/durable_cloud_media_outbox.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
+import 'package:icarus/collab/pending_media_bytes_store.dart';
+import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+
+class _SignedOutAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.signedOut,
+        user: null,
+      );
+}
+
+class _CloudReadyAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: null,
+      );
+}
+
+class _DisabledCloudCollabMode extends CloudCollabModeNotifier {
+  @override
+  CloudCollabModeState build() => const CloudCollabModeState(
+        featureFlagEnabled: false,
+        forceLocalFallback: false,
+      );
+}
+
+class _EnabledCloudCollabMode extends CloudCollabModeNotifier {
+  @override
+  CloudCollabModeState build() => const CloudCollabModeState(
+        featureFlagEnabled: true,
+        forceLocalFallback: false,
+      );
+}
+
+class _ActiveCloudStrategy extends StrategyProvider {
+  @override
+  StrategyState build() => const StrategyState(
+        strategyId: 'strategy-a',
+        strategyName: 'Strategy A',
+        source: StrategySource.cloud,
+        isOpen: true,
+      );
+}
+
+class _NoOpenStrategy extends StrategyProvider {
+  @override
+  StrategyState build() => const StrategyState();
+}
+
+class _SettledOpQueue extends StrategyOpQueueNotifier {
+  @override
+  StrategyOpQueueState build() => const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        clientId: 'client-a',
+        durableLoaded: true,
+      );
+}
+
+class _MutableMediaQueue extends CloudMediaUploadQueueNotifier {
+  @override
+  CloudMediaUploadQueueState build() => const CloudMediaUploadQueueState(
+        jobs: [],
+        isProcessing: false,
+      );
+
+  void replaceJobs(List<CloudMediaUploadJob> jobs) {
+    state = CloudMediaUploadQueueState(jobs: jobs, isProcessing: false);
+  }
+}
+
+class _FixedOpQueue extends StrategyOpQueueNotifier {
+  _FixedOpQueue(this.initialState);
+
+  final StrategyOpQueueState initialState;
+
+  @override
+  StrategyOpQueueState build() => initialState;
+}
+
+class _GoneUploadRepository implements ConvexStrategyRepository {
+  final List<String?> attemptedUploadIds = [];
+  @override
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
+    String? mimeType,
+    String? fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    attemptedUploadIds.add(uploadId);
+    throw const ConvexFunctionException(
+      code: ConvexErrorCode.uploadIntentNotFound,
+      rawCode: 'UPLOAD_INTENT_NOT_FOUND',
+      message: 'Upload intent not found.',
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// completeImageUpload fails with NOT_FOUND; the shell check says whether
+/// the strategy itself is gone.
+class _NotFoundRepository implements ConvexStrategyRepository {
+  _NotFoundRepository({required this.strategyDeleted});
+
+  final bool strategyDeleted;
+  int completeCalls = 0;
+  final List<String> shellChecks = [];
+
+  @override
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
+    String? mimeType,
+    String? fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    completeCalls += 1;
+    throw ConvexFunctionException(
+      code: ConvexErrorCode.notFound,
+      rawCode: 'NOT_FOUND',
+      message: strategyDeleted
+          ? 'Strategy not found: $strategyPublicId'
+          : 'Uploaded image not found: $objectKey',
+    );
+  }
+
+  @override
+  Future<bool> strategyIsDeleted(String strategyPublicId) async {
+    shellChecks.add(strategyPublicId);
+    return strategyDeleted;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FailingBatchStore extends MemoryDurableCloudMediaOutboxStore {
+  bool failBatch = false;
+  bool failRemove = false;
+
+  @override
+  Future<void> remove(CloudMediaUploadJob job) async {
+    if (failRemove) throw StateError('delete failed');
+    await super.remove(job);
+  }
+
+  @override
+  Future<void> putAll(Iterable<CloudMediaUploadJob> jobs) async {
+    if (failBatch) {
+      throw StateError('batch write failed');
+    }
+    await super.putAll(jobs);
+  }
+}
+
+ProviderContainer _container(
+  MemoryDurableCloudMediaOutboxStore store, {
+  MemoryDurableStrategyOutboxStore? strategyStore,
+  StrategyOpQueueState? opQueueState,
+  bool strategyOpen = true,
+  bool cloudReady = false,
+  bool cloudEnabled = false,
+  String? accountId = 'account-a',
+  CloudMediaReferenceLoader? referenceLoader,
+  ConvexStrategyRepository? repository,
+}) {
+  final resolvedOpQueueState = opQueueState ??
+      (strategyOpen
+          ? const StrategyOpQueueState(
+              accountId: 'account-a',
+              strategyPublicId: 'strategy-a',
+              clientId: 'client-a',
+              durableLoaded: true,
+            )
+          : const StrategyOpQueueState(durableLoaded: true));
+  return ProviderContainer(
+    overrides: [
+      durableCloudMediaOutboxStoreProvider.overrideWithValue(store),
+      if (repository != null)
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+      durableStrategyOutboxStoreProvider.overrideWithValue(
+        strategyStore ?? MemoryDurableStrategyOutboxStore(),
+      ),
+      authProvider.overrideWith(
+        cloudReady ? _CloudReadyAuthProvider.new : _SignedOutAuthProvider.new,
+      ),
+      cloudMediaAccountIdProvider.overrideWithValue(accountId),
+      cloudCollabModeProvider.overrideWith(
+        cloudEnabled
+            ? _EnabledCloudCollabMode.new
+            : _DisabledCloudCollabMode.new,
+      ),
+      convexConnectionSnapshotProvider.overrideWithValue(cloudReady),
+      convexConnectionProvider.overrideWith(
+        (ref) => Stream.value(cloudReady),
+      ),
+      strategyProvider.overrideWith(
+        strategyOpen ? _ActiveCloudStrategy.new : _NoOpenStrategy.new,
+      ),
+      strategyOpQueueProvider.overrideWith(
+        () => _FixedOpQueue(resolvedOpQueueState),
+      ),
+      if (referenceLoader != null)
+        cloudMediaReferenceLoaderProvider.overrideWithValue(
+          referenceLoader,
+        ),
+    ],
+  );
+}
+
+DurableOutboxRecord _durableRecord(StrategyOp op) {
+  final entityKey = EntitySyncKey.forStrategyOp(op)!;
+  return DurableOutboxRecord(
+    accountId: 'account-a',
+    strategyPublicId: 'strategy-a',
+    entityKey: entityKey,
+    pending: PendingOp(op: op, clientId: 'client-a'),
+    status: DurableOutboxStatus.queued,
+    createdAt: DateTime.utc(2026, 9, 3),
+    updatedAt: DateTime.utc(2026, 9, 3),
+  );
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('processing while signed out finds no job and does not throw', () async {
+    // Signed out, the queue's job list is the shared `const []`; sorting it
+    // in place threw on every web page load.
+    final container = _container(
+      MemoryDurableCloudMediaOutboxStore(),
+      accountId: null,
+      strategyOpen: false,
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(container.read(cloudMediaUploadQueueProvider).isProcessing, isFalse);
+  });
+
+  test('media durability recovers after a successful retry', () async {
+    final store = _FailingBatchStore()..failBatch = true;
+    final container = _container(store);
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    final images = [SimpleImageData(id: 'retry-image', fileExtension: '.png')];
+    await expectLater(
+        queue.enqueueLineupMediaJobs(
+          strategyPublicId: 'strategy-a',
+          images: images,
+        ),
+        throwsStateError);
+    store.failBatch = false;
+    await queue.enqueueLineupMediaJobs(
+        strategyPublicId: 'strategy-a', images: images);
+    expect(store.load().issues, isEmpty);
+    expect(store.load().jobs, hasLength(1));
+    await queue.clearJobsForStrategy('strategy-a');
+    expect(store.load().jobs, isEmpty);
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(
+        container.read(cloudMediaUploadQueueProvider).outboxIsReliable, isTrue);
+  });
+
+  test('removed upload intent returns to durable upload recovery', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    await store.put(CloudMediaUploadJob(
+      jobId: 'image-a',
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-a',
+      assetPublicId: 'image-a',
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      provider: 'r2',
+      uploadId: 'swept-upload',
+      objectKey: 'old/image.png',
+      state: CloudMediaJobState.pendingAttach,
+      attempts: 1,
+      updatedAt: DateTime.now().subtract(const Duration(days: 2)),
+    ));
+    final repository = _GoneUploadRepository();
+    final container = _container(store,
+        cloudReady: true, cloudEnabled: true, repository: repository);
+    addTearDown(container.dispose);
+    container.read(cloudMediaUploadQueueProvider.notifier);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(repository.attemptedUploadIds, ['swept-upload']);
+    final restored = store.load().jobs.single;
+    expect(restored.uploadId, isNull);
+    expect(restored.objectKey, isNull);
+    expect(restored.hasUploadedRemoteObject, isFalse);
+    expect(restored.referenceDurable, isTrue);
+    expect(
+        container
+            .read(cloudMediaUploadQueueProvider)
+            .jobs
+            .single
+            .hasUploadedRemoteObject,
+        isFalse,
+        reason:
+            'A permanently deleted server intent must not be retried as if the object still exists.');
+  });
+
+  group('NOT_FOUND while attaching an image', () {
+    CloudMediaUploadJob pendingAttach(String id) => CloudMediaUploadJob(
+          jobId: id,
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-a',
+          assetPublicId: id,
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          provider: 'r2',
+          uploadId: 'upload-$id',
+          objectKey: 'strategies/strategy-a/$id.png',
+          state: CloudMediaJobState.pendingAttach,
+          attempts: 1,
+          updatedAt: DateTime.now().subtract(const Duration(days: 2)),
+        );
+
+    test('drops the jobs of a strategy the server no longer has', () async {
+      final store = MemoryDurableCloudMediaOutboxStore();
+      await store.put(pendingAttach('image-a'));
+      await store.put(pendingAttach('image-b'));
+      final repository = _NotFoundRepository(strategyDeleted: true);
+      final container = _container(store,
+          cloudReady: true, cloudEnabled: true, repository: repository);
+      addTearDown(container.dispose);
+
+      container.read(cloudMediaUploadQueueProvider.notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(repository.shellChecks, ['strategy-a']);
+      expect(repository.completeCalls, 1, reason: 'never retried');
+      expect(store.load().jobs, isEmpty);
+      expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    });
+
+    test('keeps retrying when the strategy still exists', () async {
+      // e.g. the uploaded image went missing from storage.
+      final store = MemoryDurableCloudMediaOutboxStore();
+      await store.put(pendingAttach('image-a'));
+      final repository = _NotFoundRepository(strategyDeleted: false);
+      final container = _container(store,
+          cloudReady: true, cloudEnabled: true, repository: repository);
+      addTearDown(container.dispose);
+
+      container.read(cloudMediaUploadQueueProvider.notifier);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(repository.shellChecks, ['strategy-a']);
+      final kept = store.load().jobs.single;
+      expect(kept.state, CloudMediaJobState.failed);
+    });
+  });
+
+  test('a successful write cannot clear another media key failure', () async {
+    final store = _FailingBatchStore()..failBatch = true;
+    final container = _container(store);
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    final failed = [SimpleImageData(id: 'failed', fileExtension: '.png')];
+    await expectLater(
+        queue.enqueueLineupMediaJobs(
+          strategyPublicId: 'strategy-a',
+          images: failed,
+        ),
+        throwsStateError);
+    store.failBatch = false;
+    await queue.enqueueLineupMediaJobs(
+      strategyPublicId: 'strategy-a',
+      images: [SimpleImageData(id: 'other', fileExtension: '.png')],
+    );
+    expect(container.read(cloudMediaUploadQueueProvider).outboxIsReliable,
+        isFalse);
+    await queue.enqueueLineupMediaJobs(
+      strategyPublicId: 'strategy-a',
+      images: failed,
+    );
+    expect(
+        container.read(cloudMediaUploadQueueProvider).outboxIsReliable, isTrue);
+  });
+
+  for (final restage in [false, true]) {
+    test('server reads preserve new references and restaged=$restage media',
+        () async {
+      final store = MemoryDurableCloudMediaOutboxStore();
+      final ops = MemoryDurableStrategyOutboxStore();
+      final job = CloudMediaUploadJob(
+        jobId: 'racing-image',
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        assetPublicId: 'racing-image',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        referenceDurable: false,
+        state: CloudMediaJobState.pendingUpload,
+        attempts: 0,
+        updatedAt: DateTime.utc(2026, 9, 4),
+      );
+      await store.put(job);
+      final snapshot = Completer<Set<String>?>();
+      final started = Completer<void>();
+      final container = _container(
+        store,
+        strategyStore: ops,
+        cloudReady: true,
+        referenceLoader: (_, __) {
+          if (!started.isCompleted) started.complete();
+          return snapshot.future;
+        },
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await started.future;
+      if (restage) {
+        await queue.enqueuePlacedImageUpload(
+          strategyPublicId: 'strategy-a',
+          imagePublicId: 'racing-image',
+          fileExtension: '.jpg',
+          width: 42,
+        );
+      }
+      await ops.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        entityKey: const EntitySyncKey.element('page-a', 'racing-image'),
+        pending: const PendingOp(
+          clientId: 'client-a',
+          op: ElementAddOp(
+            opId: 'new-reference',
+            elementPublicId: 'racing-image',
+            pagePublicId: 'page-a',
+            sortIndex: 0,
+            payload: {'id': 'racing-image'},
+          ),
+        ),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ));
+      snapshot.complete(<String>{});
+      await queue.retryNow();
+      expect(store.load().jobs.single.referenceDurable, isTrue);
+      expect(store.load().jobs.single.width, restage ? 42 : null);
+      expect(store.load().jobs.single.fileExtension, restage ? '.jpg' : '.png');
+      expect(
+          container
+              .read(cloudMediaUploadQueueProvider)
+              .jobs
+              .single
+              .assetPublicId,
+          'racing-image');
+    });
+  }
+
+  test('an orphan removal can retry and clear its durability error', () async {
+    final store = _FailingBatchStore();
+    await store.put(CloudMediaUploadJob(
+      jobId: 'orphan',
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-a',
+      assetPublicId: 'orphan',
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      referenceDurable: false,
+      state: CloudMediaJobState.pendingUpload,
+      attempts: 0,
+      updatedAt: DateTime.utc(2026, 9, 4),
+    ));
+    var snapshotAvailable = false;
+    final container = _container(
+      store,
+      cloudReady: true,
+      referenceLoader: (_, __) async {
+        if (!snapshotAvailable) throw StateError('offline');
+        return <String>{};
+      },
+    );
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+    snapshotAvailable = true;
+    store.failRemove = true;
+    await expectLater(queue.retryNow(), throwsStateError);
+    expect(container.read(cloudMediaUploadQueueProvider).outboxIsReliable,
+        isFalse);
+
+    store.failRemove = false;
+    await queue.retryNow();
+    expect(store.load().jobs, isEmpty);
+    expect(
+        container.read(cloudMediaUploadQueueProvider).outboxIsReliable, isTrue);
+  });
+
+  test('restart restores unfinished lineup media from the durable outbox',
+      () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final first = _container(store);
+
+    await first
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueueLineupMediaJobs(
+      strategyPublicId: 'strategy-a',
+      images: [
+        SimpleImageData(id: 'lineup-image', fileExtension: '.png'),
+      ],
+    );
+    first.dispose();
+
+    final restarted = _container(store);
+    addTearDown(restarted.dispose);
+    final state = restarted.read(cloudMediaUploadQueueProvider);
+
+    expect(state.outboxIsReliable, isTrue);
+    expect(state.jobs, hasLength(1));
+    expect(state.jobs.single.assetPublicId, 'lineup-image');
+    expect(state.jobs.single.strategyPublicId, 'strategy-a');
+    expect(state.jobs.single.fileExtension, '.png');
+    expect(state.jobs.single.referenceDurable, isFalse);
+  });
+
+  test('account B cannot restore or reconcile account A media', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final accountA = _container(store, accountId: 'account-a');
+    await accountA
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueuePlacedImageUpload(
+          strategyPublicId: 'strategy-a',
+          imagePublicId: 'account-a-image',
+          fileExtension: '.png',
+        );
+    accountA.dispose();
+
+    var snapshotReads = 0;
+    final accountB = _container(
+      store,
+      accountId: 'account-b',
+      cloudReady: true,
+      referenceLoader: (_, __) async {
+        snapshotReads += 1;
+        return <String>{};
+      },
+    );
+    addTearDown(accountB.dispose);
+    final queue = accountB.read(cloudMediaUploadQueueProvider.notifier);
+
+    await queue.retryNow(ignoreBackoff: true);
+
+    expect(accountB.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(snapshotReads, 0);
+    final preserved = store.load().jobs.single;
+    expect(preserved.accountId, 'account-a');
+    expect(preserved.assetPublicId, 'account-a-image');
+    expect(preserved.referenceDurable, isFalse);
+  });
+
+  test('enqueue fails before writing when no account owns the job', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final container = _container(store, accountId: null);
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueuePlacedImageUpload(
+            strategyPublicId: 'strategy-a',
+            imagePublicId: 'unowned-image',
+            fileExtension: '.png',
+          ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(store.values, isEmpty);
+  });
+
+  test('account-scoped keys isolate identical asset IDs and removal', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    CloudMediaUploadJob job(String accountId) => CloudMediaUploadJob(
+          jobId: 'shared-image',
+          accountId: accountId,
+          strategyPublicId: 'strategy-a',
+          assetPublicId: 'shared-image',
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          state: CloudMediaJobState.pendingUpload,
+          attempts: 0,
+          updatedAt: DateTime.utc(2026, 9, 3),
+        );
+    final accountAJob = job('account-a');
+    final accountBJob = job('account-b');
+
+    await store.putAll([accountAJob, accountBJob]);
+    expect(
+      store.values.keys,
+      containsAll(['account-a|shared-image', 'account-b|shared-image']),
+    );
+
+    await store.remove(accountAJob);
+
+    final remaining = store.load().jobs.single;
+    expect(remaining.accountId, 'account-b');
+    expect(remaining.assetPublicId, 'shared-image');
+  });
+
+  test('restart keeps an interrupted placement staged and non-runnable',
+      () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final first = _container(store);
+
+    await first
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueuePlacedImageUpload(
+          strategyPublicId: 'strategy-a',
+          imagePublicId: 'interrupted-image',
+          fileExtension: '.png',
+        );
+    first.dispose();
+
+    final restarted = _container(store);
+    addTearDown(restarted.dispose);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    final job = restarted.read(cloudMediaUploadQueueProvider).jobs.single;
+
+    expect(job.assetPublicId, 'interrupted-image');
+    expect(job.referenceDurable, isFalse);
+    expect(job.attempts, 0);
+    expect(restarted.read(cloudMediaUploadQueueProvider).isProcessing, isFalse);
+  });
+
+  test('restart restores an image job without visiting its page', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final first = _container(store);
+
+    await first
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueueJobForLocalBytes(
+          strategyPublicId: 'strategy-a',
+          assetPublicId: 'unvisited-page-image',
+          fileExtension: '.webp',
+          width: 640,
+          height: 360,
+        );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    first.dispose();
+
+    final restarted = _container(store);
+    addTearDown(restarted.dispose);
+    final restored = restarted
+        .read(cloudMediaUploadQueueProvider)
+        .jobsForStrategy('strategy-a');
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(restored, hasLength(1));
+    expect(restored.single.assetPublicId, 'unvisited-page-image');
+    expect(restored.single.width, 640);
+    expect(restored.single.height, 360);
+    expect(restored.single.referenceDurable, isFalse);
+  });
+
+  test('local-file job waits for a durable strategy reference', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final container = _container(
+      store,
+      strategyStore: MemoryDurableStrategyOutboxStore(),
+      cloudReady: true,
+      cloudEnabled: true,
+      referenceLoader: (_, __) async => <String>{},
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueueJobForLocalBytes(
+          strategyPublicId: 'strategy-a',
+          assetPublicId: 'not-admitted-image',
+          fileExtension: '.png',
+        );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    final job = container.read(cloudMediaUploadQueueProvider).jobs.single;
+    expect(job.referenceDurable, isFalse);
+    expect(job.attempts, 0);
+    expect(container.read(cloudMediaUploadQueueProvider).isProcessing, isFalse);
+  });
+
+  test('blocked uploads yield and keep their durable job pending', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final container = _container(store);
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueueJobForLocalBytes(
+          strategyPublicId: 'strategy-a',
+          assetPublicId: 'offline-image',
+          fileExtension: '.jpg',
+        );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final state = container.read(cloudMediaUploadQueueProvider);
+    expect(state.isProcessing, isFalse);
+    expect(state.jobs.single.attempts, 0);
+    expect(store.values, contains('account-a|offline-image'));
+  });
+
+  test('lineup staging is atomic when the durable batch write fails', () async {
+    final store = _FailingBatchStore();
+    final container = _container(store);
+    addTearDown(container.dispose);
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueueJobForLocalBytes(
+          strategyPublicId: 'strategy-a',
+          assetPublicId: 'existing-image',
+          fileExtension: '.png',
+        );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    store.failBatch = true;
+
+    await expectLater(
+      container
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueueLineupMediaJobs(
+        strategyPublicId: 'strategy-a',
+        images: [
+          SimpleImageData(id: 'lineup-image-1', fileExtension: '.png'),
+          SimpleImageData(id: 'lineup-image-2', fileExtension: '.png'),
+        ],
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(store.values.keys, ['account-a|existing-image']);
+    expect(
+      container
+          .read(cloudMediaUploadQueueProvider)
+          .jobs
+          .map((job) => job.assetPublicId),
+      ['existing-image'],
+    );
+  });
+
+  test('restart promotes a staged lineup batch without opening its strategy',
+      () async {
+    const lineupOp = LineupAddOp(
+      opId: 'lineup-op',
+      lineupPublicId: 'lineup-a',
+      pagePublicId: 'page-a',
+      payload: <String, dynamic>{
+        'images': [
+          {'id': 'lineup-image-1'},
+          {'id': 'lineup-image-2'},
+        ],
+      },
+      sortIndex: 0,
+    );
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.putAll([
+      for (final assetId in ['lineup-image-1', 'lineup-image-2'])
+        CloudMediaUploadJob(
+          jobId: assetId,
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-a',
+          assetPublicId: assetId,
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          state: CloudMediaJobState.pendingUpload,
+          referenceDurable: false,
+          attempts: 0,
+          updatedAt: DateTime.utc(2026, 9, 3),
+        ),
+    ]);
+    final strategyStore = MemoryDurableStrategyOutboxStore();
+    await strategyStore.put(_durableRecord(lineupOp));
+    final container = _container(
+      mediaStore,
+      strategyStore: strategyStore,
+      strategyOpen: false,
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+
+    expect(container.read(strategyProvider).isOpen, isFalse);
+    expect(
+      container
+          .read(cloudMediaUploadQueueProvider)
+          .jobs
+          .map((job) => job.referenceDurable),
+      everyElement(isTrue),
+    );
+  });
+
+  test('restart recovers when the strategy op was acked before promotion',
+      () async {
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.put(
+      CloudMediaUploadJob(
+        jobId: 'acked-image',
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        assetPublicId: 'acked-image',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        state: CloudMediaJobState.pendingUpload,
+        referenceDurable: false,
+        attempts: 0,
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    );
+    var snapshotReads = 0;
+    final snapshot = {'acked-image'};
+    final container = _container(
+      mediaStore,
+      strategyStore: MemoryDurableStrategyOutboxStore(),
+      strategyOpen: false,
+      cloudReady: true,
+      referenceLoader: (strategyId, _) async {
+        snapshotReads += 1;
+        expect(strategyId, 'strategy-a');
+        return snapshot;
+      },
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+
+    expect(snapshotReads, greaterThanOrEqualTo(1));
+    expect(container.read(strategyProvider).isOpen, isFalse);
+    expect(
+      container
+          .read(cloudMediaUploadQueueProvider)
+          .jobs
+          .single
+          .referenceDurable,
+      isTrue,
+    );
+  });
+
+  test('restart removes only an unreferenced staged job, not its source',
+      () async {
+    const assetId = 'orphan-image';
+    final source = await PlacedImageProvider.getImageFile(
+      strategyID: 'strategy-a',
+      imageID: assetId,
+      fileExtension: '.png',
+    );
+    await source.writeAsBytes([1, 2, 3]);
+    addTearDown(() async {
+      if (await source.exists()) await source.delete();
+    });
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.put(
+      CloudMediaUploadJob(
+        jobId: assetId,
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        assetPublicId: assetId,
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        state: CloudMediaJobState.pendingUpload,
+        referenceDurable: false,
+        attempts: 0,
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    );
+    final container = _container(
+      mediaStore,
+      strategyStore: MemoryDurableStrategyOutboxStore(),
+      strategyOpen: false,
+      cloudReady: true,
+      referenceLoader: (_, __) async => <String>{},
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(mediaStore.values, isEmpty);
+    expect(await source.exists(), isTrue);
+  });
+
+  test('missing source job is removed after its reference is deleted',
+      () async {
+    final assetId = 'deleted-image-${DateTime.now().microsecondsSinceEpoch}';
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.put(
+      CloudMediaUploadJob(
+        jobId: assetId,
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        assetPublicId: assetId,
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        state: CloudMediaJobState.pendingUpload,
+        referenceDurable: true,
+        attempts: 3,
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    );
+    final container = _container(
+      mediaStore,
+      strategyStore: MemoryDurableStrategyOutboxStore(),
+      cloudReady: true,
+      cloudEnabled: true,
+      referenceLoader: (_, __) async => <String>{},
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(mediaStore.values, isEmpty);
+  });
+
+  test('a newly staged job is not pruned before its mutation is admitted',
+      () async {
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    final container = _container(
+      mediaStore,
+      strategyStore: MemoryDurableStrategyOutboxStore(),
+      cloudReady: true,
+      referenceLoader: (_, __) async => <String>{},
+    );
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+
+    await queue.enqueuePlacedImageUpload(
+      strategyPublicId: 'strategy-a',
+      imagePublicId: 'new-image',
+      fileExtension: '.png',
+    );
+    await queue.retryNow(ignoreBackoff: true);
+
+    final job = container.read(cloudMediaUploadQueueProvider).jobs.single;
+    expect(job.assetPublicId, 'new-image');
+    expect(job.referenceDurable, isFalse);
+    expect(mediaStore.values, contains('account-a|new-image'));
+  });
+
+  test('restart preserves an uploaded object that still needs attachment',
+      () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    await store.put(
+      CloudMediaUploadJob(
+        jobId: 'pending-attach-image',
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        assetPublicId: 'pending-attach-image',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        provider: 'r2',
+        uploadId: 'upload-a',
+        objectKey: 'strategies/strategy-a/images/pending-attach-image.png',
+        etag: 'etag-a',
+        byteSize: 1024,
+        state: CloudMediaJobState.pendingAttach,
+        attempts: 0,
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    );
+
+    final restarted = _container(store);
+    addTearDown(restarted.dispose);
+    final job = restarted.read(cloudMediaUploadQueueProvider).jobs.single;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(job.state, CloudMediaJobState.pendingAttach);
+    expect(job.uploadId, 'upload-a');
+    expect(job.objectKey, contains('pending-attach-image.png'));
+    expect(job.etag, 'etag-a');
+  });
+
+  test('media from another strategy does not affect the active save state', () {
+    final mediaQueue = _MutableMediaQueue();
+    final container = ProviderContainer(
+      overrides: [
+        strategyProvider.overrideWith(_ActiveCloudStrategy.new),
+        strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+        cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(strategySaveStateProvider);
+
+    mediaQueue.replaceJobs([
+      CloudMediaUploadJob(
+        jobId: 'other-image',
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-b',
+        assetPublicId: 'other-image',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        state: CloudMediaJobState.failed,
+        attempts: 1,
+        lastError: 'Local media file is missing.',
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    ]);
+
+    final saveState = container.read(strategySaveStateProvider);
+    expect(saveState.hasPendingMediaSync, isFalse);
+    expect(saveState.mediaSyncErrorCount, 0);
+    expect(saveState.isDirty, isFalse);
+  });
+
+  group('work discarded with a page the server deleted', () {
+    PendingMediaKey key(String assetId) => (
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-a',
+          assetPublicId: assetId,
+        );
+
+    CloudMediaUploadJob job(String assetId, {bool referenceDurable = true}) =>
+        CloudMediaUploadJob(
+          jobId: assetId,
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-a',
+          assetPublicId: assetId,
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          state: CloudMediaJobState.pendingUpload,
+          referenceDurable: referenceDurable,
+          attempts: 3,
+          updatedAt: DateTime.utc(2026, 9, 3),
+        );
+
+    /// Offline until [goOnline]; the server has 'server-image' on a page.
+    ({
+      ProviderContainer container,
+      _UploadRecordingRepository repository,
+      void Function() goOnline,
+    }) setUp({
+      required MemoryDurableCloudMediaOutboxStore mediaStore,
+      required MemoryDurableStrategyOutboxStore strategyStore,
+      PendingMediaBytesStore? bytesStore,
+      CloudMediaReferenceLoader? referenceLoader,
+      _UploadRecordingRepository? serverRepository,
+    }) {
+      var online = false;
+      final repository = serverRepository ?? _UploadRecordingRepository();
+      final container = ProviderContainer(overrides: [
+        durableCloudMediaOutboxStoreProvider.overrideWithValue(mediaStore),
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        durableStrategyOutboxStoreProvider.overrideWithValue(strategyStore),
+        authProvider.overrideWith(_CloudReadyAuthProvider.new),
+        cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+        cloudCollabModeProvider.overrideWith(_EnabledCloudCollabMode.new),
+        convexConnectionSnapshotProvider.overrideWith((ref) => online),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(false)),
+        strategyProvider.overrideWith(_ActiveCloudStrategy.new),
+        strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+        imageFilesOnDeviceProvider.overrideWithValue(false),
+        pendingMediaBytesStoreProvider
+            .overrideWithValue(bytesStore ?? MemoryPendingMediaBytesStore()),
+        // With [serverRepository], its answers are the server's.
+        if (serverRepository == null)
+          cloudMediaReferenceLoaderProvider.overrideWithValue(
+            referenceLoader ?? (_, __) async => {'server-image'},
+          ),
+      ]);
+      return (
+        container: container,
+        repository: repository,
+        goOnline: () {
+          online = true;
+          container.invalidate(convexConnectionSnapshotProvider);
+        },
+      );
+    }
+
+    test('drops an upload only that work referenced, and its bytes', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      for (final assetId in ['page-image', 'queued-image', 'server-image']) {
+        await mediaStore.put(job(assetId));
+      }
+      // Another page's change, still queued, places 'queued-image'.
+      final strategyStore = MemoryDurableStrategyOutboxStore();
+      await strategyStore.put(_durableRecord(const ElementAddOp(
+        opId: 'other-page',
+        elementPublicId: 'queued-image',
+        pagePublicId: 'page-b',
+        sortIndex: 0,
+        payload: {'id': 'queued-image'},
+      )));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: strategyStore,
+      );
+      addTearDown(container.dispose);
+      // The other two have no bytes here: an upload missing its bytes goes
+      // unless something references its image, so they stay only if the
+      // references hold them.
+      final bytes = container.read(pendingMediaBytesProvider.notifier);
+      await bytes.put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+
+      // Offline when the page's work goes; checked once the server answers.
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId).toSet(),
+        {'queued-image', 'server-image'},
+      );
+      expect(bytes.bytesFor(key('page-image')), isNull);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test(
+        'keeps an upload whose image the server still names, whatever the '
+        'full snapshot shows', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(job('page-image'));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        // The full snapshot shows only the pages on screen; the reference
+        // list counts every image the server's content still shows.
+        serverRepository: _ReferencingRepository({'page-image'}),
+      );
+      addTearDown(container.dispose);
+      final bytes = container.read(pendingMediaBytesProvider.notifier);
+      await bytes.put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId),
+        ['page-image'],
+      );
+      expect(bytes.bytesFor(key('page-image')), [1, 2, 3]);
+    });
+
+    test(
+        'a staged upload keeps its check, and its bytes, while the server '
+        'cannot tell', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      // Staged: the change placing its image has not landed, so only the
+      // server can say whether anything still shows it.
+      await mediaStore.put(job('page-image', referenceDurable: false));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        serverRepository: _ReferencingRepository(null),
+      );
+      addTearDown(container.dispose);
+      final bytes = container.read(pendingMediaBytesProvider.notifier);
+      await bytes.put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId),
+        ['page-image'],
+      );
+      expect(bytes.bytesFor(key('page-image')), [1, 2, 3]);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('a restart before the server answers still checks', () async {
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(job('page-image'));
+      final bytesStore = MemoryPendingMediaBytesStore();
+      final first = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        bytesStore: bytesStore,
+      );
+      await first.container
+          .read(pendingMediaBytesProvider.notifier)
+          .put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      await first.container
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .recheckAfterDiscardedWork('strategy-a');
+      first.container.dispose();
+
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        bytesStore: bytesStore,
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(mediaStore.load().jobs, isEmpty);
+      expect(bytesStore.load(), isEmpty);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('a failed removal is tried again, never uploaded, and waits alone',
+        () async {
+      final mediaStore = _FailingBatchStore()..failRemove = true;
+      await mediaStore.put(job('page-image'));
+      await mediaStore.put(job('queued-image'));
+      final strategyStore = MemoryDurableStrategyOutboxStore();
+      await strategyStore.put(_durableRecord(const ElementAddOp(
+        opId: 'other-page',
+        elementPublicId: 'queued-image',
+        pagePublicId: 'page-b',
+        sortIndex: 0,
+        payload: {'id': 'queued-image'},
+      )));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: strategyStore,
+      );
+      addTearDown(container.dispose);
+      final bytes = container.read(pendingMediaBytesProvider.notifier);
+      await bytes.put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      goOnline();
+
+      // Restored at launch, so already marked for the check.
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final jobs = {
+        for (final job in mediaStore.load().jobs) job.assetPublicId: job,
+      };
+      expect(jobs.keys, containsAll(['page-image', 'queued-image']));
+      expect(jobs['page-image']!.attempts, 3);
+      // The other upload was tried meanwhile (its bytes are gone here).
+      expect(jobs['queued-image']!.attempts, 4);
+
+      mediaStore.failRemove = false;
+      await queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        mediaStore.load().jobs.map((job) => job.assetPublicId),
+        ['queued-image'],
+      );
+      expect(bytes.bytesFor(key('page-image')), isNull);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('a staged upload whose removal fails keeps retrying', () async {
+      final mediaStore = _FailingBatchStore()..failRemove = true;
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await queue.enqueuePlacedImageUpload(
+        strategyPublicId: 'strategy-a',
+        imagePublicId: 'late-image',
+        fileExtension: '.png',
+      );
+      goOnline();
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      expect(mediaStore.load().jobs, hasLength(1));
+
+      mediaStore.failRemove = false;
+      await queue.retryNow(ignoreBackoff: true);
+      expect(mediaStore.load().jobs, isEmpty);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('a staged upload keeps its check through a failed server read',
+        () async {
+      var reads = 0;
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        referenceLoader: (_, __) async {
+          reads += 1;
+          if (reads == 1) throw StateError('read failed');
+          return <String>{};
+        },
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await queue.enqueuePlacedImageUpload(
+        strategyPublicId: 'strategy-a',
+        imagePublicId: 'late-image',
+        fileExtension: '.png',
+      );
+      goOnline();
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      expect(mediaStore.load().jobs, hasLength(1));
+
+      await queue.retryNow(ignoreBackoff: true);
+      expect(mediaStore.load().jobs, isEmpty);
+    });
+
+    test('a retry during a check waits for it, uploading nothing', () async {
+      final snapshot = Completer<Set<String>?>();
+      var reads = 0;
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(job('page-image'));
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+        referenceLoader: (_, __) {
+          reads += 1;
+          // A second, overlapping check could not tell and let it upload.
+          if (reads > 1) throw StateError('read failed');
+          return snapshot.future;
+        },
+      );
+      addTearDown(container.dispose);
+      await container
+          .read(pendingMediaBytesProvider.notifier)
+          .put(key('page-image'), Uint8List.fromList([1, 2, 3]));
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      goOnline();
+
+      final first = queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(Duration.zero);
+      final second = queue.retryNow(ignoreBackoff: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(repository.uploadedAssetIds, isEmpty);
+
+      snapshot.complete(<String>{});
+      await Future.wait([first, second]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(reads, 1);
+      expect(mediaStore.load().jobs, isEmpty);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+
+    test('drops an image placed after the delete that never got a change',
+        () async {
+      // Nothing can send a change for a page the server no longer has, so
+      // this upload's reference is never admitted.
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      final (:container, :repository, :goOnline) = setUp(
+        mediaStore: mediaStore,
+        strategyStore: MemoryDurableStrategyOutboxStore(),
+      );
+      addTearDown(container.dispose);
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await queue.enqueuePlacedImageUpload(
+        strategyPublicId: 'strategy-a',
+        imagePublicId: 'late-image',
+        fileExtension: '.png',
+      );
+
+      await queue.recheckAfterDiscardedWork('strategy-a');
+      goOnline();
+      await queue.retryNow(ignoreBackoff: true);
+
+      expect(mediaStore.load().jobs, isEmpty);
+      expect(repository.uploadedAssetIds, isEmpty);
+    });
+  });
+}
+
+/// Records each upload the queue starts and refuses it, as if the network
+/// dropped, so the job stays.
+class _UploadRecordingRepository implements ConvexStrategyRepository {
+  final List<String> uploadedAssetIds = [];
+
+  @override
+  Future<CloudImageUploadIntent> generateImageUploadUrl({
+    required String strategyPublicId,
+    required String assetPublicId,
+    required String mimeType,
+    required String fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    uploadedAssetIds.add(assetPublicId);
+    throw StateError('network dropped');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A server whose content shows [referenced] images (null: it cannot tell
+/// yet) and whose full snapshot shows none.
+class _ReferencingRepository extends _UploadRecordingRepository {
+  _ReferencingRepository(this.referenced);
+
+  final Set<String>? referenced;
+
+  @override
+  Future<Set<String>?> fetchReferencedAssetIds(
+    String strategyPublicId,
+    Iterable<String> assetPublicIds,
+  ) async =>
+      referenced?.intersection(assetPublicIds.toSet());
+
+  @override
+  Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
+    final now = DateTime.utc(2026, 9, 3);
+    return RemoteFullStrategySnapshot(
+      header: RemoteStrategyHeader(
+        publicId: strategyPublicId,
+        name: 'Strategy A',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      pages: const [],
+      elementsByPage: const {},
+      lineupsByPage: const {},
+      assetsById: const {},
+    );
+  }
+}

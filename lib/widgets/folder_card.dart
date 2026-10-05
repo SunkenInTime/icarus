@@ -5,15 +5,22 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/widgets/dialogs/delete_folder_alert_dialog.dart';
 import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
+import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -52,8 +59,23 @@ class FolderCardViewData {
         mapPeeks = _collectMapPeeks(strategies),
         agentTypes = _collectAgents(strategies);
 
+  /// A folder summarised elsewhere, e.g. by the cloud: counts, map peeks, and
+  /// agents arrive ready-made instead of being derived from strategies here.
+  FolderCardViewData.summary({
+    required this.folder,
+    required this.folderCount,
+    this.strategyCount,
+    List<MapValue> maps = const [],
+    this.agentTypes = const [],
+  }) : mapPeeks = [
+          for (final map in maps.take(2))
+            'assets/maps/thumbnails/${Maps.mapNames[map]}_thumbnail.webp',
+        ];
+
   final Folder folder;
-  final int strategyCount;
+
+  /// Null when the folder's strategies are not known here.
+  final int? strategyCount;
   final int folderCount;
 
   /// Distinct map thumbnail assets, most used first, capped at 2.
@@ -118,10 +140,19 @@ class FolderCard extends ConsumerStatefulWidget {
   const FolderCard({
     super.key,
     required this.data,
+    this.store = LibraryWorkspace.local,
+    this.cloudRole,
     this.isDemo = false,
   });
 
   final FolderCardViewData data;
+
+  /// Which library the folder belongs to. My Library lists both stores, so
+  /// the card cannot infer this from the active workspace.
+  final LibraryWorkspace store;
+
+  /// The signed-in user's role on a cloud folder; null for local folders.
+  final String? cloudRole;
   final bool isDemo;
 
   @override
@@ -143,6 +174,10 @@ class _FolderCardState extends ConsumerState<FolderCard>
   final DragTiltController _dragTiltController = DragTiltController();
 
   Folder get _folder => widget.data.folder;
+  bool get _isCloud => widget.store == LibraryWorkspace.cloud;
+
+  /// Shared cloud folders can be opened but only their owner reshapes them.
+  bool get _canManage => !_isCloud || widget.cloudRole == 'owner';
 
   @override
   void initState() {
@@ -212,8 +247,13 @@ class _FolderCardState extends ConsumerState<FolderCard>
     String? currentParentId = _folder.parentID;
     while (currentParentId != null) {
       if (currentParentId == folderId) return true;
-      final parentFolder =
-          ref.read(folderProvider.notifier).findFolderByID(currentParentId);
+      final folders = ref.read(folderProvider.notifier);
+      final parentFolder = _isCloud
+          ? folders.findCloudFolderByID(
+              currentParentId,
+              ref.read(cloudAllFoldersProvider).valueOrNull ?? const [],
+            )
+          : folders.findLocalFolderByID(currentParentId);
       currentParentId = parentFolder?.parentID;
     }
     return false;
@@ -236,6 +276,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
     return DragTarget<GridItem>(onWillAcceptWithDetails: (details) {
       final item = details.data;
       if (widget.isDemo) return false;
+      if (!_canManage) return false;
+      if (item.store != widget.store) return false;
       if (item is FolderItem) {
         return item.folder.id != id && !_isParentFolder(item.folder.id);
       }
@@ -286,13 +328,19 @@ class _FolderCardState extends ConsumerState<FolderCard>
       }
 
       if (item is StrategyItem) {
-        ref
-            .read(strategyProvider.notifier)
-            .moveToFolder(strategyID: item.strategy.id, parentID: _folder.id);
+        await ref.read(strategyProvider.notifier).moveToFolder(
+              strategyID: item.strategyId,
+              parentID: _folder.id,
+              source: item.strategy == null
+                  ? StrategySource.cloud
+                  : StrategySource.local,
+            );
       } else if (item is FolderItem) {
-        ref
-            .read(folderProvider.notifier)
-            .moveToFolder(folderID: item.folder.id, parentID: _folder.id);
+        await ref.read(folderProvider.notifier).moveToFolder(
+              folderID: item.folder.id,
+              parentID: _folder.id,
+              workspace: widget.store,
+            );
       }
     }, builder: (context, candidateData, rejectedData) {
       final isPinnedDropTarget = candidateData.any(
@@ -317,7 +365,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
           dragAnchorStrategy: pointerDragAnchorStrategy,
           onDragUpdate: (details) =>
               _dragTiltController.addDelta(details.delta.dx),
-          data: FolderItem(_folder),
+          data: FolderItem(_folder, store: widget.store),
           child: MouseRegion(
             onEnter: (_) {
               _isHovered = true;
@@ -334,7 +382,10 @@ class _FolderCardState extends ConsumerState<FolderCard>
               child: GestureDetector(
                 onTap: () {
                   if (widget.isDemo) return;
-                  ref.read(folderProvider.notifier).updateID(_folder.id);
+                  ref.read(folderProvider.notifier).openFolder(
+                        folderId: _folder.id,
+                        store: widget.store,
+                      );
                 },
                 child: AnimatedBuilder(
                   animation: _open,
@@ -571,10 +622,11 @@ class _FolderCardState extends ConsumerState<FolderCard>
         Expanded(
           child: agents.isEmpty
               ? Text(
-                  widget.data.strategyCount == 0
-                      ? 'Empty'
-                      : '${widget.data.strategyCount} '
-                          'strateg${widget.data.strategyCount == 1 ? 'y' : 'ies'}',
+                  switch (widget.data.strategyCount) {
+                    null => '',
+                    0 => 'Empty',
+                    final count => '$count strateg${count == 1 ? 'y' : 'ies'}',
+                  },
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.55),
                     fontSize: 11,
@@ -583,10 +635,11 @@ class _FolderCardState extends ConsumerState<FolderCard>
                 )
               : _AgentComposition(agents: agents),
         ),
-        if (widget.data.strategyCount > 0 || widget.data.folderCount > 0) ...[
+        if ((widget.data.strategyCount ?? 0) > 0 ||
+            widget.data.folderCount > 0) ...[
           const SizedBox(width: 6),
           _CountBadge(
-            strategyCount: widget.data.strategyCount,
+            strategyCount: widget.data.strategyCount ?? 0,
             folderCount: widget.data.folderCount,
           ),
         ],
@@ -651,47 +704,70 @@ class _FolderCardState extends ConsumerState<FolderCard>
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
+        enabled: _canManage,
+        onPressed: !_canManage
+            ? null
+            : () async {
+                _closeMenus();
+                if (widget.isDemo) return;
+                await showDialog<String>(
+                  context: context,
+                  builder: (context) {
+                    return FolderEditDialog(
+                      folder: _folder,
+                      store: widget.store,
+                    );
+                  },
+                );
+              },
         child: const Text('Edit'),
-        onPressed: () async {
-          _closeMenus();
-          if (widget.isDemo) return;
-          await showDialog<String>(
-            context: context,
-            builder: (context) {
-              return FolderEditDialog(folder: _folder);
-            },
-          );
-        },
       ),
+      if (_isCloud && widget.cloudRole == 'owner')
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.link2),
+          child: const Text('Share'),
+          onPressed: () async {
+            _closeMenus();
+            await showShadDialog<void>(
+              context: context,
+              builder: (_) => ShareLinksDialog(
+                targetType: 'folder',
+                targetPublicId: _folder.id,
+                title: _folder.name,
+              ),
+            );
+          },
+        ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
         child: const Text('Export'),
         onPressed: () async {
           _closeMenus();
-          await ref.read(strategyProvider.notifier).exportFolder(_folder.id);
+          if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) {
+            return;
+          }
+          await StrategyImportExportService(ref).exportFolder(_folder.id);
         },
       ),
       ShadContextMenuItem(
         leading: Icon(LucideIcons.trash2,
             color: Settings.tacticalVioletTheme.destructive),
+        enabled: _canManage,
+        onPressed: !_canManage
+            ? null
+            : () async {
+                _closeMenus();
+                if (widget.isDemo) return;
+                await showShadDialog<void>(
+                  context: context,
+                  builder: (_) => DeleteFolderAlertDialog(
+                    folder: _folder,
+                    workspace: widget.store,
+                  ),
+                );
+              },
         child: Text('Delete',
             style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
-        onPressed: () async {
-          _closeMenus();
-          ConfirmAlertDialog.show(
-            context: context,
-            title: "Are you sure you want to delete '${_folder.name}' folder?",
-            content:
-                "This will also delete all strategies and subfolders within it.",
-            confirmText: "Delete",
-            isDestructive: true,
-          ).then((confirmed) {
-            if (confirmed) {
-              if (widget.isDemo) return;
-              ref.read(folderProvider.notifier).deleteFolder(_folder.id);
-            }
-          });
-        },
       ),
     ];
   }

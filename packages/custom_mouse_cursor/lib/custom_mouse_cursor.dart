@@ -1728,15 +1728,15 @@ class CustomMouseCursor extends MouseCursor {
     }
   }
 
-  static math.Random? randomGenerator; 
-  
+  static math.Random? randomGenerator;
+
   /// Generate a 16 digit random key to use for cursor's key on non web platforms.
   static String generateUniqueKey() {
     // md5 seemed overkill, replaced with random key.. //return md5.convert(input).toString();
 
     // generate a safe/random unique 16 digit id for the cursor
     // THIS IS A QUICK HACKED version..
-    // (add [generateUniqueKeysGenerated] count so we get a new seed even if we somehow are still on the 
+    // (add [generateUniqueKeysGenerated] count so we get a new seed even if we somehow are still on the
     //  same microsecond clock time
     randomGenerator ??= math.Random(DateTime.now().microsecond);
 

@@ -14,6 +14,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
+    registerAdapter(CloudMediaJobStateAdapter());
     registerAdapter(FolderColorAdapter());
     registerAdapter(IconDataAdapter());
     registerAdapter(LineUpAdapter());
@@ -26,8 +27,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
-    registerAdapter(PlacedAbilityAdapter());
-    registerAdapter(PlacedAgentAdapter());
     registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
     registerAdapter(PlacedTextAdapter());
@@ -36,7 +35,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
-    registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());
@@ -52,6 +50,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
+    registerAdapter(CloudMediaJobStateAdapter());
     registerAdapter(FolderColorAdapter());
     registerAdapter(IconDataAdapter());
     registerAdapter(LineUpAdapter());
@@ -64,8 +63,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
-    registerAdapter(PlacedAbilityAdapter());
-    registerAdapter(PlacedAgentAdapter());
     registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
     registerAdapter(PlacedTextAdapter());
@@ -74,7 +71,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
-    registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());

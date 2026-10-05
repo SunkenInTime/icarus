@@ -251,13 +251,17 @@ class _SideToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isAttack = ref.watch(mapProvider.select((state) => state.isAttack));
-    final strategyId = ref.watch(strategyProvider.select((state) => state.id));
+    final strategyId =
+        ref.watch(strategyProvider.select((state) => state.strategyId));
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return ValueListenableBuilder(
       valueListenable: box.listenable(keys: [strategyId]),
       builder: (context, Box<StrategyData> b, _) {
-        final pages = b.get(strategyId)?.pages ?? const [];
+        // Reads the local copy; a cloud strategy has none here, so it never
+        // shows the mixed dot.
+        final pages =
+            (strategyId == null ? null : b.get(strategyId))?.pages ?? const [];
         final mixed =
             pages.any((page) => page.isAttack != pages.first.isAttack);
         final nextSide = isAttack ? 'Defense' : 'Attack';

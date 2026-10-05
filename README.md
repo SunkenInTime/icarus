@@ -40,6 +40,22 @@ flutter pub get
 flutter run
 ```
 
+### Windows dev OAuth callbacks
+Discord OAuth redirects back into the desktop app through the `icarus://auth/callback`
+protocol. On Windows, the installed app normally owns that protocol handler, so a
+dev build may not receive the browser callback.
+
+For a temporary dev session, run the Windows build with the force protocol
+registration flag:
+
+```powershell
+fvm flutter run -d windows --dart-define=ICARUS_FORCE_PROTOCOL_REGISTER=true
+```
+
+This rewrites the current user's `icarus://` handler to the debug executable.
+After testing OAuth, launch the installed Icarus app once to restore the handler
+back to the installed build.
+
 ### Isolated Hive store
 
 Desktop builds accept an absolute `--hive-store-dir` path. It moves every
@@ -68,8 +84,12 @@ support directory. Use a different absolute Hive directory for each instance.
 ## Build
 
 ```bash
-flutter build <platform>
+flutter build <platform> --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 ```
+
+That command makes an internal build against the named development Convex
+deployment. Use the release scripts in `docs/release_process.md` for stable or
+Store artifacts. They require explicit production cloud configuration.
 
 ## Versioning (Windows MSIX)
 

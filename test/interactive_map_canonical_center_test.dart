@@ -5,12 +5,21 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/interactive_map.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+class _FixedPreferences extends AppPreferencesNotifier {
+  @override
+  AppPreferences build() => AppPreferences(
+        defaultThemeProfileIdForNewStrategies:
+            MapThemeProfilesProvider.immutableDefaultProfileId,
+      );
+}
 
 class _FixedMapProvider extends MapProvider {
   @override
@@ -54,6 +63,7 @@ void main() {
 
     final container = ProviderContainer(
       overrides: [
+        appPreferencesProvider.overrideWith(_FixedPreferences.new),
         mapProvider.overrideWith(_FixedMapProvider.new),
         drawingProvider.overrideWith(_EmptyDrawingProvider.new),
         penProvider.overrideWith(_FixedPenProvider.new),
@@ -89,6 +99,60 @@ void main() {
     expect(
       defenseCenter.dy,
       closeTo(coordinates.normalizedHeight - attackCenter.dy, 0.0001),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('viewer canvas keeps navigation but disables edit layers',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1500, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final container = ProviderContainer(
+      overrides: [
+        mapProvider.overrideWith(_FixedMapProvider.new),
+        drawingProvider.overrideWith(_EmptyDrawingProvider.new),
+        penProvider.overrideWith(_FixedPenProvider.new),
+        effectiveMapThemePaletteProvider.overrideWith(
+          (ref) => MapThemeProfilesProvider.immutableDefaultPalette,
+        ),
+        currentStrategyCapabilitiesProvider.overrideWithValue(
+          StrategyCapabilities.fromCloudRole('viewer'),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: InteractiveMap()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(
+      tester
+          .widget<IgnorePointer>(
+            find.byKey(const ValueKey('strategy-canvas-object-editor')),
+          )
+          .ignoring,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<IgnorePointer>(
+            find.byKey(const ValueKey('strategy-canvas-drawing-editor')),
+          )
+          .ignoring,
+      isTrue,
     );
 
     await tester.pumpWidget(const SizedBox.shrink());

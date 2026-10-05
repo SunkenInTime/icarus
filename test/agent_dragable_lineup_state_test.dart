@@ -70,8 +70,15 @@ Finder _opacityFinder(AgentType type) {
   return find.byKey(ValueKey('agent-dim-opacity-${type.name}'));
 }
 
-Finder _tileFinder(AgentType type) {
+Finder _agentTileFinder(AgentType type) {
   return find.byKey(ValueKey('agent-tile-${type.name}'));
+}
+
+Finder _agentIgnorePointerFinder(AgentType type) {
+  return find.ancestor(
+    of: _opacityFinder(type),
+    matching: find.byType(IgnorePointer),
+  );
 }
 
 void main() {
@@ -127,7 +134,7 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    await tester.tap(_tileFinder(AgentType.sova));
+    await tester.tap(_agentTileFinder(AgentType.sova));
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.sova);
@@ -210,14 +217,20 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    await tester.tap(_tileFinder(AgentType.sova), warnIfMissed: false);
+    expect(
+      tester
+          .widget<IgnorePointer>(
+              _agentIgnorePointerFinder(AgentType.sova).first)
+          .ignoring,
+      isTrue,
+    );
+    await tester.tap(_agentTileFinder(AgentType.sova), warnIfMissed: false);
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.breach);
   });
 
-  testWidgets('pinned origin blocks non-active drag start',
-      (tester) async {
+  testWidgets('pinned origin blocks non-active drag start', (tester) async {
     final container = _createContainer();
     final group = LineUpGroup(
       id: 'breach-group',
@@ -250,7 +263,7 @@ void main() {
     await _pumpHarness(tester, container: container);
 
     await tester.drag(
-      _tileFinder(AgentType.sova),
+      _agentTileFinder(AgentType.sova),
       const Offset(30, 0),
       warnIfMissed: false,
     );

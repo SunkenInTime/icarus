@@ -44,9 +44,8 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
       child: draggable
           ? Draggable<PlacedWidget>(
               data: agent,
-              dragAnchorStrategy: ref
-                  .read(screenZoomProvider.notifier)
-                  .zoomDragAnchorStrategy,
+              dragAnchorStrategy:
+                  ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
               feedback: Opacity(
                 opacity: Settings.feedbackOpacity,
                 child: ZoomTransform(
