@@ -506,10 +506,11 @@ void main() {
     // shared corners are seams. Above it only the tall wall blocks, and the
     // same points are its corners.
     final walls = [
-      wall('low', [rectangle(10, -5, 11, 0)],
-          bands: [
-            [0, 2]
-          ]),
+      wall('low', [
+        rectangle(10, -5, 11, 0)
+      ], bands: [
+        [0, 2]
+      ]),
       wall('tall', [rectangle(10, 0, 11, 5)]),
     ];
     SvgVisibilityCone at(SvgHeightVisibility model, double camera) =>
@@ -519,11 +520,13 @@ void main() {
             range: 100,
             apertureRadians: 1.5,
             cameraHeightMeters: camera);
-    final reused = SvgHeightVisibility.fromJson(data(walls));
+    SvgHeightVisibility fresh() => SvgHeightVisibility.fromJson(data(walls));
+    final reused = fresh();
     at(reused, 1.75);
-    final fresh = SvgHeightVisibility.fromJson(data(walls));
-    expect(at(reused, 3).polygon, at(fresh, 3).polygon);
-    expect(at(reused, 1.75).polygon, at(fresh, 1.75).polygon);
+    expect(at(reused, 3).polygon, at(fresh(), 3).polygon,
+        reason: 'the low wall stopped blocking');
+    expect(at(reused, 1.75).polygon, at(fresh(), 1.75).polygon,
+        reason: 'the low wall blocks again');
   });
 
   test('two walls over the same footprint keep their corners', () {

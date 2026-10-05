@@ -1207,7 +1207,10 @@ class SvgHeightVisibility {
     var best = range;
     int? wall, bestEdge;
     final rootEntry = tree.entry(origin, direction, best);
-    if (rootEntry == null) return null;
+    if (rootEntry == null) {
+      stats.cells++;
+      return null;
+    }
     // Each node with where the ray enters its bounds. A nearer hit found
     // since it was pushed rules it out once the entry lies beyond it.
     final stack = <_EdgeNode>[tree];
