@@ -110,7 +110,8 @@ Abyss and Icebox it blocked real sightlines across drops and gaps (+54% and
 Riot blocks three places the measured model left open:
 - the floor past the end of Bind's B container. Dara chose Riot's lines
   here (2026-10-04), and the test follows them;
-- Breeze Mid's slanted-roof opening, whose test follows Riot;
+- Breeze Mid's slanted-roof opening. Dara chose Riot's lines here too
+  (2026-10-04), and the test follows them;
 - the Haven C Garage window from the garage floor. Dara kept it open
   (2026-10-04), so its lines are cleared for layer 0 and its test checks
   the window is open.
