@@ -408,7 +408,17 @@ class SvgHeightVisibility {
       }
       Offset? target;
       if (wall != null) {
-        target =
+        // Leave the ink onto open floor within reach. The nearest edge can be
+        // a seam with the next piece of the same wall, or face the unplayable
+        // side of a building, and stepping across either lands back in ink.
+        // Failing that, step across the nearest edge and try again from there.
+        target = _steppedAcross(current, wall.rings, 0.02,
+                inside: wall.contains,
+                reach: maxDistance - (current - point).distance,
+                accept: (p) =>
+                    (p - point).distance <= maxDistance &&
+                    _blockingWallAt(p) == null &&
+                    receiverContains(p)) ??
             _steppedAcross(current, wall.rings, 0.02, inside: wall.contains);
       } else {
         target = _pulledIn(current, 0.02);
@@ -449,14 +459,17 @@ class SvgHeightVisibility {
   }
 
   /// The nearest point on the rings' boundary, stepped [clearance] to the
-  /// side of the edge that [inside] reports as [wantInside]. Null when the
-  /// rings have no edges or neither side satisfies the test.
+  /// side of the edge that [inside] reports as [wantInside]. With [accept],
+  /// the nearest such point that [accept] also allows, on any edge no
+  /// farther than [reach]. Null when no side satisfies the tests.
   static Offset? _steppedAcross(
       Offset point, List<List<Offset>> rings, double clearance,
-      {required bool Function(Offset) inside, bool wantInside = false}) {
-    Offset? foot;
-    var bestDistance = double.infinity;
-    Offset normal = Offset.zero;
+      {required bool Function(Offset) inside,
+      bool wantInside = false,
+      bool Function(Offset)? accept,
+      double reach = double.infinity}) {
+    (double, Offset, Offset)? nearest;
+    final feet = <(double, Offset, Offset)>[];
     for (final ring in rings) {
       for (var i = 0; i < ring.length; i++) {
         final a = ring[i], b = ring[(i + 1) % ring.length];
@@ -468,18 +481,29 @@ class SvgHeightVisibility {
                 .clamp(0.0, 1.0);
         final candidate = a + edge * t;
         final d = (point - candidate).distance;
-        if (d < bestDistance) {
-          bestDistance = d;
-          foot = candidate;
-          normal = d > 1e-9
-              ? (point - candidate) / d
-              : Offset(-edge.dy, edge.dx) / edge.distance;
-        }
+        final normal = d > 1e-9
+            ? (point - candidate) / d
+            : Offset(-edge.dy, edge.dx) / edge.distance;
+        final foot = (d, candidate, normal);
+        if (nearest == null || d < nearest.$1) nearest = foot;
+        if (accept != null && d <= reach) feet.add(foot);
       }
     }
-    if (foot == null) return null;
-    for (final side in [foot + normal * clearance, foot - normal * clearance]) {
-      if (inside(side) == wantInside) return side;
+    if (nearest == null) return null;
+    final ordered = accept == null
+        // The first nearest edge, as before any acceptance test existed.
+        ? [nearest]
+        // Only edges within reach, usually a handful even on a long wall.
+        : (feet..sort((a, b) => a.$1.compareTo(b.$1)));
+    for (final (_, foot, normal) in ordered) {
+      for (final side in [
+        foot + normal * clearance,
+        foot - normal * clearance
+      ]) {
+        if (inside(side) == wantInside && (accept?.call(side) ?? true)) {
+          return side;
+        }
+      }
     }
     return null;
   }

@@ -39,4 +39,41 @@ void main() {
     expect(model.receiverContains(moved!), isTrue);
     expect((moved - const Offset(-0.5, 50)).distance, lessThan(1.5));
   });
+
+  test('a point in a wall cut into pieces leaves onto the floor, not a seam',
+      () {
+    // A one-unit-wide wall along the floor's west edge, cut every unit. The
+    // nearest edges are the seams with the neighbouring pieces; the floor
+    // is a little farther, to the east.
+    final pieces = SvgHeightVisibility.fromJson(data(
+      [
+        for (var y = 0; y < 10; y++)
+          wall('piece-$y', [rectangle(9, 40.0 + y, 10, 41.0 + y)])
+      ],
+      receiver: [_floor(rectangle(9.5, 0, 100, 100))],
+    ));
+    final moved = pieces.standablePointNear(const Offset(9.7, 45.1));
+    expect(moved, isNotNull);
+    expect(moved!.dx, greaterThan(10));
+    expect(pieces.receiverContains(moved), isTrue);
+  });
+
+  test('a far open edge does not stop a near exit through a thin neighbour',
+      () {
+    // Thin walls cover both near sides of a 4 x 10 wall. The open ends are
+    // 5 units away, out of reach; the way out is through a neighbour.
+    final boxed = SvgHeightVisibility.fromJson(data(
+      [
+        wall('wide', [rectangle(0, 0, 4, 10)]),
+        wall('west', [rectangle(-0.5, 0, 0, 10)]),
+        wall('east', [rectangle(4, 0, 4.5, 10)]),
+      ],
+      receiver: [_floor(rectangle(-20, -20, 20, 30))],
+    ));
+    const start = Offset(1.9, 5);
+    final moved = boxed.standablePointNear(start);
+    expect(moved, isNotNull);
+    expect((moved! - start).distance, lessThanOrEqualTo(2.5));
+    expect(boxed.walls.where((w) => w.contains(moved)), isEmpty);
+  });
 }
