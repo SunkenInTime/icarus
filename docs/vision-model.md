@@ -46,7 +46,9 @@ and the art decides where it is:
   units). This keeps both lines on walls that carry a ground line and an
   upper one. A short stretch with no parallel line (a bevel, a jog, a
   wall's end; at most 4 units, between edges that have one) takes the
-  nearest line's layers. A longer one takes none: a drawn ring or box that
+  layers of the nearest lines, all of them where several are equally near
+  (Riot often stacks a ground line and an upper line on one spot). A longer
+  one takes none: a drawn ring or box that
   only touches a wall is not part of it, and borrowing the wall's line there
   cut cones beside it into slivers.
 - Runs of equal layers become one-sided strips, 0.01 thick, inside the art.
@@ -61,6 +63,11 @@ and the art decides where it is:
 - Lines Riot lacks are added by hand in the vision-lines review data
   (`added` in `<map>.edits.json`). The only one so far is the Lotus defense
   platform wall, which the 3D map shows solid from 3.0 to 5.1 m.
+- Layers Riot has where the game is open are taken off the same way
+  (`cleared`: lines lying wholly inside an area lose the listed layers).
+  The only one so far is the Haven C Garage window, open from the garage
+  floor (layer 0) as in the 3D map; Dara ruled it open on 2026-09-19 and
+  again on 2026-10-04.
 - The receiver is the floor minus the wall art, so a cone never paints over
   a wall.
 
@@ -83,8 +90,8 @@ poles, low walls) the 3D map has, and the cones beside them look normal.
 
 | visible floor, both sides | measured model | art + Riot heights |
 |---|---|---|
-| leaked length | 1,747,007 | 2,327,130 (+33%) |
-| false-shadow length | 32,714,287 | 33,824,793 (+3.4%) |
+| leaked length | 1,747,007 | 2,323,163 (+33%) |
+| false-shadow length | 32,714,287 | 33,816,275 (+3.4%) |
 
 Pearl (−88% leaked), Summit (−90%), Breeze (−65%), Ascent (−63%), Corrode
 (−52%) and Haven (−43%) improve. Abyss, Fracture, Icebox and Sunset leak
@@ -100,12 +107,13 @@ leaving the map are never drawn, so it changed nothing visible on Pearl. On
 Abyss and Icebox it blocked real sightlines across drops and gaps (+54% and
 +34% false shadow on visible floor). It was not kept.
 
-Riot blocks three places the measured model left open. Their tests now follow
-Riot:
-- the floor past the end of Bind's B container;
-- Breeze Mid's slanted-roof opening;
-- the Haven C Garage window from the garage floor. This reverses the
-  2026-09-19 ruling, so its test is skipped pending a decision.
+Riot blocks three places the measured model left open:
+- the floor past the end of Bind's B container. Dara chose Riot's lines
+  here (2026-10-04), and the test follows them;
+- Breeze Mid's slanted-roof opening, whose test follows Riot;
+- the Haven C Garage window from the garage floor. Dara kept it open
+  (2026-10-04), so its lines are cleared for layer 0 and its test checks
+  the window is open.
 
 **Rejected.**
 - Riot's lines as they come: they leave gaps beside the art.

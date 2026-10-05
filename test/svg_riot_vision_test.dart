@@ -150,14 +150,13 @@ void main() {
   });
 
   test('the Haven garage window stays open from the garage floor', () {
-    // Dara, 2026-09-19: as a simplification the C Garage window is
-    // see-through from the floor. VALORANT's minimap lines block it there.
+    // Dara (2026-09-19, again 2026-10-04): the C Garage window is open
+    // from the floor, as in the 3D map. VALORANT's minimap lines close it
+    // there, so haven.edits.json clears them (`cleared`).
     final model = _model('haven', 'attack');
     expect(
         _sees(model, const Offset(131.651, 246.013),
             const Offset(137.17, 202.36)),
         isTrue);
-  },
-      skip: 'Riot blocks the garage window from the garage floor, reversing '
-          'the 2026-09-19 ruling: waiting on Dara');
+  });
 }
