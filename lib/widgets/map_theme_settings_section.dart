@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/services/map_theme_profile_code.dart';
+import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/map_theme_editor_dialog.dart';
+import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -43,7 +51,7 @@ class _ThemeProfilesList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profilesState = ref.watch(mapThemeProfilesProvider);
     final strategyTheme = ref.watch(strategyThemeProvider);
-    final hasActiveStrategy = ref.watch(strategyProvider).stratName != null;
+    final hasActiveStrategy = ref.watch(strategyProvider).strategyName != null;
 
     final overridePalette =
         hasActiveStrategy ? strategyTheme.overridePalette : null;
@@ -72,6 +80,7 @@ class _ThemeProfilesList extends ConsumerWidget {
               children: [
                 ShadButton.ghost(
                   size: ShadButtonSize.sm,
+                  enabled: canCreate,
                   onPressed: canCreate
                       ? () => showMapThemeEditorDialog(
                             context,
@@ -125,7 +134,9 @@ class _ThemeProfilesList extends ConsumerWidget {
           ),
           const SizedBox(height: 2),
         ],
-        _NewProfileRow(
+        _AddProfileRow(
+          icon: LucideIcons.plus,
+          label: "New profile",
           enabled: canCreate,
           onTap: () => showMapThemeEditorDialog(
             context,
@@ -133,7 +144,31 @@ class _ThemeProfilesList extends ConsumerWidget {
             initialPalette: ref.read(effectiveMapThemePaletteProvider),
           ),
         ),
+        _AddProfileRow(
+          icon: LucideIcons.clipboardPaste,
+          label: "Import profile code",
+          enabled: canCreate,
+          onTap: () => _importProfileCode(context, ref),
+        ),
       ],
+    );
+  }
+
+  Future<void> _importProfileCode(BuildContext context, WidgetRef ref) async {
+    final added = await _showImportProfileCodeDialog(context);
+    if (added == null || !context.mounted) return;
+
+    final hasActiveStrategy = ref.read(strategyProvider).strategyName != null;
+    // The toast outlives this section when Settings closes or the pane
+    // changes, so its action reads the app's container, not this ref.
+    final container = ProviderScope.containerOf(context, listen: false);
+    Settings.showToast(
+      message: "${added.name} added",
+      backgroundColor: Settings.tacticalVioletTheme.primary,
+      actionLabel: hasActiveStrategy ? "Use it" : null,
+      onActionPressed: hasActiveStrategy
+          ? () => _useImportedProfile(container, added)
+          : null,
     );
   }
 
@@ -144,14 +179,7 @@ class _ThemeProfilesList extends ConsumerWidget {
     required bool hasOverride,
   }) async {
     if (hasOverride) {
-      final confirmed = await ConfirmAlertDialog.show(
-        context: context,
-        title: "Discard custom colors?",
-        content:
-            "This strategy's custom colors will be replaced with \"${profile.name}\" and can't be brought back.",
-        confirmText: "Discard",
-        isDestructive: true,
-      );
+      final confirmed = await _confirmDiscardCustomColors(context, profile);
       if (!confirmed || !context.mounted) return;
     }
     ref
@@ -193,9 +221,16 @@ class _ThemeProfilesList extends ConsumerWidget {
   }
 }
 
-class _NewProfileRow extends StatelessWidget {
-  const _NewProfileRow({required this.enabled, required this.onTap});
+class _AddProfileRow extends StatelessWidget {
+  const _AddProfileRow({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
 
+  final IconData icon;
+  final String label;
   final bool enabled;
   final VoidCallback onTap;
 
@@ -221,13 +256,13 @@ class _NewProfileRow extends StatelessWidget {
                 SizedBox(
                   width: 22,
                   child: Icon(
-                    LucideIcons.plus,
+                    icon,
                     size: 15,
                     color: theme.mutedForeground,
                   ),
                 ),
                 Text(
-                  "New profile",
+                  label,
                   style: ShadTheme.of(context).textTheme.small.copyWith(
                         color: theme.mutedForeground,
                       ),
@@ -308,6 +343,12 @@ class _ProfileContextMenuButtonState
         ),
       if (!widget.profile.isBuiltIn)
         ShadContextMenuItem(
+          leading: const Icon(LucideIcons.copy, size: 16),
+          onPressed: _copyProfileCode,
+          child: const Text("Copy profile code"),
+        ),
+      if (!widget.profile.isBuiltIn)
+        ShadContextMenuItem(
           leading: Icon(
             LucideIcons.trash2,
             size: 16,
@@ -338,6 +379,31 @@ class _ProfileContextMenuButtonState
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
+  }
+
+  Future<void> _copyProfileCode() async {
+    try {
+      await Clipboard.setData(
+        ClipboardData(
+          text: MapThemeProfileCode.encode(
+            name: widget.profile.name,
+            colors: widget.profile.palette.toJson(),
+          ),
+        ),
+      );
+    } catch (_) {
+      Settings.showToast(
+        message: "Couldn't copy the profile code.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    Settings.showToast(
+      message: "Profile code copied",
+      backgroundColor: Settings.tacticalVioletTheme.primary,
+    );
   }
 
   Future<void> _editProfilePalette() async {
@@ -548,4 +614,313 @@ Future<String?> _showRenameDialog({
       );
     },
   );
+}
+
+/// Turns a shared profile code into a new custom profile. Returns the
+/// profile it added, or null when nothing was added.
+Future<MapThemeProfile?> _showImportProfileCodeDialog(
+  BuildContext context,
+) async {
+  // A code already on the clipboard fills the field, so the usual import is
+  // Import profile code, then Add profile.
+  // Reading it can fail (a browser can deny it); the field still works.
+  String? clipboardCode;
+  try {
+    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+    clipboardCode = MapThemeProfileCode.find(clipboard?.text ?? '');
+  } catch (_) {}
+  if (!context.mounted) return null;
+
+  return showShadDialog<MapThemeProfile>(
+    context: context,
+    builder: (_) => _ImportProfileCodeDialog(clipboardCode: clipboardCode),
+  );
+}
+
+class _ImportProfileCodeDialog extends ConsumerStatefulWidget {
+  const _ImportProfileCodeDialog({required this.clipboardCode});
+
+  final String? clipboardCode;
+
+  @override
+  ConsumerState<_ImportProfileCodeDialog> createState() =>
+      _ImportProfileCodeDialogState();
+}
+
+class _ImportProfileCodeDialogState
+    extends ConsumerState<_ImportProfileCodeDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.clipboardCode ?? '');
+  bool _adding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final result = MapThemeProfileCode.parse(_controller.text);
+    final code = result is MapThemeProfileCodeValid ? result : null;
+    final duplicate = code == null
+        ? null
+        : ref
+            .watch(mapThemeProfilesProvider)
+            .profiles
+            .where((profile) => profile.palette == code.toPalette())
+            .firstOrNull;
+
+    final (String? message, bool isError) = switch (result) {
+      MapThemeProfileCodeEmpty() => (null, false),
+      MapThemeProfileCodeInvalid() => (
+          "That isn't an Icarus profile code.",
+          true,
+        ),
+      MapThemeProfileCodeIncomplete() => (
+          "This code is incomplete. Copy the whole code and paste it again.",
+          true,
+        ),
+      MapThemeProfileCodeNewerVersion() => (
+          "This code is from a newer version of Icarus. Update Icarus to import it.",
+          true,
+        ),
+      MapThemeProfileCodeValid() when duplicate != null => (
+          "You already have these colors as “${duplicate.name}”.",
+          false,
+        ),
+      MapThemeProfileCodeValid() => (
+          _controller.text == widget.clipboardCode
+              ? "Pasted from your clipboard."
+              : null,
+          false,
+        ),
+    };
+    final canAdd = code != null && duplicate == null && !_adding;
+
+    return ShadDialog(
+      title: const Text("Import profile code"),
+      description: const Text(
+        "Paste a code someone shared to add their map colors to your profiles.",
+      ),
+      actions: [
+        ShadButton.secondary(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text("Cancel"),
+        ),
+        ShadButton(
+          enabled: canAdd,
+          onPressed: canAdd ? () => _add(code) : null,
+          child: const Text("Add profile"),
+        ),
+      ],
+      child: Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              CustomTextField(
+                controller: _controller,
+                hintText: "Paste a profile code",
+                hasError: isError,
+                autofocus: widget.clipboardCode == null,
+                onSubmitted: (_) {
+                  if (canAdd) _add(code);
+                },
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 16),
+                child: message == null
+                    ? null
+                    : Text(
+                        message,
+                        style: ShadTheme.of(context).textTheme.small.copyWith(
+                              fontSize: 12,
+                              color: isError
+                                  ? theme.destructive
+                                  : theme.mutedForeground,
+                            ),
+                      ),
+              ),
+              const SizedBox(height: 8),
+              _ProfileCodePreview(code: code),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _add(MapThemeProfileCodeValid code) async {
+    setState(() => _adding = true);
+    MapThemeProfile? created;
+    try {
+      created = await ref.read(mapThemeProfilesProvider.notifier).createProfile(
+            name: code.name,
+            palette: code.toPalette(),
+          );
+    } catch (_) {
+      created = null;
+    }
+    if (!mounted) return;
+    if (created == null) {
+      setState(() => _adding = false);
+      Settings.showToast(
+        message: "Couldn't add this profile.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    Navigator.of(context).pop(created);
+  }
+}
+
+/// The open map drawn in the pasted colors, so the importer sees what they
+/// are adding before they add it.
+class _ProfileCodePreview extends ConsumerWidget {
+  const _ProfileCodePreview({required this.code});
+
+  final MapThemeProfileCodeValid? code;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    const theme = Settings.tacticalVioletTheme;
+    final mapState = ref.watch(mapProvider);
+    final mapAsset =
+        'assets/maps/${Maps.mapNames[mapState.currentMap]}_map${mapState.isAttack ? "" : "_defense"}.svg';
+    final code = this.code;
+
+    return Container(
+      height: 250,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.border),
+        gradient: RadialGradient(
+          radius: 1.5,
+          colors: [theme.card, theme.background],
+        ),
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: Stack(
+              children: [
+                const Positioned.fill(
+                  child: Padding(
+                    padding: EdgeInsets.all(4),
+                    child: DotGrid(),
+                  ),
+                ),
+                if (code == null)
+                  Center(
+                    child: Text(
+                      "The colors show here once you paste a code.",
+                      style: ShadTheme.of(context).textTheme.small.copyWith(
+                            color: theme.mutedForeground,
+                          ),
+                    ),
+                  )
+                else
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: CanonicalMapArtwork(
+                        map: mapState.currentMap,
+                        isAttack: mapState.isAttack,
+                        child: SvgPicture.asset(
+                          mapAsset,
+                          colorMapper:
+                              MapSvgColorMapper.forPalette(code.toPalette()),
+                          fit: BoxFit.contain,
+                          semanticsLabel: 'Profile code preview',
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (code != null)
+            Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: theme.card.withValues(alpha: 0.92),
+                border: Border(top: BorderSide(color: theme.border)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(code.name, overflow: TextOverflow.ellipsis),
+                  ),
+                  _PaletteSwatches(palette: code.toPalette()),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<bool> _confirmDiscardCustomColors(
+  BuildContext context,
+  MapThemeProfile profile,
+) {
+  return ConfirmAlertDialog.show(
+    context: context,
+    title: "Discard custom colors?",
+    content:
+        "This strategy's custom colors will be replaced with \"${profile.name}\" and can't be brought back.",
+    confirmText: "Discard",
+    isDestructive: true,
+  );
+}
+
+/// The "Use it" action on an import toast: applies [profile] to the open
+/// strategy, asking first when that would discard its custom colors.
+Future<void> _useImportedProfile(
+  ProviderContainer container,
+  MapThemeProfile profile,
+) async {
+  if (container.read(strategyProvider).strategyName == null) return;
+  if (container.read(strategyThemeProvider).overridePalette != null) {
+    final context = appNavigatorKey.currentContext;
+    if (context == null) return;
+    final confirmed = await _confirmDiscardCustomColors(context, profile);
+    if (!confirmed) return;
+  }
+  // The toast outlives the profile if it was deleted in the meantime; never
+  // point the strategy at a profile that no longer exists.
+  final stillThere = container
+      .read(mapThemeProfilesProvider)
+      .profiles
+      .any((existing) => existing.id == profile.id);
+  if (!stillThere) {
+    Settings.showToast(
+      message: "${profile.name} was deleted.",
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+    return;
+  }
+  container
+      .read(strategyProvider.notifier)
+      .setThemeProfileForCurrentStrategy(profile.id);
+}
+
+extension on MapThemeProfileCodeValid {
+  MapThemePalette toPalette() => MapThemePalette.fromJson(colors);
 }

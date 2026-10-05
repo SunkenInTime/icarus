@@ -41,6 +41,14 @@ each page held for the step duration with full-fidelity page transitions
 between them.
 _Avoid_: video sequencing, movie export
 
+**Library tab**:
+One of the three destinations in the library's title strip. *My Library* is
+the user's own strategies and folders from every store, shown together;
+*Shared* is what teammates shared with them; *Community* is the public space.
+Whether a strategy is on this device, in the cloud, or both is a badge on the
+strategy, not a place the user goes.
+_Avoid_: This Computer, workspace (in user-facing copy)
+
 **Lineup**:
 A saved ability setup (position/aim reference) attached to a page, grouped
 into lineup groups.
@@ -49,3 +57,13 @@ into lineup groups.
 Icarus's zip-based strategy interchange format for import/export of whole
 strategies. Unrelated to video export.
 _Avoid_: archive (ambiguous with library backups)
+**Op**:
+One queued change to cloud data. An op lands when the server accepts it.
+Its op ID names that exact change. Changing the intended work creates a new op
+with a new ID; retrying the same work keeps the existing ID.
+_Avoid_: request, event
+
+**Outbox record**:
+The durable saved form of one queued op and its delivery state, used to recover
+unsent cloud work after an app restart. It is not a server payload.
+_Avoid_: payload, cached request

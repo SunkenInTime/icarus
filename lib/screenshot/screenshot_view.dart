@@ -31,6 +31,7 @@ class ScreenshotView extends ConsumerWidget {
     required this.showSpawnBarrier,
     required this.showRegionNames,
     required this.showUltOrbs,
+    required this.backgroundDotOpacity,
     required this.agents,
     required this.abilities,
     required this.text,
@@ -52,6 +53,7 @@ class ScreenshotView extends ConsumerWidget {
   final bool showSpawnBarrier;
   final bool showRegionNames;
   final bool showUltOrbs;
+  final double backgroundDotOpacity;
   final List<PlacedAgentNode> agents;
   final List<PlacedAbility> abilities;
   final List<PlacedText> text;
@@ -79,7 +81,6 @@ class ScreenshotView extends ConsumerWidget {
   /// surface that assertion.
   void hydrateProviders(ProviderContainer container) {
     CoordinateSystem.instance.setIsScreenshot(true);
-    container.read(strategyProvider.notifier).setFromState(strategyState);
     container.read(agentProvider.notifier).fromHive(agents);
     container.read(screenshotProvider.notifier).setIsScreenShot(true);
     container.read(abilityProvider.notifier).fromHive(abilities);
@@ -99,6 +100,9 @@ class ScreenshotView extends ConsumerWidget {
     container
         .read(drawingProvider.notifier)
         .rebuildAllPaths(CoordinateSystem.instance);
+    // Keep the strategy closed while its dependent providers are hydrated so
+    // their listeners cannot mistake capture setup for user edits.
+    container.read(strategyProvider.notifier).setFromState(strategyState);
   }
 
   @override
@@ -132,10 +136,10 @@ class ScreenshotView extends ConsumerWidget {
       width: CoordinateSystem.screenShotSize.width,
       child: Stack(
         children: [
-          const Positioned.fill(
+          Positioned.fill(
               child: Padding(
-            padding: EdgeInsets.all(4.0),
-            child: DotGrid(isScreenshot: true),
+            padding: const EdgeInsets.all(4.0),
+            child: DotGrid(isScreenshot: true, opacity: backgroundDotOpacity),
           )),
           Positioned(
             left: mapLeft,

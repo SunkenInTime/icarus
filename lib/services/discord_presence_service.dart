@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:discord_rich_presence/discord_rich_presence.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
@@ -224,4 +225,104 @@ class DiscordPresenceService {
 
   @visibleForTesting
   DiscordPresenceData? get lastPublished => _lastPublished;
+}
+
+/// Runs a [DiscordPresenceService] on its own isolate.
+///
+/// discord_rich_presence's Windows transport polls the Discord pipe once a
+/// second and sleeps 50 ms on the calling isolate in every poll. On the UI
+/// isolate that froze the app for 50 ms each second while Discord was
+/// running, which showed as a hitch in every drag and animation.
+class DiscordPresenceWorker {
+  Future<SendPort>? _inbox;
+  Isolate? _isolate;
+  bool _disposed = false;
+
+  Future<void> update(DiscordPresenceData presence) =>
+      _send(('update', presence));
+
+  /// Nothing to clear before the first update has started the worker.
+  Future<void> clear() =>
+      _inbox == null ? Future<void>.value() : _send(('clear', null));
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    final inbox = _inbox;
+    if (inbox == null) return;
+    final SendPort port;
+    try {
+      port = await inbox;
+    } catch (_) {
+      return;
+    }
+    final done = ReceivePort();
+    port.send(('dispose', done.sendPort));
+    // A worker that has stopped never answers; don't hold up shutdown.
+    await done.first.timeout(const Duration(seconds: 2), onTimeout: () => null);
+    done.close();
+    _isolate?.kill();
+  }
+
+  Future<void> _send(Object message) async {
+    if (!DiscordPresenceService.isSupported || _disposed) return;
+    try {
+      (await (_inbox ??= _start())).send(message);
+    } catch (error, stackTrace) {
+      developer.log(
+        'Discord Rich Presence could not start.',
+        name: 'DiscordPresenceWorker',
+        error: error,
+        stackTrace: stackTrace,
+        level: 700,
+      );
+    }
+  }
+
+  Future<SendPort> _start() async {
+    final ready = ReceivePort();
+    try {
+      _isolate = await Isolate.spawn(_run, ready.sendPort,
+          debugName: 'discord-presence');
+      return await ready.first as SendPort;
+    } catch (_) {
+      // Let the next update try again.
+      _inbox = null;
+      rethrow;
+    } finally {
+      ready.close();
+    }
+  }
+
+  static void _run(SendPort ready) {
+    // The package's pipe reads and closes can fail outside the service's
+    // own catch (Discord quitting mid-session). On the UI isolate those
+    // reached main()'s guarded zone; here an uncaught error would end the
+    // isolate, and presence with it, so this zone logs them instead.
+    runZonedGuarded(() {
+      final service = DiscordPresenceService();
+      final inbox = ReceivePort();
+      ready.send(inbox.sendPort);
+      inbox.listen((message) async {
+        switch (message) {
+          case ('update', final DiscordPresenceData presence):
+            unawaited(service.update(presence));
+          case ('clear', _):
+            unawaited(service.clear());
+          case ('dispose', final SendPort done):
+            await service.dispose();
+            done.send(null);
+            inbox.close();
+        }
+      });
+    }, (error, stackTrace) {
+      developer.log(
+        'Discord Rich Presence failed in the background.',
+        name: 'DiscordPresenceWorker',
+        error: error,
+        stackTrace: stackTrace,
+        level: 700,
+      );
+    });
+  }
 }

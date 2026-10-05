@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Icarus library navigation: five alternatives</title>
+<style>
+  :root {
+    --bg: #09090b; --sidebar: #141114; --card: #18181b; --panel: #1b1b1b; --raised: #27272a;
+    --border: #27272a; --fg: #fafafa; --muted: #a1a1aa; --primary: #7c3aed; --primary-deep: #4c1d95;
+    --danger: #ef4444; --ally: #3a7e5d; --enemy: #772727;
+    --r-md: 6px; --r-lg: 8px; --r-panel: 12px; --r-card: 16px; --r-pill: 22px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0e0e10; color: var(--fg);
+    font: 14px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 22px 16px 120px; }
+  svg { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* window frame */
+  .window { width: min(1280px, 96vw); height: 800px; border-radius: 12px; overflow: hidden; background: var(--bg);
+    border: 1px solid #2c2c30; box-shadow: 0 30px 80px rgba(0,0,0,.6); display: flex; flex-direction: column; position: relative; }
+  .titlebar { height: 40px; flex: none; display: flex; align-items: center; padding: 0 14px; background: #1c1c1e; border-bottom: 1px solid var(--border); position: relative; }
+  .lights { display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1){background:#ff5f57} .lights i:nth-child(2){background:#febc2e} .lights i:nth-child(3){background:#28c840}
+  .titlebar .title { position: absolute; left: 0; right: 0; text-align: center; color: #bdbdc2; font-weight: 600; pointer-events: none; font-size: 13px; }
+  .frame { flex: 1; display: flex; min-height: 0; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* dotted content area */
+  .content { flex: 1; overflow: auto; padding: 16px 24px 24px;
+    background-color: var(--bg);
+    background-image: radial-gradient(#26262a 1.2px, transparent 1.2px); background-size: 18px 18px; }
+
+  /* toolbar rows */
+  .row { display: flex; align-items: center; gap: 12px; padding: 0 24px; flex: none; }
+  .toolbar { height: 64px; border-bottom: 1px solid var(--border); }
+  .toolbar .spacer, .row .spacer { flex: 1; }
+  .crumbs { display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 500; white-space: nowrap; }
+  .crumbs .sep { color: var(--muted); font-size: 16px; }
+  .crumbs .dim { color: var(--muted); }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: var(--r-lg);
+    background: var(--raised); color: var(--fg); border: 1px solid transparent; font-weight: 500; white-space: nowrap; cursor: default; }
+  .btn.primary { background: var(--primary); }
+  .btn.outline { background: transparent; border-color: var(--border); }
+  .btn.icon { width: 36px; padding: 0; justify-content: center; }
+  .select { white-space: nowrap; display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: var(--r-lg); background: var(--card); border: 1px solid var(--border); }
+  .select .chev { color: var(--muted); }
+  .search { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: var(--r-lg); background: var(--card); border: 1px solid var(--border); color: var(--muted); width: 260px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #ec4899); border: 2px solid #3a3a3f; flex: none; }
+
+  /* scope tabs (shared by variants 1 and 2) */
+  .scopes { display: flex; align-items: center; gap: 4px; }
+  .scope { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: var(--r-lg); color: var(--muted); font-weight: 500; position: relative; }
+  .scope svg { font-size: 16px; }
+  .scope.active { color: var(--fg); background: var(--raised); }
+  .scope.underline.active { background: transparent; }
+  .scope.underline.active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -6px; height: 2px; background: var(--primary); border-radius: 2px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-right: 8px; }
+  .brand svg { font-size: 22px; }
+
+  /* chips */
+  .chips { display: flex; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-pill); background: var(--card); border: 1px solid var(--border); color: var(--muted); font-weight: 500; font-size: 13px; }
+  .chip.active { background: var(--primary-deep); border-color: var(--primary); color: var(--fg); }
+  .chip .count { color: var(--muted); font-weight: 400; }
+
+  /* segmented */
+  .seg { display: inline-flex; background: var(--raised); padding: 3px; border-radius: 10px; gap: 2px; }
+  .seg .item { padding: 6px 14px; border-radius: 7px; color: var(--muted); font-weight: 600; display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+  .seg .item.active { background: var(--bg); color: var(--fg); }
+  .seg.big .item { padding: 8px 18px; font-size: 15px; }
+
+  /* folders */
+  .folders { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-pill); font-weight: 500; }
+  .pill svg { color: #c4b5fd; font-size: 18px; }
+
+  /* strategy cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); padding: 8px; height: 250px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  .thumb { flex: 1; border-radius: 12px; position: relative; overflow: hidden;
+    background-image: linear-gradient(135deg, var(--m1), var(--m2)); }
+  .thumb::after { content: ""; position: absolute; inset: 0; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 6px, transparent 6px 18px); }
+  .thumb .kebab { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 8px; background: rgba(20,20,22,.85); display: flex; align-items: center; justify-content: center; }
+  .thumb .src { position: absolute; left: 8px; bottom: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(20,20,22,.85); font-size: 11px; font-weight: 600; display: inline-flex; gap: 5px; align-items: center; }
+  .meta { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; height: 84px; display: flex; flex-direction: column; gap: 6px; }
+  .meta .l1 { display: flex; align-items: center; gap: 8px; }
+  .meta .name { font-weight: 700; font-size: 15px; }
+  .meta .cloudtag { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 20px; border-radius: 6px; background: var(--raised); color: var(--muted); font-size: 12px; }
+  .meta .side { margin-left: auto; font-weight: 600; }
+  .side.attack { color: var(--danger); } .side.defense { color: #4ade80; }
+  .meta .l2 { display: flex; justify-content: space-between; color: var(--fg); }
+  .meta .l2 .when { color: var(--muted); }
+
+  /* sidebar (variant 5) */
+  .sidebar { width: 240px; flex: none; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: width .18s ease-out; overflow: hidden; }
+  .sidebar.collapsed { width: 60px; }
+  .sb-head { height: 52px; display: flex; align-items: center; padding: 0 12px; gap: 10px; border-bottom: 1px solid var(--border); flex: none; }
+  .sb-head .brand { margin: 0; flex: 1; }
+  .sb-head .toggle { margin-left: auto; color: var(--muted); }
+  .sb-body { flex: 1; overflow: auto; padding: 10px 8px; }
+  .sb-label { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--muted); text-transform: uppercase; padding: 10px 8px 6px; white-space: nowrap; }
+  .sb-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 8px; border-radius: var(--r-lg); color: var(--muted); white-space: nowrap; font-weight: 500; }
+  .sb-item svg { font-size: 16px; flex: none; }
+  .sb-item.active { background: var(--raised); color: var(--fg); }
+  .sb-item.folder { color: #d4d4d8; font-weight: 400; }
+  .sb-item .chev { width: 16px; color: var(--muted); }
+  .sb-item.d1 { padding-left: 22px; } .sb-item.d2 { padding-left: 38px; }
+  .sb-foot { border-top: 1px solid var(--border); padding: 10px 8px; }
+  .sidebar.collapsed .sb-label, .sidebar.collapsed .txt, .sidebar.collapsed .brand span, .sidebar.collapsed .tree, .sidebar.collapsed .chev { display: none; }
+  .sidebar.collapsed .sb-item { justify-content: center; padding: 0; }
+
+  /* sync badges (variant 3b) */
+  .thumb .sync { position: absolute; left: 8px; bottom: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(20,20,22,.88); font-size: 11px; font-weight: 600; display: inline-flex; gap: 5px; align-items: center; color: var(--muted); }
+  .thumb .sync.synced { color: #86efac; } .thumb .sync.pending { color: #fcd34d; } .thumb .sync.device { color: #d4d4d8; }
+  .thumb .syncbtn { position: absolute; right: 8px; bottom: 8px; padding: 4px 9px; border-radius: 6px; background: var(--primary); font-size: 11px; font-weight: 600; display: inline-flex; gap: 5px; align-items: center; }
+  .seg .item.disabled { opacity: .4; }
+
+  /* hub (variant 4) */
+  .hub-section { margin-bottom: 26px; }
+  .hub-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .hub-head h2 { margin: 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .hub-head .count { color: var(--muted); font-weight: 400; font-size: 14px; }
+  .hub-head .seeall { margin-left: auto; color: #c4b5fd; font-weight: 500; cursor: pointer; }
+  .hub-row { display: grid; grid-auto-flow: column; grid-auto-columns: 250px; gap: 16px; overflow: hidden; }
+  .hub-row .card { height: 220px; }
+  .hub-row .meta { height: 74px; }
+  .hub-row .folderCard { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); height: 220px; display: flex; flex-direction: column; justify-content: flex-end; padding: 16px; gap: 4px; }
+  .hub-row .folderCard svg { font-size: 42px; color: #c4b5fd; margin-bottom: auto; }
+  .hub-row .folderCard .n { font-weight: 600; } .hub-row .folderCard .c { color: var(--muted); font-size: 13px; }
+
+  /* community browse (variant 3) */
+  .community-hero { display: flex; gap: 16px; align-items: center; margin-bottom: 20px; }
+  .community-hero .search { width: 460px; height: 42px; }
+  .tag { padding: 4px 10px; border-radius: var(--r-pill); background: var(--card); border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+
+  /* switcher */
+  .switcher { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 10; }
+  .switcher .bar { display: flex; gap: 4px; padding: 5px; border-radius: 14px; background: #1c1c1f; border: 1px solid #333338; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .switcher button { background: transparent; border: 0; color: var(--muted); font: inherit; font-weight: 600; padding: 8px 12px; border-radius: 10px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+  .switcher button b { display: inline-flex; width: 20px; height: 20px; border-radius: 6px; background: #2b2b30; align-items: center; justify-content: center; font-size: 12px; color: var(--fg); }
+  .switcher button.active { background: var(--primary); color: #fff; }
+  .switcher button.active b { background: rgba(0,0,0,.25); }
+  .hint { font-size: 13px; color: var(--muted); background: #141416; padding: 8px 14px; border-radius: 10px; border: 1px solid #2a2a2e; max-width: 900px; text-align: center; }
+  h1 { font-size: 15px; font-weight: 600; color: var(--muted); margin: 0; }
+  h1 span { color: var(--fg); }
+</style>
+</head>
+<body>
+<h1>Icarus library navigation · <span id="vname"></span> · press 1–5 (b for 3b) or ←/→ to switch</h1>
+<div class="window" id="win"></div>
+
+<div class="switcher">
+  <div class="bar" id="bar"></div>
+  <div class="hint" id="hint"></div>
+</div>
+
+<script>
+const I = {
+  flame: '<svg viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
+  monitor: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  cloud: '<svg viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></svg>',
+  users: '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+  folder: '<svg viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>',
+  folderPlus: '<svg viewBox="0 0 24 24"><path d="M12 10v6M9 13h6"/><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg>',
+  chevD: '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  chevR: '<svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>',
+  chevL: '<svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
+  panel: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>',
+  star: '<svg viewBox="0 0 24 24"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>',
+  arrowUp: '<svg viewBox="0 0 24 24"><path d="m3 8 4-4 4 4M7 4v16M11 12h4M11 16h7M11 20h10"/></svg>',
+  cloudCheck: '<svg viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/><path d="m9 12 2 2 4-4"/></svg>',
+  cloudUp: '<svg viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/><path d="M12 16v-6M9 13l3-3 3 3"/></svg>',
+  clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  importExport: '<svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>',
+};
+
+const MAPS = { Ascent:['#b27c40','#5a3a1a'], Bind:['#8a4b2a','#3a1e10'], Haven:['#6b7a3a','#2c331a'], Split:['#3a5a7a','#172533'], Lotus:['#7a3a6b','#33182d'], Sunset:['#c06030','#4a2212'], Icebox:['#3a6a8a','#15303f'], Pearl:['#2a7a6a','#12352e'] };
+const STRATS = [
+  {name:'afeaf', map:'Ascent', side:'Attack', when:'3 days ago', src:'cloud'},
+  {name:'A-site default', map:'Bind', side:'Defense', when:'5 days ago', src:'cloud'},
+  {name:'B rush fast', map:'Haven', side:'Attack', when:'1 week ago', src:'local'},
+  {name:'Mid control', map:'Split', side:'Attack', when:'2 weeks ago', src:'shared'},
+  {name:'Retake B', map:'Lotus', side:'Defense', when:'3 weeks ago', src:'cloud'},
+  {name:'Anti-eco', map:'Sunset', side:'Defense', when:'1 month ago', src:'local'},
+  {name:'Post-plant A', map:'Icebox', side:'Attack', when:'1 month ago', src:'cloud'},
+  {name:'Pistol round', map:'Pearl', side:'Defense', when:'2 months ago', src:'local'},
+];
+const FOLDERS = ['Ascent Setups', 'Bind', 'Lineups', 'Scrims'];
+const SCOPES = [
+  {id:'local', icon:'monitor', label:'This Computer'},
+  {id:'cloud', icon:'cloud', label:'Cloud'},
+  {id:'shared', icon:'users', label:'Shared'},
+  {id:'community', icon:'globe', label:'Community'},
+];
+const SRC_ICON = { local:'monitor', cloud:'cloud', shared:'users' };
+
+function card(s, opts = {}) {
+  const [m1, m2] = MAPS[s.map];
+  const badge = opts.srcBadge ? `<span class="src">${I[SRC_ICON[s.src]]} ${s.src === 'local' ? 'This Computer' : s.src === 'cloud' ? 'Cloud' : 'Shared'}</span>` : '';
+  const SYNC = { synced: ['synced', 'cloudCheck', 'Synced'], pending: ['pending', 'clock', 'Pending'], device: ['device', 'monitor', 'On this device'] };
+  const sync = opts.sync && s.sync ? `<span class="sync ${SYNC[s.sync][0]}">${I[SYNC[s.sync][1]]} ${SYNC[s.sync][2]}</span>${s.sync === 'device' ? `<span class="syncbtn">${I.cloudUp} Sync</span>` : ''}` : '';
+  const cloudtag = !opts.srcBadge && !opts.sync && s.src !== 'local' ? `<span class="cloudtag">${I.cloud}</span>` : '';
+  return `<div class="card"><div class="thumb" style="--m1:${m1};--m2:${m2}"><span class="kebab">${I.dots}</span>${badge}${sync}</div>
+    <div class="meta"><div class="l1"><span class="name">${s.name}</span>${cloudtag}<span class="side ${s.side.toLowerCase()}">${s.side}</span></div>
+    <div class="l2"><span>${s.map}</span><span class="when">${s.when}</span></div></div></div>`;
+}
+const grid = (list, opts) => `<div class="grid">${list.map(s => card(s, opts)).join('')}</div>`;
+const pills = (names = FOLDERS) => `<div class="folders">${names.map(n => `<span class="pill">${I.folder}${n}</span>`).join('')}</div>`;
+const sortControls = () => `<span class="select">Date Created <span class="chev">${I.chevD}</span></span><span class="select">Ascending <span class="chev">${I.chevD}</span></span>`;
+const actions = (cloud = true) => `${cloud ? '' : `<span class="btn">${I.importExport} Import / Export ${I.chevD}</span>`}<span class="btn">${I.folderPlus} Add Folder</span><span class="btn primary">${I.plus} ${cloud ? 'Create Cloud Strategy' : 'Create Strategy'}</span>`;
+const crumbs = (...parts) => `<div class="crumbs">${parts.map((p, i) => `${i ? '<span class="sep">›</span>' : ''}<span class="${i === parts.length - 1 ? '' : 'dim'}">${p}</span>`).join('')}</div>`;
+const titlebar = (inner = '') => `<div class="titlebar"><div class="lights"><i></i><i></i><i></i></div>${inner || '<div class="title">Icarus: Valorant Strategies &amp; Line ups 4.6.0</div>'}</div>`;
+const scopeTabs = (active = 'cloud', cls = '') => `<div class="scopes">${SCOPES.map(s => `<span class="scope ${cls} ${s.id === active ? 'active' : ''}">${I[s.icon]}<span>${s.label}</span></span>`).join('')}</div>`;
+
+const VARIANTS = [
+  {
+    id: '1',
+    name: '1 · Two-row header',
+    tab: 'Two-row header',
+    hint: 'Scope gets its own full-width row, so the toolbar row keeps all its room. Costs ~44px of height, saves 64px of width and the hover rail.',
+    render: () => `${titlebar()}<div class="frame"><div class="main">
+      <div class="row" style="height:48px;border-bottom:1px solid var(--border)">
+        <span class="brand">${I.flame}</span>${scopeTabs('cloud', 'underline')}<span class="spacer"></span><span class="search">${I.search} Search strategies…</span><span class="avatar"></span>
+      </div>
+      <div class="row toolbar">${crumbs('Home')}<span class="spacer"></span>${sortControls()}${actions()}</div>
+      <div class="content">${pills()}${grid(STRATS.filter(s => s.src === 'cloud'))}</div>
+    </div></div>`,
+  },
+  {
+    id: '2',
+    name: '2 · One strip',
+    tab: 'One strip',
+    hint: 'Everything in the 40px title bar: tabs left; search, sort, New, avatar right. No second row. The breadcrumb only appears inside a folder (click a folder pill). Add Folder lives under New and in the right-click menu.',
+    state: { mode: 'library', signedOut: false, folder: null },
+    render: (st) => {
+      const tabs = [['library', 'folder', 'My Library'], ['shared', 'users', 'Shared'], ['community', 'globe', 'Community']];
+      const tabbar = `<div class="scopes" style="margin-left:14px">${tabs.map(([id, ic, l]) => `<span class="scope ${st.mode === id ? 'active' : ''}" data-mode="${id}" style="height:28px;font-size:13px;${id === 'shared' && st.signedOut ? 'opacity:.4' : ''}">${I[ic]}<span>${l}</span></span>`).join('')}</div>`;
+      const ib = (icon, extra = '') => `<span class="btn icon outline" style="width:28px;height:28px;border-color:transparent;color:var(--muted)${extra}">${icon}</span>`;
+      const account = st.signedOut ? `<span class="btn" data-auth style="height:28px;font-size:13px">Log In</span>` : `<span class="avatar" data-auth style="width:26px;height:26px"></span>`;
+      const right = st.mode === 'community'
+        ? `<span class="search" style="height:28px;width:280px;font-size:13px">${I.search} Search public strategies…</span>${account}`
+        : `${ib(I.search)}${ib(I.arrowUp)}<span class="btn primary" style="height:28px;font-size:13px;padding:0 10px 0 8px">${I.plus} New ${I.chevD}</span>${account}`;
+      const SYNCS = { 'afeaf': 'synced', 'A-site default': 'pending', 'B rush fast': 'device', 'Retake B': 'synced', 'Anti-eco': 'device', 'Post-plant A': 'synced', 'Pistol round': 'device' };
+      const mine = STRATS.filter(s => s.src !== 'shared').map(s => ({ ...s, sync: st.signedOut ? null : SYNCS[s.name] }));
+      let body;
+      if (st.mode === 'community') {
+        body = `<div class="hub-section" style="margin-top:8px"><div class="hub-head"><h2>Trending this week</h2><span class="seeall">See all ${I.chevR}</span></div>${grid(STRATS.slice(0, 4).map(s => ({...s, src: 'shared'})))}</div>
+          <div class="hub-section"><div class="hub-head"><h2>New on Ascent</h2><span class="seeall">See all ${I.chevR}</span></div>${grid(STRATS.slice(4).map(s => ({...s, src: 'shared'})))}</div>`;
+      } else if (st.mode === 'shared') {
+        body = `<div style="height:8px"></div>` + pills(['Team Phoenix', 'Coach drops']) + grid(STRATS.filter(s => s.src === 'shared').concat(STRATS.slice(4, 6)).map(s => ({ ...s, src: 'shared' })));
+      } else if (st.folder) {
+        body = `<div class="hub-head" style="margin:6px 0 16px"><span class="btn icon outline" data-back style="width:30px;height:30px">${I.chevL}</span><h2 style="font-size:20px;font-weight:500"><span style="color:var(--muted)">My Library</span><span style="color:var(--muted);font-size:16px">›</span>${st.folder}</h2><span class="count" style="color:var(--muted)">4 strategies</span></div>` + grid(mine.slice(0, 4), { sync: true });
+      } else {
+        body = `<div style="height:8px"></div>` + `<div class="folders">${FOLDERS.map(n => `<span class="pill" data-folder="${n}">${I.folder}${n}</span>`).join('')}</div>` + grid(mine, { sync: true });
+      }
+      return `${titlebar(`<div style="display:flex;align-items:center;flex:1;gap:8px">${tabbar}<span class="spacer" style="flex:1"></span>${right}</div>`)}
+        <div class="frame"><div class="main"><div class="content">${body}</div></div></div>`;
+    },
+    bind: (root, st, rerender) => {
+      root.querySelectorAll('[data-mode]').forEach(el => el.onclick = () => { if (el.dataset.mode === 'shared' && st.signedOut) return; st.mode = el.dataset.mode; st.folder = null; rerender(); });
+      root.querySelectorAll('[data-auth]').forEach(el => el.onclick = () => { st.signedOut = !st.signedOut; if (st.signedOut && st.mode === 'shared') st.mode = 'library'; rerender(); });
+      root.querySelectorAll('[data-folder]').forEach(el => el.onclick = () => { st.folder = el.dataset.folder; rerender(); });
+      root.querySelectorAll('[data-back]').forEach(el => el.onclick = () => { st.folder = null; rerender(); });
+    },
+  },
+  {
+    id: '3',
+    name: '3 · My Library / Community, with source filters',
+    tab: 'Library / Community',
+    hint: 'Two top-level modes only. Inside My Library the source is a filter chip, and cards carry a source badge. Community is half the primary nav. Click the segmented control to see the Community state.',
+    state: { mode: 'library', chip: 'all' },
+    render: (st) => {
+      const seg = `<span class="seg big"><span class="item ${st.mode === 'library' ? 'active' : ''}" data-mode="library">${I.folder} My Library</span><span class="item ${st.mode === 'community' ? 'active' : ''}" data-mode="community">${I.globe} Community</span></span>`;
+      if (st.mode === 'community') {
+        return `${titlebar()}<div class="frame"><div class="main">
+          <div class="row toolbar">${seg}<span class="spacer"></span><span class="avatar"></span></div>
+          <div class="content">
+            <div class="community-hero"><span class="search">${I.search} Search public strategies, maps, agents…</span><span class="tag">Ascent</span><span class="tag">Attack</span><span class="tag">Most copied</span></div>
+            <div class="hub-section"><div class="hub-head"><h2>Trending this week</h2><span class="seeall">See all ${I.chevR}</span></div>${grid(STRATS.slice(0, 4).map(s => ({...s, src: 'shared'})))}</div>
+            <div class="hub-section"><div class="hub-head"><h2>New on Ascent</h2><span class="seeall">See all ${I.chevR}</span></div>${grid(STRATS.slice(4).map(s => ({...s, src: 'shared'})))}</div>
+          </div></div></div>`;
+      }
+      const chips = [['all', 'All', STRATS.length], ['local', 'This Computer', 3], ['cloud', 'Cloud', 4], ['shared', 'Shared with me', 1]];
+      const list = st.chip === 'all' ? STRATS : STRATS.filter(s => s.src === st.chip);
+      return `${titlebar()}<div class="frame"><div class="main">
+        <div class="row toolbar">${seg}${crumbs('', 'Home').replace('<span class="dim"></span><span class="sep">›</span>', '')}<span class="spacer"></span>${actions()}<span class="avatar"></span></div>
+        <div class="row" style="height:48px;border-bottom:1px solid var(--border)"><div class="chips">${chips.map(([id, l, c]) => `<span class="chip ${st.chip === id ? 'active' : ''}" data-chip="${id}">${id === 'all' ? '' : I[SRC_ICON[id]]} ${l} <span class="count">${c}</span></span>`).join('')}</div><span class="spacer"></span>${sortControls()}</div>
+        <div class="content">${st.chip === 'shared' ? '' : pills(st.chip === 'all' ? [...FOLDERS, 'Old VODs'] : FOLDERS)}${grid(list, { srcBadge: st.chip === 'all' })}</div>
+      </div></div>`;
+    },
+    bind: (root, st, rerender) => {
+      root.querySelectorAll('[data-mode]').forEach(el => el.onclick = () => { st.mode = el.dataset.mode; rerender(); });
+      root.querySelectorAll('[data-chip]').forEach(el => el.onclick = () => { st.chip = el.dataset.chip; rerender(); });
+    },
+  },
+  {
+    id: '3b',
+    name: '3b · One library, sync is a badge',
+    tab: 'One library',
+    hint: 'No This Computer scope. One library where every strategy shows its sync state; local-only ones get a Sync action. Top level is My Library / Shared / Community. Click the avatar to see the signed-out state.',
+    state: { mode: 'library', signedOut: false },
+    render: (st) => {
+      const seg = `<span class="seg big"><span class="item ${st.mode === 'library' ? 'active' : ''}" data-mode="library">${I.folder} My Library</span><span class="item ${st.mode === 'shared' ? 'active' : ''} ${st.signedOut ? 'disabled' : ''}" data-mode="shared">${I.users} Shared</span><span class="item ${st.mode === 'community' ? 'active' : ''}" data-mode="community">${I.globe} Community</span></span>`;
+      const account = st.signedOut ? `<span class="btn" data-auth>Log In</span>` : `<span class="avatar" data-auth></span>`;
+      const SYNCS = { 'afeaf': 'synced', 'A-site default': 'pending', 'B rush fast': 'device', 'Retake B': 'synced', 'Anti-eco': 'device', 'Post-plant A': 'synced', 'Pistol round': 'device' };
+      const mine = STRATS.filter(s => s.src !== 'shared').map(s => ({ ...s, sync: st.signedOut ? null : SYNCS[s.name] }));
+      let body;
+      if (st.mode === 'community') {
+        body = `<div class="community-hero"><span class="search">${I.search} Search public strategies, maps, agents…</span><span class="tag">Ascent</span><span class="tag">Attack</span><span class="tag">Most copied</span></div>
+          <div class="hub-section"><div class="hub-head"><h2>Trending this week</h2><span class="seeall">See all ${I.chevR}</span></div>${grid(STRATS.slice(0, 4).map(s => ({...s, src: 'shared'})))}</div>`;
+      } else if (st.mode === 'shared') {
+        body = pills(['Team Phoenix', 'Coach drops']) + grid(STRATS.filter(s => s.src === 'shared').concat(STRATS.slice(4, 6)).map(s => ({ ...s, src: 'shared' })));
+      } else {
+        body = pills() + grid(mine, { sync: true });
+      }
+      const toolbarRight = st.mode === 'community' ? account : st.mode === 'shared' ? `<span class="btn">${I.link || I.plus} Add by Link or Code</span>${account}` : `${sortControls()}<span class="btn">${I.folderPlus} Add Folder</span><span class="btn primary">${I.plus} Create Strategy</span>${account}`;
+      return `${titlebar()}<div class="frame"><div class="main">
+        <div class="row toolbar">${seg}${st.mode === 'library' ? crumbs('Home') : ''}<span class="spacer"></span>${toolbarRight}</div>
+        <div class="content">${body}</div>
+      </div></div>`;
+    },
+    bind: (root, st, rerender) => {
+      root.querySelectorAll('[data-mode]').forEach(el => el.onclick = () => { if (el.classList.contains('disabled')) return; st.mode = el.dataset.mode; rerender(); });
+      root.querySelectorAll('[data-auth]').forEach(el => el.onclick = () => { st.signedOut = !st.signedOut; if (st.signedOut && st.mode === 'shared') st.mode = 'library'; rerender(); });
+    },
+  },
+  {
+    id: '4',
+    name: '4 · Home hub, drill in',
+    tab: 'Home hub',
+    hint: 'No persistent nav. Home stacks a row per source with a "See all" that drills into the full workspace, breadcrumb "Home › Cloud › …" to get back. Community gets a real row with real content. Click "See all" on Cloud to drill in.',
+    state: { drilled: false },
+    render: (st) => {
+      if (st.drilled) {
+        return `${titlebar()}<div class="frame"><div class="main">
+          <div class="row toolbar"><span class="btn icon outline" data-back>${I.chevL}</span>${crumbs('Home', 'Cloud')}<span class="spacer"></span>${sortControls()}${actions()}<span class="avatar"></span></div>
+          <div class="content">${pills()}${grid(STRATS.filter(s => s.src === 'cloud'))}</div></div></div>`;
+      }
+      const section = (icon, title, count, body) => `<div class="hub-section"><div class="hub-head"><h2>${I[icon]} ${title} <span class="count">${count}</span></h2><span class="seeall" data-drill>See all ${I.chevR}</span></div><div class="hub-row">${body}</div></div>`;
+      const fc = (n, c) => `<div class="folderCard">${I.folder}<span class="n">${n}</span><span class="c">${c}</span></div>`;
+      return `${titlebar()}<div class="frame"><div class="main">
+        <div class="row toolbar">${crumbs('Home')}<span class="spacer"></span><span class="search">${I.search} Search everything…</span><span class="btn primary">${I.plus} Create Strategy</span><span class="avatar"></span></div>
+        <div class="content">
+          ${section('cloud', 'Cloud', '4 strategies · 4 folders', fc('Ascent Setups', '3 strategies') + STRATS.filter(s => s.src === 'cloud').map(s => card(s)).join(''))}
+          ${section('monitor', 'This Computer', '3 strategies', STRATS.filter(s => s.src === 'local').map(s => card(s)).join('') + fc('Scrims', '12 strategies'))}
+          ${section('users', 'Shared with you', '1 strategy', STRATS.filter(s => s.src === 'shared').map(s => card(s)).join(''))}
+          ${section('globe', 'Community', 'Trending', STRATS.slice(1, 6).map(s => card({...s, src: 'shared'})).join(''))}
+        </div></div></div>`;
+    },
+    bind: (root, st, rerender) => {
+      root.querySelectorAll('[data-drill]').forEach(el => el.onclick = () => { st.drilled = true; rerender(); });
+      root.querySelectorAll('[data-back]').forEach(el => el.onclick = () => { st.drilled = false; rerender(); });
+    },
+  },
+  {
+    id: '5',
+    name: '5 · Sidebar that earns its height',
+    tab: 'Full sidebar',
+    hint: 'Keep a sidebar, but fixed (no hover) and filled: scopes, the current scope\'s folder tree, favorites, account. Finder/Drive model. Click the panel icon to collapse it to icons.',
+    state: { collapsed: false },
+    render: (st) => `${titlebar()}<div class="frame">
+      <div class="sidebar ${st.collapsed ? 'collapsed' : ''}">
+        <div class="sb-head"><span class="brand">${I.flame}<span>Icarus</span></span><span class="toggle" data-toggle>${I.panel}</span></div>
+        <div class="sb-body">
+          <div class="sb-label">Library</div>
+          ${SCOPES.map(s => `<div class="sb-item ${s.id === 'cloud' ? 'active' : ''}">${I[s.icon]}<span class="txt">${s.label}</span></div>`).join('')}
+          <div class="tree">
+            <div class="sb-label">Cloud folders</div>
+            <div class="sb-item folder"><span class="chev">${I.chevD}</span>${I.folder}<span class="txt">Ascent Setups</span></div>
+            <div class="sb-item folder d1"><span class="chev"></span>${I.folder}<span class="txt">Attack</span></div>
+            <div class="sb-item folder d1"><span class="chev"></span>${I.folder}<span class="txt">Defense</span></div>
+            <div class="sb-item folder"><span class="chev">${I.chevR}</span>${I.folder}<span class="txt">Bind</span></div>
+            <div class="sb-item folder"><span class="chev">${I.chevR}</span>${I.folder}<span class="txt">Lineups</span></div>
+            <div class="sb-item folder"><span class="chev"></span>${I.folder}<span class="txt">Scrims</span></div>
+            <div class="sb-label">Favorites</div>
+            <div class="sb-item folder"><span class="chev"></span>${I.star}<span class="txt">A-site default</span></div>
+            <div class="sb-item folder"><span class="chev"></span>${I.star}<span class="txt">Post-plant A</span></div>
+          </div>
+        </div>
+        <div class="sb-foot"><div class="sb-item"><span class="avatar" style="width:22px;height:22px"></span><span class="txt">Dara</span></div></div>
+      </div>
+      <div class="main">
+        <div class="row toolbar">${crumbs('Cloud', 'Home')}<span class="spacer"></span><span class="search">${I.search} Search…</span>${sortControls()}${actions()}</div>
+        <div class="content">${pills()}${grid(STRATS.filter(s => s.src === 'cloud'))}</div>
+      </div></div>`,
+    bind: (root, st, rerender) => {
+      root.querySelectorAll('[data-toggle]').forEach(el => el.onclick = () => { st.collapsed = !st.collapsed; rerender(); });
+    },
+  },
+];
+
+let current = 0;
+const win = document.getElementById('win');
+const bar = document.getElementById('bar');
+function show(i) {
+  current = (i + VARIANTS.length) % VARIANTS.length;
+  const v = VARIANTS[current];
+  const rerender = () => { win.innerHTML = v.render(v.state); v.bind && v.bind(win, v.state, rerender); };
+  const flag = (location.hash.split(':')[1] || '');
+  if (v.state && flag === 'signedout') v.state.signedOut = true;
+  if (v.state && flag === 'folder') v.state.folder = 'Ascent Setups';
+  if (v.state) { if (flag === 'community') v.state.mode = 'community'; if (flag === 'drilled') v.state.drilled = true; if (flag === 'collapsed') v.state.collapsed = true; }
+  rerender();
+  document.getElementById('vname').textContent = v.name;
+  document.getElementById('hint').textContent = v.hint;
+  [...bar.children].forEach((b, j) => b.classList.toggle('active', j === current));
+  if (location.hash.slice(1).split(':')[0] !== v.id) location.hash = v.id;
+}
+VARIANTS.forEach((v, i) => { const b = document.createElement('button'); b.innerHTML = `<b>${v.id}</b>${v.tab}`; b.onclick = () => show(i); bar.appendChild(b); });
+window.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '5') show(VARIANTS.findIndex(v => v.id === e.key));
+  if (e.key === 'b') show(VARIANTS.findIndex(v => v.id === '3b'));
+  if (e.key === 'ArrowRight') show(current + 1);
+  if (e.key === 'ArrowLeft') show(current - 1);
+});
+show(Math.max(0, VARIANTS.findIndex(v => v.id === location.hash.slice(1).split(':')[0])));
+</script>
+</body>
+</html>

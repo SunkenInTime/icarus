@@ -1,0 +1,282 @@
+import type { QueryCtx, MutationCtx } from "../_generated/server";
+import type { Doc, Id } from "../_generated/dataModel";
+import {
+  errorWithCode,
+  forbiddenError,
+  internalError,
+  unauthenticatedError,
+} from "./errors";
+
+export type StrategyRole = "owner" | "editor" | "viewer";
+export type CollaboratorRole = Exclude<StrategyRole, "owner">;
+
+type AnyCtx = QueryCtx | MutationCtx;
+
+const roleRank: Record<StrategyRole, number> = {
+  viewer: 1,
+  editor: 2,
+  owner: 3,
+};
+
+export function getCanonicalExternalId(identity: {
+  tokenIdentifier: string;
+}): string {
+  return identity.tokenIdentifier;
+}
+
+export function getLegacyExternalId(identity: {
+  subject?: string | null;
+  tokenIdentifier: string;
+}): string | null {
+  const subject = identity.subject;
+  if (subject == null || subject == identity.tokenIdentifier) {
+    return null;
+  }
+  return subject;
+}
+
+export async function findUserByIdentity(
+  ctx: AnyCtx,
+  identity: {
+    subject?: string | null;
+    tokenIdentifier: string;
+  },
+): Promise<Doc<"users"> | null> {
+  const canonicalExternalId = getCanonicalExternalId(identity);
+  const canonicalUser = await ctx.db
+    .query("users")
+    .withIndex("by_externalId", (q) => q.eq("externalId", canonicalExternalId))
+    .first();
+
+  if (canonicalUser !== null) {
+    return canonicalUser;
+  }
+
+  const legacyExternalId = getLegacyExternalId(identity);
+  if (legacyExternalId == null) {
+    return null;
+  }
+
+  return await ctx.db
+    .query("users")
+    .withIndex("by_externalId", (q) => q.eq("externalId", legacyExternalId))
+    .first();
+}
+
+export async function requireCurrentUser(ctx: AnyCtx): Promise<Doc<"users">> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity === null) {
+    throw unauthenticatedError();
+  }
+
+  const user = await findUserByIdentity(ctx, identity);
+
+  if (user === null) {
+    throw internalError(
+      "Missing user record. Call users:ensureCurrentUser before querying collaborative data.",
+    );
+  }
+
+  return user;
+}
+
+/**
+ * Refuses a write bound to an account other than the caller's.
+ * [accountSubject] is the identity subject (the JWT `sub`) of the account
+ * the write belongs to; for Icarus it is the Supabase user id the client
+ * keys its outbox by. The refusal is FORBIDDEN, thrown, so nothing in the
+ * write is applied or recorded and the client keeps the work for its own
+ * account to send again.
+ */
+export async function assertCallerIsAccount(
+  ctx: AnyCtx,
+  accountSubject: string,
+): Promise<void> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity === null) {
+    throw unauthenticatedError();
+  }
+  if (identity.subject !== accountSubject) {
+    throw errorWithCode(
+      "FORBIDDEN",
+      "Forbidden: these changes belong to a different account",
+    );
+  }
+}
+
+export async function getStrategyRoleForUser(
+  ctx: AnyCtx,
+  strategy: Doc<"strategies">,
+  userId: Id<"users">,
+): Promise<StrategyRole | null> {
+  if (strategy.ownerId === userId) {
+    return "owner";
+  }
+
+  const collaborator = await ctx.db
+    .query("strategyCollaborators")
+    .withIndex("by_strategyId_userId", (q) =>
+      q.eq("strategyId", strategy._id).eq("userId", userId),
+    )
+    .first();
+
+  return collaborator?.role ?? null;
+}
+
+export async function getFolderRoleForUser(
+  ctx: AnyCtx,
+  folder: Doc<"folders">,
+  userId: Id<"users">,
+): Promise<StrategyRole | null> {
+  if (folder.ownerId === userId) {
+    return "owner";
+  }
+
+  const collaborator = await ctx.db
+    .query("folderCollaborators")
+    .withIndex("by_folderId_userId", (q) =>
+      q.eq("folderId", folder._id).eq("userId", userId),
+    )
+    .first();
+
+  return collaborator?.role ?? null;
+}
+
+export function higherRole(
+  left: StrategyRole | null,
+  right: StrategyRole | null,
+): StrategyRole | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return roleRank[left] >= roleRank[right] ? left : right;
+}
+
+export function higherCollaboratorRole(
+  left: CollaboratorRole,
+  right: CollaboratorRole,
+): CollaboratorRole {
+  return higherRole(left, right) as CollaboratorRole;
+}
+
+export async function getEffectiveFolderRoleForUser(
+  ctx: AnyCtx,
+  folder: Doc<"folders">,
+  userId: Id<"users">,
+): Promise<StrategyRole | null> {
+  let current: Doc<"folders"> | null = folder;
+  let bestRole: StrategyRole | null = null;
+
+  while (current !== null) {
+    bestRole = higherRole(
+      bestRole,
+      await getFolderRoleForUser(ctx, current, userId),
+    );
+    const parentFolderId: Id<"folders"> | undefined = current.parentFolderId;
+    if (parentFolderId === undefined) {
+      break;
+    }
+    current = (await ctx.db.get(parentFolderId)) as Doc<"folders"> | null;
+  }
+
+  return bestRole;
+}
+
+export async function getEffectiveStrategyRoleForUser(
+  ctx: AnyCtx,
+  strategy: Doc<"strategies">,
+  userId: Id<"users">,
+): Promise<StrategyRole | null> {
+  let bestRole = await getStrategyRoleForUser(ctx, strategy, userId);
+
+  if (strategy.folderId !== undefined) {
+    const folder = await ctx.db.get(strategy.folderId);
+    if (folder !== null) {
+      bestRole = higherRole(
+        bestRole,
+        await getEffectiveFolderRoleForUser(ctx, folder, userId),
+      );
+    }
+  }
+
+  return bestRole;
+}
+
+export function hasRole(
+  actual: StrategyRole | null,
+  required: StrategyRole,
+): boolean {
+  if (actual === null) return false;
+  return roleRank[actual] >= roleRank[required];
+}
+
+export async function assertStrategyRole(
+  ctx: AnyCtx,
+  strategy: Doc<"strategies">,
+  required: StrategyRole,
+): Promise<{ user: Doc<"users">; role: StrategyRole }> {
+  const user = await requireCurrentUser(ctx);
+  const role = await getEffectiveStrategyRoleForUser(ctx, strategy, user._id);
+
+  if (!hasRole(role, required)) {
+    throw forbiddenError();
+  }
+
+  return { user, role: role as StrategyRole };
+}
+
+/**
+ * The role a reader holds on [strategy]: their own when they have one,
+ * otherwise viewer when [shareToken] is a live link to this strategy. A link
+ * lets anyone holding it look without an account; it never grants a write,
+ * and it stops working the moment its owner disables it.
+ */
+export async function assertStrategyReadable(
+  ctx: AnyCtx,
+  strategy: Doc<"strategies">,
+  shareToken: string | undefined,
+): Promise<StrategyRole> {
+  if (shareToken === undefined) {
+    return (await assertStrategyRole(ctx, strategy, "viewer")).role;
+  }
+
+  const identity = await ctx.auth.getUserIdentity();
+  const user =
+    identity === null ? null : await findUserByIdentity(ctx, identity);
+  if (user !== null) {
+    const role = await getEffectiveStrategyRoleForUser(ctx, strategy, user._id);
+    if (role !== null) {
+      return role;
+    }
+  }
+
+  const link = await ctx.db
+    .query("shareLinks")
+    .withIndex("by_token", (q) => q.eq("token", shareToken))
+    .first();
+  if (link !== null && link.strategyId === strategy._id) {
+    if (link.revokedAt !== undefined) {
+      throw errorWithCode("SHARE_LINK_REVOKED", "Share link revoked");
+    }
+    return "viewer";
+  }
+
+  if (identity === null) {
+    throw unauthenticatedError();
+  }
+  throw forbiddenError();
+}
+
+export async function assertFolderRole(
+  ctx: AnyCtx,
+  folder: Doc<"folders">,
+  required: StrategyRole,
+): Promise<{ user: Doc<"users">; role: StrategyRole }> {
+  const user = await requireCurrentUser(ctx);
+  const role = await getEffectiveFolderRoleForUser(ctx, folder, user._id);
+
+  if (!hasRole(role, required)) {
+    throw forbiddenError();
+  }
+
+  return { user, role: role as StrategyRole };
+}

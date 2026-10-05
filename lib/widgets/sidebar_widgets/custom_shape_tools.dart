@@ -179,7 +179,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             min: 5,
             max: 80,
             leading: Icon(LucideIcons.droplet,
-                color: Settings.tacticalVioletTheme.mutedForeground),
+                size: 16, color: Settings.tacticalVioletTheme.mutedForeground),
             // label: 'O',
             hintText: 'Enter Opacity',
             suffix: '%',
