@@ -7,20 +7,21 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('version guard allows current and older versions', () {
     expect(
-      () => StrategyProvider.throwIfImportedVersionIsTooNewForTest(
+      () => StrategyImportExportService.throwIfImportedVersionIsTooNewForTest(
         Settings.versionNumber,
       ),
       returnsNormally,
     );
     expect(
-      () => StrategyProvider.throwIfImportedVersionIsTooNewForTest(
+      () => StrategyImportExportService.throwIfImportedVersionIsTooNewForTest(
         Settings.versionNumber - 1,
       ),
       returnsNormally,
@@ -45,8 +46,7 @@ void main() {
     addTearDown(container.dispose);
 
     await expectLater(
-      container
-          .read(strategyProvider.notifier)
+      StrategyImportExportService(container)
           .loadFromFilePath(badVersionFile.path),
       throwsA(isA<NewerVersionImportException>()),
     );

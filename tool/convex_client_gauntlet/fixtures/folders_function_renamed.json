@@ -1,0 +1,50 @@
+{
+  "url": "https://your-deployment.convex.cloud",
+  "functions": [
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {
+          "parentFolderPublicId": {
+            "fieldType": { "type": "string" },
+            "optional": true
+          },
+          "scope": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "literal", "value": "owned" },
+                { "type": "literal", "value": "shared" },
+                { "type": "literal", "value": "all" }
+              ]
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "publicId": { "fieldType": { "type": "string" }, "optional": false },
+            "name": { "fieldType": { "type": "string" }, "optional": false },
+            "iconId": { "fieldType": { "type": "union", "value": [{ "type": "number" }, { "type": "null" }] }, "optional": false },
+            "iconCodePoint": { "fieldType": { "type": "union", "value": [{ "type": "number" }, { "type": "null" }] }, "optional": false },
+            "iconFontFamily": { "fieldType": { "type": "union", "value": [{ "type": "string" }, { "type": "null" }] }, "optional": false },
+            "iconFontPackage": { "fieldType": { "type": "union", "value": [{ "type": "string" }, { "type": "null" }] }, "optional": false },
+            "color": { "fieldType": { "type": "union", "value": [{ "type": "string" }, { "type": "null" }] }, "optional": false },
+            "customColorValue": { "fieldType": { "type": "union", "value": [{ "type": "number" }, { "type": "null" }] }, "optional": false },
+            "parentFolderPublicId": { "fieldType": { "type": "union", "value": [{ "type": "string" }, { "type": "null" }] }, "optional": false },
+            "createdAt": { "fieldType": { "type": "number" }, "optional": false },
+            "updatedAt": { "fieldType": { "type": "number" }, "optional": false },
+            "role": { "fieldType": { "type": "union", "value": [{ "type": "literal", "value": "owner" }, { "type": "literal", "value": "editor" }, { "type": "literal", "value": "viewer" }] }, "optional": false }
+          }
+        }
+      },
+      "identifier": "folders.js:listWithinParent",
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

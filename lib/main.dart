@@ -1,14 +1,19 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:app_links/app_links.dart';
+import 'package:icarus/config/cloud_startup.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/services/deep_link_registrar.dart';
+import 'package:icarus/services/desktop_runtime.dart';
 
 import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -18,18 +23,33 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
+import 'package:icarus/config/cloud_build_config.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/share/current_share_origin.dart';
+import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
+import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/app_error_reporter.dart';
-import 'package:icarus/services/desktop_runtime.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/services/open_cloud_strategy_store.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -44,13 +64,89 @@ import 'package:toastification/toastification.dart';
 CustomMouseCursor? staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
 bool isWebViewInitialized = false;
+bool isWebViewWarmupComplete = false;
+Future<void>? _webViewEnvironmentWarmupFuture;
+final AppLinks _appLinks = AppLinks();
+final StreamController<Uri> _deepLinkUriController =
+    StreamController<Uri>.broadcast();
+StreamSubscription<Uri>? _deepLinkStreamSub;
+final List<Uri> _bufferedDeepLinks = <Uri>[];
+bool _hasDeepLinkListener = false;
+
+Future<void> _initializeDeepLinkHandling() async {
+  if (kIsWeb) {
+    // A browser has no OS deep links: the page's own URL is the only link
+    // (app_links' web plugin just echoes it). It matters when it is Supabase
+    // returning from Discord sign-in, or a /share/<code> link.
+    final pageUri = Uri.base;
+    final authCallback = classifyAuthCallbackUri(
+      pageUri,
+      redirectUri: currentAuthRedirectUri(),
+    );
+    if (authCallback != AuthCallback.none ||
+        isIcarusShareUri(pageUri, currentOrigin: currentShareOrigin())) {
+      _publishDeepLink(pageUri, source: 'web_location');
+    }
+    return;
+  }
+
+  try {
+    final initialLink = await _appLinks.getInitialLink();
+    if (initialLink != null) {
+      _publishDeepLink(initialLink, source: 'initial');
+    }
+  } catch (error, stackTrace) {
+    developer.log(
+      'Failed to read initial deep link: $error',
+      name: 'deep_link',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
+  _deepLinkStreamSub ??= _appLinks.uriLinkStream.listen(
+    (uri) => _publishDeepLink(uri, source: 'stream'),
+    onError: (Object error, StackTrace stackTrace) {
+      developer.log(
+        'Deep link stream error: $error',
+        name: 'deep_link',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    },
+  );
+}
+
+void _publishDeepLink(Uri uri, {required String source}) {
+  final redactedUri = redactDeepLinkUri(uri);
+  developer.log('Deep link received [$source]: $redactedUri',
+      name: 'deep_link');
+  AppErrorReporter.reportInfo(
+    'Deep link received [$source]: $redactedUri',
+    source: 'deep_link',
+  );
+  if (!_hasDeepLinkListener) {
+    _bufferedDeepLinks.add(uri);
+    return;
+  }
+  _deepLinkUriController.add(uri);
+}
+
 Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
-      appProviderContainer = ProviderContainer();
+
+      appProviderContainer = ProviderContainer(overrides: [
+        guardedSignOutRequestProvider.overrideWith(
+          (ref) => ref.watch(cloudSignOutRequestProvider),
+        ),
+      ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
+      final cloudBuildConfig = CloudBuildConfig.fromEnvironment(
+        isReleaseMode: kReleaseMode,
+      );
 
       final launch = HiveStoreLaunch.parse(args);
       final PreparedHiveStore? alternateHiveStore;
@@ -62,6 +158,9 @@ Future<void> main(List<String> args) async {
           getDefaultHiveDirectory: getApplicationSupportDirectory,
         );
       }
+
+      await registerDeepLinkProtocol('icarus');
+      await _initializeDeepLinkHandling();
 
       await ensureIcarusSingleInstance(
         launch.fileOpenArgs,
@@ -106,27 +205,25 @@ Future<void> main(List<String> args) async {
 
       await MapThemeProfilesProvider.bootstrap();
 
-      await StrategyProvider.migrateAllStrategies();
+      await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
+
+      // The cloud comes up degraded rather than not at all: a failure here
+      // must never keep anyone from the library on this device.
+      appProviderContainer.read(cloudStartupProvider.notifier).state =
+          await startCloud(
+        openOutboxes: openCloudOutboxes,
+        initializeClients: () => initializeCloudClients(cloudBuildConfig),
+      );
 
       await AnalyticsService.instance.initialize();
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
-
-      await _initWebViewEnvironment();
 
       if (!kIsWeb) {
         await initializeIcarusDesktopWindow(
           "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
         );
       }
-
-      // Ensure WebView2 environment is initialized on Windows before any InAppWebView
-      // widgets are created. This is especially important in testing/dev where the
-      // WebView user-data folder and runtime selection can affect behavior.
-      // if (!kIsWeb && Platform.isWindows) {
-      //   await _initWebViewEnvironment();
-      // }
-
       runApp(
         UncontrolledProviderScope(
           container: appProviderContainer,
@@ -143,6 +240,33 @@ Future<void> main(List<String> args) async {
       );
     },
   );
+}
+
+Future<void> warmUpWebViewEnvironment() {
+  if (!isWindowsRuntime) {
+    isWebViewWarmupComplete = true;
+    return Future.value();
+  }
+
+  return _webViewEnvironmentWarmupFuture ??=
+      _warmUpWebViewEnvironmentInternal();
+}
+
+Future<void> _warmUpWebViewEnvironmentInternal() async {
+  try {
+    await _initWebViewEnvironment();
+  } catch (error, stackTrace) {
+    webViewEnvironment = null;
+    isWebViewInitialized = false;
+    AppErrorReporter.reportWarning(
+      'WebView failed to initialize. Youtube embeds will be unavailable.',
+      source: 'main.warmUpWebViewEnvironment',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  } finally {
+    isWebViewWarmupComplete = true;
+  }
 }
 
 void _installGlobalErrorHandlers() {
@@ -199,23 +323,26 @@ Future<void> _initializePersistedDebugLog() async {
 }
 
 Future<void> _initWebViewEnvironment() async {
-  if (kIsWeb) return;
-  if (Platform.isWindows) {
+  if (isWindowsRuntime) {
+    if (isWebViewInitialized && webViewEnvironment != null) {
+      return;
+    }
+
     final dir = await getApplicationSupportDirectory();
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
 
     if (availableVersion == null) {
+      webViewEnvironment = null;
       isWebViewInitialized = false;
       return;
     }
-
-    isWebViewInitialized = true;
 
     webViewEnvironment = await WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
         userDataFolder: path.join(dir.path, 'webview'),
       ),
     );
+    isWebViewInitialized = true;
   }
 }
 
@@ -229,7 +356,9 @@ class MyApp extends ConsumerStatefulWidget {
 
 class _MyAppState extends ConsumerState<MyApp> {
   StreamSubscription<List<String>>? _secondInstanceSub;
-  late final DiscordPresenceService _discordPresence;
+  StreamSubscription<Uri>? _deepLinkSub;
+  final Set<String> _processedDeepLinks = <String>{};
+  late final DiscordPresenceWorker _discordPresence;
   ProviderSubscription<StrategyState>? _discordStrategySub;
   ProviderSubscription<MapState>? _discordMapSub;
   ProviderSubscription<AppPreferences>? _discordPreferencesSub;
@@ -239,7 +368,7 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
-      await ref.read(strategyProvider.notifier).loadFromFilePath(filePath);
+      await StrategyImportExportService(ref).loadFromFilePath(filePath);
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,
@@ -250,11 +379,64 @@ class _MyAppState extends ConsumerState<MyApp> {
     }
   }
 
+  Future<void> _handleIncomingArgument(
+    String argument, {
+    required String source,
+  }) async {
+    final uri = Uri.tryParse(argument);
+    if (uri != null &&
+        (uri.scheme.toLowerCase() == 'icarus' ||
+            isIcarusShareUri(uri, currentOrigin: currentShareOrigin()))) {
+      _handleIncomingUri(uri, source: source);
+      return;
+    }
+
+    await _loadFromFilePathWithWarning(argument);
+  }
+
+  void _handleIncomingUri(Uri uri, {required String source}) {
+    final uriText = uri.toString();
+    if (!_processedDeepLinks.add(uriText)) {
+      developer.log(
+        'Ignoring duplicate deep link [$source]: ${redactDeepLinkUri(uri)}',
+        name: 'deep_link',
+      );
+      return;
+    }
+
+    final redactedUri = redactDeepLinkUri(uri);
+    developer.log('Handling deep link [$source]: $redactedUri',
+        name: 'deep_link');
+    AppErrorReporter.reportInfo(
+      'Handling deep link [$source]: $redactedUri',
+      source: 'deep_link',
+    );
+
+    unawaited(() async {
+      final handledAuth = await ref
+          .read(authProvider.notifier)
+          .handleAuthCallbackUri(uri, source: source);
+      if (handledAuth) {
+        if (kIsWeb) {
+          replaceBrowserUrl(withoutAuthCallbackParameters(Uri.base));
+        }
+        return;
+      }
+      await ref
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(uri, source: source);
+    }());
+  }
+
   @override
   void initState() {
     super.initState();
+    ref.read(authProvider);
+    ref.read(strategyOpQueueProvider);
+    ref.read(cloudMediaUploadQueueProvider);
+    ref.read(cloudMediaCacheProvider);
 
-    _discordPresence = DiscordPresenceService();
+    _discordPresence = DiscordPresenceWorker();
     _discordStrategySub = ref.listenManual(
       strategyProvider,
       (_, __) => _scheduleDiscordSync(),
@@ -279,33 +461,59 @@ class _MyAppState extends ConsumerState<MyApp> {
     unawaited(_syncDiscordPresence());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(warmUpWebViewEnvironment());
+
+      final cloudUnavailableReason =
+          ref.read(cloudStartupProvider).unavailableReason;
+      if (cloudUnavailableReason != null) {
+        AppErrorReporter.reportWarning(
+          cloudUnavailableReason,
+          source: 'main.cloudStartup',
+          promptUser: true,
+        );
+      }
+
       if (widget.data.isEmpty) return;
 
       for (final argument in widget.data) {
         AppErrorReporter.reportInfo(
-          'Startup argument: $argument',
+          'Startup argument: ${redactLaunchArgument(argument)}',
           source: 'main.startupArgs',
         );
+        unawaited(_handleIncomingArgument(argument, source: 'startup_args'));
       }
-      _loadFromFilePathWithWarning(widget.data.first);
     });
 
     _secondInstanceSub = secondInstanceArgsController.stream.listen((args) {
       if (args.isEmpty) return;
 
-      _loadFromFilePathWithWarning(args.first);
       for (final argument in args) {
         AppErrorReporter.reportInfo(
-          'Second-instance argument: $argument',
+          'Second-instance argument: ${redactLaunchArgument(argument)}',
           source: 'main.secondInstanceArgs',
         );
+        unawaited(_handleIncomingArgument(argument, source: 'second_instance'));
       }
     });
+
+    _deepLinkSub = _deepLinkUriController.stream.listen(
+      (uri) => _handleIncomingUri(uri, source: 'app_links'),
+    );
+    _hasDeepLinkListener = true;
+    if (_bufferedDeepLinks.isNotEmpty) {
+      final pendingUris = List<Uri>.from(_bufferedDeepLinks);
+      _bufferedDeepLinks.clear();
+      for (final uri in pendingUris) {
+        _deepLinkUriController.add(uri);
+      }
+    }
   }
 
   @override
   void dispose() {
     _secondInstanceSub?.cancel();
+    _deepLinkSub?.cancel();
+    _hasDeepLinkListener = false;
     _discordSyncDebounce?.cancel();
     _discordStrategySub?.close();
     _discordMapSub?.close();
@@ -347,6 +555,21 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(authProvider, (previous, next) {
+      bool settledSignedOut(AppAuthState? auth) =>
+          auth != null && !auth.isAuthenticated && !auth.isLoading;
+      // A held code is redeemed once the cloud is ready, or, once it is
+      // clear nobody is signed in, opened read-only through the link.
+      if ((next.isAuthenticated && next.isConvexUserReady) ||
+          (settledSignedOut(next) && !settledSignedOut(previous))) {
+        unawaited(
+          ref
+              .read(shareLinkControllerProvider.notifier)
+              .redeemPendingIfPossible(),
+        );
+      }
+    });
+
     return ToastificationWrapper(
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,
@@ -414,12 +637,21 @@ class _MyAppState extends ConsumerState<MyApp> {
         home: const MyHomePage(),
         routes: {
           Routes.folderNavigator: (context) => const FolderNavigator(),
-          Routes.strategyView: (context) => const StrategyView(),
           Routes.settings: (context) => const SettingsTab(),
         },
+        onGenerateRoute: (settings) => settings.name == Routes.strategyView
+            ? StrategyView.restoredRoute(
+                openCloudStrategyId:
+                    ref.read(openCloudStrategyStoreProvider).read(),
+                allowsLocalLibrary:
+                    ref.read(platformPolicyProvider).allowsLocalLibrary,
+              )
+            : null,
         builder: (context, child) {
           return GlobalShortcuts(
-            child: MouseNavigation(child: child ?? const SizedBox.shrink()),
+            child: EditorOperationScope(
+              child: MouseNavigation(child: child ?? const SizedBox.shrink()),
+            ),
           );
         },
       ),

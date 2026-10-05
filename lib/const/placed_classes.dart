@@ -217,6 +217,7 @@ class PlacedImage extends PlacedWidget {
     required this.fileExtension,
     this.sizeVersion,
     this.tagColorValue,
+    this.link = '',
   });
 
   final double aspectRatio;
@@ -230,7 +231,8 @@ class PlacedImage extends PlacedWidget {
   @JsonKey(defaultValue: null)
   int? tagColorValue;
 
-  String link = "";
+  @JsonKey(defaultValue: '')
+  String link;
 
   bool get usesWorldSize => (sizeVersion ?? 0) >= currentSizeVersion;
 
@@ -274,7 +276,6 @@ class PlacedImage extends PlacedWidget {
     );
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;
-    // Mutable field specific to PlacedImage
     cloned.link = link ?? this.link;
     return cloned;
   }

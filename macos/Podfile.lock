@@ -1,4 +1,6 @@
 PODS:
+  - convex_flutter (0.0.1):
+    - FlutterMacOS
   - cryptography_flutter_plus (0.2.0):
     - FlutterMacOS
   - custom_mouse_cursor (0.0.1):
@@ -16,6 +18,7 @@ PODS:
     - FlutterMacOS
 
 DEPENDENCIES:
+  - convex_flutter (from `Flutter/ephemeral/.symlinks/plugins/convex_flutter/macos`)
   - cryptography_flutter_plus (from `Flutter/ephemeral/.symlinks/plugins/cryptography_flutter_plus/macos`)
   - custom_mouse_cursor (from `Flutter/ephemeral/.symlinks/plugins/custom_mouse_cursor/macos`)
   - flutter_inappwebview_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos`)
@@ -29,6 +32,8 @@ SPEC REPOS:
     - OrderedSet
 
 EXTERNAL SOURCES:
+  convex_flutter:
+    :path: Flutter/ephemeral/.symlinks/plugins/convex_flutter/macos
   cryptography_flutter_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/cryptography_flutter_plus/macos
   custom_mouse_cursor:
@@ -45,6 +50,7 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
 
 SPEC CHECKSUMS:
+  convex_flutter: a9d12846e80c8a2238282775fa9eb9c906efcea4
   cryptography_flutter_plus: 7c6e0d0f08664499a2c5402aa7cbcca07f2a7130
   custom_mouse_cursor: 5228910e366264d13615a102b1900946df2ab181
   flutter_inappwebview_macos: c2d68649f9f8f1831bfcd98d73fd6256366d9d1d

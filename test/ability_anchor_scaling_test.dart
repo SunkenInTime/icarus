@@ -15,7 +15,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 class _NoopStrategyProvider extends StrategyProvider {
   @override
   StrategyState build() {
-    return StrategyState(
+    return const StrategyState(
       isSaved: true,
       stratName: 'anchor-test',
       id: 'anchor-test',

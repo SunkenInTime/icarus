@@ -1,0 +1,521 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/share/pending_share_code_store.dart';
+import 'package:icarus/share/share_link_format.dart';
+import 'package:toastification/toastification.dart';
+
+const _code = 'ICR-2345-6789-ABCD-EFGH';
+
+void main() {
+  group('MemoryPendingShareCodeStore', () {
+    test('stores, restores, and clears a code', () {
+      final store = MemoryPendingShareCodeStore();
+      expect(store.read(), isNull);
+
+      store.write(_code);
+      expect(store.read(), _code);
+
+      store.write('ICR-XXXX-XXXX-XXXX-XXXX');
+      expect(store.read(), 'ICR-XXXX-XXXX-XXXX-XXXX', reason: 'latest wins');
+
+      store.clear();
+      expect(store.read(), isNull);
+    });
+
+    test('native builds keep the code in memory', () {
+      expect(createPendingShareCodeStore(), isA<MemoryPendingShareCodeStore>());
+    });
+  });
+
+  group('ShareLinkController pending code', () {
+    ProviderContainer containerWith(
+      PendingShareCodeStore store, {
+      required bool signedIn,
+      ConvexStrategyRepository? repository,
+    }) {
+      final container = ProviderContainer(
+        overrides: [
+          pendingShareCodeStoreProvider.overrideWithValue(store),
+          authProvider.overrideWith(
+            () => _FixedAuthProvider(signedIn: signedIn),
+          ),
+          if (repository != null)
+            convexStrategyRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('a code viewed while signed out survives into the next page load',
+        () async {
+      // Shared by both containers, like sessionStorage across a Discord
+      // round trip.
+      final store = MemoryPendingShareCodeStore();
+
+      final beforeSignIn = containerWith(
+        store,
+        signedIn: false,
+        repository: _LinkRepository(resolvesTo: 'strategy-1'),
+      );
+      await beforeSignIn
+          .read(shareLinkControllerProvider.notifier)
+          .redeemToken(_code);
+      expect(store.read(), _code, reason: 'signing in still redeems it');
+
+      final afterSignIn = containerWith(store, signedIn: false);
+      expect(afterSignIn.read(shareLinkControllerProvider), _code);
+    });
+
+    test('a late failure of an older attempt keeps the newer pending code',
+        () async {
+      const newer = 'ICR-XXXX-XXXX-XXXX-XXXX';
+      final store = MemoryPendingShareCodeStore();
+      final repository = _ControlledRepository();
+      final container = containerWith(
+        store,
+        signedIn: true,
+        repository: repository,
+      );
+      final controller = container.read(shareLinkControllerProvider.notifier);
+
+      // Attempt A is in flight when code B becomes pending.
+      final attemptA = controller.redeemToken(_code);
+      final attemptB = controller.redeemToken(newer);
+      expect(container.read(shareLinkControllerProvider), newer);
+
+      repository.fail(_code);
+      expect(await attemptA, isFalse);
+      expect(container.read(shareLinkControllerProvider), newer);
+      expect(store.read(), newer);
+
+      // B's own failure is the one that clears B.
+      repository.fail(newer);
+      expect(await attemptB, isFalse);
+      expect(container.read(shareLinkControllerProvider), isNull);
+      expect(store.read(), isNull);
+    });
+
+    test('a failed redemption the user was told about clears the code',
+        () async {
+      final store = MemoryPendingShareCodeStore()..write(_code);
+      final container = containerWith(
+        store,
+        signedIn: true,
+        repository: _FailingRepository(),
+      );
+
+      expect(container.read(shareLinkControllerProvider), _code);
+      final redeemed = await container
+          .read(shareLinkControllerProvider.notifier)
+          .redeemPendingIfPossible(showFailureToasts: false);
+
+      expect(redeemed, isFalse);
+      expect(container.read(shareLinkControllerProvider), isNull);
+      expect(store.read(), isNull);
+    });
+  });
+
+  group('opening a share link', () {
+    final link = icarusProductionShareOrigin.replace(path: '/share/$_code');
+    // The page as a web build sees it after opening the link; the router's
+    // fragment rides along.
+    final pageUrl = link.replace(fragment: '/strategy_view');
+    late List<Uri> replacedUrls;
+
+    setUp(() => replacedUrls = []);
+
+    Future<ProviderContainer> pumpApp(
+      WidgetTester tester, {
+      required AppAuthState auth,
+      PendingShareCodeStore? store,
+      ConvexStrategyRepository? repository,
+    }) async {
+      final container = ProviderContainer(overrides: [
+        pendingShareCodeStoreProvider
+            .overrideWithValue(store ?? MemoryPendingShareCodeStore()),
+        authProvider.overrideWith(() => _SettableAuthProvider(auth)),
+        sharePageUrlProvider.overrideWithValue(pageUrl),
+        replaceBrowserUrlProvider.overrideWithValue(replacedUrls.add),
+        if (repository != null)
+          convexStrategyRepositoryProvider.overrideWithValue(repository),
+      ]);
+      addTearDown(container.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const ToastificationWrapper(
+          child: ShadApp(home: Scaffold()),
+        ),
+      ));
+      return container;
+    }
+
+    Future<void> settleToasts(WidgetTester tester) async {
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    // toastification is a global: clear it and let every auto-close timer
+    // run out, so no toast outlives its test or lands in the next one.
+    Future<void> clearToasts(WidgetTester tester) async {
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('while a saved session is still restoring, it waits quietly',
+        (tester) async {
+      final store = MemoryPendingShareCodeStore();
+      // Already accessible, so redeeming shows no toast of its own.
+      final repository = _RedeemingRepository(const ShareRedemption(
+        targetType: 'strategy',
+        strategyPublicId: 'strategy-1',
+        role: 'viewer',
+        alreadyHadAccess: true,
+      ));
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: true, cloudReady: false),
+        store: store,
+        repository: repository,
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(container.read(shareLinkViewProvider), isNull,
+          reason: 'a session is coming; it will redeem the link');
+      expect(replacedUrls, isEmpty, reason: 'the code is still waiting');
+      expect(store.read(), _code, reason: 'held until the cloud is ready');
+      expect(repository.redeemed, isEmpty);
+
+      // The app redeems it once the cloud is ready (main.dart's listener).
+      (container.read(authProvider.notifier) as _SettableAuthProvider)
+          .set(_auth(session: true, cloudReady: true));
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .redeemPendingIfPossible();
+      expect(repository.redeemed, [_code]);
+      expect(
+          replacedUrls,
+          [
+            icarusProductionShareOrigin.replace(
+                path: '/', fragment: '/strategy_view')
+          ],
+          reason: 'a reload must not redeem it again');
+      expect(store.read(), isNull);
+      await clearToasts(tester);
+    });
+
+    testWidgets('while signed out, it opens the strategy read-only',
+        (tester) async {
+      final store = MemoryPendingShareCodeStore();
+      final repository = _LinkRepository(resolvesTo: 'strategy-1');
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: false, cloudReady: false),
+        store: store,
+        repository: repository,
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(
+        container.read(shareLinkViewProvider),
+        (strategyPublicId: 'strategy-1', token: _code),
+      );
+      expect(container.read(sharedStrategyToOpenProvider), 'strategy-1');
+      expect(store.read(), _code, reason: 'kept for after sign-in');
+      expect(replacedUrls, isEmpty, reason: 'a reload opens it again');
+      expect(repository.redeemed, isEmpty);
+
+      // Another auth update asks again; the open view is not reopened.
+      container.read(sharedStrategyToOpenProvider.notifier).state = null;
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .redeemPendingIfPossible();
+      expect(container.read(sharedStrategyToOpenProvider), isNull);
+
+      // Signing in redeems the link, and the strategy opens as the
+      // reader's own.
+      (container.read(authProvider.notifier) as _SettableAuthProvider)
+          .set(_auth(session: true, cloudReady: true));
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .redeemPendingIfPossible();
+      await settleToasts(tester);
+      expect(repository.redeemed, [_code]);
+      expect(container.read(shareLinkViewProvider), isNull);
+      expect(container.read(sharedStrategyToOpenProvider), 'strategy-1');
+      expect(store.read(), isNull);
+      await clearToasts(tester);
+    });
+
+    testWidgets(
+        'a lookup that lands after sign-in redeemed the link is dropped',
+        (tester) async {
+      final repository = _LinkRepository(resolvesTo: 'strategy-1')
+        ..holdResolve = Completer<void>();
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: false, cloudReady: false),
+        repository: repository,
+      );
+      final controller = container.read(shareLinkControllerProvider.notifier);
+
+      // The signed-out lookup is still on the wire when sign-in finishes.
+      final lookup = controller.handleIncomingUri(link, source: 'test');
+      (container.read(authProvider.notifier) as _SettableAuthProvider)
+          .set(_auth(session: true, cloudReady: true));
+      await controller.redeemPendingIfPossible();
+      expect(repository.redeemed, [_code]);
+
+      repository.holdResolve!.complete();
+      await lookup;
+      await settleToasts(tester);
+      expect(container.read(shareLinkViewProvider), isNull,
+          reason: "the redeemed strategy is now the reader's own");
+      await clearToasts(tester);
+    });
+
+    testWidgets('while signed out, a folder link asks the user to sign in',
+        (tester) async {
+      final store = MemoryPendingShareCodeStore();
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: false, cloudReady: false),
+        store: store,
+        repository: _LinkRepository(resolvesTo: null),
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(toast('Sign in to open this shared folder.'), findsOneWidget);
+      expect(container.read(shareLinkViewProvider), isNull);
+      expect(store.read(), _code, reason: 'kept for after sign-in');
+      expect(replacedUrls, isEmpty);
+      await clearToasts(tester);
+    });
+
+    testWidgets('while signed out, a disabled link says so and is dropped',
+        (tester) async {
+      final store = MemoryPendingShareCodeStore();
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: false, cloudReady: false),
+        store: store,
+        repository: _LinkRepository(
+          resolveError: const ConvexFunctionException(
+            code: ConvexErrorCode.shareLinkRevoked,
+            rawCode: 'SHARE_LINK_REVOKED',
+            message: 'Share link revoked',
+          ),
+        ),
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(
+        toast('This share link was disabled by its owner.'),
+        findsOneWidget,
+      );
+      expect(container.read(shareLinkViewProvider), isNull);
+      expect(container.read(sharedStrategyToOpenProvider), isNull);
+      expect(store.read(), isNull);
+      expect(replacedUrls, hasLength(1), reason: 'a reload must not retry it');
+      await clearToasts(tester);
+    });
+
+    testWidgets(
+        'the owner of the strategy is taken to it, with no "added" toast',
+        (tester) async {
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: true, cloudReady: true),
+        repository: _RedeemingRepository(const ShareRedemption(
+          targetType: 'strategy',
+          strategyPublicId: 'strategy-1',
+          folderPublicId: 'folder-1',
+          role: 'owner',
+          alreadyHadAccess: true,
+        )),
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(toast('Shared strategy added to your library.'), findsNothing);
+      expect(
+        container.read(cloudLibrarySectionProvider),
+        CloudLibrarySection.home,
+      );
+      expect(container.read(sharedStrategyToOpenProvider), 'strategy-1');
+      expect(replacedUrls, [
+        icarusProductionShareOrigin.replace(
+            path: '/', fragment: '/strategy_view')
+      ]);
+      await clearToasts(tester);
+    });
+
+    testWidgets('a newly shared strategy is added to Shared, then opened',
+        (tester) async {
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: true, cloudReady: true),
+        repository: _RedeemingRepository(const ShareRedemption(
+          targetType: 'strategy',
+          strategyPublicId: 'strategy-2',
+          role: 'viewer',
+        )),
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(
+        toast('Shared strategy added to your library.'),
+        findsOneWidget,
+      );
+      expect(
+        container.read(cloudLibrarySectionProvider),
+        CloudLibrarySection.sharedWithMe,
+      );
+      expect(container.read(sharedStrategyToOpenProvider), 'strategy-2');
+      await clearToasts(tester);
+    });
+  });
+}
+
+/// A toast's text. Toasts sit in an overlay entry that is still animating
+/// in when these tests look, so offstage widgets count.
+Finder toast(String text) => find.byWidgetPredicate(
+      (widget) => widget is Text && widget.data == text,
+      skipOffstage: false,
+    );
+
+AppAuthState _auth({required bool session, required bool cloudReady}) {
+  return AppAuthState(
+    isLoading: false,
+    isAuthenticated: session,
+    isConvexUserReady: session && cloudReady,
+    convexAuthStatus: !session
+        ? ConvexAuthStatus.signedOut
+        : cloudReady
+            ? ConvexAuthStatus.ready
+            : ConvexAuthStatus.configuring,
+    user: null,
+  );
+}
+
+class _SettableAuthProvider extends AuthProvider {
+  _SettableAuthProvider(this._initial);
+
+  final AppAuthState _initial;
+
+  @override
+  AppAuthState build() => _initial;
+
+  void set(AppAuthState next) => state = next;
+}
+
+class _RedeemingRepository extends Fake implements ConvexStrategyRepository {
+  _RedeemingRepository(this.response);
+
+  final ShareRedemption response;
+  final List<String> redeemed = [];
+
+  @override
+  Future<ShareRedemption> redeemShareLink(String token) async {
+    redeemed.add(token);
+    return response;
+  }
+}
+
+/// Answers what a link shares ([resolvesTo] null for a folder), and redeems.
+class _LinkRepository extends Fake implements ConvexStrategyRepository {
+  _LinkRepository({this.resolvesTo, this.resolveError});
+
+  final String? resolvesTo;
+  final Object? resolveError;
+  final List<String> redeemed = [];
+
+  /// When set, lookups wait for it to complete.
+  Completer<void>? holdResolve;
+
+  @override
+  Future<String?> resolveSharedStrategy(String token) async {
+    await holdResolve?.future;
+    if (resolveError case final error?) throw error;
+    return resolvesTo;
+  }
+
+  @override
+  Future<ShareRedemption> redeemShareLink(String token) async {
+    redeemed.add(token);
+    return ShareRedemption(
+      targetType: 'strategy',
+      strategyPublicId: resolvesTo,
+      role: 'viewer',
+    );
+  }
+}
+
+class _FixedAuthProvider extends AuthProvider {
+  _FixedAuthProvider({required this.signedIn});
+
+  final bool signedIn;
+
+  @override
+  AppAuthState build() => AppAuthState(
+        isLoading: false,
+        isAuthenticated: signedIn,
+        isConvexUserReady: signedIn,
+        convexAuthStatus:
+            signedIn ? ConvexAuthStatus.ready : ConvexAuthStatus.signedOut,
+        user: null,
+      );
+}
+
+/// Holds each redemption open until the test fails it.
+class _ControlledRepository extends Fake implements ConvexStrategyRepository {
+  final _pending = <String, Completer<ShareRedemption>>{};
+
+  void fail(String token) =>
+      _pending[token]!.completeError(Exception('Share link revoked'));
+
+  @override
+  Future<ShareRedemption> redeemShareLink(String token) =>
+      (_pending[token] = Completer<ShareRedemption>()).future;
+}
+
+class _FailingRepository extends Fake implements ConvexStrategyRepository {
+  @override
+  Future<ShareRedemption> redeemShareLink(String token) async {
+    throw Exception('Share link revoked');
+  }
+}

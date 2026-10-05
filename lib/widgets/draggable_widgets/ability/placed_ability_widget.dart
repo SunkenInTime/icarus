@@ -118,6 +118,17 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     return Offset(rotatedX + origin.dx, rotatedY + origin.dy);
   }
 
+  /// Looks the ability up now, not at build: a teammate's change may have
+  /// moved it in the list while the handle was held.
+  void _commitRotation() {
+    final index =
+        PlacedWidget.getIndexByID(widget.id, ref.read(abilityProvider));
+    if (index < 0) return;
+    ref
+        .read(abilityProvider.notifier)
+        .updateRotation(index, localRotation!, localLength ?? 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -339,9 +350,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                     length: localLength ?? 0,
                   );
             } else {
-              ref
-                  .read(abilityProvider.notifier)
-                  .updateRotation(index, localRotation!, localLength ?? 0);
+              _commitRotation();
             }
 
             setState(() {
@@ -585,9 +594,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           });
         },
         onPanEnd: (_) {
-          ref
-              .read(abilityProvider.notifier)
-              .updateRotation(index, localRotation!, localLength ?? 0);
+          _commitRotation();
           setState(() {
             rotationOrigin = Offset.zero;
           });

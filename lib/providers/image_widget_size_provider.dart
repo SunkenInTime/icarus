@@ -9,24 +9,13 @@ final imageWidgetSizeProvider =
 
 class ImageWidgetSizeProvider extends Notifier<Map<String, Offset>> {
   @override
-  Map<String, Offset> build() {
-    return {};
-  }
+  Map<String, Offset> build() => {};
 
   void updateSize(String id, Offset size) {
     state = {...state, id: size};
   }
 
-  Offset getSize(String id) {
-    return state[id] ?? Offset.zero;
-  }
-
-  Map<String, Offset> takeSnapshotForIds(Iterable<String> ids) {
-    return {
-      for (final id in ids)
-        if (state.containsKey(id)) id: state[id]!,
-    };
-  }
+  Offset getSize(String id) => state[id] ?? Offset.zero;
 
   void clearEntries(Iterable<String> ids) {
     final newState = {...state};
@@ -34,13 +23,6 @@ class ImageWidgetSizeProvider extends Notifier<Map<String, Offset>> {
       newState.remove(id);
     }
     state = newState;
-  }
-
-  void restoreSnapshot(Map<String, Offset> snapshot) {
-    state = {
-      ...state,
-      ...snapshot,
-    };
   }
 
   void clearAll() {

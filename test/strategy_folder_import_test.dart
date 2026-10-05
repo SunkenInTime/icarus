@@ -17,8 +17,9 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
 bool _adaptersRegistered = false;
@@ -76,7 +77,7 @@ void main() {
     await _writeStrategyFile(File(path.join(childDir.path, 'a-site.ica')));
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -105,7 +106,7 @@ void main() {
         await Directory(path.join(emptyChild.path, 'Deep Empty')).create();
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -142,7 +143,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -182,7 +183,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -225,7 +226,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -279,7 +280,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -332,8 +333,7 @@ void main() {
     await _storeStrategy(name: 'default', folderID: rootFolder.id);
     await _storeStrategy(name: 'a-site', folderID: childFolder.id);
 
-    final exportDirectory = await container
-        .read(strategyProvider.notifier)
+    final exportDirectory = await StrategyImportExportService(container)
         .buildFolderExportDirectoryForTest(rootFolder.id);
 
     try {
@@ -368,7 +368,7 @@ void main() {
       await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
 
       final result =
-          await container.read(strategyProvider.notifier).loadFromFileDrop(
+          await StrategyImportExportService(container).loadFromFileDrop(
         [XFile(zipFile.path)],
       );
 
@@ -414,6 +414,9 @@ void main() {
         .read(appPreferencesProvider.notifier)
         .setCustomColorValues(const [0xFF22C55E, 0xFF38BDF8]);
     await container
+        .read(appPreferencesProvider.notifier)
+        .setBackgroundDotOpacity(0.25);
+    await container
         .read(favoriteAgentsProvider.notifier)
         .toggleFavorite(AgentType.jett);
 
@@ -433,8 +436,7 @@ void main() {
       themeProfileId: customProfile.id,
     );
 
-    final exportDirectory = await container
-        .read(strategyProvider.notifier)
+    final exportDirectory = await StrategyImportExportService(container)
         .buildLibraryExportDirectoryForTest();
 
     try {
@@ -458,7 +460,7 @@ void main() {
       await MapThemeProfilesProvider.bootstrap();
 
       final result =
-          await container.read(strategyProvider.notifier).loadFromFileDrop(
+          await StrategyImportExportService(container).loadFromFileDrop(
         [XFile(zipFile.path)],
       );
 
@@ -489,8 +491,88 @@ void main() {
         const [0xFF22C55E, 0xFF38BDF8],
       );
       expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.backgroundDotOpacity,
+        0.25,
+      );
+      expect(
         Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).containsKey('jett'),
         isTrue,
+      );
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
+  });
+
+  test('library backup without custom colors preserves current color library',
+      () async {
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setCustomColorValues(const [0xFF22C55E, 0xFF38BDF8]);
+    await _storeStrategy(
+      name: 'Legacy Backup',
+      folderID: null,
+    );
+
+    final exportDirectory = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+
+    try {
+      final rootDirectory = Directory(
+        path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+      );
+      final manifestFile =
+          File(path.join(rootDirectory.path, archiveMetadataFileName));
+      final decoded =
+          jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>;
+      final globals = Map<String, dynamic>.from(
+          decoded['globals'] as Map<dynamic, dynamic>);
+      final appPreferences = Map<String, dynamic>.from(
+          globals['appPreferences'] as Map<dynamic, dynamic>);
+      // Backups from before these settings existed have neither key.
+      appPreferences.remove('customColorValues');
+      appPreferences.remove('backgroundDotOpacity');
+      globals['appPreferences'] = appPreferences;
+      decoded['globals'] = globals;
+      await manifestFile.writeAsString(jsonEncode(decoded));
+
+      final zipFile = await _zipDirectory(
+        sourceDirectory: rootDirectory,
+        zipPath: path.join(tempDir.path, 'legacy-library-backup.zip'),
+      );
+
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
+      await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox).clear();
+      await MapThemeProfilesProvider.bootstrap();
+      await container
+          .read(appPreferencesProvider.notifier)
+          .setCustomColorValues(const [0xFFABCDEF, 0xFF123456]);
+      await container
+          .read(appPreferencesProvider.notifier)
+          .setBackgroundDotOpacity(0.6);
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      expect(result.globalStateRestored, isTrue);
+      expect(result.issues, isEmpty);
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.customColorValues,
+        const [0xFFABCDEF, 0xFF123456],
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.backgroundDotOpacity,
+        0.6,
       );
     } finally {
       if (await exportDirectory.exists()) {
@@ -511,7 +593,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -526,6 +608,66 @@ void main() {
           .where((strategy) => strategy.name == 'future'),
       isEmpty,
     );
+  });
+
+  test('a shared .ica keeps its colors when the receiver lacks the profile',
+      () async {
+    final palette = MapThemePalette(
+      baseColorValue: 0xFF2A1B2E,
+      detailColorValue: 0xFFC78B5A,
+      highlightColorValue: 0xFF6FD3C4,
+    );
+    final profile = await container
+        .read(mapThemeProfilesProvider.notifier)
+        .createProfile(name: 'Haven Dusk', palette: palette);
+    await _storeStrategy(
+      name: 'Sender copy',
+      folderID: null,
+      themeProfileId: profile!.id,
+    );
+    final file = File(path.join(tempDir.path, 'shared.ica'));
+    await StrategyImportExportService(container).zipStrategyData(
+      strategy: _strategyByName('Sender copy'),
+      outputFilePath: file.path,
+    );
+    // The receiver's machine has never seen this custom profile.
+    await container
+        .read(mapThemeProfilesProvider.notifier)
+        .deleteProfile(profile.id);
+
+    final result =
+        await StrategyImportExportService(container).loadFromFileDrop(
+      [XFile(file.path)],
+    );
+
+    expect(result.strategiesImported, 1);
+    final imported = _strategyByName('shared');
+    expect(imported.themeProfileId, isNull);
+    expect(imported.themeOverridePalette, palette);
+  });
+
+  test('an .ica using a built-in theme still points at the built-in', () async {
+    await _storeStrategy(
+      name: 'Valorant colors',
+      folderID: null,
+      themeProfileId: MapThemeProfilesProvider.immutableValorantProfileId,
+    );
+    final file = File(path.join(tempDir.path, 'builtin.ica'));
+    await StrategyImportExportService(container).zipStrategyData(
+      strategy: _strategyByName('Valorant colors'),
+      outputFilePath: file.path,
+    );
+
+    await StrategyImportExportService(container).loadFromFileDrop(
+      [XFile(file.path)],
+    );
+
+    final imported = _strategyByName('builtin');
+    expect(
+      imported.themeProfileId,
+      MapThemeProfilesProvider.immutableValorantProfileId,
+    );
+    expect(imported.themeOverridePalette, isNull);
   });
 
   test('standalone .ica drop imports into the current folder', () async {
@@ -544,7 +686,7 @@ void main() {
     await _writeStrategyFile(file);
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(file.path)],
     );
 
@@ -580,7 +722,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -610,7 +752,7 @@ void main() {
     await nestedText.writeAsString('notes');
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -631,7 +773,7 @@ void main() {
     await file.writeAsString('not a strategy');
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(file.path)],
     );
 

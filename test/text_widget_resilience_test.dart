@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -11,13 +12,16 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
@@ -172,6 +176,72 @@ void main() {
     expect(container.read(textProvider).single.text, 'edited');
   });
 
+  testWidgets('semantics text changes enter the draft and commit pipeline',
+      (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'before',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    final placedText = find.semantics.byLabel('Placed text');
+    expect(placedText, findsOneWidget);
+    tester.semantics.performAction(
+      placedText,
+      SemanticsAction.setText,
+      args: 'edited through semantics',
+    );
+    await tester.pump();
+
+    expect(
+      container.read(textDraftProvider),
+      {'text-1': 'edited through semantics'},
+    );
+    expect(container.read(textProvider).single.text, 'before');
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.focusNode!.unfocus();
+    await tester.pump();
+
+    expect(container.read(textDraftProvider), isEmpty);
+    expect(
+      container.read(textProvider).single.text,
+      'edited through semantics',
+    );
+    semanticsHandle.dispose();
+  });
+
+  testWidgets('controller text changes enter the draft pipeline',
+      (tester) async {
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'before',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.value = const TextEditingValue(
+      text: 'edited through controller',
+      selection: TextSelection.collapsed(offset: 25),
+    );
+    await tester.pump();
+
+    expect(
+      container.read(textDraftProvider),
+      {'text-1': 'edited through controller'},
+    );
+    expect(container.read(textProvider).single.text, 'before');
+  });
+
   testWidgets(
       'drag start commits the draft before the drag lifecycle swaps children',
       (tester) async {
@@ -273,17 +343,23 @@ void main() {
     container.read(textProvider.notifier).fromHive(page.textData);
 
     final strategyNotifier = container.read(strategyProvider.notifier);
-    strategyNotifier
-      ..setFromState(
-        StrategyState(
-          isSaved: false,
-          stratName: strategy.name,
-          id: strategy.id,
-          storageDirectory: null,
-          activePageId: page.id,
-        ),
-      )
-      ..activePageID = page.id;
+    strategyNotifier.setFromState(
+      StrategyState(
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+    );
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          const StrategyPageSessionState(
+            activePageId: 'page-1',
+            availablePageIds: ['page-1'],
+            transitionState: PageTransitionState.idle,
+            isApplyingPage: false,
+          ),
+        );
 
     await tester.pumpWidget(buildTextHarness(container));
     await tester.tap(find.byType(FormattedTextView));
@@ -311,6 +387,15 @@ void main() {
     expect(container.read(textDraftProvider), {'text-1': 'before edited'});
     expect(savedStrategy, isNotNull);
     expect(savedStrategy!.pages.single.textData.single.text, 'before edited');
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    container.read(strategyProvider.notifier).cancelPendingSave();
   });
 
   testWidgets('feedback widget matches editable widget size', (tester) async {
@@ -322,6 +407,95 @@ void main() {
 
     expect(feedbackSize.width, editableSize.width);
     expect(feedbackSize.height, editableSize.height);
+  });
+
+  testWidgets('text widget starts single-line and grows instead of scrolling',
+      (tester) async {
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(
+        id: 'text-1',
+        position: const Offset(10, 20),
+        size: 80,
+        fontSize: 16,
+        sizeVersion: worldSizedMediaVersion,
+      )..text = 'ew',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
+
+    final initialSize = tester.getSize(find.byType(TextWidget));
+    expect(initialSize.height, lessThan(64));
+
+    await tester.enterText(
+      find.byType(TextField),
+      'this text wraps onto a few lines',
+    );
+    await tester.pump();
+
+    final wrappedSize = tester.getSize(find.byType(TextWidget));
+    expect(wrappedSize.height, greaterThan(initialSize.height));
+
+    final scrollableFinder = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(Scrollable),
+    );
+    final scrollableState =
+        tester.state<ScrollableState>(scrollableFinder.first);
+    final scrollable = tester.widget<Scrollable>(scrollableFinder.first);
+    expect(scrollable.axisDirection, AxisDirection.down);
+    expect(
+      scrollableState.position.maxScrollExtent,
+      0,
+      reason: 'wrappedSize=$wrappedSize',
+    );
+  });
+
+  testWidgets('side switch leaves multiline text stored canonically',
+      (tester) async {
+    final container = createContainer();
+    final placedText = PlacedText(
+      id: 'text-1',
+      position: const Offset(10, 20),
+      size: 220,
+      fontSize: 16,
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'same text\nsecond line';
+
+    container.read(textProvider.notifier).fromHive([placedText]);
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final renderedSize = tester.getSize(find.byType(TextWidget));
+    container.read(mapProvider.notifier).switchSide();
+    expect(renderedSize, isNot(Size.zero));
+    expect(container.read(textProvider).single.position, placedText.position);
+  });
+
+  testWidgets(
+      'single-line text remains canonical after deterministic measurement',
+      (tester) async {
+    final container = createContainer();
+    final placedText = PlacedText(
+      id: 'text-1',
+      position: const Offset(10, 20),
+      size: 220,
+      fontSize: 16,
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'one line';
+
+    container.read(textProvider.notifier).fromHive([placedText]);
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final renderedSize = tester.getSize(find.byType(TextWidget));
+    container.read(mapProvider.notifier).switchSide();
+    expect(renderedSize, isNot(Size.zero));
+    expect(container.read(textProvider).single.position, placedText.position);
   });
 
   testWidgets('screenshot text stays read-only across page updates',

@@ -55,6 +55,10 @@ abstract final class ParanoiaRangeMigration {
     return moved ? migrated : pages;
   }
 
+  /// One saved Paranoia on [map], moved as [migratePages] moves it.
+  static PlacedAbility migrateAbility(PlacedAbility ability, MapValue map) =>
+      _ability(ability, Maps.mapScale[map] ?? 1.0);
+
   static PlacedAbility _ability(PlacedAbility ability, double mapScale) {
     Offset anchor(Ability data) => data.getAnchorPoint(
           mapScale: mapScale,

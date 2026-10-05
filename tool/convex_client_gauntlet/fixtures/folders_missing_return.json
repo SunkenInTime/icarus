@@ -1,0 +1,31 @@
+{
+  "url": "https://your-deployment.convex.cloud",
+  "functions": [
+    {
+      "functionType": "Query",
+      "args": {
+        "type": "object",
+        "value": {
+          "parentFolderPublicId": {
+            "fieldType": { "type": "string" },
+            "optional": true
+          },
+          "scope": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                { "type": "literal", "value": "owned" },
+                { "type": "literal", "value": "shared" },
+                { "type": "literal", "value": "all" }
+              ]
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": null,
+      "identifier": "folders.js:listForParent",
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

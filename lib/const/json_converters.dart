@@ -61,9 +61,19 @@ class AbilityInfoConverter
 
   @override
   AbilityInfo fromJson(Map<String, dynamic> json) {
-    final info = AgentData.agents[$enumDecode(_agentTypeEnumMap, json["type"])]!
-        .abilities[json["index"] as int];
-    return info;
+    final type = $enumDecode(_agentTypeEnumMap, json['type']);
+    final rawIndex = json['index'];
+    if (rawIndex is! num ||
+        !rawIndex.isFinite ||
+        rawIndex.toInt().toDouble() != rawIndex.toDouble()) {
+      throw FormatException('Ability index must be an integer: $rawIndex');
+    }
+    final index = rawIndex.toInt();
+    final abilities = AgentData.agents[type]?.abilities;
+    if (abilities == null || index < 0 || index >= abilities.length) {
+      throw FormatException('Ability index $index is invalid for ${type.name}');
+    }
+    return abilities[index];
   }
 
   @override
