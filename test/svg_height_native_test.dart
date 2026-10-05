@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/view_cone/svg_height_native.dart';
@@ -28,6 +29,45 @@ void main() {
                 .distance);
       }
       expect(nearest, lessThan(1e-7));
+    } finally {
+      native.close();
+    }
+  }, skip: library == null ? 'Set ICARUS_SVG_NATIVE_LIBRARY.' : false);
+  test('a curved wall still lets rays past its silhouette', () {
+    // A 64-gon in front of a far wall. Its vertices are all corners a wall
+    // runs straight across, except the two at its silhouette, where the
+    // rays beside the vertex find the far wall.
+    final edges = <double>[];
+    for (var k = 0; k < 64; k++) {
+      final a = k * 2 * math.pi / 64, b = (k + 1) * 2 * math.pi / 64;
+      edges.addAll([
+        20 + 5 * math.cos(a), 5 * math.sin(a), //
+        20 + 5 * math.cos(b), 5 * math.sin(b), 0
+      ]);
+    }
+    edges.addAll([60, -50, 60, 50, 1]);
+    final native = SvgHeightNative.open(
+        wallIds: ['curve', 'far'],
+        edgeRecords: Float64List.fromList(edges),
+        libraryPath: library);
+    try {
+      final cone = native.query(
+          origin: Offset.zero,
+          directionRadians: 0.05,
+          range: 100,
+          apertureRadians: 1,
+          activeWalls: [true, true]);
+      final path = Path()
+        ..addPolygon([
+          for (var i = 0; i < cone.xy.length; i += 2)
+            Offset(cone.xy[i], cone.xy[i + 1])
+        ], true);
+      Offset at(double degrees, double distance) =>
+          Offset.fromDirection(degrees * math.pi / 180, distance);
+      // Just past the silhouette (14.47 degrees), between two arc rays.
+      expect(path.contains(at(14.54, 59)), isTrue);
+      expect(path.contains(at(10, 12)), isTrue);
+      expect(path.contains(at(10, 30)), isFalse);
     } finally {
       native.close();
     }

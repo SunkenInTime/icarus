@@ -17,15 +17,27 @@ class SvgHeightVisibility {
       this.cellSize,
       this.ground,
       this.requiresPhysicalGround,
-      this.sightlineFloors) {
-    for (var wall = 0; wall < walls.length; wall++) {
-      for (final ring in walls[wall].rings) {
-        final points = _runtimeRing(ring);
+      this.sightlineFloors,
+      [List<SvgRuntimeWall>? runtimeWalls])
+      : runtimeWalls = runtimeWalls ??
+            List.unmodifiable([
+              for (var i = 0; i < walls.length; i++)
+                SvgRuntimeWall._(i, walls[i].rings, walls[i].evenOdd)
+            ]) {
+    for (final shape in this.runtimeWalls) {
+      final sides = shape.sides;
+      var k = 0;
+      for (final points in shape.edgeRings) {
         for (var i = 0; i < points.length; i++) {
           final a = points[i], b = points[(i + 1) % points.length];
           if (a == b) continue;
-          final edge = _Edge(a, b, wall);
-          _edges.add(edge);
+          final side = sides[k++];
+          _edges.add(_Edge(a, b, shape.wall,
+              interior: side == 0
+                  ? null
+                  : side > 0
+                      ? _Side.left
+                      : _Side.right));
         }
       }
     }
@@ -153,6 +165,55 @@ class SvgHeightVisibility {
       }
       sightlineFloors.add(support);
     }
+    // Touching pieces with the same heights, merged offline into one outline
+    // each: what cones are cast against. The pieces stay the model.
+    List<SvgRuntimeWall>? runtimeWalls;
+    if (json['runtimeWalls'] != null) {
+      final index = {for (var i = 0; i < walls.length; i++) walls[i].id: i};
+      final covered = List.filled(walls.length, false);
+      runtimeWalls = [];
+      for (final raw in _list(json['runtimeWalls'], 'runtimeWalls')) {
+        final row = _map(raw);
+        // A piece's own edges where its outline does not cover them (a bow
+        // tie, a sliver): extra geometry under its heights, not a member.
+        if (row['heightsOf'] != null) {
+          if (_list(row['walls'] ?? const [], 'walls').isNotEmpty) {
+            throw FormatException(
+                'Runtime edges of ${row['heightsOf']} also name members.');
+          }
+          final owner = index[row['heightsOf']] ??
+              (throw FormatException(
+                  'Runtime edges name missing wall ${row['heightsOf']}.'));
+          runtimeWalls.add(SvgRuntimeWall._(owner, _rings(row), _evenOdd(row)));
+          continue;
+        }
+        final members = [
+          for (final id in _list(row['walls'], 'runtime wall members'))
+            index[id] ??
+                (throw FormatException('Runtime wall names missing wall $id.'))
+        ];
+        if (members.isEmpty) {
+          throw const FormatException('Runtime wall has no members.');
+        }
+        final first = walls[members.first];
+        for (final member in members) {
+          final wall = walls[member];
+          if (covered[member] ||
+              wall.floorElevationMeters != first.floorElevationMeters ||
+              wall.unknownHeight != first.unknownHeight ||
+              !_sameBands(wall.bands, first.bands)) {
+            throw FormatException(
+                'Runtime wall merges ${wall.id} with different heights.');
+          }
+          covered[member] = true;
+        }
+        runtimeWalls
+            .add(SvgRuntimeWall._(members.first, _rings(row), _evenOdd(row)));
+      }
+      if (covered.contains(false)) {
+        throw const FormatException('Runtime walls leave a wall out.');
+      }
+    }
     return SvgHeightVisibility._(
         List.unmodifiable(walls),
         List.unmodifiable(supports),
@@ -163,7 +224,16 @@ class SvgHeightVisibility {
             ? null
             : SvgGroundHeight.fromJson(_map(json['ground'])),
         physicalGround,
-        List.unmodifiable(sightlineFloors));
+        List.unmodifiable(sightlineFloors),
+        runtimeWalls == null ? null : List.unmodifiable(runtimeWalls));
+  }
+
+  static bool _sameBands(List<SvgHeightBand> a, List<SvgHeightBand> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].bottom != b[i].bottom || a[i].top != b[i].top) return false;
+    }
+    return true;
   }
 
   final List<SvgHeightWall> walls;
@@ -173,12 +243,18 @@ class SvgHeightVisibility {
   final SvgGroundHeight? ground;
   final bool requiresPhysicalGround;
   final List<SvgHeightSupport> sightlineFloors;
-  late final _floorPaths = [
-    for (final floor in sightlineFloors) _footprintPath(floor)
-  ];
+
+  /// The outlines cones are cast against: [walls] themselves, or touching
+  /// pieces with the same heights merged into one outline each.
+  final List<SvgRuntimeWall> runtimeWalls;
+
   late final _floorOccluders = [
-    for (final wall in walls)
-      SvgFloorOccluder(wall.rings, wall.evenOdd, [
+    for (final shape in runtimeWalls)
+      SvgFloorOccluder(shape.edgeRings, shape.evenOdd,
+          _absoluteBands(walls[shape.wall]), shape.sides)
+  ];
+
+  static List<(double, double)> _absoluteBands(SvgHeightWall wall) => [
         if (wall.unknownHeight)
           (double.negativeInfinity, double.infinity)
         else
@@ -189,8 +265,7 @@ class SvgHeightVisibility {
                   : (wall.floorElevationMeters ?? 0) + band.bottom,
               (wall.floorElevationMeters ?? 0) + band.top
             )
-      ])
-  ];
+      ];
   final _edges = <_Edge>[];
   _EdgeNode? _tree;
   SvgHeightNative? _native;
@@ -210,6 +285,50 @@ class SvgHeightVisibility {
 
   // Static SVG topology, computed only if the Dart fallback is used.
   late final _crossings = _findCrossings();
+  late final _vertexEdges = () {
+    final result = <Offset, List<int>>{};
+    for (var i = 0; i < _edges.length; i++) {
+      (result[_edges[i].a] ??= []).add(i);
+      (result[_edges[i].b] ??= []).add(i);
+    }
+    return result;
+  }();
+
+  /// Whether no active boundary turns at [point]: the edges two touching
+  /// pieces share cancel, and what remains runs straight through it, or
+  /// nothing does. A ray there meets the wall the rays beside it meet, so it
+  /// is not a visibility event. Pieces cut along one stroke leave such seams
+  /// every metre or so; skipping them is most of a cone's rays.
+  bool _seam(Offset point, List<bool> active) {
+    final live = [
+      for (final id in _vertexEdges[point] ?? const <int>[])
+        if (active[_edges[id].wall]) _edges[id]
+    ];
+    final cancelled = List.filled(live.length, false);
+    for (var i = 0; i < live.length; i++) {
+      for (var j = i + 1; j < live.length && !cancelled[i]; j++) {
+        if (cancelled[j]) continue;
+        // A shared side only when the two walls lie on either side of it.
+        final first = live[i], second = live[j];
+        if (first.interior == null || second.interior == null) continue;
+        final same = first.a == second.a && first.b == second.b;
+        final reversed = first.a == second.b && first.b == second.a;
+        if ((same && first.interior != second.interior) ||
+            (reversed && first.interior == second.interior)) {
+          cancelled[i] = cancelled[j] = true;
+        }
+      }
+    }
+    final away = [
+      for (var i = 0; i < live.length; i++)
+        if (!cancelled[i]) (live[i].a == point ? live[i].b : live[i].a) - point
+    ];
+    if (away.isEmpty) return true;
+    if (away.length != 2) return false;
+    return _dot(away[0], away[1]) < 0 &&
+        _cross(away[0], away[1]).abs() <=
+            1e-12 * away[0].distance * away[1].distance;
+  }
 
   List<(Offset, int, int)> _findCrossings() {
     double cross(Offset a, Offset b) => a.dx * b.dy - a.dy * b.dx;
@@ -244,6 +363,14 @@ class SvgHeightVisibility {
     if (walls.any((wall) => wall.unknownHeight)) return false;
     _native = SvgHeightNative.tryOpen(
         wallIds: [for (final wall in walls) wall.id],
+        interiorSides: Uint8List.fromList([
+          for (final edge in _edges)
+            switch (edge.interior) {
+              _Side.right => 0,
+              _Side.left => 1,
+              null => 2,
+            }
+        ]),
         edgeRecords: Float64List.fromList([
           for (final edge in _edges) ...[
             edge.a.dx,
@@ -647,49 +774,39 @@ class SvgHeightVisibility {
         arcSteps: arcSteps);
     if (sightlineFloors.isEmpty || base.polygon.length < 3) return base;
     final eye = base.eyeElevationMeters!;
-    Path? visibility;
-    Path? sector;
+    final reach = Rect.fromCircle(center: origin, radius: range);
+    final floors = <SvgFloorLayer>[];
     for (var i = 0; i < sightlineFloors.length; i++) {
       final targetEye = sightlineFloors[i].surfaceElevationMeters! +
           (cameraHeightMeters ?? defaultCameraHeightMeters);
       if (targetEye == eye) continue;
-      final floor = _floorPaths[i];
-      if (!floor
-          .getBounds()
-          .overlaps(Rect.fromCircle(center: origin, radius: range))) {
-        continue;
-      }
-      sector ??= Path()
-        ..addPolygon([
-          origin,
-          for (var step = 0; step <= arcSteps; step++)
-            origin +
-                Offset(
-                        math.cos(directionRadians -
-                            apertureRadians / 2 +
-                            apertureRadians * step / arcSteps),
-                        math.sin(directionRadians -
-                            apertureRadians / 2 +
-                            apertureRadians * step / arcSteps)) *
-                    range
-        ], true);
-      if (Path.combine(PathOperation.intersect, floor, sector)
-          .getBounds()
-          .isEmpty) {
-        continue;
-      }
-      final visible = visibleSvgFloor(
-          floor: floor,
-          sector: sector,
-          origin: origin,
-          observerEye: eye,
-          targetEye: targetEye,
-          walls: _floorOccluders);
-      visibility ??= Path()..addPolygon(base.polygon, true);
-      visibility = Path.combine(PathOperation.union,
-          Path.combine(PathOperation.difference, visibility, floor), visible);
+      final floor = sightlineFloors[i];
+      final bounds = floor.bounds.intersect(reach);
+      if (bounds.width <= 0 || bounds.height <= 0) continue;
+      floors.add(SvgFloorLayer(
+          floor.rings,
+          floor.evenOdd,
+          svgFloorShadows(
+              bounds: bounds,
+              origin: origin,
+              observerEye: eye,
+              targetEye: targetEye,
+              walls: _floorOccluders)));
     }
-    if (visibility == null) return base;
+    if (floors.isEmpty) return base;
+    final sector = [
+      origin,
+      for (var step = 0; step <= arcSteps; step++)
+        origin +
+            Offset(
+                    math.cos(directionRadians -
+                        apertureRadians / 2 +
+                        apertureRadians * step / arcSteps),
+                    math.sin(directionRadians -
+                        apertureRadians / 2 +
+                        apertureRadians * step / arcSteps)) *
+                range
+    ];
     final stats = base.stats;
     return SvgVisibilityCone(
         base.polygon,
@@ -700,7 +817,8 @@ class SvgHeightVisibility {
             candidateMicros: stats.candidateMicros,
             nativeMicros: stats.nativeMicros),
         eyeElevationMeters: eye,
-        visibilityPath: visibility);
+        floors: floors,
+        sector: sector);
   }
 
   SvgVisibilityCone _horizontalCone({
@@ -845,7 +963,7 @@ class SvgHeightVisibility {
         }
       }
       for (final point in [edge.a, edge.b]) {
-        if (!seenPoints.add(point)) continue;
+        if (!seenPoints.add(point) || _seam(point, active)) continue;
         final delta = point - origin;
         if (delta.distanceSquared > range * range || delta == Offset.zero)
           continue;
@@ -1028,6 +1146,24 @@ class SvgHeightBand {
   bool contains(double height) => height >= bottom && height <= top;
 }
 
+/// One outline cones are cast against, standing for [wall] and every piece
+/// with the same heights merged into it.
+class SvgRuntimeWall extends _Footprint {
+  SvgRuntimeWall._(this.wall, super.rings, super.evenOdd);
+
+  /// The index in [SvgHeightVisibility.walls] whose heights it carries.
+  final int wall;
+
+  /// [rings] without repeated points or points midway along straight
+  /// horizontal and vertical runs: the edges rays are cast against.
+  late final List<List<Offset>> edgeRings = [
+    for (final ring in rings) _runtimeRing(ring)
+  ];
+
+  /// The side of each edge of [edgeRings] the wall lies on.
+  late final Int8List sides = svgEdgeSides(edgeRings, evenOdd);
+}
+
 class SvgHeightWall extends _Footprint {
   SvgHeightWall._(this.id, super.rings, super.evenOdd,
       List<SvgHeightBand> bands, this.unknownHeight, this.floorElevationMeters)
@@ -1098,7 +1234,7 @@ class SvgVisibilityHit {
 class SvgVisibilityCone {
   SvgVisibilityCone(
       List<Offset> polygon, this.eyeHeightAboveFloorMeters, this.stats,
-      {this.eyeElevationMeters, this.visibilityPath})
+      {this.eyeElevationMeters, this.floors = const [], this.sector})
       : _polygon = polygon,
         xy = null;
 
@@ -1108,7 +1244,8 @@ class SvgVisibilityCone {
       Float64List this.xy, this.eyeHeightAboveFloorMeters, this.stats,
       {this.eyeElevationMeters})
       : _polygon = null,
-        visibilityPath = null;
+        floors = const [],
+        sector = null;
 
   final List<Offset>? _polygon;
   final Float64List? xy;
@@ -1119,9 +1256,32 @@ class SvgVisibilityCone {
   final double? eyeElevationMeters;
   final SvgVisibilityStats stats;
 
-  /// Includes projected visibility on explicitly measured destination floors.
-  /// The polygon retains the horizontal slice for native-query diagnostics.
-  final Path? visibilityPath;
+  /// Measured destination floors the cone overlooks, each lit inside
+  /// [sector] less the shadows cast on it. Where a floor lies, it replaces
+  /// the horizontal [polygon]; see [paintSvgConeArea].
+  final List<SvgFloorLayer> floors;
+
+  /// The cone's aperture out to its range, when it has [floors].
+  final List<Offset>? sector;
+
+  /// The lit area as one path, when the cone has [floors]: what
+  /// [paintSvgConeArea] fills, built with path operations. Costly; for
+  /// reports and tests, never for a frame.
+  late final Path? visibilityPath = floors.isEmpty
+      ? null
+      : () {
+          final sectorPath = Path()..addPolygon(sector!, true);
+          var visibility = Path()..addPolygon(polygon, true);
+          for (final layer in floors) {
+            final visible = layer.shadows.subtractFrom(
+                Path.combine(PathOperation.intersect, layer.floor, sectorPath));
+            visibility = Path.combine(
+                PathOperation.union,
+                Path.combine(PathOperation.difference, visibility, layer.floor),
+                visible);
+          }
+          return visibility;
+        }();
 
   /// The cone outline under a 4x4 column-major affine [transform], built
   /// without allocating a point object per vertex.
@@ -1152,14 +1312,36 @@ class SvgVisibilityCone {
   }
 }
 
-Path _footprintPath(_Footprint footprint) {
-  final path = Path()
-    ..fillType =
-        footprint.evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
-  for (final ring in footprint.rings) {
-    path.addPolygon(ring, true);
+/// Fills the lit area of [cone] with [fill], in source coordinates:
+/// [outline], its horizontal cut, and on each destination floor the floor
+/// inside the cone's sector less the shadows cast on it. Floors are composed
+/// in layers rather than path operations, so a cone that overlooks a floor
+/// paints in the same time as one that does not. [bounds] holds the cone.
+void paintSvgConeArea(Canvas canvas, SvgVisibilityCone cone, Path outline,
+    Paint fill, Rect bounds) {
+  if (cone.floors.isEmpty) {
+    canvas.drawPath(outline, fill);
+    return;
   }
-  return path;
+  final sector = Path()..addPolygon(cone.sector!, true);
+  final clear = Paint()..blendMode = BlendMode.clear;
+  // Where a floor edge crosses lit ground, the cleared pixel keeps 1 - c of
+  // the cut and the floor brings c; adding them, rather than laying one over
+  // the other, restores the fill exactly, with every edge antialiased.
+  final add = Paint()..blendMode = BlendMode.plus;
+  canvas.saveLayer(bounds, Paint());
+  canvas.drawPath(outline, fill);
+  for (final layer in cone.floors) {
+    // A floor replaces the horizontal cut where it lies, as the later of
+    // two overlapping floors replaces the earlier.
+    canvas.drawPath(layer.floor, clear);
+    canvas.saveLayer(bounds, add);
+    canvas.clipPath(sector);
+    canvas.drawPath(layer.floor, fill);
+    layer.shadows.erase(canvas);
+    canvas.restore();
+  }
+  canvas.restore();
 }
 
 class SvgVisibilityStats {
@@ -1260,10 +1442,19 @@ class _Footprint {
   }
 }
 
+enum _Side { left, right }
+
 class _Edge {
-  const _Edge(this.a, this.b, this.wall);
+  _Edge(this.a, this.b, this.wall, {required this.interior})
+      : _inverseLength = 1 / (b - a).distance;
   final Offset a, b;
   final int wall;
+
+  /// The side of the edge, going from [a] to [b], its own wall lies on; null
+  /// when that could not be told.
+  final _Side? interior;
+  final double _inverseLength;
+
   double? intersection(Offset origin, Offset direction, double range) {
     final edge = b - a, relative = a - origin;
     final determinant = _cross(direction, edge);
@@ -1276,13 +1467,15 @@ class _Edge {
     }
     final distance = _cross(relative, edge) / determinant;
     final along = _cross(relative, direction) / determinant;
-    // atan2/sin/cos can put an exact corner a few ulps beyond both adjoining
-    // endpoints. Admit endpoint roundoff without moving the supporting line.
-    const endpointRoundoff = 1e-12;
+    // atan2/sin/cos can put a ray aimed at an exact corner a few ulps beyond
+    // both adjoining endpoints. Admit that much along the wall: a sliver of
+    // what the 1e-8 radian rays beside a corner pass it by at the same
+    // distance, which must still pass.
+    final slack = (1e-13 + distance * 1e-10) * _inverseLength;
     return distance >= 0 &&
             distance <= range &&
-            along >= -endpointRoundoff &&
-            along <= 1 + endpointRoundoff
+            along >= -slack &&
+            along <= 1 + slack
         ? distance
         : null;
   }

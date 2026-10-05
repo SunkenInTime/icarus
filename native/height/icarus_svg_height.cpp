@@ -19,6 +19,13 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 static_assert(sizeof(ISHResult) == 72);
 static_assert(offsetof(ISHResult, points) == 8);
 static_assert(offsetof(ISHResult, queryMicros) == 64);
@@ -62,6 +69,10 @@ struct Edge {
   Point a, b;
   uint32_t wall;
   uint32_t aVertex = 0, bVertex = 0;
+  // See the Dart _Edge: corner roundoff admitted along the wall.
+  double inverseLength = 0;
+  // The side its own wall lies on, going a to b: 0 right, 1 left, 2 unknown.
+  uint8_t interior = 2;
 
   bool intersection(Point origin, Point direction, double range,
                     double &distance) const {
@@ -84,9 +95,9 @@ struct Edge {
     const double along = cross(relative, direction) / determinant;
     // Admit floating-point endpoint roundoff, matching the Dart oracle. The
     // supporting line and reported intersection distance remain unchanged.
-    constexpr double endpointRoundoff = 1e-12;
+    const double slack = (1e-13 + rayDistance * 1e-10) * inverseLength;
     if (rayDistance >= 0 && rayDistance <= range &&
-        along >= -endpointRoundoff && along <= 1 + endpointRoundoff) {
+        along >= -slack && along <= 1 + slack) {
       distance = rayDistance;
       return true;
     }
@@ -215,10 +226,34 @@ struct Crossing { Point point; uint32_t first, second; };
 // that run's count, fails the bounds test, and touches nothing; a claim
 // within range keeps the run alive until the chunk is done, so the callback
 // and the remaining counter it then reads belong to that run.
+// A query is a few milliseconds of work split across threads, and the
+// caller waits for every chunk. A thread the scheduler sets aside for a
+// time slice (15 ms on Windows) holding one chunk stalls the whole query, so
+// the threads doing a query run above normal priority while they do it.
+struct Boost {
+#ifdef _WIN32
+  Boost() : thread(GetCurrentThread()), previous(GetThreadPriority(thread)) {
+    if (previous < THREAD_PRIORITY_ABOVE_NORMAL)
+      SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
+  }
+  ~Boost() {
+    if (previous < THREAD_PRIORITY_ABOVE_NORMAL)
+      SetThreadPriority(thread, previous);
+  }
+  HANDLE thread;
+  int previous;
+#endif
+};
+
 struct Pool {
   explicit Pool(unsigned workers) {
     for (unsigned i = 0; i < workers; ++i)
-      threads.emplace_back([this] { loop(); });
+      threads.emplace_back([this] {
+#ifdef _WIN32
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
+        loop();
+      });
   }
   ~Pool() {
     {
@@ -316,6 +351,10 @@ struct Handle {
   std::vector<ChunkCounters> chunkCounters;
   std::vector<std::vector<double>> chunkAngles, chunkVertexAngles;
   std::vector<uint32_t> candidates;
+  // The edges meeting at each vertex, to tell a corner from a seam.
+  std::vector<std::vector<uint32_t>> vertexEdges;
+  std::vector<Point> vertexPoints;
+  bool interiorSides = false;
   Pool pool{poolWorkers()};
   std::mutex mutex;
   std::string error;
@@ -336,6 +375,16 @@ struct Handle {
       };
       edge.aVertex = id(edge.a);
       edge.bVertex = id(edge.b);
+      const Point delta = edge.b - edge.a;
+      edge.inverseLength = 1 / std::sqrt(dot(delta, delta));
+    }
+    vertexEdges.resize(vertices.size());
+    vertexPoints.resize(vertices.size());
+    for (const auto &[key, value] : vertices)
+      vertexPoints[value] = {key.first, key.second};
+    for (uint32_t i = 0; i < edges.size(); ++i) {
+      vertexEdges[edges[i].aVertex].push_back(i);
+      vertexEdges[edges[i].bVertex].push_back(i);
     }
     candidates.reserve(edges.size());
     angles.reserve(std::min(maximumPoints, size_t(4097) + vertices.size() * 3));
@@ -373,6 +422,69 @@ struct Handle {
     }
   }
 };
+
+// Whether no active boundary turns at a vertex: the edges two touching pieces
+// share cancel, and what remains runs straight through it, or nothing does.
+// A ray there meets the wall the rays beside it meet, so it is not an event.
+// Pieces cut along one stroke leave such seams every metre or so.
+bool seam(const Handle &handle, uint32_t vertex, const uint8_t *active) {
+  if (!handle.interiorSides) return false;
+  std::array<uint32_t, 8> live{};
+  size_t count = 0;
+  for (uint32_t id : handle.vertexEdges[vertex]) {
+    if (!active[handle.edges[id].wall]) continue;
+    if (count == live.size()) return false;
+    live[count++] = id;
+  }
+  std::array<bool, 8> cancelled{};
+  for (size_t i = 0; i < count; ++i) {
+    const Edge &first = handle.edges[live[i]];
+    for (size_t j = i + 1; j < count && !cancelled[i]; ++j) {
+      if (cancelled[j]) continue;
+      const Edge &second = handle.edges[live[j]];
+      // A shared side only when the two walls lie on either side of it.
+      const bool same = first.aVertex == second.aVertex && first.bVertex == second.bVertex;
+      const bool reversed = first.aVertex == second.bVertex && first.bVertex == second.aVertex;
+      if (first.interior > 1 || second.interior > 1) continue;
+      if ((same && first.interior != second.interior) ||
+          (reversed && first.interior == second.interior))
+        cancelled[i] = cancelled[j] = true;
+    }
+  }
+  std::array<Point, 2> away{};
+  size_t remaining = 0;
+  const Point at = handle.vertexPoints[vertex];
+  for (size_t i = 0; i < count; ++i) {
+    if (cancelled[i]) continue;
+    if (remaining == 2) return false;
+    const Edge &edge = handle.edges[live[i]];
+    away[remaining++] = (edge.aVertex == vertex ? edge.b : edge.a) - at;
+  }
+  if (remaining == 0) return true;
+  if (remaining == 1) return false;
+  const double lengths = std::sqrt(dot(away[0], away[0]) * dot(away[1], away[1]));
+  return dot(away[0], away[1]) < 0 &&
+         std::abs(cross(away[0], away[1])) <= 1e-12 * lengths;
+}
+
+// Whether the wall runs straight across the ray at a vertex: its two active
+// edges there leave to either side of the ray's line. Rays just beside such
+// a vertex meet those two edges, so only the vertex ray adds a corner. Rays
+// beside the vertex matter where the wall turns back (a silhouette) and
+// something further can show past it.
+bool passThrough(const Handle &handle, uint32_t vertex, Point delta,
+                 const uint8_t *active) {
+  std::array<double, 2> sides{};
+  size_t count = 0;
+  const Point at = handle.vertexPoints[vertex];
+  for (uint32_t id : handle.vertexEdges[vertex]) {
+    const Edge &edge = handle.edges[id];
+    if (!active[edge.wall]) continue;
+    if (count == sides.size()) return false;
+    sides[count++] = cross(delta, (edge.aVertex == vertex ? edge.b : edge.a) - at);
+  }
+  return count == 2 && sides[0] * sides[1] < 0;
+}
 
 Hit castRay(const Handle &handle, Point origin, Point direction, double range,
             const uint8_t *active, Counters &counters) {
@@ -502,6 +614,20 @@ void *ish_open(const double *records, uint32_t edgeCount, uint32_t wallCount,
   }
 }
 
+int32_t ish_set_interior_sides(void *opaque, const uint8_t *sides,
+                               uint32_t edgeCount) {
+  if (!opaque || !sides) return ISH_INVALID;
+  auto &handle = *static_cast<Handle *>(opaque);
+  std::lock_guard<std::mutex> lock(handle.mutex);
+  if (edgeCount != handle.edges.size()) return ISH_INVALID;
+  for (uint32_t i = 0; i < edgeCount; ++i)
+    if (sides[i] > 2) return ISH_INVALID;
+  for (uint32_t i = 0; i < edgeCount; ++i)
+    handle.edges[i].interior = sides[i];
+  handle.interiorSides = true;
+  return ISH_OK;
+}
+
 uint8_t *ish_active_wall_buffer(void *opaque) {
   return opaque ? static_cast<Handle *>(opaque)->activeScratch.data() : nullptr;
 }
@@ -525,6 +651,7 @@ int32_t ish_query(void *opaque, double originX, double originY,
     out->status = ISH_BUSY;
     return ISH_BUSY;
   }
+  Boost boost;
   const auto started = Clock::now();
   try {
     const double values[] = {originX, originY, directionRadians, range,
@@ -626,8 +753,9 @@ int32_t ish_query(void *opaque, double originX, double originY,
         std::vector<double> &angles, &vertex, &outAngles, &outVertex;
         ~Store() { outAngles = std::move(angles); outVertex = std::move(vertex); }
       } store{localAngles, localVertex, handle.chunkAngles[chunk], handle.chunkVertexAngles[chunk]};
-      auto emit = [&](double angle, bool vertex) {
+      auto emit = [&](double angle, bool vertex, bool beside = true) {
         for (double event : {angle - cornerOffset, angle, angle + cornerOffset}) {
+          if (event != angle && !beside) continue;
           if (event >= -half && event <= half) {
             localAngles.push_back(event);
             if (vertex && event == angle) localVertex.push_back(event);
@@ -681,7 +809,9 @@ int32_t ish_query(void *opaque, double originX, double originY,
         }
       }
       const Point endpoints[] = {edge.a, edge.b};
+      const uint32_t endpointVertices[] = {edge.aVertex, edge.bVertex};
       for (int endpoint = 0; endpoint < 2; ++endpoint) {
+        if (seam(handle, endpointVertices[endpoint], active)) continue;
         const Point point = endpoints[endpoint];
         const Point delta = point - origin;
         const double distanceSquared = dot(delta, delta);
@@ -709,7 +839,8 @@ int32_t ish_query(void *opaque, double originX, double originY,
               continue;
           }
         }
-        emit(angle, true);
+        emit(angle, true,
+             !passThrough(handle, endpointVertices[endpoint], delta, active));
       }
       }
     });

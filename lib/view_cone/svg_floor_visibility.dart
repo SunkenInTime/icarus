@@ -1,34 +1,282 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
 /// A painted footprint extruded through absolute source-height intervals.
 class SvgFloorOccluder {
-  SvgFloorOccluder(this.rings, this.evenOdd, this.bands)
-      : bounds = _bounds(rings.expand((ring) => ring));
+  SvgFloorOccluder(this.rings, this.evenOdd, this.bands, [Int8List? sides])
+      : bounds = _bounds(rings.expand((ring) => ring)),
+        _sides = sides;
 
   final List<List<Offset>> rings;
   final bool evenOdd;
   final List<(double, double)> bands;
   final Rect bounds;
+
+  final Int8List? _sides;
+
+  /// Every edge as ax, ay, bx, by, inside: which side of a to b the
+  /// footprint lies on, 1 left, -1 right, 0 unknown (see [svgEdgeSides]).
+  late final Float64List edges = () {
+    final sides = _sides ?? svgEdgeSides(rings, evenOdd);
+    final out = <double>[];
+    var k = 0;
+    for (final ring in rings) {
+      for (var i = 0; i < ring.length; i++) {
+        final a = ring[i], b = ring[(i + 1) % ring.length];
+        if (a == b) continue;
+        out.addAll([a.dx, a.dy, b.dx, b.dy, sides[k++].toDouble()]);
+      }
+    }
+    return Float64List.fromList(out);
+  }();
 }
 
-/// Projects the same SVG wall volumes onto one measured, horizontal floor.
-/// A target stands on that floor, so its eye can differ from the observer's.
-/// Clipping projected faces in double precision keeps distant shadows out of
-/// Skia's float coordinates and preserves holes in the painted footprints.
-Path visibleSvgFloor({
-  required Path floor,
-  required Path sector,
+/// Which side of each edge a footprint lies on, edges in ring order skipping
+/// zero-length ones: 1 left, -1 right, 0 unknown.
+///
+/// Unknown where the side can change along the edge or a step either way
+/// cannot tell: the edge touches or crosses another edge (a bow tie, a ring
+/// meeting another), or the footprint is thinner than the step there. An
+/// unknown side only costs work, never blocking: no seam is skipped and no
+/// shadow face is culled on it. Along a run of a ring that nothing else comes
+/// near, the side cannot change, so one probe answers for the whole run.
+Int8List svgEdgeSides(List<List<Offset>> rings, bool evenOdd) {
+  const step = 1e-6, near = 2 * step;
+  final ax = <double>[], ay = <double>[], bx = <double>[], by = <double>[];
+  final ringOf = <int>[];
+  for (var r = 0; r < rings.length; r++) {
+    final ring = rings[r];
+    for (var i = 0; i < ring.length; i++) {
+      final a = ring[i], b = ring[(i + 1) % ring.length];
+      if (a == b) continue;
+      ax.add(a.dx);
+      ay.add(a.dy);
+      bx.add(b.dx);
+      by.add(b.dy);
+      ringOf.add(r);
+    }
+  }
+  final n = ax.length;
+  final ringStart = List.filled(rings.length, 0);
+  for (var e = n - 1; e >= 0; e--) {
+    ringStart[ringOf[e]] = e;
+  }
+
+  double toEdge(double px, double py, int e) {
+    final ex = bx[e] - ax[e], ey = by[e] - ay[e];
+    final t = (((px - ax[e]) * ex + (py - ay[e]) * ey) / (ex * ex + ey * ey))
+        .clamp(0.0, 1.0);
+    final dx = ax[e] + ex * t - px, dy = ay[e] + ey * t - py;
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  double side(double px, double py, int e) =>
+      (bx[e] - ax[e]) * (py - ay[e]) - (by[e] - ay[e]) * (px - ax[e]);
+  // Properly, each through the other's inside.
+  bool cross(int e, int f) =>
+      side(ax[f], ay[f], e) * side(bx[f], by[f], e) < 0 &&
+      side(ax[e], ay[e], f) * side(bx[e], by[e], f) < 0;
+  bool next(int e, int f) =>
+      ringOf[e] == ringOf[f] && bx[e] == ax[f] && by[e] == ay[f];
+  int following(int e) =>
+      e + 1 < n && ringOf[e + 1] == ringOf[e] ? e + 1 : ringStart[ringOf[e]];
+
+  // An edge something meets inside its length can change side there. Where
+  // something meets a ring only at a corner, each edge keeps its side, but
+  // the side can change at that corner.
+  final crowded = List.filled(n, false);
+  final cornerMet = List.filled(n, false); // at the edge's start
+  void meet(double px, double py, int e) {
+    if (toEdge(px, py, e) > near) return;
+    if ((Offset(px, py) - Offset(ax[e], ay[e])).distance <= near) {
+      cornerMet[e] = true;
+    } else if ((Offset(px, py) - Offset(bx[e], by[e])).distance <= near) {
+      cornerMet[following(e)] = true;
+    } else {
+      crowded[e] = true;
+    }
+  }
+
+  final order = List.generate(n, (i) => i)
+    ..sort((e, f) => math.min(ax[e], bx[e]).compareTo(math.min(ax[f], bx[f])));
+  final active = <int>[];
+  for (final e in order) {
+    final left = math.min(ax[e], bx[e]);
+    active.removeWhere((f) => math.max(ax[f], bx[f]) + near < left);
+    final top = math.min(ay[e], by[e]), bottom = math.max(ay[e], by[e]);
+    for (final f in active) {
+      if (math.min(ay[f], by[f]) > bottom + near ||
+          math.max(ay[f], by[f]) < top - near) {
+        continue;
+      }
+      if (next(e, f) || next(f, e)) {
+        // Consecutive edges share a point by construction; they crowd each
+        // other only when one folds back along the other.
+        final (first, second) = next(e, f) ? (e, f) : (f, e);
+        if (toEdge(ax[first], ay[first], second) <= near ||
+            toEdge(bx[second], by[second], first) <= near) {
+          crowded[e] = crowded[f] = true;
+        }
+        continue;
+      }
+      if (cross(e, f)) crowded[e] = crowded[f] = true;
+      meet(ax[f], ay[f], e);
+      meet(bx[f], by[f], e);
+      meet(ax[e], ay[e], f);
+      meet(bx[e], by[e], f);
+    }
+    active.add(e);
+  }
+
+  bool inside(double px, double py) {
+    var winding = 0;
+    for (var e = 0; e < n; e++) {
+      final s = side(px, py, e);
+      if (ay[e] <= py && by[e] > py && s > 0) winding++;
+      if (ay[e] > py && by[e] <= py && s < 0) winding--;
+    }
+    return evenOdd ? winding.isOdd : winding != 0;
+  }
+
+  int probe(int e) {
+    final ex = bx[e] - ax[e], ey = by[e] - ay[e];
+    final length = math.sqrt(ex * ex + ey * ey);
+    final lx = ey / length * step, ly = -ex / length * step;
+    final mx = (ax[e] + bx[e]) / 2, my = (ay[e] + by[e]) / 2;
+    final inLeft = inside(mx + lx, my + ly), inRight = inside(mx - lx, my - ly);
+    return inLeft == inRight
+        ? 0
+        : inLeft
+            ? 1
+            : -1;
+  }
+
+  final sides = Int8List(n);
+  for (var start = 0, end = 0; start < n; start = end) {
+    while (end < n && ringOf[end] == ringOf[start]) {
+      end++;
+    }
+    final count = end - start;
+    bool breaks(int e) =>
+        cornerMet[e] || crowded[e] || crowded[e == start ? end - 1 : e - 1];
+    // Walk the ring from a break, so a run never wraps past its start.
+    var first = 0;
+    while (first < count && !breaks(start + first)) {
+      first++;
+    }
+    if (first == count) first = 0;
+    int? runSide;
+    for (var i = 0; i < count; i++) {
+      final e = start + (first + i) % count;
+      if (crowded[e]) {
+        runSide = null;
+        continue;
+      }
+      if (runSide == null || breaks(e)) runSide = probe(e);
+      sides[e] = runSide;
+    }
+  }
+  return sides;
+}
+
+/// One measured destination floor as a cone overlooks it. Built from plain
+/// geometry, so a worker isolate can make one; paths are made when painted.
+class SvgFloorLayer {
+  SvgFloorLayer(this.rings, this.evenOdd, this.shadows);
+
+  /// The floor's footprint, in source coordinates.
+  final List<List<Offset>> rings;
+  final bool evenOdd;
+  final SvgFloorShadows shadows;
+
+  late final Path floor = Path()
+    ..fillType = evenOdd ? PathFillType.evenOdd : PathFillType.nonZero
+    ..addPolygonRings(rings);
+}
+
+/// The shadows the SVG wall volumes cast onto one measured, horizontal floor,
+/// for a target standing on it, whose eye can differ from the observer's.
+///
+/// They are kept as shapes rather than subtracted: a painter fills the floor
+/// and erases them, so a cone costs no path operations however many walls
+/// stand between it and the floor. Faces are wound one way, so their nonzero
+/// union is their shadow; caps keep their footprint's fill rule and holes.
+class SvgFloorShadows {
+  SvgFloorShadows._(this.faces, this.caps);
+
+  final List<List<Offset>> faces;
+  final List<(List<List<Offset>>, bool)> caps;
+
+  late final Path facesPath = () {
+    final path = Path()..fillType = PathFillType.nonZero;
+    for (final face in faces) {
+      path.addPolygon(face, true);
+    }
+    return path;
+  }();
+
+  late final List<Path> capPaths = [
+    for (final (rings, evenOdd) in caps)
+      Path()
+        ..fillType = evenOdd ? PathFillType.evenOdd : PathFillType.nonZero
+        ..addPolygonRings(rings)
+  ];
+
+  /// Erases the shadows from what [canvas] has drawn so far in this layer.
+  void erase(Canvas canvas) {
+    final clear = Paint()..blendMode = BlendMode.clear;
+    for (final cap in capPaths) {
+      canvas.drawPath(cap, clear);
+    }
+    canvas.drawPath(facesPath, clear);
+  }
+
+  /// [area] less the shadows, as one path. Each shadow is subtracted on its
+  /// own: near a wall endpoint, overlapping thin contours in one path can
+  /// make Skia's path operation fail. Slow; for reports and tests.
+  Path subtractFrom(Path area) {
+    var visible = area;
+    for (final cap in capPaths) {
+      if (!cap.getBounds().isEmpty) {
+        visible = Path.combine(PathOperation.difference, visible, cap);
+      }
+    }
+    for (final face in faces) {
+      final side = Path()..addPolygon(face, true);
+      if (!side.getBounds().isEmpty) {
+        visible = Path.combine(PathOperation.difference, visible, side);
+      }
+    }
+    return visible;
+  }
+}
+
+extension on Path {
+  void addPolygonRings(List<List<Offset>> rings) {
+    for (final ring in rings) {
+      addPolygon(ring, true);
+    }
+  }
+}
+
+/// Projects the wall volumes onto a target standing anywhere in [bounds].
+/// Clipping projected faces to [bounds] in double precision keeps distant
+/// shadows out of Skia's float coordinates.
+SvgFloorShadows svgFloorShadows({
+  required Rect bounds,
   required Offset origin,
   required double observerEye,
   required double targetEye,
   required Iterable<SvgFloorOccluder> walls,
 }) {
-  var visible = Path.combine(PathOperation.intersect, floor, sector);
-  final bounds = visible.getBounds();
-  if (bounds.isEmpty) return visible;
+  final faces = <List<Offset>>[];
+  final caps = <(List<List<Offset>>, bool)>[];
+  if (bounds.isEmpty) return SvgFloorShadows._(faces, caps);
   final influence = bounds.expandToInclude(Rect.fromPoints(origin, origin));
   final delta = targetEye - observerEye;
+  final ox = origin.dx, oy = origin.dy;
+  final clip = _Clipper(bounds);
   for (final wall in walls) {
     if (!wall.bounds.overlaps(influence)) continue;
     for (final band in wall.bands) {
@@ -47,55 +295,152 @@ Path visibleSvgFloor({
       final near = 1 / last;
       final far = first == 0 ? null : 1 / first;
       // Horizontal caps matter when an eye starts below an overhead footprint.
-      // Subtraction distributes over their union; even-odd holes stay intact.
       for (final factor in [near, if (far != null && far != near) far]) {
-        final cap = Path()
-          ..fillType =
-              wall.evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
-        for (final ring in wall.rings) {
-          final clipped = _clipRect(
-              [for (final p in ring) origin + (p - origin) * factor], bounds);
-          if (clipped.length >= 3) cap.addPolygon(clipped, true);
-        }
-        if (!cap.getBounds().isEmpty) {
-          visible = Path.combine(PathOperation.difference, visible, cap);
-        }
+        final rings = [
+          for (final ring in wall.rings)
+            _clipRect(
+                [for (final p in ring) origin + (p - origin) * factor], bounds)
+        ].where((ring) => ring.length >= 3).toList();
+        if (rings.isNotEmpty) caps.add((rings, wall.evenOdd));
       }
-      for (final ring in wall.rings) {
-        for (var i = 0; i < ring.length; i++) {
-          final a = ring[i], b = ring[(i + 1) % ring.length];
-          final av = a - origin, bv = b - origin;
-          final cross = _cross(av, bv);
-          if (cross == 0) continue;
-          final sign = cross.sign;
-          final edge = b - a;
-          var face = _rectangle(bounds);
-          face = _clip(face, (p) => sign * _cross(av, p - origin));
-          face = _clip(face, (p) => -sign * _cross(bv, p - origin));
-          face = _clip(
-              face, (p) => -sign * _cross(edge, p - (origin + av * near)));
-          if (far != null) {
-            face = _clip(
-                face, (p) => sign * _cross(edge, p - (origin + av * far)));
-          }
-          if (face.length >= 3) {
-            // Subtraction distributes over the union of projected faces.
-            // Keep each face simple: near a wall endpoint, overlapping thin
-            // contours in one path can make Skia's path operation fail.
-            final side = Path()..addPolygon(face, true);
-            if (!side.getBounds().isEmpty) {
-              visible = Path.combine(PathOperation.difference, visible, side);
-            }
-          }
+      final e = wall.edges;
+      for (var k = 0; k < e.length; k += 5) {
+        final avx = e[k] - ox, avy = e[k + 1] - oy;
+        final bvx = e[k + 2] - ox, bvy = e[k + 3] - oy;
+        final cross = avx * bvy - avy * bvx;
+        if (cross == 0) continue;
+        final ex = bvx - avx, ey = bvy - avy;
+        // A shadow that runs on for ever is cast whole by the edges facing
+        // the eye; an edge facing away only shades what they already shade.
+        if (far == null && e[k + 4] != 0) {
+          final eyeSide = ex * -avy - ey * -avx;
+          if (eyeSide * e[k + 4] < 0) continue;
         }
+        final sign = cross.sign;
+        clip.reset();
+        // Between the rays through the edge's ends, past its near copy.
+        if (!clip.cut(sign * -avy, sign * avx, 0, ox, oy) ||
+            !clip.cut(-sign * -bvy, -sign * bvx, 0, ox, oy) ||
+            !clip.cut(
+                -sign * -ey, -sign * ex, 0, ox + avx * near, oy + avy * near)) {
+          continue;
+        }
+        if (far != null &&
+            !clip.cut(
+                sign * -ey, sign * ex, 0, ox + avx * far, oy + avy * far)) {
+          continue;
+        }
+        final face = clip.polygon();
+        if (face.length >= 3) faces.add(face);
       }
     }
   }
-  return visible;
+  return SvgFloorShadows._(faces, caps);
 }
 
-List<Offset> _rectangle(Rect r) =>
-    [r.topLeft, r.topRight, r.bottomRight, r.bottomLeft];
+/// Sutherland-Hodgman clipping of a rectangle by half-planes, in flat
+/// buffers: a face is clipped by three or four lines per edge, thousands of
+/// times per cone, so no lists or closures per step.
+class _Clipper {
+  _Clipper(this.rect);
+
+  final Rect rect;
+  var _a = Float64List(32), _b = Float64List(32);
+  var _n = 0;
+
+  void reset() {
+    _a[0] = rect.left;
+    _a[1] = rect.top;
+    _a[2] = rect.right;
+    _a[3] = rect.top;
+    _a[4] = rect.right;
+    _a[5] = rect.bottom;
+    _a[6] = rect.left;
+    _a[7] = rect.bottom;
+    _n = 4;
+  }
+
+  /// Keeps the side where nx * (x - px) + ny * (y - py) >= c. False when
+  /// nothing is left.
+  bool cut(double nx, double ny, double c, double px, double py) {
+    if (_n == 0) return false;
+    var allIn = true, anyIn = false;
+    for (var i = 0; i < _n; i++) {
+      final d = nx * (_a[i * 2] - px) + ny * (_a[i * 2 + 1] - py) - c;
+      if (d >= 0) {
+        anyIn = true;
+      } else {
+        allIn = false;
+      }
+    }
+    if (allIn) return true;
+    if (!anyIn) {
+      _n = 0;
+      return false;
+    }
+    if (_b.length < (_n + 1) * 2) _b = Float64List((_n + 1) * 4);
+    var m = 0;
+    for (var i = 0; i < _n; i++) {
+      final j = (i + 1) % _n;
+      final ax = _a[i * 2], ay = _a[i * 2 + 1];
+      final bx = _a[j * 2], by = _a[j * 2 + 1];
+      final da = nx * (ax - px) + ny * (ay - py) - c;
+      final db = nx * (bx - px) + ny * (by - py) - c;
+      if (da >= 0) {
+        _b[m * 2] = ax;
+        _b[m * 2 + 1] = ay;
+        m++;
+      }
+      if ((da >= 0) != (db >= 0)) {
+        final t = da / (da - db);
+        _b[m * 2] = ax + (bx - ax) * t;
+        _b[m * 2 + 1] = ay + (by - ay) * t;
+        m++;
+      }
+    }
+    final swap = _a;
+    _a = _b;
+    _b = swap;
+    if (_a.length < _b.length) _a = Float64List(_b.length)..setAll(0, _a);
+    _n = m;
+    return _n >= 3;
+  }
+
+  /// The clipped face, wound one way so faces unite under nonzero fill.
+  List<Offset> polygon() {
+    var twiceArea = 0.0;
+    for (var i = 0; i < _n; i++) {
+      final j = (i + 1) % _n;
+      twiceArea += _a[i * 2] * _a[j * 2 + 1] - _a[j * 2] * _a[i * 2 + 1];
+    }
+    final points = [
+      for (var i = 0; i < _n; i++) Offset(_a[i * 2], _a[i * 2 + 1])
+    ];
+    return twiceArea < 0 ? points.reversed.toList() : points;
+  }
+}
+
+/// [floor] inside [sector], less the shadows the walls cast on a target
+/// standing on it. The boolean form of what [SvgFloorShadows] paints.
+Path visibleSvgFloor({
+  required Path floor,
+  required Path sector,
+  required Offset origin,
+  required double observerEye,
+  required double targetEye,
+  required Iterable<SvgFloorOccluder> walls,
+}) {
+  final visible = Path.combine(PathOperation.intersect, floor, sector);
+  final bounds = visible.getBounds();
+  if (bounds.isEmpty) return visible;
+  return svgFloorShadows(
+          bounds: bounds,
+          origin: origin,
+          observerEye: observerEye,
+          targetEye: targetEye,
+          walls: walls)
+      .subtractFrom(visible);
+}
 
 List<Offset> _clipRect(List<Offset> points, Rect r) {
   var result = _clip(points, (p) => p.dx - r.left);
@@ -115,8 +460,6 @@ List<Offset> _clip(List<Offset> points, double Function(Offset) distance) {
   }
   return result;
 }
-
-double _cross(Offset a, Offset b) => a.dx * b.dy - a.dy * b.dx;
 
 Rect _bounds(Iterable<Offset> points) {
   var left = double.infinity, top = double.infinity;
