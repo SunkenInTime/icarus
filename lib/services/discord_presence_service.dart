@@ -250,8 +250,14 @@ class DiscordPresenceWorker {
     _disposed = true;
     final inbox = _inbox;
     if (inbox == null) return;
+    final SendPort port;
+    try {
+      port = await inbox;
+    } catch (_) {
+      return;
+    }
     final done = ReceivePort();
-    (await inbox).send(('dispose', done.sendPort));
+    port.send(('dispose', done.sendPort));
     // A worker that has stopped never answers; don't hold up shutdown.
     await done.first.timeout(const Duration(seconds: 2), onTimeout: () => null);
     done.close();
@@ -260,16 +266,32 @@ class DiscordPresenceWorker {
 
   Future<void> _send(Object message) async {
     if (!DiscordPresenceService.isSupported || _disposed) return;
-    (await (_inbox ??= _start())).send(message);
+    try {
+      (await (_inbox ??= _start())).send(message);
+    } catch (error, stackTrace) {
+      developer.log(
+        'Discord Rich Presence could not start.',
+        name: 'DiscordPresenceWorker',
+        error: error,
+        stackTrace: stackTrace,
+        level: 700,
+      );
+    }
   }
 
   Future<SendPort> _start() async {
     final ready = ReceivePort();
-    _isolate = await Isolate.spawn(_run, ready.sendPort,
-        debugName: 'discord-presence');
-    final inbox = await ready.first as SendPort;
-    ready.close();
-    return inbox;
+    try {
+      _isolate = await Isolate.spawn(_run, ready.sendPort,
+          debugName: 'discord-presence');
+      return await ready.first as SendPort;
+    } catch (_) {
+      // Let the next update try again.
+      _inbox = null;
+      rethrow;
+    } finally {
+      ready.close();
+    }
   }
 
   static void _run(SendPort ready) {
