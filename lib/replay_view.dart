@@ -345,9 +345,10 @@ class _ReplayStrip extends StatelessWidget {
                     probe.recordedAt ?? DateTime.now(),
                   ),
                 ].join(' · '),
+                // DESIGN.md body role, the size of the editor's title.
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
                   color: theme.foreground,
                 ),
               ),
