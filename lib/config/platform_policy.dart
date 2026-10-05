@@ -10,7 +10,8 @@ enum PlatformFeature {
   videoExport('Video export'),
   fileDrop('Drag and drop'),
   addImages('Adding images'),
-  addLineups('Adding lineups');
+  addLineups('Adding lineups'),
+  replays('Replays');
 
   const PlatformFeature(this.label);
 
@@ -48,6 +49,8 @@ class PlatformPolicy {
       PlatformFeature.exportFiles,
       PlatformFeature.importFiles,
       PlatformFeature.fileDrop,
+      // Decoding a replay needs the native decoder and the file on disk.
+      PlatformFeature.replays,
     },
     // Empty for now; the Beta dialog hides its "Coming" list when it is.
     comingToWebBeta: {},

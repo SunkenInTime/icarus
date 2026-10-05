@@ -107,6 +107,11 @@ class Settings {
   static const Color defenderColor = Color(0xFF6BA6C9);
   static Color get mixedStrategyColor => tacticalVioletTheme.mutedForeground;
 
+  // The outline hues at full strength, for team text and marks on panels:
+  // scores, the roster, killfeed and timeline ticks.
+  static const Color allyInk = Color.fromARGB(255, 105, 240, 175);
+  static const Color enemyInk = Color.fromARGB(255, 255, 82, 82);
+
   static Color neutralTeamShade(Color color) {
     return HSLColor.fromColor(color).withSaturation(0).toColor();
   }

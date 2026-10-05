@@ -6,6 +6,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CustomSquareWidget extends ConsumerWidget {
@@ -49,6 +50,7 @@ class CustomSquareWidget extends ConsumerWidget {
   final List<ShadContextMenuItem>? contextMenuItems;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
 
     final double scaledWidth;
@@ -102,7 +104,7 @@ class CustomSquareWidget extends ConsumerWidget {
                   left: 0,
                   child: Opacity(
                     key: const ValueKey('square-range-body'),
-                    opacity: showRangeFill ? 1 : 0,
+                    opacity: showRangeFill ? rangeOpacity : 0,
                     child: IgnorePointer(
                       child: CustomBorderContainer(
                         color: color,
@@ -123,13 +125,13 @@ class CustomSquareWidget extends ConsumerWidget {
               child: supportsInactiveState
                   ? AnimatedOpacity(
                       key: const ValueKey('square-range-body-transition'),
-                      opacity: showRangeFill ? 1 : 0,
+                      opacity: showRangeFill ? rangeOpacity : 0,
                       duration: abilityStateTransitionDuration,
                       child: wallBody,
                     )
                   : Opacity(
                       key: const ValueKey('square-range-body'),
-                      opacity: showRangeFill ? 1 : 0,
+                      opacity: showRangeFill ? rangeOpacity : 0,
                       child: wallBody,
                     ),
             ),
@@ -139,7 +141,7 @@ class CustomSquareWidget extends ConsumerWidget {
               left: (scaledWidth - inactiveTraceWidth) / 2,
               child: AnimatedOpacity(
                 key: const ValueKey('inactive-wall-trace-transition'),
-                opacity: showRangeFill ? 0 : 1,
+                opacity: showRangeFill ? 0 : rangeOpacity,
                 duration: abilityStateTransitionDuration,
                 child: IgnorePointer(
                   child: SizedBox(

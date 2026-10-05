@@ -29,6 +29,7 @@ import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
+import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -160,6 +161,8 @@ class FolderContent extends ConsumerWidget {
     switch (tab) {
       case LibraryTab.community:
         return _buildCommunityPlaceholder(context, ref);
+      case LibraryTab.replays:
+        return const ReplayLibraryContent();
       case LibraryTab.shared:
         return _crossFade(_buildCloudBody(context, ref));
       case LibraryTab.library:

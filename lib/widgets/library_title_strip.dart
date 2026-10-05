@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
@@ -5,7 +6,9 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
@@ -97,6 +100,19 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             onTap: navigation.showLibrary,
           ),
           const SizedBox(width: _tabGap),
+          if (ref
+              .watch(platformPolicyProvider)
+              .supports(PlatformFeature.replays)) ...[
+            _TabButton(
+              key: const ValueKey('library-tab-replays'),
+              icon: LucideIcons.film,
+              label: 'Replays',
+              semanticsLabel: 'Replays',
+              selected: tab == LibraryTab.replays,
+              onTap: navigation.showReplays,
+            ),
+            const SizedBox(width: _tabGap),
+          ],
           _TabButton(
             key: const ValueKey('library-tab-shared'),
             icon: LucideIcons.users,
@@ -136,7 +152,10 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           ),
           const WhatsNewIcon(),
           const SizedBox(width: 4),
-          if (tab != LibraryTab.community && !signInRequired) ...[
+          if (tab == LibraryTab.replays) ...[
+            _buildAddReplayButton(),
+            const SizedBox(width: 8),
+          ] else if (tab != LibraryTab.community && !signInRequired) ...[
             const SizedBox(
               height: _controlHeight,
               child: SearchTextField(
@@ -169,6 +188,40 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           const SizedBox(width: 10),
         ],
       ),
+    );
+  }
+
+  /// Replays Valorant downloads list themselves; this brings in one saved
+  /// anywhere else.
+  Widget _buildAddReplayButton() {
+    return ShadButton(
+      key: const ValueKey('library-add-replay'),
+      height: _controlHeight,
+      padding: const EdgeInsets.only(left: 8, right: 10),
+      leading: const Icon(LucideIcons.plus, size: 16),
+      onPressed: () async {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: const ['vrf'],
+          allowMultiple: true,
+        );
+        if (result == null) return;
+        for (final file in result.files) {
+          final path = file.path;
+          if (path == null) continue;
+          try {
+            await ref.read(replayLibraryProvider.notifier).import(path);
+          } catch (error, stackTrace) {
+            AppErrorReporter.reportError(
+              "Couldn't add ${file.name}.",
+              error: error,
+              stackTrace: stackTrace,
+              source: 'LibraryTitleStrip.addReplay',
+            );
+          }
+        }
+      },
+      child: const Text('Add Replay'),
     );
   }
 

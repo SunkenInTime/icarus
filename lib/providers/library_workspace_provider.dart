@@ -90,17 +90,24 @@ class CloudLibrarySectionNotifier extends Notifier<CloudLibrarySection> {
   }
 }
 
-/// The three destinations in the library's title strip. `library` is the
-/// user's own work from every store; `shared` is what teammates gave them;
-/// `community` is the public space. The active store ([libraryWorkspaceProvider])
+/// The destinations in the library's title strip. `library` is the user's
+/// own work from every store; `shared` is what teammates gave them;
+/// `community` is the public space; `replays` is the Valorant match
+/// recordings on this computer. The active store ([libraryWorkspaceProvider])
 /// stays an implementation detail behind the first tab.
 enum LibraryTab {
   library,
   shared,
   community,
+  replays,
 }
 
+/// Whether the Replays tab is open. Replays are files on this computer, not
+/// a store, so the tab sits apart from the workspace the others choose.
+final replaysTabOpenProvider = StateProvider<bool>((ref) => false);
+
 final libraryTabProvider = Provider<LibraryTab>((ref) {
+  if (ref.watch(replaysTabOpenProvider)) return LibraryTab.replays;
   final workspace = ref.watch(libraryWorkspaceProvider);
   if (workspace == LibraryWorkspace.community) {
     return LibraryTab.community;

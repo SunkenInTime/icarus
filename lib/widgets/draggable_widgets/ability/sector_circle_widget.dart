@@ -6,6 +6,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SectorCircleWidget extends ConsumerWidget {
@@ -57,6 +58,7 @@ class SectorCircleWidget extends ConsumerWidget {
     final scaledInnerRangeSize = coordinateSystem.scale(innerRangeSize ?? 0);
     final scaledTopInset = coordinateSystem.scale(handleTopInsetVirtual);
     final resolvedVisualState = visualState ?? const AbilityVisualState();
+    final rangeOpacity = AbilityRangeOpacity.of(context);
     final style = _SectorCircleStyle.fromValues(
       coordinateSystem: coordinateSystem,
       rangeOutlineColor: rangeOutlineColor,
@@ -83,13 +85,16 @@ class SectorCircleWidget extends ConsumerWidget {
                 children: [
                   Positioned.fill(
                     child: IgnorePointer(
-                      child: CustomPaint(
-                        key: const ValueKey('sector-range-layer'),
-                        painter: SectorCirclePainter(
-                          sweepAngleDegrees: sweepAngleDegrees,
-                          fillColor: style.fillColor,
-                          strokeColor: style.strokeColor,
-                          strokeWidth: style.strokeWidth,
+                      child: Opacity(
+                        opacity: rangeOpacity,
+                        child: CustomPaint(
+                          key: const ValueKey('sector-range-layer'),
+                          painter: SectorCirclePainter(
+                            sweepAngleDegrees: sweepAngleDegrees,
+                            fillColor: style.fillColor,
+                            strokeColor: style.strokeColor,
+                            strokeWidth: style.strokeWidth,
+                          ),
                         ),
                       ),
                     ),
@@ -98,11 +103,13 @@ class SectorCircleWidget extends ConsumerWidget {
                     _buildInnerRangeFill(
                       scaledInnerRangeSize,
                       resolvedVisualState.showInnerFill,
+                      rangeOpacity,
                     ),
                     _buildInnerRangeOutline(
                       coordinateSystem,
                       scaledInnerRangeSize,
                       resolvedVisualState.showInnerOutline,
+                      rangeOpacity,
                     ),
                   ],
                   if (hasCenterDot) _buildCenterIcon(),
@@ -118,6 +125,7 @@ class SectorCircleWidget extends ConsumerWidget {
   Widget _buildInnerRangeFill(
     double scaledInnerRangeSize,
     bool showInnerFill,
+    double rangeOpacity,
   ) {
     assert(
       innerRangeColor != null,
@@ -127,7 +135,7 @@ class SectorCircleWidget extends ConsumerWidget {
     return Positioned.fill(
       child: Opacity(
         key: const ValueKey('sector-inner-fill-layer'),
-        opacity: showInnerFill ? 1 : 0,
+        opacity: showInnerFill ? rangeOpacity : 0,
         child: IgnorePointer(
           child: Align(
             alignment: Alignment.center,
@@ -149,6 +157,7 @@ class SectorCircleWidget extends ConsumerWidget {
     CoordinateSystem coordinateSystem,
     double scaledInnerRangeSize,
     bool showInnerOutline,
+    double rangeOpacity,
   ) {
     assert(
       innerRangeColor != null,
@@ -158,7 +167,7 @@ class SectorCircleWidget extends ConsumerWidget {
     return Positioned.fill(
       child: Opacity(
         key: const ValueKey('sector-inner-outline-layer'),
-        opacity: showInnerOutline ? 1 : 0,
+        opacity: showInnerOutline ? rangeOpacity : 0,
         child: IgnorePointer(
           child: Align(
             alignment: Alignment.center,
@@ -313,7 +322,8 @@ class _SectorCircleStyle {
 
     return _SectorCircleStyle(
       fillColor: showRangeFill ? baseStyle.fillColor : null,
-      strokeColor: showRangeOutline ? baseStyle.strokeColor : Colors.transparent,
+      strokeColor:
+          showRangeOutline ? baseStyle.strokeColor : Colors.transparent,
       strokeWidth: showRangeOutline ? baseStyle.strokeWidth : 0,
     );
   }

@@ -227,7 +227,7 @@ class _RecordingStrategies extends StrategyProvider {
   }
 
   @override
-  Future<void> loadFromHive(String id) async {
+  Future<void> loadFromHive(String id, {String? pageId}) async {
     opened.add('local:$id');
     show(id, StrategySource.local);
   }

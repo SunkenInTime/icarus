@@ -803,7 +803,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
         clipBehavior: Clip.none,
         children: [
           for (final widget in orderedWidgets)
-            _widgetView(
+            staticPlacedWidgetView(
               widget: widget,
               mapScale: mapScale,
               abilitySize: abilitySize,
@@ -814,116 +814,123 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _widgetView({
-    required PlacedWidget widget,
-    required double mapScale,
-    required double abilitySize,
-    required double agentSize,
-    required bool isAttack,
-  }) {
-    final coord = CoordinateSystem.instance;
-    final scaledPosition = _overlayScreenPosition(
-      widget: widget,
-      coordinateSystem: coord,
-      agentSize: agentSize,
-      mapScale: mapScale,
-      abilitySize: abilitySize,
-      isAttack: isAttack,
+/// One placed widget drawn where a page puts it, without the editor's handles
+/// or gestures. The transition's still frame and the replay viewer share it,
+/// so both match the editor exactly.
+Widget staticPlacedWidgetView({
+  required PlacedWidget widget,
+  required double mapScale,
+  required double abilitySize,
+  required double agentSize,
+  required bool isAttack,
+}) {
+  final coord = CoordinateSystem.instance;
+  final scaledPosition = _overlayScreenPosition(
+    widget: widget,
+    coordinateSystem: coord,
+    agentSize: agentSize,
+    mapScale: mapScale,
+    abilitySize: abilitySize,
+    isAttack: isAttack,
+  );
+  final canonicalRotation = PageTransitionEntry.rotationOf(widget);
+  final displayRotation = canonicalRotation == null
+      ? null
+      : coord.rotationForSide(canonicalRotation, isAttack: isAttack);
+
+  if (widget is PlacedUtility &&
+      UtilityData.usesRotation(widget.type) &&
+      displayRotation != null &&
+      displayRotation != 0) {
+    return Positioned(
+    key: ValueKey(widget.id),
+      left: scaledPosition.dx,
+      top: scaledPosition.dy,
+      child: Transform.rotate(
+        angle: displayRotation,
+        alignment: Alignment.topLeft,
+        origin: utilityAnchorForScale(
+          utility: widget,
+          mapScale: mapScale,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
+        ).scale(
+          CoordinateSystem.instance.scaleFactor,
+          CoordinateSystem.instance.scaleFactor,
+        ),
+        child: PlacedWidgetPreview.build(
+          widget,
+          mapScale,
+          length: widget.length,
+          rotation: displayRotation,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
+        ),
+      ),
     );
-    final canonicalRotation = PageTransitionEntry.rotationOf(widget);
-    final displayRotation = canonicalRotation == null
-        ? null
-        : coord.rotationForSide(canonicalRotation, isAttack: isAttack);
-
-    if (widget is PlacedUtility &&
-        UtilityData.usesRotation(widget.type) &&
-        displayRotation != null &&
-        displayRotation != 0) {
-      return Positioned(
-        left: scaledPosition.dx,
-        top: scaledPosition.dy,
-        child: Transform.rotate(
-          angle: displayRotation,
-          alignment: Alignment.topLeft,
-          origin: utilityAnchorForScale(
-            utility: widget,
-            mapScale: mapScale,
-            agentSize: agentSize,
-            abilitySize: abilitySize,
-          ).scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          ),
-          child: PlacedWidgetPreview.build(
-            widget,
-            mapScale,
-            length: widget.length,
-            rotation: displayRotation,
-            agentSize: agentSize,
-            abilitySize: abilitySize,
-          ),
-        ),
-      );
-    } else if (widget is PlacedAbility &&
-        displayRotation != null &&
-        displayRotation != 0 &&
-        widget.data.abilityData != null &&
-        !(widget.visualState.showVisionCone &&
-            AbilityVisionConeSpec.forAbility(widget.data) != null) &&
-        isRotatable(widget.data.abilityData!)) {
-      return Positioned(
-        left: scaledPosition.dx,
-        top: scaledPosition.dy,
-        child: Transform.rotate(
-          angle: displayRotation,
-          alignment: Alignment.topLeft,
-          origin: (widget)
-              .data
-              .abilityData!
-              .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-              .scale(coord.scaleFactor, coord.scaleFactor),
-          child: PlacedWidgetPreview.build(
-            widget,
-            mapScale,
-            length: widget.length,
-            rotation: displayRotation,
-            armLengthsMeters: widget.armLengthsMeters,
-            agentSize: agentSize,
-            abilitySize: abilitySize,
-          ),
-        ),
-      );
-    } else if (widget is PlacedText || widget is PlacedImage) {
-      return CanonicalPositionedBox(
-        attackScreenPosition: scaledPosition,
-        isAttack: isAttack,
+  } else if (widget is PlacedAbility &&
+      displayRotation != null &&
+      displayRotation != 0 &&
+      widget.data.abilityData != null &&
+      !(widget.visualState.showVisionCone &&
+          AbilityVisionConeSpec.forAbility(widget.data) != null) &&
+      isRotatable(widget.data.abilityData!)) {
+    return Positioned(
+    key: ValueKey(widget.id),
+      left: scaledPosition.dx,
+      top: scaledPosition.dy,
+      child: Transform.rotate(
+        angle: displayRotation,
+        alignment: Alignment.topLeft,
+        origin: (widget)
+            .data
+            .abilityData!
+            .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
+            .scale(coord.scaleFactor, coord.scaleFactor),
         child: PlacedWidgetPreview.build(
           widget,
           mapScale,
-          length: widget is PlacedAbility ? widget.length : null,
+          length: widget.length,
           rotation: displayRotation,
-          armLengthsMeters:
-              widget is PlacedAbility ? widget.armLengthsMeters : null,
+          armLengthsMeters: widget.armLengthsMeters,
           agentSize: agentSize,
           abilitySize: abilitySize,
         ),
-      );
-    } else {
-      return Positioned(
-        left: scaledPosition.dx,
-        top: scaledPosition.dy,
-        child: PlacedWidgetPreview.build(
-          widget,
-          mapScale,
-          length: widget is PlacedAbility ? widget.length : null,
-          rotation: displayRotation,
-          armLengthsMeters:
-              widget is PlacedAbility ? widget.armLengthsMeters : null,
-          agentSize: agentSize,
-          abilitySize: abilitySize,
-        ),
-      );
-    }
+      ),
+    );
+  } else if (widget is PlacedText || widget is PlacedImage) {
+    return CanonicalPositionedBox(
+    key: ValueKey(widget.id),
+      attackScreenPosition: scaledPosition,
+      isAttack: isAttack,
+      child: PlacedWidgetPreview.build(
+        widget,
+        mapScale,
+        length: widget is PlacedAbility ? widget.length : null,
+        rotation: displayRotation,
+        armLengthsMeters:
+            widget is PlacedAbility ? widget.armLengthsMeters : null,
+        agentSize: agentSize,
+        abilitySize: abilitySize,
+      ),
+    );
+  } else {
+    return Positioned(
+    key: ValueKey(widget.id),
+      left: scaledPosition.dx,
+      top: scaledPosition.dy,
+      child: PlacedWidgetPreview.build(
+        widget,
+        mapScale,
+        length: widget is PlacedAbility ? widget.length : null,
+        rotation: displayRotation,
+        armLengthsMeters:
+            widget is PlacedAbility ? widget.armLengthsMeters : null,
+        agentSize: agentSize,
+        abilitySize: abilitySize,
+      ),
+    );
   }
 }

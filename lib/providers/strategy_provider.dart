@@ -1103,7 +1103,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     return true;
   }
 
-  Future<void> loadFromHive(String id) async {
+  /// Opens strategy [id] on its first page, or on [pageId] when given.
+  Future<void> loadFromHive(String id, {String? pageId}) async {
     _requireLocalLibrary('open');
     cancelPendingSave();
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
@@ -1158,6 +1159,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           strategyId: migratedStrategy.id,
           source: StrategySource.local,
           selectFirstPageIfNeeded: true,
+          preferredPageId: pageId,
         );
     ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
@@ -1165,13 +1167,16 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// Creates an empty strategy on [map] and returns it. Without [name] it
   /// is auto-named after the map ("Haven", then "Haven 2", ...). In the cloud
   /// workspace the strategy is created on the server and opened; nothing is
-  /// written to the local library.
+  /// written to the local library. With [local] it goes to the local library
+  /// (its open folder) whichever workspace is selected: a replay's Capture
+  /// writes its pages there, from files on this computer.
   Future<StrategyData> createNewStrategy({
     required MapValue map,
     String? name,
+    bool local = false,
   }) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final isCloud = _selectedWorkspaceIsCloud();
+    final isCloud = !local && _selectedWorkspaceIsCloud();
     if (!isCloud) _requireLocalLibrary('create');
     final existingNames = isCloud
         ? (ref.read(cloudStrategiesProvider).valueOrNull ?? const [])
@@ -1214,7 +1219,11 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       // ignore: deprecated_member_use_from_same_package
       strategySettings: defaultSettings,
-      folderID: ref.read(folderProvider),
+      folderID: local
+          ? ref
+              .read(folderProvider.notifier)
+              .currentFolderIdForWorkspace(LibraryWorkspace.local)
+          : ref.read(folderProvider),
       themeProfileId: defaultThemeProfileId,
     );
 

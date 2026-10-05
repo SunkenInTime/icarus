@@ -300,16 +300,23 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   String? get activePageId => state.activePageId;
 
+  /// Opens [strategyId]'s pages on [preferredPageId] when it has one, else
+  /// on the page already active, else (with [selectFirstPageIfNeeded]) the
+  /// first.
   Future<void> initializeForStrategy({
     required String strategyId,
     required StrategySource source,
     required bool selectFirstPageIfNeeded,
+    String? preferredPageId,
   }) async {
     _pageSessionGeneration++;
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await pageSource.listPageIds();
-    final initialPageId =
-        pageIds.contains(state.activePageId) ? state.activePageId : null;
+    final initialPageId = pageIds.contains(preferredPageId)
+        ? preferredPageId
+        : pageIds.contains(state.activePageId)
+            ? state.activePageId
+            : null;
     final selected = initialPageId ??
         (selectFirstPageIfNeeded && pageIds.isNotEmpty ? pageIds.first : null);
 

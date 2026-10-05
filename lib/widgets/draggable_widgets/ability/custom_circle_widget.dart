@@ -4,6 +4,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CustomCircleWidget extends ConsumerWidget {
@@ -48,27 +49,32 @@ class CustomCircleWidget extends ConsumerWidget {
     final scaledSize = coordinateSystem.scale(size);
     final scaledInnerRangeSize = coordinateSystem.scale(innerRangeSize ?? 0);
     final resolvedVisualState = visualState ?? const AbilityVisualState();
+    final rangeOpacity = AbilityRangeOpacity.of(context);
 
     return Stack(
       children: [
         _buildRangeFill(
           scaledSize,
           showRangeFill: resolvedVisualState.showRangeFill && !hasInnerRange,
+          rangeOpacity: rangeOpacity,
         ),
         _buildRangeOutline(
           coordinateSystem,
           scaledSize,
           showRangeOutline: resolvedVisualState.showRangeOutline,
+          rangeOpacity: rangeOpacity,
         ),
         if (hasInnerRange) ...[
           _buildInnerRangeFill(
             scaledInnerRangeSize,
             showInnerFill: resolvedVisualState.showInnerFill,
+            rangeOpacity: rangeOpacity,
           ),
           _buildInnerRangeOutline(
             coordinateSystem,
             scaledInnerRangeSize,
             showInnerOutline: resolvedVisualState.showInnerOutline,
+            rangeOpacity: rangeOpacity,
           ),
         ],
         if (hasCenterDot) _buildCenterIcon(),
@@ -79,6 +85,7 @@ class CustomCircleWidget extends ConsumerWidget {
   Widget _buildRangeFill(
     double scaledSize, {
     required bool showRangeFill,
+    required double rangeOpacity,
   }) {
     final fillColor = resolveAbilityRangeFillColor(
       rangeOutlineColor: rangeOutlineColor,
@@ -87,7 +94,7 @@ class CustomCircleWidget extends ConsumerWidget {
     );
     return Opacity(
       key: const ValueKey('circle-range-fill-layer'),
-      opacity: showRangeFill ? 1 : 0,
+      opacity: showRangeFill ? rangeOpacity : 0,
       child: IgnorePointer(
         child: Container(
           width: scaledSize,
@@ -105,10 +112,11 @@ class CustomCircleWidget extends ConsumerWidget {
     CoordinateSystem coordinateSystem,
     double scaledSize, {
     required bool showRangeOutline,
+    required double rangeOpacity,
   }) {
     return Opacity(
       key: const ValueKey('circle-range-outline-layer'),
-      opacity: showRangeOutline ? 1 : 0,
+      opacity: showRangeOutline ? rangeOpacity : 0,
       child: IgnorePointer(
         child: Container(
           width: scaledSize,
@@ -119,7 +127,8 @@ class CustomCircleWidget extends ConsumerWidget {
               color: hasInnerRange
                   ? rangeOutlineColor.withAlpha(100)
                   : rangeOutlineColor,
-              width: coordinateSystem.scale(hasInnerRange || hasCenterDot ? 2 : 5),
+              width:
+                  coordinateSystem.scale(hasInnerRange || hasCenterDot ? 2 : 5),
             ),
           ),
         ),
@@ -130,11 +139,12 @@ class CustomCircleWidget extends ConsumerWidget {
   Widget _buildInnerRangeFill(
     double scaledInnerRangeSize, {
     required bool showInnerFill,
+    required double rangeOpacity,
   }) {
     return Positioned.fill(
       child: Opacity(
         key: const ValueKey('circle-inner-fill-layer'),
-        opacity: showInnerFill ? 1 : 0,
+        opacity: showInnerFill ? rangeOpacity : 0,
         child: IgnorePointer(
           child: Align(
             alignment: Alignment.center,
@@ -156,11 +166,12 @@ class CustomCircleWidget extends ConsumerWidget {
     CoordinateSystem coordinateSystem,
     double scaledInnerRangeSize, {
     required bool showInnerOutline,
+    required double rangeOpacity,
   }) {
     return Positioned.fill(
       child: Opacity(
         key: const ValueKey('circle-inner-outline-layer'),
-        opacity: showInnerOutline ? 1 : 0,
+        opacity: showInnerOutline ? rangeOpacity : 0,
         child: IgnorePointer(
           child: Align(
             alignment: Alignment.center,

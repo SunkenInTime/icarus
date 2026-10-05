@@ -5,6 +5,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SimpleImageAbilityWidget extends ConsumerWidget {
@@ -33,6 +34,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
     final deleteTarget = landingId != null
         ? HoveredDeleteTarget.lineup(id: landingId!, ownerToken: Object())
@@ -50,14 +52,14 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
         children: [
           AnimatedOpacity(
             key: const ValueKey('image-ability-active-layer'),
-            opacity: isActive ? 1 : 0,
+            opacity: isActive ? rangeOpacity : 0,
             duration: abilityStateTransitionDuration,
             child: Image.asset(imagePath),
           ),
           if (supportsInactiveState)
             AnimatedOpacity(
               key: const ValueKey('image-ability-inactive-layer'),
-              opacity: isActive ? 0 : 1,
+              opacity: isActive ? 0 : rangeOpacity,
               duration: abilityStateTransitionDuration,
               child: InactiveCircleAbilityTrace(
                 color: inactiveTraceColor!,

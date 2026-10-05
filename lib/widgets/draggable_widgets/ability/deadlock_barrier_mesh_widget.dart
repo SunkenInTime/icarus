@@ -7,6 +7,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double deadlockBarrierMeshMinArmLengthMeters = 1.0;
@@ -126,6 +127,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final normalizedArmLengths =
@@ -147,7 +149,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
         children: [
           Opacity(
             key: const ValueKey('deadlock-mesh-layer'),
-            opacity: showMesh ? 1 : 0,
+            opacity: showMesh ? rangeOpacity : 0,
             child: Stack(
               clipBehavior: Clip.none,
               children: [

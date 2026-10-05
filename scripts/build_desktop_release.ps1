@@ -127,6 +127,11 @@ if ($runPackage) {
     if (-not (Test-Path -LiteralPath $distArchivePath)) {
         throw "Desktop Updater archive folder not found at $distArchivePath"
     }
+    # The replay decoder is built by cargo from windows/CMakeLists.txt; without
+    # it the app runs but cannot open a replay.
+    if (-not (Test-Path -LiteralPath (Join-Path $distArchivePath "icarus_replay.dll"))) {
+        throw "icarus_replay.dll was not included in the Desktop Updater archive at $distArchivePath"
+    }
     $archivedFfmpegDirectory = Join-Path $distArchivePath "ffmpeg"
     $archivedFfmpegPath = Join-Path $archivedFfmpegDirectory "ffmpeg.exe"
     $archiveHashesPath = Join-Path $distArchivePath "hashes.json"

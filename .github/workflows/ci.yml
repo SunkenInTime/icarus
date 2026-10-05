@@ -22,6 +22,55 @@ env:
   PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
 jobs:
+  native-replay:
+    runs-on: ubuntu-latest
+    # Cargo build scripts run here: no write token, none left in .git.
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: native/replay
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # The version in native/replay/rust-toolchain.toml.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.96.1
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/replay/target
+          key: ${{ runner.os }}-cargo-replay-${{ hashFiles('native/replay/Cargo.lock', 'native/replay/rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-replay-
+
+      # oozextract is GPL-derived: it must never enter the build
+      # (docs/adr/0006-replay-decoder.md).
+      - name: Keep oozextract out
+        run: |
+          if grep -q oozextract Cargo.lock; then
+            echo "::error::oozextract is in native/replay/Cargo.lock"
+            exit 1
+          fi
+
+      - name: Clippy
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features dev-vectors -- -D warnings
+
+      - name: Test
+        run: |
+          cargo test --locked
+          cargo test --locked --features dev-vectors
+
   # Decides which lanes a run needs. Every lane runs for manual runs, PRs into
   # main, PRs that change CI itself, and PRs whose files can't be listed.
   # Pushes run every lane but the desktop builds: the release runs the upgrade
