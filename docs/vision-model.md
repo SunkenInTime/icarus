@@ -53,9 +53,11 @@ and the art decides where it is:
   cut cones beside it into slivers.
 - Runs of equal layers become one-sided strips, 0.01 thick, inside the art.
   The art is closed by 0.03 first, so hairline cracks between strokes don't
-  leak. Strips with the same heights are merged into `runtimeWalls`
-  outlines. Without the merge, each strip's ends are silhouettes and a cone
-  grows to about 10,000 points.
+  leak. Touching strips with the same heights are merged into one outline
+  each, and those outlines are the model's walls (no `runtimeWalls`). With
+  a wall per strip, each strip's ends were silhouettes and a cone grew to
+  about 10,000 points; with strips merged only for casting, stepping an
+  agent out of a wall searched every strip and took up to 1.6 s.
 - A stretch of Riot line with no art beside it (glass, railings, crates the
   art doesn't draw) stays as a thin wall on Riot's own line. Where the
   stretch was cut because the art beside it takes over, its end is joined
@@ -90,17 +92,26 @@ poles, low walls) the 3D map has, and the cones beside them look normal.
 
 | visible floor, both sides | measured model | art + Riot heights |
 |---|---|---|
-| leaked length | 1,747,007 | 2,323,163 (+33%) |
-| false-shadow length | 32,714,287 | 33,816,275 (+3.4%) |
+| leaked length | 1,747,007 | 2,313,132 (+32%) |
+| false-shadow length | 32,714,287 | 33,816,279 (+3.4%) |
 
 Pearl (−88% leaked), Summit (−90%), Breeze (−65%), Ascent (−63%), Corrode
 (−52%) and Haven (−43%) improve. Abyss, Fracture, Icebox and Sunset leak
 about twice as much or more, and Split and Bind about a quarter more, where
 Riot's lines are sparse or ignore props.
 
-Cones stay within 165 fps: on a drag across every map side, frame build is
-at most 5.57 ms at p99 (budget 6.06 ms) and raster at most 2.04 ms. That was
-measured before the short-stretch rule, which only removes walls.
+Cones stay within 165 fps: on a profile-build drag across every map side,
+frame build is at most 3.35 ms at p99 over two runs (budget 6.06 ms) and
+no frame's build goes over budget.
+
+Stepping an agent out of a wall (`standablePointNear`, every frame of a
+drag) tests points against every wall and the floor. The floor has every
+wall cut out of it, thousands of edges in one ring, and walls run along
+whole outlines, so `_Footprint` now files each edge under the 1-unit rows
+its height reaches and a test reads one row; the answer is unchanged
+(`test/svg_footprint_contains_test.dart`). Over a grid of every 1.37 units,
+in a profile build, the step plus choosing the standing level takes at most
+2.0–5.6 ms on Lotus, Breeze and Summit, about what the measured model took.
 
 Walling off everything that is neither floor nor wall was tried. Rays
 leaving the map are never drawn, so it changed nothing visible on Pearl. On
