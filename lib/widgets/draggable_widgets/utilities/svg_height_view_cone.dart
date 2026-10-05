@@ -332,12 +332,7 @@ class SvgHeightViewConePainter extends CustomPainter {
     final path = Path()
       ..fillType = evenOdd ? PathFillType.evenOdd : PathFillType.nonZero;
     for (final ring in rings) {
-      if (ring.isEmpty) continue;
-      path.moveTo(ring.first.dx, ring.first.dy);
-      for (final point in ring.skip(1)) {
-        path.lineTo(point.dx, point.dy);
-      }
-      path.close();
+      if (ring.isNotEmpty) path.addPolygon(ring, true);
     }
     return path;
   }

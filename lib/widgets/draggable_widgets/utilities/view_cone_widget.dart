@@ -429,13 +429,7 @@ class ViewConePainter extends CustomPainter {
     // second circular screen-space clip would trim them on stretched maps.
     canvas.clipPath(clipPath);
     if (visibilityPolygon != null && visibilityPolygon!.length >= 3) {
-      final visibilityPath = Path()
-        ..moveTo(visibilityPolygon!.first.dx, visibilityPolygon!.first.dy);
-      for (final point in visibilityPolygon!.skip(1)) {
-        visibilityPath.lineTo(point.dx, point.dy);
-      }
-      visibilityPath.close();
-      canvas.clipPath(visibilityPath);
+      canvas.clipPath(Path()..addPolygon(visibilityPolygon!, true));
     }
 
     final gradientCenter = apex;
