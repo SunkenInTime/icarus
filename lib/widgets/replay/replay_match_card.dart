@@ -89,6 +89,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         initialMapValue: strategy.mapData,
         initialIsAttack: page.isAttack,
         initialPageId: page.id,
+        backTooltip: 'Back to replay',
       ),
     );
     if (!mounted) return;

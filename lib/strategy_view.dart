@@ -36,6 +36,7 @@ class StrategyView extends ConsumerStatefulWidget {
     this.initialMapValue,
     this.initialIsAttack = true,
     this.initialPageId,
+    this.backTooltip,
   });
 
   final String? initialStrategyId;
@@ -46,12 +47,18 @@ class StrategyView extends ConsumerStatefulWidget {
   /// The page to open on; the first when null.
   final String? initialPageId;
 
+  /// Set when the editor was opened from somewhere other than the library
+  /// (a replay's Capture): leaving goes back there, so the leading button is
+  /// a back arrow with this tooltip instead of the house.
+  final String? backTooltip;
+
   static PageRoute<void> route({
     String? initialStrategyId,
     String? initialStrategyName,
     MapValue? initialMapValue,
     bool initialIsAttack = true,
     String? initialPageId,
+    String? backTooltip,
   }) {
     return PageRouteBuilder<void>(
       settings: const RouteSettings(name: Routes.strategyView),
@@ -63,6 +70,7 @@ class StrategyView extends ConsumerStatefulWidget {
         initialMapValue: initialMapValue,
         initialIsAttack: initialIsAttack,
         initialPageId: initialPageId,
+        backTooltip: backTooltip,
       ),
       transitionsBuilder: (context, animation, _, child) {
         return FadeTransition(
@@ -211,7 +219,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   children: [
                     const SizedBox(width: 6),
                     ShadTooltip(
-                      builder: (context) => const Text('Library'),
+                      builder: (context) =>
+                          Text(widget.backTooltip ?? 'Library'),
                       child: ShadIconButton.ghost(
                         width: 28,
                         height: 28,
@@ -220,7 +229,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                         hoverForegroundColor:
                             Settings.tacticalVioletTheme.foreground,
                         onPressed: _leaveToLibrary,
-                        icon: const Icon(LucideIcons.house300, size: 18),
+                        icon: Icon(
+                          widget.backTooltip == null
+                              ? LucideIcons.house300
+                              : LucideIcons.chevronLeft300,
+                          size: 18,
+                        ),
                       ),
                     ),
                     const IcarusWordmark(),
