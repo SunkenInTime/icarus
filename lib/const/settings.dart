@@ -98,6 +98,14 @@ class Settings {
 
   static const Color enemyOutlineColor = Color.fromARGB(139, 255, 82, 82);
   static const Color allyOutlineColor = Color.fromARGB(106, 105, 240, 175);
+  static Color get attackColor => tacticalVioletTheme.destructive;
+
+  /// Defend-side label color. Deliberately NOT the violet primary (reserved
+  /// for selection/command per DESIGN.md) and not ally green (reserved for
+  /// team identity) — a muted steel blue in the family of the old
+  /// lightBlueAccent, toned down for the tactical palette.
+  static const Color defenderColor = Color(0xFF6BA6C9);
+  static Color get mixedStrategyColor => tacticalVioletTheme.mutedForeground;
 
   static Color neutralTeamShade(Color color) {
     return HSLColor.fromColor(color).withSaturation(0).toColor();
@@ -120,6 +128,8 @@ class Settings {
 
   static final Uri windowsStoreLink = Uri.parse(
       "https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdpshare");
+  static final Uri stableWindowsInstallerLink = Uri.parse(
+      "https://sunkenintime.github.io/icarus/downloads/windows/stable/icarus-setup-latest.exe");
   static ThemeData appTheme = ThemeData(
       colorScheme: const ColorScheme.dark(
         // primary: Color.fromARGB(255, 129, 75, 223),
@@ -244,6 +254,20 @@ class Settings {
   static const Color sightlineReportBlockingWall = Color(0xffd6a24a);
   static const Color sightlineReportClearWall = Color(0xff6b5527);
   static const Color sightlineReportCone = Color(0xff5da0e8);
+
+  // Live presence on a cloud strategy. Each person gets one hue for their
+  // avatar ring, cursor, and name tag, picked from their id so every viewer
+  // sees them in the same color. None is the violet command hue or a
+  // tactical one (ally green, enemy red, defender blue, favorite amber).
+  static const List<Color> presenceColors = [
+    Color(0xfff472b6), // pink-400
+    Color(0xfffb923c), // orange-400
+    Color(0xff22d3ee), // cyan-400
+    Color(0xffa3e635), // lime-400
+    Color(0xffe4e4e7), // zinc-200
+  ];
+  // Text on a presence name tag; every presence hue is light.
+  static const Color presenceTagInk = Color(0xff09090b); // zinc-950
   // Resting glyph color for toolbar controls: a step under foreground so the
   // strip of icons stays quiet, but above mutedForeground, which vanishes at
   // the light stroke weights. Hover still comes up to foreground.
@@ -335,14 +359,15 @@ class Settings {
     offset: Offset(0, 4), // Slight downward shift
   );
 
-  static void showToast({
+  static ToastificationItem showToast({
     required String message,
     required Color backgroundColor,
+    Duration? autoCloseDuration = const Duration(seconds: 3),
     String? actionLabel,
     VoidCallback? onActionPressed,
   }) {
-    toastification.showCustom(
-      autoCloseDuration: const Duration(seconds: 3),
+    return toastification.showCustom(
+      autoCloseDuration: autoCloseDuration,
       alignment: Alignment.bottomCenter,
       builder: (context, holder) {
         final actionIsVisible = actionLabel != null &&
@@ -390,6 +415,16 @@ class Settings {
           ),
         );
       },
+    );
+  }
+
+  static void dismissToast(
+    ToastificationItem toast, {
+    bool showRemoveAnimation = true,
+  }) {
+    toastification.dismiss(
+      toast,
+      showRemoveAnimation: showRemoveAnimation,
     );
   }
 

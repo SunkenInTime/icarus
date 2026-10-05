@@ -1,0 +1,25 @@
+{
+  "name": "icarus",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "audit:convex-contract": "node tool/audit_convex_contract.mjs",
+    "audit:convex-architecture": "fvm flutter test test/convex_architecture_test.dart",
+    "check:convex-web-binding": "node tool/check_convex_web_binding.mjs",
+    "snapshot:convex-contract": "node tool/snapshot_convex_contract.mjs",
+    "snapshot:convex-contract:check": "node tool/snapshot_convex_contract.mjs --check",
+    "test:convex": "vitest run --config vitest.config.ts"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^3.2.0",
+    "@types/bun": "latest",
+    "convex-test": "^0.0.41",
+    "vitest": "^1.6.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "convex": "1.45.0"
+  }
+}

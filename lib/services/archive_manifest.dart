@@ -209,7 +209,9 @@ class ArchiveGlobals {
     required this.showSpawnBarrier,
     required this.showUltOrbs,
     required this.showRegionNames,
+    required this.backgroundDotOpacity,
     required this.customColorValues,
+    this.hasCustomColorValues = true,
     required this.favoriteAgents,
   });
 
@@ -218,7 +220,9 @@ class ArchiveGlobals {
   final bool? showSpawnBarrier;
   final bool? showUltOrbs;
   final bool? showRegionNames;
+  final double? backgroundDotOpacity;
   final List<int> customColorValues;
+  final bool hasCustomColorValues;
   final List<String> favoriteAgents;
 
   Map<String, dynamic> toJson() {
@@ -231,6 +235,7 @@ class ArchiveGlobals {
         'showSpawnBarrier': showSpawnBarrier,
         'showUltOrbs': showUltOrbs,
         'showRegionNames': showRegionNames,
+        'backgroundDotOpacity': backgroundDotOpacity,
         'customColorValues': customColorValues,
       },
       'favoriteAgents': favoriteAgents,
@@ -242,6 +247,8 @@ class ArchiveGlobals {
     final appPreferencesMap = appPreferences is Map
         ? Map<String, dynamic>.from(appPreferences)
         : null;
+    final hasCustomColorValues =
+        appPreferencesMap?.containsKey('customColorValues') ?? false;
 
     return ArchiveGlobals(
       themeProfiles: _readRequiredList(json, 'themeProfiles')
@@ -263,11 +270,15 @@ class ArchiveGlobals {
       showRegionNames: appPreferencesMap == null
           ? null
           : _readNullableBool(appPreferencesMap, 'showRegionNames'),
+      backgroundDotOpacity: appPreferencesMap == null
+          ? null
+          : _readNullableDouble(appPreferencesMap, 'backgroundDotOpacity'),
       customColorValues: appPreferencesMap == null
           ? const []
           : _readOptionalList(appPreferencesMap, 'customColorValues')
               .map(_readIntValue)
               .toList(growable: false),
+      hasCustomColorValues: hasCustomColorValues,
       favoriteAgents: _readRequiredList(json, 'favoriteAgents')
           .map((entry) => entry.toString())
           .toList(growable: false),
@@ -435,6 +446,17 @@ bool? _readNullableBool(Map<String, dynamic> json, String key) {
     return null;
   }
   return _readRequiredBool(json, key);
+}
+
+double? _readNullableDouble(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) {
+    final parsed = double.tryParse(value);
+    if (parsed != null) return parsed;
+  }
+  throw FormatException('Expected number or null for $key');
 }
 
 bool _readRequiredBool(Map<String, dynamic> json, String key) {

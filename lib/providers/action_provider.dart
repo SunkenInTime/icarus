@@ -1,18 +1,18 @@
-import 'dart:ui';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -36,64 +36,35 @@ enum ActionType {
   transaction,
 }
 
-class TransactionSnapshot {
-  final List<ActionGroup> targetGroups;
-  final BulkActionSnapshot before;
-  final BulkActionSnapshot after;
-
-  const TransactionSnapshot({
-    required this.targetGroups,
-    required this.before,
-    required this.after,
-  });
-}
-
-class BulkActionSnapshot {
-  final List<ActionGroup> targetGroups;
-  final List<UserAction> actionStateBefore;
-  final List<UserAction> redoStateBefore;
-  final AgentProviderSnapshot? agentSnapshot;
-  final AbilityProviderSnapshot? abilitySnapshot;
-  final DrawingProviderSnapshot? drawingSnapshot;
-  final TextProviderSnapshot? textSnapshot;
-  final PlacedImageProviderSnapshot? imageSnapshot;
-  final UtilityProviderSnapshot? utilitySnapshot;
-  final LineUpProviderSnapshot? lineUpSnapshot;
-  final StrategySettings? strategySettingsSnapshot;
-  final Map<String, Offset> imageSizeSnapshot;
-  final Map<String, Offset> textHeightSnapshot;
-
-  const BulkActionSnapshot({
-    required this.targetGroups,
-    required this.actionStateBefore,
-    required this.redoStateBefore,
-    this.agentSnapshot,
-    this.abilitySnapshot,
-    this.drawingSnapshot,
-    this.textSnapshot,
-    this.imageSnapshot,
-    this.utilitySnapshot,
-    this.lineUpSnapshot,
-    this.strategySettingsSnapshot,
-    this.imageSizeSnapshot = const {},
-    this.textHeightSnapshot = const {},
-  });
-}
-
 class UserAction {
   final ActionGroup group;
   final String id;
   final ActionType type;
-  final BulkActionSnapshot? bulkSnapshot;
-  final TransactionSnapshot? transactionSnapshot;
+  final ObjectHistoryDelta? objectDelta;
+
+  /// For a transaction or bulk clear (group [ActionGroup.bulk]): the change
+  /// to each object, in the order they happened. Undo reverses them last to
+  /// first and redo replays them, each against the page as it is now, so
+  /// objects a teammate added or changed since are left alone.
+  final List<UserAction> changes;
 
   UserAction({
     required this.type,
     required this.id,
     required this.group,
-    this.bulkSnapshot,
-    this.transactionSnapshot,
+    this.objectDelta,
+    this.changes = const [],
   });
+
+  UserAction copy() {
+    return UserAction(
+      type: type,
+      id: id,
+      group: group,
+      objectDelta: objectDelta?.clone(),
+      changes: changes.map((change) => change.copy()).toList(),
+    );
+  }
 
   @override
   String toString() {
@@ -120,6 +91,36 @@ class WeaponSelectionAction extends UserAction {
 
   final WeaponType before;
   final WeaponType after;
+
+  // History stores copies, so the copy must stay a weapon action; a plain
+  // edit would undo through the agent's movement history instead.
+  @override
+  WeaponSelectionAction copy() {
+    return WeaponSelectionAction(
+      id: id,
+      group: group,
+      before: before,
+      after: after,
+    );
+  }
+}
+
+/// A change to the strategy settings. Undo and redo write only the settings
+/// it changed, so a teammate's change to another setting is kept.
+class StrategySettingsAction extends UserAction {
+  StrategySettingsAction({
+    required super.id,
+    required this.before,
+    required this.after,
+  }) : super(type: ActionType.edit, group: ActionGroup.strategySettings);
+
+  final StrategySettings before;
+  final StrategySettings after;
+
+  @override
+  StrategySettingsAction copy() {
+    return StrategySettingsAction(id: id, before: before, after: after);
+  }
 }
 
 class ActionProvider extends Notifier<List<UserAction>> {
@@ -132,13 +133,15 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ActionGroup.utility,
     ActionGroup.lineUp,
   ];
-  static const List<ActionGroup> _transactionGroups = [
-    ..._clearableGroups,
-    ActionGroup.strategySettings,
-  ];
   static const _uuid = Uuid();
+
+  /// The most undo steps kept; older ones are dropped.
+  static const historyLimit = 200;
+
   List<UserAction> poppedItems = [];
-  bool _recordingDisabled = false;
+
+  /// While a transaction's mutation runs, the changes it records.
+  List<UserAction>? _transactionChanges;
 
   @override
   List<UserAction> build() {
@@ -146,7 +149,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void addAction(UserAction action) {
-    if (_recordingDisabled) {
+    final transactionChanges = _transactionChanges;
+    if (transactionChanges != null) {
+      transactionChanges.add(action.copy());
       return;
     }
     ref.read(strategyProvider.notifier).setUnsaved();
@@ -156,101 +161,231 @@ class ActionProvider extends Notifier<List<UserAction>> {
           .updateData(null); // Make the agent tab disappear after an action
     }
     poppedItems = [];
-    state = [...state, action];
-
-    // log("\n Current state \n ${state.toString()}");
+    final history = [...state, action.copy()];
+    state = history.length > historyLimit
+        ? history.sublist(history.length - historyLimit)
+        : history;
   }
 
+  /// Redoes the most recent undone step that still changes something. Steps
+  /// that no longer can (a teammate removed what they act on) are dropped on
+  /// the way, so one keypress always does something visible while anything
+  /// is left to redo. Each pass takes a step off the stack, so this ends.
   void redoAction() {
-    if (poppedItems.isEmpty) {
-      // log("Popped list is empty");
+    while (poppedItems.isNotEmpty) {
+      final action = poppedItems.removeLast();
+      final undo = _redo(action);
+      if (undo == null) continue;
+      state = [...state, undo];
+      if (action.group == ActionGroup.bulk) {
+        ref.read(abilityBarProvider.notifier).updateData(null);
+      }
       return;
     }
-
-    final poppedAction = poppedItems.last;
-    if (poppedAction.type == ActionType.bulkDeletion) {
-      _redoBulkAction(poppedAction);
-      return;
-    }
-    if (poppedAction.type == ActionType.transaction) {
-      _redoTransaction(poppedAction);
-      return;
-    }
-
-    switch (poppedAction.group) {
-      case ActionGroup.agent:
-        ref.read(agentProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.ability:
-        ref.read(abilityProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.drawing:
-        ref.read(drawingProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.text:
-        ref.read(textProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.image:
-        ref.read(placedImageProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.utility:
-        ref.read(utilityProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.lineUp:
-        ref.read(lineUpProvider.notifier).redoAction(poppedAction);
-      case ActionGroup.strategySettings:
-        return;
-      case ActionGroup.bulk:
-        return;
-    }
-
-    final newState = [...state];
-    newState.add(poppedItems.removeLast());
-
-    ref.read(strategyProvider.notifier).setUnsaved();
-
-    state = newState;
-    // log("\n Current state \n ${state.toString()}");
   }
 
+  /// Undoes the most recent step that still changes something, dropping the
+  /// steps on the way that no longer can, as [redoAction] does.
   void undoAction() {
-    // log("Undo action was triggered");
-
-    if (state.isEmpty) return;
-    final currentAction = state.last;
-    if (currentAction.type == ActionType.bulkDeletion) {
-      _undoBulkAction(currentAction);
+    while (state.isNotEmpty) {
+      final action = state.last;
+      state = state.sublist(0, state.length - 1);
+      final redo = _undo(action);
+      if (redo == null) continue;
+      poppedItems.add(redo);
       return;
     }
-    if (currentAction.type == ActionType.transaction) {
-      _undoTransaction(currentAction);
-      return;
+  }
+
+  /// Undoes [action] against the page as it is now. Returns the entry that
+  /// redoes exactly what this undo did, or null when it changed nothing.
+  UserAction? _undo(UserAction action) => _replay(action, undo: true);
+
+  /// Redoes [action] against the page as it is now. Returns the entry that
+  /// undoes exactly what this redo did, or null when it changed nothing.
+  UserAction? _redo(UserAction action) => _replay(action, undo: false);
+
+  UserAction? _replay(UserAction action, {required bool undo}) {
+    if (action.group == ActionGroup.bulk) {
+      // Undo runs the changes last to first, redo first to last; only the
+      // ones that changed something are kept, in their original order.
+      final order = undo ? action.changes.reversed : action.changes;
+      final replayed = [
+        for (final change in order)
+          if (_replay(change, undo: undo) case final done?) done,
+      ];
+      if (replayed.isEmpty) return null;
+      return _withChanges(
+        action,
+        undo ? replayed.reversed.toList() : replayed,
+      );
     }
 
-    switch (currentAction.group) {
+    if (action is LineUpGraphAction) {
+      return ref
+          .read(lineUpProvider.notifier)
+          .replayGraphAction(action, undo: undo);
+    }
+    if (action is LineUpEditAction) {
+      return ref.read(lineUpProvider.notifier).replayEdit(action, undo: undo);
+    }
+    if (action is WeaponSelectionAction) {
+      return _replayWeapon(action, undo: undo);
+    }
+    if (action is StrategySettingsAction) {
+      return _replaySettings(action, undo: undo);
+    }
+
+    final delta = action.objectDelta;
+    if (delta != null) {
+      final current = _currentObjectState(
+        delta.id,
+        delta.after?.kind ?? delta.before?.kind,
+      );
+      switch (action.type) {
+        case ActionType.addition:
+        case ActionType.deletion:
+          final removes = (action.type == ActionType.addition) == undo;
+          if (removes) {
+            if (current == null) return null;
+            _apply(action, undo: undo);
+            // The opposite step puts back the object as it was when taken
+            // away, a teammate's edits included.
+            return _holding(action, current);
+          }
+          // An object that is already there is left as it is.
+          if (current != null) return null;
+        case ActionType.edit:
+          // An object a teammate deleted stays deleted.
+          if (current == null) return null;
+          final written =
+              undo ? delta.undoOnto(current) : delta.redoOnto(current);
+          // A teammate already put the fields back where this would.
+          if (cloudJsonEquivalent(written.toJson(), current.toJson())) {
+            return null;
+          }
+          _apply(action, undo: undo);
+          return UserAction(
+            type: ActionType.edit,
+            id: action.id,
+            group: action.group,
+            objectDelta: _between(undo: undo, from: current, to: written),
+          );
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          break;
+      }
+    }
+    _apply(action, undo: undo);
+    return action;
+  }
+
+  /// The edit for the opposite stack after a replay moved an object from
+  /// [from] to [to]: undo writes an edit's `before`, redo its `after`, so
+  /// after an undo the entry's redo returns to [from] and after a redo its
+  /// undo does.
+  static ObjectHistoryDelta _between({
+    required bool undo,
+    required ActionObjectState from,
+    required ActionObjectState to,
+  }) {
+    return undo
+        ? ObjectHistoryDelta(before: to, after: from)
+        : ObjectHistoryDelta(before: from, after: to);
+  }
+
+  /// Sets the weapon of an agent or lineup origin, unless it is already
+  /// that weapon or the agent or origin is gone.
+  UserAction? _replayWeapon(
+    WeaponSelectionAction action, {
+    required bool undo,
+  }) {
+    final current = action.group == ActionGroup.lineUp
+        ? ref.read(lineUpProvider).originById(action.id)?.agent.weapon
+        : _currentObjectState(action.id, ActionObjectKind.agent)?.agent?.weapon;
+    final target = undo ? action.before : action.after;
+    if (current == null || current == target) return null;
+    _apply(action, undo: undo);
+    return WeaponSelectionAction(
+      id: action.id,
+      group: action.group,
+      before: undo ? target : current,
+      after: undo ? current : target,
+    );
+  }
+
+  /// Writes only the settings [action] changed, unless they already hold
+  /// the values it would write.
+  UserAction? _replaySettings(
+    StrategySettingsAction action, {
+    required bool undo,
+  }) {
+    final current = ref.read(strategySettingsProvider);
+    final (to, from) =
+        undo ? (action.before, action.after) : (action.after, action.before);
+    final written = StrategySettings.fromJson(writeChangedFields(
+      to: to.toJson(),
+      from: from.toJson(),
+      onto: current.toJson(),
+    ));
+    if (cloudJsonEquivalent(written.toJson(), current.toJson())) return null;
+    ref.read(strategySettingsProvider.notifier).fromHive(written);
+    return StrategySettingsAction(
+      id: action.id,
+      before: undo ? written : current,
+      after: undo ? current : written,
+    );
+  }
+
+  /// [action], an addition or deletion, holding [object] as the copy to put
+  /// back.
+  static UserAction _holding(UserAction action, ActionObjectState object) {
+    return UserAction(
+      type: action.type,
+      id: action.id,
+      group: action.group,
+      objectDelta: action.type == ActionType.addition
+          ? ObjectHistoryDelta(after: object)
+          : ObjectHistoryDelta(before: object),
+    );
+  }
+
+  static UserAction _withChanges(UserAction action, List<UserAction> changes) {
+    return UserAction(
+      type: action.type,
+      id: action.id,
+      group: action.group,
+      changes: changes,
+    );
+  }
+
+  void _apply(UserAction action, {required bool undo}) {
+    switch (action.group) {
       case ActionGroup.agent:
-        ref.read(agentProvider.notifier).undoAction(currentAction);
+        final agents = ref.read(agentProvider.notifier);
+        undo ? agents.undoAction(action) : agents.redoAction(action);
       case ActionGroup.ability:
-        ref.read(abilityProvider.notifier).undoAction(currentAction);
+        final abilities = ref.read(abilityProvider.notifier);
+        undo ? abilities.undoAction(action) : abilities.redoAction(action);
       case ActionGroup.drawing:
-        ref.read(drawingProvider.notifier).undoAction(currentAction);
+        final drawings = ref.read(drawingProvider.notifier);
+        undo ? drawings.undoAction(action) : drawings.redoAction(action);
       case ActionGroup.text:
-        ref.read(textProvider.notifier).undoAction(currentAction);
+        final texts = ref.read(textProvider.notifier);
+        undo ? texts.undoAction(action) : texts.redoAction(action);
       case ActionGroup.image:
-        ref.read(placedImageProvider.notifier).undoAction(currentAction);
+        final images = ref.read(placedImageProvider.notifier);
+        undo ? images.undoAction(action) : images.redoAction(action);
       case ActionGroup.utility:
-        ref.read(utilityProvider.notifier).undoAction(currentAction);
+        final utilities = ref.read(utilityProvider.notifier);
+        undo ? utilities.undoAction(action) : utilities.redoAction(action);
       case ActionGroup.lineUp:
-        ref.read(lineUpProvider.notifier).undoAction(currentAction);
+        final lineUps = ref.read(lineUpProvider.notifier);
+        undo ? lineUps.undoAction(action) : lineUps.redoAction(action);
       case ActionGroup.strategySettings:
-        return;
       case ActionGroup.bulk:
-        return;
+        break;
     }
-    // log("Undo action was called");
-    final newState = [...state];
-    poppedItems.add(newState.removeLast());
-
-    ref.read(strategyProvider.notifier).setUnsaved();
-
-    state = newState;
-    // log("\n Current state \n ${state.toString()}");
-
-    // log("\n Popped State \n ${poppedItems.toString()}");
   }
 
   // Hard reset used by strategy/page lifecycle flows. This is not undoable.
@@ -264,10 +399,105 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ref.read(utilityProvider.notifier).clearAll();
     ref.read(lineUpProvider.notifier).clearAll();
 
-    ref.read(imageWidgetSizeProvider.notifier).clearAll();
-    ref.read(textWidgetHeightProvider.notifier).clearAll();
-    ref.read(strategyProvider.notifier).setUnsaved();
     state = [];
+  }
+
+  void clearActionHistory() {
+    poppedItems = [];
+    state = [];
+  }
+
+  /// Drops the steps that can no longer change anything after the page was
+  /// rehydrated. Each stack is followed in the order it would replay from the
+  /// page as it is now, so a step is kept only if what it acts on will be
+  /// there when its turn comes: an object a teammate deleted is recoverable
+  /// for an undo step only through a deletion undo reaches first, and for a
+  /// redo step only through an addition redo reaches first.
+  void reconcileHistory() {
+    state = _stillReplayable(state, undo: true);
+    poppedItems = _stillReplayable(poppedItems, undo: false);
+  }
+
+  List<UserAction> _stillReplayable(
+    List<UserAction> stack, {
+    required bool undo,
+  }) {
+    final page = _PagePresence(
+      objects: {
+        ...ref.read(agentProvider).map((agent) => agent.id),
+        ...ref.read(abilityProvider).map((ability) => ability.id),
+        ...ref.read(drawingProvider).elements.map((drawing) => drawing.id),
+        ...ref.read(textProvider).map((text) => text.id),
+        ...ref.read(placedImageProvider).images.map((image) => image.id),
+        ...ref.read(utilityProvider).map((utility) => utility.id),
+      },
+      links: {
+        for (final link in ref.read(lineUpProvider).links) link.id: link,
+      },
+    );
+    final kept = [
+      for (final action in stack.reversed)
+        if (_replayableOn(page, action, undo: undo) case final step?) step,
+    ];
+    return kept.reversed.toList();
+  }
+
+  /// [action] as far as replaying it on [page] would still change something,
+  /// with [page] moved on to what that replay leaves; null when it would
+  /// change nothing. Mirrors [_replay] without touching the canvas.
+  UserAction? _replayableOn(
+    _PagePresence page,
+    UserAction action, {
+    required bool undo,
+  }) {
+    if (action.group == ActionGroup.bulk) {
+      final order = undo ? action.changes.reversed : action.changes;
+      final kept = [
+        for (final change in order)
+          if (_replayableOn(page, change, undo: undo) case final step?) step,
+      ];
+      if (kept.isEmpty) return null;
+      return _withChanges(action, undo ? kept.reversed.toList() : kept);
+    }
+
+    if (action is LineUpGraphAction) {
+      final from = undo ? action.after : action.before;
+      final to = undo ? action.before : action.after;
+      final kept = to.links.map((link) => link.id).toSet();
+      final removing = [
+        for (final link in from.links)
+          if (!kept.contains(link.id) && page.links.containsKey(link.id))
+            link.id,
+      ];
+      final inserting = [
+        for (final link in to.links)
+          if (!page.links.containsKey(link.id)) link,
+      ];
+      if (removing.isEmpty && inserting.isEmpty) return null;
+      removing.forEach(page.links.remove);
+      for (final link in inserting) {
+        page.links[link.id] = link;
+      }
+      return action.copy();
+    }
+
+    final delta = action.objectDelta;
+    if (delta != null && action.type != ActionType.edit) {
+      final removes = (action.type == ActionType.addition) == undo;
+      // Taking away needs the object there; putting back needs it gone.
+      if (removes != page.objects.contains(delta.id)) return null;
+      removes ? page.objects.remove(delta.id) : page.objects.add(delta.id);
+      return action.copy();
+    }
+
+    final target = switch (action) {
+      _ when delta != null => delta.id,
+      WeaponSelectionAction() => action.id,
+      LineUpEditAction() => action.targetId,
+      _ => null,
+    };
+    if (target != null && !page.has(target)) return null;
+    return action.copy();
   }
 
   void clearAllAsAction() {
@@ -279,41 +509,44 @@ class ActionProvider extends Notifier<List<UserAction>> {
     _performBulkClear([group]);
   }
 
+  /// Runs [mutation] as one undo step made of the per-object changes it
+  /// records. Changing strategy settings records nothing, so when [groups]
+  /// names them they are compared before and after instead.
   void performTransaction({
     required List<ActionGroup> groups,
     required void Function() mutation,
   }) {
-    final targetGroups = <ActionGroup>[];
-    for (final group in groups) {
-      if (_transactionGroups.contains(group) && !targetGroups.contains(group)) {
-        targetGroups.add(group);
-      }
-    }
-    if (targetGroups.isEmpty) {
-      mutation();
-      return;
-    }
+    final settingsBefore = groups.contains(ActionGroup.strategySettings)
+        ? ref.read(strategySettingsProvider)
+        : null;
 
-    final before = _captureBulkSnapshot(targetGroups);
-    final previousRecordingState = _recordingDisabled;
-    _recordingDisabled = true;
+    final outerChanges = _transactionChanges;
+    final changes = _transactionChanges = <UserAction>[];
     try {
       mutation();
     } finally {
-      _recordingDisabled = previousRecordingState;
+      _transactionChanges = outerChanges;
     }
-    final after = _captureBulkSnapshot(targetGroups);
+
+    if (settingsBefore != null) {
+      final settingsAfter = ref.read(strategySettingsProvider);
+      if (!cloudJsonEquivalent(
+          settingsBefore.toJson(), settingsAfter.toJson())) {
+        changes.add(StrategySettingsAction(
+          id: _uuid.v4(),
+          before: settingsBefore,
+          after: settingsAfter,
+        ));
+      }
+    }
+    if (changes.isEmpty) return;
 
     addAction(
       UserAction(
         type: ActionType.transaction,
         id: _uuid.v4(),
         group: ActionGroup.bulk,
-        transactionSnapshot: TransactionSnapshot(
-          targetGroups: targetGroups,
-          before: before,
-          after: after,
-        ),
+        changes: changes,
       ),
     );
   }
@@ -326,127 +559,63 @@ class ActionProvider extends Notifier<List<UserAction>> {
       }
     }
 
-    if (targetGroups.isEmpty || !_hasAnyItemsForGroups(targetGroups)) {
-      return;
-    }
-
-    final snapshot = _captureBulkSnapshot(targetGroups);
-    final filteredActions = _filterActionsForGroups(
-      snapshot.actionStateBefore,
-      targetGroups,
-    );
+    final changes = [
+      for (final group in targetGroups) ..._clearChanges(group),
+    ];
+    if (changes.isEmpty) return;
 
     _clearProvidersForGroups(targetGroups);
-    _clearAncillaryState(snapshot);
-
-    state = filteredActions;
     addAction(
       UserAction(
         type: ActionType.bulkDeletion,
         id: _uuid.v4(),
         group: ActionGroup.bulk,
-        bulkSnapshot: snapshot,
+        changes: changes,
       ),
     );
   }
 
-  bool _hasAnyItemsForGroups(List<ActionGroup> groups) {
-    for (final group in groups) {
-      switch (group) {
-        case ActionGroup.agent:
-          if (ref.read(agentProvider).isNotEmpty) return true;
-        case ActionGroup.ability:
-          if (ref.read(abilityProvider).isNotEmpty) return true;
-        case ActionGroup.drawing:
-          if (ref.read(drawingProvider).elements.isNotEmpty) return true;
-        case ActionGroup.text:
-          if (ref.read(textProvider).isNotEmpty) return true;
-        case ActionGroup.image:
-          if (ref.read(placedImageProvider).images.isNotEmpty) return true;
-        case ActionGroup.utility:
-          if (ref.read(utilityProvider).isNotEmpty) return true;
-        case ActionGroup.lineUp:
-          if (ref.read(lineUpProvider).links.isNotEmpty) return true;
-        case ActionGroup.strategySettings:
-          break;
-        case ActionGroup.bulk:
-          break;
-      }
-    }
-    return false;
-  }
-
-  BulkActionSnapshot _captureBulkSnapshot(List<ActionGroup> groups) {
-    final imageIds = groups.contains(ActionGroup.image)
-        ? ref.read(placedImageProvider).images.map((image) => image.id)
-        : const <String>[];
-    final textIds = groups.contains(ActionGroup.text)
-        ? ref.read(textProvider).map((text) => text.id)
-        : const <String>[];
-
-    return BulkActionSnapshot(
-      targetGroups: [...groups],
-      actionStateBefore: [...state],
-      redoStateBefore: [...poppedItems],
-      agentSnapshot: groups.contains(ActionGroup.agent)
-          ? ref.read(agentProvider.notifier).takeSnapshot()
-          : null,
-      abilitySnapshot: groups.contains(ActionGroup.ability)
-          ? ref.read(abilityProvider.notifier).takeSnapshot()
-          : null,
-      drawingSnapshot: groups.contains(ActionGroup.drawing)
-          ? ref.read(drawingProvider.notifier).takeSnapshot()
-          : null,
-      textSnapshot: groups.contains(ActionGroup.text)
-          ? ref.read(textProvider.notifier).takeSnapshot()
-          : null,
-      imageSnapshot: groups.contains(ActionGroup.image)
-          ? ref.read(placedImageProvider.notifier).takeSnapshot()
-          : null,
-      utilitySnapshot: groups.contains(ActionGroup.utility)
-          ? ref.read(utilityProvider.notifier).takeSnapshot()
-          : null,
-      lineUpSnapshot: groups.contains(ActionGroup.lineUp)
-          ? ref.read(lineUpProvider.notifier).takeSnapshot()
-          : null,
-      strategySettingsSnapshot: groups.contains(ActionGroup.strategySettings)
-          ? ref.read(strategySettingsProvider)
-          : null,
-      imageSizeSnapshot: ref
-          .read(imageWidgetSizeProvider.notifier)
-          .takeSnapshotForIds(imageIds),
-      textHeightSnapshot: ref
-          .read(textWidgetHeightProvider.notifier)
-          .takeSnapshotForIds(textIds),
-    );
-  }
-
-  List<UserAction> _filterActionsForGroups(
-    List<UserAction> actions,
-    List<ActionGroup> targetGroups,
-  ) {
-    final groupSet = targetGroups.toSet();
-
-    return actions
-        .where((action) => !_actionIntersectsGroups(action, groupSet))
-        .toList();
-  }
-
-  bool _actionIntersectsGroups(
-      UserAction action, Set<ActionGroup> targetGroups) {
-    if (action.group == ActionGroup.bulk) {
-      final bulkSnapshot = action.bulkSnapshot;
-      if (bulkSnapshot != null) {
-        return bulkSnapshot.targetGroups.any(targetGroups.contains);
-      }
-      final transactionSnapshot = action.transactionSnapshot;
-      if (transactionSnapshot != null) {
-        return transactionSnapshot.targetGroups.any(targetGroups.contains);
-      }
-      return false;
+  /// The deletions that clear [group]: one per object, topmost first, so
+  /// undo (last to first) puts them back in their order. Lineups are
+  /// removed as one graph change.
+  List<UserAction> _clearChanges(ActionGroup group) {
+    if (group == ActionGroup.lineUp) {
+      final graph = ref.read(lineUpProvider).graph;
+      return [
+        if (graph.links.isNotEmpty)
+          LineUpGraphAction(
+            type: ActionType.deletion,
+            id: _uuid.v4(),
+            before: graph.deepCopy(),
+          ),
+      ];
     }
 
-    return targetGroups.contains(action.group);
+    final Iterable<ActionObjectState> objects = switch (group) {
+      ActionGroup.agent => ref.read(agentProvider).map(ActionObjectState.agent),
+      ActionGroup.ability =>
+        ref.read(abilityProvider).map(ActionObjectState.ability),
+      ActionGroup.drawing =>
+        ref.read(drawingProvider).elements.map(ActionObjectState.drawing),
+      ActionGroup.text => ref.read(textProvider).map(ActionObjectState.text),
+      ActionGroup.image =>
+        ref.read(placedImageProvider).images.map(ActionObjectState.image),
+      ActionGroup.utility =>
+        ref.read(utilityProvider).map(ActionObjectState.utility),
+      ActionGroup.lineUp ||
+      ActionGroup.strategySettings ||
+      ActionGroup.bulk =>
+        const [],
+    };
+    return [
+      for (final object in objects.toList().reversed)
+        UserAction(
+          type: ActionType.deletion,
+          id: object.id,
+          group: group,
+          objectDelta: ObjectHistoryDelta(before: object),
+        ),
+    ];
   }
 
   void _clearProvidersForGroups(List<ActionGroup> groups) {
@@ -474,114 +643,58 @@ class ActionProvider extends Notifier<List<UserAction>> {
     }
   }
 
-  void _clearAncillaryState(BulkActionSnapshot snapshot) {
-    if (snapshot.imageSizeSnapshot.isNotEmpty) {
-      ref
-          .read(imageWidgetSizeProvider.notifier)
-          .clearEntries(snapshot.imageSizeSnapshot.keys);
+  ActionObjectState? _currentObjectState(String id, ActionObjectKind? kind) {
+    if (kind == null) {
+      return null;
     }
-    if (snapshot.textHeightSnapshot.isNotEmpty) {
-      ref
-          .read(textWidgetHeightProvider.notifier)
-          .clearEntries(snapshot.textHeightSnapshot.keys);
-    }
-  }
-
-  void _restoreBulkSnapshot(BulkActionSnapshot snapshot) {
-    if (snapshot.agentSnapshot != null) {
-      ref.read(agentProvider.notifier).restoreSnapshot(snapshot.agentSnapshot!);
-    }
-    if (snapshot.abilitySnapshot != null) {
-      ref
-          .read(abilityProvider.notifier)
-          .restoreSnapshot(snapshot.abilitySnapshot!);
-    }
-    if (snapshot.drawingSnapshot != null) {
-      ref
-          .read(drawingProvider.notifier)
-          .restoreSnapshot(snapshot.drawingSnapshot!);
-    }
-    if (snapshot.textSnapshot != null) {
-      ref.read(textProvider.notifier).restoreSnapshot(snapshot.textSnapshot!);
-    }
-    if (snapshot.imageSnapshot != null) {
-      ref
-          .read(placedImageProvider.notifier)
-          .restoreSnapshot(snapshot.imageSnapshot!);
-    }
-    if (snapshot.utilitySnapshot != null) {
-      ref
-          .read(utilityProvider.notifier)
-          .restoreSnapshot(snapshot.utilitySnapshot!);
-    }
-    if (snapshot.lineUpSnapshot != null) {
-      ref
-          .read(lineUpProvider.notifier)
-          .restoreSnapshot(snapshot.lineUpSnapshot!);
-    }
-    if (snapshot.strategySettingsSnapshot != null) {
-      ref
-          .read(strategySettingsProvider.notifier)
-          .fromHive(snapshot.strategySettingsSnapshot!);
-    }
-
-    if (snapshot.imageSizeSnapshot.isNotEmpty) {
-      ref
-          .read(imageWidgetSizeProvider.notifier)
-          .restoreSnapshot(snapshot.imageSizeSnapshot);
-    }
-    if (snapshot.textHeightSnapshot.isNotEmpty) {
-      ref
-          .read(textWidgetHeightProvider.notifier)
-          .restoreSnapshot(snapshot.textHeightSnapshot);
+    switch (kind) {
+      case ActionObjectKind.agent:
+        final index = PlacedWidget.getIndexByID(id, ref.read(agentProvider));
+        if (index < 0) return null;
+        return ActionObjectState.agent(ref.read(agentProvider)[index]);
+      case ActionObjectKind.ability:
+        final index = PlacedWidget.getIndexByID(id, ref.read(abilityProvider));
+        if (index < 0) return null;
+        return ActionObjectState.ability(ref.read(abilityProvider)[index]);
+      case ActionObjectKind.drawing:
+        final index =
+            DrawingElement.getIndexByID(id, ref.read(drawingProvider).elements);
+        if (index < 0) return null;
+        return ActionObjectState.drawing(
+            ref.read(drawingProvider).elements[index]);
+      case ActionObjectKind.text:
+        final index = PlacedWidget.getIndexByID(id, ref.read(textProvider));
+        if (index < 0) return null;
+        return ActionObjectState.text(ref.read(textProvider)[index]);
+      case ActionObjectKind.image:
+        final images = ref.read(placedImageProvider).images;
+        final index = PlacedWidget.getIndexByID(id, images);
+        if (index < 0) return null;
+        return ActionObjectState.image(images[index]);
+      case ActionObjectKind.utility:
+        final index = PlacedWidget.getIndexByID(id, ref.read(utilityProvider));
+        if (index < 0) return null;
+        return ActionObjectState.utility(ref.read(utilityProvider)[index]);
+      case ActionObjectKind.lineUp:
+        // Lineup history is graph snapshots keyed by action id; the lineup
+        // graph never records per-object deltas, so there is nothing to keep.
+        return null;
     }
   }
+}
 
-  void _undoBulkAction(UserAction action) {
-    final snapshot = action.bulkSnapshot;
-    if (snapshot == null) return;
+/// The canvas objects and lineup links a page holds, followed step by step
+/// while history is reconciled.
+class _PagePresence {
+  _PagePresence({required this.objects, required this.links});
 
-    _restoreBulkSnapshot(snapshot);
-    poppedItems.add(action);
-    ref.read(strategyProvider.notifier).setUnsaved();
-    state = [...snapshot.actionStateBefore];
-  }
+  final Set<String> objects;
+  final Map<String, LineUpLink> links;
 
-  void _redoBulkAction(UserAction action) {
-    final snapshot = action.bulkSnapshot;
-    if (snapshot == null) return;
-
-    _clearProvidersForGroups(snapshot.targetGroups);
-    _clearAncillaryState(snapshot);
-
-    final newState = _filterActionsForGroups(state, snapshot.targetGroups)
-      ..add(poppedItems.removeLast());
-
-    ref.read(strategyProvider.notifier).setUnsaved();
-    ref.read(abilityBarProvider.notifier).updateData(null);
-    state = newState;
-  }
-
-  void _undoTransaction(UserAction action) {
-    final snapshot = action.transactionSnapshot;
-    if (snapshot == null) return;
-
-    _restoreBulkSnapshot(snapshot.before);
-    final newState = [...state];
-    poppedItems.add(newState.removeLast());
-    ref.read(strategyProvider.notifier).setUnsaved();
-    state = newState;
-  }
-
-  void _redoTransaction(UserAction action) {
-    final snapshot = action.transactionSnapshot;
-    if (snapshot == null) return;
-
-    _restoreBulkSnapshot(snapshot.after);
-    final newState = [...state];
-    newState.add(poppedItems.removeLast());
-    ref.read(strategyProvider.notifier).setUnsaved();
-    ref.read(abilityBarProvider.notifier).updateData(null);
-    state = newState;
-  }
+  /// Whether [id] names an object, a link, or an origin or landing a link
+  /// joins (they exist only while a link uses them).
+  bool has(String id) =>
+      objects.contains(id) ||
+      links.containsKey(id) ||
+      links.values.any((link) => link.originId == id || link.landingId == id);
 }

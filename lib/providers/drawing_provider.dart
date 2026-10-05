@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -11,6 +13,7 @@ import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:uuid/uuid.dart';
 
 class DrawingState {
@@ -63,16 +66,6 @@ class DrawingState {
 final drawingProvider =
     NotifierProvider<DrawingProvider, DrawingState>(DrawingProvider.new);
 
-class DrawingProviderSnapshot {
-  final DrawingState state;
-  final List<DrawingElement> poppedElements;
-
-  const DrawingProviderSnapshot({
-    required this.state,
-    required this.poppedElements,
-  });
-}
-
 class DrawingProvider extends Notifier<DrawingState> {
   List<DrawingElement> poppedElements = [];
 
@@ -82,48 +75,72 @@ class DrawingProvider extends Notifier<DrawingState> {
   }
 
   void undoAction(UserAction action) {
-    final newElements = [...state.elements];
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      final newElements = [...state.elements];
       switch (action.type) {
         case ActionType.addition:
-          final index = DrawingElement.getIndexByID(action.id, newElements);
-          poppedElements.add(newElements.removeAt(index));
-
+          _removeDrawingById(action.id);
+          return;
         case ActionType.deletion:
-          final index = DrawingElement.getIndexByID(action.id, poppedElements);
-          newElements.add(poppedElements.removeAt(index));
+          if (poppedElements.isEmpty) return;
+          newElements.add(cloneDrawingElement(poppedElements.removeLast()));
+          state = state.copyWith(elements: newElements);
+          _triggerRepaint();
+          return;
         case ActionType.edit:
         case ActionType.bulkDeletion:
         case ActionType.transaction:
-          break;
+          return;
       }
-    } catch (_) {
-      dev.log("Can't find index in undo action");
     }
-    state = state.copyWith(elements: newElements);
-    _triggerRepaint();
+    switch (action.type) {
+      case ActionType.addition:
+        _removeDrawingById(action.id);
+        return;
+      case ActionType.deletion:
+        final before = delta.before?.drawing;
+        if (before == null) return;
+        _upsertDrawing(cloneDrawingElement(before));
+        return;
+      case ActionType.edit:
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   void redoAction(UserAction action) {
-    final newElements = [...state.elements];
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
       switch (action.type) {
         case ActionType.addition:
-          final index = DrawingElement.getIndexByID(action.id, poppedElements);
-          newElements.add(poppedElements.removeAt(index));
+          if (poppedElements.isEmpty) return;
+          _upsertDrawing(cloneDrawingElement(poppedElements.removeLast()));
+          return;
         case ActionType.deletion:
-          final index = DrawingElement.getIndexByID(action.id, newElements);
-          poppedElements.add(newElements.removeAt(index));
+          _removeDrawingById(action.id);
+          return;
         case ActionType.edit:
         case ActionType.bulkDeletion:
         case ActionType.transaction:
-          break;
+          return;
       }
-    } catch (_) {
-      dev.log("Can't find index in redo action");
     }
-    state = state.copyWith(elements: newElements);
-    _triggerRepaint();
+    switch (action.type) {
+      case ActionType.addition:
+        final after = delta.after?.drawing;
+        if (after == null) return;
+        _upsertDrawing(cloneDrawingElement(after));
+        return;
+      case ActionType.deletion:
+        _removeDrawingById(action.id);
+        return;
+      case ActionType.edit:
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   String toJson() {
@@ -363,12 +380,16 @@ class DrawingProvider extends Notifier<DrawingState> {
     final newElements = [...state.elements];
 
     final poppedElement = newElements.removeAt(index);
-    poppedElements.add(poppedElement);
+    poppedElements.removeWhere((element) => element.id == poppedElement.id);
+    poppedElements.add(cloneDrawingElement(poppedElement));
 
     final action = UserAction(
       type: ActionType.deletion,
       id: poppedElement.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        before: ActionObjectState.drawing(poppedElement),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -631,9 +652,13 @@ class DrawingProvider extends Notifier<DrawingState> {
     );
 
     final action = UserAction(
-        type: ActionType.addition,
-        id: finalDrawing.id,
-        group: ActionGroup.drawing);
+      type: ActionType.addition,
+      id: finalDrawing.id,
+      group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(finalDrawing),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     _triggerRepaint();
@@ -711,6 +736,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       type: ActionType.addition,
       id: rectangle.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(rectangle),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -791,6 +819,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       type: ActionType.addition,
       id: ellipse.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(ellipse),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -868,6 +899,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       type: ActionType.addition,
       id: line.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(line),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -887,30 +921,67 @@ class DrawingProvider extends Notifier<DrawingState> {
     _triggerRepaint();
   }
 
+  /// Takes the server's copy of every item but those [keep] names; see
+  /// [mergeRemoteItems].
+  /// A drawing still being drawn is not on the page yet and is left alone.
+  void mergeRemote(
+      List<DrawingElement> incoming, bool Function(String id) keep) {
+    final coordinateSystem = CoordinateSystem.instance;
+    final merged = mergeRemoteItems(
+      current: state.elements,
+      incoming: incoming,
+      idOf: (drawing) => drawing.id,
+      keep: keep,
+    );
+    final onScreen = {
+      for (final drawing in state.elements)
+        if (drawing is FreeDrawing) drawing.id: drawing,
+    };
+    for (final drawing in incoming) {
+      if (drawing is! FreeDrawing || keep(drawing.id)) continue;
+      // A stroke whose points did not change reuses the path already built
+      // for this canvas; on a busy page most strokes are unchanged.
+      final current = onScreen[drawing.id];
+      if (current != null &&
+          current.thickness == drawing.thickness &&
+          listEquals(current.listOfPoints, drawing.listOfPoints)) {
+        drawing.updatePath(current.path);
+      } else {
+        drawing.rebuildPath(coordinateSystem);
+      }
+    }
+    state = state.copyWith(elements: merged);
+    _triggerRepaint();
+  }
+
   void clearAll() {
     poppedElements = [];
     state = DrawingState(elements: []);
     _triggerRepaint();
   }
 
-  DrawingProviderSnapshot takeSnapshot() {
-    return DrawingProviderSnapshot(
-      state: DrawingState(
-        elements: [...state.elements],
-        updateCounter: state.updateCounter,
-        currentElement: state.currentElement,
-      ),
-      poppedElements: [...poppedElements],
-    );
+  void _upsertDrawing(DrawingElement element) {
+    final newElements = [...state.elements];
+    final index = DrawingElement.getIndexByID(element.id, newElements);
+    if (index < 0) {
+      newElements.add(element);
+    } else {
+      newElements[index] = element;
+    }
+    state = state.copyWith(elements: newElements);
+    _triggerRepaint();
   }
 
-  void restoreSnapshot(DrawingProviderSnapshot snapshot) {
-    poppedElements = [...snapshot.poppedElements];
-    state = DrawingState(
-      elements: [...snapshot.state.elements],
-      updateCounter: snapshot.state.updateCounter,
-      currentElement: snapshot.state.currentElement,
-    );
+  void _removeDrawingById(String id) {
+    final newElements = [...state.elements];
+    final index = DrawingElement.getIndexByID(id, newElements);
+    if (index < 0) {
+      return;
+    }
+    final removedElement = newElements.removeAt(index);
+    poppedElements.removeWhere((element) => element.id == id);
+    poppedElements.add(cloneDrawingElement(removedElement));
+    state = state.copyWith(elements: newElements);
     _triggerRepaint();
   }
 }

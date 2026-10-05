@@ -189,7 +189,9 @@ class _SkeletonTopBar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: _tone(Settings.tacticalVioletTheme.card, 0.95),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _tone(Settings.highlightColor, 0.82)),
+                border: Border.all(
+                  color: _tone(Settings.highlightColor, 0.82),
+                ),
               ),
               child: Center(
                 child: title == null || title.isEmpty
@@ -200,9 +202,10 @@ class _SkeletonTopBar extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: ShadTheme.of(
-                            context,
-                          ).textTheme.small.copyWith(color: Colors.white70),
+                          style: ShadTheme.of(context)
+                              .textTheme
+                              .small
+                              .copyWith(color: Colors.white70),
                         ),
                       ),
               ),

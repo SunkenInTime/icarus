@@ -129,6 +129,10 @@ class AppPreferences extends HiveObject {
   final bool discordPresenceEnabled;
   final double videoExportStepDurationSeconds;
 
+  /// How strongly the dot grid behind maps and the library draws, from 0
+  /// (hidden) to 1 (the original look).
+  final double backgroundDotOpacity;
+
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
@@ -148,6 +152,7 @@ class AppPreferences extends HiveObject {
     this.drawingThickness = Settings.defaultStrokeThickness,
     this.discordPresenceEnabled = true,
     this.videoExportStepDurationSeconds = 3.0,
+    this.backgroundDotOpacity = 1.0,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -171,6 +176,7 @@ class AppPreferences extends HiveObject {
     double? drawingThickness,
     bool? discordPresenceEnabled,
     double? videoExportStepDurationSeconds,
+    double? backgroundDotOpacity,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -201,6 +207,7 @@ class AppPreferences extends HiveObject {
           discordPresenceEnabled ?? this.discordPresenceEnabled,
       videoExportStepDurationSeconds:
           videoExportStepDurationSeconds ?? this.videoExportStepDurationSeconds,
+      backgroundDotOpacity: backgroundDotOpacity ?? this.backgroundDotOpacity,
     );
   }
 }
@@ -286,6 +293,8 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
   static const String immutableDefaultProfileId = 'immutable-default-map-theme';
   static const String immutableValorantProfileId =
       'immutable-valorant-map-theme';
+  static const String immutableLotusMossProfileId =
+      'immutable-lotus-moss-map-theme';
   static const String appPreferencesSingletonKey = 'app_preferences';
   static const int customProfilesSoftCap = 10;
 
@@ -315,9 +324,25 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     isBuiltIn: true,
   );
 
+  static final MapThemePalette immutableLotusMossPalette = MapThemePalette(
+    baseColorValue: 0xFF18221A,
+    detailColorValue: 0xFF7FA36B,
+    highlightColorValue: 0xFFE3C567,
+  );
+
+  static final MapThemeProfile immutableLotusMossProfile = MapThemeProfile(
+    id: immutableLotusMossProfileId,
+    name: 'Lotus Moss',
+    palette: immutableLotusMossPalette,
+    isBuiltIn: true,
+  );
+
+  /// Every store gets each of these on launch ([bootstrap] writes any that
+  /// are missing), so adding one here ships it to existing users too.
   static final List<MapThemeProfile> immutableBuiltInProfiles = [
     immutableDefaultProfile,
     immutableValorantProfile,
+    immutableLotusMossProfile,
   ];
 
   @override
@@ -336,9 +361,12 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
         .toList(growable: false);
     final builtInProfileIds =
         builtInProfiles.map((profile) => profile.id).toSet();
+    // Oldest first, so a new or imported profile lands at the end of the
+    // list. Box order follows the random profile ids.
     final customProfiles = allProfiles
         .where((profile) => !builtInProfileIds.contains(profile.id))
-        .toList(growable: false);
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final sortedProfiles = [
       ...builtInProfiles,
       ...customProfiles,
@@ -656,6 +684,14 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     );
   }
 
+  Future<void> setBackgroundDotOpacity(double opacity) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        backgroundDotOpacity: opacity.clamp(0.0, 1.0),
+      ),
+    );
+  }
+
   Future<void> setDrawingDefaults({
     int? colorValue,
     double? thickness,
@@ -720,6 +756,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   }
 
   AppPreferences _readFromHive() {
+    if (!Hive.isBoxOpen(HiveBoxNames.appPreferencesBox)) {
+      return AppPreferences(
+        defaultThemeProfileIdForNewStrategies:
+            MapThemeProfilesProvider.immutableDefaultProfileId,
+      );
+    }
     return Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).get(
           MapThemeProfilesProvider.appPreferencesSingletonKey,
         ) ??

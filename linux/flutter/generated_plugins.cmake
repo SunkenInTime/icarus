@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_drop
   desktop_updater
+  gtk
   pasteboard
   screen_retriever_linux
   url_launcher_linux
@@ -12,6 +13,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  convex_flutter
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

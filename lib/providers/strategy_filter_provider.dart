@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum SortBy {
   alphabetical,

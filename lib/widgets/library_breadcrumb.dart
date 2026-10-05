@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_navigation_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Where the user is inside a folder tree. Shown only inside a folder; at the
-/// library's root the tab itself says where you are.
+/// Where the user is inside a folder tree. Shown only inside a folder; at a
+/// tab's root the tab itself says where you are.
 class LibraryBreadcrumb extends ConsumerWidget {
   const LibraryBreadcrumb({super.key, required this.folder});
 
@@ -15,16 +19,20 @@ class LibraryBreadcrumb extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final folders = ref.read(folderProvider.notifier);
-    final pathFolders = folders
-        .getFullPathIDs(folder)
-        .map(folders.findFolderByID)
-        .whereType<Folder>()
-        .toList(growable: false);
+    final tab = ref.watch(libraryTabProvider);
+    final store = ref.watch(libraryWorkspaceProvider);
+    final pathFolders = _pathFolders(ref, store);
     final parent =
         pathFolders.length >= 2 ? pathFolders[pathFolders.length - 2] : null;
 
-    void goToRoot() => ref.read(folderProvider.notifier).updateID(null);
+    void goToRoot() {
+      final navigation = ref.read(libraryNavigationProvider);
+      if (tab == LibraryTab.shared) {
+        navigation.showShared();
+      } else {
+        navigation.showLibrary();
+      }
+    }
 
     // Same card as the editor toolbar, so the path reads as hardware on the
     // bench instead of text floating on the dot grid.
@@ -63,12 +71,16 @@ class LibraryBreadcrumb extends ConsumerWidget {
               children: [
                 FolderTab(
                   folder: null,
-                  label: 'My Library',
+                  label: tab == LibraryTab.shared
+                      ? 'Shared with Me'
+                      : 'My Library',
+                  store: store,
                   onOpen: goToRoot,
                 ),
                 for (int i = 0; i < pathFolders.length; i++)
                   FolderTab(
                     folder: pathFolders[i],
+                    store: store,
                     isActive: i == pathFolders.length - 1,
                     onOpen: () => ref
                         .read(folderProvider.notifier)
@@ -81,14 +93,40 @@ class LibraryBreadcrumb extends ConsumerWidget {
       ),
     );
   }
+
+  List<Folder> _pathFolders(WidgetRef ref, LibraryWorkspace store) {
+    if (store == LibraryWorkspace.cloud) {
+      final cloudFolders =
+          (ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [])
+              .map((entry) => entry.folder)
+              .toList(growable: false);
+      final path = <Folder>[];
+      Folder? current = folder;
+      while (current != null) {
+        path.insert(0, current);
+        final parentId = current.parentID;
+        current = parentId == null
+            ? null
+            : cloudFolders.where((item) => item.id == parentId).firstOrNull;
+      }
+      return path;
+    }
+    final folders = ref.read(folderProvider.notifier);
+    return folders
+        .getFullPathIDs(folder)
+        .map(folders.findLocalFolderByID)
+        .whereType<Folder>()
+        .toList(growable: false);
+  }
 }
 
 /// One crumb. Also a drop target: dragging a strategy or folder onto it moves
-/// the item there.
+/// the item there, within the same store.
 class FolderTab extends ConsumerWidget {
   const FolderTab({
     super.key,
     required this.folder,
+    required this.store,
     required this.onOpen,
     this.label,
     this.isActive = false,
@@ -96,6 +134,7 @@ class FolderTab extends ConsumerWidget {
 
   /// Null for the root crumb.
   final Folder? folder;
+  final LibraryWorkspace store;
   final VoidCallback onOpen;
   final String? label;
   final bool isActive;
@@ -107,17 +146,22 @@ class FolderTab extends ConsumerWidget {
       normalColor: isActive ? Settings.tacticalVioletTheme.foreground : null,
       onPressed: onOpen,
       child: DragTarget<GridItem>(
-        onAcceptWithDetails: (details) {
+        onWillAcceptWithDetails: (details) => details.data.store == store,
+        onAcceptWithDetails: (details) async {
           final item = details.data;
           if (item is StrategyItem) {
-            ref.read(strategyProvider.notifier).moveToFolder(
-                  strategyID: item.strategy.id,
+            await ref.read(strategyProvider.notifier).moveToFolder(
+                  strategyID: item.strategyId,
                   parentID: folder?.id,
+                  source: item.strategy == null
+                      ? StrategySource.cloud
+                      : StrategySource.local,
                 );
           } else if (item is FolderItem) {
-            ref.read(folderProvider.notifier).moveToFolder(
+            await ref.read(folderProvider.notifier).moveToFolder(
                   folderID: item.folder.id,
                   parentID: folder?.id,
+                  workspace: store,
                 );
           }
         },
