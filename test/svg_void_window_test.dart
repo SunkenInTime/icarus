@@ -43,15 +43,4 @@ void main() {
         closeTo(5.0, 0.05));
     expect(_sees(model, roof, beyond), isFalse);
   });
-
-  test('Breeze Mid keeps its slanted-roof opening', () {
-    // From the 11.8 m perch, a ray through the opening reaches a standing
-    // eye on the crate across Mid; the 3D scene clears it all the way.
-    final model = _model('breeze');
-    const perch = Offset(160, 190);
-    const crate = Offset(213.49, 183.84);
-    expect(model.automaticSupportAt(perch)?.surfaceElevationAt(perch),
-        closeTo(10.0, 0.1));
-    expect(_sees(model, perch, crate), isTrue);
-  });
 }

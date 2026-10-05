@@ -3,65 +3,66 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The bundled SVG-height models encode every sightline ruling Dara made
-/// during the 2026-09 review (see docs/vision-model.md). The per-ruling
-/// acceptance tests and the pipeline that produced these files live in the
-/// icarus-vision-pipeline archive. Here the models are pinned byte for byte:
+/// The bundled SVG-height models are Icarus's drawn walls carrying the
+/// heights of VALORANT's minimap vision lines (see docs/vision-model.md). The
+/// builder and the vision-line review data live in the icarus-vision-pipeline
+/// archive (scripts/riot, tools/vision-lines). Here the models are pinned
+/// byte for byte:
 /// a change to any of them is a change to what players see and must come
 /// with a deliberate update to this table.
 const _modelChecksums = <String, String>{
   'abyss_svg_height_attack.json.gz':
-      '4f7b09791e08b2df1ef3ee5242654e7cdbca1c35f2636c6b58f6a794d949c2d8',
+      'd2584571cbfa55707b282e001c6d623d55afdbe6bcd4ef49544432db5be9ccbc',
   'abyss_svg_height_defense.json.gz':
-      '1a450b6c369eb879d5f785c5637daca8780e122c4609020cd9b95b6ce0912a3e',
+      '9a96967a96c7838090ac090dd9abc330a872e17caec252397b49b4e4d1c2f76c',
   'ascent_svg_height_attack.json.gz':
-      'ef96b0367e0b8949c2529b56e0abbfc47e0631e3b6ea832e9b667226a63caf13',
+      '00530c60076b564b3ac5020d983de60d1554fdc3e12f97d137b49f9932ba42cb',
   'ascent_svg_height_defense.json.gz':
-      '38c9c8a40ac53bfe246660d3ce605e3d05d96ffe2904343b5973ff8a067cb753',
+      'e25313890e098d5bef86fa094f512483c82e0fb166074f80d3081dece976a2a7',
   'bind_svg_height_attack.json.gz':
-      'f2892c1aef0f62c0cc3c8516f13b03275f4679fe7db7b1be0140d918edb09b5a',
+      'ae27a16a23fbdf5b44ca050c16b1f89a03bea4113efad1da1d95e3c5b08111ba',
   'bind_svg_height_defense.json.gz':
-      '236d891cdc37488cc076b9301e509d9a140751f180673ce71a46be62a7f74d6d',
+      '8c6d2611c88518e900fc59c5bc7ba0f1fea15c1e0491ad0b4618a64286515af3',
   'breeze_svg_height_attack.json.gz':
-      '66e63a0e31ce5083db29be07f5e3cd7bd45b5c53e851c1b5eab297b7db4ec17a',
+      'afa3dbbe0a741ad3bb9df699deed3fbdfe07764be5136ab07735f456786b996b',
   'breeze_svg_height_defense.json.gz':
-      'd40b25298334eb2c2074d20d1c3acc1ca36fe074dc1bae02d3c2c3f0d7a2adc9',
+      'c744d6bb946abd1ed233a6cc0bb214dc5ff42317941128f0b6edb4b953d9f6ee',
   'corrode_svg_height_attack.json.gz':
-      'e3cc0f04f17c364c38720da2a1c37a69ed905b507867d85b61c1f9004869287d',
+      '467fc710f8912b81ae31403fc144cf94730891e87b9bd57dd07f5f1076b0415d',
   'corrode_svg_height_defense.json.gz':
-      '43dbd72bc7e4bc7250b1f6468edee7385b48c5255d9dd33fad286f67016c6fa3',
+      '32b41d8de237a8788b65ec655339310b5f14f4baa37c2468c7a82f1cb0acf136',
   'fracture_svg_height_attack.json.gz':
-      '17bea88c009b01a619b3a9c0ec73e4042d0bd2b38490eb53e12b9c3fb24915ce',
+      '181776c0bfc042d3901367f9e1db8276f2c5d8f57b4fd5cc575b3cdb815c7b9b',
   'fracture_svg_height_defense.json.gz':
-      '77ce5636607ec03393e1a11d6454586781439d5d6bd37ab2193f6e5b7e7e224f',
+      '04f40b1d132e21a783106fadb3ec604309318da0491f664121a0d122b6202f52',
   'haven_svg_height_attack.json.gz':
-      'f3ef26501e6fb9a3c48307e8a8b28583e6a731cf30dc047ab7fef86d1795632a',
+      '43529cc5731df622df66c7d05205fb149bb36ae0d14e7940a1e83af0a1535ecf',
   'haven_svg_height_defense.json.gz':
-      '54b9f0eafc867940e7556949f2cfbe886d6e446da72b038f6d891112dd5890fd',
+      'b4fb1b072f0de7c8d78141ea1227befe60c4dfc61234fdb6e6c54585ec0c24ee',
   'icebox_svg_height_attack.json.gz':
-      '0b3aa659f5223a378f97573582243a0202be8d398fc74fa818994cd09d78e3e4',
+      '5755af829f1ef568fa8c8cc49256d431e987b8dc020f227be83d8644dfa9f22d',
   'icebox_svg_height_defense.json.gz':
-      'ad5ae3d58600316ebb5bde272444c476d1297e349dbd59e3df696ea958bffcc5',
+      'e1feb443b83915f362db96df9644274f3f8abb9636b39b359c4b14e3004373aa',
   'lotus_svg_height_attack.json.gz':
-      'f41a05363c9dfcaf577cbcbe470c1436cbc8bd5c22c891ba85625e325a666d1b',
+      'e0246d2298948c97cb1b14a7e3a78c37639364781746d85246f3326d88e646e7',
   'lotus_svg_height_defense.json.gz':
-      'bad95da0f2ded6ef3a9c8d3ae4ca8b61fedeab1df59eeed40838fe83ec26f593',
+      'ba349690b50fa9101bd78534e1ed70e36e0b4e3976276257d167243d6e000d15',
   'pearl_svg_height_attack.json.gz':
-      '6202255d92c611a2b020089c501136d651f6e4fecf99156509332f514daea6c6',
+      '9b1e1751375c4f350221632a1218a6d82b468dc99cd3a73c4c9e444d46624011',
   'pearl_svg_height_defense.json.gz':
-      '91b47d86f95a7a99b866e8a13b1fcff9af47c68c259f47d9be2588255ea0bd1d',
+      '64c06641fe30e66cdbee3e4e5cbbeb230ac817a797be1c0c5255f5f6a52d2121',
   'split_svg_height_attack.json.gz':
-      'd24243709ddd4f9322f70c16c4d449e0557a90cd00dca038d6196f3911a7a2d7',
+      'a532f2815c1d570727063c6e07bd776228ea745b015990f1411a437244d49287',
   'split_svg_height_defense.json.gz':
-      'e1975791d570b7d5e570853eda8d00fbc3a3cc33c6ebabbad1ee04247b6f7b76',
+      'd2c33e89e929919a07522b562825cc4d529ebf0a5d82e751df1c99b471e5e0c0',
   'summit_svg_height_attack.json.gz':
-      '24334581de53f9a9a7bcb35ce85425e95f141dbe77f6f576249bdaa23a83d723',
+      '30e0894932abde8134fa477edb41885cde316637ca548d2bc701fd191e8d70b0',
   'summit_svg_height_defense.json.gz':
-      'c8462c9dc9d0dc3285363ee4f3b0376f1035dfcb7774dbec18a20fb4f73c0960',
+      'd9499a88a76fb73f31d818a1c28e200687a662df71827aa133f0bb56b908b876',
   'sunset_svg_height_attack.json.gz':
-      'ae8783c980c648a5c09ffc472378184f8076e69e062552d51958fac39a3915dd',
+      '012f38f95f49df79c81896685e899de4408147fb367e178954d34c6c4e3842f4',
   'sunset_svg_height_defense.json.gz':
-      '41028e8d49f11ae17d980f52897f44b540fab2c62394adf9bee24e2b64adf8ff',
+      '86f9c66c4670ba1dc7859e2a71f0ac7c58929e63d900d68e720cb304747780b6',
 };
 
 void main() {
@@ -77,7 +78,8 @@ void main() {
       if (actual != entry.value) mismatches.add('${entry.key}: $actual');
     }
     expect(mismatches, isEmpty,
-        reason: 'A reviewed model changed. Re-run the sightline review in the '
+        reason:
+            'A reviewed model changed. Rebuild it with scripts/riot/build_art.py in the '
             'icarus-vision-pipeline archive before updating its checksum.');
   });
 }

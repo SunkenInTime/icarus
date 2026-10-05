@@ -412,14 +412,15 @@ class SvgHeightVisibility {
         // a seam with the next piece of the same wall, or face the unplayable
         // side of a building, and stepping across either lands back in ink.
         // Failing that, step across the nearest edge and try again from there.
-        target = _steppedAcross(current, wall.rings, 0.02,
+        target = _steppedAcross(current, wall.rings, _inkClearance,
                 inside: wall.contains,
                 reach: maxDistance - (current - point).distance,
                 accept: (p) =>
                     (p - point).distance <= maxDistance &&
                     _blockingWallAt(p) == null &&
                     receiverContains(p)) ??
-            _steppedAcross(current, wall.rings, 0.02, inside: wall.contains);
+            _steppedAcross(current, wall.rings, _inkClearance,
+                inside: wall.contains);
       } else {
         target = _pulledIn(current, 0.02);
       }
@@ -430,13 +431,22 @@ class SvgHeightVisibility {
     return null;
   }
 
+  /// How close to blocking ink still counts as in it. Two strokes drawn a
+  /// couple of centimetres apart leave a slit no agent stands in; a cone
+  /// from inside one is a hairline running down it.
+  static const _inkMargin = 0.05;
+
+  /// How far past the ink a nudged agent stands: clear of [_inkMargin].
+  static const _inkClearance = 0.06;
+
   SvgHeightWall? _blockingWallAt(Offset point) {
     // A wall that does not block a standing eye (a kerb, a floor mark) is
     // not something an agent stands inside of.
-    final floor = ground?.heightAt(point);
-    final eye = (floor ?? 0) + defaultCameraHeightMeters;
+    double? eye;
     for (final wall in walls) {
-      if (wall.contains(point) && wall.blocks(eye)) return wall;
+      if (!wall._contains(point, _inkMargin)) continue;
+      eye ??= (ground?.heightAt(point) ?? 0) + defaultCameraHeightMeters;
+      if (wall.blocks(eye)) return wall;
     }
     return null;
   }
@@ -1367,26 +1377,66 @@ class _Footprint {
   late final Rect bounds;
   bool contains(Offset point) => _contains(point, 0);
 
-  bool _contains(Offset point, double boundaryTolerance) {
-    if (point.dx < bounds.left - boundaryTolerance ||
-        point.dx > bounds.right + boundaryTolerance ||
-        point.dy < bounds.top - boundaryTolerance ||
-        point.dy > bounds.bottom + boundaryTolerance) return false;
-    var winding = 0;
-    for (final ring in rings) {
+  /// The largest boundary tolerance [_contains] is asked for.
+  static const _maxTolerance = 0.05;
+
+  /// Rows are a unit tall, or taller for a footprint so tall that unit rows
+  /// would number more than this.
+  static const _maxRows = 4096;
+  late final double _rowHeight =
+      math.max(1.0, (bounds.height + 2 * _maxTolerance) / _maxRows);
+
+  /// Every edge, as its ring and first point's index, filed under each
+  /// [_rowHeight] row its height, grown by [_maxTolerance], reaches. Only
+  /// edges spanning a point's height add to its winding, and only edges that
+  /// near can hold it on their boundary, so a test reads one row. A floor
+  /// with every wall cut out of it is thousands of edges in one ring.
+  late final List<Int32List> _rows = () {
+    final rows = List.generate(_rowCount, (_) => <int>[]);
+    for (var r = 0; r < rings.length; r++) {
+      final ring = rings[r];
       for (var i = 0; i < ring.length; i++) {
         final a = ring[i], b = ring[(i + 1) % ring.length];
-        final side = _cross(b - a, point - a);
-        if ((side == 0 ||
-                boundaryTolerance > 0 &&
-                    side.abs() <= boundaryTolerance * (b - a).distance) &&
-            point.dx >= math.min(a.dx, b.dx) - boundaryTolerance &&
-            point.dx <= math.max(a.dx, b.dx) + boundaryTolerance &&
-            point.dy >= math.min(a.dy, b.dy) - boundaryTolerance &&
-            point.dy <= math.max(a.dy, b.dy) + boundaryTolerance) return true;
-        if (a.dy <= point.dy && b.dy > point.dy && side > 0) winding++;
-        if (a.dy > point.dy && b.dy <= point.dy && side < 0) winding--;
+        final first = _row(math.min(a.dy, b.dy) - _maxTolerance);
+        final last = _row(math.max(a.dy, b.dy) + _maxTolerance);
+        for (var row = first; row <= last; row++)
+          rows[row]
+            ..add(r)
+            ..add(i);
       }
+    }
+    return [for (final row in rows) Int32List.fromList(row)];
+  }();
+
+  late final int _rowCount =
+      (bounds.height + 2 * _maxTolerance) ~/ _rowHeight + 1;
+
+  int _row(double y) => ((y - bounds.top + _maxTolerance) / _rowHeight)
+      .floor()
+      .clamp(0, _rowCount - 1);
+
+  bool _contains(Offset point, double boundaryTolerance) {
+    assert(boundaryTolerance <= _maxTolerance);
+    // Written so a NaN coordinate fails it, as it failed every edge before.
+    if (!(point.dx >= bounds.left - boundaryTolerance &&
+        point.dx <= bounds.right + boundaryTolerance &&
+        point.dy >= bounds.top - boundaryTolerance &&
+        point.dy <= bounds.bottom + boundaryTolerance)) return false;
+    var winding = 0;
+    final row = _rows[_row(point.dy)];
+    for (var e = 0; e < row.length; e += 2) {
+      final ring = rings[row[e]], i = row[e + 1];
+      final a = ring[i], b = ring[(i + 1) % ring.length];
+      final side = _cross(b - a, point - a);
+      if ((side == 0 ||
+              boundaryTolerance > 0 &&
+                  side.abs() <= boundaryTolerance * (b - a).distance) &&
+          point.dx >= math.min(a.dx, b.dx) - boundaryTolerance &&
+          point.dx <= math.max(a.dx, b.dx) + boundaryTolerance &&
+          point.dy >= math.min(a.dy, b.dy) - boundaryTolerance &&
+          point.dy <= math.max(a.dy, b.dy) + boundaryTolerance) return true;
+      if (a.dy <= point.dy && b.dy > point.dy && side > 0) winding++;
+      if (a.dy > point.dy && b.dy <= point.dy && side < 0) winding--;
     }
     return evenOdd ? winding.abs().isOdd : winding != 0;
   }

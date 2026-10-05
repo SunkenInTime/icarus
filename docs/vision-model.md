@@ -9,6 +9,132 @@
 > `assets/maps/*_svg_height_*.json.gz` models, `tool/check_bundled_wall_heights.dart`
 > and this document.
 
+## Blocking from VALORANT's minimap lines (2026-10-04)
+
+The bundled models no longer carry band data measured from the 3D map. Each
+wall now takes its heights from VALORANT's minimap vision lines, the 2D line
+set the game uses for its own minimap cones. The sections after this one
+describe the measured model these walls replace. They still explain the
+file format, supports, and how the runtime casts.
+
+**Source.** `AresWorldSettings.MinimapVisionOccluders` names a
+`DataTable<VisionGeometry>` for each map. Each row is one layer. `g` holds the
+line count and the layer's threshold in centimetres, `v` holds minimap uv
+points, and `l` holds index pairs. The thresholds are absolute heights in
+world space. Uv points convert to UE world space through the map's
+`XMultiplier`/`XScalarToAdd` and `YMultiplier`/`YScalarToAdd`. They then go to
+scene metres as `(X, -Y) / 100` and through the map's `nativeTo{Side}Svg`
+affine.
+
+**Layer rule.** This rule is inferred; the assets do not state it. A viewer
+uses layer k when its capsule centre, floor + 0.98 m, lies in
+`[th_k, th_k+1)`. The 98 cm capsule half-height is in the assets. A scan of
+where each line's obstacle top falls peaks sharply at 0.98–0.99 m; feet and
+eye height both score worse. Icarus casts from floor + 1.75 m, so each layer
+is stored as an eye band shifted up by 0.77 m. The runtime treats a band as
+closed at both ends, but a layer is open at the top. So every band edge sits
+1e-6 m below its threshold, and a viewer exactly on a threshold gets the
+layer above. Ascent has floors at 5.02 m, under a 6.0 m threshold.
+
+**Walls are our art.** Riot's lines sit centimetres to a metre off the drawn
+walls, which left visible gaps. So the lines decide only how tall a wall is,
+and the art decides where it is:
+- The wall art is each wall's footprint by its own fill rule, so a hole
+  drawn inside a wall stays floor.
+- Every edge of the wall-art outline, in 0.5-unit pieces, takes the union of
+  layers of every Riot line running alongside it (|cos| ≥ 0.7, within 2 SVG
+  units). This keeps both lines on walls that carry a ground line and an
+  upper one. A short stretch with no parallel line (a bevel, a jog, a
+  wall's end; at most 4 units, between edges that have one) takes the
+  layers of the nearest lines, all of them where several are equally near
+  (Riot often stacks a ground line and an upper line on one spot). A longer
+  one takes none: a drawn ring or box that
+  only touches a wall is not part of it, and borrowing the wall's line there
+  cut cones beside it into slivers.
+- Runs of equal layers become one-sided strips, 0.01 thick, inside the art.
+  The art is closed by 0.03 first, so hairline cracks between strokes don't
+  leak. Touching strips with the same heights are merged into one outline
+  each, and those outlines are the model's walls (no `runtimeWalls`). With
+  a wall per strip, each strip's ends were silhouettes and a cone grew to
+  about 10,000 points; with strips merged only for casting, stepping an
+  agent out of a wall searched every strip and took up to 1.6 s.
+- A stretch of Riot line with no art beside it (glass, railings, crates the
+  art doesn't draw) stays as a thin wall on Riot's own line. Where the
+  stretch was cut because the art beside it takes over, its end is joined
+  to the nearest art, so no ray slips between the line and the wall.
+- Lines Riot lacks are added by hand in the vision-lines review data
+  (`added` in `<map>.edits.json`). The only one so far is the Lotus defense
+  platform wall, which the 3D map shows solid from 3.0 to 5.1 m.
+- Layers Riot has where the game is open are taken off the same way
+  (`cleared`: lines lying wholly inside an area lose the listed layers).
+  The only one so far is the Haven C Garage window, open from the garage
+  floor (layer 0) as in the 3D map; Dara ruled it open on 2026-09-19 and
+  again on 2026-10-04.
+- The receiver is the floor minus the wall art, so a cone never paints over
+  a wall.
+
+`sightlineFloorSupportIds` is dropped. Riot's layers already decide which
+floors a viewer sees over. Each model stores the thresholds as
+`riotVisionLayers`, and `test/svg_riot_vision_test.dart` checks that every
+band edge is one of them.
+
+**Built by.** `scripts/riot/build_art.py` in the icarus-vision-pipeline
+archive, run on the bundled models at commit `0497bec`. The review tool and its line data are in
+`tools/vision-lines`.
+
+**Checked against the 3D map.** This used 240 standing poses per map side and
+cast against the extracted geometry. Only the part of each ray that lands on
+floor the app draws counts. Rays leaving the map are never drawn, and
+counting them made Pearl look worse than it is. A leak is a stretch the
+model sees that the 3D map says is hidden; a false shadow is the reverse.
+The check is stricter than the game. Riot's minimap ignores props (crates,
+poles, low walls) the 3D map has, and the cones beside them look normal.
+
+| visible floor, both sides | measured model | art + Riot heights |
+|---|---|---|
+| leaked length | 1,747,007 | 2,313,132 (+32%) |
+| false-shadow length | 32,714,287 | 33,816,279 (+3.4%) |
+
+Pearl (−88% leaked), Summit (−90%), Breeze (−65%), Ascent (−63%), Corrode
+(−52%) and Haven (−43%) improve. Abyss, Fracture, Icebox and Sunset leak
+about twice as much or more, and Split and Bind about a quarter more, where
+Riot's lines are sparse or ignore props.
+
+Cones stay within 165 fps: on a profile-build drag across every map side,
+frame build is at most 3.35 ms at p99 over two runs (budget 6.06 ms) and
+no frame's build goes over budget.
+
+Stepping an agent out of a wall (`standablePointNear`, every frame of a
+drag) tests points against every wall and the floor. The floor has every
+wall cut out of it, thousands of edges in one ring, and walls run along
+whole outlines, so `_Footprint` now files each edge under the 1-unit rows
+its height reaches and a test reads one row; the answer is unchanged
+(`test/svg_footprint_contains_test.dart`). Over a grid of every 1.37 units,
+in a profile build, the step plus choosing the standing level takes at most
+2.0–5.6 ms on Lotus, Breeze and Summit, about what the measured model took.
+
+Walling off everything that is neither floor nor wall was tried. Rays
+leaving the map are never drawn, so it changed nothing visible on Pearl. On
+Abyss and Icebox it blocked real sightlines across drops and gaps (+54% and
++34% false shadow on visible floor). It was not kept.
+
+Riot blocks three places the measured model left open:
+- the floor past the end of Bind's B container. Dara chose Riot's lines
+  here (2026-10-04), and the test follows them;
+- Breeze Mid's slanted-roof opening. Dara chose Riot's lines here too
+  (2026-10-04), and the test follows them;
+- the Haven C Garage window from the garage floor. Dara kept it open
+  (2026-10-04), so its lines are cleared for layer 0 and its test checks
+  the window is open.
+
+**Rejected.**
+- Riot's lines as they come: they leave gaps beside the art.
+- Snapping the lines onto the art: tracing closes real openings, and
+  receiver-edge snapping lands under walls.
+- Our measured pieces with Riot heights.
+- A measured-height fallback for edges with no Riot line: it adds 4–8% false
+  shadow.
+
 Before declaring a visibility change complete, apply the acceptance contract
 (`docs/vision-acceptance-contract.md` in the archive). It defines source
 accounting, independent expectations, and the evidence required for completion.
@@ -512,6 +638,124 @@ the withdrawn void seal and changes nothing else:
 
 The reviewed sightline suite from the archive passes on the sealed models.
 `test/svg_void_window_test.dart` pins the Sunset case.
+
+## Bands checked from where players stand (2026-10-02)
+
+The ray probe above looks across the ink, half a metre either side. Where the
+real face sits further off the ink than that, it measured nothing and left
+the piece open. Lotus's defense platform wall (`p7-stroke-3-local-1`, 34
+units long) had no band below 20.75 m, so Chamber standing on the 3 m
+platform saw straight through it. Bind's B container outline had no bands at
+all.
+
+The archive's `scripts/truth/` checks the bundled models from the player's
+side instead. From every standable spot on an 8-unit grid, about 32,000 on
+both sides of all maps, it casts 720 horizontal rays at the runtime eye. Each
+ray runs twice: once against the painted walls active at that eye, once
+against the 3D scene's solid, non-decor, non-floor faces sliced at the eye.
+
+A painted piece is solid at an eye when, of the rays from that eye height
+that cross it, the scene stops at least 60% within a metre of it (and at
+least six). Where a piece the model leaves open is solid, its band is raised
+to the height of what those rays hit, cut short at the nearest eye heights
+where the scene lets most rays through. Bands only rise. Ids that record a
+decision about an opening (review, report, user section, opening, door,
+window, sill, jamb, header) are not changed; where the scene disagrees they
+are listed in the archive for review. A piece longer than 3 units that the
+scene stops only a fifth to three fifths of the rays through is a window in
+a longer wall, and is first cut into one-unit pieces (`-truth-cut-N`) so the
+solid part can rise without closing the window.
+
+Result on the bundled models (spots that see through a painted piece the
+scene says is solid, then rays): 11,054 to 5,905 spots and 337,158 to
+104,440 rays, with false shadows (painted walls blocking where the scene is
+open) up 0.7%. 1,397 pieces rose and 128 were cut into 1,910. Most of what
+the check still reports is not a data error. Of the remaining leak rays,
+68% cross pieces the scene leaves open at that eye, where a prop or frame
+near the piece stopped a few; 20% cross short pieces that really are partly
+open, such as railings. `test/svg_truth_bands_test.dart` (now `svg_riot_vision_test.dart`) pinned the Lotus wall
+and the Bind container.
+
+Dara ruled on the 119 recorded-decision pieces from in-game renders on
+2026-10-03. 51 became solid at the measured heights. Most are the Abyss
+atrium wall's `user-section` strips. They were never a decision: the
+2026-09-12 screenshot pass (`scripts/review_reported_sightlines.py`)
+measured `p7-stroke-0` in half-unit strips against four source objects that
+did not include the atrium wall itself (object 4912), so every strip only it
+covered measured empty and stayed open, leaving centimetre holes along a
+solid wall. The 2026-09-14 pass added 4912 for eleven strips and missed the
+rest. All now block at 3.96 to 8.0 m. The other closures are the two
+Fracture corridor openings and Haven defense's
+`p3-stroke-10-gameplay-opening-0`, Mid Window, which had lost its sill; the
+attack side's `p3-stroke-12-gameplay-opening-0` gets the same measured sill. The Haven, Icebox and Pearl
+door and corridor openings stay open. The rulings are in the archive as
+`scripts/data/truth-bands-dara-review-2026-10-03.json`.
+
+### Holes in walls (2026-10-03)
+
+The Abyss strips were one case of a general fault: earlier passes measured
+walls in short strips against chosen objects, and a strip that missed them
+stayed open. The archive's `scripts/truth/notch.py` finds every hole
+directly. A hole is a piece no longer than a metre that is open over some
+height while touching pieces on both sides of it are solid there, up to
+40 m over its floor. Each is checked against every solid, non-decor face
+within half a metre of the piece. Where the scene is solid over at least
+80% of the hole, the hole is filled; where it is open, the hole stays and
+is listed for review. A piece whose top is lower than its neighbours' is a
+hole only when the scene is solid up to their height. Dara's rulings are
+never touched. Across both sides of all maps it found 5,343 holes and
+filled 4,096. The other 463 are open in the scene but are single pieces,
+a few tens of centimetres wide, between solid walls; renders from the
+standing spots that see them show mostly solid wall, its face more than
+half a metre off the ink. A real window or doorway spans several pieces,
+so these are filled too.
+
+### Reviewed openings put back (2026-10-03)
+
+The archive's acceptance suite (`scripts/truth/accept_at.sh`) holds the
+sightlines earlier reviews pinned. On the #240 models 7 of its tests fail
+(Split's crane, which #238 reverses, and fixture hashes); after the passes
+above, 26 did. Astra cast every new failure against the complete 3D scene
+(`scripts/truth/ray3d.py`) rather than a chosen object list. Six were clear
+in the scene: the hole fill had closed a gap at Corrode's 4801 pieces.
+Others contradicted a ruling or a recorded decision. `restore_reviewed.py`
+puts these pieces back to their #240 bands, uncutting any `-truth-cut-N`
+pieces:
+- the two Corrode pieces;
+- Haven's C Garage window walls, which Dara opened from the garage floor
+  on 2026-09-19;
+- Haven defense `p3-stroke-9`, whose raised band stopped a Mid sightline
+  where the scene is clear;
+- Icebox's zipline and ramp markings, which are symbols, not walls;
+- every piece named see-through.
+
+Seven failures remain, and each is deliberate. Four are the Haven Mid
+Window sill Dara ruled solid. The other three, Icebox's front window jamb
+and the boost-step box, pin sightlines the scene blocks.
+`test/svg_truth_bands_test.dart` (now `svg_riot_vision_test.dart`) pinned the garage window. On the 3D check's
+current standing spots (`poses-240.json`), the restore takes leaks from
+5,565 spots and 100,106 rays to 5,679 and 104,153, mostly where the
+garage ruling opens the window.
+
+A rebuild of each drawn wall as two or three constant-height segments was
+tried and not used (`scripts/truth/segment_walls.py` records why). It
+removed 35k leak rays but added 160k false-shadow rays, because it closed
+pieces the scene shows mostly open. It also shut reviewed openings that the
+scene confirms are clear. One band set per piece cannot hold a window in
+part of a piece, and a vote across neighbours makes that worse.
+
+### Merged runtime outlines (2026-10-03)
+
+Each model now carries `runtimeWalls`: the touching pieces that share a
+floor, bands and unknown-height flag, merged offline into one outline by
+the archive's `scripts/truth/merge_runtime.py`. Cones are cast against these
+outlines, with 1.6 to 4 times fewer points than the pieces. The pieces remain
+the model. The loader checks that every piece is covered once and that
+every member of an outline has the same heights. Where an outline does not
+cover a piece's own edges (a bow tie, a sliver), those edges come along
+under the piece's heights (`heightsOf`). Merging seals cracks narrower than
+0.06 SVG units (under 2 cm) between pieces of one wall and changes nothing
+else; the cone areas it was checked on differ by at most 0.074%.
 
 ## Drag performance on Windows (2026-09-19)
 
