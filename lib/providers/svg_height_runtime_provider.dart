@@ -258,8 +258,8 @@ Future<SvgHeightVisibility> _loadSide(Uint8List source, List<int> artworkBytes,
   return model;
 }
 
-Map<String, dynamic> _decodeModel(Uint8List source) {
-  final decoded = jsonDecode(utf8.decode(decodeWorldGzip(source)));
+Future<Map<String, dynamic>> _decodeModel(Uint8List source) async {
+  final decoded = jsonDecode(utf8.decode(await inflateWorldGzip(source)));
   if (decoded is! Map<String, dynamic>) {
     throw const FormatException('SVG sightline asset must be an object.');
   }

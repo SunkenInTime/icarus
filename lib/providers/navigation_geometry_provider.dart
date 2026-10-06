@@ -56,13 +56,13 @@ Future<NavigationGeometryMap> loadNavigationGeometry(MapValue map,
   ));
 }
 
-NavigationGeometryMap _decodeNavigation(
+Future<NavigationGeometryMap> _decodeNavigation(
     ({
       MapValue map,
       Uint8List bytes,
       Offset defenseOffset,
-    }) source) {
-  final decoded = jsonDecode(utf8.decode(decodeWorldGzip(source.bytes)));
+    }) source) async {
+  final decoded = jsonDecode(utf8.decode(await inflateWorldGzip(source.bytes)));
   if (decoded is! Map<String, dynamic> || decoded['map'] != source.map.name) {
     throw const FormatException('Navigation geometry map mismatch.');
   }
