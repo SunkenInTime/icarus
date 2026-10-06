@@ -84,9 +84,15 @@ List<String> _wrongOutline(SvgHeightVisibility model, List<Offset> outline,
     -half + turn(_relative(points.first - eye, direction) + half)
   ];
   for (final p in points.skip(1)) {
-    final previous = angles.last;
-    angles.add(previous + turn(_relative(p - eye, direction) - previous));
+    // Rays come in increasing angle, so each step is forward; a hair
+    // backward is rounding.
+    var step = (_relative(p - eye, direction) - angles.last) % (2 * math.pi);
+    if (step > 2 * math.pi - 1e-9) step -= 2 * math.pi;
+    angles.add(angles.last + step);
   }
+  // The last point is the ray along the cone's far edge, a full turn on
+  // from the first on a full circle even where the two coincide.
+  if (angles.last < half - math.pi) angles.last += 2 * math.pi;
   final probes = <double>[
     for (var i = 0; i + 1 < angles.length; i++) (angles[i] + angles[i + 1]) / 2,
     for (final wall in model.walls)
@@ -99,6 +105,22 @@ List<String> _wrongOutline(SvgHeightVisibility model, List<Offset> outline,
     for (var i = 0; i < 200; i++) -half + aperture * (i + 0.5) / 200,
   ];
   final wrong = <String>[];
+  // Every point lies where the ray toward it ends. This needs no probe
+  // between points, so it also holds a cone too narrow to probe.
+  for (final p in points) {
+    final delta = p - eye;
+    if (delta.distance < 1e-9) continue;
+    final hit = model.castRay(
+        origin: eye,
+        directionRadians: math.atan2(delta.dy, delta.dx),
+        range: range,
+        supportId: support);
+    final truth = hit?.distance ?? range;
+    if ((truth - delta.distance).abs() > 1e-6) {
+      wrong.add('point $p at ${delta.distance.toStringAsFixed(5)}, '
+          'its ray ends at ${truth.toStringAsFixed(5)}');
+    }
+  }
   for (final angle in probes) {
     if (angle <= -half || angle >= half) continue;
     // The outline point pair the probe falls between, in ray order.
@@ -123,7 +145,7 @@ List<String> _wrongOutline(SvgHeightVisibility model, List<Offset> outline,
     // Open sky: the outline follows the range circle with chords, which sag
     // inside it by at most this much.
     final slack = hit == null ? range * (1 - math.cos(gap / 2)) + 1e-6 : 1e-6;
-    if (line > truth + 1e-6 || line < truth - slack) {
+    if (!line.isFinite || line > truth + 1e-6 || line < truth - slack) {
       wrong.add('ray ${angle.toStringAsFixed(7)}: outline at '
           '${line.toStringAsFixed(5)}, ray ends at ${truth.toStringAsFixed(5)}');
     }
@@ -222,23 +244,44 @@ void main() {
     // back as pi rather than -pi, and the check then probed nothing.
     final wall = _walls([_rectangle(10, .03, 11, .05)]);
     final real = _model(wall), empty = _model(_walls(const []));
-    for (final (direction, aperture) in [
-      (0.0, 1.8),
-      (0.0, 2 * math.pi),
-      (-math.pi / 2, 2 * math.pi),
-      (math.pi, 2 * math.pi),
+    for (final (direction, aperture, arcSteps) in [
+      (0.0, 1.8, 96),
+      (0.0, 2 * math.pi, 96),
+      (-math.pi / 2, 2 * math.pi, 96),
+      (math.pi, 2 * math.pi, 96),
+      // Found in review: steps between points wider than half a turn.
+      (0.0, 4.0, 1),
+      (0.0, 3.2, 1),
+      (0.0, 2 * math.pi, 1),
     ]) {
       final missing = empty
           .horizontalCone(
               origin: Offset.zero,
               directionRadians: direction,
               range: 100,
-              apertureRadians: aperture)
+              apertureRadians: aperture,
+              arcSteps: arcSteps)
           .polygon;
       expect(
           _wrongOutline(real, missing, Offset.zero, direction, aperture, 100),
           isNotEmpty,
           reason: 'direction $direction aperture $aperture');
+    }
+    // Found in review: cones too narrow to probe between their points.
+    final ledge = _model(_walls([
+      [10, -1e-8, 11, -1e-8, 11, 10, 10, 10]
+    ]));
+    for (final aperture in [1e-6, 1e-300, 5e-324]) {
+      final missing = empty
+          .horizontalCone(
+              origin: Offset.zero,
+              directionRadians: 0,
+              range: 100,
+              apertureRadians: aperture)
+          .polygon;
+      expect(_wrongOutline(ledge, missing, Offset.zero, 0, aperture, 100),
+          isNotEmpty,
+          reason: 'aperture $aperture');
     }
   });
 
