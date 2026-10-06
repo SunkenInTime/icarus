@@ -96,6 +96,7 @@ msix_config:
 flutter:
   shaders:
     - shaders/dot_grid.frag
+    - shaders/dot_lattice.frag
     - shaders/dither_fire.frag
   fonts:
     - family: CustomIcons

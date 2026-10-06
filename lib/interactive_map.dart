@@ -263,7 +263,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       child: Padding(
                                         padding: const EdgeInsets.all(4.0),
                                         child:
-                                            RepaintBoundary(child: DotGrid()),
+                                            RepaintBoundary(
+                                                child: DotGrid(followsEditorZoom: true)),
                                       ),
                                     ),
                                   ),
