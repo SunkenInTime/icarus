@@ -7,24 +7,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
-#include <condition_variable>
-#include <functional>
-#include <thread>
-#include <atomic>
-#include <map>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 static_assert(sizeof(ISHResult) == 72);
 static_assert(offsetof(ISHResult, points) == 8);
@@ -33,8 +23,8 @@ static_assert(offsetof(ISHResult, queryMicros) == 64);
 namespace {
 using Clock = std::chrono::steady_clock;
 constexpr double pi = 3.141592653589793238462643383279502884;
+constexpr double infinity = std::numeric_limits<double>::infinity();
 constexpr double cornerOffset = 1e-8;
-constexpr double slabPadding = 1e-10;
 constexpr uint32_t maximumEdges = 1u << 19;
 constexpr uint32_t maximumWalls = 1u << 20;
 constexpr uint32_t maximumArcSteps = 4096;
@@ -153,44 +143,16 @@ bool overlaps(const Bounds &a, const Bounds &b) {
            a.bottom < b.top);
 }
 
-struct PreparedRay {
-  Point origin, direction;
-  double inverseX, inverseY;
-};
-
-bool entry(const Bounds &bounds, const PreparedRay &ray, double range,
-           double &result) {
-  double lo = 0.0, hi = range;
-  if (ray.direction.x == 0) {
-    if (ray.origin.x < bounds.left - slabPadding ||
-        ray.origin.x > bounds.right + slabPadding)
-      return false;
+void collectCandidates(const Node *node, const Bounds &area,
+                       std::vector<uint32_t> &output) {
+  if (!overlaps(node->bounds, area))
+    return;
+  if (!node->ids.empty()) {
+    output.insert(output.end(), node->ids.begin(), node->ids.end());
   } else {
-    const double a =
-        (bounds.left - slabPadding - ray.origin.x) * ray.inverseX;
-    const double b =
-        (bounds.right + slabPadding - ray.origin.x) * ray.inverseX;
-    lo = std::max(lo, std::min(a, b));
-    hi = std::min(hi, std::max(a, b));
-    if (lo > hi)
-      return false;
+    collectCandidates(node->left.get(), area, output);
+    collectCandidates(node->right.get(), area, output);
   }
-  if (ray.direction.y == 0) {
-    if (ray.origin.y < bounds.top - slabPadding ||
-        ray.origin.y > bounds.bottom + slabPadding)
-      return false;
-  } else {
-    const double a =
-        (bounds.top - slabPadding - ray.origin.y) * ray.inverseY;
-    const double b =
-        (bounds.bottom + slabPadding - ray.origin.y) * ray.inverseY;
-    lo = std::max(lo, std::min(a, b));
-    hi = std::min(hi, std::max(a, b));
-    if (lo > hi)
-      return false;
-  }
-  result = lo;
-  return true;
 }
 
 struct Hit {
@@ -199,144 +161,597 @@ struct Hit {
   uint32_t edge = 0;
 };
 
-struct Counters {
-  uint64_t edgeTests = 0, nodes = 0;
-};
-
-// One per chunk, padded to a cache line: neighbouring chunks run on different
-// threads and must not bounce the same line while counting.
-struct alignas(64) ChunkCounters {
-  Counters value;
-  char padding[64 - sizeof(Counters)];
-};
-
-void collectCandidates(const Node *node, const Bounds &area,
-                       std::vector<uint32_t> &output);
 struct Crossing { Point point; uint32_t first, second; };
 
-// A persistent pool for the per-query ray casts. Rays are independent and
-// the polygon is assembled serially afterwards, so the result is bitwise the
-// same as the single-threaded query; only the wall-clock time changes. The
-// caller thread works too, so a query never waits on a sleeping worker.
-//
-// A run is published as one 64-bit ticket: the chunk count in the high half
-// and the next chunk index in the low half. A worker claims a chunk with a
-// single fetch-add on that word, so the index it receives is always paired
-// with the count of the same run. A stale claim from an earlier run carries
-// that run's count, fails the bounds test, and touches nothing; a claim
-// within range keeps the run alive until the chunk is done, so the callback
-// and the remaining counter it then reads belong to that run.
-// A query is a few milliseconds of work split across threads, and the
-// caller waits for every chunk. A thread the scheduler sets aside for a
-// time slice (15 ms on Windows) holding one chunk stalls the whole query, so
-// the threads doing a query run above normal priority while they do it.
-struct Boost {
-#ifdef _WIN32
-  Boost() : thread(GetCurrentThread()), previous(GetThreadPriority(thread)) {
-    if (previous < THREAD_PRIORITY_ABOVE_NORMAL)
-      SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
+// Moves a per-query stamp on, clearing its marks the one time in 2^32 it
+// wraps, so a stale mark never matches.
+void advance(uint32_t &stamp, std::vector<uint32_t> &marks) {
+  if (++stamp == 0) {
+    std::fill(marks.begin(), marks.end(), 0u);
+    stamp = 1;
   }
-  ~Boost() {
-    if (previous < THREAD_PRIORITY_ABOVE_NORMAL)
-      SetThreadPriority(thread, previous);
-  }
-  HANDLE thread;
-  int previous;
-#endif
-};
+}
 
-struct Pool {
-  explicit Pool(unsigned workers) {
-    for (unsigned i = 0; i < workers; ++i)
-      threads.emplace_back([this] {
-#ifdef _WIN32
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-#endif
-        loop();
-      });
+// Margins on the proofs: rounding in the angles and distances here is some
+// 1e-15, far inside these.
+constexpr double angleMargin = 1e-9;
+constexpr double relativeMargin = 1e-9, absoluteMargin = 1e-9;
+// Rays beside a corner leave this far from its angle.
+constexpr double cornerSlack = cornerOffset + angleMargin;
+// The narrowest bin; a cone's bins are about this wide.
+constexpr double binWidth = 2 * pi / 2048;
+
+bool beyond(double distance, double depth) {
+  return distance > depth * (1 + relativeMargin) + absoluteMargin;
+}
+
+double distanceTo(const Bounds &bounds, double x, double y) {
+  const double dx = std::max(0.0, std::max(bounds.left - x, x - bounds.right));
+  const double dy = std::max(0.0, std::max(bounds.top - y, y - bounds.bottom));
+  return std::sqrt(dx * dx + dy * dy);
+}
+
+// The active edges a cone's eye may see, filed by the angles they cover. This
+// is the Dart _ConeBins in lib/view_cone/svg_height_visibility.dart, which
+// carries the proofs.
+//
+// Every ray of a cone leaves the same eye. So rather than walk the edge tree
+// once per ray, a query files the edges it may meet once: each gets its
+// nearest distance to the eye and the span of angles it covers, and goes into
+// every bin of that span. A ray then tests only its bin's edges.
+//
+// Each bin also gets a depth, the farthest any ray in it can travel. A run of
+// consecutive ring edges that crosses a bin from one boundary to the next is
+// an unbroken wall across it, so every ray in the bin stops no farther than
+// the run's farthest point there. Whatever begins beyond the depths it spans
+// is hidden: an edge there is not filed, and a corner there needs no rays.
+//
+// The edge tree is walked nearest node first, and a node whose bounds begin
+// beyond the depths of every bin they span is skipped whole. Depths are only
+// ever used with a margin, and whatever they let through is tested exactly,
+// so the outline is the one every edge would give.
+struct ConeBins {
+  const std::vector<Edge> *edges = nullptr;
+  const std::vector<Point> *points = nullptr;
+  const uint8_t *active = nullptr;
+
+  // Filed edges, by slot: edge id, nearest distance to the eye, and the span
+  // of angles from the cone's direction they cover, which may run past pi.
+  std::vector<uint32_t> edgeIds;
+  std::vector<double> near, from, to;
+
+  // Bins split [lowest, lowest + binCount * width] evenly. Bin k's filed
+  // slots are items[offsets[k]] up to items[offsets[k + 1]], nearest first.
+  uint32_t binCount = 0;
+  double lowest = 0, width = 1;
+  std::vector<uint32_t> offsets, items;
+
+  // The farthest any ray in a bin can travel; infinite when unproven.
+  std::vector<double> depth;
+  // The largest depth over ranges of bins: a segment tree whose leaves, from
+  // index leaves on, are the depths.
+  std::vector<double> peaks;
+  size_t leaves = 0;
+  // The world direction of each bin boundary.
+  std::vector<double> boundaryX, boundaryY;
+
+  double cosine = 1, sine = 0, ox = 0, oy = 0;
+  bool whole = false;
+
+  // Per vertex this query, where vertexMark is vertexStamp: its angle from
+  // the cone's direction and its distance from the eye.
+  std::vector<double> vertexAngle, vertexDistance;
+  std::vector<uint32_t> vertexMark;
+  uint32_t vertexStamp = 0;
+
+  // Edges filed this query that a run can pass through: slotMark is mark.
+  // An edge through the eye stops nothing reliably beside it.
+  std::vector<uint32_t> slotMark;
+  uint32_t mark = 0;
+  // The runs to walk this wave: dirty is dirtyStamp on their edges.
+  std::vector<uint32_t> dirty;
+  uint32_t dirtyStamp = 0;
+  std::vector<uint32_t> heads;
+
+  // Tree nodes waiting to be visited, nearest first: a binary heap.
+  std::vector<const Node *> heapNodes;
+  std::vector<double> heapKeys;
+
+  uint64_t nodes = 0;
+
+  void reserve(size_t vertexCount, size_t edgeCount) {
+    vertexAngle.resize(vertexCount);
+    vertexDistance.resize(vertexCount);
+    vertexMark.assign(vertexCount, 0);
+    slotMark.assign(edgeCount, 0);
+    dirty.assign(edgeCount, 0);
   }
-  ~Pool() {
-    {
-      std::lock_guard<std::mutex> lock(mutex);
-      stop.store(true, std::memory_order_release);
-    }
-    wake.notify_all();
-    for (std::thread &thread : threads) thread.join();
+
+  size_t count() const { return edgeIds.size(); }
+
+  // The angle of dx, dy from the cone's direction, in [-pi, pi].
+  double angleOf(double dx, double dy) const {
+    return std::atan2(-dx * sine + dy * cosine, dx * cosine + dy * sine);
   }
-  void run(size_t count, const std::function<void(size_t)> &task) {
-    if (count == 0) return;
-    if (threads.empty() || count == 1 || count > kMaximumChunks) {
-      for (size_t i = 0; i < count; ++i) task(i);
-      return;
+
+  uint32_t binOf(double angle) const {
+    const double k = std::floor((angle - lowest) / width);
+    return k < 0 ? 0 : (k >= binCount ? binCount - 1 : uint32_t(k));
+  }
+
+  // Whether every ray within a corner offset of angle provably stops before
+  // distance.
+  bool hides(double angle, double distance) const {
+    const uint32_t last = binOf(angle + cornerSlack);
+    for (uint32_t k = binOf(angle - cornerSlack); k <= last; ++k)
+      if (!beyond(distance, depth[k]))
+        return false;
+    return true;
+  }
+
+  void file(const std::vector<Edge> &edgeList,
+            const std::vector<Point> &vertexPoints, const Node *root,
+            Point origin, double direction, double range,
+            const uint8_t *activeWalls, double lowestAngle, double span) {
+    edges = &edgeList;
+    points = &vertexPoints;
+    active = activeWalls;
+    cosine = std::cos(direction);
+    sine = std::sin(direction);
+    lowest = lowestAngle;
+    ox = origin.x;
+    oy = origin.y;
+    advance(vertexStamp, vertexMark);
+    advance(mark, slotMark);
+    const uint32_t bins =
+        std::max(64u, uint32_t(std::ceil(span / binWidth)));
+    binCount = bins;
+    width = span / bins;
+    whole = span >= 2 * pi;
+    boundaryX.resize(bins + 1);
+    boundaryY.resize(bins + 1);
+    for (uint32_t j = 0; j <= bins; ++j) {
+      const double world = direction + lowest + j * width;
+      boundaryX[j] = std::cos(world);
+      boundaryY[j] = std::sin(world);
     }
-    {
-      std::lock_guard<std::mutex> lock(mutex);
-      job = &task;
-      remaining.store(count, std::memory_order_relaxed);
-      ticket.store(uint64_t(count) << 32, std::memory_order_release);
+    depth.assign(bins, infinity);
+    leaves = 1;
+    while (leaves < bins)
+      leaves *= 2;
+    peaks.assign(2 * leaves, infinity);
+    edgeIds.clear();
+    near.clear();
+    from.clear();
+    to.clear();
+    nodes = 0;
+    if (root)
+      walk(root, range);
+
+    // File each edge in the bins it may be seen in: count, then place.
+    offsets.assign(bins + 1, 0);
+    place(false);
+    for (uint32_t k = 0; k < bins; ++k)
+      offsets[k + 1] += offsets[k];
+    if (items.size() < offsets[bins])
+      items.resize(std::max<size_t>(offsets[bins], items.size() * 2));
+    place(true);
+    // Placing advanced each bin's offset to the next bin's start.
+    for (uint32_t k = bins; k > 0; --k)
+      offsets[k] = offsets[k - 1];
+    offsets[0] = 0;
+    // Nearest first within each bin, so a ray stops at the first edge that
+    // begins beyond its hit. The walk filed them nearly in this order.
+    for (uint32_t k = 0; k < bins; ++k) {
+      const uint32_t begin = offsets[k], end = offsets[k + 1];
+      for (uint32_t i = begin + 1; i < end; ++i) {
+        const uint32_t slot = items[i];
+        const double key = near[slot];
+        uint32_t j = i;
+        while (j > begin && near[items[j - 1]] > key) {
+          items[j] = items[j - 1];
+          --j;
+        }
+        items[j] = slot;
+      }
     }
-    wake.notify_all();
-    work();
-    // The caller spins on the last chunks: they finish within microseconds
-    // and a condition-variable sleep here would cost more than the work.
-    // Every claimed chunk is counted, so once remaining reaches zero no
-    // thread is inside the callback and the stack-owned task may go.
-    while (remaining.load(std::memory_order_acquire) != 0)
-      std::this_thread::yield();
+  }
+
+  // The nearest hit along direction, angle from the cone's direction, within
+  // range; ties go to the lowest edge id.
+  Hit cast(Point origin, Point direction, double angle, double range,
+           uint64_t &edgeTests) const {
+    const uint32_t k = binOf(angle);
+    double best = range;
+    bool found = false;
+    uint32_t bestId = 0;
+    for (uint32_t i = offsets[k]; i < offsets[k + 1]; ++i) {
+      const uint32_t slot = items[i];
+      if (near[slot] > best)
+        break;
+      const uint32_t id = edgeIds[slot];
+      ++edgeTests;
+      double distance;
+      if (!(*edges)[id].intersection(origin, direction, best, distance))
+        continue;
+      if (!found || distance < best || (distance == best && id < bestId)) {
+        best = distance;
+        bestId = id;
+        found = true;
+      }
+    }
+    return found ? Hit{true, best, bestId} : Hit{};
   }
 
 private:
-  static constexpr size_t kMaximumChunks = size_t(1) << 31;
-  static uint64_t countOf(uint64_t ticket) { return ticket >> 32; }
-  static uint64_t indexOf(uint64_t ticket) { return ticket & 0xffffffffu; }
-  void work() {
-    for (;;) {
-      const uint64_t claim = ticket.fetch_add(1, std::memory_order_acq_rel);
-      const uint64_t index = indexOf(claim);
-      if (index >= countOf(claim)) return;
-      (*job)(size_t(index));
-      remaining.fetch_sub(1, std::memory_order_acq_rel);
-    }
+  void see(uint32_t vertex) {
+    if (vertexMark[vertex] == vertexStamp)
+      return;
+    vertexMark[vertex] = vertexStamp;
+    const Point point = (*points)[vertex];
+    const double dx = point.x - ox, dy = point.y - oy;
+    vertexAngle[vertex] = angleOf(dx, dy);
+    vertexDistance[vertex] = std::sqrt(dx * dx + dy * dy);
   }
-  bool pending() const {
-    const uint64_t current = ticket.load(std::memory_order_acquire);
-    return indexOf(current) < countOf(current);
-  }
-  void loop() {
-    for (;;) {
-      // A query issues three runs a few hundred microseconds apart, and a
-      // drag issues a query every frame. Spin briefly before sleeping so the
-      // next run finds the workers awake; sleep for real between frames.
-      bool ready = false;
-      for (int spin = 0; spin < 4000 && !ready; ++spin) {
-        ready = pending() || stop.load(std::memory_order_acquire);
-        if (!ready) std::this_thread::yield();
-      }
-      if (!ready) {
-        std::unique_lock<std::mutex> lock(mutex);
-        wake.wait(lock, [this] { return stop.load(std::memory_order_acquire) || pending(); });
-      }
-      if (stop.load(std::memory_order_acquire)) return;
-      work();
-    }
-  }
-  std::vector<std::thread> threads;
-  std::mutex mutex;
-  std::condition_variable wake;
-  const std::function<void(size_t)> *job = nullptr;
-  std::atomic<uint64_t> ticket{0};
-  std::atomic<size_t> remaining{0};
-  std::atomic<bool> stop{false};
-};
 
-unsigned poolWorkers() {
-  if (const char *override = std::getenv("ICARUS_HEIGHT_THREADS")) {
-    const long value = std::strtol(override, nullptr, 10);
-    if (value >= 0 && value <= 64) return unsigned(value);
+  void push(const Node *node, double key) {
+    size_t i = heapNodes.size();
+    heapNodes.push_back(node);
+    heapKeys.push_back(key);
+    while (i > 0) {
+      const size_t parent = (i - 1) >> 1;
+      if (heapKeys[parent] <= key)
+        break;
+      heapNodes[i] = heapNodes[parent];
+      heapKeys[i] = heapKeys[parent];
+      i = parent;
+    }
+    heapNodes[i] = node;
+    heapKeys[i] = key;
   }
-  const unsigned cores = std::thread::hardware_concurrency();
-  return cores > 2 ? std::min(5u, cores - 1) : 0;
-}
+
+  // Removes the nearest node and its key.
+  const Node *pop(double &popped) {
+    const Node *top = heapNodes[0];
+    popped = heapKeys[0];
+    const Node *node = heapNodes.back();
+    const double key = heapKeys.back();
+    heapNodes.pop_back();
+    heapKeys.pop_back();
+    const size_t n = heapNodes.size();
+    if (n > 0) {
+      size_t i = 0;
+      for (;;) {
+        size_t child = 2 * i + 1;
+        if (child >= n)
+          break;
+        if (child + 1 < n && heapKeys[child + 1] < heapKeys[child])
+          ++child;
+        if (heapKeys[child] >= key)
+          break;
+        heapNodes[i] = heapNodes[child];
+        heapKeys[i] = heapKeys[child];
+        i = child;
+      }
+      heapNodes[i] = node;
+      heapKeys[i] = key;
+    }
+    return top;
+  }
+
+  void walk(const Node *root, double range) {
+    heapNodes.clear();
+    heapKeys.clear();
+    push(root, distanceTo(root->bounds, ox, oy));
+    // Depths are proven from the edges filed so far, again each time the
+    // walk passes four times as far from the eye.
+    double wave = std::max(range / 16, 1e-3);
+    size_t proven = 0;
+    while (!heapNodes.empty()) {
+      double distance;
+      const Node *node = pop(distance);
+      if (distance > range)
+        break;
+      if (distance > wave) {
+        if (count() > proven) {
+          walkChains(proven);
+          raisePeaks();
+          proven = count();
+        }
+        while (wave < distance)
+          wave *= 4;
+      }
+      ++nodes;
+      if (!boundsMayShow(node->bounds, distance))
+        continue;
+      if (!node->ids.empty()) {
+        for (uint32_t id : node->ids)
+          fileEdge(id, range);
+      } else {
+        const Node *left = node->left.get(), *right = node->right.get();
+        const double leftKey = distanceTo(left->bounds, ox, oy);
+        if (leftKey <= range)
+          push(left, leftKey);
+        const double rightKey = distanceTo(right->bounds, ox, oy);
+        if (rightKey <= range)
+          push(right, rightKey);
+      }
+    }
+    if (count() > proven)
+      walkChains(proven);
+  }
+
+  // Whether anything in bounds, distance from the eye at its nearest, could
+  // show in the cone.
+  bool boundsMayShow(const Bounds &bounds, double distance) const {
+    const int column = ox < bounds.left ? 0 : (ox > bounds.right ? 2 : 1);
+    const int row = oy < bounds.top ? 0 : (oy > bounds.bottom ? 2 : 1);
+    if (distance < absoluteMargin || (column == 1 && row == 1))
+      return true;
+    // Seen from outside, a box spans less than half a turn, between the two
+    // corners that bound its silhouette. Which two depends only on where the
+    // eye is around the box: per region, each corner as (right?, bottom?).
+    static constexpr bool silhouette[3][3][4] = {
+        {{1, 0, 0, 1}, {0, 0, 1, 0}, {0, 0, 1, 1}},
+        {{0, 0, 0, 1}, {0, 0, 0, 0}, {1, 0, 1, 1}},
+        {{0, 0, 1, 1}, {0, 1, 1, 1}, {1, 0, 0, 1}}};
+    const bool *corners = silhouette[row][column];
+    const double ax = (corners[0] ? bounds.right : bounds.left) - ox;
+    const double ay = (corners[1] ? bounds.bottom : bounds.top) - oy;
+    const double bx = (corners[2] ? bounds.right : bounds.left) - ox;
+    const double by = (corners[3] ? bounds.bottom : bounds.top) - oy;
+    const auto [first, last] =
+        span(ax, ay, bx, by, angleOf(ax, ay), angleOf(bx, by));
+    return mayShow(first - cornerSlack, last + cornerSlack, distance);
+  }
+
+  // The angles the eye sees between points a and b, at angles ta and tb:
+  // first to last, last unwrapped past first.
+  static std::pair<double, double> span(double ax, double ay, double bx,
+                                        double by, double ta, double tb) {
+    const double turn = ax * by - ay * bx;
+    double first, last;
+    if (turn > 0) {
+      first = ta;
+      last = tb;
+    } else if (turn < 0) {
+      first = tb;
+      last = ta;
+    } else {
+      first = std::min(ta, tb);
+      last = std::max(ta, tb);
+    }
+    if (last < first)
+      last += 2 * pi;
+    return {first, last};
+  }
+
+  // Whether something distance from the eye, spanning angles first to last
+  // (which may run past pi), falls in the cone and is not provably behind
+  // the depths there.
+  bool mayShow(double first, double last, double distance) const {
+    constexpr double margin = 1e-6;
+    const double highest = lowest + binCount * width;
+    for (double shift = 2 * pi; shift > -4 * pi; shift -= 2 * pi) {
+      const double start = first + shift, end = last + shift;
+      if (end < lowest - margin || start > highest + margin)
+        continue;
+      if (!beyond(distance, peak(binOf(start), binOf(end))))
+        return true;
+    }
+    return false;
+  }
+
+  // The largest depth over bins first to last.
+  double peak(uint32_t first, uint32_t last) const {
+    double result = 0;
+    size_t low = first + leaves, high = last + leaves + 1;
+    while (low < high) {
+      if (low & 1)
+        result = std::max(result, peaks[low++]);
+      if (high & 1)
+        result = std::max(result, peaks[--high]);
+      low >>= 1;
+      high >>= 1;
+    }
+    return result;
+  }
+
+  void raisePeaks() {
+    std::copy(depth.begin(), depth.begin() + binCount,
+              peaks.begin() + leaves);
+    for (size_t i = leaves - 1; i > 0; --i)
+      peaks[i] = std::max(peaks[2 * i], peaks[2 * i + 1]);
+  }
+
+  void fileEdge(uint32_t id, double range) {
+    const Edge &edge = (*edges)[id];
+    if (!active[edge.wall])
+      return;
+    const double ax = edge.a.x - ox, ay = edge.a.y - oy;
+    const double bx = edge.b.x - ox, by = edge.b.y - oy;
+    const double ex = edge.b.x - edge.a.x, ey = edge.b.y - edge.a.y;
+    const double lengthSquared = ex * ex + ey * ey;
+    double t = lengthSquared == 0 ? 0.0 : -(ax * ex + ay * ey) / lengthSquared;
+    t = t < 0 ? 0.0 : (t > 1 ? 1.0 : t);
+    const double cx = ax + ex * t, cy = ay + ey * t;
+    const double distance = std::sqrt(cx * cx + cy * cy);
+    if (distance > range)
+      return;
+    see(edge.aVertex);
+    see(edge.bVertex);
+    double first = -pi, last = pi;
+    if (distance >= absoluteMargin) {
+      std::tie(first, last) = span(ax, ay, bx, by, vertexAngle[edge.aVertex],
+                                   vertexAngle[edge.bVertex]);
+      if (!mayShow(first - cornerSlack, last + cornerSlack, distance))
+        return;
+      slotMark[id] = mark;
+    }
+    edgeIds.push_back(id);
+    near.push_back(distance);
+    from.push_back(first);
+    to.push_back(last);
+  }
+
+  // A boundary index of a whole turn's bins, brought into [0, binCount):
+  // a run's unwrapped angle stays within a few turns.
+  int64_t wrap(int64_t j) const {
+    while (j < 0)
+      j += binCount;
+    while (j >= binCount)
+      j -= binCount;
+    return j;
+  }
+
+  bool chained(int64_t id) const {
+    return id >= 0 && id < int64_t(edges->size()) && slotMark[size_t(id)] == mark;
+  }
+
+  // Lowers each bin's depth to the farthest point of any run of consecutive
+  // ring edges that crosses the bin from one boundary to the next. Such a run
+  // is an unbroken wall across the bin, so it stops every ray in it. Single
+  // edges rarely span a bin: Riot's outlines are many short strokes.
+  void walkChains(size_t firstNew) {
+    const std::vector<Edge> &list = *edges;
+    // Runs already walked have proven all they can; walk again only those
+    // with an edge filed since, each from its first edge.
+    advance(dirtyStamp, dirty);
+    const uint32_t stamp = dirtyStamp;
+    heads.clear();
+    for (size_t slot = firstNew; slot < count(); ++slot) {
+      uint32_t id = edgeIds[slot];
+      if (slotMark[id] != mark)
+        continue;
+      while (dirty[id] != stamp) {
+        dirty[id] = stamp;
+        if (!chained(int64_t(id) - 1) || list[id - 1].bVertex != list[id].aVertex) {
+          heads.push_back(id);
+          break;
+        }
+        --id;
+      }
+    }
+    const int64_t bins = binCount;
+    for (uint32_t head : heads) {
+      uint32_t id = head;
+      double raw = vertexAngle[list[id].aVertex];
+      // The run's angle, unwrapped so it never jumps by a turn.
+      double angle = raw;
+      // The last boundary crossed, and since then: the farthest point and the
+      // angles the run has reached.
+      bool hasLast = false;
+      int64_t last = 0;
+      double farthest = 0, lowAngle = 0, highAngle = 0;
+      for (;;) {
+        const Edge &edge = list[id];
+        const uint32_t next = edge.bVertex;
+        const double nextRaw = vertexAngle[next];
+        double turn = nextRaw - raw;
+        if (turn > pi)
+          turn -= 2 * pi;
+        else if (turn <= -pi)
+          turn += 2 * pi;
+        const double end = angle + turn;
+        const double ex = edge.b.x - edge.a.x, ey = edge.b.y - edge.a.y;
+        const double along = (edge.a.x - ox) * ey - (edge.a.y - oy) * ex;
+        // Boundaries the edge plainly crosses, in the order it crosses them.
+        const int64_t step = end > angle ? 1 : -1;
+        double start = step > 0
+                           ? std::ceil((angle + angleMargin - lowest) / width)
+                           : std::floor((angle - angleMargin - lowest) / width);
+        double finish = step > 0
+                            ? std::floor((end - angleMargin - lowest) / width)
+                            : std::ceil((end + angleMargin - lowest) / width);
+        if (!whole) {
+          // Boundaries outside the cone are skipped below and leave the run
+          // alone, so only those just outside need walking. A narrow cone's
+          // bins are so fine the others can lie past any integer.
+          start = std::min(std::max(start, -1.0), bins + 1.0);
+          finish = std::min(std::max(finish, -1.0), bins + 1.0);
+        }
+        const int64_t stop = int64_t(finish);
+        for (int64_t j = int64_t(start); step > 0 ? j <= stop : j >= stop;
+             j += step) {
+          if (!whole && (j < 0 || j > bins))
+            continue;
+          const int64_t boundary = whole ? wrap(j) : j;
+          const double distance =
+              along / (boundaryX[size_t(boundary)] * ey -
+                       boundaryY[size_t(boundary)] * ex);
+          const double at = lowest + double(j) * width;
+          if (!(distance >= 0 && distance < infinity)) {
+            hasLast = false;
+            continue;
+          }
+          if (hasLast && std::abs(j - last) == 1) {
+            const double previous = lowest + double(last) * width;
+            // Between the two crossings the run stayed inside the bin.
+            if (lowAngle >= std::min(at, previous) - 1e-8 &&
+                highAngle <= std::max(at, previous) + 1e-8) {
+              const int64_t low = std::min(j, last);
+              const size_t k = size_t(whole ? wrap(low) : low);
+              const double bound = std::max(farthest, distance);
+              if (bound < depth[k])
+                depth[k] = bound;
+            }
+          }
+          hasLast = true;
+          last = j;
+          farthest = distance;
+          lowAngle = highAngle = at;
+        }
+        farthest = std::max(farthest, vertexDistance[next]);
+        lowAngle = std::min(lowAngle, end);
+        highAngle = std::max(highAngle, end);
+        if (!chained(int64_t(id) + 1) || list[id + 1].aVertex != next)
+          break;
+        ++id;
+        raw = nextRaw;
+        angle = end;
+      }
+    }
+  }
+
+  // Counts each slot into offsets[k + 1] for every bin k it is filed in, or,
+  // with fill, writes it at offsets[k] and advances that.
+  void place(bool fill) {
+    const double highest = lowest + binCount * width;
+    const uint32_t slots = uint32_t(count());
+    for (uint32_t slot = 0; slot < slots; ++slot) {
+      const double distance = near[slot];
+      if (distance < absoluteMargin) {
+        // An edge through the eye can stop a ray in any direction.
+        for (uint32_t k = 0; k < binCount; ++k) {
+          if (fill)
+            items[offsets[k]++] = slot;
+          else
+            ++offsets[k + 1];
+        }
+        continue;
+      }
+      // Rays are admitted a sliver past an edge's ends; see Edge::intersection.
+      const double pad = angleMargin + 1e-12 / distance;
+      for (double shift = 0; shift > -4 * pi; shift -= 2 * pi) {
+        const double start = from[slot] + shift - pad;
+        const double end = to[slot] + shift + pad;
+        if (end < lowest)
+          break;
+        if (start > highest)
+          continue;
+        const uint32_t first = binOf(start), last = binOf(end);
+        for (uint32_t k = first; k <= last; ++k) {
+          if (beyond(distance, depth[k]))
+            continue;
+          if (fill)
+            items[offsets[k]++] = slot;
+          else
+            ++offsets[k + 1];
+        }
+      }
+    }
+  }
+};
 
 struct Handle {
   std::vector<Edge> edges;
@@ -346,16 +761,15 @@ struct Handle {
   std::vector<double> output;
   std::vector<uint8_t> activeScratch;
   ISHResult resultScratch{};
-  std::vector<double> angles, arcAngles, vertexAngles;
-  std::vector<Hit> arcHits, hits;
-  std::vector<ChunkCounters> chunkCounters;
-  std::vector<std::vector<double>> chunkAngles, chunkVertexAngles;
-  std::vector<uint32_t> candidates;
+  std::vector<double> angles, vertexAngles;
   // The edges meeting at each vertex, to tell a corner from a seam.
   std::vector<std::vector<uint32_t>> vertexEdges;
   std::vector<Point> vertexPoints;
+  ConeBins bins;
+  // Vertices already turned into events this query: eventMark is eventStamp.
+  std::vector<uint32_t> eventMark;
+  uint32_t eventStamp = 0;
   bool interiorSides = false;
-  Pool pool{poolWorkers()};
   std::mutex mutex;
   std::string error;
 
@@ -386,11 +800,10 @@ struct Handle {
       vertexEdges[edges[i].aVertex].push_back(i);
       vertexEdges[edges[i].bVertex].push_back(i);
     }
-    candidates.reserve(edges.size());
+    bins.reserve(vertices.size(), edges.size());
+    eventMark.assign(vertices.size(), 0);
     angles.reserve(std::min(maximumPoints, size_t(4097) + vertices.size() * 3));
-    arcAngles.reserve(maximumArcSteps + 1);
     vertexAngles.reserve(vertices.size());
-    arcHits.reserve(maximumArcSteps + 1);
     if (!edges.empty()) {
       std::vector<uint32_t> ids(edges.size());
       for (uint32_t i = 0; i < ids.size(); ++i)
@@ -486,81 +899,6 @@ bool passThrough(const Handle &handle, uint32_t vertex, Point delta,
   return count == 2 && sides[0] * sides[1] < 0;
 }
 
-Hit castRay(const Handle &handle, Point origin, Point direction, double range,
-            const uint8_t *active, Counters &counters) {
-  Hit result;
-  if (!handle.tree || range == 0)
-    return result;
-  double best = range;
-  const PreparedRay ray{origin, direction,
-                        direction.x == 0 ? 0 : 1 / direction.x,
-                        direction.y == 0 ? 0 : 1 / direction.y};
-  // A balanced binary tree with at most 2^19 leaves needs fewer than 64
-  // pending siblings. Keep ray traversal off the allocator hot path.
-  struct Pending {
-    const Node *node;
-    double entryDistance;
-  };
-  std::array<Pending, 64> stack{};
-  size_t stackSize = 0;
-  double rootEntry;
-  if (entry(handle.tree->bounds, ray, best, rootEntry))
-    stack[stackSize++] = {handle.tree.get(), rootEntry};
-  else
-    ++counters.nodes;
-  while (stackSize) {
-    const Pending pending = stack[--stackSize];
-    const Node *node = pending.node;
-    ++counters.nodes;
-    if (pending.entryDistance > best)
-      continue;
-    if (!node->ids.empty()) {
-      for (uint32_t id : node->ids) {
-        const Edge &edge = handle.edges[id];
-        if (!active[edge.wall])
-          continue;
-        ++counters.edgeTests;
-        double distance;
-        if (edge.intersection(origin, direction, best, distance) &&
-            (distance < best || !result.found)) {
-          best = distance;
-          result = {true, distance, id};
-        }
-      }
-      continue;
-    }
-    double leftEntry, rightEntry;
-    const bool hasLeft = entry(node->left->bounds, ray, best, leftEntry);
-    const bool hasRight = entry(node->right->bounds, ray, best, rightEntry);
-    if (hasLeft && hasRight) {
-      if (leftEntry <= rightEntry) {
-        stack[stackSize++] = {node->right.get(), rightEntry};
-        stack[stackSize++] = {node->left.get(), leftEntry};
-      } else {
-        stack[stackSize++] = {node->left.get(), leftEntry};
-        stack[stackSize++] = {node->right.get(), rightEntry};
-      }
-    } else if (hasLeft) {
-      stack[stackSize++] = {node->left.get(), leftEntry};
-    } else if (hasRight) {
-      stack[stackSize++] = {node->right.get(), rightEntry};
-    }
-  }
-  return result;
-}
-
-void collectCandidates(const Node *node, const Bounds &area,
-                       std::vector<uint32_t> &output) {
-  if (!overlaps(node->bounds, area))
-    return;
-  if (!node->ids.empty()) {
-    output.insert(output.end(), node->ids.begin(), node->ids.end());
-  } else {
-    collectCandidates(node->left.get(), area, output);
-    collectCandidates(node->right.get(), area, output);
-  }
-}
-
 void copyText(const std::string &text, char *target, uint32_t capacity) {
   if (!target || capacity == 0)
     return;
@@ -651,7 +989,6 @@ int32_t ish_query(void *opaque, double originX, double originY,
     out->status = ISH_BUSY;
     return ISH_BUSY;
   }
-  Boost boost;
   const auto started = Clock::now();
   try {
     const double values[] = {originX, originY, directionRadians, range,
@@ -665,188 +1002,98 @@ int32_t ish_query(void *opaque, double originX, double originY,
       return failure(handle, out, ISH_INVALID,
                      "invalid SVG query range, aperture, arc steps or mask");
 
+    // Every ray starts at the eye, so the walls near it are filed by the
+    // angle they cover (see ConeBins): a ray tests only the few edges in its
+    // bin, and a corner that a nearer wall provably hides casts no rays.
     const Point origin{originX, originY};
     const double half = apertureRadians / 2;
+    const bool whole = half + 1e-6 >= pi;
+    ConeBins &bins = handle.bins;
+    bins.file(handle.edges, handle.vertexPoints, handle.tree.get(), origin,
+              directionRadians, range, active, whole ? -pi : -half,
+              whole ? 2 * pi : apertureRadians);
+
     auto &angles = handle.angles;
-    auto &arcAngles = handle.arcAngles;
     auto &vertexAngles = handle.vertexAngles;
-    auto &arcHits = handle.arcHits;
     angles.clear();
-    arcAngles.clear();
     vertexAngles.clear();
-    arcHits.clear();
-    Counters counters;
-    constexpr size_t chunkSize = 32;
-    constexpr size_t eventChunk = 256;
-    for (uint32_t i = 0; i <= arcSteps; ++i) {
-      const double angle = -half + apertureRadians * i / arcSteps;
-      angles.push_back(angle);
-      arcAngles.push_back(angle);
-    }
-    arcHits.resize(arcAngles.size());
-    {
-      const size_t chunks = (arcAngles.size() + chunkSize - 1) / chunkSize;
-      handle.chunkCounters.assign(chunks, ChunkCounters{});
-      handle.pool.run(chunks, [&](size_t chunk) {
-        Counters local;
-        const size_t end = std::min(arcAngles.size(), (chunk + 1) * chunkSize);
-        for (size_t i = chunk * chunkSize; i < end; ++i) {
-          const double world = directionRadians + arcAngles[i];
-          arcHits[i] = castRay(handle, origin, {std::cos(world), std::sin(world)},
-                               range, active, local);
-        }
-        handle.chunkCounters[chunk].value = local;
-      });
-      for (const ChunkCounters &local : handle.chunkCounters) {
-        counters.edgeTests += local.value.edgeTests;
-        counters.nodes += local.value.nodes;
-      }
+    for (uint32_t i = 0; i <= arcSteps; ++i)
+      angles.push_back(-half + apertureRadians * i / arcSteps);
+    // Rays aimed at a vertex or at a wall's crossing of the range circle stay
+    // in the outline even when their neighbours meet the same edge.
+    auto add = [&](double event, bool vertex) {
+      if (event < -half || event > half) return;
+      angles.push_back(event);
+      if (vertex) vertexAngles.push_back(event);
+    };
+    auto emit = [&](double angle, bool beside) {
+      if (beside) add(angle - cornerOffset, false);
+      add(angle, true);
+      if (beside) add(angle + cornerOffset, false);
+    };
+    // Whether an event at angle could start a ray in the aperture and is not
+    // provably behind a nearer wall.
+    auto open = [&](double angle, double distance) {
+      if (!whole && (angle < -half - 1e-6 || angle > half + 1e-6))
+        return false;
+      return !bins.hides(angle, distance);
+    };
+
+    const double rangeSquared = range * range;
+    // Overlapping painted strokes create visibility corners at their crossing.
+    for (const Crossing &crossing : handle.crossings) {
+      if (!active[crossing.first] || !active[crossing.second]) continue;
+      const Point delta = crossing.point - origin;
+      const double distanceSquared = dot(delta, delta);
+      if (distanceSquared > rangeSquared || (delta.x == 0 && delta.y == 0))
+        continue;
+      const double angle = bins.angleOf(delta.x, delta.y);
+      if (!open(angle, std::sqrt(distanceSquared))) continue;
+      emit(angle, true);
     }
     const auto prepared = Clock::now();
 
-    auto &candidates = handle.candidates;
-    candidates.clear();
-    if (handle.tree) {
-      const Bounds area{origin.x - range, origin.y - range, origin.x + range,
-                        origin.y + range};
-      collectCandidates(handle.tree.get(), area, candidates);
-    }
-    const double rangeSquared = range * range;
-    // Sector culling: a vertex outside the aperture (with slack for the
-    // corner offsets) cannot start a ray inside it, so skip its trig.
-    const Point facing{std::cos(directionRadians), std::sin(directionRadians)};
-    const bool cullSector = half + 1e-6 < pi;
-    const double cosSlack = std::cos(std::min(pi, half + 1e-6));
-    auto inSector = [&](Point delta) {
-      if (!cullSector) return true;
-      const double length = std::sqrt(dot(delta, delta));
-      return dot(delta, facing) >= cosSlack * length;
-    };
-    auto hiddenEvent = [&](double angle, Point delta) {
-      if (apertureRadians / arcSteps >= pi || angle <= -half || angle >= half) return false;
-      int interval=int(std::floor((angle+half)/apertureRadians*double(arcSteps)));
-      interval=std::max(0,std::min(interval,int(arcSteps)-1));
-      const Hit &first=arcHits[size_t(interval)], &last=arcHits[size_t(interval)+1];
-      if (!first.found || !last.found || first.edge!=last.edge ||
-          angle-cornerOffset<arcAngles[size_t(interval)] ||
-          angle+cornerOffset>arcAngles[size_t(interval)+1]) return false;
-      const double distance=std::sqrt(dot(delta,delta));
-      double hitDistance;
-      return handle.edges[first.edge].intersection(origin,{delta.x/distance,delta.y/distance},distance,hitDistance)
-          && hitDistance<distance-1e-7;
-    };
-    // Events come from static crossings, range-circle transitions and edge
-    // endpoints. Each chunk writes its own buffers; the buffers are merged and
-    // sorted afterwards, and shared vertices reached from several chunks
-    // collapse in the unique pass because equal points give equal angles.
-    const size_t crossingChunks = (handle.crossings.size() + eventChunk - 1) / eventChunk;
-    const size_t candidateChunks = (candidates.size() + eventChunk - 1) / eventChunk;
-    const size_t eventChunks = crossingChunks + candidateChunks;
-    handle.chunkAngles.resize(eventChunks);
-    handle.chunkVertexAngles.resize(eventChunks);
-    handle.pool.run(eventChunks, [&](size_t chunk) {
-      std::vector<double> localAngles = std::move(handle.chunkAngles[chunk]);
-      std::vector<double> localVertex = std::move(handle.chunkVertexAngles[chunk]);
-      localAngles.clear();
-      localVertex.clear();
-      struct Store {
-        std::vector<double> &angles, &vertex, &outAngles, &outVertex;
-        ~Store() { outAngles = std::move(angles); outVertex = std::move(vertex); }
-      } store{localAngles, localVertex, handle.chunkAngles[chunk], handle.chunkVertexAngles[chunk]};
-      auto emit = [&](double angle, bool vertex, bool beside = true) {
-        for (double event : {angle - cornerOffset, angle, angle + cornerOffset}) {
-          if (event != angle && !beside) continue;
-          if (event >= -half && event <= half) {
-            localAngles.push_back(event);
-            if (vertex && event == angle) localVertex.push_back(event);
-          }
-        }
-      };
-      if (chunk < crossingChunks) {
-        const size_t end = std::min(handle.crossings.size(), (chunk + 1) * eventChunk);
-        for (size_t c = chunk * eventChunk; c < end; ++c) {
-          const Crossing &crossing = handle.crossings[c];
-          if (!active[crossing.first] || !active[crossing.second]) continue;
-          const Point delta = crossing.point - origin;
-          if (dot(delta, delta) > rangeSquared || (delta.x == 0 && delta.y == 0)) continue;
-          if (!inSector(delta)) continue;
-          const double relative = std::atan2(delta.y, delta.x) - directionRadians;
-          const double angle = std::atan2(std::sin(relative), std::cos(relative));
-          if (hiddenEvent(angle, delta)) continue;
-          emit(angle, true);
-        }
-        return;
-      }
-      const size_t first = (chunk - crossingChunks) * eventChunk;
-      const size_t end = std::min(candidates.size(), first + eventChunk);
-      for (size_t c = first; c < end; ++c) {
-      const uint32_t id = candidates[c];
+    advance(handle.eventStamp, handle.eventMark);
+    const uint32_t stamp = handle.eventStamp;
+    for (size_t slot = 0; slot < bins.count(); ++slot) {
+      const uint32_t id = bins.edgeIds[slot];
       const Edge &edge = handle.edges[id];
-      if (!active[edge.wall])
-        continue;
-      // Preserve the exact wall/range-circle transition, even when neither
-      // endpoint lies in range. Otherwise a polygon chord clips the wall early.
+      // A long wall can cross the range circle without either endpoint being
+      // in range. Seed that exact transition so the polygon follows the wall
+      // all the way to the circle instead of cutting diagonally short of it.
       const Point segment = edge.b - edge.a;
-      const Point relativeStart = edge.a - origin;
+      const Point relative = edge.a - origin;
       const double lengthSquared = dot(segment, segment);
-      const double projection = -dot(relativeStart, segment) / lengthSquared;
-      const Point closest{relativeStart.x + segment.x * projection,
-                          relativeStart.y + segment.y * projection};
+      const double projection = -dot(relative, segment) / lengthSquared;
+      const Point closest{relative.x + segment.x * projection,
+                          relative.y + segment.y * projection};
       const double remaining = rangeSquared - dot(closest, closest);
       if (remaining >= 0) {
         const double offset = std::sqrt(remaining / lengthSquared);
         for (double t : {projection - offset, projection + offset}) {
           if (t < 0 || t > 1) continue;
-          const Point delta{relativeStart.x + segment.x * t,
-                            relativeStart.y + segment.y * t};
-          if (!inSector(delta)) continue;
-          const double relative = std::atan2(delta.y, delta.x) - directionRadians;
-          const double angle = std::atan2(std::sin(relative), std::cos(relative));
-          if (angle >= -half && angle <= half && !hiddenEvent(angle,delta)) {
-            localAngles.push_back(angle);
-            localVertex.push_back(angle);
+          const double angle = bins.angleOf(relative.x + segment.x * t,
+                                            relative.y + segment.y * t);
+          if (!open(angle, range)) continue;
+          if (angle >= -half && angle <= half) {
+            angles.push_back(angle);
+            vertexAngles.push_back(angle);
           }
         }
       }
-      const Point endpoints[] = {edge.a, edge.b};
-      const uint32_t endpointVertices[] = {edge.aVertex, edge.bVertex};
-      for (int endpoint = 0; endpoint < 2; ++endpoint) {
-        if (seam(handle, endpointVertices[endpoint], active)) continue;
-        const Point point = endpoints[endpoint];
-        const Point delta = point - origin;
-        const double distanceSquared = dot(delta, delta);
-        if (distanceSquared > rangeSquared ||
-            (delta.x == 0 && delta.y == 0))
-          continue;
-        if (!inSector(delta)) continue;
-        const double relative = std::atan2(delta.y, delta.x) - directionRadians;
-        const double angle = std::atan2(std::sin(relative), std::cos(relative));
-        if (apertureRadians / arcSteps < pi && angle > -half && angle < half) {
-          int interval = int(std::floor((angle + half) / apertureRadians *
-                                        double(arcSteps)));
-          interval = std::max(0, std::min(interval, int(arcSteps) - 1));
-          const Hit &first = arcHits[size_t(interval)];
-          const Hit &last = arcHits[size_t(interval) + 1];
-          if (first.found && last.found && first.edge == last.edge &&
-              angle - cornerOffset >= arcAngles[size_t(interval)] &&
-              angle + cornerOffset <= arcAngles[size_t(interval) + 1]) {
-            const double distance = std::sqrt(distanceSquared);
-            double hitDistance;
-            const Point ray{delta.x / distance, delta.y / distance};
-            if (handle.edges[first.edge].intersection(origin, ray, distance,
-                                                       hitDistance) &&
-                hitDistance < distance - 1e-7)
-              continue;
-          }
-        }
-        emit(angle, true,
-             !passThrough(handle, endpointVertices[endpoint], delta, active));
+      for (uint32_t vertex : {edge.aVertex, edge.bVertex}) {
+        if (handle.eventMark[vertex] == stamp) continue;
+        handle.eventMark[vertex] = stamp;
+        const double distance = bins.vertexDistance[vertex];
+        if (distance > range || distance == 0) continue;
+        const double angle = bins.vertexAngle[vertex];
+        if (!open(angle, distance)) continue;
+        if (seam(handle, vertex, active)) continue;
+        // Rays just beside a vertex the wall runs straight across meet its
+        // two edges, so only the vertex ray adds a corner.
+        emit(angle, !passThrough(handle, vertex,
+                                 handle.vertexPoints[vertex] - origin, active));
       }
-      }
-    });
-    for (size_t chunk = 0; chunk < eventChunks; ++chunk) {
-      angles.insert(angles.end(), handle.chunkAngles[chunk].begin(), handle.chunkAngles[chunk].end());
-      vertexAngles.insert(vertexAngles.end(), handle.chunkVertexAngles[chunk].begin(), handle.chunkVertexAngles[chunk].end());
     }
     std::sort(angles.begin(), angles.end());
     angles.erase(std::unique(angles.begin(), angles.end()), angles.end());
@@ -862,40 +1109,14 @@ int32_t ish_query(void *opaque, double originX, double originY,
     handle.output.reserve((angles.size() + 1) * 2);
     handle.output.push_back(origin.x);
     handle.output.push_back(origin.y);
-    auto &hits = handle.hits;
-    hits.resize(angles.size());
-    {
-      const size_t chunks = (angles.size() + chunkSize - 1) / chunkSize;
-      handle.chunkCounters.assign(chunks, ChunkCounters{});
-      handle.pool.run(chunks, [&](size_t chunk) {
-        Counters local;
-        const size_t end = std::min(angles.size(), (chunk + 1) * chunkSize);
-        for (size_t i = chunk * chunkSize; i < end; ++i) {
-          const double angle = angles[i];
-          const auto found = std::lower_bound(arcAngles.begin(), arcAngles.end(), angle);
-          if (found != arcAngles.end() && *found == angle) {
-            hits[i] = arcHits[size_t(found - arcAngles.begin())];
-          } else {
-            const double world = directionRadians + angle;
-            hits[i] = castRay(handle, origin, {std::cos(world), std::sin(world)},
-                              range, active, local);
-          }
-        }
-        handle.chunkCounters[chunk].value = local;
-      });
-      for (const ChunkCounters &local : handle.chunkCounters) {
-        counters.edgeTests += local.value.edgeTests;
-        counters.nodes += local.value.nodes;
-      }
-    }
+    uint64_t edgeTests = 0;
     Hit previousHit;
     size_t sameEdgeRun = 0;
     Point runAnchor{};
-    for (size_t rayIndex = 0; rayIndex < angles.size(); ++rayIndex) {
-      const double angle = angles[rayIndex];
+    for (const double angle : angles) {
       const double world = directionRadians + angle;
       const Point direction{std::cos(world), std::sin(world)};
-      const Hit hit = hits[rayIndex];
+      const Hit hit = bins.cast(origin, direction, angle, range, edgeTests);
       const double distance = hit.found ? hit.distance : range;
       const double x = origin.x + direction.x * distance;
       const double y = origin.y + direction.y * distance;
@@ -942,9 +1163,10 @@ int32_t ish_query(void *opaque, double originX, double originY,
     out->points = handle.output.data();
     out->pointCount = uint32_t(handle.output.size() / 2);
     out->rayCount = uint32_t(angles.size());
-    out->edgeTests = counters.edgeTests;
-    out->spatialNodes = counters.nodes;
-    out->candidateEdges = uint32_t(candidates.size());
+    out->edgeTests = edgeTests;
+    // Tree nodes the filing walk visited, and one bin per ray.
+    out->spatialNodes = bins.nodes + angles.size();
+    out->candidateEdges = uint32_t(bins.count());
     out->preparationMicros =
         std::chrono::duration<double, std::micro>(prepared - started).count();
     out->candidateMicros = std::chrono::duration<double, std::micro>(

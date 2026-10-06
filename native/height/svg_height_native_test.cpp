@@ -45,6 +45,14 @@ int main() {
   CHECK(std::abs(result->points[4] - 5) < 1e-12);
   CHECK(std::abs(result->points[5] - 5) < 1e-12);
 
+  // A cone this narrow has bins far finer than any integer count of them
+  // across the wall's angles; the wall still stops its rays.
+  result->structSize = sizeof(*result);
+  CHECK(ish_query(handle, 0, 0, 0, 10, 1e-300, 2, active, 1, result) ==
+        ISH_OK);
+  CHECK(result->pointCount >= 2);
+  CHECK(std::abs(result->points[2] - 5) < 1e-12);
+
   active[0] = 0;
   result->structSize = sizeof(*result);
   CHECK(ish_query(handle, 0, 0, 0, 10, 1.5707963267948966, 2, active,
