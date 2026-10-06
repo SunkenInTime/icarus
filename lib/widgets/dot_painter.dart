@@ -88,19 +88,18 @@ class _DotGridState extends ConsumerState<DotGrid> {
   static bool _loading = false;
 
   // This grid's shader, kept for its lifetime: each holds uniforms that are
-  // only freed by dispose.
+  // only freed by dispose. A recorded picture reads the shader's current
+  // uniforms when drawn, which is safe because the grid only ever shows the
+  // picture it painted last.
   ui.FragmentShader? _shader;
 
   bool get _usesShader => kIsWeb && !widget.isScreenshot;
 
-  @override
-  void initState() {
-    super.initState();
-    if (_usesShader && !_loading) {
-      _loading = true;
-      ui.FragmentProgram.fromAsset('shaders/dot_lattice.frag')
-          .then((program) => _lattice.value = program, onError: (_) {});
-    }
+  static void _load() {
+    if (_loading) return;
+    _loading = true;
+    ui.FragmentProgram.fromAsset('shaders/dot_lattice.frag')
+        .then((program) => _lattice.value = program, onError: (_) {});
   }
 
   @override
@@ -118,6 +117,7 @@ class _DotGridState extends ConsumerState<DotGrid> {
     if (!_usesShader) {
       return CustomPaint(painter: DotPainter(opacity: opacity));
     }
+    _load();
     final zoom = widget.followsEditorZoom ? ref.watch(screenZoomProvider) : 1.0;
     final pixel = 1 / (MediaQuery.devicePixelRatioOf(context) * zoom);
     return ValueListenableBuilder(
