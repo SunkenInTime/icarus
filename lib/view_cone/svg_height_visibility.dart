@@ -1880,9 +1880,17 @@ class _ConeBins {
   double angleOf(double dx, double dy) =>
       math.atan2(-dx * _sine + dy * _cosine, dx * _cosine + dy * _sine);
 
+  /// [index] held to the boundaries just outside the cone; NaN, from an
+  /// aperture so small its bins have no width, to the first.
+  double _boundaryIndex(double index) =>
+      index >= -1 ? (index <= binCount + 1 ? index : binCount + 1.0) : -1.0;
+
   int binOf(double angle) {
-    final k = ((angle - lowest) / width).floor();
-    return k < 0 ? 0 : (k >= binCount ? binCount - 1 : k);
+    // Clamped as a double: a narrow cone's bins are so fine that angles
+    // outside it can lie past any integer.
+    final k = ((angle - lowest) / width).floorToDouble();
+    if (!(k >= 0)) return 0;
+    return k >= binCount ? binCount - 1 : k.toInt();
   }
 
   /// Whether every ray within a corner offset of [angle] provably stops
@@ -2266,12 +2274,20 @@ class _ConeBins {
         final along = (edge.a.dx - ox) * ey - (edge.a.dy - oy) * ex;
         // Boundaries the edge plainly crosses, in the order it crosses them.
         final step = end > angle ? 1 : -1;
-        var j = step > 0
-            ? ((angle + _angleMargin - lowest) / width).ceil()
-            : ((angle - _angleMargin - lowest) / width).floor();
-        final stop = step > 0
-            ? ((end - _angleMargin - lowest) / width).floor()
-            : ((end + _angleMargin - lowest) / width).ceil();
+        var start = step > 0
+            ? ((angle + _angleMargin - lowest) / width).ceilToDouble()
+            : ((angle - _angleMargin - lowest) / width).floorToDouble();
+        var finish = step > 0
+            ? ((end - _angleMargin - lowest) / width).floorToDouble()
+            : ((end + _angleMargin - lowest) / width).ceilToDouble();
+        if (!whole) {
+          // Boundaries outside the cone are skipped below, and a narrow
+          // cone's bins are so fine those can lie past any integer.
+          start = _boundaryIndex(start);
+          finish = _boundaryIndex(finish);
+        }
+        var j = start.toInt();
+        final stop = finish.toInt();
         for (; step > 0 ? j <= stop : j >= stop; j += step) {
           if (!whole && (j < 0 || j > binCount)) continue;
           final boundary = whole ? j % binCount : j;
