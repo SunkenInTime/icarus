@@ -1587,6 +1587,9 @@ class _Footprint {
   /// than j row heights away (rows are filed with [_maxTolerance] to spare),
   /// so the search ends once the nearest edge found is nearer than that:
   /// a point beside a floor reads a few rows of it, not its every edge.
+  Int32List? _seenEdges;
+  var _seenStamp = 0;
+
   int _nearestEdge(Offset point) {
     final x = point.dx, y = point.dy;
     var best = -1;
@@ -1605,6 +1608,9 @@ class _Footprint {
       }
       return best;
     }
+    // A tall edge is filed in every row it spans: measure it once.
+    final seen = _seenEdges ??= Int32List(_edgeCount);
+    final stamp = ++_seenStamp;
     final center = _row(y);
     for (var j = 0; center - j >= 0 || center + j < _rowCount; j++) {
       for (final r in [center - j, if (j > 0) center + j]) {
@@ -1612,6 +1618,8 @@ class _Footprint {
         final row = _rows[r];
         for (var n = 0; n < row.length; n++) {
           final e = row[n];
+          if (seen[e] == stamp) continue;
+          seen[e] = stamp;
           final d = _distanceTo(e, x, y);
           if (d >= 0 &&
               (best < 0 || d < bestDistance || d == bestDistance && e < best)) {
