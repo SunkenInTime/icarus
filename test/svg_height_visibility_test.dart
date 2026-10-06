@@ -486,6 +486,29 @@ void main() {
           range: 100,
           apertureRadians: 1);
 
+  test('a vanishingly narrow cone still returns at once', () {
+    // Its bins are so thin that the walls beside it lie past any integer
+    // number of them.
+    final model = SvgHeightVisibility.fromJson(data([
+      wall('near', [rectangle(10, -20, 11, 20)]),
+      wall('ring', [
+        [-30, -30, 30, -30, 30, 30, -30, 30],
+        [-29, -29, -29, 29, 29, 29, 29, -29],
+      ]),
+    ]));
+    for (final aperture in [1e-6, 1e-300, 5e-324]) {
+      final cone = model.horizontalCone(
+          origin: Offset.zero,
+          directionRadians: 0,
+          range: 100,
+          apertureRadians: aperture);
+      expect(cone.polygon.length, greaterThan(1), reason: 'aperture $aperture');
+      expect(
+          cone.polygon.skip(1).every((p) => (p.dx - 10).abs() < 1e-9), isTrue,
+          reason: 'aperture $aperture');
+    }
+  });
+
   test('touching pieces of one wall cast the cone the whole wall casts', () {
     final whole = coneOf([
       wall('whole', [rectangle(10, -20, 11, 20)])

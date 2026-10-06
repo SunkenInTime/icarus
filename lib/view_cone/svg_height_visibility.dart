@@ -8,6 +8,7 @@ import 'svg_floor_visibility.dart';
 
 /// Offline SVG ink footprints with vertical bands above connected local ground.
 /// Ground slopes are not geometry here. The caller clips the result to SVG fill.
+
 class SvgHeightVisibility {
   SvgHeightVisibility._(
       this.walls,
@@ -319,6 +320,11 @@ class SvgHeightVisibility {
   // 1 a seam, 2 not.
   List<bool>? _seamMask;
   Int8List? _seams;
+
+  // Reused by every Dart cone query, so a dragged cone allocates little.
+  final _bins = _ConeBins();
+  Int32List? _seenVertices;
+  var _seenStamp = 0;
 
   bool _findSeam(int vertex, List<bool> active) {
     final topology = _topology;
@@ -963,48 +969,27 @@ class SvgHeightVisibility {
               nativeMicros: result.queryMicros),
           eyeElevationMeters: ground == null ? null : eye);
     }
-    // The native query's algorithm, in Dart for the web: the same events,
-    // rays and outline as ish_query in native/height. Every structure is a
-    // list or an index: hashing points and angles dominated the cost once
-    // Dart is compiled to JavaScript.
+    // Every ray starts at the eye, so the walls near it are filed by the
+    // angle they cover (see _ConeBins): a ray tests only the few edges in its
+    // bin, and a corner that a nearer wall provably hides casts no rays.
     final half = apertureRadians / 2;
-    final arcAngles = Float64List(arcSteps + 1);
-    for (var i = 0; i <= arcSteps; i++) {
-      arcAngles[i] = -half + apertureRadians * i / arcSteps;
-    }
-    final arcHits = <SvgVisibilityHit?>[
-      for (final angle in arcAngles)
-        _cast(
-            origin,
-            Offset(math.cos(directionRadians + angle),
-                math.sin(directionRadians + angle)),
-            range,
-            active,
-            stats),
-    ];
-    bool hiddenEvent(double angle, Offset delta) {
-      if (apertureRadians / arcSteps >= math.pi ||
-          angle <= -half ||
-          angle >= half) return false;
-      final interval = ((angle + half) / apertureRadians * arcSteps)
-          .floor()
-          .clamp(0, arcSteps - 1);
-      final first = arcHits[interval]?._edgeIndex;
-      if (first == null ||
-          first != arcHits[interval + 1]?._edgeIndex ||
-          angle - _cornerOffset < arcAngles[interval] ||
-          angle + _cornerOffset > arcAngles[interval + 1]) return false;
-      final distance = delta.distance;
-      final hit =
-          _edges[first].intersection(origin, delta / distance, distance);
-      return hit != null && hit < distance - 1e-7;
-    }
+    final whole = half + 1e-6 >= math.pi;
+    final bins = _bins;
+    bins.file(this, origin, directionRadians, range, active,
+        lowest: whole ? -math.pi : -half,
+        span: whole ? 2 * math.pi : apertureRadians);
 
-    final angles = <double>[...arcAngles];
+    final angles = <double>[
+      for (var i = 0; i <= arcSteps; i++) -half + apertureRadians * i / arcSteps
+    ];
     // Rays aimed at a vertex or at a wall's crossing of the range circle
     // stay in the outline even when their neighbours meet the same edge.
     final vertexAngles = <double>[];
     void add(double event, {required bool vertex}) {
+      // Behind a full circle, a ray beside the seam wraps round to the
+      // other end: -pi and pi are the same direction.
+      if (whole && event < -half) event += 2 * math.pi;
+      if (whole && event > half) event -= 2 * math.pi;
       if (event < -half || event > half) return;
       angles.add(event);
       if (vertex) vertexAngles.add(event);
@@ -1016,40 +1001,33 @@ class SvgHeightVisibility {
       if (beside) add(angle + _cornerOffset, vertex: false);
     }
 
-    // A vertex outside the aperture, with slack for the corner offsets,
-    // cannot start a ray inside it: skip its trigonometry.
-    final facing =
-        Offset(math.cos(directionRadians), math.sin(directionRadians));
-    final cullSector = half + 1e-6 < math.pi;
-    final cosSlack = math.cos(math.min(math.pi, half + 1e-6));
-    bool inSector(Offset delta) =>
-        !cullSector || _dot(delta, facing) >= cosSlack * delta.distance;
-    double angleOf(Offset delta) {
-      final relative = math.atan2(delta.dy, delta.dx) - directionRadians;
-      return math.atan2(math.sin(relative), math.cos(relative));
+    // Whether an event at [angle] could start a ray in the aperture and is
+    // not provably behind a nearer wall.
+    bool open(double angle, double distance) {
+      if (!whole && (angle < -half - 1e-6 || angle > half + 1e-6)) {
+        return false;
+      }
+      return !bins.hides(angle, distance);
     }
 
     final rangeSquared = range * range;
     // Overlapping painted strokes create visibility corners at their crossing.
-    // Events behind a proven nearer straight wall cannot change the boundary.
     for (final crossing in _crossings) {
       if (!active[crossing.$2] || !active[crossing.$3]) continue;
       final delta = crossing.$1 - origin;
-      if (delta.distanceSquared > rangeSquared || delta == Offset.zero) {
-        continue;
-      }
-      if (!inSector(delta)) continue;
-      final angle = angleOf(delta);
-      if (hiddenEvent(angle, delta)) continue;
+      final distanceSquared = delta.distanceSquared;
+      if (distanceSquared > rangeSquared || delta == Offset.zero) continue;
+      final angle = bins.angleOf(delta.dx, delta.dy);
+      if (!open(angle, math.sqrt(distanceSquared))) continue;
       emit(angle);
     }
     final preparationMicros = timer.elapsedMicroseconds;
-    final candidates = <int>[];
-    _tree?.query(Rect.fromCircle(center: origin, radius: range), candidates);
     final topology = _topology;
-    for (final id in candidates) {
+    final seen = _seenVertices ??= Int32List(topology.points.length);
+    final stamp = ++_seenStamp;
+    for (var slot = 0; slot < bins.count; slot++) {
+      final id = bins.edgeIds[slot];
       final edge = _edges[id];
-      if (!active[edge.wall]) continue;
       // A long wall can cross the range circle without either endpoint being
       // in range. Seed that exact transition so the polygon follows the wall
       // all the way to the circle instead of cutting diagonally short of it.
@@ -1063,12 +1041,13 @@ class SvgHeightVisibility {
       final remaining = rangeSquared - closest.distanceSquared;
       if (remaining >= 0) {
         final offset = math.sqrt(remaining / lengthSquared);
-        for (final t in [projection - offset, projection + offset]) {
+        for (var end = 0; end < 2; end++) {
+          final t = end == 0 ? projection - offset : projection + offset;
           if (t < 0 || t > 1) continue;
           final delta = relative + segment * t;
-          if (!inSector(delta)) continue;
-          final angle = angleOf(delta);
-          if (angle >= -half && angle <= half && !hiddenEvent(angle, delta)) {
+          final angle = bins.angleOf(delta.dx, delta.dy);
+          if (!open(angle, range)) continue;
+          if (angle >= -half && angle <= half) {
             angles.add(angle);
             vertexAngles.add(angle);
           }
@@ -1076,36 +1055,18 @@ class SvgHeightVisibility {
       }
       for (var end = 0; end < 2; end++) {
         final vertex = end == 0 ? topology.aVertex[id] : topology.bVertex[id];
+        if (seen[vertex] == stamp) continue;
+        seen[vertex] = stamp;
+        final distance = bins.vertexDistance[vertex];
+        if (distance > range || distance == 0) continue;
+        final angle = bins.vertexAngle[vertex];
+        if (!open(angle, distance)) continue;
         if (_seam(vertex, active)) continue;
-        final delta = (end == 0 ? edge.a : edge.b) - origin;
-        final distanceSquared = delta.distanceSquared;
-        if (distanceSquared > rangeSquared || delta == Offset.zero) continue;
-        if (!inSector(delta)) continue;
-        final angle = angleOf(delta);
-        // If both bounding arc rays hit the same straight segment, that
-        // segment covers the angular interval. A vertex strictly behind it
-        // cannot change the visible boundary. Nearer corners still add rays.
-        if (apertureRadians / arcSteps < math.pi &&
-            angle > -half &&
-            angle < half) {
-          final interval = ((angle + half) / apertureRadians * arcSteps)
-              .floor()
-              .clamp(0, arcSteps - 1);
-          final first = arcHits[interval]?._edgeIndex;
-          final last = arcHits[interval + 1]?._edgeIndex;
-          if (first != null &&
-              first == last &&
-              angle - _cornerOffset >= arcAngles[interval] &&
-              angle + _cornerOffset <= arcAngles[interval + 1]) {
-            final distance = math.sqrt(distanceSquared);
-            final hit =
-                _edges[first].intersection(origin, delta / distance, distance);
-            if (hit != null && hit < distance - 1e-7) continue;
-          }
-        }
         // Rays just beside a vertex the wall runs straight across meet its
         // two edges, so only the vertex ray adds a corner.
-        emit(angle, beside: !_passThrough(vertex, delta, active));
+        emit(angle,
+            beside: !_passThrough(
+                vertex, topology.points[vertex] - origin, active));
       }
     }
     final sorted = _sortedUnique(angles);
@@ -1119,10 +1080,7 @@ class SvgHeightVisibility {
     for (final angle in sorted) {
       final direction = Offset(math.cos(directionRadians + angle),
           math.sin(directionRadians + angle));
-      final arc = _indexOf(arcAngles, angle);
-      final hit = arc >= 0
-          ? arcHits[arc]
-          : _cast(origin, direction, range, active, stats);
+      final hit = bins.cast(this, origin, direction, angle, range, stats);
       final point = hit?.point ?? origin + direction * range;
       // Rays meeting the same edge in a row lie on one straight line; the
       // middle ones add nothing to the outline. Vertex rays always stay.
@@ -1839,4 +1797,613 @@ bool _betweenOnSameLine(Offset first, Offset middle, Offset last) {
   final length = math.sqrt(lengthSquared);
   final roundoff = 64 * 2.220446049250313e-16 * math.max(1.0, length);
   return _cross(offset, span).abs() <= roundoff * length;
+}
+
+/// The active edges a cone's eye may see, filed by the angles they cover.
+///
+/// Every ray of a cone leaves the same eye. So rather than walk the map's
+/// edge tree once per ray, a query files the edges it may meet once: each
+/// gets its nearest distance to the eye and the span of angles it covers, and
+/// goes into every bin of that span. A ray then tests only its bin's edges.
+///
+/// Each bin also gets a depth, the farthest any ray in it can travel. A run
+/// of consecutive ring edges that crosses a bin from one boundary to the next
+/// is an unbroken wall across it, so every ray in the bin stops no farther
+/// than the run's farthest point there. The nearest such bound is the bin's
+/// depth. Whatever begins beyond the depths it spans is hidden: an edge there
+/// is not filed, and a corner there needs no rays, since they would land in
+/// the middle of whatever hides it.
+///
+/// The edge tree is walked nearest node first, the way a renderer draws front
+/// to back, and a node whose bounds begin beyond the depths of every bin they
+/// span is skipped whole: most of a map is behind the walls nearest the eye.
+/// Depths are only ever used with a margin, and whatever they let through is
+/// tested exactly, so the outline is the one every edge would give.
+class _ConeBins {
+  /// Filed edges, by slot: edge id, nearest distance to the eye, and the span
+  /// of angles from the cone's direction they cover, which may run past pi.
+  int count = 0;
+  Int32List edgeIds = Int32List(64);
+  Float64List near = Float64List(64);
+  Float64List from = Float64List(64);
+  Float64List to = Float64List(64);
+
+  /// Bins split [lowest, lowest + binCount * width] evenly.
+  int binCount = 0;
+  double lowest = 0, width = 1;
+
+  /// Bin k's filed slots are items[offsets[k]] up to items[offsets[k + 1]].
+  Int32List offsets = Int32List(1);
+  Int32List items = Int32List(0);
+
+  /// The farthest any ray in a bin can travel; infinite when unproven.
+  Float64List depth = Float64List(0);
+
+  /// The largest depth over ranges of bins: a segment tree whose leaves,
+  /// from [_leaves] on, are the depths.
+  Float64List _peaks = Float64List(0);
+  int _leaves = 0;
+
+  /// The world direction of each bin boundary.
+  Float64List boundaryX = Float64List(0), boundaryY = Float64List(0);
+
+  double _cosine = 1, _sine = 0;
+  var _whole = false;
+  double _relativeLowest = double.nan, _relativeWidth = double.nan;
+  Float64List _relativeX = Float64List(0), _relativeY = Float64List(0);
+
+  /// Per vertex this query, where [vertexMark] is [_vertexStamp]: its angle
+  /// from the cone's direction and its distance from the eye.
+  Float64List vertexAngle = Float64List(0), vertexDistance = Float64List(0);
+  Int32List vertexMark = Int32List(0);
+  var _vertexStamp = 0;
+  double _ox = 0, _oy = 0;
+  late _VertexTopology _topology;
+
+  void _see(int vertex) {
+    if (vertexMark[vertex] == _vertexStamp) return;
+    vertexMark[vertex] = _vertexStamp;
+    final point = _topology.points[vertex];
+    final dx = point.dx - _ox, dy = point.dy - _oy;
+    vertexAngle[vertex] = angleOf(dx, dy);
+    vertexDistance[vertex] = math.sqrt(dx * dx + dy * dy);
+  }
+
+  /// Margins on the proofs: rounding in the angles and distances here is
+  /// some 1e-15, far inside these.
+  static const _angleMargin = 1e-9;
+  static const _relativeMargin = 1e-9, _absoluteMargin = 1e-9;
+
+  /// Rays beside a corner leave this far from its angle.
+  static const _cornerSlack = SvgHeightVisibility._cornerOffset + _angleMargin;
+
+  /// The narrowest bin; a cone's bins are about this wide.
+  static const _binWidth = 2 * math.pi / 2048;
+
+  /// The angle of [dx], [dy] from the cone's direction, in [-pi, pi].
+  double angleOf(double dx, double dy) =>
+      math.atan2(-dx * _sine + dy * _cosine, dx * _cosine + dy * _sine);
+
+  /// [index] held to the boundaries just outside the cone; NaN, from an
+  /// aperture so small its bins have no width, to the first.
+  double _boundaryIndex(double index) =>
+      index >= -1 ? (index <= binCount + 1 ? index : binCount + 1.0) : -1.0;
+
+  int binOf(double angle) {
+    // Clamped as a double: a narrow cone's bins are so fine that angles
+    // outside it can lie past any integer.
+    final k = ((angle - lowest) / width).floorToDouble();
+    if (!(k >= 0)) return 0;
+    return k >= binCount ? binCount - 1 : k.toInt();
+  }
+
+  /// Whether every ray within a corner offset of [angle] provably stops
+  /// before [distance].
+  bool hides(double angle, double distance) {
+    final last = binOf(angle + _cornerSlack);
+    for (var k = binOf(angle - _cornerSlack); k <= last; k++) {
+      if (!_beyond(distance, depth[k])) return false;
+    }
+    // Behind a full circle, rays beside an angle at the seam wrap round.
+    if (_whole) {
+      if (angle - _cornerSlack < lowest &&
+          !_beyond(distance, depth[binCount - 1])) {
+        return false;
+      }
+      if (angle + _cornerSlack > lowest + binCount * width &&
+          !_beyond(distance, depth[0])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _beyond(double distance, double depth) =>
+      distance > depth * (1 + _relativeMargin) + _absoluteMargin;
+
+  void file(SvgHeightVisibility model, Offset origin, double direction,
+      double range, List<bool> active,
+      {required double lowest, required double span}) {
+    _cosine = math.cos(direction);
+    _sine = math.sin(direction);
+    this.lowest = lowest;
+    _topology = model._topology;
+    _ox = origin.dx;
+    _oy = origin.dy;
+    final vertices = _topology.points.length;
+    if (vertexMark.length < vertices) {
+      vertexAngle = Float64List(vertices);
+      vertexDistance = Float64List(vertices);
+      vertexMark = Int32List(vertices);
+    }
+    _vertexStamp++;
+    final edgeCount = model._edges.length;
+    if (_slotMark.length < edgeCount) {
+      _slotMark = Int32List(edgeCount);
+      _dirty = Int32List(edgeCount);
+    }
+    _mark++;
+    final bins = math.max(64, (span / _binWidth).ceil());
+    binCount = bins;
+    width = span / bins;
+    _whole = span >= 2 * math.pi;
+    if (depth.length < bins) {
+      depth = Float64List(bins);
+      boundaryX = Float64List(bins + 1);
+      boundaryY = Float64List(bins + 1);
+      offsets = Int32List(bins + 1);
+    }
+    // Boundary directions relative to the cone's direction depend only on
+    // the bins, so they are kept between queries and turned to face it.
+    if (_relativeLowest != lowest ||
+        _relativeWidth != width ||
+        _relativeX.length < bins + 1) {
+      _relativeLowest = lowest;
+      _relativeWidth = width;
+      _relativeX = Float64List(bins + 1);
+      _relativeY = Float64List(bins + 1);
+      for (var j = 0; j <= bins; j++) {
+        _relativeX[j] = math.cos(lowest + j * width);
+        _relativeY[j] = math.sin(lowest + j * width);
+      }
+    }
+    for (var j = 0; j <= bins; j++) {
+      final x = _relativeX[j], y = _relativeY[j];
+      boundaryX[j] = x * _cosine - y * _sine;
+      boundaryY[j] = x * _sine + y * _cosine;
+    }
+    depth.fillRange(0, bins, double.infinity);
+    _leaves = 1;
+    while (_leaves < bins) {
+      _leaves *= 2;
+    }
+    if (_peaks.length < 2 * _leaves) _peaks = Float64List(2 * _leaves);
+    _peaks.fillRange(0, 2 * _leaves, double.infinity);
+    count = 0;
+
+    final root = model._tree;
+    if (root != null) {
+      _walk(model, root, origin, range, active);
+    }
+
+    // File each edge in the bins it may be seen in: count, then place.
+    offsets.fillRange(0, bins + 1, 0);
+    _place(false);
+    for (var k = 0; k < bins; k++) {
+      offsets[k + 1] += offsets[k];
+    }
+    if (items.length < offsets[bins]) {
+      items = Int32List(math.max(offsets[bins], items.length * 2));
+    }
+    _place(true);
+    // Placing advanced each bin's offset to the next bin's start.
+    for (var k = bins; k > 0; k--) {
+      offsets[k] = offsets[k - 1];
+    }
+    offsets[0] = 0;
+    // Nearest first within each bin, so a ray stops at the first edge that
+    // begins beyond its hit. The walk filed them nearly in this order.
+    for (var k = 0; k < bins; k++) {
+      final end = offsets[k + 1];
+      for (var i = offsets[k] + 1; i < end; i++) {
+        final slot = items[i];
+        final key = near[slot];
+        var j = i - 1;
+        while (j >= offsets[k] && near[items[j]] > key) {
+          items[j + 1] = items[j];
+          j--;
+        }
+        items[j + 1] = slot;
+      }
+    }
+  }
+
+  // Tree nodes waiting to be visited, nearest first: a binary heap.
+  final _heapNodes = <_EdgeNode>[];
+  Float64List _heapKeys = Float64List(64);
+
+  void _push(_EdgeNode node, double key) {
+    var i = _heapNodes.length;
+    _heapNodes.add(node);
+    if (_heapKeys.length <= i) {
+      _heapKeys = Float64List(_heapKeys.length * 2)..setAll(0, _heapKeys);
+    }
+    while (i > 0) {
+      final parent = (i - 1) >> 1;
+      if (_heapKeys[parent] <= key) break;
+      _heapNodes[i] = _heapNodes[parent];
+      _heapKeys[i] = _heapKeys[parent];
+      i = parent;
+    }
+    _heapNodes[i] = node;
+    _heapKeys[i] = key;
+  }
+
+  /// Removes the nearest node; its key is left in [_popped].
+  _EdgeNode _pop() {
+    final top = _heapNodes[0];
+    _popped = _heapKeys[0];
+    final node = _heapNodes.removeLast();
+    final n = _heapNodes.length;
+    if (n > 0) {
+      final key = _heapKeys[n];
+      var i = 0;
+      while (true) {
+        var child = 2 * i + 1;
+        if (child >= n) break;
+        if (child + 1 < n && _heapKeys[child + 1] < _heapKeys[child]) child++;
+        if (_heapKeys[child] >= key) break;
+        _heapNodes[i] = _heapNodes[child];
+        _heapKeys[i] = _heapKeys[child];
+        i = child;
+      }
+      _heapNodes[i] = node;
+      _heapKeys[i] = key;
+    }
+    return top;
+  }
+
+  double _popped = 0;
+
+  static double _distanceTo(Rect bounds, double x, double y) {
+    final dx = math.max(0.0, math.max(bounds.left - x, x - bounds.right));
+    final dy = math.max(0.0, math.max(bounds.top - y, y - bounds.bottom));
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  void _walk(SvgHeightVisibility model, _EdgeNode root, Offset origin,
+      double range, List<bool> active) {
+    final ox = origin.dx, oy = origin.dy;
+    _heapNodes.clear();
+    _push(root, _distanceTo(root.bounds, ox, oy));
+    // Depths are proven from the edges filed so far, again each time the
+    // walk passes twice as far from the eye.
+    var wave = math.max(range / 16, 1e-3);
+    var proven = 0;
+    while (_heapNodes.isNotEmpty) {
+      final node = _pop();
+      final distance = _popped;
+      if (distance > range) break;
+      if (distance > wave) {
+        if (count > proven) {
+          _walkChains(model, origin, _whole, proven);
+          _raisePeaks();
+          proven = count;
+        }
+        while (wave < distance) {
+          wave *= 4;
+        }
+      }
+      if (!_boundsMayShow(node.bounds, distance, ox, oy)) continue;
+      final ids = node.ids;
+      if (ids != null) {
+        for (final id in ids) {
+          _fileEdge(model, id, ox, oy, range, active);
+        }
+      } else {
+        final left = node.left!, right = node.right!;
+        final leftKey = _distanceTo(left.bounds, ox, oy);
+        if (leftKey <= range) _push(left, leftKey);
+        final rightKey = _distanceTo(right.bounds, ox, oy);
+        if (rightKey <= range) _push(right, rightKey);
+      }
+    }
+    if (count > proven) _walkChains(model, origin, _whole, proven);
+  }
+
+  /// Whether anything in [bounds], [distance] from the eye at its nearest,
+  /// could show in the cone.
+  bool _boundsMayShow(Rect bounds, double distance, double ox, double oy) {
+    final column = ox < bounds.left ? 0 : (ox > bounds.right ? 2 : 1);
+    final row = oy < bounds.top ? 0 : (oy > bounds.bottom ? 2 : 1);
+    if (distance < _absoluteMargin || (column == 1 && row == 1)) return true;
+    // Seen from outside, a box spans less than half a turn, between the two
+    // corners that bound its silhouette. Which two depends only on where the
+    // eye is around the box: per region, each corner as (right?, bottom?).
+    final corners = _silhouettes[row * 3 + column];
+    final ax = ((corners & 8) != 0 ? bounds.right : bounds.left) - ox;
+    final ay = ((corners & 4) != 0 ? bounds.bottom : bounds.top) - oy;
+    final bx = ((corners & 2) != 0 ? bounds.right : bounds.left) - ox;
+    final by = ((corners & 1) != 0 ? bounds.bottom : bounds.top) - oy;
+    final ta = angleOf(ax, ay), tb = angleOf(bx, by);
+    final turn = ax * by - ay * bx;
+    final first = turn > 0 ? ta : (turn < 0 ? tb : math.min(ta, tb));
+    var last = turn > 0 ? tb : (turn < 0 ? ta : math.max(ta, tb));
+    if (last < first) last += 2 * math.pi;
+    return _mayShow(first - _cornerSlack, last + _cornerSlack, distance);
+  }
+
+  /// For each region around a box, rows top to bottom and columns left to
+  /// right, the two corners of its silhouette as bits: first corner right,
+  /// first bottom, second right, second bottom.
+  static const _silhouettes = [
+    0x9, 0x2, 0x3, //
+    0x1, 0x0, 0xb, //
+    0x3, 0x7, 0x9,
+  ];
+
+  /// Whether something [distance] from the eye, spanning angles [first] to
+  /// [last] (which may run past pi), falls in the cone and is not provably
+  /// behind the depths there.
+  bool _mayShow(double first, double last, double distance) {
+    const margin = 1e-6;
+    final highest = lowest + binCount * width;
+    for (var shift = 2 * math.pi; shift > -4 * math.pi; shift -= 2 * math.pi) {
+      final start = first + shift, end = last + shift;
+      if (end < lowest - margin || start > highest + margin) continue;
+      if (!_beyond(distance, _peak(binOf(start), binOf(end)))) return true;
+    }
+    return false;
+  }
+
+  /// The largest depth over bins [first] to [last].
+  double _peak(int first, int last) {
+    var result = 0.0;
+    var low = first + _leaves, high = last + _leaves + 1;
+    while (low < high) {
+      if (low.isOdd) result = math.max(result, _peaks[low++]);
+      if (high.isOdd) result = math.max(result, _peaks[--high]);
+      low >>= 1;
+      high >>= 1;
+    }
+    return result;
+  }
+
+  void _raisePeaks() {
+    _peaks.setRange(_leaves, _leaves + binCount, depth);
+    for (var i = _leaves - 1; i > 0; i--) {
+      _peaks[i] = math.max(_peaks[2 * i], _peaks[2 * i + 1]);
+    }
+  }
+
+  void _fileEdge(SvgHeightVisibility model, int id, double ox, double oy,
+      double range, List<bool> active) {
+    final edge = model._edges[id];
+    if (!active[edge.wall]) return;
+    final ax = edge.a.dx - ox, ay = edge.a.dy - oy;
+    final bx = edge.b.dx - ox, by = edge.b.dy - oy;
+    final ex = edge._ex, ey = edge._ey;
+    final lengthSquared = ex * ex + ey * ey;
+    var t = lengthSquared == 0 ? 0.0 : -(ax * ex + ay * ey) / lengthSquared;
+    t = t < 0 ? 0.0 : (t > 1 ? 1.0 : t);
+    final cx = ax + ex * t, cy = ay + ey * t;
+    final distance = math.sqrt(cx * cx + cy * cy);
+    if (distance > range) return;
+    final va = _topology.aVertex[id], vb = _topology.bVertex[id];
+    _see(va);
+    _see(vb);
+    var first = -math.pi, last = math.pi;
+    if (distance >= _absoluteMargin) {
+      final ta = vertexAngle[va], tb = vertexAngle[vb];
+      final turn = ax * by - ay * bx;
+      if (turn > 0) {
+        first = ta;
+        last = tb;
+      } else if (turn < 0) {
+        first = tb;
+        last = ta;
+      } else {
+        first = math.min(ta, tb);
+        last = math.max(ta, tb);
+      }
+      if (last < first) last += 2 * math.pi;
+      if (!_mayShow(first - _cornerSlack, last + _cornerSlack, distance)) {
+        return;
+      }
+    }
+    if (count == edgeIds.length) {
+      final size = count * 2;
+      edgeIds = Int32List(size)..setAll(0, edgeIds);
+      near = Float64List(size)..setAll(0, near);
+      from = Float64List(size)..setAll(0, from);
+      to = Float64List(size)..setAll(0, to);
+    }
+    if (distance >= _absoluteMargin) _slotMark[id] = _mark;
+    edgeIds[count] = id;
+    near[count] = distance;
+    from[count] = first;
+    to[count] = last;
+    count++;
+  }
+
+  /// Edges filed this query that a run can pass through: [_slotMark] is
+  /// [_mark]. An edge through the eye stops nothing reliably beside it.
+  Int32List _slotMark = Int32List(0);
+  var _mark = 0;
+
+  // The runs to walk this wave: [_dirty] is [_dirtyStamp] on their edges.
+  Int32List _dirty = Int32List(0);
+  var _dirtyStamp = 0;
+  final _heads = <int>[];
+
+  /// Lowers each bin's depth to the farthest point of any run of consecutive
+  /// ring edges that crosses the bin from one boundary to the next. Such a run
+  /// is an unbroken wall across the bin, so it stops every ray in it. Single
+  /// edges rarely span a bin: Riot's outlines are many short strokes.
+  void _walkChains(
+      SvgHeightVisibility model, Offset origin, bool whole, int firstNew) {
+    final edges = model._edges;
+    final mark = _mark;
+    bool chained(int id) =>
+        id >= 0 && id < edges.length && _slotMark[id] == mark;
+    final ox = origin.dx, oy = origin.dy;
+    final aVertex = _topology.aVertex, bVertex = _topology.bVertex;
+    // Runs already walked have proven all they can; walk again only those
+    // with an edge filed since, each from its first edge.
+    final stamp = ++_dirtyStamp;
+    _heads.clear();
+    for (var slot = firstNew; slot < count; slot++) {
+      var id = edgeIds[slot];
+      if (_slotMark[id] != mark) continue;
+      while (_dirty[id] != stamp) {
+        _dirty[id] = stamp;
+        if (!chained(id - 1) || bVertex[id - 1] != aVertex[id]) {
+          _heads.add(id);
+          break;
+        }
+        id--;
+      }
+    }
+    for (final head in _heads) {
+      var id = head;
+      var raw = vertexAngle[aVertex[id]];
+      // The run's angle, unwrapped so it never jumps by a turn.
+      var angle = raw;
+      // The last boundary crossed, and since then: the farthest point and
+      // the angles the run has reached.
+      var hasLast = false;
+      var last = 0;
+      var farthest = 0.0, lowAngle = 0.0, highAngle = 0.0;
+      while (true) {
+        final edge = edges[id];
+        final next = bVertex[id];
+        final nextRaw = vertexAngle[next];
+        var turn = nextRaw - raw;
+        if (turn > math.pi) {
+          turn -= 2 * math.pi;
+        } else if (turn <= -math.pi) {
+          turn += 2 * math.pi;
+        }
+        final end = angle + turn;
+        final ex = edge._ex, ey = edge._ey;
+        final along = (edge.a.dx - ox) * ey - (edge.a.dy - oy) * ex;
+        // Boundaries the edge plainly crosses, in the order it crosses them.
+        final step = end > angle ? 1 : -1;
+        var start = step > 0
+            ? ((angle + _angleMargin - lowest) / width).ceilToDouble()
+            : ((angle - _angleMargin - lowest) / width).floorToDouble();
+        var finish = step > 0
+            ? ((end - _angleMargin - lowest) / width).floorToDouble()
+            : ((end + _angleMargin - lowest) / width).ceilToDouble();
+        if (!whole) {
+          // Boundaries outside the cone are skipped below, and a narrow
+          // cone's bins are so fine those can lie past any integer.
+          start = _boundaryIndex(start);
+          finish = _boundaryIndex(finish);
+        }
+        var j = start.toInt();
+        final stop = finish.toInt();
+        for (; step > 0 ? j <= stop : j >= stop; j += step) {
+          if (!whole && (j < 0 || j > binCount)) continue;
+          final boundary = whole ? j % binCount : j;
+          final distance =
+              along / (boundaryX[boundary] * ey - boundaryY[boundary] * ex);
+          final at = lowest + j * width;
+          if (!(distance >= 0) || distance.isInfinite) {
+            hasLast = false;
+            continue;
+          }
+          if (hasLast && (j - last).abs() == 1) {
+            final previous = lowest + last * width;
+            // Between the two crossings the run stayed inside the bin.
+            if (lowAngle >= math.min(at, previous) - 1e-8 &&
+                highAngle <= math.max(at, previous) + 1e-8) {
+              final k =
+                  whole ? math.min(j, last) % binCount : math.min(j, last);
+              final bound = math.max(farthest, distance);
+              if (bound < depth[k]) depth[k] = bound;
+            }
+          }
+          hasLast = true;
+          last = j;
+          farthest = distance;
+          lowAngle = highAngle = at;
+        }
+        farthest = math.max(farthest, vertexDistance[next]);
+        lowAngle = math.min(lowAngle, end);
+        highAngle = math.max(highAngle, end);
+        if (!chained(id + 1) || aVertex[id + 1] != next) break;
+        id++;
+        raw = nextRaw;
+        angle = end;
+      }
+    }
+  }
+
+  /// Counts each slot into offsets[k + 1] for every bin k it is filed in, or,
+  /// with [fill], writes it at offsets[k] and advances that.
+  void _place(bool fill) {
+    final highest = lowest + binCount * width;
+    for (var slot = 0; slot < count; slot++) {
+      final distance = near[slot];
+      if (distance < _absoluteMargin) {
+        // An edge through the eye can stop a ray in any direction.
+        for (var k = 0; k < binCount; k++) {
+          if (fill) {
+            items[offsets[k]++] = slot;
+          } else {
+            offsets[k + 1]++;
+          }
+        }
+        continue;
+      }
+      // Rays are admitted a sliver past an edge's ends; see _Edge.intersection.
+      final pad = _angleMargin + 1e-12 / distance;
+      // A span starting just below -pi also covers the bins just below pi.
+      for (var shift = 2 * math.pi;
+          shift > -4 * math.pi;
+          shift -= 2 * math.pi) {
+        final start = from[slot] + shift - pad, end = to[slot] + shift + pad;
+        if (end < lowest) break;
+        if (start > highest) continue;
+        final first = binOf(start), last = binOf(end);
+        for (var k = first; k <= last; k++) {
+          if (distance > depth[k] * (1 + _relativeMargin) + _absoluteMargin) {
+            continue;
+          }
+          if (fill) {
+            items[offsets[k]++] = slot;
+          } else {
+            offsets[k + 1]++;
+          }
+        }
+      }
+    }
+  }
+
+  /// The nearest hit along [direction], [angle] from the cone's direction,
+  /// within [range]; ties go to the lowest edge id.
+  SvgVisibilityHit? cast(SvgHeightVisibility model, Offset origin,
+      Offset direction, double angle, double range, _Counters stats) {
+    final k = binOf(angle);
+    stats.cells++;
+    var best = range;
+    var bestId = -1;
+    for (var i = offsets[k]; i < offsets[k + 1]; i++) {
+      final slot = items[i];
+      if (near[slot] > best) break;
+      final id = edgeIds[slot];
+      stats.edgeTests++;
+      final distance = model._edges[id].intersection(origin, direction, best);
+      if (distance == null) continue;
+      if (bestId < 0 || distance < best || (distance == best && id < bestId)) {
+        best = distance;
+        bestId = id;
+      }
+    }
+    if (bestId < 0) return null;
+    final wall = model._edges[bestId].wall;
+    if (model.walls[wall].unknownHeight) stats.unknownHits++;
+    return model._hit(origin, direction, best, wall, bestId);
+  }
 }
