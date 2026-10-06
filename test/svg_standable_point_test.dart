@@ -20,6 +20,47 @@ void main() {
     receiver: [_floor(rectangle(0, 0, 100, 100))],
   ));
 
+  // Found in review: the floor edge search reads rows of edges outward from
+  // the point and stops early. It must pick the edge reading every edge
+  // would, even where rounding makes far edges tie, and must not trip over a
+  // footprint too tall to split into rows.
+  test('the nearest floor edge is the one a full scan finds, at any scale', () {
+    final huge = SvgHeightVisibility.fromJson(data(
+      [],
+      receiver: [
+        for (final (i, ring) in [
+          [-10.0, 3e16, 10.0, 3e16, 10.0, 3e16 + 100, -10.0, 3e16 + 100],
+          [2e16, 0.0, 2e16 + 100, 0.0, 2e16 + 100, 2e16, 2e16, 2e16],
+          [
+            1000.0,
+            4.096e19 - 10000,
+            2000.0,
+            4.096e19 - 10000,
+            2000.0,
+            4.096e19,
+            1000.0,
+            4.096e19
+          ],
+        ].indexed)
+          {
+            'id': 'floor-$i',
+            'rings': [ring],
+            'fillRule': 'nonzero'
+          }
+      ],
+    ));
+    expect(
+        huge.standablePointNear(const Offset(0, 1e16 - 2), maxDistance: 2e16),
+        const Offset(0, 3e16));
+    final tall = SvgHeightVisibility.fromJson(data(
+      [],
+      receiver: [
+        _floor([10, -1e308, 10, 1e308, 11, 1e308, 11, -1e308])
+      ],
+    ));
+    expect(tall.standablePointNear(Offset.zero), isNull);
+  });
+
   test('a point already on the floor is returned as it is', () {
     expect(
         model.standablePointNear(const Offset(20, 20)), const Offset(20, 20));

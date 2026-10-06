@@ -478,15 +478,13 @@ class SvgHeightVisibility {
         // a seam with the next piece of the same wall, or face the unplayable
         // side of a building, and stepping across either lands back in ink.
         // Failing that, step across the nearest edge and try again from there.
-        target = _steppedAcross(current, wall.rings, _inkClearance,
-                inside: wall.contains,
+        target = _steppedAcross(current, wall, _inkClearance,
                 reach: maxDistance - (current - point).distance,
                 accept: (p) =>
                     (p - point).distance <= maxDistance &&
                     _blockingWallAt(p) == null &&
                     receiverContains(p)) ??
-            _steppedAcross(current, wall.rings, _inkClearance,
-                inside: wall.contains);
+            _steppedAcross(current, wall, _inkClearance);
       } else {
         target = _pulledIn(current, 0.02);
       }
@@ -522,8 +520,8 @@ class SvgHeightVisibility {
     Offset? best;
     var bestDistance = double.infinity;
     for (final receiver in receivers) {
-      final inside = _steppedAcross(point, receiver.rings, clearance,
-          inside: receiver.contains, wantInside: true);
+      final inside =
+          _steppedAcross(point, receiver, clearance, wantInside: true);
       if (inside == null) continue;
       final d = (inside - point).distance;
       if (d < bestDistance) {
@@ -534,49 +532,38 @@ class SvgHeightVisibility {
     return best;
   }
 
-  /// The nearest point on the rings' boundary, stepped [clearance] to the
-  /// side of the edge that [inside] reports as [wantInside]. With [accept],
-  /// the nearest such point that [accept] also allows, on any edge no
-  /// farther than [reach]. Null when no side satisfies the tests.
+  /// The nearest point on [footprint]'s boundary, stepped [clearance] to the
+  /// side of the edge that the footprint reports as [wantInside]. With
+  /// [accept], the nearest such point that [accept] also allows, on any edge
+  /// no farther than [reach]. Null when no side satisfies the tests.
   static Offset? _steppedAcross(
-      Offset point, List<List<Offset>> rings, double clearance,
-      {required bool Function(Offset) inside,
-      bool wantInside = false,
+      Offset point, _Footprint footprint, double clearance,
+      {bool wantInside = false,
       bool Function(Offset)? accept,
       double reach = double.infinity}) {
-    (double, Offset, Offset)? nearest;
-    final feet = <(double, Offset, Offset)>[];
-    for (final ring in rings) {
-      for (var i = 0; i < ring.length; i++) {
-        final a = ring[i], b = ring[(i + 1) % ring.length];
-        final edge = b - a;
-        final length = edge.distanceSquared;
-        if (length == 0) continue;
-        final t =
-            (((point - a).dx * edge.dx + (point - a).dy * edge.dy) / length)
-                .clamp(0.0, 1.0);
-        final candidate = a + edge * t;
-        final d = (point - candidate).distance;
-        final normal = d > 1e-9
-            ? (point - candidate) / d
-            : Offset(-edge.dy, edge.dx) / edge.distance;
-        final foot = (d, candidate, normal);
-        if (nearest == null || d < nearest.$1) nearest = foot;
-        if (accept != null && d <= reach) feet.add(foot);
+    final List<int> edges;
+    if (accept == null) {
+      // The first nearest edge, as before any acceptance test existed.
+      final nearest = footprint._nearestEdge(point);
+      edges = nearest < 0 ? const [] : [nearest];
+    } else {
+      // Only edges within reach, usually a handful even on a long wall.
+      final feet = <(double, int)>[];
+      for (var e = 0; e < footprint._edgeCount; e++) {
+        final d = footprint._distanceTo(e, point.dx, point.dy);
+        if (d >= 0 && d <= reach) feet.add((d, e));
       }
+      feet.sort((a, b) => a.$1.compareTo(b.$1));
+      edges = [for (final (_, e) in feet) e];
     }
-    if (nearest == null) return null;
-    final ordered = accept == null
-        // The first nearest edge, as before any acceptance test existed.
-        ? [nearest]
-        // Only edges within reach, usually a handful even on a long wall.
-        : (feet..sort((a, b) => a.$1.compareTo(b.$1)));
-    for (final (_, foot, normal) in ordered) {
+    for (final e in edges) {
+      final (foot, normal) = footprint._footOn(e, point);
       for (final side in [
         foot + normal * clearance,
         foot - normal * clearance
       ]) {
-        if (inside(side) == wantInside && (accept?.call(side) ?? true)) {
+        if (footprint.contains(side) == wantInside &&
+            (accept?.call(side) ?? true)) {
           return side;
         }
       }
@@ -1490,24 +1477,37 @@ class _Footprint {
   late final double _rowHeight =
       math.max(1.0, (bounds.height + 2 * _maxTolerance) / _maxRows);
 
-  /// Every edge, as its ring and first point's index, filed under each
-  /// [_rowHeight] row its height, grown by [_maxTolerance], reaches. Only
-  /// edges spanning a point's height add to its winding, and only edges that
-  /// near can hold it on their boundary, so a test reads one row. A floor
-  /// with every wall cut out of it is thousands of edges in one ring.
+  /// Every edge's two points as `ax, ay, bx, by`, ring after ring: what
+  /// [_contains] and [_nearestEdge] read, without an [Offset] or a modulo
+  /// per edge.
+  late final Float64List _ends = () {
+    final ends = Float64List(4 * rings.fold(0, (n, ring) => n + ring.length));
+    var k = 0;
+    for (final ring in rings) {
+      for (var i = 0; i < ring.length; i++) {
+        final a = ring[i], b = ring[i + 1 == ring.length ? 0 : i + 1];
+        ends[k++] = a.dx;
+        ends[k++] = a.dy;
+        ends[k++] = b.dx;
+        ends[k++] = b.dy;
+      }
+    }
+    return ends;
+  }();
+
+  /// Every edge, as its index in [_ends], filed under each [_rowHeight] row
+  /// its height, grown by [_maxTolerance], reaches. Only edges spanning a
+  /// point's height add to its winding, and only edges that near can hold it
+  /// on their boundary, so a test reads one row. A floor with every wall cut
+  /// out of it is thousands of edges in one ring.
   late final List<Int32List> _rows = () {
     final rows = List.generate(_rowCount, (_) => <int>[]);
-    for (var r = 0; r < rings.length; r++) {
-      final ring = rings[r];
-      for (var i = 0; i < ring.length; i++) {
-        final a = ring[i], b = ring[(i + 1) % ring.length];
-        final first = _row(math.min(a.dy, b.dy) - _maxTolerance);
-        final last = _row(math.max(a.dy, b.dy) + _maxTolerance);
-        for (var row = first; row <= last; row++)
-          rows[row]
-            ..add(r)
-            ..add(i);
-      }
+    final ends = _ends;
+    for (var e = 0; e < ends.length ~/ 4; e++) {
+      final ay = ends[4 * e + 1], by = ends[4 * e + 3];
+      final first = _row(math.min(ay, by) - _maxTolerance);
+      final last = _row(math.max(ay, by) + _maxTolerance);
+      for (var row = first; row <= last; row++) rows[row].add(e);
     }
     return [for (final row in rows) Int32List.fromList(row)];
   }();
@@ -1528,21 +1528,111 @@ class _Footprint {
         point.dy <= bounds.bottom + boundaryTolerance)) return false;
     var winding = 0;
     final row = _rows[_row(point.dy)];
-    for (var e = 0; e < row.length; e += 2) {
-      final ring = rings[row[e]], i = row[e + 1];
-      final a = ring[i], b = ring[(i + 1) % ring.length];
-      final side = _cross(b - a, point - a);
+    final ends = _ends;
+    final x = point.dx, y = point.dy;
+    for (var n = 0; n < row.length; n++) {
+      final k = 4 * row[n];
+      final ax = ends[k], ay = ends[k + 1], bx = ends[k + 2], by = ends[k + 3];
+      final ex = bx - ax, ey = by - ay;
+      final side = ex * (y - ay) - ey * (x - ax);
       if ((side == 0 ||
               boundaryTolerance > 0 &&
-                  side.abs() <= boundaryTolerance * (b - a).distance) &&
-          point.dx >= math.min(a.dx, b.dx) - boundaryTolerance &&
-          point.dx <= math.max(a.dx, b.dx) + boundaryTolerance &&
-          point.dy >= math.min(a.dy, b.dy) - boundaryTolerance &&
-          point.dy <= math.max(a.dy, b.dy) + boundaryTolerance) return true;
-      if (a.dy <= point.dy && b.dy > point.dy && side > 0) winding++;
-      if (a.dy > point.dy && b.dy <= point.dy && side < 0) winding--;
+                  side.abs() <=
+                      boundaryTolerance * math.sqrt(ex * ex + ey * ey)) &&
+          x >= math.min(ax, bx) - boundaryTolerance &&
+          x <= math.max(ax, bx) + boundaryTolerance &&
+          y >= math.min(ay, by) - boundaryTolerance &&
+          y <= math.max(ay, by) + boundaryTolerance) return true;
+      if (ay <= y && by > y && side > 0) winding++;
+      if (ay > y && by <= y && side < 0) winding--;
     }
     return evenOdd ? winding.abs().isOdd : winding != 0;
+  }
+
+  int get _edgeCount => _ends.length ~/ 4;
+
+  /// How far ([x], [y]) is from edge [e]; -1 for an edge of no length.
+  double _distanceTo(int e, double x, double y) {
+    final ends = _ends, k = 4 * e;
+    final ax = ends[k], ay = ends[k + 1];
+    final ex = ends[k + 2] - ax, ey = ends[k + 3] - ay;
+    final length = ex * ex + ey * ey;
+    if (length == 0) return -1;
+    final t = (((x - ax) * ex + (y - ay) * ey) / length).clamp(0.0, 1.0);
+    final dx = x - (ax + ex * t), dy = y - (ay + ey * t);
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  /// The point of edge [e] nearest [point], and the unit normal from it
+  /// toward [point], or across the edge when [point] is on it. The same
+  /// arithmetic as [_distanceTo], so the foot is as far as it said.
+  (Offset, Offset) _footOn(int e, Offset point) {
+    final k = 4 * e;
+    final a = Offset(_ends[k], _ends[k + 1]);
+    final edge = Offset(_ends[k + 2], _ends[k + 3]) - a;
+    final t = (((point - a).dx * edge.dx + (point - a).dy * edge.dy) /
+            edge.distanceSquared)
+        .clamp(0.0, 1.0);
+    final foot = a + edge * t;
+    final d = (point - foot).distance;
+    return (
+      foot,
+      d > 1e-9 ? (point - foot) / d : Offset(-edge.dy, edge.dx) / edge.distance
+    );
+  }
+
+  /// The edge nearest [point], the first in ring order when several are
+  /// equally near; -1 when no edge has length. Rows are read outward from the
+  /// point's own. An edge filed in none of the rows within j of it lies more
+  /// than j row heights away (rows are filed with [_maxTolerance] to spare),
+  /// so the search ends once the nearest edge found is nearer than that:
+  /// a point beside a floor reads a few rows of it, not its every edge.
+  Int32List? _seenEdges;
+  var _seenStamp = 0;
+
+  int _nearestEdge(Offset point) {
+    final x = point.dx, y = point.dy;
+    var best = -1;
+    var bestDistance = double.infinity;
+    // Not a number, so far out that the squares overflow, or a footprint
+    // too tall for rows: every edge, in order, as before rows were read.
+    if (!(x.abs() < 1e100 && y.abs() < 1e100 && _rowHeight < 1e100)) {
+      for (var e = 0; e < _edgeCount; e++) {
+        final d = _distanceTo(e, x, y);
+        // A NaN distance is kept when it comes first, as it was.
+        if (d < 0) continue;
+        if (best < 0 || d < bestDistance) {
+          best = e;
+          bestDistance = d;
+        }
+      }
+      return best;
+    }
+    // A tall edge is filed in every row it spans: measure it once.
+    final seen = _seenEdges ??= Int32List(_edgeCount);
+    final stamp = ++_seenStamp;
+    final center = _row(y);
+    for (var j = 0; center - j >= 0 || center + j < _rowCount; j++) {
+      for (final r in [center - j, if (j > 0) center + j]) {
+        if (r < 0 || r >= _rowCount) continue;
+        final row = _rows[r];
+        for (var n = 0; n < row.length; n++) {
+          final e = row[n];
+          if (seen[e] == stamp) continue;
+          seen[e] = stamp;
+          final d = _distanceTo(e, x, y);
+          if (d >= 0 &&
+              (best < 0 || d < bestDistance || d == bestDistance && e < best)) {
+            best = e;
+            bestDistance = d;
+          }
+        }
+      }
+      // Strictly nearer, with room for rounding: an edge just beyond the rows
+      // read must not tie with this one once both distances are rounded.
+      if (bestDistance < j * _rowHeight * (1 - 1e-9)) break;
+    }
+    return best;
   }
 }
 
