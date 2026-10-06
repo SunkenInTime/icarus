@@ -1585,15 +1585,15 @@ class _Footprint {
   /// equally near; -1 when no edge has length. Rows are read outward from the
   /// point's own. An edge filed in none of the rows within j of it lies more
   /// than j row heights away (rows are filed with [_maxTolerance] to spare),
-  /// so the search ends once the nearest edge found is no farther than that:
+  /// so the search ends once the nearest edge found is nearer than that:
   /// a point beside a floor reads a few rows of it, not its every edge.
   int _nearestEdge(Offset point) {
     final x = point.dx, y = point.dy;
     var best = -1;
     var bestDistance = double.infinity;
-    // Not a number, or so far out that the squares overflow: every edge, in
-    // order, as before rows were read.
-    if (!(x.abs() < 1e100 && y.abs() < 1e100)) {
+    // Not a number, so far out that the squares overflow, or a footprint
+    // too tall for rows: every edge, in order, as before rows were read.
+    if (!(x.abs() < 1e100 && y.abs() < 1e100 && _rowHeight < 1e100)) {
       for (var e = 0; e < _edgeCount; e++) {
         final d = _distanceTo(e, x, y);
         // A NaN distance is kept when it comes first, as it was.
@@ -1620,7 +1620,9 @@ class _Footprint {
           }
         }
       }
-      if (bestDistance <= j * _rowHeight) break;
+      // Strictly nearer, with room for rounding: an edge just beyond the rows
+      // read must not tie with this one once both distances are rounded.
+      if (bestDistance < j * _rowHeight * (1 - 1e-9)) break;
     }
     return best;
   }
