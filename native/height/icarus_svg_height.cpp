@@ -276,7 +276,15 @@ struct ConeBins {
 
   uint32_t binOf(double angle) const {
     const double k = std::floor((angle - lowest) / width);
-    return k < 0 ? 0 : (k >= binCount ? binCount - 1 : uint32_t(k));
+    // NaN, from an aperture so small its bins have no width, goes first.
+    if (!(k >= 0)) return 0;
+    return k >= binCount ? binCount - 1 : uint32_t(k);
+  }
+
+  // index held to the boundaries just outside the cone; NaN, from an
+  // aperture so small its bins have no width, to the first.
+  static double boundaryIndex(double index, double bins) {
+    return index >= -1 ? (index <= bins + 1 ? index : bins + 1) : -1;
   }
 
   // Whether every ray within a corner offset of angle provably stops before
@@ -676,8 +684,8 @@ private:
           // Boundaries outside the cone are skipped below and leave the run
           // alone, so only those just outside need walking. A narrow cone's
           // bins are so fine the others can lie past any integer.
-          start = std::min(std::max(start, -1.0), bins + 1.0);
-          finish = std::min(std::max(finish, -1.0), bins + 1.0);
+          start = boundaryIndex(start, double(bins));
+          finish = boundaryIndex(finish, double(bins));
         }
         const int64_t stop = int64_t(finish);
         for (int64_t j = int64_t(start); step > 0 ? j <= stop : j >= stop;

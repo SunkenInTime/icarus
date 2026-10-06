@@ -56,22 +56,37 @@ double _relative(Offset delta, double direction) {
   return math.atan2(math.sin(turn), math.cos(turn));
 }
 
-/// The places where the outline disagrees with exact rays.
+/// The places where [model]'s cone outline disagrees with exact rays.
 List<String> _wrong(SvgHeightVisibility model, Offset eye, double direction,
     double aperture, double range) {
-  final support = model.automaticSupportAt(eye)?.id;
   final outline = model
       .horizontalCone(
           origin: eye,
           directionRadians: direction,
           range: range,
           apertureRadians: aperture,
-          supportId: support)
+          supportId: model.automaticSupportAt(eye)?.id)
       .polygon;
+  return _wrongOutline(model, outline, eye, direction, aperture, range);
+}
+
+/// The places where [outline] disagrees with exact rays through [model].
+List<String> _wrongOutline(SvgHeightVisibility model, List<Offset> outline,
+    Offset eye, double direction, double aperture, double range) {
+  final support = model.automaticSupportAt(eye)?.id;
   final points = outline.skip(1).toList();
   if (points.length < 2) return ['no outline'];
-  final angles = [for (final p in points) _relative(p - eye, direction)];
   final half = aperture / 2;
+  // Angles in ray order, from the cone's first edge: on a full circle the
+  // first and last points lie on the same line, at -half and half.
+  double turn(double angle) => math.atan2(math.sin(angle), math.cos(angle));
+  final angles = <double>[
+    -half + turn(_relative(points.first - eye, direction) + half)
+  ];
+  for (final p in points.skip(1)) {
+    final previous = angles.last;
+    angles.add(previous + turn(_relative(p - eye, direction) - previous));
+  }
   final probes = <double>[
     for (var i = 0; i + 1 < angles.length; i++) (angles[i] + angles[i + 1]) / 2,
     for (final wall in model.walls)
@@ -145,6 +160,20 @@ void main() {
       expect(outline.last.distance, closeTo(10, 1e-9));
     }, skip: skip);
 
+    test('$label: a vanishingly narrow cone returns at once', () {
+      // Found in review: at 5e-324 radians the bins have no width, and a
+      // corner a hair off the cone's direction gave NaN bin indices.
+      final model = _model(
+          _walls([
+            [10, -1e-8, 11, -1e-8, 11, 10, 10, 10]
+          ]),
+          nativeLibrary: library);
+      for (final aperture in [1e-6, 1e-300, 5e-324]) {
+        expect(_wrong(model, Offset.zero, 0, aperture, 100), isEmpty,
+            reason: 'aperture $aperture');
+      }
+    }, timeout: const Timeout(Duration(seconds: 20)), skip: skip);
+
     test('$label: a sliver of wall between two rays', () {
       final model = _model(_walls([_rectangle(10, .03, 11, .05)]),
           nativeLibrary: library);
@@ -187,6 +216,31 @@ void main() {
       expect(failures.take(20), isEmpty);
     }, timeout: const Timeout(Duration(minutes: 5)), skip: skip);
   }
+
+  test('the check finds a wall an outline left out', () {
+    // Found in review: on a full circle the first point's angle could come
+    // back as pi rather than -pi, and the check then probed nothing.
+    final wall = _walls([_rectangle(10, .03, 11, .05)]);
+    final real = _model(wall), empty = _model(_walls(const []));
+    for (final (direction, aperture) in [
+      (0.0, 1.8),
+      (0.0, 2 * math.pi),
+      (-math.pi / 2, 2 * math.pi),
+      (math.pi, 2 * math.pi),
+    ]) {
+      final missing = empty
+          .horizontalCone(
+              origin: Offset.zero,
+              directionRadians: direction,
+              range: 100,
+              apertureRadians: aperture)
+          .polygon;
+      expect(
+          _wrongOutline(real, missing, Offset.zero, direction, aperture, 100),
+          isNotEmpty,
+          reason: 'direction $direction aperture $aperture');
+    }
+  });
 
   check('Dart');
   // Desktop runs the same query in native/height.
