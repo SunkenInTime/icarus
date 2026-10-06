@@ -986,6 +986,10 @@ class SvgHeightVisibility {
     // stay in the outline even when their neighbours meet the same edge.
     final vertexAngles = <double>[];
     void add(double event, {required bool vertex}) {
+      // Behind a full circle, a ray beside the seam wraps round to the
+      // other end: -pi and pi are the same direction.
+      if (whole && event < -half) event += 2 * math.pi;
+      if (whole && event > half) event -= 2 * math.pi;
       if (event < -half || event > half) return;
       angles.add(event);
       if (vertex) vertexAngles.add(event);
@@ -1900,6 +1904,17 @@ class _ConeBins {
     for (var k = binOf(angle - _cornerSlack); k <= last; k++) {
       if (!_beyond(distance, depth[k])) return false;
     }
+    // Behind a full circle, rays beside an angle at the seam wrap round.
+    if (_whole) {
+      if (angle - _cornerSlack < lowest &&
+          !_beyond(distance, depth[binCount - 1])) {
+        return false;
+      }
+      if (angle + _cornerSlack > lowest + binCount * width &&
+          !_beyond(distance, depth[0])) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -2344,7 +2359,10 @@ class _ConeBins {
       }
       // Rays are admitted a sliver past an edge's ends; see _Edge.intersection.
       final pad = _angleMargin + 1e-12 / distance;
-      for (var shift = 0.0; shift > -4 * math.pi; shift -= 2 * math.pi) {
+      // A span starting just below -pi also covers the bins just below pi.
+      for (var shift = 2 * math.pi;
+          shift > -4 * math.pi;
+          shift -= 2 * math.pi) {
         final start = from[slot] + shift - pad, end = to[slot] + shift + pad;
         if (end < lowest) break;
         if (start > highest) continue;

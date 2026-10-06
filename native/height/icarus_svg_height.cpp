@@ -286,6 +286,15 @@ struct ConeBins {
     for (uint32_t k = binOf(angle - cornerSlack); k <= last; ++k)
       if (!beyond(distance, depth[k]))
         return false;
+    // Behind a full circle, rays beside an angle at the seam wrap round.
+    if (whole) {
+      if (angle - cornerSlack < lowest &&
+          !beyond(distance, depth[binCount - 1]))
+        return false;
+      if (angle + cornerSlack > lowest + binCount * width &&
+          !beyond(distance, depth[0]))
+        return false;
+    }
     return true;
   }
 
@@ -732,7 +741,8 @@ private:
       }
       // Rays are admitted a sliver past an edge's ends; see Edge::intersection.
       const double pad = angleMargin + 1e-12 / distance;
-      for (double shift = 0; shift > -4 * pi; shift -= 2 * pi) {
+      // A span starting just below -pi also covers the bins just below pi.
+      for (double shift = 2 * pi; shift > -4 * pi; shift -= 2 * pi) {
         const double start = from[slot] + shift - pad;
         const double end = to[slot] + shift + pad;
         if (end < lowest)
@@ -1022,6 +1032,10 @@ int32_t ish_query(void *opaque, double originX, double originY,
     // Rays aimed at a vertex or at a wall's crossing of the range circle stay
     // in the outline even when their neighbours meet the same edge.
     auto add = [&](double event, bool vertex) {
+      // Behind a full circle, a ray beside the seam wraps round to the other
+      // end: -pi and pi are the same direction.
+      if (whole && event < -half) event += 2 * pi;
+      if (whole && event > half) event -= 2 * pi;
       if (event < -half || event > half) return;
       angles.push_back(event);
       if (vertex) vertexAngles.push_back(event);
