@@ -25,8 +25,7 @@ void main() {
   float distToDot = length(p - index * uSpacing);
 
   // About one device pixel of antialiasing at any zoom.
-  float mask = 1.0 - smoothstep(uRadius - 0.5 * uPixel,
-                                uRadius + 0.5 * uPixel, distToDot);
+  float mask = clamp((uRadius - distToDot) / uPixel + 0.5, 0.0, 1.0);
 
   float a = uColor.a * mask;
   fragColor = vec4(uColor.rgb * a, a);  // premultiplied alpha

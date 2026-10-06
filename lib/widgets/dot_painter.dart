@@ -98,8 +98,10 @@ class _DotGridState extends ConsumerState<DotGrid> {
   static void _load() {
     if (_loading) return;
     _loading = true;
-    ui.FragmentProgram.fromAsset('shaders/dot_lattice.frag')
-        .then((program) => _lattice.value = program, onError: (_) {});
+    // A failed load leaves the points drawing, and the next build tries again.
+    ui.FragmentProgram.fromAsset('shaders/dot_lattice.frag').then(
+        (program) => _lattice.value = program,
+        onError: (_) => _loading = false);
   }
 
   @override
