@@ -53,6 +53,13 @@ int main() {
   CHECK(result->pointCount >= 2);
   CHECK(std::abs(result->points[2] - 5) < 1e-12);
 
+  // At the smallest positive aperture the bins have no width at all.
+  result->structSize = sizeof(*result);
+  CHECK(ish_query(handle, 0, 0, 0, 10, 4.9406564584124654e-324, 2, active, 1,
+                  result) == ISH_OK);
+  CHECK(result->pointCount >= 2);
+  CHECK(std::abs(result->points[2] - 5) < 1e-12);
+
   active[0] = 0;
   result->structSize = sizeof(*result);
   CHECK(ish_query(handle, 0, 0, 0, 10, 1.5707963267948966, 2, active,
