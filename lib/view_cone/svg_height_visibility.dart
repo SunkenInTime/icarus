@@ -2091,26 +2091,33 @@ class _ConeBins {
   /// Whether anything in [bounds], [distance] from the eye at its nearest,
   /// could show in the cone.
   bool _boundsMayShow(Rect bounds, double distance, double ox, double oy) {
-    if (distance < _absoluteMargin) return true;
-    // Seen from outside, a box spans less than half a turn: its corners'
-    // angles around its centre's give the span.
-    final centre = angleOf(bounds.center.dx - ox, bounds.center.dy - oy);
-    var low = 0.0, high = 0.0;
-    for (var corner = 0; corner < 4; corner++) {
-      final x = (corner & 1) == 0 ? bounds.left : bounds.right;
-      final y = (corner & 2) == 0 ? bounds.top : bounds.bottom;
-      var turn = angleOf(x - ox, y - oy) - centre;
-      if (turn > math.pi) {
-        turn -= 2 * math.pi;
-      } else if (turn < -math.pi) {
-        turn += 2 * math.pi;
-      }
-      low = math.min(low, turn);
-      high = math.max(high, turn);
-    }
-    return _mayShow(
-        centre + low - _cornerSlack, centre + high + _cornerSlack, distance);
+    final column = ox < bounds.left ? 0 : (ox > bounds.right ? 2 : 1);
+    final row = oy < bounds.top ? 0 : (oy > bounds.bottom ? 2 : 1);
+    if (distance < _absoluteMargin || (column == 1 && row == 1)) return true;
+    // Seen from outside, a box spans less than half a turn, between the two
+    // corners that bound its silhouette. Which two depends only on where the
+    // eye is around the box: per region, each corner as (right?, bottom?).
+    final corners = _silhouettes[row * 3 + column];
+    final ax = ((corners & 8) != 0 ? bounds.right : bounds.left) - ox;
+    final ay = ((corners & 4) != 0 ? bounds.bottom : bounds.top) - oy;
+    final bx = ((corners & 2) != 0 ? bounds.right : bounds.left) - ox;
+    final by = ((corners & 1) != 0 ? bounds.bottom : bounds.top) - oy;
+    final ta = angleOf(ax, ay), tb = angleOf(bx, by);
+    final turn = ax * by - ay * bx;
+    final first = turn > 0 ? ta : (turn < 0 ? tb : math.min(ta, tb));
+    var last = turn > 0 ? tb : (turn < 0 ? ta : math.max(ta, tb));
+    if (last < first) last += 2 * math.pi;
+    return _mayShow(first - _cornerSlack, last + _cornerSlack, distance);
   }
+
+  /// For each region around a box, rows top to bottom and columns left to
+  /// right, the two corners of its silhouette as bits: first corner right,
+  /// first bottom, second right, second bottom.
+  static const _silhouettes = [
+    0x9, 0x2, 0x3, //
+    0x1, 0x0, 0xb, //
+    0x3, 0x7, 0x9,
+  ];
 
   /// Whether something [distance] from the eye, spanning angles [first] to
   /// [last] (which may run past pi), falls in the cone and is not provably
