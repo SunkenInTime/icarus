@@ -48,42 +48,103 @@
 //     return false;
 //   }
 // }
-import 'dart:ui' show PointMode;
+import 'dart:ui' as ui show FragmentProgram, FragmentShader, PointMode;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 
-class DotGrid extends ConsumerWidget {
+class DotGrid extends ConsumerStatefulWidget {
   const DotGrid({
     super.key,
     this.isScreenshot = false,
     this.opacity,
+    this.followsEditorZoom = false,
   });
   final bool isScreenshot;
+
+  /// Whether the grid sits on the editor's zoomable canvas. On the web its
+  /// dots then keep edges one device pixel wide at the editor's zoom.
+  final bool followsEditorZoom;
 
   /// Offscreen captures pass the opacity in because their isolated provider
   /// container doesn't read Hive. Everywhere else the user's setting applies.
   final double? opacity;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final double opacity = this.opacity ??
+  ConsumerState<DotGrid> createState() => _DotGridState();
+}
+
+class _DotGridState extends ConsumerState<DotGrid> {
+  // The web redraws every point of the grid on every frame, which was most
+  // of the editor's raster time while dragging; there one shader draws the
+  // lattice instead. Desktop keeps the grid's pixels between frames, so it
+  // keeps the points, as do screenshots. Until the shader loads, the points
+  // draw.
+  static final _lattice = ValueNotifier<ui.FragmentProgram?>(null);
+  static bool _loading = false;
+
+  // This grid's shader, kept for its lifetime: each holds uniforms that are
+  // only freed by dispose. A recorded picture reads the shader's current
+  // uniforms when drawn, which is safe because the grid only ever shows the
+  // picture it painted last.
+  ui.FragmentShader? _shader;
+
+  bool get _usesShader => kIsWeb && !widget.isScreenshot;
+
+  static void _load() {
+    if (_loading) return;
+    _loading = true;
+    // A failed load leaves the points drawing, and the next build tries again.
+    ui.FragmentProgram.fromAsset('shaders/dot_lattice.frag').then(
+        (program) => _lattice.value = program,
+        onError: (_) => _loading = false);
+  }
+
+  @override
+  void dispose() {
+    _shader?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double opacity = widget.opacity ??
         ref.watch(
           appPreferencesProvider.select((prefs) => prefs.backgroundDotOpacity),
         );
-    return CustomPaint(
-      painter: DotPainter(isScreenshot: isScreenshot, opacity: opacity),
+    if (!_usesShader) {
+      return CustomPaint(painter: DotPainter(opacity: opacity));
+    }
+    _load();
+    final zoom = widget.followsEditorZoom ? ref.watch(screenZoomProvider) : 1.0;
+    final pixel = 1 / (MediaQuery.devicePixelRatioOf(context) * zoom);
+    return ValueListenableBuilder(
+      valueListenable: _lattice,
+      builder: (context, program, _) {
+        if (program != null) _shader ??= program.fragmentShader();
+        return CustomPaint(
+          painter: DotPainter(opacity: opacity, shader: _shader, pixel: pixel),
+        );
+      },
     );
   }
 }
 
 class DotPainter extends CustomPainter {
-  DotPainter({required this.isScreenshot, required this.opacity});
+  DotPainter({required this.opacity, this.shader, this.pixel = 1});
 
-  final bool isScreenshot;
   final double opacity;
+
+  /// dot_lattice.frag, to draw the grid with in place of its points.
+  final ui.FragmentShader? shader;
+
+  /// One device pixel in the grid's own units, for [shader].
+  final double pixel;
+
   Size? _cachedSize;
   List<Offset> _cachedPoints = const [];
 
@@ -93,14 +154,45 @@ class DotPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (opacity <= 0) return;
+    final color = Settings.tacticalVioletTheme.border.withValues(
+      alpha: 0.7 * opacity,
+    );
+    final shader = this.shader;
+    if (shader != null) {
+      _paintLattice(canvas, size, shader, color);
+      return;
+    }
 
     final paint = Paint()
-      ..color =
-          Settings.tacticalVioletTheme.border.withValues(alpha: 0.7 * opacity)
+      ..color = color
       ..strokeWidth = dotSize
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawPoints(PointMode.points, _pointsFor(size), paint);
+    canvas.drawPoints(ui.PointMode.points, _pointsFor(size), paint);
+  }
+
+  /// The same lattice as [_pointsFor], drawn by dot_lattice.frag.
+  void _paintLattice(
+      Canvas canvas, Size size, ui.FragmentShader shader, Color color) {
+    final rows = (size.height / dotSpacing).ceil() + 1;
+    final columns = (size.width / dotSpacing).ceil() + 1;
+    var i = 0;
+    shader
+      ..setFloat(i++, columns > 1 ? size.width / (columns - 1) : 0)
+      ..setFloat(i++, rows > 1 ? size.height / (rows - 1) : 0)
+      ..setFloat(i++, columns - 1.0)
+      ..setFloat(i++, rows - 1.0)
+      ..setFloat(i++, dotSize / 2)
+      ..setFloat(i++, pixel)
+      ..setFloat(i++, color.r)
+      ..setFloat(i++, color.g)
+      ..setFloat(i++, color.b)
+      ..setFloat(i++, color.a);
+    // The outer dots straddle the edges, as points do.
+    canvas.drawRect(
+      (Offset.zero & size).inflate(dotSize),
+      Paint()..shader = shader,
+    );
   }
 
   List<Offset> _pointsFor(Size size) {
@@ -141,6 +233,7 @@ class DotPainter extends CustomPainter {
   @override
   bool shouldRepaint(DotPainter oldDelegate) {
     return oldDelegate.opacity != opacity ||
-        oldDelegate.isScreenshot != isScreenshot;
+        oldDelegate.shader != shader ||
+        oldDelegate.pixel != pixel;
   }
 }
