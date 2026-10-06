@@ -773,6 +773,9 @@ Changes, all exact (the polygon is bitwise the same):
   it; the polygon is assembled serially afterwards in the original order.
   Workers spin briefly between the runs of one query and sleep between
   frames. `ICARUS_HEIGHT_THREADS` overrides the worker count for diagnosis.
+  (Removed 2026-10-05: the query now files the edges near the eye by angle
+  once and casts each ray against its own bin, so casting is a tenth of the
+  query and runs on the calling thread.)
 * Event generation culls vertices outside the aperture before any trig.
 * `SvgHeightVisibility` caches the wall activity mask per eye height.
 * A native result keeps its packed doubles; the cone outline path is built
@@ -789,3 +792,58 @@ Instruments: `tool/svg_height_drag_bench_test.dart` and
 `ICARUS_SVG_NATIVE_LIBRARY` to the built `icarus_height.dll`),
 `integration_test/view_cone_drag_performance_test.dart` and
 `view_cone_drag_timeline_test.dart` under `flutter drive --profile -d windows`.
+
+## How a cone is computed (2026-10-05)
+
+A cone's outline is a fan of rays from the eye, joined by straight lines. It
+is exact when every place the visible wall changes has a ray: each corner the
+eye can see (with rays 1e-8 radians either side where the wall turns away),
+each crossing of two strokes, and each wall's crossing of the range circle.
+Rays aimed at corners nobody can see only add points in the middle of a wall
+that is already in the outline. The query's job is to cast the first kind and
+skip the second, without ever skipping the first.
+
+Every ray starts at the same eye, so the query works in angles from it, the
+way a 2D renderer does:
+
+* **Angular bins.** The edges the eye may see are filed once per query into
+  bins about 2π/2048 radians wide, each bin sorted nearest first. A ray tests
+  only its own bin's edges and stops at the first one that starts beyond its
+  hit. Ties go to the lowest edge id.
+* **Depths proven by walls.** A run of consecutive edges along a wall ring that
+  crosses a bin from one boundary to the next, without leaving the bin, is an
+  unbroken wall across it. Every ray in the bin stops no farther than that
+  run's farthest point there, so that is the bin's depth: a one-dimensional
+  depth buffer whose values are proofs rather than samples.
+* **Front-to-back culling.** The map's edge tree is walked nearest node first.
+  A node, an edge or a corner that begins beyond the depth of every bin it
+  spans is provably hidden and skipped: no filing, no events, no rays. Depths
+  are re-proven as the walk gets twice as far out (four times, after the first
+  wave), so nearby walls hide most of the map before it is touched.
+* **Margins.** Every proof uses a margin far larger than the rounding in it
+  (1e-9 in angle and relative distance). Anything the depths cannot rule out
+  is tested exactly, as before.
+
+Dart (the web) and `native/height` (desktop) run the same algorithm; native
+runs on the calling thread, the old thread pool is gone.
+
+Checked on 2026-10-05:
+
+* Against the previous native query on a grid over all 26 map sides, three
+  apertures and two ranges: 145,872 cones, none whose outline differs by more
+  than 1e-5 SVG units. The comparison skips the 1e-8 sliver beside each
+  silhouette, which any ray-built outline draws as a chord.
+* `test/svg_cone_exact_test.dart` checks the outline between every pair of
+  points against an exact ray on two busy maps and five tight spots, and fails
+  if the hidden-corner test is made even 3% too eager.
+* Per cone on Lotus and Breeze: rays fall from about 690 and 1,020 on
+  average to about 290 and 260, edge tests from about 17,600 and 32,300 to
+  about 2,000 and 1,400.
+* Web, dragging a 103° cone at full length through Lotus and Breeze in Edge:
+  the query's p99 went from 11–13 ms and 18 ms to 2.5 ms and 4.4 ms, and the
+  worst query from 15–18 ms and 22 ms to about 3 ms and 6 ms.
+* Native, over the same grid: p99 from 3.5 ms to 1.6 ms, p50 from 0.26 ms to
+  0.18 ms.
+
+The slowest cones left are full circles in open areas such as Breeze mid,
+where the visible outline itself has some 2,800 corners.
