@@ -180,8 +180,10 @@ final svgHeightRuntimeProvider = FutureProvider.autoDispose
     if (disposed) return null;
     final runtime = SplitSvgHeightRuntime.forMap(map, attack, defense);
     currentRuntime = runtime;
-    attack.enableNativeAcceleration();
-    defense.enableNativeAcceleration();
+    for (final side in [attack, defense]) {
+      // Without the native library (the web), cones use the Dart query.
+      if (!side.enableNativeAcceleration()) side.prepareDartQuery();
+    }
     return runtime;
   } catch (error, stack) {
     AppErrorReporter.reportError(
