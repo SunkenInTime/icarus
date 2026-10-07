@@ -27,11 +27,11 @@ const _modelChecksums = <String, String>{
   'breeze_svg_height_attack.json.gz':
       'e8a91f798da33ffae3c70a8f3a684450ad93bab8d77001f5257d0e3f8f645ab6',
   'breeze_svg_height_defense.json.gz':
-      '7d2edb1958c90faa72ef49514dd3adbbedc168227ef1c82aafbe6c60838ca862',
+      '13e8e1e1b4b7c91e80a7a4c8f8ea1994d38272a5639c5a8096d14fcdf68116d1',
   'corrode_svg_height_attack.json.gz':
       '7cb371eda6449d9ae0942352436b37bd6084d2618af00d06567677daa0a7a96c',
   'corrode_svg_height_defense.json.gz':
-      '2aa1c1f3e05f9a02e3fd0457cffae200fe39b45a0568132fc9b93ffdfa8630f2',
+      'a3b7204fa23b62445af09bdb53907410c400bc1a351faf70c5d7af939ec88781',
   'fracture_svg_height_attack.json.gz':
       '187662474f144b49b8c8bfa82ec20a94dc5922f1dcdb100b2860b87787fffcd1',
   'fracture_svg_height_defense.json.gz':
@@ -57,11 +57,11 @@ const _modelChecksums = <String, String>{
   'split_svg_height_defense.json.gz':
       '77b1f0ce8d97dea046666761192a29a3db8b6f78a5b8453436ee7204867c1e3d',
   'summit_svg_height_attack.json.gz':
-      '66ede9bacb193ddf99f7ff1c092cbd675bfcca183d3c99b430f5e402d39c88aa',
+      '5a5f5f74abbe6e3819c409892974386eecccd806a609698b054cf665284e0098',
   'summit_svg_height_defense.json.gz':
       '44ce26d9371526823526ca9bf8c8d94e27b2930574fe3de9681b6e66cd30189c',
   'sunset_svg_height_attack.json.gz':
-      '66bfd94fc20b3d0a034dd7791cd45cbf0dad0740a4d6dd7e9467570b96f94d1c',
+      '16cdd31bc3b8a9af9f7e0b0c15d7a0e6d82913d3e32e11e07f460b6458db1356',
   'sunset_svg_height_defense.json.gz':
       '733dcb7cdad19541c65b60419f161789ca0c9e5937ebb371a9f804852c9c7ba1',
 };

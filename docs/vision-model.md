@@ -866,12 +866,14 @@ bevelled, so:
 
 * it covers every edge it had, so any ray the old wall stopped, it stops: no
   new leaks, and no crack can open between two walls;
-* it moves outward by at most 0.01 units;
+* no point of its outline is more than 0.01 units from the old wall (the
+  whole outline is checked, not just its corners);
 * its heights, floor and id are unchanged.
 
 A wall that would miss one of its old edges or stray further is kept as it
-was. Wall points fall from 25,563 to 4,772 on Summit attack, 17,707 to 4,024
-on Pearl attack and 13,500 to 4,273 on Breeze attack.
+was, as is a wall drawn nonzero with more than one ring (none are today).
+Wall points fall from 25,563 to 5,409 on Summit attack, 17,707 to 4,024 on
+Pearl attack and 13,500 to 4,273 on Breeze attack.
 
 Checked on 2026-10-07 against the previous models, the 360° cut from every
 standable spot on an 8-unit grid over all 26 map sides (33,000 spots), each
@@ -882,7 +884,7 @@ compared along 20,000 directions:
   units). The largest change at any spot is a 4.5° sliver on Lotus attack
   that now ends 0.1 units from the eye instead of 1.1.
 * Native, worst 1% of 360° cuts: Pearl attack 3.8 → 0.8 ms, Summit attack
-  4.3 → 0.9 ms, Breeze defense 2.9 → 0.8 ms. Maps without traced curves are
+  3.1 → 1.0 ms, Breeze defense 2.9 → 0.8 ms. Maps without traced curves are
   unchanged.
 * Dart (the query the web runs, timed in the test VM), worst 1% of 103°
   cones: Pearl attack
