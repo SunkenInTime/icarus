@@ -845,5 +845,45 @@ Checked on 2026-10-05:
 * Native, over the same grid: p99 from 3.5 ms to 1.6 ms, p50 from 0.26 ms to
   0.18 ms.
 
-The slowest cones left are full circles in open areas such as Breeze mid,
-where the visible outline itself has some 2,800 corners.
+The slowest cones left were full circles in open areas such as Breeze mid,
+where the visible outline itself had some 2,800 corners. Most of those
+corners were on traced curves; see the next section.
+
+## Curves drawn with the points they need (2026-10-07)
+
+A cone pays for every corner it can see, about 1.3 µs each natively, and the
+curved walls were traced with a point every 0.03 units or so: the round wall
+in Breeze mid was nearly a thousand points on a circle of radius 9, all within
+0.008 of it. Summit, Pearl and Breeze drew 84–89% of their wall segments
+shorter than 0.1 units.
+
+`scripts/riot/simplify_walls.py` in the archive now runs after `build_art.py`.
+A wall is redrawn only when simplifying at least halves its points and saves
+at least 16, which picks out the traced curves (about 20 walls on each of the
+heavy maps; none on Abyss or Ascent attack). A redrawn wall is simplified to
+within 0.005 units and grown by 0.005, with mitres past right angles
+bevelled, so:
+
+* it covers every edge it had, so any ray the old wall stopped, it stops: no
+  new leaks, and no crack can open between two walls;
+* it moves outward by at most 0.01 units;
+* its heights, floor and id are unchanged.
+
+A wall that would miss one of its old edges or stray further is kept as it
+was. Wall points fall from 25,563 to 4,772 on Summit attack, 17,707 to 4,024
+on Pearl attack and 13,500 to 4,273 on Breeze attack.
+
+Checked on 2026-10-07 against the previous models, the 360° cut from every
+standable spot on an 8-unit grid over all 26 map sides (33,000 spots), each
+compared along 20,000 directions:
+
+* No direction on any map sees farther than before.
+* At most 0.045% of directions on any map side see less (by more than 0.25
+  units). The largest change at any spot is a 4.5° sliver on Lotus attack
+  that now ends 0.1 units from the eye instead of 1.1.
+* Native, worst 1% of 360° cuts: Pearl attack 3.8 → 0.8 ms, Summit attack
+  4.3 → 0.9 ms, Breeze defense 2.9 → 0.8 ms. Maps without traced curves are
+  unchanged.
+* Dart (the query the web runs, timed in the test VM), worst 1% of 103°
+  cones: Pearl attack
+  8.7 → 0.7 ms, Breeze defense 4.4 → 0.8 ms, Summit defense 4.4 → 0.7 ms.
