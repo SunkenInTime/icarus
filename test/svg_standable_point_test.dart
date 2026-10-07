@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -144,5 +147,78 @@ void main() {
     final moved = slit.standablePointNear(const Offset(50, 10.01))!;
     expect(moved.dy < 9 || moved.dy > 11, isTrue,
         reason: 'stepped out to open floor, not left in the slit: $moved');
+  });
+
+  group('where the steps out of the ink find no floor', () {
+    // Stepping out of one wall at a time circles among thin strokes, or
+    // crosses a floor edge with no floor on either side. The agent then
+    // stands at the nearest point of the model's standable floor.
+    final models = <String, SvgHeightVisibility>{};
+    SvgHeightVisibility bundled(String file) => models.putIfAbsent(
+        file,
+        () => SvgHeightVisibility.fromJson(jsonDecode(utf8.decode(gzip
+                .decode(File('assets/maps/$file.json.gz').readAsBytesSync())))
+            as Map<String, dynamic>));
+    Offset stand(String file, Offset dropped) {
+      final model = bundled(file);
+      final stood = model.standablePointNear(dropped);
+      expect(stood, isNotNull, reason: '$file $dropped');
+      expect((stood! - dropped).distance, lessThanOrEqualTo(2.5));
+      expect(model.standablePointNear(stood, maxDistance: 0), stood);
+      return stood;
+    }
+
+    double coneArea(String file, Offset origin) {
+      final model = bundled(file);
+      final polygon = model
+          .cone(
+              origin: origin,
+              directionRadians: 0,
+              range: 30,
+              apertureRadians: 2 * math.pi,
+              supportId: model.standingSupportAt(origin)?.id)
+          .polygon;
+      var twice = 0.0;
+      for (var i = 0; i < polygon.length; i++) {
+        final a = polygon[i], b = polygon[(i + 1) % polygon.length];
+        twice += a.dx * b.dy - b.dx * a.dy;
+      }
+      return twice.abs() / 2;
+    }
+
+    test("an agent dropped on Breeze mid's strokes has a cone", () {
+      for (final dropped in const [
+        Offset(222, 238),
+        Offset(221.5, 238.5),
+        Offset(254, 366),
+      ]) {
+        final stood = stand('breeze_svg_height_attack', dropped);
+        expect(coneArea('breeze_svg_height_attack', stood), greaterThan(100),
+            reason: '$dropped');
+      }
+    });
+
+    test('slivers, pockets and the insides of props are not where it stands',
+        () {
+      // Pearl has floor 0.014 wide beside this wall; Split a pocket under
+      // one square unit; Ascent a square of floor walled in on every side,
+      // a prop drawn as an outline, 0.07 from this drop. Cones from them
+      // are specks or see nothing.
+      for (final (file, dropped) in const [
+        ('pearl_svg_height_attack', Offset(314, 70)),
+        ('split_svg_height_attack', Offset(193, 333)),
+        ('ascent_svg_height_defense', Offset(161, 167)),
+      ]) {
+        expect(coneArea(file, stand(file, dropped)), greaterThan(100),
+            reason: '$file $dropped');
+      }
+    });
+
+    test('the agent stands on the near side of a wall when floor is there', () {
+      // A corridor a unit wide is 0.12 away; past the wall it is a unit.
+      const dropped = Offset(157, 261);
+      expect((stand('fracture_svg_height_attack', dropped) - dropped).distance,
+          lessThan(0.2));
+    });
   });
 }

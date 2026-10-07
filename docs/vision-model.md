@@ -889,3 +889,40 @@ compared along 20,000 directions:
 * Dart (the query the web runs, timed in the test VM), worst 1% of 103°
   cones: Pearl attack
   8.7 → 0.7 ms, Breeze defense 4.4 → 0.8 ms, Summit defense 4.4 → 0.7 ms.
+
+## Where a dragged agent stands (2026-10-07)
+
+A cone is cast from where its agent stands: on the floor, with ground
+beneath, and not within 0.05 of the ink of a wall that blocks a standing eye
+there. An agent dropped in ink is stepped out (`standablePointNear`, every
+frame of a drag): across the nearest edge of the wall it is in, or back onto
+the floor across the floor's nearest edge, up to four steps, the last one's
+landing checked. Among thin strokes those steps can circle, or cross an edge
+with no floor on either side, and the agent got no cone: 3 to 40 spots on a
+4-unit grid per map side with floor within reach.
+
+Then the agent stands at the nearest point of the model's standable floor,
+within the same 2.5 reach. `scripts/riot/standable_region.py` in the archive
+builds it after `simplify_walls.py`, as `standable` in each model:
+
+* the floor, cut by the ground into layers where the same walls block a
+  standing eye, less each blocking wall's ink margin shaped as
+  `_Footprint._contains` tests it;
+* without strips narrower than 0.2 units (Pearl has floor 0.014 wide beside
+  a wall) and pieces under 40 square units: the insides of props drawn as
+  outlines, like a box on Breeze mid's round wall or a walled-in square on
+  Ascent defense, where a cone sees nothing;
+* drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
+  standing test after rounding. The app checks the point anyway.
+
+It adds 1,100 to 25,000 points per map side, 2 to 5% to the files. The steps
+still run first, so every agent they place stands where it did.
+
+Checked on 2026-10-07, every nudge on a 2-unit grid over six map sides
+against main: none lost, none moved more than 0.017 (#256's walls stand
+0.01 farther out), 6 to 254 more spots per side get a cone. Of 24 failing
+points an independent review traced, 21 now stand within 0.015 of the
+nearest standable point, or past a sliver or a prop's inside where that was
+nearest; the other 3 have their nearest floor exactly 2.5 away. Points where
+no cone is correct still get none. A nudge costs 9 to 11 µs at p50 and
+87 to 104 µs at p99 in the test VM; the steps alone were 6 to 8 and 49 to 70.
