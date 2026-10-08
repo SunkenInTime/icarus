@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 
@@ -13,7 +14,8 @@ import 'package:icarus/widgets/youtube_view.dart';
 import 'package:icarus/widgets/lineup_editors_notice.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Fullscreen viewer for one lineup's media, with delete and edit actions.
+/// Fullscreen viewer for one lineup's media, with delete and edit actions
+/// for those who can edit.
 class LineUpMediaCarousel extends ConsumerWidget {
   const LineUpMediaCarousel({super.key, required this.linkId});
 
@@ -23,6 +25,11 @@ class LineUpMediaCarousel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final link = ref.watch(
       lineUpProvider.select((state) => state.linkById(linkId)),
+    );
+    final canEdit = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
     );
 
     return CallbackShortcuts(
@@ -60,29 +67,33 @@ class LineUpMediaCarousel extends ConsumerWidget {
                     spacing: 8,
                     children: [
                       Expanded(child: LineUpEditorsNotice(itemId: linkId)),
-                      ShadIconButton.destructive(
-                        icon: const Icon(LucideIcons.trash2),
-                        decoration: ShadDecoration(
-                          border: ShadBorder.all(
-                              color: Settings.tacticalVioletTheme.border),
+                      if (canEdit) ...[
+                        ShadIconButton.destructive(
+                          icon: const Icon(LucideIcons.trash2),
+                          decoration: ShadDecoration(
+                            border: ShadBorder.all(
+                                color: Settings.tacticalVioletTheme.border),
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            ref
+                                .read(lineUpProvider.notifier)
+                                .deleteLink(linkId);
+                          },
                         ),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          ref.read(lineUpProvider.notifier).deleteLink(linkId);
-                        },
-                      ),
-                      ShadButton(
-                        leading: const Icon(LucideIcons.pencil),
-                        child: const Text("Edit"),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          showDialog(
-                            context: context,
-                            builder: (context) =>
-                                CreateLineupDialog(linkId: linkId),
-                          );
-                        },
-                      ),
+                        ShadButton(
+                          leading: const Icon(LucideIcons.pencil),
+                          child: const Text("Edit"),
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            showDialog(
+                              context: context,
+                              builder: (context) =>
+                                  CreateLineupDialog(linkId: linkId),
+                            );
+                          },
+                        ),
+                      ],
                       ShadIconButton.secondary(
                         icon: const Icon(LucideIcons.x),
                         decoration: ShadDecoration(

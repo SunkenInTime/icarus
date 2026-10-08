@@ -341,25 +341,21 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       ),
                                     ),
                                   Positioned.fill(
-                                    child: IgnorePointer(
-                                      key: const ValueKey(
-                                        'strategy-canvas-object-editor',
-                                      ),
-                                      ignoring: !canEditPages,
-                                      child: ExcludeFocus(
-                                        excluding: !canEditPages,
-                                        child: transitionPresentation.hideView
-                                            ? SizedBox.shrink()
-                                            : Opacity(
-                                                opacity: ref.watch(
-                                                            interactionStateProvider) ==
-                                                        InteractionState
-                                                            .lineUpPlacing
-                                                    ? 0.2
-                                                    : 1.0,
-                                                child: PlacedWidgetBuilder(),
-                                              ),
-                                      ),
+                                    // PlacedWidgetBuilder keeps a viewer's
+                                    // pointer off everything but lineups.
+                                    child: ExcludeFocus(
+                                      excluding: !canEditPages,
+                                      child: transitionPresentation.hideView
+                                          ? SizedBox.shrink()
+                                          : Opacity(
+                                              opacity: ref.watch(
+                                                          interactionStateProvider) ==
+                                                      InteractionState
+                                                          .lineUpPlacing
+                                                  ? 0.2
+                                                  : 1.0,
+                                              child: PlacedWidgetBuilder(),
+                                            ),
                                     ),
                                   ),
                                   Positioned.fill(

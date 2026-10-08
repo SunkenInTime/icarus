@@ -15,6 +15,7 @@ import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -114,6 +115,11 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
     final agentSize = strategySettings.agentSize;
     final scaledAgentSize = coordinateSystem.scale(agentSize);
     final abilitySize = strategySettings.abilitySize;
+    final canEditPages = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -132,36 +138,49 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                     //   alignment: Alignment.topRight,
                     //   child: const DeleteArea(),
                     // ),
-                    _CustomShapeUtilityList(
-                      coordinateSystem: coordinateSystem,
-                      mapScale: mapScale,
-                    ),
-                    _ViewConeUtilityList(
-                      coordinateSystem: coordinateSystem,
-                      agentSize: agentSize,
-                    ),
-                    _AbilityList(
-                      coordinateSystem: coordinateSystem,
-                      mapScale: mapScale,
-                      abilitySize: abilitySize,
-                    ),
-                    _AgentList(
-                      coordinateSystem: coordinateSystem,
-                      agentSize: agentSize,
-                    ),
-                    _TextList(
-                      coordinateSystem: coordinateSystem,
-                      agentSize: scaledAgentSize,
-                    ),
-                    _PlacedImageList(
-                      coordinateSystem: coordinateSystem,
-                      agentSize: scaledAgentSize,
-                    ),
-                    _UtilityList(
-                      coordinateSystem: coordinateSystem,
-                      agentSize: agentSize,
-                      abilitySize: abilitySize,
-                      mapScale: mapScale,
+                    // A viewer can't touch what is placed, but lineups stay
+                    // live: opening one is how its media is seen.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        key: const ValueKey('strategy-canvas-object-editor'),
+                        ignoring: !canEditPages,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _CustomShapeUtilityList(
+                              coordinateSystem: coordinateSystem,
+                              mapScale: mapScale,
+                            ),
+                            _ViewConeUtilityList(
+                              coordinateSystem: coordinateSystem,
+                              agentSize: agentSize,
+                            ),
+                            _AbilityList(
+                              coordinateSystem: coordinateSystem,
+                              mapScale: mapScale,
+                              abilitySize: abilitySize,
+                            ),
+                            _AgentList(
+                              coordinateSystem: coordinateSystem,
+                              agentSize: agentSize,
+                            ),
+                            _TextList(
+                              coordinateSystem: coordinateSystem,
+                              agentSize: scaledAgentSize,
+                            ),
+                            _PlacedImageList(
+                              coordinateSystem: coordinateSystem,
+                              agentSize: scaledAgentSize,
+                            ),
+                            _UtilityList(
+                              coordinateSystem: coordinateSystem,
+                              agentSize: agentSize,
+                              abilitySize: abilitySize,
+                              mapScale: mapScale,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const LineUpOverlay(),
                   ],

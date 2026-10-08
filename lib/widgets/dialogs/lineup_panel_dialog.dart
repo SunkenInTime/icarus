@@ -5,6 +5,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
@@ -90,9 +91,11 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     super.initState();
     _selectedLinkId = widget.initialLinkId;
     // Having the panel open counts as editing its lineups (see
-    // myLineupEditingProvider); providers change after this frame.
+    // myLineupEditingProvider), unless the reader can only view them;
+    // providers change after this frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) return;
       ref.read(openLineUpItemsProvider.notifier).open(_hoverOwnerToken, {
         _spotId,
       });
@@ -169,6 +172,11 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
   Widget build(BuildContext context) {
     final state = ref.watch(lineUpProvider);
     final links = _links(state);
+    final canEdit = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
 
     if (links.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -247,6 +255,7 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
                                   ?.name ??
                               '',
                           isSelected: link.id == selected.id,
+                          canEdit: canEdit,
                           onTap: () =>
                               setState(() => _selectedLinkId = link.id),
                           onHoverEnter: () {
@@ -307,6 +316,7 @@ class _LineUpRow extends StatefulWidget {
     required this.label,
     required this.agentName,
     required this.isSelected,
+    required this.canEdit,
     required this.onTap,
     required this.onHoverEnter,
     required this.onHoverExit,
@@ -319,6 +329,9 @@ class _LineUpRow extends StatefulWidget {
   final String label;
   final String agentName;
   final bool isSelected;
+
+  /// False for a viewer: the row has no menu of edits.
+  final bool canEdit;
   final VoidCallback onTap;
   final VoidCallback onHoverEnter;
   final VoidCallback onHoverExit;
@@ -339,6 +352,73 @@ class _LineUpRowState extends State<_LineUpRow> {
     final firstImage =
         widget.link.images.isEmpty ? null : widget.link.images.first;
 
+    final row = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        setState(() => _hovered = true);
+        widget.onHoverEnter();
+      },
+      onExit: (_) {
+        setState(() => _hovered = false);
+        widget.onHoverExit();
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          key: ValueKey('lineup-panel-row-${widget.link.id}'),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: widget.isSelected || _hovered ? theme.accent : theme.card,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: widget.isSelected ? theme.primary : theme.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  width: 72,
+                  height: 44,
+                  child: _LineUpThumbnail(image: firstImage),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: theme.foreground,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.agentName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: theme.mutedForeground,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!widget.canEdit) return row;
+
     return ShadContextMenuRegion(
       items: [
         ShadContextMenuItem(
@@ -357,71 +437,7 @@ class _LineUpRowState extends State<_LineUpRow> {
           child: const Text('Delete lineup'),
         ),
       ],
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) {
-          setState(() => _hovered = true);
-          widget.onHoverEnter();
-        },
-        onExit: (_) {
-          setState(() => _hovered = false);
-          widget.onHoverExit();
-        },
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: Container(
-            key: ValueKey('lineup-panel-row-${widget.link.id}'),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: widget.isSelected || _hovered ? theme.accent : theme.card,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: widget.isSelected ? theme.primary : theme.border,
-              ),
-            ),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: SizedBox(
-                    width: 72,
-                    height: 44,
-                    child: _LineUpThumbnail(image: firstImage),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: theme.foreground,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        widget.agentName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: theme.mutedForeground,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      child: row,
     );
   }
 }
