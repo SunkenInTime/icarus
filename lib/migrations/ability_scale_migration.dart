@@ -105,7 +105,7 @@ class AbilityScaleMigration {
     }
 
     if (data is CircleAbility) {
-      final oldSize = data.size *
+      final oldSize = data.storedSize *
           (_oldInGameMetersDiameter / AgentData.inGameMetersDiameter);
       return Offset((oldSize * oldMapScale) / 2, (oldSize * oldMapScale) / 2);
     }
