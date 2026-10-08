@@ -845,5 +845,114 @@ Checked on 2026-10-05:
 * Native, over the same grid: p99 from 3.5 ms to 1.6 ms, p50 from 0.26 ms to
   0.18 ms.
 
-The slowest cones left are full circles in open areas such as Breeze mid,
-where the visible outline itself has some 2,800 corners.
+The slowest cones left were full circles in open areas such as Breeze mid,
+where the visible outline itself had some 2,800 corners. Most of those
+corners were on traced curves; see the next section.
+
+## Curves drawn with the points they need (2026-10-07)
+
+A cone pays for every corner it can see, about 1.3 µs each natively, and the
+curved walls were traced with a point every 0.03 units or so: the round wall
+in Breeze mid was nearly a thousand points on a circle of radius 9, all within
+0.008 of it. Summit, Pearl and Breeze drew 84–89% of their wall segments
+shorter than 0.1 units.
+
+`scripts/riot/simplify_walls.py` in the archive now runs after `build_art.py`.
+A wall is redrawn only when simplifying at least halves its points and saves
+at least 16, which picks out the traced curves (about 20 walls on each of the
+heavy maps; none on Abyss or Ascent attack). A redrawn wall is simplified to
+within 0.005 units and grown by 0.005, with mitres past right angles
+bevelled, so:
+
+* it covers every edge it had, so any ray the old wall stopped, it stops: no
+  new leaks, and no crack can open between two walls;
+* no point of its outline is more than 0.01 units from the old wall (the
+  whole outline is checked, not just its corners);
+* its heights, floor and id are unchanged.
+
+A wall that would miss one of its old edges or stray further is kept as it
+was, as is a wall drawn nonzero with more than one ring (none are today).
+Wall points fall from 25,563 to 5,409 on Summit attack, 17,707 to 4,024 on
+Pearl attack and 13,500 to 4,273 on Breeze attack.
+
+Checked on 2026-10-07 against the previous models, the 360° cut from every
+standable spot on an 8-unit grid over all 26 map sides (33,000 spots), each
+compared along 20,000 directions:
+
+* No direction on any map sees farther than before.
+* At most 0.045% of directions on any map side see less (by more than 0.25
+  units). The largest change at any spot is a 4.5° sliver on Lotus attack
+  that now ends 0.1 units from the eye instead of 1.1.
+* Native, worst 1% of 360° cuts: Pearl attack 3.8 → 0.8 ms, Summit attack
+  3.1 → 1.0 ms, Breeze defense 2.9 → 0.8 ms. Maps without traced curves are
+  unchanged.
+* Dart (the query the web runs, timed in the test VM), worst 1% of 103°
+  cones: Pearl attack
+  8.7 → 0.7 ms, Breeze defense 4.4 → 0.8 ms, Summit defense 4.4 → 0.7 ms.
+
+## Where a dragged agent stands (2026-10-07)
+
+A cone is cast from where its agent stands: on the floor, with ground
+beneath, and not within 0.05 of the ink of a wall that blocks a standing eye
+there. An agent dropped in ink is stepped out (`standablePointNear`, every
+frame of a drag): across the nearest edge of the wall it is in, or back onto
+the floor across the floor's nearest edge, up to four steps. Among thin
+strokes those steps can circle, or cross an edge with no floor on either
+side, and the agent got no cone: 3 to 40 spots on a 4-unit grid per map side
+with floor within reach.
+
+Then the agent stands at the nearest point of the model's standable floor,
+within the same 2.5 reach. `scripts/riot/standable_region.py` in the archive
+builds it after `simplify_walls.py`, as `standable` in each model:
+
+* the floor, cut by the ground into layers where the same walls block a
+  standing eye, less each blocking wall's ink margin shaped as
+  `_Footprint._contains` tests it;
+* without strips narrower than 0.2 units (Pearl has floor 0.014 wide beside
+  a wall) and specks under 2 square units;
+* every piece walled off from the main floor judged by the app itself. Such
+  a piece may be the ground inside a prop drawn as an outline (from there a
+  cone sees only the prop), the prop's top, a ledge or a corridor, and only
+  the app's own standing level and cone can tell which. An offline step
+  (`standable_classify_test.dart` in the archive) stands an agent at samples
+  over each piece and along its edge, as the app would, casts a full cone of
+  range 30, and measures the floor it paints, outside the piece and in all.
+  A piece where no sample sees 50 square units outside it is the inside of
+  a prop and goes: Pearl's free-standing blocks, Breeze's big boxes by A.
+  In the rest, a sample is worth standing on if it sees out or paints 100
+  square units (a corridor's wall paints mostly its own corridor). The
+  level an agent stands on changes sharply at a support's outline: beside
+  a prop's top it stands on the ground and sees only the prop, a twentieth
+  of a unit over it sees the map. So each level in a piece (a support, or
+  the ground) is judged on its own. Where all its samples agree it is kept
+  or dropped along the support's outline; where they disagree (a ledge
+  whose view fades), each point takes its nearest sample's verdict, a
+  quarter of the spacing toward not worth standing on. A level no sample stands on, such as a rim of ground around a prop's
+  top narrower than the samples, goes;
+* where ground triangles overlap, read as the app reads them, the first in
+  the file giving the height;
+* drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
+  standing test after rounding. The app checks the point anyway.
+
+It adds 1,152 to 7,008 points per map side, 0.5 to 3.0% to the files. The
+steps run first, exactly as before, so every agent they place stands where
+it did.
+
+Checked on 2026-10-08 on all 26 map sides. The region against the app's
+standing test: no point of a 0.5-unit grid inside it, and none sampled along
+its edges every 0.25, is refused (7.9 million and 877,000 points). Of the
+4,036 drops on a 2-unit grid where the steps find nothing and the region
+places the agent, 9 paint a cone under 100 square units once it is clipped
+to the floor, all on floor painting 78 to 100, six along a Corrode ledge
+whose view runs off the painted floor; none stands inside a prop. Along
+the region's edges in walled-off pieces, where the fallback lands, the app
+finds 1,688 of 384,000 points every 0.1 not worth standing on (7,211 with
+disc cuts alone), mostly where the view fades within one level. Every nudge on a 2-unit grid
+against main: with main's walls, none lost or moved and 3,654 more spots get
+a cone; with #256's walls, 4 of 1.3 million lost: three whose floor is 2.4 to 2.5 away
+at the edge of the reach, and one where main stands the agent in a speck
+whose cone paints under a square unit; and 4 moved more than 0.022 (#256's walls
+stand 0.01 farther out), two of them by about 2 units where the steps take
+another way round #256's walls.
+A nudge costs 7 to 10 µs at p50 and 65 to 68 µs at p99 in the test VM; the
+steps alone were 6 to 8 and 49 to 70.

@@ -94,7 +94,10 @@ void main() {
   test('a hole in a wall stays floor', () {
     // Haven's p5-stroke-10 is drawn even-odd with floor inside it.
     final model = _model('haven', 'attack');
-    expect(model.receiverContains(const Offset(198.4425, 184.726)), isTrue);
+    const inHole = Offset(198.4425, 184.726);
+    expect(model.receiverContains(inHole), isTrue);
+    // No wall reaches into it: an agent placed there stays where it is.
+    expect(model.standablePointNear(inHole), inHole);
   });
 
   test('a drawn ring by a wall does not slice a cone into slivers', () {

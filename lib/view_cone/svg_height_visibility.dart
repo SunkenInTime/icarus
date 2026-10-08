@@ -19,7 +19,8 @@ class SvgHeightVisibility {
       this.ground,
       this.requiresPhysicalGround,
       this.sightlineFloors,
-      [List<SvgRuntimeWall>? runtimeWalls])
+      [List<SvgRuntimeWall>? runtimeWalls,
+      this._standable])
       : runtimeWalls = runtimeWalls ??
             List.unmodifiable([
               for (var i = 0; i < walls.length; i++)
@@ -226,7 +227,15 @@ class SvgHeightVisibility {
             : SvgGroundHeight.fromJson(_map(json['ground'])),
         physicalGround,
         List.unmodifiable(sightlineFloors),
-        runtimeWalls == null ? null : List.unmodifiable(runtimeWalls));
+        runtimeWalls == null ? null : List.unmodifiable(runtimeWalls),
+        _standableFloor(json['standable']));
+  }
+
+  static _Footprint? _standableFloor(Object? raw) {
+    if (raw == null) return null;
+    final row = _map(raw);
+    if (_list(row['rings'], 'rings').isEmpty) return null;
+    return SvgHeightReceiver._(_rings(row), _evenOdd(row));
   }
 
   static bool _sameBands(List<SvgHeightBand> a, List<SvgHeightBand> b) {
@@ -244,6 +253,12 @@ class SvgHeightVisibility {
   final SvgGroundHeight? ground;
   final bool requiresPhysicalGround;
   final List<SvgHeightSupport> sightlineFloors;
+
+  /// Where an agent may stand: the floor less every blocking wall's ink
+  /// margin, and less slivers and pockets no agent fits in. Built offline
+  /// (scripts/riot/standable_region.py in the archive); older models have
+  /// none.
+  final _Footprint? _standable;
 
   /// The outlines cones are cast against: [walls] themselves, or touching
   /// pieces with the same heights merged into one outline each.
@@ -488,11 +503,29 @@ class SvgHeightVisibility {
       } else {
         target = _pulledIn(current, 0.02);
       }
-      if (target == null || (target - point).distance > maxDistance)
-        return null;
+      if (target == null || (target - point).distance > maxDistance) break;
       current = target;
     }
-    return null;
+    // Among thin strokes the steps can circle, or cross an edge with no floor
+    // on either side. Then stand at the nearest point of the standable floor.
+    return _nearestStandable(point, maxDistance);
+  }
+
+  Offset? _nearestStandable(Offset point, double maxDistance) {
+    final floor = _standable;
+    if (floor == null) return null;
+    final e = floor._nearestEdge(point);
+    if (e < 0 || floor._distanceTo(e, point.dx, point.dy) > maxDistance) {
+      return null;
+    }
+    final (foot, _) = floor._footOn(e, point);
+    // The region lies inside the standable set by a margin, so its edge
+    // passes; the check guards against a model and region out of step.
+    return _blockingWallAt(foot) == null &&
+            receiverContains(foot) &&
+            (ground == null || ground!.heightAt(foot) != null)
+        ? foot
+        : null;
   }
 
   /// How close to blocking ink still counts as in it. Two strokes drawn a
