@@ -8,6 +8,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -32,7 +33,8 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
   /// while this origin is pinned; the real one underneath keeps the hitbox.
   final bool interactive;
 
-  /// Moves the committed origin. Null leaves the marker fixed in place.
+  /// Moves the committed origin. Null, or a reader who can only view, leaves
+  /// the marker fixed in place.
   final ValueChanged<DraggableDetails>? onDragEnd;
 
   @override
@@ -63,7 +65,12 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
         isInteractive: interactive,
       ),
     );
-    if (interactive && onDragEnd != null) {
+    final canEdit = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
+    if (interactive && canEdit && onDragEnd != null) {
       marker = Draggable<PlacedWidget>(
         key: ValueKey('lineup-agent-drag-${origin.id}'),
         data: origin.agent,
@@ -112,7 +119,8 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
   /// while this landing is pinned; the real one underneath keeps the hitbox.
   final bool interactive;
 
-  /// Moves the committed landing. Null leaves the marker fixed in place.
+  /// Moves the committed landing. Null, or a reader who can only view, leaves
+  /// the marker fixed in place.
   final ValueChanged<DraggableDetails>? onDragEnd;
 
   @override
@@ -178,7 +186,12 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
       isPinned: isPinned,
       child: buildAbility(isFeedback: false),
     );
-    if (interactive && onDragEnd != null) {
+    final canEdit = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
+    if (interactive && canEdit && onDragEnd != null) {
       marker = Draggable<PlacedWidget>(
         key: ValueKey('lineup-ability-drag-${landing.id}'),
         data: ability,

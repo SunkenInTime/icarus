@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
@@ -291,23 +292,31 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
         landingLinks.length == 1 ? landingLinks.single.notes : null;
     final hasLineUpNote = (lineUpNotes?.trim().isNotEmpty ?? false);
     _scheduleHitboxMeasurement();
-    final menuItems = widget.contextMenuItems ??
-        (widget.lineUpOriginId == null
-            ? null
-            : [
-                ShadContextMenuItem(
-                  leading: Icon(
-                    Icons.delete,
-                    color: Settings.tacticalVioletTheme.destructive,
-                  ),
-                  child: const Text('Delete origin'),
-                  onPressed: () {
-                    ref
-                        .read(lineUpProvider.notifier)
-                        .deleteOrigin(widget.lineUpOriginId!);
-                  },
-                ),
-              ]);
+    // A viewer can still hover and open what is here, never change it.
+    final canEdit = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
+    final menuItems = !canEdit
+        ? null
+        : widget.contextMenuItems ??
+            (widget.lineUpOriginId == null
+                ? null
+                : [
+                    ShadContextMenuItem(
+                      leading: Icon(
+                        Icons.delete,
+                        color: Settings.tacticalVioletTheme.destructive,
+                      ),
+                      child: const Text('Delete origin'),
+                      onPressed: () {
+                        ref
+                            .read(lineUpProvider.notifier)
+                            .deleteOrigin(widget.lineUpOriginId!);
+                      },
+                    ),
+                  ]);
 
     final content = MouseRegion(
       cursor: widget.cursor,
@@ -324,7 +333,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
             ownerToken: _ownerToken,
           );
         }
-        _publishHoveredDeleteTarget();
+        if (canEdit) _publishHoveredDeleteTarget();
         _updateLineUpHoverState(true);
       },
       onExit: (_) {
@@ -347,7 +356,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       interactiveChild = GestureDetector(
         behavior: HitTestBehavior.deferToChild,
         onTapUp: _handleStackAwarePrimaryTap,
-        onSecondaryTapUp: _handleStackAwareSecondaryTap,
+        onSecondaryTapUp: canEdit ? _handleStackAwareSecondaryTap : null,
         child: interactiveChild,
       );
     } else if (effectiveOnTap != null) {
