@@ -916,8 +916,8 @@ builds it after `simplify_walls.py`, as `standable` in each model:
   floor, and only the app's own standing level and cone can tell which. An
   offline step (`standable_classify_test.dart` in the archive) stands an
   agent at samples a quarter unit apart, as the app would, casts a full cone
-  of range 30, and keeps the cells around samples whose cone sees more than
-  100 square units;
+  of range 30, and keeps the cells around samples whose cone, before it is
+  clipped to the floor, covers more than 100 square units;
 * where ground triangles overlap, read as the app reads them, the first in
   the file giving the height;
 * drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
@@ -930,8 +930,12 @@ Checked on 2026-10-07 on all 26 map sides. The region against the app's
 standing test: no point of a 0.5-unit grid inside it, and none sampled along
 its edges every 0.25, is refused (8.0 million and 888,000 points). Inside
 the small pieces it keeps, 8 of 1.1 million samples a tenth of a unit apart
-have a cone under 100 square units, single points where the level the app
-stands an agent on changes. Every nudge on a 2-unit grid against main: with
+have a cone under 100 square units, small patches where the level the app
+stands an agent on changes. Of the 4,052 drops on a 2-unit grid where the
+steps find nothing and the region places the agent, 63 paint a cone under
+100 square units once it is clipped to the floor: the ground inside props
+larger than 40 square units, which the floor data counts as floor, and
+ledges whose view runs mostly off the painted floor. Every nudge on a 2-unit grid against main: with
 main's walls, none lost or moved and 3,693 more spots get a cone; with
 #256's walls, 4 of 1.3 million lost (three whose floor was near the 2.5
 reach, one a speck whose cone covered a square unit), almost all moves under
