@@ -919,27 +919,35 @@ builds it after `simplify_walls.py`, as `standable` in each model:
   range 30, and measures the floor it paints, outside the piece and in all.
   A piece where no sample sees 50 square units outside it is the inside of
   a prop and goes: Pearl's free-standing blocks, Breeze's big boxes by A.
-  From the rest, a disc is cut around every sample that neither sees out
-  nor paints 100 square units: a prop's rim around its top goes, a
-  corridor's wall stays;
+  In the rest, a sample is worth standing on if it sees out or paints 100
+  square units (a corridor's wall paints mostly its own corridor). The
+  level an agent stands on changes sharply at a support's outline: beside
+  a prop's top it stands on the ground and sees only the prop, a twentieth
+  of a unit over it sees the map. So each level in a piece (a support, or
+  the ground) is judged on its own. Where all its samples agree it is kept
+  or dropped along the support's outline; where they disagree (a ledge
+  whose view fades), a disc is cut around each sample not worth standing
+  on;
 * where ground triangles overlap, read as the app reads them, the first in
   the file giving the height;
 * drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
   standing test after rounding. The app checks the point anyway.
 
-It adds 1,950 to 9,640 points per map side, 0.8 to 5.9% to the files. The
+It adds 1,270 to 8,220 points per map side, 0.6 to 3.2% to the files. The
 steps run first, exactly as before, so every agent they place stands where
 it did.
 
 Checked on 2026-10-08 on all 26 map sides. The region against the app's
 standing test: no point of a 0.5-unit grid inside it, and none sampled along
-its edges every 0.25, is refused (7.9 million and 921,000 points). Of the
+its edges every 0.25, is refused (7.9 million and 886,000 points). Of the
 4,036 drops on a 2-unit grid where the steps find nothing and the region
-places the agent, 14 paint a cone under 100 square units once it is clipped
-to the floor. Three stand on the ground inside a prop, within a twentieth
-of a unit of where its top begins, finer than the quarter-unit samples. The
-other 11 are floor painting 79 to 100, six along a Corrode ledge whose view
-runs off the painted floor. Every nudge on a 2-unit grid
+places the agent, 11 paint a cone under 100 square units once it is clipped
+to the floor, all on floor painting 79 to 100, six along a Corrode ledge
+whose view runs off the painted floor; none stands inside a prop. Along
+the region's edges in walled-off pieces, where the fallback lands, the app
+finds 2,796 of 385,000 points every 0.1 not worth standing on (7,211 with
+disc cuts alone), mostly where the ground's view changes sharply within
+one level, between two samples. Every nudge on a 2-unit grid
 against main: with main's walls, none lost or moved and 3,654 more spots get
 a cone; with #256's walls, 4 of 1.3 million lost: three whose floor is 2.4 to 2.5 away
 at the edge of the reach, and one where main stands the agent in a speck
