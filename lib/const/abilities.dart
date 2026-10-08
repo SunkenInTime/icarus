@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -40,6 +42,13 @@ bool isRotatable(Ability ability) {
 /// their glyph upright; their rotation is the cone's.
 bool turnsGlyph(Ability ability) =>
     ability is BaseAbility || ability is ImageAbility;
+
+/// The rotation a plain icon's glyph is drawn with, before the side flip. An
+/// icon nobody turned stores 0 and stays upright on both sides, so on defense
+/// it draws as half a turn, which the flip brings back upright. A turned icon
+/// never stores 0 (see steppedRotation) and points along the map.
+double uprightGlyphRotation(double rotation, {required bool isAttack}) =>
+    rotation == 0 && !isAttack ? math.pi : rotation;
 
 double _squareRenderedWidth({
   required bool isWall,

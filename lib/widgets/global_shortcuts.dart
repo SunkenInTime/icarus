@@ -70,6 +70,10 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     }
   }
 
+  // A held button means a drag or a rotation handle is mid-edit; the widget
+  // commits its own angle on release, which would overwrite a keyed turn.
+  int _pointersDown = 0;
+
   void _dismissDeleteMenu() {
     ref.read(deleteMenuProvider.notifier).requestClose();
   }
@@ -195,7 +199,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
           ),
           RotateHoveredIntent: CallbackAction<RotateHoveredIntent>(
             onInvoke: (intent) {
-              if (!capabilities.canEditPages) return null;
+              if (!capabilities.canEditPages || _pointersDown > 0) return null;
               final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
               if (hoveredTarget == null) return null;
               rotateHoveredTarget(
@@ -309,7 +313,12 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
         child: Focus(
           focusNode: _focusNode,
           autofocus: true,
-          child: widget.child,
+          child: Listener(
+            onPointerDown: (_) => _pointersDown++,
+            onPointerUp: (_) => _pointersDown--,
+            onPointerCancel: (_) => _pointersDown--,
+            child: widget.child,
+          ),
         ),
       ),
     );

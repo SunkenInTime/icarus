@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
@@ -189,7 +191,7 @@ class _EntryRenderer {
           opacity: 1,
           length: entry.endLength,
           armLengthsMeters: entry.endArmLengths,
-          rotation: entry.endRotation,
+          rotation: _drawnRotation(entry.to, entry.endRotation),
           scale: entry.endScale,
           textSize: entry.endTextSize,
           customDiameter: entry.endCustomDiameter,
@@ -218,7 +220,7 @@ class _EntryRenderer {
           opacity: 1 - t,
           length: entry.startLength,
           armLengthsMeters: entry.startArmLengths,
-          rotation: entry.startRotation,
+          rotation: _drawnRotation(entry.from, entry.startRotation),
           scale: entry.startScale,
           textSize: entry.startTextSize,
           customDiameter: entry.startCustomDiameter,
@@ -264,7 +266,12 @@ class _EntryRenderer {
             entry.endArmLengths,
             t,
           ),
-          rotation: _lerpAngle(entry.startRotation, entry.endRotation, t),
+          rotation: _lerpRotation(
+            entry.to!,
+            _drawnRotation(entry.from, entry.startRotation),
+            _drawnRotation(entry.to, entry.endRotation),
+            t,
+          ),
           scale: _lerpDouble(entry.startScale, entry.endScale, t),
           textSize: _lerpDouble(entry.startTextSize, entry.endTextSize, t),
           customDiameter: _lerpDouble(
@@ -308,7 +315,7 @@ class _EntryRenderer {
           opacity: appearOpacity,
           length: entry.endLength,
           armLengthsMeters: entry.endArmLengths,
-          rotation: entry.endRotation,
+          rotation: _drawnRotation(entry.to, entry.endRotation),
           scale: entry.endScale,
           textSize: entry.endTextSize,
           customDiameter: entry.endCustomDiameter,
@@ -322,6 +329,25 @@ class _EntryRenderer {
   double? _lerpAngle(double? a, double? b, double t) {
     if (a == null || b == null) return null;
     return a + (b - a) * t;
+  }
+
+  /// A plain icon turns the short way between pages; its stored angles wrap
+  /// at a full turn, so 315 degrees to 45 must not spin back through 180.
+  double? _lerpRotation(PlacedWidget widget, double? a, double? b, double t) {
+    if (a == null || b == null || !_turnsGlyph(widget)) {
+      return _lerpAngle(a, b, t);
+    }
+    const turn = 2 * math.pi;
+    // Dart's % is never negative for a positive divisor.
+    final delta = (b - a + math.pi) % turn - math.pi;
+    return a + delta * t;
+  }
+
+  double? _drawnRotation(PlacedWidget? widget, double? rotation) {
+    if (rotation == null || widget == null || !_turnsGlyph(widget)) {
+      return rotation;
+    }
+    return uprightGlyphRotation(rotation, isAttack: isAttack);
   }
 
   double? _lerpLength(double? a, double? b, double t) {
@@ -838,7 +864,10 @@ Widget staticPlacedWidgetView({
     abilitySize: abilitySize,
     isAttack: isAttack,
   );
-  final canonicalRotation = PageTransitionEntry.rotationOf(widget);
+  final storedRotation = PageTransitionEntry.rotationOf(widget);
+  final canonicalRotation = storedRotation != null && _turnsGlyph(widget)
+      ? uprightGlyphRotation(storedRotation, isAttack: isAttack)
+      : storedRotation;
   final displayRotation = canonicalRotation == null
       ? null
       : coord.rotationForSide(canonicalRotation, isAttack: isAttack);
@@ -936,4 +965,11 @@ Widget staticPlacedWidgetView({
       ),
     );
   }
+}
+
+/// Plain icons draw their rotation on the glyph (see turnsGlyph).
+bool _turnsGlyph(PlacedWidget widget) {
+  if (widget is! PlacedAbility) return false;
+  final data = widget.data.abilityData;
+  return data != null && turnsGlyph(data);
 }

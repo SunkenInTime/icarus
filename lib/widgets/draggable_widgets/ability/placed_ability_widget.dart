@@ -455,8 +455,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       abilitySize: abilitySize,
       isAttack: isAttack,
     );
-    final glyphRotation =
-        turnsGlyph(abilityData) && visionSpec == null ? displayRotation : null;
+    final glyphRotation = turnsGlyph(abilityData) && visionSpec == null
+        ? coordinateSystem.rotationForSide(
+            uprightGlyphRotation(localRotation!, isAttack: isAttack),
+            isAttack: isAttack,
+          )
+        : null;
     return Positioned(
       left: screenPosition.dx,
       top: screenPosition.dy,
