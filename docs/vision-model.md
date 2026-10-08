@@ -927,7 +927,8 @@ builds it after `simplify_walls.py`, as `standable` in each model:
   the ground) is judged on its own. Where all its samples agree it is kept
   or dropped along the support's outline; where they disagree (a ledge
   whose view fades), a disc is cut around each sample not worth standing
-  on;
+  on. A level no sample stands on, such as a rim of ground around a prop's
+  top narrower than the samples, goes;
 * where ground triangles overlap, read as the app reads them, the first in
   the file giving the height;
 * drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
@@ -945,7 +946,7 @@ places the agent, 11 paint a cone under 100 square units once it is clipped
 to the floor, all on floor painting 79 to 100, six along a Corrode ledge
 whose view runs off the painted floor; none stands inside a prop. Along
 the region's edges in walled-off pieces, where the fallback lands, the app
-finds 2,796 of 385,000 points every 0.1 not worth standing on (7,211 with
+finds 2,719 of 384,000 points every 0.1 not worth standing on (7,211 with
 disc cuts alone), mostly where the ground's view changes sharply within
 one level, between two samples. Every nudge on a 2-unit grid
 against main: with main's walls, none lost or moved and 3,654 more spots get
