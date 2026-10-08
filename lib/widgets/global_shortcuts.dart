@@ -18,6 +18,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
+import 'package:icarus/widgets/rotate_helpers.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:uuid/uuid.dart';
@@ -189,6 +190,19 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
               ref.read(deleteMenuProvider.notifier).requestOpen(
                     reason: DeleteMenuOpenReason.keyboard,
                   );
+              return null;
+            },
+          ),
+          RotateHoveredIntent: CallbackAction<RotateHoveredIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages) return null;
+              final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+              if (hoveredTarget == null) return null;
+              rotateHoveredTarget(
+                ref,
+                hoveredTarget,
+                clockwise: intent.clockwise,
+              );
               return null;
             },
           ),

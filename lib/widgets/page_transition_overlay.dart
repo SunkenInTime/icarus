@@ -636,7 +636,8 @@ class PlacedWidgetPreview {
           id: w.id,
           isAlly: w.isAlly,
           mapScale: mapScale,
-          rotation: rotation ?? w.rotation,
+          // The cone carries the rotation; the icon inside stays upright.
+          rotation: turnsGlyph(ability) ? null : rotation ?? w.rotation,
           length: length ?? w.length,
           armLengthsMeters: armLengthsMeters ?? w.armLengthsMeters,
           visualState: w.visualState,
@@ -660,6 +661,7 @@ class PlacedWidgetPreview {
             id: w.id,
             isAlly: w.isAlly,
             mapScale: mapScale,
+            rotation: visionSpec == null ? rotation ?? w.rotation : null,
             visualState: w.visualState,
             watchMouse: false,
           );
@@ -668,6 +670,7 @@ class PlacedWidgetPreview {
             id: w.id,
             isAlly: w.isAlly,
             mapScale: mapScale,
+            rotation: visionSpec == null ? rotation ?? w.rotation : null,
             visualState: w.visualState,
             watchMouse: false,
           );

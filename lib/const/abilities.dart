@@ -35,6 +35,12 @@ bool isRotatable(Ability ability) {
   }
 }
 
+/// Plain icons have no shape to turn, so their rotation turns the glyph: a
+/// directional icon can point down a lane. Abilities with a vision cone keep
+/// their glyph upright; their rotation is the cone's.
+bool turnsGlyph(Ability ability) =>
+    ability is BaseAbility || ability is ImageAbility;
+
 double _squareRenderedWidth({
   required bool isWall,
   required double width,
@@ -91,6 +97,7 @@ class BaseAbility extends Ability {
     return AbilityWidget(
       isAlly: isAlly,
       iconPath: iconPath,
+      rotation: rotation,
       id: id,
       landingId: landingId,
       watchMouse: watchMouse,
@@ -142,6 +149,7 @@ class ImageAbility extends Ability {
       landingId: landingId,
       imagePath: imagePath,
       size: size * mapScale,
+      rotation: rotation,
       id: id,
       visualState: visualState,
       inactiveTraceColor: inactiveTraceColor,

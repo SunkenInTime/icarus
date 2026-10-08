@@ -12,6 +12,7 @@ class AbilityWidget extends ConsumerWidget {
     required this.iconPath,
     required this.id,
     required this.isAlly,
+    this.rotation,
     this.landingId,
     this.watchMouse = true,
     this.contextMenuItems,
@@ -23,6 +24,9 @@ class AbilityWidget extends ConsumerWidget {
   final String? id;
   final bool isAlly;
   final String iconPath;
+
+  /// Turns the glyph, not the tile: the team-coloured frame stays upright.
+  final double? rotation;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
   final VoidCallback? onTapOverride;
@@ -40,9 +44,11 @@ class AbilityWidget extends ConsumerWidget {
       size: abilitySize,
       isAlly: isAlly,
       landingId: landingId,
-      child: Image.asset(
-        iconPath,
-        fit: BoxFit.contain,
+      child: _turned(
+        Image.asset(
+          iconPath,
+          fit: BoxFit.contain,
+        ),
       ),
     );
 
@@ -58,5 +64,11 @@ class AbilityWidget extends ConsumerWidget {
       onTap: onTapOverride,
       child: shell,
     );
+  }
+
+  Widget _turned(Widget glyph) {
+    final angle = rotation ?? 0;
+    if (angle == 0) return glyph;
+    return Transform.rotate(angle: angle, child: glyph);
   }
 }

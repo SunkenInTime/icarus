@@ -455,6 +455,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       abilitySize: abilitySize,
       isAttack: isAttack,
     );
+    final glyphRotation =
+        turnsGlyph(abilityData) && visionSpec == null ? displayRotation : null;
     return Positioned(
       left: screenPosition.dx,
       top: screenPosition.dy,
@@ -469,6 +471,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               id: null,
               isAlly: isAlly,
               mapScale: mapScale,
+              rotation: glyphRotation,
               armLengthsMeters: widget.ability.armLengthsMeters,
               visualState: widget.ability.visualState,
               watchMouse: false,
@@ -500,6 +503,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           id: widget.id,
           isAlly: isAlly,
           mapScale: mapScale,
+          rotation: glyphRotation,
           armLengthsMeters: widget.ability.armLengthsMeters,
           visualState: abilityRef.visualState,
           watchMouse: true,

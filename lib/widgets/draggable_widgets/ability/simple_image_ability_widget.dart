@@ -13,6 +13,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
     super.key,
     required this.imagePath,
     required this.size,
+    this.rotation,
     this.index,
     required this.id,
     this.landingId,
@@ -24,6 +25,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
 
   final double size;
   final String imagePath;
+  final double? rotation;
   final int? index;
   final String? id;
   final String? landingId;
@@ -44,7 +46,8 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
     final supportsInactiveState = inactiveTraceColor != null;
     final isActive =
         !supportsInactiveState || (visualState?.showRangeFill ?? true);
-    final content = SizedBox(
+    final angle = rotation ?? 0;
+    final image = SizedBox(
       width: coordinateSystem.scale(size),
       height: coordinateSystem.scale(size),
       child: Stack(
@@ -68,6 +71,8 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
         ],
       ),
     );
+    final content =
+        angle == 0 ? image : Transform.rotate(angle: angle, child: image);
 
     if (!watchMouse) {
       return content;
