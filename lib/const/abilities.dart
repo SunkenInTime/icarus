@@ -174,16 +174,24 @@ class CircleAbility extends Ability {
     this.innerRangeColor,
     this.opacity,
     double? innerRangeSize,
+    double? storedSize,
   })  : assert(
           innerRangeSize == null || innerRangeColor != null,
           'innerRangeColor is required when innerRangeSize is set',
         ),
         size = size * AgentData.inGameMetersDiameter,
+        storedSize = (storedSize ?? size) * AgentData.inGameMetersDiameter,
         innerRangeSize = innerRangeSize != null
             ? innerRangeSize * AgentData.inGameMetersDiameter
             : null;
 
   final double size;
+
+  /// The size saved positions were placed at. A saved circle's position is
+  /// the top-left of a box this big, so when Riot changes the radius, this
+  /// keeps the old one: the circle is drawn at [size], centered in the box,
+  /// and stays centered where the user put it.
+  final double storedSize;
   final Color rangeOutlineColor;
   final String iconPath;
 
@@ -201,14 +209,14 @@ class CircleAbility extends Ability {
     double? abilitySize,
   }) {
     assert(mapScale != null, 'mapScale must be provided');
-    return Offset((size * mapScale!) / 2, (size * mapScale) / 2);
+    return Offset((storedSize * mapScale!) / 2, (storedSize * mapScale) / 2);
   }
 
   @override
   Offset getSize({double? mapScale, double? abilitySize}) {
     assert(abilitySize != null, 'abilitySize must be provided');
     assert(mapScale != null, 'mapScale must be provided');
-    return Offset(size * mapScale!, size * mapScale);
+    return Offset(storedSize * mapScale!, storedSize * mapScale);
   }
 
   @override
@@ -227,6 +235,7 @@ class CircleAbility extends Ability {
     return CustomCircleWidget(
       iconPath: iconPath,
       size: size * mapScale,
+      boxSize: storedSize * mapScale,
       rangeOutlineColor: rangeOutlineColor,
       hasCenterDot: hasCenterDot ?? true,
       opacity: opacity,

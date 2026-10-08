@@ -997,9 +997,11 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
+      // 28 m since patch 12.00. Saved Steel Gardens were placed at 32.5 m.
       agent.abilities.last.abilityData = CircleAbility(
         iconPath: agent.abilities.last.iconPath,
-        size: 32.5,
+        size: 28,
+        storedSize: 32.5,
         rangeOutlineColor: Colors.deepPurple,
         hasCenterDot: true,
       );

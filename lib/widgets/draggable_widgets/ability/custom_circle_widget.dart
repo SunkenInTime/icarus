@@ -12,6 +12,7 @@ class CustomCircleWidget extends ConsumerWidget {
     super.key,
     required this.iconPath,
     required this.size,
+    double? boxSize,
     required this.rangeOutlineColor,
     required this.hasCenterDot,
     this.opacity = 70,
@@ -24,13 +25,16 @@ class CustomCircleWidget extends ConsumerWidget {
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
-  });
+  }) : boxSize = boxSize ?? size;
 
   final String? landingId;
   final bool isAlly;
   final String? id;
   final String iconPath;
   final double size;
+
+  /// The square the circle is centered in; see [CircleAbility.storedSize].
+  final double boxSize;
   final Color rangeOutlineColor;
   final bool hasCenterDot;
   final int? opacity;
@@ -51,34 +55,41 @@ class CustomCircleWidget extends ConsumerWidget {
     final resolvedVisualState = visualState ?? const AbilityVisualState();
     final rangeOpacity = AbilityRangeOpacity.of(context);
 
-    return Stack(
-      children: [
-        _buildRangeFill(
-          scaledSize,
-          showRangeFill: resolvedVisualState.showRangeFill && !hasInnerRange,
-          rangeOpacity: rangeOpacity,
-        ),
-        _buildRangeOutline(
-          coordinateSystem,
-          scaledSize,
-          showRangeOutline: resolvedVisualState.showRangeOutline,
-          rangeOpacity: rangeOpacity,
-        ),
-        if (hasInnerRange) ...[
-          _buildInnerRangeFill(
-            scaledInnerRangeSize,
-            showInnerFill: resolvedVisualState.showInnerFill,
+    final scaledBoxSize = coordinateSystem.scale(boxSize);
+
+    return SizedBox(
+      width: scaledBoxSize,
+      height: scaledBoxSize,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          _buildRangeFill(
+            scaledSize,
+            showRangeFill: resolvedVisualState.showRangeFill && !hasInnerRange,
             rangeOpacity: rangeOpacity,
           ),
-          _buildInnerRangeOutline(
+          _buildRangeOutline(
             coordinateSystem,
-            scaledInnerRangeSize,
-            showInnerOutline: resolvedVisualState.showInnerOutline,
+            scaledSize,
+            showRangeOutline: resolvedVisualState.showRangeOutline,
             rangeOpacity: rangeOpacity,
           ),
+          if (hasInnerRange) ...[
+            _buildInnerRangeFill(
+              scaledInnerRangeSize,
+              showInnerFill: resolvedVisualState.showInnerFill,
+              rangeOpacity: rangeOpacity,
+            ),
+            _buildInnerRangeOutline(
+              coordinateSystem,
+              scaledInnerRangeSize,
+              showInnerOutline: resolvedVisualState.showInnerOutline,
+              rangeOpacity: rangeOpacity,
+            ),
+          ],
+          if (hasCenterDot) _buildCenterIcon(),
         ],
-        if (hasCenterDot) _buildCenterIcon(),
-      ],
+      ),
     );
   }
 
