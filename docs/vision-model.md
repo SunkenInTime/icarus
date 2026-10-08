@@ -926,8 +926,8 @@ builds it after `simplify_walls.py`, as `standable` in each model:
   of a unit over it sees the map. So each level in a piece (a support, or
   the ground) is judged on its own. Where all its samples agree it is kept
   or dropped along the support's outline; where they disagree (a ledge
-  whose view fades), a disc is cut around each sample not worth standing
-  on. A level no sample stands on, such as a rim of ground around a prop's
+  whose view fades), each point takes its nearest sample's verdict, a
+  quarter of the spacing toward not worth standing on. A level no sample stands on, such as a rim of ground around a prop's
   top narrower than the samples, goes;
 * where ground triangles overlap, read as the app reads them, the first in
   the file giving the height;
@@ -940,15 +940,14 @@ it did.
 
 Checked on 2026-10-08 on all 26 map sides. The region against the app's
 standing test: no point of a 0.5-unit grid inside it, and none sampled along
-its edges every 0.25, is refused (7.9 million and 886,000 points). Of the
+its edges every 0.25, is refused (7.9 million and 877,000 points). Of the
 4,036 drops on a 2-unit grid where the steps find nothing and the region
-places the agent, 11 paint a cone under 100 square units once it is clipped
-to the floor, all on floor painting 79 to 100, six along a Corrode ledge
+places the agent, 9 paint a cone under 100 square units once it is clipped
+to the floor, all on floor painting 78 to 100, six along a Corrode ledge
 whose view runs off the painted floor; none stands inside a prop. Along
 the region's edges in walled-off pieces, where the fallback lands, the app
-finds 2,719 of 384,000 points every 0.1 not worth standing on (7,211 with
-disc cuts alone), mostly where the ground's view changes sharply within
-one level, between two samples. Every nudge on a 2-unit grid
+finds 1,688 of 384,000 points every 0.1 not worth standing on (7,211 with
+disc cuts alone), mostly where the view fades within one level. Every nudge on a 2-unit grid
 against main: with main's walls, none lost or moved and 3,654 more spots get
 a cone; with #256's walls, 4 of 1.3 million lost: three whose floor is 2.4 to 2.5 away
 at the edge of the reach, and one where main stands the agent in a speck
