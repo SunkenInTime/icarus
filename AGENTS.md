@@ -29,6 +29,8 @@ Before changing view cones, map blockers, or elevation handling, read [docs/visi
 ## The library is sacred
 Corrupted or dropped library data is unrecoverable. In local mode nothing here changes: a change to the Hive models means source models and generated adapters, plus a migration (`lib/migrations/`) whenever data written by a past version would not load correctly in this one. A new field whose default reproduces the old behavior needs no migration; a test that reads a record written without the field proves it. In cloud mode the op queue holds work the user believes is saved. Every op either lands or the user is told, on screen, before they walk away. When a write path is uncertain, fail loudly without saving rather than save something wrong.
 
+Size is part of placement. A placed item saves the top-left of its box, and the box comes from its definition in `lib/const/`, so changing an ability's size, shape or anchor moves every saved one on screen without changing a byte. Keep the box the saved positions were placed in and change only what is drawn inside it (`CircleAbility.storedSize`, `storedAgentAnchor`), then prove it with a render of an old placement that lands on the same pixel. When the new drawing cannot fit the old box, it needs a migration, like Paranoia's (#222).
+
 ## Sync status is a promise
 The chip that says synced is the app promising the work is on the server. A conflict resolved in silence makes the app lie. So does an op dropped after retries, and so do offline edits with no badge. A user who catches the app lying once stops trusting it with their library. Every state the user's work can be in has a face on screen, and when the true state is uncertain, show uncertainty.
 
