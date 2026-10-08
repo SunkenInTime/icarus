@@ -480,15 +480,13 @@ class SvgHeightVisibility {
   /// most [maxDistance] SVG units. Returns null when no such point exists.
   Offset? standablePointNear(Offset point, {double maxDistance = 2.5}) {
     var current = point;
-    // The fourth step's landing is checked too.
-    for (var step = 0; step <= 4; step++) {
+    for (var step = 0; step < 4; step++) {
       final wall = _blockingWallAt(current);
       if (wall == null &&
           receiverContains(current) &&
           (ground == null || ground!.heightAt(current) != null)) {
         return current;
       }
-      if (step == 4) break;
       Offset? target;
       if (wall != null) {
         // Leave the ink onto open floor within reach. The nearest edge can be

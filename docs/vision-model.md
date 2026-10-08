@@ -896,10 +896,10 @@ A cone is cast from where its agent stands: on the floor, with ground
 beneath, and not within 0.05 of the ink of a wall that blocks a standing eye
 there. An agent dropped in ink is stepped out (`standablePointNear`, every
 frame of a drag): across the nearest edge of the wall it is in, or back onto
-the floor across the floor's nearest edge, up to four steps, the last one's
-landing checked. Among thin strokes those steps can circle, or cross an edge
-with no floor on either side, and the agent got no cone: 3 to 40 spots on a
-4-unit grid per map side with floor within reach.
+the floor across the floor's nearest edge, up to four steps. Among thin
+strokes those steps can circle, or cross an edge with no floor on either
+side, and the agent got no cone: 3 to 40 spots on a 4-unit grid per map side
+with floor within reach.
 
 Then the agent stands at the nearest point of the model's standable floor,
 within the same 2.5 reach. `scripts/riot/standable_region.py` in the archive
@@ -910,36 +910,40 @@ builds it after `simplify_walls.py`, as `standable` in each model:
   `_Footprint._contains` tests it;
 * without strips narrower than 0.2 units (Pearl has floor 0.014 wide beside
   a wall) and specks under 2 square units;
-* in pieces under 40 square units, only where the app itself says a cone
-  is worth drawing. Such a piece may be the ground inside a prop drawn as an
-  outline (from there a cone sees only the prop), the prop's top, or ordinary
-  floor, and only the app's own standing level and cone can tell which. An
-  offline step (`standable_classify_test.dart` in the archive) stands an
-  agent at samples a quarter unit apart, as the app would, casts a full cone
-  of range 30, and keeps the cells around samples whose cone, before it is
-  clipped to the floor, covers more than 100 square units;
+* every piece walled off from the main floor judged by the app itself. Such
+  a piece may be the ground inside a prop drawn as an outline (from there a
+  cone sees only the prop), the prop's top, a ledge or a corridor, and only
+  the app's own standing level and cone can tell which. An offline step
+  (`standable_classify_test.dart` in the archive) stands an agent at samples
+  over each piece and along its edge, as the app would, casts a full cone of
+  range 30, and measures the floor it paints, outside the piece and in all.
+  A piece where no sample sees 50 square units outside it is the inside of
+  a prop and goes: Pearl's free-standing blocks, Breeze's big boxes by A.
+  From the rest, a disc is cut around every sample that neither sees out
+  nor paints 100 square units: a prop's rim around its top goes, a
+  corridor's wall stays;
 * where ground triangles overlap, read as the app reads them, the first in
   the file giving the height;
 * drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
   standing test after rounding. The app checks the point anyway.
 
-It adds 1,300 to 6,700 points per map side, 0.5 to 2.8% to the files. The steps
-still run first, so every agent they place stands where it did.
+It adds 1,950 to 9,640 points per map side, 0.8 to 5.9% to the files. The
+steps run first, exactly as before, so every agent they place stands where
+it did.
 
-Checked on 2026-10-07 on all 26 map sides. The region against the app's
+Checked on 2026-10-08 on all 26 map sides. The region against the app's
 standing test: no point of a 0.5-unit grid inside it, and none sampled along
-its edges every 0.25, is refused (8.0 million and 888,000 points). Inside
-the small pieces it keeps, 8 of 1.1 million samples a tenth of a unit apart
-have a cone under 100 square units, small patches where the level the app
-stands an agent on changes. Of the 4,052 drops on a 2-unit grid where the
-steps find nothing and the region places the agent, 63 paint a cone under
-100 square units once it is clipped to the floor: the ground inside props
-larger than 40 square units, which the floor data counts as floor, and
-ledges whose view runs mostly off the painted floor. Every nudge on a 2-unit grid against main: with
-main's walls, none lost or moved and 3,693 more spots get a cone; with
-#256's walls, 4 of 1.3 million lost (three whose floor was near the 2.5
-reach, one a speck whose cone covered a square unit), almost all moves under
-0.022 (#256's walls stand 0.01 farther out) and two of about 2 units where
-the steps take another way round #256's walls.
-A nudge costs 9 to 11 µs at p50 and 87 to
-104 µs at p99 in the test VM; the steps alone were 6 to 8 and 49 to 70.
+its edges every 0.25, is refused (7.9 million and 921,000 points). Of the
+4,036 drops on a 2-unit grid where the steps find nothing and the region
+places the agent, 14 paint a cone under 100 square units once it is clipped
+to the floor. Two are inside props: the samples are a quarter unit apart,
+and there a prop's top starts within a twentieth of a unit of the ground
+around it. The rest are real floor painting 79 to 100, most along a Corrode
+ledge whose view runs off the painted floor. Every nudge on a 2-unit grid
+against main: with main's walls, none lost or moved and 3,654 more spots get
+a cone; with #256's walls, 4 of 1.3 million lost, each with its floor 2.4 to
+2.5 away at the edge of the reach, and 4 moved more than 0.022 (#256's walls
+stand 0.01 farther out), two of them by about 2 units where the steps take
+another way round #256's walls.
+A nudge costs 7 to 10 µs at p50 and 65 to 68 µs at p99 in the test VM; the
+steps alone were 6 to 8 and 49 to 70.
