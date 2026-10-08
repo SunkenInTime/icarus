@@ -936,13 +936,14 @@ standing test: no point of a 0.5-unit grid inside it, and none sampled along
 its edges every 0.25, is refused (7.9 million and 921,000 points). Of the
 4,036 drops on a 2-unit grid where the steps find nothing and the region
 places the agent, 14 paint a cone under 100 square units once it is clipped
-to the floor. Two are inside props: the samples are a quarter unit apart,
-and there a prop's top starts within a twentieth of a unit of the ground
-around it. The rest are real floor painting 79 to 100, most along a Corrode
-ledge whose view runs off the painted floor. Every nudge on a 2-unit grid
+to the floor. Three stand on the ground inside a prop, within a twentieth
+of a unit of where its top begins, finer than the quarter-unit samples. The
+other 11 are floor painting 79 to 100, six along a Corrode ledge whose view
+runs off the painted floor. Every nudge on a 2-unit grid
 against main: with main's walls, none lost or moved and 3,654 more spots get
-a cone; with #256's walls, 4 of 1.3 million lost, each with its floor 2.4 to
-2.5 away at the edge of the reach, and 4 moved more than 0.022 (#256's walls
+a cone; with #256's walls, 4 of 1.3 million lost: three whose floor is 2.4 to 2.5 away
+at the edge of the reach, and one where main stands the agent in a speck
+whose cone paints under a square unit; and 4 moved more than 0.022 (#256's walls
 stand 0.01 farther out), two of them by about 2 units where the steps take
 another way round #256's walls.
 A nudge costs 7 to 10 µs at p50 and 65 to 68 µs at p99 in the test VM; the

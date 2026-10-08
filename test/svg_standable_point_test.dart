@@ -168,22 +168,31 @@ void main() {
       return stood;
     }
 
+    // The floor a full cone paints, as players see it: the cone clipped to
+    // the floor, counted on a quarter-unit grid.
     double coneArea(String file, Offset origin) {
       final model = bundled(file);
-      final polygon = model
-          .cone(
-              origin: origin,
-              directionRadians: 0,
-              range: 30,
-              apertureRadians: 2 * math.pi,
-              supportId: model.standingSupportAt(origin)?.id)
-          .polygon;
-      var twice = 0.0;
-      for (var i = 0; i < polygon.length; i++) {
-        final a = polygon[i], b = polygon[(i + 1) % polygon.length];
-        twice += a.dx * b.dy - b.dx * a.dy;
+      final cone = Path()
+        ..addPolygon(
+            model
+                .cone(
+                    origin: origin,
+                    directionRadians: 0,
+                    range: 30,
+                    apertureRadians: 2 * math.pi,
+                    supportId: model.standingSupportAt(origin)?.id)
+                .polygon,
+            true);
+      const step = 0.25;
+      final box = cone.getBounds();
+      var cells = 0;
+      for (var x = box.left + step / 2; x < box.right; x += step) {
+        for (var y = box.top + step / 2; y < box.bottom; y += step) {
+          final q = Offset(x, y);
+          if (cone.contains(q) && model.receiverContains(q)) cells++;
+        }
       }
-      return twice.abs() / 2;
+      return cells * step * step;
     }
 
     test("an agent dropped on Breeze mid's strokes has a cone", () {
