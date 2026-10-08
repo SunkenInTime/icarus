@@ -909,20 +909,27 @@ builds it after `simplify_walls.py`, as `standable` in each model:
   standing eye, less each blocking wall's ink margin shaped as
   `_Footprint._contains` tests it;
 * without strips narrower than 0.2 units (Pearl has floor 0.014 wide beside
-  a wall) and pieces under 40 square units: the insides of props drawn as
-  outlines, like a box on Breeze mid's round wall or a walled-in square on
-  Ascent defense, where a cone sees nothing;
+  a wall) and specks under 2 square units;
+* in pieces under 40 square units, only where a surface allowing automatic
+  standing covers them. Such a piece is the ground inside a prop drawn as an
+  outline, like a box on Breeze mid's round wall or a walled-in square on
+  Ascent defense: from the ground a cone sees only the prop, from its top it
+  sees the map;
+* where ground triangles overlap, read as the app reads them, the first in
+  the file giving the height;
 * drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
   standing test after rounding. The app checks the point anyway.
 
-It adds 1,100 to 25,000 points per map side, 2 to 5% to the files. The steps
+It adds 1,000 to 6,100 points per map side, 0.5 to 2.7% to the files. The steps
 still run first, so every agent they place stands where it did.
 
-Checked on 2026-10-07, every nudge on a 2-unit grid over six map sides
-against main: none lost, none moved more than 0.017 (#256's walls stand
-0.01 farther out), 6 to 254 more spots per side get a cone. Of 24 failing
-points an independent review traced, 21 now stand within 0.015 of the
-nearest standable point, or past a sliver or a prop's inside where that was
-nearest; the other 3 have their nearest floor exactly 2.5 away. Points where
-no cone is correct still get none. A nudge costs 9 to 11 µs at p50 and
-87 to 104 µs at p99 in the test VM; the steps alone were 6 to 8 and 49 to 70.
+Checked on 2026-10-07 on all 26 map sides. The region against the app's
+standing test: no point of a 0.5-unit grid inside it, and none sampled along
+its edges every 0.25, is refused (8.0 million and 879,000 points). Every
+nudge on a 2-unit grid against main: with main's walls, none lost or moved
+and 4 to 350 more spots per side get a cone; with #256's walls, 4 of 1.3
+million lost (three whose floor was exactly at the 2.5 reach, one a speck
+whose cone covered a square unit), almost all moves under 0.022 (#256's
+walls stand 0.01 farther out) and two of about 2 units where the steps take
+another way round #256's walls. A nudge costs 9 to 11 µs at p50 and 87 to
+104 µs at p99 in the test VM; the steps alone were 6 to 8 and 49 to 70.

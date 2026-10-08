@@ -198,12 +198,12 @@ void main() {
       }
     });
 
-    test('slivers, pockets and the insides of props are not where it stands',
+    test('slivers, specks and the ground inside props are not where it stands',
         () {
-      // Pearl has floor 0.014 wide beside this wall; Split a pocket under
-      // one square unit; Ascent a square of floor walled in on every side,
-      // a prop drawn as an outline, 0.07 from this drop. Cones from them
-      // are specks or see nothing.
+      // Pearl has floor 0.014 wide beside this wall and Split a speck under
+      // one square unit; cones from either are specks. By Ascent's drop is a
+      // walled-in square whose corner sees only the square; its top, a 6 m
+      // platform, is where the agent stands.
       for (final (file, dropped) in const [
         ('pearl_svg_height_attack', Offset(314, 70)),
         ('split_svg_height_attack', Offset(193, 333)),
