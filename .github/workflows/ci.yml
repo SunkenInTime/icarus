@@ -23,6 +23,8 @@ env:
 
 jobs:
   native-replay:
+    needs: changes
+    if: needs.changes.outputs.replay == 'true'
     runs-on: ubuntu-latest
     # Cargo build scripts run here: no write token, none left in .git.
     permissions:
@@ -71,71 +73,132 @@ jobs:
           cargo test --locked
           cargo test --locked --features dev-vectors
 
-  # Decides which lanes a run needs. Every lane runs for manual runs, PRs into
-  # main, PRs that change CI itself, and PRs whose files can't be listed.
+  # Decides which lanes a run needs.
+  #
   # Pushes run every lane but the desktop builds: the release runs the upgrade
-  # and rollback test on its signed installer before publishing. Otherwise a
-  # PR runs the always-on lanes (analyze, test, web) plus the lanes its
-  # changed files reach.
+  # and rollback test on its signed installer before publishing. Manual runs,
+  # PRs that change CI itself, and PRs whose files can't be listed run
+  # everything.
+  #
+  # Any other PR can name its lanes on a line of its description:
+  #
+  #   ci: test web
+  #   ci: skip
+  #   ci: all
+  #
+  # Lanes: analyze, test, web, replay, convex, presence, contract, bridge,
+  # desktop. "skip" runs none of them. Lanes that guard production or the
+  # library (convex, presence, contract, desktop) still run when the PR
+  # changes their files, whatever the line says. Without the line, a PR runs
+  # analyze, test and web plus the lanes its changed files reach. The line is
+  # read when the run starts, so after editing it, rerun the run.
   changes:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     outputs:
+      analyze: ${{ steps.lanes.outputs.analyze }}
+      test: ${{ steps.lanes.outputs.test }}
+      web: ${{ steps.lanes.outputs.web }}
+      replay: ${{ steps.lanes.outputs.replay }}
       convex: ${{ steps.lanes.outputs.convex }}
       presence: ${{ steps.lanes.outputs.presence }}
       contract: ${{ steps.lanes.outputs.contract }}
-      rust: ${{ steps.lanes.outputs.rust }}
+      bridge: ${{ steps.lanes.outputs.bridge }}
       desktop: ${{ steps.lanes.outputs.desktop }}
     steps:
-      - name: Pick lanes from changed files
+      - name: Pick lanes
         id: lanes
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
           full=false
           merged=false
           files=""
+          named=""
           if [[ "$EVENT" == "push" ]]; then
             merged=true
-          elif [[ "$EVENT" != "pull_request" || "$BASE_REF" == "main" ]]; then
+          elif [[ "$EVENT" != "pull_request" ]]; then
             full=true
           elif ! files=$(gh pr diff "$PR" --repo "$REPO" --name-only); then
             echo "Could not list the PR's files; running every lane."
             full=true
           elif grep -qE '^\.github/' <<<"$files"; then
             full=true
+          else
+            # The description is fetched, not taken from the event, so a
+            # rerun sees the current line.
+            body=$(gh pr view "$PR" --repo "$REPO" --json body --jq .body | tr -d '\r')
+            line=$(grep -m1 -iE '^ci:' <<<"$body" || true)
+            if [[ -n "$line" ]]; then
+              named=" $(cut -d: -f2- <<<"$line" | tr 'A-Z,' 'a-z ' | xargs) "
+              echo "The description names: ${named}"
+              for word in $named; do
+                case "$word" in
+                  analyze|test|web|replay|convex|presence|contract|bridge|desktop|skip) ;;
+                  all) full=true ;;
+                  *)
+                    echo "::warning::The ci: line names an unknown lane, \"$word\"; running every lane."
+                    full=true
+                    ;;
+                esac
+              done
+            fi
           fi
 
+          # lane NAME FILES [guarded]
+          # FILES is a regex over changed paths; empty means the lane runs on
+          # every PR that doesn't name its lanes.
           lane() {
-            if [[ "$full" == true ]] ||
-              { [[ "$merged" == true ]] && [[ "$1" != desktop ]]; } ||
-              grep -qE "$2" <<<"$files"; then
+            local why=""
+            if [[ "$full" == true ]]; then
+              why="every lane runs"
+            elif [[ "$merged" == true ]]; then
+              if [[ "$1" != desktop ]]; then
+                why="push"
+              fi
+            elif [[ -n "$named" ]]; then
+              if [[ "$named" == *" $1 "* ]]; then
+                why="named in the description"
+              elif [[ "${3:-}" == guarded && -n "$2" ]] && grep -qE "$2" <<<"$files"; then
+                why="guarded, and its files changed"
+              fi
+            elif [[ -z "$2" ]]; then
+              why="always on"
+            elif grep -qE "$2" <<<"$files"; then
+              why="its files changed"
+            fi
+            if [[ -n "$why" ]]; then
               echo "$1=true" >> "$GITHUB_OUTPUT"
-              echo "$1: runs"
+              echo "$1: runs ($why)"
             else
               echo "$1=false" >> "$GITHUB_OUTPUT"
-              echo "$1: skipped, no matching files"
+              echo "$1: skipped"
             fi
           }
+          lane analyze ''
+          lane test ''
+          lane web ''
+          lane replay '^native/replay/'
           # The contract scripts in tool/ run in this lane, against its preview.
-          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$)'
-          lane presence '^presence/'
-          lane contract '^(convex/|tool/|lib/collab/)'
-          lane rust '^third_party/'
+          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$)' guarded
+          lane presence '^presence/' guarded
+          lane contract '^(convex/|tool/|lib/collab/)' guarded
+          lane bridge '^third_party/'
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
           # test on every signed installer; this catches a break on its PR.
-          lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$'
+          lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
 
   analyze:
+    needs: changes
+    if: needs.changes.outputs.analyze == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
@@ -160,6 +223,8 @@ jobs:
 
   test:
     name: test (shard ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.test == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -179,6 +244,8 @@ jobs:
   # Same flags as "Build Web Client" in deploy-web.yml, which ships the beta
   # against the production Convex deployment instead of development.
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
@@ -348,7 +415,7 @@ jobs:
 
   native-bridge:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.bridge == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
@@ -482,7 +549,7 @@ jobs:
         run: fvm flutter test
 
       - name: Test Native Convex Bridge
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.bridge == 'true'
         run: |
           cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
