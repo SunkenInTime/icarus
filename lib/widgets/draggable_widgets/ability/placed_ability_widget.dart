@@ -455,7 +455,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       abilitySize: abilitySize,
       isAttack: isAttack,
     );
-    final glyphRotation = turnsGlyph(abilityData) && visionSpec == null
+    final glyphRotation = drawsGlyphRotation(abilityRef)
         ? coordinateSystem.rotationForSide(
             uprightGlyphRotation(localRotation!, isAttack: isAttack),
             isAttack: isAttack,

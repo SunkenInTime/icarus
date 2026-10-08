@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -37,16 +38,24 @@ bool isRotatable(Ability ability) {
   }
 }
 
-/// Plain icons have no shape to turn, so their rotation turns the glyph: a
-/// directional icon can point down a lane. Abilities with a vision cone keep
-/// their glyph upright; their rotation is the cone's.
+/// Plain icons: no shape of their own, just a glyph in a tile.
 bool turnsGlyph(Ability ability) =>
     ability is BaseAbility || ability is ImageAbility;
 
-/// The rotation a plain icon's glyph is drawn with, before the side flip. An
-/// icon nobody turned stores 0 and stays upright on both sides, so on defense
-/// it draws as half a turn, which the flip brings back upright. A turned icon
-/// never stores 0 (see steppedRotation) and points along the map.
+/// Whether a placed ability's rotation turns its glyph, so a directional icon
+/// can point down a lane. A plain icon with a vision cone keeps its glyph
+/// upright: its rotation is the cone's.
+bool drawsGlyphRotation(PlacedAbility ability) {
+  final data = ability.data.abilityData;
+  return data != null &&
+      turnsGlyph(data) &&
+      AbilityVisionConeSpec.forAbility(ability.data) == null;
+}
+
+/// The rotation a glyph is drawn with, before the side flip. A turned glyph
+/// points along the map, but an icon nobody turned stores 0 and must stay
+/// upright on both sides, so on defense it draws as half a turn, which the
+/// flip brings back upright.
 double uprightGlyphRotation(double rotation, {required bool isAttack}) =>
     rotation == 0 && !isAttack ? math.pi : rotation;
 

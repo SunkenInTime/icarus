@@ -20,6 +20,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
+import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/rotate_helpers.dart';
@@ -152,29 +153,34 @@ void main() {
   setUp(() => CoordinateSystem(playAreaSize: const Size(1920, 1080)));
 
   group('steppedRotation', () {
-    test('turns an eighth of a turn each way and wraps', () {
+    test('turns an eighth of a turn each way without wrapping', () {
       expect(steppedRotation(0, clockwise: true), closeTo(math.pi / 4, 1e-9));
       expect(
         steppedRotation(0, clockwise: false),
-        closeTo(7 * math.pi / 4, 1e-9),
+        closeTo(-math.pi / 4, 1e-9),
       );
-      // A full turn is 2pi, never 0: 0 marks an icon nobody turned.
       expect(
         steppedRotation(7 * math.pi / 4, clockwise: true),
         closeTo(2 * math.pi, 1e-9),
       );
+      // There and back lands on the very angle it started from, so two
+      // pages that look the same compare the same.
+      for (final start in [0.0, -math.pi / 2, 7 * math.pi / 4]) {
+        final back = steppedRotation(
+          steppedRotation(start, clockwise: true),
+          clockwise: false,
+        );
+        expect(back, closeTo(start, 1e-9));
+      }
     });
 
     test('an angle between steps lands on the next step', () {
       expect(steppedRotation(0.3, clockwise: true), closeTo(math.pi / 4, 1e-9));
-      expect(
-        steppedRotation(0.3, clockwise: false),
-        closeTo(2 * math.pi, 1e-9),
-      );
+      expect(steppedRotation(0.3, clockwise: false), 0);
       // The handle can leave a negative angle.
       expect(
         steppedRotation(-math.pi / 2, clockwise: true),
-        closeTo(7 * math.pi / 4, 1e-9),
+        closeTo(-math.pi / 4, 1e-9),
       );
     });
   });
@@ -321,6 +327,34 @@ void main() {
     });
   });
 
+  test('only plain icons without a vision cone turn their glyph', () {
+    expect(drawsGlyphRotation(_plainIcon()), isTrue);
+    final camera = PlacedAbility(
+      id: 'camera',
+      data: AgentData.agents[AgentType.cypher]!.abilities[2],
+      position: Offset.zero,
+    );
+    expect(camera.data.abilityData, isA<BaseAbility>());
+    expect(drawsGlyphRotation(camera), isFalse);
+  });
+
+  testWidgets('on defense, X turns a camera cone from where it points',
+      (tester) async {
+    final info = AgentData.agents[AgentType.cypher]!.abilities[2];
+    final container = await _pumpAbility(
+      tester,
+      PlacedAbility(id: 'camera', data: info, position: const Offset(300, 300)),
+      isAttack: false,
+    );
+    await _hover(tester, find.byType(AbilityWidget));
+    await _press(tester, LogicalKeyboardKey.keyX);
+    // The cone's stored 0 is a real direction, not "unturned".
+    expect(
+      container.read(abilityProvider).single.rotation,
+      closeTo(math.pi / 4, 1e-9),
+    );
+  });
+
   testWidgets('a camera with its cone hidden stays upright and ignores X',
       (tester) async {
     final info = AgentData.agents[AgentType.cypher]!.abilities[2];
@@ -382,6 +416,54 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(_glyphAngle(tester), 0);
+  });
+
+  testWidgets('a lineup draft swapped for a plain icon starts upright',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = ProviderContainer(
+      overrides: [mapProvider.overrideWith(_AttackMap.new)],
+    );
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      container.dispose();
+    });
+    final lineUps = container.read(lineUpProvider.notifier);
+    lineUps.startFresh();
+    lineUps.setDraftAgent(
+      PlacedAgent(
+        id: 'draft-agent',
+        type: AgentType.fade,
+        position: const Offset(180, 220),
+      ),
+    );
+    // Nightfall, turned by its handle before being swapped out.
+    lineUps.setDraftAbility(
+      PlacedAbility(
+        id: 'nightfall',
+        data: AgentData.agents[AgentType.fade]!.abilities.last,
+        position: const Offset(300, 300),
+        rotation: math.pi / 4,
+      ),
+    );
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: LineupPositionWidget()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    lineUps.setDraftAbility(_plainIcon().copyWith(id: 'prowler-draft'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AbilityWidget), findsOneWidget);
     expect(_glyphAngle(tester), 0);
   });
 

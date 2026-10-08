@@ -17,15 +17,14 @@ const double rotationStep = math.pi / 4;
 
 /// The next eighth of a turn from [rotation]. An angle between steps, left by
 /// a rotation handle, lands on the nearest step in the turning direction.
-/// A full turn comes back as 2 pi, never 0: 0 marks an icon nobody turned
-/// (see uprightGlyphRotation).
+/// It doesn't wrap at a full turn, so X then Shift+X gives back the very
+/// angle it started from and a page change between them doesn't spin.
 double steppedRotation(double rotation, {required bool clockwise}) {
   const epsilon = 1e-6;
   final steps = rotation / rotationStep;
   final next =
       clockwise ? (steps + epsilon).floor() + 1 : (steps - epsilon).ceil() - 1;
-  final eighths = next % 8;
-  return (eighths == 0 ? 8 : eighths) * rotationStep;
+  return next * rotationStep;
 }
 
 /// Turns the hovered item one step. Items whose rotation doesn't show on the
@@ -43,7 +42,7 @@ void rotateHoveredTarget(
       final ability = abilities[index];
       // Step from the angle on screen, so an unturned icon on defense turns
       // from upright rather than from the half turn it is drawn under.
-      final from = turnsGlyph(ability.data.abilityData!)
+      final from = drawsGlyphRotation(ability)
           ? uprightGlyphRotation(
               ability.rotation,
               isAttack: ref.read(mapProvider).isAttack,

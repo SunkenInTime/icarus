@@ -317,6 +317,9 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             onPointerDown: (_) => _pointersDown++,
             onPointerUp: (_) => _pointersDown--,
             onPointerCancel: (_) => _pointersDown--,
+            // A two-finger trackpad drag can hold a handle too.
+            onPointerPanZoomStart: (_) => _pointersDown++,
+            onPointerPanZoomEnd: (_) => _pointersDown--,
             child: widget.child,
           ),
         ),

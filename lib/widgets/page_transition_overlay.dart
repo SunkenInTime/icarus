@@ -967,9 +967,5 @@ Widget staticPlacedWidgetView({
   }
 }
 
-/// Plain icons draw their rotation on the glyph (see turnsGlyph).
-bool _turnsGlyph(PlacedWidget widget) {
-  if (widget is! PlacedAbility) return false;
-  final data = widget.data.abilityData;
-  return data != null && turnsGlyph(data);
-}
+bool _turnsGlyph(PlacedWidget widget) =>
+    widget is PlacedAbility && drawsGlyphRotation(widget);
