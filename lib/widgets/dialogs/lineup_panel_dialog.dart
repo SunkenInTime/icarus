@@ -91,11 +91,9 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     super.initState();
     _selectedLinkId = widget.initialLinkId;
     // Having the panel open counts as editing its lineups (see
-    // myLineupEditingProvider), unless the reader can only view them;
-    // providers change after this frame.
+    // myLineupEditingProvider); providers change after this frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) return;
       ref.read(openLineUpItemsProvider.notifier).open(_hoverOwnerToken, {
         _spotId,
       });

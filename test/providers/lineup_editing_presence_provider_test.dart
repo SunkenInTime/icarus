@@ -6,6 +6,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 
@@ -19,6 +20,9 @@ class _FixedSession extends StrategyPageSessionNotifier {
         isApplyingPage: false,
       );
 }
+
+/// The role of whoever has the strategy open.
+final _role = StateProvider<String>((ref) => 'editor');
 
 /// Two lineups, each from its own origin to its own landing: two groups.
 LineUpGraph _graph() {
@@ -55,6 +59,9 @@ void main() {
   setUp(() {
     container = ProviderContainer(overrides: [
       strategyPageSessionProvider.overrideWith(_FixedSession.new),
+      currentStrategyCapabilitiesProvider.overrideWith(
+        (ref) => StrategyCapabilities.fromCloudRole(ref.watch(_role)),
+      ),
     ]);
     addTearDown(container.dispose);
     container.read(lineUpProvider.notifier).fromHive(_graph());
@@ -134,6 +141,22 @@ void main() {
     open.close(editor);
     expect(container.read(openLineUpItemsProvider), isEmpty);
     expect(editing(), isNull);
+  });
+
+  test('a reader who can only view edits nothing they hold or open', () {
+    container.read(_role.notifier).state = 'viewer';
+    container.read(editorPointersProvider.notifier).holdEntity(1, 'landing-a');
+    container.read(openLineUpItemsProvider.notifier).open(Object(), {
+      'link-b',
+    });
+    expect(editing(), isNull);
+
+    // Made an editor while still holding and looking: now it is editing.
+    container.read(_role.notifier).state = 'editor';
+    expect(
+      editing(),
+      const PresenceEditing(pageId: 'p1', groupIds: {'group-a', 'group-b'}),
+    );
   });
 
   test('held, placed and open items together name each group once', () {

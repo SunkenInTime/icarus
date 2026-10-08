@@ -189,6 +189,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
             );
           },
           onAcceptWithDetails: (details) {
+            // A drag can outlive the edit access it started with.
+            if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+              return;
+            }
             RenderBox renderBox = context.findRenderObject() as RenderBox;
             Offset localOffset = renderBox.globalToLocal(details.offset);
             const uuid = Uuid();
