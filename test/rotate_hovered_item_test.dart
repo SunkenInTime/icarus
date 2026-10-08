@@ -242,6 +242,28 @@ void main() {
     expect(container.read(abilityProvider).single.rotation, isNot(0));
   });
 
+  testWidgets('on defense, Shift+X walks an icon all the way round',
+      (tester) async {
+    final container = await _pumpAbility(tester, _plainIcon(), isAttack: false);
+    await _hover(tester, find.byType(AbilityWidget));
+    final seen = <double>[];
+    for (var press = 0; press < 8; press++) {
+      await _press(
+        tester,
+        LogicalKeyboardKey.keyX,
+        holding: LogicalKeyboardKey.shiftLeft,
+      );
+      seen.add(_glyphAngle(tester));
+    }
+    // 315, 270, ..., 45, then upright: every direction, none skipped.
+    for (var i = 0; i < 7; i++) {
+      expect(seen[i], closeTo((7 - i) * math.pi / 4, 1e-9));
+    }
+    expect(seen.last, 0);
+    // Pointing straight down the defense screen is a turn, not "untouched".
+    expect(container.read(abilityProvider).single.rotation, isNot(0));
+  });
+
   testWidgets('X does nothing while a mouse button is held', (tester) async {
     final container = await _pumpAbility(tester, _plainIcon());
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);

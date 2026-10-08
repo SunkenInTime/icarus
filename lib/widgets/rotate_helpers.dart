@@ -42,15 +42,19 @@ void rotateHoveredTarget(
       final ability = abilities[index];
       // Step from the angle on screen, so an unturned icon on defense turns
       // from upright rather than from the half turn it is drawn under.
-      final from = drawsGlyphRotation(ability)
+      final turnsGlyph = drawsGlyphRotation(ability);
+      final from = turnsGlyph
           ? uprightGlyphRotation(
               ability.rotation,
               isAttack: ref.read(mapProvider).isAttack,
             )
           : ability.rotation;
+      final to = steppedRotation(from, clockwise: clockwise);
       ref.read(abilityProvider.notifier).updateGeometry(
             index,
-            rotation: steppedRotation(from, clockwise: clockwise),
+            // 0 means nobody turned the icon; a glyph turned to point up the
+            // attack side stores a full turn instead, which looks the same.
+            rotation: turnsGlyph && to == 0 ? 2 * math.pi : to,
           );
       return;
     case DeleteTargetType.utility:
