@@ -934,7 +934,7 @@ builds it after `simplify_walls.py`, as `standable` in each model:
 * drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
   standing test after rounding. The app checks the point anyway.
 
-It adds 1,270 to 8,220 points per map side, 0.6 to 3.2% to the files. The
+It adds 1,152 to 7,008 points per map side, 0.5 to 3.0% to the files. The
 steps run first, exactly as before, so every agent they place stands where
 it did.
 
