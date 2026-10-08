@@ -225,7 +225,7 @@ void main() {
     expect(container.read(agentProvider), same(agentsBefore));
   });
 
-  testWidgets('an editor keeps every edit on a lineup', (tester) async {
+  testWidgets('an editor keeps the lineup edit controls', (tester) async {
     final container = await _pumpMap(tester, 'editor');
 
     await _hover(tester, _originAgent());
