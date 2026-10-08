@@ -910,26 +910,32 @@ builds it after `simplify_walls.py`, as `standable` in each model:
   `_Footprint._contains` tests it;
 * without strips narrower than 0.2 units (Pearl has floor 0.014 wide beside
   a wall) and specks under 2 square units;
-* in pieces under 40 square units, only where a surface allowing automatic
-  standing covers them. Such a piece is the ground inside a prop drawn as an
-  outline, like a box on Breeze mid's round wall or a walled-in square on
-  Ascent defense: from the ground a cone sees only the prop, from its top it
-  sees the map;
+* in pieces under 40 square units, only where the app itself says a cone
+  is worth drawing. Such a piece may be the ground inside a prop drawn as an
+  outline (from there a cone sees only the prop), the prop's top, or ordinary
+  floor, and only the app's own standing level and cone can tell which. An
+  offline step (`standable_classify_test.dart` in the archive) stands an
+  agent at samples a quarter unit apart, as the app would, casts a full cone
+  of range 30, and keeps the cells around samples whose cone sees more than
+  100 square units;
 * where ground triangles overlap, read as the app reads them, the first in
   the file giving the height;
 * drawn within 0.002 and shrunk by that and 1e-5, so its edge passes the
   standing test after rounding. The app checks the point anyway.
 
-It adds 1,000 to 6,100 points per map side, 0.5 to 2.7% to the files. The steps
+It adds 1,300 to 6,700 points per map side, 0.5 to 2.8% to the files. The steps
 still run first, so every agent they place stands where it did.
 
 Checked on 2026-10-07 on all 26 map sides. The region against the app's
 standing test: no point of a 0.5-unit grid inside it, and none sampled along
-its edges every 0.25, is refused (8.0 million and 879,000 points). Every
-nudge on a 2-unit grid against main: with main's walls, none lost or moved
-and 4 to 350 more spots per side get a cone; with #256's walls, 4 of 1.3
-million lost (three whose floor was exactly at the 2.5 reach, one a speck
-whose cone covered a square unit), almost all moves under 0.022 (#256's
-walls stand 0.01 farther out) and two of about 2 units where the steps take
-another way round #256's walls. A nudge costs 9 to 11 µs at p50 and 87 to
+its edges every 0.25, is refused (8.0 million and 888,000 points). Inside
+the small pieces it keeps, 8 of 1.1 million samples a tenth of a unit apart
+have a cone under 100 square units, single points where the level the app
+stands an agent on changes. Every nudge on a 2-unit grid against main: with
+main's walls, none lost or moved and 3,693 more spots get a cone; with
+#256's walls, 4 of 1.3 million lost (three whose floor was near the 2.5
+reach, one a speck whose cone covered a square unit), almost all moves under
+0.022 (#256's walls stand 0.01 farther out) and two of about 2 units where
+the steps take another way round #256's walls.
+A nudge costs 9 to 11 µs at p50 and 87 to
 104 µs at p99 in the test VM; the steps alone were 6 to 8 and 49 to 70.
