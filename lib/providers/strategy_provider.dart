@@ -989,10 +989,6 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> _cloudCopies = Future<void>.value();
 
-  /// The copies this app sent, by page, with their sortIndexes. A read of a
-  /// page can be older than a copy that landed while it was on its way.
-  final Map<String, Map<String, int>> _cloudCopiesSent = {};
-
   Future<PageCopyResult> _copyToCloudPage({
     required String strategyId,
     required String targetPageId,
@@ -1019,20 +1015,20 @@ class StrategyProvider extends Notifier<StrategyState> {
       return PageCopyResult.alreadyThere;
     }
 
-    final queue = ref.read(strategyOpQueueProvider);
-    final accountId = queue.accountId;
-    final copyId = newPageCopyId(
-      widgetId,
-      fits: (id) =>
-          accountId == null ||
-          DurableOutboxRecord.createStorageKey(
-                accountId: accountId,
-                strategyPublicId: strategyId,
-                entityKey: EntitySyncKey.element(targetPageId, id),
-              ).length <=
-              _maxStoredKeyLength,
-    );
-    final sortIndex = 1 + onTarget.values.fold<int>(-1, max);
+    final accountId = ref.read(strategyOpQueueProvider).accountId;
+    final copyId = newPageCopyId(widgetId);
+    // Hive refuses keys over 255 characters, and an op is stored under one
+    // naming its account, strategy, page and item. Only an imported item
+    // with an unusually long id could get here.
+    if (accountId == null ||
+        DurableOutboxRecord.createStorageKey(
+              accountId: accountId,
+              strategyPublicId: strategyId,
+              entityKey: EntitySyncKey.element(targetPageId, copyId),
+            ).length >
+            255) {
+      return PageCopyResult.unavailable;
+    }
     // The canvas never draws the copy: its page shows it from the server.
     await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
           ElementAddOp(
@@ -1043,11 +1039,10 @@ class StrategyProvider extends Notifier<StrategyState> {
               kind: element.kind,
               data: {...element.data, 'id': copyId},
             ),
-            sortIndex: sortIndex,
+            sortIndex: 1 + onTarget.values.fold<int>(-1, max),
           ),
           flushImmediately: true,
         );
-    (_cloudCopiesSent[targetPageId] ??= {})[copyId] = sortIndex;
     ref.read(strategySaveStateProvider.notifier)
       ..markDirty()
       ..setPendingCloudSync(true)
@@ -1055,20 +1050,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     return PageCopyResult.copied;
   }
 
-  /// Hive refuses longer keys, and an op is stored under one naming its
-  /// account, strategy, page and item.
-  static const _maxStoredKeyLength = 255;
-
   /// The items on [page] as the server has them with the work still queued
-  /// for it laid over, by id, with their sortIndexes. A copy this app sent
-  /// counts unless the read shows it deleted.
+  /// for it laid over, refused work waiting for the user's choice included,
+  /// by id, with their sortIndexes.
   Map<String, int> _cloudElementsOn(RemotePageSnapshot page) {
     final pageId = page.page.publicId;
-    final read = {for (final element in page.elements) element.publicId};
     final elements = <String, int>{
-      for (final MapEntry(key: id, value: sortIndex)
-          in (_cloudCopiesSent[pageId] ?? const <String, int>{}).entries)
-        if (!read.contains(id)) id: sortIndex,
       for (final element in page.elements)
         if (!element.deleted) element.publicId: element.sortIndex,
     };
@@ -1076,6 +1063,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     // Later entries win: a sent op over a paused one, its successor over it.
     final queued = <EntitySyncKey, StrategyOp>{
       for (final (key, pending) in [
+        for (final MapEntry(:key, :value) in queue.attentionByEntityKey.entries)
+          (key, value.pending),
         for (final MapEntry(:key, :value) in queue.pausedByEntityKey.entries)
           (key, value.pending),
         for (final MapEntry(:key, :value) in queue.queuedByEntityKey.entries)

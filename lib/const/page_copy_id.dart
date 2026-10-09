@@ -27,10 +27,6 @@ String pageCopyRoot(String id) {
   return _uuid.hasMatch(occurrence) ? id.substring(0, at) : id;
 }
 
-/// A fresh id for a copy of [id] on another page. [fits] says whether an id
-/// can be stored; when the root makes the copy's id too long, the copy gets
-/// a plain uuid and fades between pages instead of gliding.
-String newPageCopyId(String id, {required bool Function(String id) fits}) {
-  final copyId = '${pageCopyRoot(id)}$_copyMark${const Uuid().v4()}';
-  return fits(copyId) ? copyId : const Uuid().v4();
-}
+/// A fresh id for a copy of [id] on another page.
+String newPageCopyId(String id) =>
+    '${pageCopyRoot(id)}$_copyMark${const Uuid().v4()}';

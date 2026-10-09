@@ -10495,8 +10495,7 @@ void main() {
       expect(adds(container), hasLength(1));
     });
 
-    test('a read made before an earlier copy landed gets no second copy',
-        () async {
+    test('a refused copy waiting for the user still counts as there', () async {
       final (container, queue, _) = await open();
       final notifier = container.read(strategyProvider.notifier);
       Future<PageCopyResult> copy() => notifier.copyPlacedWidgetToAdjacentPage(
@@ -10505,9 +10504,32 @@ void main() {
           );
 
       expect(await copy(), PageCopyResult.copied);
-      // The copy lands, but the next read of page 3 is older than it.
-      queue.ackQueued();
+      // The server refuses it; it waits in attention for the user's choice.
+      final (key, intent) = queue.state.queuedByEntityKey.entries
+          .map((e) => (e.key, e.value))
+          .single;
+      queue.state = queue.state.copyWith(
+        queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+        attentionByEntityKey: {key: intent},
+      );
+
       expect(await copy(), PageCopyResult.alreadyThere);
+    });
+
+    test('an item whose id is too long to store a copy of is not copied',
+        () async {
+      final longId = 'x' * 200;
+      final (container, _, _) = await open(onScreenId: longId);
+
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: longId,
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.unavailable,
+      );
       expect(adds(container), isEmpty);
     });
 

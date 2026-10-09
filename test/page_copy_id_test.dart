@@ -39,18 +39,12 @@ void main() {
 
   group('newPageCopyId', () {
     test('a copy of a copy keeps the first root, so ids never nest', () {
-      final first = newPageCopyId('agent-1', fits: (_) => true);
-      final second = newPageCopyId(first, fits: (_) => true);
+      final first = newPageCopyId('agent-1');
+      final second = newPageCopyId(first);
       expect(pageCopyRoot(first), 'agent-1');
       expect(pageCopyRoot(second), 'agent-1');
       expect(second, isNot(first));
       expect('~cp1~'.allMatches(second), hasLength(1));
-    });
-
-    test('an id too long to store becomes a plain uuid', () {
-      final id = newPageCopyId('agent-1', fits: (_) => false);
-      expect(pageCopyRoot(id), id);
-      expect(id, isNot(contains('agent-1')));
     });
   });
 
