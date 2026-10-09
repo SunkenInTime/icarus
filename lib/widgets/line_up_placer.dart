@@ -177,6 +177,9 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                   ),
                 if (draftAbility != null)
                   PlacedAbilityWidget(
+                    // A new draft ability starts from its own geometry, not
+                    // the one it replaced.
+                    key: ValueKey(draftAbility.id),
                     rotation: draftAbility.rotation,
                     data: draftAbility,
                     ability: draftAbility,

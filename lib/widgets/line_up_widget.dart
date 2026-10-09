@@ -164,7 +164,9 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
         isAlly: ability.isAlly,
         mapScale: mapScale,
         landingId: landing.id,
-        rotation: displayRotation,
+        // Landings can't be turned yet, so a plain icon stays upright.
+        rotation:
+            turnsGlyph(ability.data.abilityData!) ? null : displayRotation,
         length: ability.length,
         armLengthsMeters: ability.armLengthsMeters,
         visualState: ability.visualState,
