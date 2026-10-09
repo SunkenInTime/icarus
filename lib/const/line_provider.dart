@@ -523,17 +523,53 @@ class LineUpPlacement {
   }
 }
 
+/// Moving placed lineups. Lineups that share an origin or a landing meet at
+/// one marker on the map, so they move together: [linkIds] is the lineup the
+/// user picked plus every lineup joined to it that way. Each of their origins
+/// and landings sits at the position here until the edit is saved.
+class LineUpPlacementEdit {
+  const LineUpPlacementEdit({
+    required this.linkIds,
+    required this.originPositions,
+    required this.landingPositions,
+  });
+
+  final Set<String> linkIds;
+  final Map<String, Offset> originPositions;
+  final Map<String, Offset> landingPositions;
+
+  /// Every lineup, origin and landing the edit holds.
+  Set<String> get itemIds => {
+        ...linkIds,
+        ...originPositions.keys,
+        ...landingPositions.keys,
+      };
+
+  LineUpPlacementEdit copyWith({
+    Map<String, Offset>? originPositions,
+    Map<String, Offset>? landingPositions,
+  }) {
+    return LineUpPlacementEdit(
+      linkIds: linkIds,
+      originPositions: originPositions ?? this.originPositions,
+      landingPositions: landingPositions ?? this.landingPositions,
+    );
+  }
+}
+
 class LineUpState {
   final List<LineUpOrigin> origins;
   final List<LineUpLanding> landings;
   final List<LineUpLink> links;
   final LineUpPlacement? placement;
+  final LineUpPlacementEdit? edit;
 
   const LineUpState({
     this.origins = const [],
     this.landings = const [],
     this.links = const [],
     this.placement,
+    this.edit,
   });
 
   LineUpGraph get graph =>
@@ -583,11 +619,24 @@ class LineUpState {
     return pairs;
   }
 
+  /// Whether saving the edit would move anything.
+  bool get editMovesAnything {
+    final edit = this.edit;
+    if (edit == null) return false;
+    bool moved(Offset? current, Offset draft) =>
+        current != null && current != draft;
+    return edit.originPositions.entries.any((entry) =>
+            moved(originById(entry.key)?.agent.position, entry.value)) ||
+        edit.landingPositions.entries.any((entry) =>
+            moved(landingById(entry.key)?.ability.position, entry.value));
+  }
+
   LineUpState copyWith({
     List<LineUpOrigin>? origins,
     List<LineUpLanding>? landings,
     List<LineUpLink>? links,
     Object? placement = _noChange,
+    Object? edit = _noChange,
   }) {
     return LineUpState(
       origins: origins ?? this.origins,
@@ -596,6 +645,8 @@ class LineUpState {
       placement: identical(placement, _noChange)
           ? this.placement
           : placement as LineUpPlacement?,
+      edit:
+          identical(edit, _noChange) ? this.edit : edit as LineUpPlacementEdit?,
     );
   }
 }
@@ -982,6 +1033,95 @@ class LineUpProvider extends Notifier<LineUpState> {
   void clearPlacement() {
     if (state.placement == null) return;
     state = state.copyWith(placement: null);
+  }
+
+  // --- Placement editing ---------------------------------------------------
+
+  /// Starts moving [linkId] and every lineup joined to it through a shared
+  /// origin or landing, each end where it is now.
+  void startEdit(String linkId) {
+    final start = state.linkById(linkId);
+    if (start == null) return;
+    final linkIds = <String>{};
+    final originIds = <String>{};
+    final landingIds = <String>{};
+    final pending = [start];
+    while (pending.isNotEmpty) {
+      final link = pending.removeLast();
+      if (!linkIds.add(link.id)) continue;
+      originIds.add(link.originId);
+      landingIds.add(link.landingId);
+      pending.addAll(state.links.where((other) =>
+          other.originId == link.originId ||
+          other.landingId == link.landingId));
+    }
+    state = state.copyWith(
+      edit: LineUpPlacementEdit(
+        linkIds: linkIds,
+        originPositions: {
+          for (final id in originIds)
+            if (state.originById(id) case final origin?)
+              id: origin.agent.position,
+        },
+        landingPositions: {
+          for (final id in landingIds)
+            if (state.landingById(id) case final landing?)
+              id: landing.ability.position,
+        },
+      ),
+    );
+  }
+
+  void moveEditedOrigin(String originId, Offset position) {
+    final edit = state.edit;
+    if (edit == null || !edit.originPositions.containsKey(originId)) return;
+    state = state.copyWith(
+      edit: edit.copyWith(
+        originPositions: {...edit.originPositions, originId: position},
+      ),
+    );
+  }
+
+  void moveEditedLanding(String landingId, Offset position) {
+    final edit = state.edit;
+    if (edit == null || !edit.landingPositions.containsKey(landingId)) return;
+    state = state.copyWith(
+      edit: edit.copyWith(
+        landingPositions: {...edit.landingPositions, landingId: position},
+      ),
+    );
+  }
+
+  void cancelEdit() {
+    if (state.edit == null) return;
+    state = state.copyWith(edit: null);
+  }
+
+  /// Writes every end the edit moved, as one undo step. Ends a teammate
+  /// removed meanwhile stay removed.
+  void saveEdit() {
+    final edit = state.edit;
+    if (edit == null) return;
+    state = state.copyWith(edit: null);
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [ActionGroup.lineUp],
+      mutation: () {
+        for (final MapEntry(key: id, value: position)
+            in edit.originPositions.entries) {
+          final current = state.originById(id)?.agent.position;
+          if (current != null && current != position) {
+            updateOriginAgentPosition(id, position);
+          }
+        }
+        for (final MapEntry(key: id, value: position)
+            in edit.landingPositions.entries) {
+          final current = state.landingById(id)?.ability.position;
+          if (current != null && current != position) {
+            updateLandingPosition(id, position);
+          }
+        }
+      },
+    );
   }
 
   /// Turns the current placement into a link, creating whichever end was a

@@ -25,6 +25,7 @@ import 'package:icarus/widgets/hovered_map_item_name_card.dart';
 import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
+import 'package:icarus/widgets/line_up_placement_editor.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
@@ -262,9 +263,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       },
                                       child: Padding(
                                         padding: const EdgeInsets.all(4.0),
-                                        child:
-                                            RepaintBoundary(
-                                                child: DotGrid(followsEditorZoom: true)),
+                                        child: RepaintBoundary(
+                                            child: DotGrid(
+                                                followsEditorZoom: true)),
                                       ),
                                     ),
                                   ),
@@ -348,10 +349,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       child: transitionPresentation.hideView
                                           ? SizedBox.shrink()
                                           : Opacity(
-                                              opacity: ref.watch(
-                                                          interactionStateProvider) ==
-                                                      InteractionState
-                                                          .lineUpPlacing
+                                              opacity: ref
+                                                      .watch(
+                                                          interactionStateProvider)
+                                                      .isLineUpMode
                                                   ? 0.2
                                                   : 1.0,
                                               child: PlacedWidgetBuilder(),
@@ -388,9 +389,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                         final transitionOpacity = ref.watch(
                                           drawingsTransitionOpacityProvider,
                                         );
-                                        final lineUpOpacity = ref.watch(
-                                                    interactionStateProvider) ==
-                                                InteractionState.lineUpPlacing
+                                        final lineUpOpacity = ref
+                                                .watch(interactionStateProvider)
+                                                .isLineUpMode
                                             ? 0.2
                                             : 1.0;
                                         return IgnorePointer(
@@ -416,6 +417,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       child: IgnorePointer(
                                         ignoring: !canEditPages,
                                         child: const LineupPositionWidget(),
+                                      ),
+                                    ),
+                                  if (ref.watch(interactionStateProvider) ==
+                                      InteractionState.lineUpEditing)
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        ignoring: !canEditPages,
+                                        child: const LineUpPlacementEditor(),
                                       ),
                                     ),
                                   // Teammates' cursors ride above everything

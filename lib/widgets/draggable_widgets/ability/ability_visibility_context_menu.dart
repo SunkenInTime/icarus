@@ -71,7 +71,7 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
 }
 
 /// Lineup actions for a landing spot: add another lineup into it from a new
-/// throw spot, edit, delete.
+/// throw spot, edit its media or placement, delete.
 List<ShadContextMenuItem> buildLandingLineUpMenuItems(
   WidgetRef ref,
   String landingId, {
@@ -110,6 +110,16 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
         } else {
           showLineUpPanel(context, landingId: landingId);
         }
+      },
+    ),
+    ShadContextMenuItem(
+      leading: const Icon(LucideIcons.move, size: 16),
+      child: const Text('Edit placement'),
+      onPressed: () {
+        if (links.isEmpty) return;
+        ref
+            .read(interactionStateProvider.notifier)
+            .editLineUpPlacement(links.first.id);
       },
     ),
     ShadContextMenuItem(

@@ -130,7 +130,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               child: IgnorePointer(
                 ignoring: interactionState == InteractionState.drawing ||
                     interactionState == InteractionState.erasing ||
-                    interactionState == InteractionState.lineUpPlacing,
+                    interactionState.isLineUpMode,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
@@ -1193,41 +1193,25 @@ class _LineUpAgents extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
     final origins = ref.watch(lineUpProvider.select((state) => state.origins));
-    final coordinateSystem = CoordinateSystem.instance;
-    final agentSize = ref.watch(strategySettingsProvider).agentSize;
-    final isAttack = ref.watch(mapProvider).isAttack;
+    // Placement editing draws the origins it moves on its own layer. The
+    // edit's lineups stay the same while its ends move, so watching them
+    // keeps a drag from rebuilding every marker.
+    final editedLinks =
+        ref.watch(lineUpProvider.select((state) => state.edit?.linkIds));
+    final edited = editedLinks == null
+        ? const <String>{}
+        : ref.read(lineUpProvider).edit!.originPositions.keys.toSet();
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         for (final origin in origins)
-          EditorEntityLayer(
-            key: ValueKey('entity-${origin.id}'),
-            id: origin.id,
-            child: LineUpOriginAgentWidget(
-              origin: origin,
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final position = storedAgentPositionForRenderedScreenPosition(
-                  coordinateSystem: coordinateSystem,
-                  renderedScreenPosition: localOffset,
-                  agentSize: agentSize,
-                  isAttack: isAttack,
-                );
-                // Dropped off the map: the origin stays where it was.
-                if (coordinateSystem
-                    .isOutOfBounds(position + storedAgentAnchor)) {
-                  return;
-                }
-                // Records a move of this origin only, so undo never rolls
-                // back lineups that arrived since.
-                ref
-                    .read(lineUpProvider.notifier)
-                    .updateOriginAgentPosition(origin.id, position);
-              },
+          if (!edited.contains(origin.id))
+            EditorEntityLayer(
+              key: ValueKey('entity-${origin.id}'),
+              id: origin.id,
+              child: LineUpOriginAgentWidget(origin: origin),
             ),
-          ),
       ],
     );
   }
@@ -1241,44 +1225,25 @@ class _LineUpAbilities extends ConsumerWidget {
     ref.watch(canvasResizeProvider);
     final landings =
         ref.watch(lineUpProvider.select((state) => state.landings));
-    final coordinateSystem = CoordinateSystem.instance;
-    final mapState = ref.watch(mapProvider);
-    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    // Placement editing draws the landings it moves on its own layer. The
+    // edit's lineups stay the same while its ends move, so watching them
+    // keeps a drag from rebuilding every marker.
+    final editedLinks =
+        ref.watch(lineUpProvider.select((state) => state.edit?.linkIds));
+    final edited = editedLinks == null
+        ? const <String>{}
+        : ref.read(lineUpProvider).edit!.landingPositions.keys.toSet();
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         for (final landing in landings)
-          EditorEntityLayer(
-            key: ValueKey('entity-${landing.id}'),
-            id: landing.id,
-            child: LineUpLandingAbilityWidget(
-              landing: landing,
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final abilityData = landing.ability.data.abilityData!;
-                final position = storedAbilityPositionForRenderedScreenPosition(
-                  ability: abilityData,
-                  coordinateSystem: coordinateSystem,
-                  renderedScreenPosition: localOffset,
-                  mapScale: mapScale,
-                  abilitySize: abilitySize,
-                  isAttack: mapState.isAttack,
-                );
-                // Dropped off the map: the landing stays where it was.
-                final anchor = storedAbilityAnchor(
-                  ability: abilityData,
-                  mapScale: mapScale,
-                );
-                if (coordinateSystem.isOutOfBounds(position + anchor)) return;
-                ref
-                    .read(lineUpProvider.notifier)
-                    .updateLandingPosition(landing.id, position);
-              },
+          if (!edited.contains(landing.id))
+            EditorEntityLayer(
+              key: ValueKey('entity-${landing.id}'),
+              id: landing.id,
+              child: LineUpLandingAbilityWidget(landing: landing),
             ),
-          ),
       ],
     );
   }

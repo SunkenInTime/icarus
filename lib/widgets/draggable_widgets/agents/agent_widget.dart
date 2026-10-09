@@ -304,6 +304,19 @@ class AgentWidget extends ConsumerWidget {
         ),
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
+          leading: const Icon(LucideIcons.move, size: 16),
+          child: const Text('Edit placement'),
+          onPressed: () {
+            final links =
+                ref.read(lineUpProvider.notifier).linksFromOrigin(lineUpId!);
+            if (links.isEmpty) return;
+            ref
+                .read(interactionStateProvider.notifier)
+                .editLineUpPlacement(links.first.id);
+          },
+        ),
+      if (canInteract && lineUpId != null)
+        ShadContextMenuItem(
           leading: Icon(
             LucideIcons.trash2,
             size: 16,

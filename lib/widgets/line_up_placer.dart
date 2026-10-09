@@ -154,26 +154,9 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                     interactive: false,
                   ),
                 if (placement != null && !placement.isComplete)
-                  Align(
-                    alignment: Alignment.center,
-                    child: IgnorePointer(
-                      child: Container(
-                        key: const ValueKey('lineup-placement-status'),
-                        margin: const EdgeInsets.all(16),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: Settings.raisedPrimary(8),
-                        child: Text(
-                          lineUpPlacementStatus(placement),
-                          style: ShadTheme.of(context)
-                              .textTheme
-                              .small
-                              .copyWith(color: Colors.white),
-                        ),
-                      ),
-                    ),
+                  LineUpStatusPill(
+                    key: const ValueKey('lineup-placement-status'),
+                    text: lineUpPlacementStatus(placement),
                   ),
                 if (draftAbility != null)
                   PlacedAbilityWidget(
@@ -270,6 +253,34 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
           },
         );
       },
+    );
+  }
+}
+
+/// The one thing to do next in a lineup mode, centred over the map.
+class LineUpStatusPill extends StatelessWidget {
+  const LineUpStatusPill({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.center,
+      child: IgnorePointer(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: Settings.raisedPrimary(8),
+          child: Text(
+            text,
+            style: ShadTheme.of(context)
+                .textTheme
+                .small
+                .copyWith(color: Colors.white),
+          ),
+        ),
+      ),
     );
   }
 }

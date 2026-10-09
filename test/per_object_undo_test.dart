@@ -143,6 +143,113 @@ void main() {
     expect(history.poppedItems, hasLength(1));
   });
 
+  test('editing placement moves lineups that share a spot together', () {
+    final container = _container();
+    PlacedAbility ability(String id, Offset position) => PlacedAbility(
+          id: id,
+          data: AgentData.agents[AgentType.jett]!.abilities.first,
+          position: position,
+        );
+    final lineUps = container.read(lineUpProvider.notifier)
+      ..fromHive(
+        LineUpGraph(
+          origins: [
+            LineUpOrigin(
+                id: 'shared', agent: _agent('a1', const Offset(10, 10))),
+            LineUpOrigin(
+                id: 'apart', agent: _agent('a2', const Offset(90, 10))),
+          ],
+          landings: [
+            LineUpLanding(
+                id: 'l1', ability: ability('b1', const Offset(20, 80))),
+            LineUpLanding(
+                id: 'l2', ability: ability('b2', const Offset(40, 80))),
+            LineUpLanding(
+                id: 'l3', ability: ability('b3', const Offset(90, 80))),
+          ],
+          links: [
+            LineUpLink(id: 'k1', originId: 'shared', landingId: 'l1'),
+            LineUpLink(id: 'k2', originId: 'shared', landingId: 'l2'),
+            LineUpLink(id: 'k3', originId: 'apart', landingId: 'l3'),
+          ],
+        ),
+      );
+    final history = container.read(actionProvider.notifier);
+    Offset origin(String id) =>
+        container.read(lineUpProvider).originById(id)!.agent.position;
+    Offset landing(String id) =>
+        container.read(lineUpProvider).landingById(id)!.ability.position;
+
+    // Picking one lineup takes the one that throws from the same spot too,
+    // and nothing else.
+    lineUps.startEdit('k1');
+    final edit = container.read(lineUpProvider).edit!;
+    expect(edit.linkIds, {'k1', 'k2'});
+    expect(edit.originPositions.keys, ['shared']);
+    expect(edit.landingPositions.keys, unorderedEquals(['l1', 'l2']));
+    expect(container.read(lineUpProvider).editMovesAnything, isFalse);
+
+    // Drafts move nothing until saved.
+    lineUps.moveEditedOrigin('shared', const Offset(30, 30));
+    lineUps.moveEditedLanding('l2', const Offset(60, 120));
+    expect(origin('shared'), const Offset(10, 10));
+    expect(container.read(lineUpProvider).editMovesAnything, isTrue);
+
+    lineUps.saveEdit();
+    expect(container.read(lineUpProvider).edit, isNull);
+    expect(origin('shared'), const Offset(30, 30));
+    expect(landing('l1'), const Offset(20, 80));
+    expect(landing('l2'), const Offset(60, 120));
+    // Still one marker for both lineups: nothing split.
+    expect(
+      container.read(lineUpProvider).links.map((link) => link.originId),
+      ['shared', 'shared', 'apart'],
+    );
+    expect(container.read(actionProvider), hasLength(1));
+
+    history.undoAction();
+    expect(origin('shared'), const Offset(10, 10));
+    expect(landing('l2'), const Offset(40, 80));
+
+    history.redoAction();
+    expect(origin('shared'), const Offset(30, 30));
+    expect(landing('l2'), const Offset(60, 120));
+  });
+
+  test('cancelling a placement edit leaves every lineup where it was', () {
+    final container = _container();
+    final lineUps = container.read(lineUpProvider.notifier)
+      ..fromHive(
+        LineUpGraph(
+          origins: [
+            LineUpOrigin(id: 'o', agent: _agent('a', const Offset(10, 10))),
+          ],
+          landings: [
+            LineUpLanding(
+              id: 'l',
+              ability: PlacedAbility(
+                id: 'b',
+                data: AgentData.agents[AgentType.jett]!.abilities.first,
+                position: const Offset(20, 80),
+              ),
+            ),
+          ],
+          links: [LineUpLink(id: 'k', originId: 'o', landingId: 'l')],
+        ),
+      );
+
+    lineUps.startEdit('k');
+    lineUps.moveEditedOrigin('o', const Offset(300, 300));
+    lineUps.cancelEdit();
+
+    expect(container.read(lineUpProvider).edit, isNull);
+    expect(
+      container.read(lineUpProvider).originById('o')!.agent.position,
+      const Offset(10, 10),
+    );
+    expect(container.read(actionProvider), isEmpty);
+  });
+
   test('one undo steps past entries that change nothing to one that does', () {
     final container = _container();
     final agents = container.read(agentProvider.notifier)

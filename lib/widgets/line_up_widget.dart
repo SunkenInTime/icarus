@@ -5,16 +5,13 @@ import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
-import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
 const double _pinnedRingGap = 3;
 const double _pinnedRingStroke = 2;
@@ -24,7 +21,8 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
     Key? key,
     required this.origin,
     this.interactive = true,
-    this.onDragEnd,
+    this.onMove,
+    this.onMoveEnd,
   }) : super(key: key ?? ValueKey('lineup-agent-widget-${origin.id}'));
 
   final LineUpOrigin origin;
@@ -33,9 +31,13 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
   /// while this origin is pinned; the real one underneath keeps the hitbox.
   final bool interactive;
 
-  /// Moves the committed origin. Null, or a reader who can only view, leaves
-  /// the marker fixed in place.
-  final ValueChanged<DraggableDetails>? onDragEnd;
+  /// Set only while placement editing moves this origin: the marker follows
+  /// the pointer itself, with no drag image, and reports each move. Placed
+  /// lineups stay where they are otherwise.
+  final ValueChanged<DragUpdateDetails>? onMove;
+
+  /// Called when a move reported through [onMove] ends.
+  final VoidCallback? onMoveEnd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -70,25 +72,12 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
         (capabilities) => capabilities.canEditPages,
       ),
     );
-    if (interactive && canEdit && onDragEnd != null) {
-      marker = Draggable<PlacedWidget>(
+    final moving = canEdit && onMove != null;
+    if (moving) {
+      marker = _MovableEnd(
         key: ValueKey('lineup-agent-drag-${origin.id}'),
-        data: origin.agent,
-        dragAnchorStrategy:
-            ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
-        feedback: Opacity(
-          opacity: Settings.feedbackOpacity,
-          child: ZoomTransform(
-            child: AgentWidget(
-              agent: AgentData.agents[origin.agent.type]!,
-              isAlly: origin.agent.isAlly,
-              weapon: origin.agent.weapon,
-              id: '',
-            ),
-          ),
-        ),
-        childWhenDragging: const SizedBox.shrink(),
-        onDragEnd: onDragEnd,
+        onMove: onMove!,
+        onMoveEnd: onMoveEnd,
         child: marker,
       );
     }
@@ -98,7 +87,7 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
       left: agentScreen.dx,
       top: agentScreen.dy,
       child: IgnorePointer(
-        ignoring: !interactive,
+        ignoring: !interactive && !moving,
         child: marker,
       ),
     );
@@ -110,7 +99,8 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
     Key? key,
     required this.landing,
     this.interactive = true,
-    this.onDragEnd,
+    this.onMove,
+    this.onMoveEnd,
   }) : super(key: key ?? ValueKey('lineup-ability-widget-${landing.id}'));
 
   final LineUpLanding landing;
@@ -119,9 +109,13 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
   /// while this landing is pinned; the real one underneath keeps the hitbox.
   final bool interactive;
 
-  /// Moves the committed landing. Null, or a reader who can only view, leaves
-  /// the marker fixed in place.
-  final ValueChanged<DraggableDetails>? onDragEnd;
+  /// Set only while placement editing moves this landing: the marker follows
+  /// the pointer itself, with no drag image, and reports each move. Placed
+  /// lineups stay where they are otherwise.
+  final ValueChanged<DragUpdateDetails>? onMove;
+
+  /// Called when a move reported through [onMove] ends.
+  final VoidCallback? onMoveEnd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -191,18 +185,12 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
         (capabilities) => capabilities.canEditPages,
       ),
     );
-    if (interactive && canEdit && onDragEnd != null) {
-      marker = Draggable<PlacedWidget>(
+    final moving = canEdit && onMove != null;
+    if (moving) {
+      marker = _MovableEnd(
         key: ValueKey('lineup-ability-drag-${landing.id}'),
-        data: ability,
-        dragAnchorStrategy:
-            ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
-        feedback: Opacity(
-          opacity: Settings.feedbackOpacity,
-          child: ZoomTransform(child: buildAbility(isFeedback: true)),
-        ),
-        childWhenDragging: const SizedBox.shrink(),
-        onDragEnd: onDragEnd,
+        onMove: onMove!,
+        onMoveEnd: onMoveEnd,
         // The ability art has transparent gaps; the whole box takes the drag.
         child: ColoredBox(color: Colors.transparent, child: marker),
       );
@@ -213,8 +201,45 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
       left: abilityScreen.dx,
       top: abilityScreen.dy,
       child: IgnorePointer(
-        ignoring: !interactive,
+        ignoring: !interactive && !moving,
         child: marker,
+      ),
+    );
+  }
+}
+
+/// What a lineup end being moved in placement editing carries. Nothing on
+/// the canvas accepts it (the delete area takes placed widgets), so dropping
+/// it only ends the move.
+class _MovingLineUpEnd {
+  const _MovingLineUpEnd();
+}
+
+/// A lineup end that moves with the pointer while placement editing is on.
+/// The marker itself is redrawn at each new position, so there is no drag
+/// image, and the lines into it follow live.
+class _MovableEnd extends StatelessWidget {
+  const _MovableEnd({
+    super.key,
+    required this.onMove,
+    required this.onMoveEnd,
+    required this.child,
+  });
+
+  final ValueChanged<DragUpdateDetails> onMove;
+  final VoidCallback? onMoveEnd;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.grab,
+      child: Draggable<_MovingLineUpEnd>(
+        data: const _MovingLineUpEnd(),
+        feedback: const SizedBox.shrink(),
+        onDragUpdate: onMove,
+        onDragEnd: (_) => onMoveEnd?.call(),
+        child: child,
       ),
     );
   }
