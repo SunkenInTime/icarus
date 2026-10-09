@@ -80,8 +80,8 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     final coordinateSystem = CoordinateSystem.instance;
     final state = ref.watch(lineUpProvider);
     final edit = state.edit;
-    // The page's lineups were replaced (another page opened) and the edit
-    // went with them.
+    // The page's lineups were replaced (another page opened, or a reload
+    // took every lineup being moved) and the edit went with them.
     if (edit == null) {
       _leave();
       return const SizedBox.shrink();

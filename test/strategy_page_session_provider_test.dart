@@ -25,6 +25,7 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/agents.dart';
@@ -7370,6 +7371,101 @@ void main() {
       expect(container.read(strategyConflictProvider), isEmpty);
       expect(container.read(lineupConflictsProvider), isNull);
     });
+
+    for (final keepBoth in [false, true]) {
+      test(
+          '${keepBoth ? 'Keep both' : 'Use cloud'} on another group keeps a '
+          'placement edit open, and Save sends its drag as one undo step',
+          () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId, lineups: [
+          fanIn(page.publicId),
+          _lineup(page.publicId, 'z', sortIndex: 1),
+        ]);
+        final (container, _) = await openOnRealQueue(page);
+        final key = keyOf(page, 'link-a');
+        StrategyOpQueueState queueState() =>
+            container.read(strategyOpQueueProvider);
+        Offset serverLanding() =>
+            lineUpGraphFromRemoteLineups([server.row('link-z')])
+                .landings
+                .single
+                .ability
+                .position;
+        // The fan-in group's edit is refused beside a teammate's and waits,
+        // as in refusedBesideTeammate.
+        server.teammateEdit('link-a',
+            (data) => _entry(data, 'links', 'link-b')['notes'] = 'theirs');
+        container.read(lineUpProvider.notifier).updateLink(container
+            .read(lineUpProvider)
+            .linkById('link-a')!
+            .copyWith(notes: 'mine'));
+        await _until(() => queueState().attentionByEntityKey.containsKey(key));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        // Mid-edit of lineup Z, its landing dragged, the user resolves the
+        // conflict on the other group.
+        const dragTo = Offset(400, 250);
+        container
+            .read(interactionStateProvider.notifier)
+            .editLineUpPlacement('link-z');
+        container
+            .read(lineUpProvider.notifier)
+            .moveEditedLanding('landing-z', dragTo);
+        final session = container.read(strategyPageSessionProvider.notifier);
+        if (keepBoth) {
+          expect(await session.keepBothForRejected(), KeepBothOutcome.kept);
+        } else {
+          expect(await session.useCloudVersionsForRejected(), isTrue);
+        }
+        await _until(() => queueState().pending.isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        // The page reloaded under the edit: the cloud's version of the other
+        // group is on screen, and the edit is still open with its drag.
+        expect(
+            container.read(lineUpProvider).linkById('link-b')!.notes, 'theirs');
+        expect(queueState().attentionByEntityKey, isEmpty);
+        expect(container.read(interactionStateProvider),
+            InteractionState.lineUpEditing);
+        final edit = container.read(lineUpProvider).edit!;
+        expect(edit.linkIds, {'link-z'});
+        expect(edit.movedLandings, {'landing-z': dragTo});
+        expect(serverLanding(), const Offset(30, 40));
+
+        final undoSteps = container.read(actionProvider).length;
+        container.read(lineUpProvider.notifier).saveEdit();
+        container
+            .read(interactionStateProvider.notifier)
+            .update(InteractionState.navigation);
+        await _until(() => serverLanding() == dragTo);
+        await _until(() => queueState().pending.isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        expect(queueState().attentionByEntityKey, isEmpty);
+        expect(container.read(actionProvider), hasLength(undoSteps + 1));
+        container.read(actionProvider.notifier).undoAction();
+        expect(
+          container
+              .read(lineUpProvider)
+              .landingById('landing-z')!
+              .ability
+              .position,
+          const Offset(30, 40),
+        );
+        await _until(() => serverLanding() == const Offset(30, 40));
+        await _until(() => queueState().pending.isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+    }
 
     test(
         'Keep both whose cloud version cannot be loaded changes nothing, so '

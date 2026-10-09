@@ -158,6 +158,9 @@ Future<void> _pumpLineupCanvas(
   );
 }
 
+/// How far [editAndDragAbility] drags the ability.
+const _editDrag = Offset(-55, 65);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -604,6 +607,159 @@ void main() {
     expect(
       find.text('The page changed, so the placement edit closed without '
           'saving.'),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
+  /// Opens placement editing on the Breach lineup and drags its ability by
+  /// [_editDrag]. Returns the lineup as it was placed.
+  Future<LineUpGroup> editAndDragAbility(
+    WidgetTester tester,
+    ProviderContainer container,
+  ) async {
+    final group = _breachGroup();
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(interactionStateProvider.notifier).editLineUpPlacement(
+          container.read(lineUpProvider).links.single.id,
+        );
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: Stack(
+          children: [
+            LineUpOverlay(),
+            Positioned.fill(child: LineUpPlacementEditor()),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: LineupControlButtons(),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('lineup-ability-drag-breach-item')),
+      _editDrag,
+    );
+    await tester.pump();
+    return group;
+  }
+
+  /// The Breach lineup [group] with its ability at [abilityAt], as a newer
+  /// copy of the page would bring it.
+  LineUpGraph reloaded(LineUpGroup group, {required Offset abilityAt}) {
+    final item = group.items.single;
+    return LineUpGraph.fromLegacyGroups([
+      group.copyWith(items: [
+        item.copyWith(ability: item.ability.copyWith(position: abilityAt)),
+      ]),
+    ]);
+  }
+
+  testWidgets('reloading the same page keeps a placement edit and its drag',
+      (tester) async {
+    final container = _createContainer();
+    final group = await editAndDragAbility(tester, container);
+    final abilityFinder =
+        find.byKey(const ValueKey('lineup-ability-drag-breach-item'));
+    final draggedTopLeft = tester.getTopLeft(abilityFinder);
+    final draft =
+        container.read(lineUpProvider).edit!.movedLandings['breach-item']!;
+
+    // Resolving a cloud conflict reloads the page on screen.
+    container.read(lineUpProvider.notifier).fromHive(
+          reloaded(group, abilityAt: group.items.single.ability.position),
+          samePage: true,
+        );
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(interactionStateProvider),
+      InteractionState.lineUpEditing,
+    );
+    expect(tester.getTopLeft(abilityFinder), draggedTopLeft);
+    expect(find.textContaining('undone'), findsNothing);
+    expect(find.textContaining('without saving'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('lineup-edit-save')));
+    await tester.pumpAndSettle();
+    expect(
+      container
+          .read(lineUpProvider)
+          .landingById('breach-item')!
+          .ability
+          .position,
+      draft,
+    );
+    expect(container.read(actionProvider), hasLength(1));
+  });
+
+  testWidgets('a reload that moved a dragged spot undoes that drag and says so',
+      (tester) async {
+    final container = _createContainer();
+    final group = await editAndDragAbility(tester, container);
+    const theirs = Offset(500, 300);
+
+    container.read(lineUpProvider.notifier).fromHive(
+          reloaded(group, abilityAt: theirs),
+          samePage: true,
+        );
+    await tester.pumpAndSettle();
+
+    // Still editing, the ability where the cloud has it.
+    expect(
+      container.read(interactionStateProvider),
+      InteractionState.lineUpEditing,
+    );
+    expect(container.read(lineUpProvider).edit!.movedLandings, isEmpty);
+    expect(
+      tester.getTopLeft(
+          find.byKey(const ValueKey('lineup-ability-drag-breach-item'))),
+      screenPositionForWidget(
+        widget: container.read(lineUpProvider).landings.single.ability,
+        coordinateSystem: CoordinateSystem.instance,
+        mapScale: Maps.mapScale[MapValue.bind] ?? 1.0,
+        abilitySize: container.read(strategySettingsProvider).abilitySize,
+        isAttack: true,
+      ),
+    );
+    expect(
+      find.text("The cloud's version changed a spot you dragged, so that "
+          'drag was undone.'),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a reload without the lineups being moved ends the edit',
+      (tester) async {
+    final container = _createContainer();
+    await editAndDragAbility(tester, container);
+
+    // "Use cloud" took the lineup away.
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.empty, samePage: true);
+    await tester.pumpAndSettle();
+
+    expect(container.read(lineUpProvider).edit, isNull);
+    expect(
+      container.read(interactionStateProvider),
+      InteractionState.navigation,
+    );
+    expect(
+      find.text('The lineups you were moving are no longer on this page, so '
+          'the placement edit closed without saving.'),
       findsOneWidget,
     );
     await tester.pump(const Duration(seconds: 4));
