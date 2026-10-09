@@ -56,7 +56,8 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
   })? _drag;
 
   /// The end whose drag a reload of the page took back while the pointer
-  /// was still down. The rest of that gesture moves nothing.
+  /// was still down. The rest of that gesture moves nothing; dragging
+  /// another end clears it.
   _End? _takenBack;
 
   /// Where the drag of [end] puts its top-left, keeping the point that was
@@ -70,6 +71,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     required Offset position,
   }) {
     if (_takenBack == end) return null;
+    _takenBack = null;
     final box = context.findRenderObject() as RenderBox;
     final drag = _drag = (
       end: end,
@@ -92,25 +94,20 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     });
   }
 
-  /// A reload of the page reopens the edit (see LineUpProvider.fromHive).
-  /// The drag under way carries on only if its end is still there, where
-  /// the drag began; otherwise the reload took the drag back, and following
-  /// the pointer would put it back.
-  void _onEditReopened(LineUpState next) {
+  /// A reload of the page reopens the edit, deciding which drags it keeps
+  /// (see LineUpProvider.fromHive). The drag under way carries on only if
+  /// the reload kept its draft; otherwise following the pointer would put
+  /// back a drag the reload undid.
+  void _onEditReopened(LineUpPlacementEdit? edit) {
     final drag = _drag;
     if (drag == null) return;
-    final edit = next.edit;
     final (id, origin) = drag.end;
-    final now = origin
-        ? (edit?.originIds.contains(id) ?? false)
-            ? next.originById(id)?.agent.position
-            : null
-        : (edit?.landingIds.contains(id) ?? false)
-            ? next.landingById(id)?.ability.position
-            : null;
-    if (now == drag.position) return;
+    final ends = origin ? edit?.originIds : edit?.landingIds;
+    final drafts = origin ? edit?.movedOrigins : edit?.movedLandings;
+    if (drafts?.containsKey(id) ?? false) return;
     _drag = null;
-    _takenBack = drag.end;
+    // An end the reload removed has no gesture left to finish.
+    _takenBack = (ends?.contains(id) ?? false) ? drag.end : null;
   }
 
   @override
@@ -119,7 +116,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     ref.listen(lineUpProvider, (previous, next) {
       // Drags keep the edit's lineups; a new set means it was reopened.
       if (!identical(previous?.edit?.linkIds, next.edit?.linkIds)) {
-        _onEditReopened(next);
+        _onEditReopened(next.edit);
       }
     });
     final state = ref.watch(lineUpProvider);

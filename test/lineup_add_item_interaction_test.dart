@@ -914,6 +914,110 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  for (final cloudTakesFirstDrag in [false, true]) {
+    testWidgets(
+        'a reload during a second drag of a spot '
+        '${cloudTakesFirstDrag ? 'the cloud moved stops it' : 'it kept lets it carry on'}',
+        (tester) async {
+      final container = _createContainer();
+      final group = _breachGroup();
+      await openEdit(tester, container, group);
+      final startTopLeft = tester.getTopLeft(abilityOf('breach-item'));
+      Offset? draft() =>
+          container.read(lineUpProvider).edit!.movedLandings['breach-item'];
+
+      await tester.drag(abilityOf('breach-item'), _editDrag);
+      await tester.pump();
+      final firstDraft = draft()!;
+      const second = Offset(40, 30);
+      final gesture = await tester.startGesture(
+        tester.getCenter(abilityOf('breach-item')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await moveInSteps(gesture, second / 2);
+      await tester.pump();
+      // The cloud's version has the spot where the user's first drag put
+      // it, or where it was saved.
+      container.read(lineUpProvider.notifier).fromHive(
+            reloaded(
+              group,
+              abilityAt: cloudTakesFirstDrag
+                  ? firstDraft
+                  : group.items.single.ability.position,
+            ),
+            samePage: true,
+          );
+      await tester.pump();
+      await moveInSteps(gesture, second / 2);
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      if (cloudTakesFirstDrag) {
+        expect(draft(), isNull);
+        expect(
+          find.text("The cloud's version changed a spot you dragged, so that "
+              'drag was undone.'),
+          findsOneWidget,
+        );
+      } else {
+        final expected = CoordinateSystem.instance
+            .screenToCoordinate(startTopLeft + _editDrag + second);
+        expect(draft()!.dx, closeTo(expected.dx, 0.001));
+        expect(draft()!.dy, closeTo(expected.dy, 0.001));
+      }
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    });
+  }
+
+  testWidgets('a lineup a reload removed mid-drag drags again once it is back',
+      (tester) async {
+    final container = _createContainer();
+    final breach = _breachGroup();
+    final first = breach.items.single;
+    final second = first.copyWith(
+      id: 'breach-item-2',
+      ability: first.ability.copyWith(
+        id: 'breach-ability-2',
+        position: const Offset(520, 200),
+      ),
+    );
+    final group = breach.copyWith(items: [first, second]);
+    await openEdit(tester, container, group);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(abilityOf('breach-item')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await moveInSteps(gesture, _editDrag);
+    await tester.pump();
+    container.read(lineUpProvider.notifier).fromHive(
+          LineUpGraph.fromLegacyGroups([
+            group.copyWith(items: [second]),
+          ]),
+          samePage: true,
+        );
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    // A later reload brings it back, joined through the shared agent.
+    container.read(lineUpProvider.notifier).fromHive(
+          LineUpGraph.fromLegacyGroups([group]),
+          samePage: true,
+        );
+    await tester.pumpAndSettle();
+    expect(container.read(lineUpProvider).edit!.linkIds, hasLength(2));
+
+    await tester.drag(abilityOf('breach-item'), const Offset(30, 20));
+    await tester.pump();
+    expect(
+      container.read(lineUpProvider).edit!.movedLandings['breach-item'],
+      isNotNull,
+    );
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('lineup origin opens its menu on right-click', (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
