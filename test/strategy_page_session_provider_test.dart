@@ -269,6 +269,20 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   }
 
   @override
+  Future<void> enqueueOffCanvas(
+    StrategyOp op, {
+    bool flushImmediately = false,
+  }) async {
+    final key = EntitySyncKey.forStrategyOp(op)!;
+    await syncDesiredOpsForPage(
+      pageId: key.pageId!,
+      desiredOpsByEntityKey: {key: op},
+      clearMissing: false,
+    );
+    if (flushImmediately) await flushNow();
+  }
+
+  @override
   Future<void> flushNow() async {
     flushNowCount += 1;
     if (blockFlush) await Completer<void>().future;
@@ -624,6 +638,17 @@ class _ServerRepository implements ConvexStrategyRepository {
   /// While set, an op it answers for never reaches [server]; that answer
   /// is returned instead, as a validation the server fails.
   OpAck? Function(StrategyOp op)? refuse;
+
+  /// Reads a page as the server holds it, for a copy to another page.
+  RemotePageSnapshot Function(String pageId)? readPage;
+
+  @override
+  Future<RemotePageSnapshot> fetchPageSnapshot({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  }) async =>
+      readPage!(pagePublicId);
 
   @override
   Future<List<OpAck>> applyBatch({
@@ -6497,10 +6522,15 @@ void main() {
       DurableStrategyOutboxStore? store,
       Completer<void>? hold,
       List<RemotePage> otherPages = const [],
+      Map<String, List<RemoteElement>> otherElements = const {},
     }) async {
       final others = {
         for (final other in otherPages)
-          other.publicId: _pageSnapshot(other, settings: settingsFor(1)),
+          other.publicId: _pageSnapshot(
+            other,
+            settings: settingsFor(1),
+            elements: otherElements[other.publicId] ?? const [],
+          ),
       };
       var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
@@ -6533,7 +6563,16 @@ void main() {
         shown = pageId;
         reread();
       };
-      repository = _ServerRepository(server, afterBatch: reread)..hold = hold;
+      repository = _ServerRepository(server, afterBatch: reread)
+        ..hold = hold
+        ..readPage = (pageId) => pageId == page.publicId
+            ? _pageSnapshot(
+                page,
+                settings: settingsFor(1),
+                elements: server.elements,
+                lineups: server.rows,
+              )
+            : others[pageId]!;
       final container = ProviderContainer(overrides: [
         remoteEditorSnapshotProvider.overrideWith(() => remote),
         durableStrategyOutboxStoreProvider
@@ -6630,6 +6669,85 @@ void main() {
       expect(queueState().needsAttention, isFalse);
       return sent().last;
     }
+
+    test(
+        'an item copied to the next page shows there when the user gets '
+        'there before it lands', () async {
+      final source = _page('page-1', 0);
+      final target = _page('page-2', 1);
+      server = _FakeServer(target.publicId);
+      final (container, batches) = await openOnRealQueue(
+        target,
+        otherPages: [source],
+        otherElements: {
+          source.publicId: [
+            _textElement(source.publicId, 'text-1', 'one', worldSized: true),
+          ],
+        },
+      );
+      readPage(source.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(textProvider).map((t) => t.id), ['text-1']);
+
+      // The copy is sent, and its answer held back.
+      final hold = repository.hold = Completer<void>();
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'text-1',
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.copied,
+      );
+      await _until(() => batches.isNotEmpty);
+      final copyId = (batches.single.single as ElementAddOp).elementPublicId;
+      expect(pageCopyRoot(copyId), 'text-1');
+
+      // The user opens page 2 before the copy lands, then it lands.
+      final session = container.read(strategyPageSessionProvider.notifier);
+      await session.setActivePage(target.publicId);
+      readPage(target.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      // It lands while the page's next read is still on its way, and the
+      // user places an agent on the page meanwhile.
+      final read = liveRead.refreshGate = Completer<void>();
+      hold.complete();
+      final copyKey = EntitySyncKey.element(target.publicId, copyId);
+      await _until(() => !container.read(strategyOpQueueProvider).pending.any(
+          (pending) => EntitySyncKey.forStrategyOp(pending.op) == copyKey));
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-1',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      read.complete();
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(container.read(textProvider).map((t) => t.id), [copyId]);
+      await container.read(strategyOpQueueProvider.notifier).flushNow();
+      // Page 2 sent the copy and the agent, and no delete of the copy.
+      expect(
+        [
+          for (final batch in batches)
+            for (final op in batch)
+              if (EntitySyncKey.forStrategyOp(op)?.pageId == target.publicId)
+                (op.kind, op.entityPublicId),
+        ],
+        [(StrategyOpKind.add, copyId), (StrategyOpKind.add, 'agent-1')],
+      );
+      expect(server.element(copyId).deleted, isFalse);
+    });
 
     test(
         'Keep mine restores a lineup a teammate deleted while the user '
@@ -10332,6 +10450,28 @@ void main() {
         PageCopyResult.alreadyThere,
       );
       expect(adds(container), isEmpty);
+    });
+
+    test('copying twice at once sends one copy', () async {
+      final (container, queue, _) = await open();
+      final notifier = container.read(strategyProvider.notifier);
+
+      // The first copy's write to the outbox takes a while.
+      final write = queue.writeGate = Completer<void>();
+      final copies = Future.wait([
+        for (var i = 0; i < 2; i++)
+          notifier.copyPlacedWidgetToAdjacentPage(
+            widgetId: 'text-page-2',
+            direction: PageTransitionDirection.forward,
+          ),
+      ]);
+      await _settle();
+      queue.writeGate = null;
+      write.complete();
+      final results = await copies;
+
+      expect(results, [PageCopyResult.copied, PageCopyResult.alreadyThere]);
+      expect(adds(container), hasLength(1));
     });
 
     test('a page that cannot be read gets nothing', () async {

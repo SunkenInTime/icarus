@@ -957,8 +957,25 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// a new item whose id carries the original's (see page_copy_id.dart).
   /// The target page is read from the server first: a copy goes after the
   /// page's items, and never beside the item or another copy of it. If the
-  /// page cannot be read, nothing is copied.
+  /// page cannot be read, nothing is copied. Copies run one at a time, so a
+  /// second one sees the first already queued.
   Future<PageCopyResult> _copyPlacedWidgetToAdjacentCloudPage({
+    required String widgetId,
+    required PageTransitionDirection direction,
+  }) {
+    final result = _cloudCopies.then(
+      (_) => _copyToAdjacentCloudPageNow(
+        widgetId: widgetId,
+        direction: direction,
+      ),
+    );
+    _cloudCopies = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<void> _cloudCopies = Future<void>.value();
+
+  Future<PageCopyResult> _copyToAdjacentCloudPageNow({
     required String widgetId,
     required PageTransitionDirection direction,
   }) async {
@@ -1006,18 +1023,24 @@ class StrategyProvider extends Notifier<StrategyState> {
               ).length <=
               _maxStoredKeyLength,
     );
-    await enqueueOps([
-      ElementAddOp(
-        opId: const Uuid().v4(),
-        elementPublicId: copyId,
-        pagePublicId: targetPageId,
-        payload: cloudElementPayload(
-          kind: element.kind,
-          data: element.data..['id'] = copyId,
-        ),
-        sortIndex: 1 + onTarget.values.fold<int>(-1, max),
-      ),
-    ], flushImmediately: true);
+    // The canvas never draws the copy: its page shows it from the server.
+    await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
+          ElementAddOp(
+            opId: const Uuid().v4(),
+            elementPublicId: copyId,
+            pagePublicId: targetPageId,
+            payload: cloudElementPayload(
+              kind: element.kind,
+              data: element.data..['id'] = copyId,
+            ),
+            sortIndex: 1 + onTarget.values.fold<int>(-1, max),
+          ),
+          flushImmediately: true,
+        );
+    ref.read(strategySaveStateProvider.notifier)
+      ..markDirty()
+      ..setPendingCloudSync(true)
+      ..setCloudSyncError(null);
     return PageCopyResult.copied;
   }
 
