@@ -60,7 +60,9 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/const/page_copy_id.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
+import 'package:uuid/uuid.dart';
 
 class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   _FakeRemoteEditorNotifier(
@@ -10222,4 +10224,203 @@ void main() {
       );
     });
   });
+
+  group('copying to the next or previous cloud page', () {
+    final pages = [_page('page-1', 0), _page('page-2', 1), _page('page-3', 2)];
+
+    /// Opens the strategy on page 2, which holds text [onScreenId]; the
+    /// repository reads page 3 with [nextPage] on it.
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier, _PageReader)>
+        open({
+      String onScreenId = 'text-page-2',
+      List<RemoteElement> nextPage = const [],
+    }) async {
+      final onScreen = _pageSnapshot(
+        pages[1],
+        elements: [_textElement('page-2', onScreenId, 'two')],
+      );
+      final queue = _FakeStrategyOpQueueNotifier();
+      final reader = _PageReader({
+        'page-3': _pageSnapshot(pages[2], elements: nextPage),
+      });
+      final container = await _cloudContainer(
+        remote: _FakeRemoteEditorNotifier(
+          _editorSnapshot(pages: pages, activePage: onScreen),
+        ),
+        queue: queue,
+        repository: reader,
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+            preferredPageId: 'page-2',
+          );
+      return (container, queue, reader);
+    }
+
+    Iterable<ElementAddOp> adds(ProviderContainer container) => container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .values
+        .map((intent) => intent.pending.op)
+        .whereType<ElementAddOp>();
+
+    test('offers both neighbours, and sends a copy with an id of its own',
+        () async {
+      final (container, queue, _) = await open(nextPage: [
+        _textElement('page-3', 'other', 'other', sortIndex: 4),
+      ]);
+      final notifier = container.read(strategyProvider.notifier);
+      expect(notifier.copyDirectionsForPlacedWidget('text-page-2'), [
+        PageTransitionDirection.forward,
+        PageTransitionDirection.backward,
+      ]);
+
+      expect(
+        await notifier.copyPlacedWidgetToAdjacentPage(
+          widgetId: 'text-page-2',
+          direction: PageTransitionDirection.forward,
+        ),
+        PageCopyResult.copied,
+      );
+
+      final add = adds(container).single;
+      expect(add.pagePublicId, 'page-3');
+      expect(add.elementPublicId, isNot('text-page-2'));
+      expect(pageCopyRoot(add.elementPublicId), 'text-page-2');
+      expect(add.sortIndex, 5);
+      expect(add.payload['kind'], 'text');
+      final data = cloudPayloadData(add.payload);
+      expect(data['id'], add.elementPublicId);
+      expect(data['text'], 'two');
+      expect(queue.flushNowCount, greaterThan(0));
+      // The page on screen is left as it was.
+      expect(container.read(textProvider).map((t) => t.id), ['text-page-2']);
+    });
+
+    test('a copy of a copy keeps the first item as its root', () async {
+      final copyId = 'text-page-2~cp1~${const Uuid().v4()}';
+      final (container, _, _) = await open(onScreenId: copyId);
+
+      await container
+          .read(strategyProvider.notifier)
+          .copyPlacedWidgetToAdjacentPage(
+            widgetId: copyId,
+            direction: PageTransitionDirection.forward,
+          );
+
+      final add = adds(container).single;
+      expect(pageCopyRoot(add.elementPublicId), 'text-page-2');
+      expect(add.elementPublicId.split('~cp1~'), hasLength(2));
+    });
+
+    test('a page that already has a copy of the item gets no other', () async {
+      final (container, _, _) = await open(nextPage: [
+        _textElement('page-3', 'text-page-2~cp1~${const Uuid().v4()}', 'two'),
+      ]);
+
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'text-page-2',
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.alreadyThere,
+      );
+      expect(adds(container), isEmpty);
+    });
+
+    test('a page that cannot be read gets nothing', () async {
+      final (container, _, reader) = await open();
+      reader.fails = true;
+
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'text-page-2',
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.unreachable,
+      );
+      expect(adds(container), isEmpty);
+    });
+
+    test('an item deleted from the next page but not yet sent can be copied',
+        () async {
+      final (container, queue, _) = await open(nextPage: [
+        _textElement('page-3', 'text-page-2', 'two'),
+      ]);
+      await queue.syncDesiredOpsForPage(
+        pageId: 'page-3',
+        desiredOpsByEntityKey: {
+          const EntitySyncKey.element('page-3', 'text-page-2'):
+              const ElementDeleteOp(
+            opId: 'delete',
+            elementPublicId: 'text-page-2',
+            pagePublicId: 'page-3',
+            expectedElementRevision: 1,
+          ),
+        },
+        clearMissing: false,
+      );
+
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'text-page-2',
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.copied,
+      );
+      expect(adds(container).single.pagePublicId, 'page-3');
+    });
+
+    test('an image is not offered: its copy would need a file of its own',
+        () async {
+      final (container, _, _) = await open();
+      container.read(placedImageProvider.notifier).fromHive([
+        PlacedImage(
+          id: 'image',
+          position: Offset.zero,
+          aspectRatio: 1,
+          scale: 100,
+          fileExtension: '.png',
+        ),
+      ]);
+      await _settle();
+
+      expect(
+        container
+            .read(strategyProvider.notifier)
+            .copyDirectionsForPlacedWidget('image'),
+        isEmpty,
+      );
+    });
+  });
+}
+
+/// Reads cloud pages for a copy to another page.
+class _PageReader extends Fake implements ConvexStrategyRepository {
+  _PageReader(this.pages);
+
+  final Map<String, RemotePageSnapshot> pages;
+
+  /// While set, a read fails as when offline.
+  bool fails = false;
+
+  @override
+  Future<RemotePageSnapshot> fetchPageSnapshot({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  }) async {
+    if (fails) throw const SocketException('offline');
+    return pages[pagePublicId]!;
+  }
 }
