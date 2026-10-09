@@ -470,18 +470,23 @@ void main() {
     await _pumpHarness(
       tester,
       container: container,
-      child: const SizedBox(
-        width: 900,
-        height: 600,
-        child: Stack(
-          children: [
-            LineUpOverlay(),
-            Positioned.fill(child: LineUpPlacementEditor()),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: LineupControlButtons(),
-            ),
-          ],
+      // The map pans and zooms under the canvas, so a lineup end's drag only
+      // wins the pointer once it has moved.
+      child: GestureDetector(
+        onScaleUpdate: (_) {},
+        child: const SizedBox(
+          width: 900,
+          height: 600,
+          child: Stack(
+            children: [
+              LineUpOverlay(),
+              Positioned.fill(child: LineUpPlacementEditor()),
+              Align(
+                alignment: Alignment.bottomRight,
+                child: LineupControlButtons(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -503,7 +508,17 @@ void main() {
         find.byKey(const ValueKey('lineup-ability-drag-breach-item'));
     final initialAbilityTopLeft = tester.getTopLeft(abilityFinder);
     const abilityDelta = Offset(-55, 65);
-    await tester.drag(abilityFinder, abilityDelta);
+    // A real drag arrives as many small moves; the end must stay under the
+    // pointer through all of them.
+    final gesture = await tester.startGesture(
+      tester.getCenter(abilityFinder),
+      kind: PointerDeviceKind.mouse,
+    );
+    for (var step = 0; step < 5; step++) {
+      await gesture.moveBy(abilityDelta / 5);
+      await tester.pump();
+    }
+    await gesture.up();
     await tester.pump();
 
     final expectedPosition = CoordinateSystem.instance
@@ -511,6 +526,8 @@ void main() {
     // The marker follows the drag; the lineup moves only on Save.
     expect(tester.getTopLeft(abilityFinder).dx,
         closeTo(initialAbilityTopLeft.dx + abilityDelta.dx, 0.001));
+    expect(tester.getTopLeft(abilityFinder).dy,
+        closeTo(initialAbilityTopLeft.dy + abilityDelta.dy, 0.001));
     expect(
       container
           .read(lineUpProvider)

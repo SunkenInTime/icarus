@@ -128,7 +128,7 @@ class LinePainter extends CustomPainter {
     final edit = lineUpState.edit;
     for (final (originId, landingId) in lineUpState.connectorPairs) {
       // Every lineup at an edited origin is part of the edit.
-      if (edit?.originPositions.containsKey(originId) ?? false) continue;
+      if (edit?.originIds.contains(originId) ?? false) continue;
       final origin = lineUpState.originById(originId);
       final landing = lineUpState.landingById(landingId);
       if (origin == null || landing == null) continue;

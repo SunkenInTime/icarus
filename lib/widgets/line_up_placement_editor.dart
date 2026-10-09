@@ -18,7 +18,7 @@ import 'package:icarus/widgets/line_up_widget.dart';
 String lineUpEditStatus(LineUpState state) {
   final edit = state.edit;
   if (edit == null || state.editMovesAnything) return '';
-  final agentType = edit.originPositions.keys
+  final agentType = edit.originIds
       .map((id) => state.originById(id)?.agent.type)
       .nonNulls
       .firstOrNull;
@@ -41,25 +41,38 @@ class LineUpPlacementEditor extends ConsumerStatefulWidget {
 }
 
 class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
-  /// The drag under way: the pointer and the end's top-left where it began,
-  /// in this layer's pixels, and the end's stored position then.
-  ({Offset pointer, Offset topLeft, Offset position})? _drag;
+  /// The drag under way: how far the pointer has moved in window pixels,
+  /// and the end's top-left in this layer's pixels and its stored position
+  /// where the drag began.
+  ({Offset moved, Offset topLeft, Offset position})? _drag;
 
   /// Where the drag puts the end's top-left, keeping the point that was
-  /// grabbed under the pointer.
+  /// grabbed under the pointer. The movement adds up the updates' deltas:
+  /// the first update reports where the pointer went down, not where it is.
   Offset _draggedTopLeft(
     DragUpdateDetails details, {
     required Offset topLeft,
     required Offset position,
   }) {
     final box = context.findRenderObject() as RenderBox;
-    final drag = _drag ??= (
-      pointer: box.globalToLocal(details.globalPosition - details.delta),
-      topLeft: topLeft,
-      position: position,
+    final drag = _drag = (
+      moved: (_drag?.moved ?? Offset.zero) + details.delta,
+      topLeft: _drag?.topLeft ?? topLeft,
+      position: _drag?.position ?? position,
     );
+    // The map can be zoomed and panned, so the movement is converted to this
+    // layer's pixels as a whole.
     return drag.topLeft +
-        (box.globalToLocal(details.globalPosition) - drag.pointer);
+        (box.globalToLocal(drag.moved) - box.globalToLocal(Offset.zero));
+  }
+
+  void _leave() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.navigation);
+    });
   }
 
   @override
@@ -67,26 +80,40 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     final coordinateSystem = CoordinateSystem.instance;
     final state = ref.watch(lineUpProvider);
     final edit = state.edit;
-    if (edit == null) return const SizedBox.shrink();
+    // The page's lineups were replaced (another page opened) and the edit
+    // went with them.
+    if (edit == null) {
+      _leave();
+      return const SizedBox.shrink();
+    }
     final settings = ref.watch(strategySettingsProvider);
     final currentMap = ref.watch(mapProvider.select((s) => s.currentMap));
     final isAttack = ref.watch(mapProvider.select((s) => s.isAttack));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final notifier = ref.read(lineUpProvider.notifier);
 
+    // Dragged ends sit at their drafts; the rest wherever the page has them.
     final origins = [
-      for (final MapEntry(key: id, value: position)
-          in edit.originPositions.entries)
+      for (final id in edit.originIds)
         if (state.originById(id) case final origin?)
-          origin.copyWith(agent: origin.agent.copyWith(position: position)),
+          edit.movedOrigins[id] == null
+              ? origin
+              : origin.copyWith(
+                  agent: origin.agent.copyWith(
+                    position: edit.movedOrigins[id],
+                  ),
+                ),
     ];
     final landings = [
-      for (final MapEntry(key: id, value: position)
-          in edit.landingPositions.entries)
+      for (final id in edit.landingIds)
         if (state.landingById(id) case final landing?)
-          landing.copyWith(
-            ability: landing.ability.copyWith(position: position),
-          ),
+          edit.movedLandings[id] == null
+              ? landing
+              : landing.copyWith(
+                  ability: landing.ability.copyWith(
+                    position: edit.movedLandings[id],
+                  ),
+                ),
     ];
     final draft = LineUpState(
       origins: origins,
@@ -98,12 +125,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     );
     // A teammate or an undo removed every lineup being moved.
     if (draft.links.isEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ref
-            .read(interactionStateProvider.notifier)
-            .update(InteractionState.navigation);
-      });
+      _leave();
       return const SizedBox.shrink();
     }
 
@@ -162,7 +184,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
             onMoveEnd: () {
               final start = _drag?.position;
               final position =
-                  ref.read(lineUpProvider).edit?.originPositions[origin.id];
+                  ref.read(lineUpProvider).edit?.movedOrigins[origin.id];
               endMove(
                 outOfBounds: position != null &&
                     coordinateSystem
@@ -208,7 +230,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
             onMoveEnd: () {
               final start = _drag?.position;
               final position =
-                  ref.read(lineUpProvider).edit?.landingPositions[landing.id];
+                  ref.read(lineUpProvider).edit?.movedLandings[landing.id];
               final anchor = storedAbilityAnchor(
                 ability: landing.ability.data.abilityData!,
                 mapScale: mapScale,

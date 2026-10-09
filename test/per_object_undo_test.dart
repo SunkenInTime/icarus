@@ -185,8 +185,8 @@ void main() {
     lineUps.startEdit('k1');
     final edit = container.read(lineUpProvider).edit!;
     expect(edit.linkIds, {'k1', 'k2'});
-    expect(edit.originPositions.keys, ['shared']);
-    expect(edit.landingPositions.keys, unorderedEquals(['l1', 'l2']));
+    expect(edit.originIds, {'shared'});
+    expect(edit.landingIds, {'l1', 'l2'});
     expect(container.read(lineUpProvider).editMovesAnything, isFalse);
 
     // Drafts move nothing until saved.
@@ -241,6 +241,70 @@ void main() {
     lineUps.startEdit('k');
     lineUps.moveEditedOrigin('o', const Offset(300, 300));
     lineUps.cancelEdit();
+
+    expect(container.read(lineUpProvider).edit, isNull);
+    expect(
+      container.read(lineUpProvider).originById('o')!.agent.position,
+      const Offset(10, 10),
+    );
+    expect(container.read(actionProvider), isEmpty);
+  });
+
+  LineUpGraph oneLineup() => LineUpGraph(
+        origins: [
+          LineUpOrigin(id: 'o', agent: _agent('a', const Offset(10, 10))),
+        ],
+        landings: [
+          LineUpLanding(
+            id: 'l',
+            ability: PlacedAbility(
+              id: 'b',
+              data: AgentData.agents[AgentType.jett]!.abilities.first,
+              position: const Offset(20, 80),
+            ),
+          ),
+        ],
+        links: [LineUpLink(id: 'k', originId: 'o', landingId: 'l')],
+      );
+
+  test('saving a placement edit keeps an undo made while it was open', () {
+    final container = _container();
+    final lineUps = container.read(lineUpProvider.notifier)
+      ..fromHive(oneLineup());
+    final history = container.read(actionProvider.notifier);
+    LineUpState lineUpState() => container.read(lineUpProvider);
+
+    lineUps
+      ..startEdit('k')
+      ..moveEditedOrigin('o', const Offset(50, 50))
+      ..saveEdit();
+    // A second edit moves only the landing; the origin move is undone
+    // before it is saved.
+    lineUps
+      ..startEdit('k')
+      ..moveEditedLanding('l', const Offset(90, 90));
+    history.undoAction();
+    expect(lineUpState().originById('o')!.agent.position, const Offset(10, 10));
+
+    lineUps.saveEdit();
+    expect(lineUpState().originById('o')!.agent.position, const Offset(10, 10));
+    expect(
+      lineUpState().landingById('l')!.ability.position,
+      const Offset(90, 90),
+    );
+  });
+
+  test('opening another page ends a placement edit without saving it', () {
+    final container = _container();
+    final lineUps = container.read(lineUpProvider.notifier)
+      ..fromHive(oneLineup());
+
+    lineUps
+      ..startEdit('k')
+      ..moveEditedOrigin('o', const Offset(50, 50));
+    // A copied page holds lineups with the same ids.
+    lineUps.fromHive(oneLineup());
+    lineUps.saveEdit();
 
     expect(container.read(lineUpProvider).edit, isNull);
     expect(

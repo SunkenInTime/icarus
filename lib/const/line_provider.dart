@@ -525,34 +525,40 @@ class LineUpPlacement {
 
 /// Moving placed lineups. Lineups that share an origin or a landing meet at
 /// one marker on the map, so they move together: [linkIds] is the lineup the
-/// user picked plus every lineup joined to it that way. Each of their origins
-/// and landings sits at the position here until the edit is saved.
+/// user picked plus every lineup joined to it that way, and [originIds] and
+/// [landingIds] are their ends. Only the ends the user drags take a draft
+/// position; the rest stay wherever the page has them, an undo included, so
+/// saving writes exactly what was dragged.
 class LineUpPlacementEdit {
   const LineUpPlacementEdit({
     required this.linkIds,
-    required this.originPositions,
-    required this.landingPositions,
+    required this.originIds,
+    required this.landingIds,
+    this.movedOrigins = const {},
+    this.movedLandings = const {},
   });
 
   final Set<String> linkIds;
-  final Map<String, Offset> originPositions;
-  final Map<String, Offset> landingPositions;
+  final Set<String> originIds;
+  final Set<String> landingIds;
+
+  /// Where the user dragged each moved origin and landing to, by id.
+  final Map<String, Offset> movedOrigins;
+  final Map<String, Offset> movedLandings;
 
   /// Every lineup, origin and landing the edit holds.
-  Set<String> get itemIds => {
-        ...linkIds,
-        ...originPositions.keys,
-        ...landingPositions.keys,
-      };
+  Set<String> get itemIds => {...linkIds, ...originIds, ...landingIds};
 
   LineUpPlacementEdit copyWith({
-    Map<String, Offset>? originPositions,
-    Map<String, Offset>? landingPositions,
+    Map<String, Offset>? movedOrigins,
+    Map<String, Offset>? movedLandings,
   }) {
     return LineUpPlacementEdit(
       linkIds: linkIds,
-      originPositions: originPositions ?? this.originPositions,
-      landingPositions: landingPositions ?? this.landingPositions,
+      originIds: originIds,
+      landingIds: landingIds,
+      movedOrigins: movedOrigins ?? this.movedOrigins,
+      movedLandings: movedLandings ?? this.movedLandings,
     );
   }
 }
@@ -625,9 +631,9 @@ class LineUpState {
     if (edit == null) return false;
     bool moved(Offset? current, Offset draft) =>
         current != null && current != draft;
-    return edit.originPositions.entries.any((entry) =>
+    return edit.movedOrigins.entries.any((entry) =>
             moved(originById(entry.key)?.agent.position, entry.value)) ||
-        edit.landingPositions.entries.any((entry) =>
+        edit.movedLandings.entries.any((entry) =>
             moved(landingById(entry.key)?.ability.position, entry.value));
   }
 
@@ -1038,7 +1044,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   // --- Placement editing ---------------------------------------------------
 
   /// Starts moving [linkId] and every lineup joined to it through a shared
-  /// origin or landing, each end where it is now.
+  /// origin or landing.
   void startEdit(String linkId) {
     final start = state.linkById(linkId);
     if (start == null) return;
@@ -1058,36 +1064,28 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(
       edit: LineUpPlacementEdit(
         linkIds: linkIds,
-        originPositions: {
-          for (final id in originIds)
-            if (state.originById(id) case final origin?)
-              id: origin.agent.position,
-        },
-        landingPositions: {
-          for (final id in landingIds)
-            if (state.landingById(id) case final landing?)
-              id: landing.ability.position,
-        },
+        originIds: originIds,
+        landingIds: landingIds,
       ),
     );
   }
 
   void moveEditedOrigin(String originId, Offset position) {
     final edit = state.edit;
-    if (edit == null || !edit.originPositions.containsKey(originId)) return;
+    if (edit == null || !edit.originIds.contains(originId)) return;
     state = state.copyWith(
       edit: edit.copyWith(
-        originPositions: {...edit.originPositions, originId: position},
+        movedOrigins: {...edit.movedOrigins, originId: position},
       ),
     );
   }
 
   void moveEditedLanding(String landingId, Offset position) {
     final edit = state.edit;
-    if (edit == null || !edit.landingPositions.containsKey(landingId)) return;
+    if (edit == null || !edit.landingIds.contains(landingId)) return;
     state = state.copyWith(
       edit: edit.copyWith(
-        landingPositions: {...edit.landingPositions, landingId: position},
+        movedLandings: {...edit.movedLandings, landingId: position},
       ),
     );
   }
@@ -1097,7 +1095,7 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(edit: null);
   }
 
-  /// Writes every end the edit moved, as one undo step. Ends a teammate
+  /// Writes every end the user dragged, as one undo step. Ends a teammate
   /// removed meanwhile stay removed.
   void saveEdit() {
     final edit = state.edit;
@@ -1107,14 +1105,14 @@ class LineUpProvider extends Notifier<LineUpState> {
       groups: const [ActionGroup.lineUp],
       mutation: () {
         for (final MapEntry(key: id, value: position)
-            in edit.originPositions.entries) {
+            in edit.movedOrigins.entries) {
           final current = state.originById(id)?.agent.position;
           if (current != null && current != position) {
             updateOriginAgentPosition(id, position);
           }
         }
         for (final MapEntry(key: id, value: position)
-            in edit.landingPositions.entries) {
+            in edit.movedLandings.entries) {
           final current = state.landingById(id)?.ability.position;
           if (current != null && current != position) {
             updateLandingPosition(id, position);
@@ -1569,12 +1567,16 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   // --- Lifecycle and serialization -----------------------------------------
 
+  /// Replaces the page's lineups. A placement edit ends with them: its ids
+  /// may name lineups a copied page shares, and saving it there would move
+  /// the wrong page's lineups.
   void fromHive(LineUpGraph graph) {
     final copy = graph.deepCopy();
     state = state.copyWith(
       origins: copy.origins,
       landings: copy.landings,
       links: copy.links,
+      edit: null,
     );
   }
 
@@ -1623,7 +1625,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void clearAll() {
-    state = state.copyWith(origins: [], landings: [], links: []);
+    state = state.copyWith(origins: [], landings: [], links: [], edit: null);
   }
 }
 

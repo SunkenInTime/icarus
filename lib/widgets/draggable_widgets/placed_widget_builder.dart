@@ -1193,14 +1193,10 @@ class _LineUpAgents extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
     final origins = ref.watch(lineUpProvider.select((state) => state.origins));
-    // Placement editing draws the origins it moves on its own layer. The
-    // edit's lineups stay the same while its ends move, so watching them
-    // keeps a drag from rebuilding every marker.
-    final editedLinks =
-        ref.watch(lineUpProvider.select((state) => state.edit?.linkIds));
-    final edited = editedLinks == null
-        ? const <String>{}
-        : ref.read(lineUpProvider).edit!.originPositions.keys.toSet();
+    // Placement editing draws the origins it moves on its own layer.
+    final edited =
+        ref.watch(lineUpProvider.select((state) => state.edit?.originIds)) ??
+            const <String>{};
 
     return Stack(
       clipBehavior: Clip.none,
@@ -1225,14 +1221,10 @@ class _LineUpAbilities extends ConsumerWidget {
     ref.watch(canvasResizeProvider);
     final landings =
         ref.watch(lineUpProvider.select((state) => state.landings));
-    // Placement editing draws the landings it moves on its own layer. The
-    // edit's lineups stay the same while its ends move, so watching them
-    // keeps a drag from rebuilding every marker.
-    final editedLinks =
-        ref.watch(lineUpProvider.select((state) => state.edit?.linkIds));
-    final edited = editedLinks == null
-        ? const <String>{}
-        : ref.read(lineUpProvider).edit!.landingPositions.keys.toSet();
+    // Placement editing draws the landings it moves on its own layer.
+    final edited =
+        ref.watch(lineUpProvider.select((state) => state.edit?.landingIds)) ??
+            const <String>{};
 
     return Stack(
       clipBehavior: Clip.none,
