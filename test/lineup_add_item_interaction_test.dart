@@ -766,6 +766,154 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  /// Opens placement editing on [group]'s lineups, without dragging.
+  Future<void> openEdit(
+    WidgetTester tester,
+    ProviderContainer container,
+    LineUpGroup group,
+  ) async {
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(interactionStateProvider.notifier).editLineUpPlacement(
+          container.read(lineUpProvider).links.first.id,
+        );
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: Stack(
+          children: [
+            LineUpOverlay(),
+            Positioned.fill(child: LineUpPlacementEditor()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> moveInSteps(TestGesture gesture, Offset by) async {
+    for (var step = 0; step < 4; step++) {
+      await gesture.moveBy(by / 4);
+    }
+  }
+
+  Finder abilityOf(String landingId) =>
+      find.byKey(ValueKey('lineup-ability-drag-$landingId'));
+
+  testWidgets('a reload mid-drag that kept the spot lets the drag carry on',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    await openEdit(tester, container, group);
+    final startTopLeft = tester.getTopLeft(abilityOf('breach-item'));
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(abilityOf('breach-item')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await moveInSteps(gesture, _editDrag / 2);
+    await tester.pump();
+    container.read(lineUpProvider.notifier).fromHive(
+          reloaded(group, abilityAt: group.items.single.ability.position),
+          samePage: true,
+        );
+    await tester.pump();
+    await moveInSteps(gesture, _editDrag / 2);
+    await gesture.up();
+    await tester.pump();
+
+    final expected =
+        CoordinateSystem.instance.screenToCoordinate(startTopLeft + _editDrag);
+    final draft =
+        container.read(lineUpProvider).edit!.movedLandings['breach-item']!;
+    expect(draft.dx, closeTo(expected.dx, 0.001));
+    expect(draft.dy, closeTo(expected.dy, 0.001));
+  });
+
+  testWidgets('a reload mid-drag that moved the spot stops that drag',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    await openEdit(tester, container, group);
+    const theirs = Offset(500, 300);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(abilityOf('breach-item')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await moveInSteps(gesture, _editDrag / 2);
+    await tester.pump();
+    container.read(lineUpProvider.notifier).fromHive(
+          reloaded(group, abilityAt: theirs),
+          samePage: true,
+        );
+    await tester.pump();
+    // The pointer keeps going, but the drag it was making is gone.
+    await moveInSteps(gesture, _editDrag / 2);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(container.read(lineUpProvider).edit!.movedLandings, isEmpty);
+    expect(
+      find.text("The cloud's version changed a spot you dragged, so that "
+          'drag was undone.'),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+      'after a reload removes the lineup being dragged, the next drag starts '
+      'fresh', (tester) async {
+    final container = _createContainer();
+    final breach = _breachGroup();
+    final first = breach.items.single;
+    final second = first.copyWith(
+      id: 'breach-item-2',
+      ability: first.ability.copyWith(
+        id: 'breach-ability-2',
+        position: const Offset(520, 200),
+      ),
+    );
+    final group = breach.copyWith(items: [first, second]);
+    await openEdit(tester, container, group);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(abilityOf('breach-item')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await moveInSteps(gesture, _editDrag);
+    await tester.pump();
+    // The cloud's version no longer has the lineup being dragged.
+    container.read(lineUpProvider.notifier).fromHive(
+          LineUpGraph.fromLegacyGroups([
+            group.copyWith(items: [second]),
+          ]),
+          samePage: true,
+        );
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(container.read(lineUpProvider).edit!.linkIds, hasLength(1));
+
+    final secondTopLeft = tester.getTopLeft(abilityOf('breach-item-2'));
+    await tester.drag(abilityOf('breach-item-2'), const Offset(30, 20));
+    await tester.pump();
+    final expected = CoordinateSystem.instance
+        .screenToCoordinate(secondTopLeft + const Offset(30, 20));
+    final draft =
+        container.read(lineUpProvider).edit!.movedLandings['breach-item-2']!;
+    expect(draft.dx, closeTo(expected.dx, 0.001));
+    expect(draft.dy, closeTo(expected.dy, 0.001));
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('lineup origin opens its menu on right-click', (tester) async {
     final container = _createContainer();
     final group = _breachGroup();

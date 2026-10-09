@@ -29,6 +29,10 @@ String lineUpEditStatus(LineUpState state) {
       'so they move together';
 }
 
+/// One end of an edited lineup: its id, and whether it is an origin (else a
+/// landing).
+typedef _End = (String id, bool origin);
+
 /// Placement editing: the lineups being moved, drawn over the dimmed page at
 /// their draft positions. Each origin and landing follows the pointer with
 /// its lines; Save in LineupControlButtons writes the move.
@@ -41,21 +45,34 @@ class LineUpPlacementEditor extends ConsumerStatefulWidget {
 }
 
 class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
-  /// The drag under way: how far the pointer has moved in window pixels,
-  /// and the end's top-left in this layer's pixels and its stored position
-  /// where the drag began.
-  ({Offset moved, Offset topLeft, Offset position})? _drag;
+  /// The drag under way: which end, how far the pointer has moved in window
+  /// pixels, and the end's top-left in this layer's pixels and its stored
+  /// position where the drag began.
+  ({
+    _End end,
+    Offset moved,
+    Offset topLeft,
+    Offset position,
+  })? _drag;
 
-  /// Where the drag puts the end's top-left, keeping the point that was
-  /// grabbed under the pointer. The movement adds up the updates' deltas:
-  /// the first update reports where the pointer went down, not where it is.
-  Offset _draggedTopLeft(
+  /// The end whose drag a reload of the page took back while the pointer
+  /// was still down. The rest of that gesture moves nothing.
+  _End? _takenBack;
+
+  /// Where the drag of [end] puts its top-left, keeping the point that was
+  /// grabbed under the pointer, or null once a reload took the drag back.
+  /// The movement adds up the updates' deltas: the first update reports
+  /// where the pointer went down, not where it is.
+  Offset? _draggedTopLeft(
     DragUpdateDetails details, {
+    required _End end,
     required Offset topLeft,
     required Offset position,
   }) {
+    if (_takenBack == end) return null;
     final box = context.findRenderObject() as RenderBox;
     final drag = _drag = (
+      end: end,
       moved: (_drag?.moved ?? Offset.zero) + details.delta,
       topLeft: _drag?.topLeft ?? topLeft,
       position: _drag?.position ?? position,
@@ -75,9 +92,36 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     });
   }
 
+  /// A reload of the page reopens the edit (see LineUpProvider.fromHive).
+  /// The drag under way carries on only if its end is still there, where
+  /// the drag began; otherwise the reload took the drag back, and following
+  /// the pointer would put it back.
+  void _onEditReopened(LineUpState next) {
+    final drag = _drag;
+    if (drag == null) return;
+    final edit = next.edit;
+    final (id, origin) = drag.end;
+    final now = origin
+        ? (edit?.originIds.contains(id) ?? false)
+            ? next.originById(id)?.agent.position
+            : null
+        : (edit?.landingIds.contains(id) ?? false)
+            ? next.landingById(id)?.ability.position
+            : null;
+    if (now == drag.position) return;
+    _drag = null;
+    _takenBack = drag.end;
+  }
+
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
+    ref.listen(lineUpProvider, (previous, next) {
+      // Drags keep the edit's lineups; a new set means it was reopened.
+      if (!identical(previous?.edit?.linkIds, next.edit?.linkIds)) {
+        _onEditReopened(next);
+      }
+    });
     final state = ref.watch(lineUpProvider);
     final edit = state.edit;
     // The page's lineups were replaced (another page opened, or a reload
@@ -129,7 +173,15 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
       return const SizedBox.shrink();
     }
 
-    void endMove({required bool outOfBounds, required void Function() undo}) {
+    void endMove(
+      _End end, {
+      required bool outOfBounds,
+      required void Function() undo,
+    }) {
+      if (_takenBack == end) {
+        _takenBack = null;
+        return;
+      }
       // Dropped off the map: the end goes back to where the drag began.
       if (outOfBounds) undo();
       _drag = null;
@@ -163,6 +215,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
             onMove: (details) {
               final topLeft = _draggedTopLeft(
                 details,
+                end: (origin.id, true),
                 topLeft: screenPositionForWidget(
                   widget: origin.agent,
                   coordinateSystem: coordinateSystem,
@@ -171,6 +224,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
                 ),
                 position: origin.agent.position,
               );
+              if (topLeft == null) return;
               notifier.moveEditedOrigin(
                 origin.id,
                 storedAgentPositionForRenderedScreenPosition(
@@ -186,6 +240,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
               final position =
                   ref.read(lineUpProvider).edit?.movedOrigins[origin.id];
               endMove(
+                (origin.id, true),
                 outOfBounds: position != null &&
                     coordinateSystem
                         .isOutOfBounds(position + storedAgentAnchor),
@@ -206,6 +261,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
               final abilityData = landing.ability.data.abilityData!;
               final topLeft = _draggedTopLeft(
                 details,
+                end: (landing.id, false),
                 topLeft: screenPositionForWidget(
                   widget: landing.ability,
                   coordinateSystem: coordinateSystem,
@@ -215,6 +271,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
                 ),
                 position: landing.ability.position,
               );
+              if (topLeft == null) return;
               notifier.moveEditedLanding(
                 landing.id,
                 storedAbilityPositionForRenderedScreenPosition(
@@ -236,6 +293,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
                 mapScale: mapScale,
               );
               endMove(
+                (landing.id, false),
                 outOfBounds: position != null &&
                     coordinateSystem.isOutOfBounds(position + anchor),
                 undo: () {

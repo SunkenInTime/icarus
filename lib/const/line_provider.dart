@@ -1048,12 +1048,15 @@ class LineUpProvider extends Notifier<LineUpState> {
   void startEdit(String linkId) {
     final start = state.linkById(linkId);
     if (start == null) return;
-    state = state.copyWith(edit: _editOf([start]));
+    state = state.copyWith(edit: _editOf([start], within: state));
   }
 
-  /// An edit of [links] and every lineup joined to them through a shared
-  /// origin or landing, with nothing moved yet.
-  LineUpPlacementEdit _editOf(Iterable<LineUpLink> links) {
+  /// An edit of [links] and every lineup in [within] joined to them through
+  /// a shared origin or landing, with nothing moved yet.
+  static LineUpPlacementEdit _editOf(
+    Iterable<LineUpLink> links, {
+    required LineUpState within,
+  }) {
     final linkIds = <String>{};
     final originIds = <String>{};
     final landingIds = <String>{};
@@ -1063,7 +1066,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       if (!linkIds.add(link.id)) continue;
       originIds.add(link.originId);
       landingIds.add(link.landingId);
-      pending.addAll(state.links.where((other) =>
+      pending.addAll(within.links.where((other) =>
           other.originId == link.originId ||
           other.landingId == link.landingId));
     }
@@ -1583,30 +1586,45 @@ class LineUpProvider extends Notifier<LineUpState> {
   void fromHive(LineUpGraph graph, {bool samePage = false}) {
     final before = state;
     final copy = graph.deepCopy();
-    state = state.copyWith(
+    final loaded = before.copyWith(
       origins: copy.origins,
       landings: copy.landings,
       links: copy.links,
       edit: null,
     );
+    // Set once, so nothing watching sees the edit end on the way.
+    final (edit, lost) = samePage
+        ? _reopenEdit(before, loaded)
+        : (
+            null,
+            before.editMovesAnything
+                ? 'The page changed, so the placement edit closed without '
+                    'saving.'
+                : null,
+          );
+    state = loaded.copyWith(edit: edit);
+    if (lost != null) _toastDroppedEdit(lost);
+  }
+
+  /// [before]'s placement edit on [loaded], a newer copy of the same page
+  /// (see [fromHive]), and what to tell the user if drags were lost.
+  static (LineUpPlacementEdit?, String?) _reopenEdit(
+    LineUpState before,
+    LineUpState loaded,
+  ) {
     final edit = before.edit;
-    if (edit == null) return;
-    if (!samePage) {
-      if (before.editMovesAnything) {
-        _toastDroppedEdit('The page changed, so the placement edit closed '
-            'without saving.');
-      }
-      return;
-    }
-    final survivors = edit.linkIds.map(state.linkById).nonNulls;
+    if (edit == null) return (null, null);
+    final survivors = edit.linkIds.map(loaded.linkById).nonNulls;
     if (survivors.isEmpty) {
-      if (before.editMovesAnything) {
-        _toastDroppedEdit('The lineups you were moving are no longer on this '
-            'page, so the placement edit closed without saving.');
-      }
-      return;
+      return (
+        null,
+        before.editMovesAnything
+            ? 'The lineups you were moving are no longer on this page, so '
+                'the placement edit closed without saving.'
+            : null,
+      );
     }
-    final reopened = _editOf(survivors);
+    final reopened = _editOf(survivors, within: loaded);
     var dropped = false;
     Map<String, Offset> keptDrags(
       Map<String, Offset> drags,
@@ -1617,7 +1635,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       for (final MapEntry(key: id, value: draft) in drags.entries) {
         final was = positionOf(before, id);
         if (was == null || was == draft) continue;
-        if (ids.contains(id) && positionOf(state, id) == was) {
+        if (ids.contains(id) && positionOf(loaded, id) == was) {
           kept[id] = draft;
         } else {
           dropped = true;
@@ -1626,18 +1644,18 @@ class LineUpProvider extends Notifier<LineUpState> {
       return kept;
     }
 
-    state = state.copyWith(
-      edit: reopened.copyWith(
+    return (
+      reopened.copyWith(
         movedOrigins: keptDrags(edit.movedOrigins, reopened.originIds,
             (state, id) => state.originById(id)?.agent.position),
         movedLandings: keptDrags(edit.movedLandings, reopened.landingIds,
             (state, id) => state.landingById(id)?.ability.position),
       ),
+      dropped
+          ? "The cloud's version changed a spot you dragged, so that drag "
+              'was undone.'
+          : null,
     );
-    if (dropped) {
-      _toastDroppedEdit("The cloud's version changed a spot you dragged, so "
-          'that drag was undone.');
-    }
   }
 
   /// Takes [graph] as the server's lineups merged with the ones the user
