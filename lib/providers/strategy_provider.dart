@@ -69,6 +69,9 @@ enum PageCopyResult {
   /// The cloud page could not be read, so nothing was copied.
   unreachable,
 
+  /// This device could not store the copy to send, so nothing was copied.
+  notSaved,
+
   /// There was nothing to copy, or no page to copy it to.
   unavailable,
 }
@@ -1030,19 +1033,21 @@ class StrategyProvider extends Notifier<StrategyState> {
       return PageCopyResult.unavailable;
     }
     // The canvas never draws the copy: its page shows it from the server.
-    await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
-          ElementAddOp(
-            opId: const Uuid().v4(),
-            elementPublicId: copyId,
-            pagePublicId: targetPageId,
-            payload: cloudElementPayload(
-              kind: element.kind,
-              data: {...element.data, 'id': copyId},
-            ),
-            sortIndex: 1 + onTarget.values.fold<int>(-1, max),
-          ),
-          flushImmediately: true,
-        );
+    final queued =
+        await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
+              ElementAddOp(
+                opId: const Uuid().v4(),
+                elementPublicId: copyId,
+                pagePublicId: targetPageId,
+                payload: cloudElementPayload(
+                  kind: element.kind,
+                  data: {...element.data, 'id': copyId},
+                ),
+                sortIndex: 1 + onTarget.values.fold<int>(-1, max),
+              ),
+              flushImmediately: true,
+            );
+    if (!queued) return PageCopyResult.notSaved;
     ref.read(strategySaveStateProvider.notifier)
       ..markDirty()
       ..setPendingCloudSync(true)

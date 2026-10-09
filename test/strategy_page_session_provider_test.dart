@@ -268,11 +268,15 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     );
   }
 
+  /// While set, work that only the queue would keep cannot be stored.
+  bool offCanvasStoreFails = false;
+
   @override
-  Future<void> enqueueOffCanvas(
+  Future<bool> enqueueOffCanvas(
     StrategyOp op, {
     bool flushImmediately = false,
   }) async {
+    if (offCanvasStoreFails) return false;
     final key = EntitySyncKey.forStrategyOp(op)!;
     await syncDesiredOpsForPage(
       pageId: key.pageId!,
@@ -280,6 +284,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       clearMissing: false,
     );
     if (flushImmediately) await flushNow();
+    return true;
   }
 
   @override
@@ -10553,6 +10558,23 @@ void main() {
       expect(await copied, PageCopyResult.copied);
       expect(cloudPayloadData(adds(container).single.payload)['text'], 'two');
       await _settle();
+    });
+
+    test('a copy this device cannot store is not reported as copied', () async {
+      final (container, queue, _) = await open();
+      queue.offCanvasStoreFails = true;
+
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'text-page-2',
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.notSaved,
+      );
+      expect(container.read(strategySaveStateProvider).hasPendingCloudSync,
+          isFalse);
     });
 
     test('a page that cannot be read gets nothing', () async {

@@ -521,19 +521,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// copied to another page). Its ack is marked restored: if that page is
   /// on screen by then, it shows the item from the server's copy, like a
   /// teammate's, instead of taking it as something the canvas removed.
-  Future<void> enqueueOffCanvas(
+  /// Returns whether the queue holds [op]: nothing on screen keeps it, so
+  /// when the outbox could not store it, the caller must say so.
+  Future<bool> enqueueOffCanvas(
     StrategyOp op, {
     bool flushImmediately = false,
-  }) {
+  }) async {
     final key = EntitySyncKey.forStrategyOp(op)!;
     final canvasSession = _canvasSession;
-    return _serializeWrite(() => _syncDesiredLocked(
+    await _serializeWrite(() => _syncDesiredLocked(
           keys: <EntitySyncKey>{key},
           desiredOps: <EntitySyncKey, StrategyOp?>{key: op},
           flushImmediately: flushImmediately,
           canvasSession: canvasSession,
           onCanvas: false,
         ));
+    return state.pending.any(
+          (pending) => EntitySyncKey.forStrategyOp(pending.op) == key,
+        ) ||
+        state.lastAckBatch.any((acked) => acked.entityKey == key);
   }
 
   Future<void> syncDesiredGenericOp({

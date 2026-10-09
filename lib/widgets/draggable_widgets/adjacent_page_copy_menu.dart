@@ -33,6 +33,12 @@ List<ShadContextMenuItem> buildAdjacentPageCopyMenuItems(
           message: "Couldn't reach the cloud, so nothing was copied.",
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
+      case PageCopyResult.notSaved:
+        Settings.showToast(
+          message: "Couldn't save the copy on this device, so nothing was "
+              'copied.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
       case PageCopyResult.copied || PageCopyResult.unavailable:
         break;
     }
