@@ -294,26 +294,6 @@ void main() {
     );
   });
 
-  test('opening another page ends a placement edit without saving it', () {
-    final container = _container();
-    final lineUps = container.read(lineUpProvider.notifier)
-      ..fromHive(oneLineup());
-
-    lineUps
-      ..startEdit('k')
-      ..moveEditedOrigin('o', const Offset(50, 50));
-    // A copied page holds lineups with the same ids.
-    lineUps.fromHive(oneLineup());
-    lineUps.saveEdit();
-
-    expect(container.read(lineUpProvider).edit, isNull);
-    expect(
-      container.read(lineUpProvider).originById('o')!.agent.position,
-      const Offset(10, 10),
-    );
-    expect(container.read(actionProvider), isEmpty);
-  });
-
   test('one undo steps past entries that change nothing to one that does', () {
     final container = _container();
     final agents = container.read(agentProvider.notifier)

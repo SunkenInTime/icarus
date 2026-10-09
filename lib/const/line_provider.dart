@@ -1572,12 +1572,14 @@ class LineUpProvider extends Notifier<LineUpState> {
   /// the wrong page's lineups.
   void fromHive(LineUpGraph graph) {
     final copy = graph.deepCopy();
+    final droppedMoves = state.editMovesAnything;
     state = state.copyWith(
       origins: copy.origins,
       landings: copy.landings,
       links: copy.links,
       edit: null,
     );
+    if (droppedMoves) _toastDroppedEdit();
   }
 
   /// Takes [graph] as the server's lineups merged with the ones the user
@@ -1625,7 +1627,17 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void clearAll() {
+    final droppedMoves = state.editMovesAnything;
     state = state.copyWith(origins: [], landings: [], links: [], edit: null);
+    if (droppedMoves) _toastDroppedEdit();
+  }
+
+  void _toastDroppedEdit() {
+    Settings.showToast(
+      message: 'The page changed, so the placement edit closed without '
+          'saving.',
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
   }
 }
 

@@ -550,6 +550,66 @@ void main() {
     expect(container.read(lineUpProvider).edit, isNull);
   });
 
+  testWidgets('opening another page ends a placement edit and says so',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(interactionStateProvider.notifier).editLineUpPlacement(
+          container.read(lineUpProvider).links.single.id,
+        );
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: Stack(
+          children: [
+            LineUpOverlay(),
+            Positioned.fill(child: LineUpPlacementEditor()),
+          ],
+        ),
+      ),
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('lineup-ability-drag-breach-item')),
+      const Offset(-55, 65),
+    );
+    await tester.pump();
+
+    // A page copied with "+" holds lineups with the same ids.
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    await tester.pumpAndSettle();
+
+    expect(container.read(lineUpProvider).edit, isNull);
+    expect(
+      container.read(interactionStateProvider),
+      InteractionState.navigation,
+    );
+    expect(
+      container
+          .read(lineUpProvider)
+          .landingById('breach-item')!
+          .ability
+          .position,
+      group.items.single.ability.position,
+    );
+    expect(
+      find.text('The page changed, so the placement edit closed without '
+          'saving.'),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('lineup origin opens its menu on right-click', (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
