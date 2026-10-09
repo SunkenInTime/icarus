@@ -970,53 +970,75 @@ void main() {
     });
   }
 
-  testWidgets('a lineup a reload removed mid-drag drags again once it is back',
-      (tester) async {
-    final container = _createContainer();
-    final breach = _breachGroup();
-    final first = breach.items.single;
-    final second = first.copyWith(
-      id: 'breach-item-2',
-      ability: first.ability.copyWith(
-        id: 'breach-ability-2',
-        position: const Offset(520, 200),
-      ),
-    );
-    final group = breach.copyWith(items: [first, second]);
-    await openEdit(tester, container, group);
+  for (final movedFirst in [false, true]) {
+    testWidgets(
+        'a lineup a reload removed mid-drag drags again once it is back'
+        '${movedFirst ? ', after an earlier reload took its drag back' : ''}',
+        (tester) async {
+      final container = _createContainer();
+      final breach = _breachGroup();
+      final first = breach.items.single;
+      final second = first.copyWith(
+        id: 'breach-item-2',
+        ability: first.ability.copyWith(
+          id: 'breach-ability-2',
+          position: const Offset(520, 200),
+        ),
+      );
+      final group = breach.copyWith(items: [first, second]);
+      await openEdit(tester, container, group);
 
-    final gesture = await tester.startGesture(
-      tester.getCenter(abilityOf('breach-item')),
-      kind: PointerDeviceKind.mouse,
-    );
-    await moveInSteps(gesture, _editDrag);
-    await tester.pump();
-    container.read(lineUpProvider.notifier).fromHive(
-          LineUpGraph.fromLegacyGroups([
-            group.copyWith(items: [second]),
-          ]),
-          samePage: true,
-        );
-    await tester.pump();
-    await gesture.up();
-    await tester.pumpAndSettle();
-    // A later reload brings it back, joined through the shared agent.
-    container.read(lineUpProvider.notifier).fromHive(
-          LineUpGraph.fromLegacyGroups([group]),
-          samePage: true,
-        );
-    await tester.pumpAndSettle();
-    expect(container.read(lineUpProvider).edit!.linkIds, hasLength(2));
+      final gesture = await tester.startGesture(
+        tester.getCenter(abilityOf('breach-item')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await moveInSteps(gesture, _editDrag);
+      await tester.pump();
+      if (movedFirst) {
+        // The cloud moves the spot being dragged, then drops its lineup, all
+        // before the pointer lifts.
+        container.read(lineUpProvider.notifier).fromHive(
+              LineUpGraph.fromLegacyGroups([
+                group.copyWith(items: [
+                  first.copyWith(
+                    ability: first.ability.copyWith(
+                      position: const Offset(500, 300),
+                    ),
+                  ),
+                  second,
+                ]),
+              ]),
+              samePage: true,
+            );
+        await tester.pump();
+      }
+      container.read(lineUpProvider.notifier).fromHive(
+            LineUpGraph.fromLegacyGroups([
+              group.copyWith(items: [second]),
+            ]),
+            samePage: true,
+          );
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      // A later reload brings it back, joined through the shared agent.
+      container.read(lineUpProvider.notifier).fromHive(
+            LineUpGraph.fromLegacyGroups([group]),
+            samePage: true,
+          );
+      await tester.pumpAndSettle();
+      expect(container.read(lineUpProvider).edit!.linkIds, hasLength(2));
 
-    await tester.drag(abilityOf('breach-item'), const Offset(30, 20));
-    await tester.pump();
-    expect(
-      container.read(lineUpProvider).edit!.movedLandings['breach-item'],
-      isNotNull,
-    );
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pumpAndSettle();
-  });
+      await tester.drag(abilityOf('breach-item'), const Offset(30, 20));
+      await tester.pump();
+      expect(
+        container.read(lineUpProvider).edit!.movedLandings['breach-item'],
+        isNotNull,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    });
+  }
 
   testWidgets('lineup origin opens its menu on right-click', (tester) async {
     final container = _createContainer();

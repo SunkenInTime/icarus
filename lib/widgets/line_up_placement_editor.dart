@@ -99,15 +99,21 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
   /// the reload kept its draft; otherwise following the pointer would put
   /// back a drag the reload undid.
   void _onEditReopened(LineUpPlacementEdit? edit) {
+    bool inEdit(_End end) {
+      final (id, origin) = end;
+      return (origin ? edit?.originIds : edit?.landingIds)?.contains(id) ??
+          false;
+    }
+
+    // An end the reload removed has no gesture left to finish.
+    if (_takenBack case final end? when !inEdit(end)) _takenBack = null;
     final drag = _drag;
     if (drag == null) return;
     final (id, origin) = drag.end;
-    final ends = origin ? edit?.originIds : edit?.landingIds;
     final drafts = origin ? edit?.movedOrigins : edit?.movedLandings;
     if (drafts?.containsKey(id) ?? false) return;
     _drag = null;
-    // An end the reload removed has no gesture left to finish.
-    _takenBack = (ends?.contains(id) ?? false) ? drag.end : null;
+    if (inEdit(drag.end)) _takenBack = drag.end;
   }
 
   @override
