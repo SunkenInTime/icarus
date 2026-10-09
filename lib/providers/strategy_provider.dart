@@ -957,16 +957,30 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// a new item whose id carries the original's (see page_copy_id.dart).
   /// The target page is read from the server first: a copy goes after the
   /// page's items, and never beside the item or another copy of it. If the
-  /// page cannot be read, nothing is copied. Copies run one at a time, so a
-  /// second one sees the first already queued.
+  /// page cannot be read, nothing is copied. The item is taken as it is when
+  /// the user asks; copies then run one at a time, so a second one sees the
+  /// first already queued.
   Future<PageCopyResult> _copyPlacedWidgetToAdjacentCloudPage({
     required String widgetId,
     required PageTransitionDirection direction,
   }) {
+    final strategyId = state.strategyId;
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final element = _cloudElementOnScreen(widgetId);
+    final targetPageId =
+        snapshot == null ? null : _adjacentCloudPageId(snapshot, direction);
+    if (strategyId == null ||
+        element == null ||
+        targetPageId == null ||
+        !_currentStrategyCanEditPages()) {
+      return Future.value(PageCopyResult.unavailable);
+    }
     final result = _cloudCopies.then(
-      (_) => _copyToAdjacentCloudPageNow(
+      (_) => _copyToCloudPage(
+        strategyId: strategyId,
+        targetPageId: targetPageId,
         widgetId: widgetId,
-        direction: direction,
+        element: element,
       ),
     );
     _cloudCopies = result.then((_) {}, onError: (_) {});
@@ -975,22 +989,17 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> _cloudCopies = Future<void>.value();
 
-  Future<PageCopyResult> _copyToAdjacentCloudPageNow({
-    required String widgetId,
-    required PageTransitionDirection direction,
-  }) async {
-    final strategyId = state.strategyId;
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    final element = _cloudElementOnScreen(widgetId);
-    if (strategyId == null ||
-        snapshot == null ||
-        element == null ||
-        !_currentStrategyCanEditPages()) {
-      return PageCopyResult.unavailable;
-    }
-    final targetPageId = _adjacentCloudPageId(snapshot, direction);
-    if (targetPageId == null) return PageCopyResult.unavailable;
+  /// The copies this app sent, by page, with their sortIndexes. A read of a
+  /// page can be older than a copy that landed while it was on its way.
+  final Map<String, Map<String, int>> _cloudCopiesSent = {};
 
+  Future<PageCopyResult> _copyToCloudPage({
+    required String strategyId,
+    required String targetPageId,
+    required String widgetId,
+    required ({String kind, Map<String, dynamic> data}) element,
+  }) async {
+    if (state.strategyId != strategyId) return PageCopyResult.unavailable;
     final RemotePageSnapshot targetPage;
     try {
       targetPage =
@@ -1023,6 +1032,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               ).length <=
               _maxStoredKeyLength,
     );
+    final sortIndex = 1 + onTarget.values.fold<int>(-1, max);
     // The canvas never draws the copy: its page shows it from the server.
     await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
           ElementAddOp(
@@ -1031,12 +1041,13 @@ class StrategyProvider extends Notifier<StrategyState> {
             pagePublicId: targetPageId,
             payload: cloudElementPayload(
               kind: element.kind,
-              data: element.data..['id'] = copyId,
+              data: {...element.data, 'id': copyId},
             ),
-            sortIndex: 1 + onTarget.values.fold<int>(-1, max),
+            sortIndex: sortIndex,
           ),
           flushImmediately: true,
         );
+    (_cloudCopiesSent[targetPageId] ??= {})[copyId] = sortIndex;
     ref.read(strategySaveStateProvider.notifier)
       ..markDirty()
       ..setPendingCloudSync(true)
@@ -1049,10 +1060,15 @@ class StrategyProvider extends Notifier<StrategyState> {
   static const _maxStoredKeyLength = 255;
 
   /// The items on [page] as the server has them with the work still queued
-  /// for it laid over, by id, with their sortIndexes.
+  /// for it laid over, by id, with their sortIndexes. A copy this app sent
+  /// counts unless the read shows it deleted.
   Map<String, int> _cloudElementsOn(RemotePageSnapshot page) {
     final pageId = page.page.publicId;
+    final read = {for (final element in page.elements) element.publicId};
     final elements = <String, int>{
+      for (final MapEntry(key: id, value: sortIndex)
+          in (_cloudCopiesSent[pageId] ?? const <String, int>{}).entries)
+        if (!read.contains(id)) id: sortIndex,
       for (final element in page.elements)
         if (!element.deleted) element.publicId: element.sortIndex,
     };

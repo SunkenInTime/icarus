@@ -6713,13 +6713,28 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
-      // It lands while the page's next read is still on its way, and the
-      // user places an agent on the page meanwhile.
-      final read = liveRead.refreshGate = Completer<void>();
+      // A press off the canvas (the sidebar) holds the page's updates back
+      // while the copy lands and the page's read shows it. The user places
+      // an agent meanwhile.
+      final pointers = container.read(editorPointersProvider.notifier)..down(1);
       hold.complete();
       final copyKey = EntitySyncKey.element(target.publicId, copyId);
       await _until(() => !container.read(strategyOpQueueProvider).pending.any(
           (pending) => EntitySyncKey.forStrategyOp(pending.op) == copyKey));
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(
+        container
+            .read(remoteEditorSnapshotProvider)
+            .valueOrNull!
+            .activePage!
+            .elements
+            .map((e) => e.publicId),
+        [copyId],
+      );
+      expect(container.read(textProvider), isEmpty);
       container.read(agentProvider.notifier).addAgent(PlacedAgent(
             id: 'agent-1',
             type: AgentType.jett,
@@ -6728,14 +6743,20 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
-      read.complete();
+      pointers.release(1);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      await container.read(strategyOpQueueProvider.notifier).flushNow();
+      await _until(
+          () => container.read(strategyOpQueueProvider).pending.isEmpty);
       showServer();
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
 
       expect(container.read(textProvider).map((t) => t.id), [copyId]);
-      await container.read(strategyOpQueueProvider.notifier).flushNow();
       // Page 2 sent the copy and the agent, and no delete of the copy.
       expect(
         [
@@ -10474,6 +10495,44 @@ void main() {
       expect(adds(container), hasLength(1));
     });
 
+    test('a read made before an earlier copy landed gets no second copy',
+        () async {
+      final (container, queue, _) = await open();
+      final notifier = container.read(strategyProvider.notifier);
+      Future<PageCopyResult> copy() => notifier.copyPlacedWidgetToAdjacentPage(
+            widgetId: 'text-page-2',
+            direction: PageTransitionDirection.forward,
+          );
+
+      expect(await copy(), PageCopyResult.copied);
+      // The copy lands, but the next read of page 3 is older than it.
+      queue.ackQueued();
+      expect(await copy(), PageCopyResult.alreadyThere);
+      expect(adds(container), isEmpty);
+    });
+
+    test('the item is copied as it was when the user asked', () async {
+      final (container, _, reader) = await open();
+      final read = reader.gate = Completer<void>();
+
+      final copied = container
+          .read(strategyProvider.notifier)
+          .copyPlacedWidgetToAdjacentPage(
+            widgetId: 'text-page-2',
+            direction: PageTransitionDirection.forward,
+          );
+      // While page 3 is read, the user edits the text.
+      container.read(textProvider.notifier).fromHive([
+        PlacedText(id: 'text-page-2', position: const Offset(10, 20))
+          ..text = 'edited',
+      ]);
+      read.complete();
+
+      expect(await copied, PageCopyResult.copied);
+      expect(cloudPayloadData(adds(container).single.payload)['text'], 'two');
+      await _settle();
+    });
+
     test('a page that cannot be read gets nothing', () async {
       final (container, _, reader) = await open();
       reader.fails = true;
@@ -10554,12 +10613,16 @@ class _PageReader extends Fake implements ConvexStrategyRepository {
   /// While set, a read fails as when offline.
   bool fails = false;
 
+  /// While set, a read waits for it.
+  Completer<void>? gate;
+
   @override
   Future<RemotePageSnapshot> fetchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
   }) async {
+    await gate?.future;
     if (fails) throw const SocketException('offline');
     return pages[pagePublicId]!;
   }
