@@ -10,6 +10,7 @@ import {
   expectAssets,
   keepPictureId,
   referencedAssetIds,
+  withoutPictureId,
   staleUploadAgeMs,
 } from "./lib/imageAssets";
 import {
@@ -788,6 +789,7 @@ function isRejectionReason(
 function toPublicResult(
   op: StrategyOp,
   result: OperationResult,
+  acceptsPictureIds: boolean,
 ): PublicOperationResult {
   if (result.status === "failed") {
     return {
@@ -831,7 +833,10 @@ function toPublicResult(
           current: {
             type: currentTargetForOp(op),
             revision: result.latestRevision,
-            value: result.latestPayload,
+            value:
+              op.entityType === "element" && !acceptsPictureIds
+                ? withoutPictureId(result.latestPayload as ElementPayload)
+                : result.latestPayload,
           } as Infer<typeof currentOpSnapshotValidator>,
         }),
   };
@@ -1826,6 +1831,11 @@ export const applyBatch = mutation({
     // once the page is back. Older clients get the no-op a deleted page's
     // purged content gave them (see refuseDeleteOffLivePage).
     checkTrashedPageDeletes: v.optional(v.boolean()),
+    // Set by clients that keep an image's picture id (assetId, see
+    // collectAssetIdFromElementPayload). Older clients get image payloads
+    // without it, as they would write them, and find pictures under each
+    // image's own id (withPictureAliases).
+    acceptsPictureIds: v.optional(v.boolean()),
     // Sent by clients on protocol 4, which stored lineups as origin,
     // landing and link rows. Ignored: accepting them lets such a client
     // reach the protocol gate (CLIENT_UPGRADE_REQUIRED) instead of failing
@@ -1905,7 +1915,9 @@ export const applyBatch = mutation({
                   latestPayload: latest?.payload,
                 }
               : noop(existingEvent.appliedRevision);
-        results.push(toPublicResult(op, replayResult));
+        results.push(
+          toPublicResult(op, replayResult, args.acceptsPictureIds === true),
+        );
         continue;
       }
 
@@ -2017,7 +2029,11 @@ export const applyBatch = mutation({
         acceptedStrategyBatchBaseRevision = originalExpectedRevision;
       }
 
-      const publicResult = toPublicResult(op, result);
+      const publicResult = toPublicResult(
+        op,
+        result,
+        args.acceptsPictureIds === true,
+      );
 
       await ctx.db.insert("operationEvents", {
         strategyId: strategy._id,
