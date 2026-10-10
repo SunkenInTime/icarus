@@ -219,7 +219,9 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  /// Saves the lineup and closes. With [thenEditPlacement] the editor then
+  /// opens placement editing for it.
+  Future<void> _save({bool thenEditPlacement = false}) async {
     final notifier = ref.read(lineUpProvider.notifier);
     final name = _nameController.text.trim();
     final existing = _isEditing ? notifier.linkById(widget.linkId!) : null;
@@ -297,8 +299,13 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     ref
         .read(interactionStateProvider.notifier)
         .update(InteractionState.navigation);
+    // Read now: closing the dialog takes its ref with it.
+    final interaction = ref.read(interactionStateProvider.notifier);
     if (mounted) {
       Navigator.of(context).pop();
+    }
+    if (thenEditPlacement && existing != null) {
+      interaction.editLineUpPlacement(existing.id);
     }
   }
 
@@ -324,6 +331,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         // while Save is queuing.
         closeIcon: _saving ? const SizedBox.shrink() : null,
         actions: [
+          if (_isEditing)
+            ShadButton.secondary(
+              leading: const Icon(LucideIcons.move),
+              onPressed: _saving ? null : () => _save(thenEditPlacement: true),
+              child: const Text("Edit placement"),
+            ),
           ShadButton(
             onPressed: _saving ? null : _save,
             child: const Text("Done"),

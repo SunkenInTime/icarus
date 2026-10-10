@@ -8,6 +8,7 @@ import {
   strategyPatchPayloadValidator,
   strategySettingsValidator,
 } from "./payloadValidators";
+import { fieldMergeValidator } from "./fieldMerge";
 
 const strategyPatchOpValidator = v.object({
   opId: v.string(),
@@ -74,6 +75,9 @@ const elementPatchOpValidator = v.object({
   payload: v.optional(elementPayloadValidator),
   sortIndex: v.optional(v.number()),
   expectedElementRevision: v.number(),
+  // Writes only these fields of payload (see fieldMerge.ts). The revision is
+  // then checked only if the patch cannot be merged by field.
+  merge: v.optional(fieldMergeValidator),
 });
 
 const elementDeleteOpValidator = v.object({
@@ -82,6 +86,9 @@ const elementDeleteOpValidator = v.object({
   elementPublicId: v.string(),
   pagePublicId: v.string(),
   expectedElementRevision: v.number(),
+  // Deletes whatever the row holds now, without checking the revision: a
+  // live delete wins over a teammate's edit made a moment before it.
+  lastWriterWins: v.optional(v.boolean()),
 });
 
 const elementReorderOpValidator = v.object({
@@ -111,6 +118,8 @@ const lineupPatchOpValidator = v.object({
   payload: v.optional(lineupOpPayloadValidator),
   sortIndex: v.optional(v.number()),
   expectedLineupRevision: v.number(),
+  // Writes only these items of payload (see fieldMerge.ts).
+  merge: v.optional(fieldMergeValidator),
 });
 
 const lineupDeleteOpValidator = v.object({
@@ -119,6 +128,8 @@ const lineupDeleteOpValidator = v.object({
   lineupPublicId: v.string(),
   pagePublicId: v.string(),
   expectedLineupRevision: v.number(),
+  // As for element.delete.
+  lastWriterWins: v.optional(v.boolean()),
 });
 
 const lineupReorderOpValidator = v.object({
@@ -160,6 +171,12 @@ export const opRejectionReasonValidator = v.union(
   v.literal("not_found"),
   v.literal("page_strategy_mismatch"),
   v.literal("revision_mismatch"),
+  // Only for a merge with a base (work that waited offline): a field it
+  // changes was changed on the server since the client last saw it.
+  v.literal("field_conflict"),
+  // Only for a lineup merge: the group it would leave is not one that can
+  // be stored, say a lineup whose spot a teammate removed.
+  v.literal("merge_invalid"),
 );
 
 const strategyCurrentValidator = v.object({

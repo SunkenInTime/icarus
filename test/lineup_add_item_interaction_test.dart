@@ -18,7 +18,9 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.d
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
+import 'package:icarus/widgets/line_up_placement_editor.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
+import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -420,8 +422,7 @@ void main() {
     expect(resizedAbilityTopLeft.dy, closeTo(expectedAbilityTopLeft.dy, 0.001));
   });
 
-  testWidgets('persistent lineup markers remain draggable after completion',
-      (tester) async {
+  testWidgets('placed lineup ends stay put when dragged', (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
     container
@@ -439,52 +440,177 @@ void main() {
       ),
     );
 
+    await tester.drag(find.byType(AgentWidget), const Offset(70, 45));
+    await tester.drag(
+      find.byKey(const ValueKey('lineup-ability-breach-item')),
+      const Offset(-55, 65),
+    );
+    await tester.pumpAndSettle();
+
+    final state = container.read(lineUpProvider);
+    expect(
+      state.originById('breach-group')!.agent.position,
+      group.agent.position,
+    );
+    expect(
+      state.landingById('breach-item')!.ability.position,
+      group.items.single.ability.position,
+    );
+    expect(container.read(actionProvider), isEmpty);
+  });
+
+  testWidgets('edit placement moves an end and Save writes it', (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      // The map pans and zooms under the canvas, so a lineup end's drag only
+      // wins the pointer once it has moved.
+      child: GestureDetector(
+        onScaleUpdate: (_) {},
+        child: const SizedBox(
+          width: 900,
+          height: 600,
+          child: Stack(
+            children: [
+              LineUpOverlay(),
+              Positioned.fill(child: LineUpPlacementEditor()),
+              Align(
+                alignment: Alignment.bottomRight,
+                child: LineupControlButtons(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tapAt(
+      tester.getCenter(find.byType(AgentWidget)),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit placement'));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(interactionStateProvider),
+      InteractionState.lineUpEditing,
+    );
+
     final abilityFinder =
         find.byKey(const ValueKey('lineup-ability-drag-breach-item'));
     final initialAbilityTopLeft = tester.getTopLeft(abilityFinder);
     const abilityDelta = Offset(-55, 65);
-    await tester.drag(abilityFinder, abilityDelta);
+    // A real drag arrives as many small moves; the end must stay under the
+    // pointer through all of them.
+    final gesture = await tester.startGesture(
+      tester.getCenter(abilityFinder),
+      kind: PointerDeviceKind.mouse,
+    );
+    for (var step = 0; step < 5; step++) {
+      await gesture.moveBy(abilityDelta / 5);
+      await tester.pump();
+    }
+    await gesture.up();
     await tester.pump();
 
-    var landing = container.read(lineUpProvider).landingById('breach-item')!;
-    final expectedAbilityPosition = CoordinateSystem.instance
+    final expectedPosition = CoordinateSystem.instance
         .screenToCoordinate(initialAbilityTopLeft + abilityDelta);
+    // The marker follows the drag; the lineup moves only on Save.
+    expect(tester.getTopLeft(abilityFinder).dx,
+        closeTo(initialAbilityTopLeft.dx + abilityDelta.dx, 0.001));
+    expect(tester.getTopLeft(abilityFinder).dy,
+        closeTo(initialAbilityTopLeft.dy + abilityDelta.dy, 0.001));
     expect(
-      landing.ability.position.dx,
-      closeTo(expectedAbilityPosition.dx, 0.001),
+      container
+          .read(lineUpProvider)
+          .landingById('breach-item')!
+          .ability
+          .position,
+      group.items.single.ability.position,
     );
+
+    await tester.tap(find.byKey(const ValueKey('lineup-edit-save')));
+    await tester.pumpAndSettle();
+
+    final landing = container.read(lineUpProvider).landingById('breach-item')!;
+    expect(landing.ability.position.dx, closeTo(expectedPosition.dx, 0.001));
+    expect(landing.ability.position.dy, closeTo(expectedPosition.dy, 0.001));
     expect(
-      landing.ability.position.dy,
-      closeTo(expectedAbilityPosition.dy, 0.001),
+      container.read(interactionStateProvider),
+      InteractionState.navigation,
     );
-    // One undoable step per move, which is also what marks the strategy dirty.
-    expect(container.read(actionProvider), hasLength(1));
-
-    final agentFinder =
-        find.byKey(const ValueKey('lineup-agent-drag-breach-group'));
-    final initialAgentTopLeft = tester.getTopLeft(agentFinder);
-    const agentDelta = Offset(70, 45);
-    await tester.drag(agentFinder, agentDelta);
-    await tester.pump();
-
-    final origin = container.read(lineUpProvider).originById('breach-group')!;
-    final expectedAgentPosition = CoordinateSystem.instance
-        .screenToCoordinate(initialAgentTopLeft + agentDelta);
-    expect(origin.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
-    expect(origin.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
-    expect(container.read(actionProvider), hasLength(2));
-
-    // Moving an end keeps the lineup itself: same link between the same ends.
-    final links = container.read(lineUpProvider).links;
-    expect(links, hasLength(1));
-    expect(links.single.originId, 'breach-group');
-    expect(links.single.landingId, 'breach-item');
-    landing = container.read(lineUpProvider).landingById('breach-item')!;
-    expect(landing.ability.lineUpID, 'breach-item');
+    expect(container.read(lineUpProvider).edit, isNull);
   });
 
-  testWidgets('draggable lineup origin still opens its menu on right-click',
+  testWidgets('opening another page ends a placement edit and says so',
       (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    container.read(interactionStateProvider.notifier).editLineUpPlacement(
+          container.read(lineUpProvider).links.single.id,
+        );
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: Stack(
+          children: [
+            LineUpOverlay(),
+            Positioned.fill(child: LineUpPlacementEditor()),
+          ],
+        ),
+      ),
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('lineup-ability-drag-breach-item')),
+      const Offset(-55, 65),
+    );
+    await tester.pump();
+
+    // A page copied with "+" holds lineups with the same ids.
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([group]));
+    await tester.pumpAndSettle();
+
+    expect(container.read(lineUpProvider).edit, isNull);
+    expect(
+      container.read(interactionStateProvider),
+      InteractionState.navigation,
+    );
+    expect(
+      container
+          .read(lineUpProvider)
+          .landingById('breach-item')!
+          .ability
+          .position,
+      group.items.single.ability.position,
+    );
+    expect(
+      find.text('The page changed, so the placement edit closed without '
+          'saving.'),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('lineup origin opens its menu on right-click', (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
     container
@@ -521,7 +647,7 @@ void main() {
     );
   });
 
-  testWidgets('defense lineup drags persist canonical marker positions',
+  testWidgets('defense placement edits persist canonical marker positions',
       (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
@@ -529,6 +655,9 @@ void main() {
         .read(lineUpProvider.notifier)
         .fromHive(LineUpGraph.fromLegacyGroups([group]));
     container.read(mapProvider.notifier).switchSide();
+    container.read(interactionStateProvider.notifier).editLineUpPlacement(
+          container.read(lineUpProvider).links.single.id,
+        );
 
     CoordinateSystem(playAreaSize: const Size(900, 600));
     await _pumpHarness(
@@ -537,7 +666,12 @@ void main() {
       child: const SizedBox(
         width: 900,
         height: 600,
-        child: LineUpOverlay(),
+        child: Stack(
+          children: [
+            LineUpOverlay(),
+            Positioned.fill(child: LineUpPlacementEditor()),
+          ],
+        ),
       ),
     );
 
@@ -549,6 +683,19 @@ void main() {
     final initialAbilityTopLeft = tester.getTopLeft(abilityFinder);
     const abilityDelta = Offset(-55, 65);
     await tester.drag(abilityFinder, abilityDelta);
+    await tester.pump();
+
+    final agentFinder =
+        find.byKey(const ValueKey('lineup-agent-drag-breach-group'));
+    final initialAgentTopLeft = tester.getTopLeft(agentFinder);
+    const agentDelta = Offset(70, 45);
+    await tester.drag(agentFinder, agentDelta);
+    await tester.pump();
+
+    container.read(lineUpProvider.notifier).saveEdit();
+    container
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.navigation);
     await tester.pump();
 
     final landing = container.read(lineUpProvider).landingById('breach-item')!;
@@ -570,13 +717,6 @@ void main() {
       closeTo(expectedAbilityPosition.dy, 0.001),
     );
 
-    final agentFinder =
-        find.byKey(const ValueKey('lineup-agent-drag-breach-group'));
-    final initialAgentTopLeft = tester.getTopLeft(agentFinder);
-    const agentDelta = Offset(70, 45);
-    await tester.drag(agentFinder, agentDelta);
-    await tester.pump();
-
     final origin = container.read(lineUpProvider).originById('breach-group')!;
     final expectedAgentPosition = storedAgentPositionForRenderedScreenPosition(
       coordinateSystem: coordinateSystem,
@@ -589,6 +729,11 @@ void main() {
 
     container.read(mapProvider.notifier).switchSide();
     await tester.pump();
+
+    // Back on the page, the saved markers sit where the edit left them.
+    final placedAgent = find.byKey(const ValueKey('lineup-agent-breach-group'));
+    final placedAbility =
+        find.byKey(const ValueKey('lineup-ability-breach-item'));
 
     final attackAgentTopLeft = screenPositionForWidget(
       widget: origin.agent,
@@ -604,25 +749,24 @@ void main() {
       isAttack: true,
     );
     expect(
-      tester.getTopLeft(agentFinder).dx,
+      tester.getTopLeft(placedAgent).dx,
       closeTo(attackAgentTopLeft.dx, 0.001),
     );
     expect(
-      tester.getTopLeft(agentFinder).dy,
+      tester.getTopLeft(placedAgent).dy,
       closeTo(attackAgentTopLeft.dy, 0.001),
     );
     expect(
-      tester.getTopLeft(abilityFinder).dx,
+      tester.getTopLeft(placedAbility).dx,
       closeTo(attackAbilityTopLeft.dx, 0.001),
     );
     expect(
-      tester.getTopLeft(abilityFinder).dy,
+      tester.getTopLeft(placedAbility).dy,
       closeTo(attackAbilityTopLeft.dy, 0.001),
     );
   });
 
-  testWidgets('pinned origin rejects dragging any agent',
-      (tester) async {
+  testWidgets('pinned origin rejects dragging any agent', (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
     container
@@ -670,8 +814,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('pinned origin accepts matching ability drops',
-      (tester) async {
+  testWidgets('pinned origin accepts matching ability drops', (tester) async {
     final container = _createContainer();
     final group = _breachGroup();
     container

@@ -10,12 +10,22 @@ class LineupControlButtons extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final placement = ref.watch(lineUpProvider).placement;
     final interactionState = ref.watch(interactionStateProvider);
-    if (interactionState != InteractionState.lineUpPlacing ||
-        placement == null) {
-      return const SizedBox.shrink();
-    }
+    return switch (interactionState) {
+      InteractionState.lineUpPlacing => const _PlacingButtons(),
+      InteractionState.lineUpEditing => const _EditingButtons(),
+      _ => const SizedBox.shrink(),
+    };
+  }
+}
+
+class _PlacingButtons extends ConsumerWidget {
+  const _PlacingButtons();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final placement = ref.watch(lineUpProvider).placement;
+    if (placement == null) return const SizedBox.shrink();
 
     final hasOrigin = placement.hasOrigin;
     final hasLanding = placement.hasLanding;
@@ -27,6 +37,59 @@ class LineupControlButtons extends ConsumerWidget {
                 ? "Place an ability to continue"
                 : "Finalize lineup details";
 
+    return _ButtonRow(
+      primary: ShadTooltip(
+        builder: (_) => Text(tooltipMessage),
+        child: ShadGestureDetector(
+          child: ShadButton(
+            trailing: const Icon(LucideIcons.arrowRight),
+            enabled: placement.isComplete,
+            onPressed: () {
+              showShadDialog(
+                context: context,
+                builder: (dialogContext) {
+                  return const CreateLineupDialog();
+                },
+              );
+            },
+            child: const Text("Next"),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EditingButtons extends ConsumerWidget {
+  const _EditingButtons();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final moved = ref.watch(lineUpProvider.select((s) => s.editMovesAnything));
+    return _ButtonRow(
+      primary: ShadButton(
+        key: const ValueKey('lineup-edit-save'),
+        enabled: moved,
+        onPressed: () {
+          ref.read(lineUpProvider.notifier).saveEdit();
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+        },
+        child: const Text("Save"),
+      ),
+    );
+  }
+}
+
+/// Cancel, then the mode's own button, at the bottom right of the map.
+class _ButtonRow extends ConsumerWidget {
+  const _ButtonRow({required this.primary});
+
+  final Widget primary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Row(
@@ -46,24 +109,7 @@ class LineupControlButtons extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
-          ShadTooltip(
-            builder: (_) => Text(tooltipMessage),
-            child: ShadGestureDetector(
-              child: ShadButton(
-                trailing: const Icon(LucideIcons.arrowRight),
-                enabled: placement.isComplete,
-                onPressed: () {
-                  showShadDialog(
-                    context: context,
-                    builder: (dialogContext) {
-                      return const CreateLineupDialog();
-                    },
-                  );
-                },
-                child: const Text("Next"),
-              ),
-            ),
-          ),
+          primary,
         ],
       ),
     );

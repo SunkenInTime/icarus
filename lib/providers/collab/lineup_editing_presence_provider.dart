@@ -40,8 +40,9 @@ class OpenLineUpItemsNotifier extends Notifier<Map<Object, Set<String>>> {
 }
 
 /// The lineup groups this user is editing on the page on screen: those of
-/// the lineup spots they hold, the spot a lineup is being placed from, and
-/// the lineups an open dialog shows. Null for none, and always null for a
+/// the lineup spots they hold, the spot a lineup is being placed from, the
+/// lineups whose placement is being edited, and the lineups an open dialog
+/// shows. Null for none, and always null for a
 /// reader who can only view: holding or opening a lineup is not editing it.
 final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
   final canEdit = ref.watch(
@@ -55,6 +56,7 @@ final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
   if (pageId == null) return null;
   final held = ref.watch(editorHeldEntitiesProvider) ?? const <String>{};
   final placement = ref.watch(lineUpProvider.select((s) => s.placement));
+  final edit = ref.watch(lineUpProvider.select((s) => s.edit?.linkIds));
   final open = ref.watch(openLineUpItemsProvider);
   final openNotifier = ref.read(openLineUpItemsProvider.notifier);
   ref.watch(lineupGroupMemoryRevisionProvider);
@@ -64,6 +66,7 @@ final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
       ...held,
       if (placement?.pinnedOriginId case final id?) id,
       if (placement?.pinnedLandingId case final id?) id,
+      ...?edit,
       for (final MapEntry(key: owner, value: ids) in open.entries)
         if (openNotifier.pageOf(owner) == pageId) ...ids,
     })
