@@ -16,6 +16,7 @@ import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/draggable_widgets/lineup_page_menu.dart';
 
 bool supportsAbilityVisibilityMenu(Ability? ability) {
   return supportsAbilityInactiveState(ability) ||
@@ -122,6 +123,7 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
             .editLineUpPlacement(links.first.id);
       },
     ),
+    ...buildLineUpPageMenuItems(ref, links),
     ShadContextMenuItem(
       leading: Icon(
         LucideIcons.trash2,

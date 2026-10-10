@@ -6528,6 +6528,7 @@ void main() {
       Completer<void>? hold,
       List<RemotePage> otherPages = const [],
       Map<String, List<RemoteElement>> otherElements = const {},
+      Map<String, List<RemoteLineup>> otherLineups = const {},
     }) async {
       final others = {
         for (final other in otherPages)
@@ -6535,6 +6536,7 @@ void main() {
             other,
             settings: settingsFor(1),
             elements: otherElements[other.publicId] ?? const [],
+            lineups: otherLineups[other.publicId] ?? const [],
           ),
       };
       var shown = page.publicId;
@@ -6773,6 +6775,94 @@ void main() {
         [(StrategyOpKind.add, copyId), (StrategyOpKind.add, 'agent-1')],
       );
       expect(server.element(copyId).deleted, isFalse);
+    });
+
+    test(
+        'lineups copied to another page show there when the user gets there '
+        'before they land', () async {
+      final source = _page('page-1', 0);
+      final target = _page('page-2', 1);
+      server = _FakeServer(target.publicId);
+      final (container, batches) = await openOnRealQueue(
+        target,
+        otherPages: [source],
+        otherLineups: {
+          source.publicId: [_lineup(source.publicId, 'a', linkName: 'Smoke')],
+        },
+      );
+      readPage(source.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(lineUpProvider).links.map((link) => link.id),
+          ['link-a']);
+
+      // The copy is sent, and its answer held back.
+      final hold = repository.hold = Completer<void>();
+      expect(
+        await container.read(strategyProvider.notifier).sendLineUpsToPage(
+          linkIds: {'link-a'},
+          pageId: target.publicId,
+          move: false,
+        ),
+        LineUpPageResult.done,
+      );
+      await _until(() => batches.isNotEmpty);
+      final groupId = (batches.single.single as LineupAddOp).lineupPublicId;
+
+      // The user opens page 2 before the copy lands, then it lands.
+      final session = container.read(strategyPageSessionProvider.notifier);
+      await session.setActivePage(target.publicId);
+      readPage(target.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      // A press off the canvas (the sidebar) holds the page's updates back
+      // while the copy lands and the page's read shows it. The user places
+      // an agent meanwhile.
+      final pointers = container.read(editorPointersProvider.notifier)..down(1);
+      hold.complete();
+      final copyKey = EntitySyncKey.lineup(target.publicId, groupId);
+      await _until(() => !container.read(strategyOpQueueProvider).pending.any(
+          (pending) => EntitySyncKey.forStrategyOp(pending.op) == copyKey));
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(lineUpProvider).links, isEmpty);
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-1',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      pointers.release(1);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      await container.read(strategyOpQueueProvider.notifier).flushNow();
+      await _until(
+          () => container.read(strategyOpQueueProvider).pending.isEmpty);
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(container.read(lineUpProvider).links.map((link) => link.name),
+          ['Smoke']);
+      // Page 2 sent the copy and the agent, and no delete of the copy.
+      expect(
+        [
+          for (final batch in batches)
+            for (final op in batch)
+              if (EntitySyncKey.forStrategyOp(op)?.pageId == target.publicId)
+                (op.kind, op.entityPublicId),
+        ],
+        [(StrategyOpKind.add, groupId), (StrategyOpKind.add, 'agent-1')],
+      );
     });
 
     test(
@@ -10644,6 +10734,205 @@ void main() {
             .copyDirectionsForPlacedWidget('image'),
         isEmpty,
       );
+    });
+  });
+
+  group('moving and copying lineups to another cloud page', () {
+    final pages = [_page('page-1', 0), _page('page-2', 1), _page('page-3', 2)];
+
+    // On page 2, lineups a and b meet at one landing; solo is on its own.
+    final shared = _groupRow(
+      'page-2',
+      'link-a',
+      origins: [_originJson('stand-a'), _originJson('stand-b')],
+      landings: [_landingJson('land-ab')],
+      links: [
+        _linkJson('link-a',
+            originId: 'stand-a', landingId: 'land-ab', name: 'Bolt A'),
+        _linkJson('link-b',
+            originId: 'stand-b', landingId: 'land-ab', name: 'Bolt B'),
+      ],
+    );
+
+    /// Opens the strategy on page 2; the repository reads page 3 with a
+    /// lineup group of its own at sortIndex 6.
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier, _PageReader)>
+        open() async {
+      final onScreen = _pageSnapshot(
+        pages[1],
+        lineups: [shared, _lineup('page-2', 'solo', sortIndex: 1)],
+      );
+      final queue = _FakeStrategyOpQueueNotifier();
+      final reader = _PageReader({
+        'page-3': _pageSnapshot(
+          pages[2],
+          lineups: [_lineup('page-3', 'there', sortIndex: 6)],
+        ),
+      });
+      final container = await _cloudContainer(
+        remote: _FakeRemoteEditorNotifier(
+          _editorSnapshot(pages: pages, activePage: onScreen),
+        ),
+        queue: queue,
+        repository: reader,
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+            preferredPageId: 'page-2',
+          );
+      return (container, queue, reader);
+    }
+
+    Iterable<LineupAddOp> adds(ProviderContainer container) => container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .values
+        .map((intent) => intent.pending.op)
+        .whereType<LineupAddOp>()
+        .where((op) => op.pagePublicId == 'page-3');
+
+    Set<String> linksHere(ProviderContainer container) =>
+        {for (final link in container.read(lineUpProvider).links) link.id};
+
+    Future<LineUpPageResult> send(
+      ProviderContainer container, {
+      required bool move,
+    }) =>
+        container.read(strategyProvider.notifier).sendLineUpsToPage(
+          linkIds: {'link-a', 'link-b'},
+          pageId: 'page-3',
+          move: move,
+        );
+
+    test('offers every other page', () async {
+      final (container, _, _) = await open();
+      expect(
+        container.read(strategyProvider.notifier).lineUpPageTargets(),
+        [
+          (id: 'page-1', name: 'Page 1', offset: -1),
+          (id: 'page-3', name: 'Page 3', offset: 1),
+        ],
+      );
+    });
+
+    test('a copy is sent as a new group after the page\'s own', () async {
+      final (container, queue, _) = await open();
+
+      expect(await send(container, move: false), LineUpPageResult.done);
+
+      final add = adds(container).single;
+      expect(add.sortIndex, 7);
+      final data = cloudPayloadData(add.payload);
+      expect(data['id'], add.lineupPublicId);
+      final links = _entries(data, 'links');
+      expect(links.map((link) => link['name']), ['Bolt A', 'Bolt B']);
+      expect(_entries(data, 'origins'), hasLength(2));
+      expect(_entries(data, 'landings'), hasLength(1));
+      expect(links.map((link) => link['landingId']).toSet(), hasLength(1));
+      final ids = {
+        add.lineupPublicId,
+        for (final field in ['origins', 'landings', 'links'])
+          for (final entry in _entries(data, field)) entry['id'],
+      };
+      expect(
+        ids.intersection({
+          'link-a',
+          'link-b',
+          'stand-a',
+          'stand-b',
+          'land-ab',
+          'link-there'
+        }),
+        isEmpty,
+      );
+      expect(queue.flushNowCount, greaterThan(0));
+      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
+    });
+
+    test('a move takes the lineups off this page once they are sent', () async {
+      final (container, _, _) = await open();
+
+      expect(await send(container, move: true), LineUpPageResult.done);
+
+      expect(adds(container), hasLength(1));
+      expect(linksHere(container), {'link-solo'});
+      await _settle();
+    });
+
+    test('a page that cannot be read gets nothing, and the lineups stay',
+        () async {
+      final (container, _, reader) = await open();
+      reader.fails = true;
+
+      expect(await send(container, move: true), LineUpPageResult.unreachable);
+      expect(adds(container), isEmpty);
+      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
+    });
+
+    test('lineups this device cannot store to send stay here', () async {
+      final (container, queue, _) = await open();
+      queue.offCanvasStoreFails = true;
+
+      expect(await send(container, move: true), LineUpPageResult.notSaved);
+      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
+      expect(container.read(strategySaveStateProvider).hasPendingCloudSync,
+          isFalse);
+    });
+
+    test(
+        'the lineups are sent as they were when the user asked, and stay '
+        'here if they changed meanwhile', () async {
+      final (container, _, reader) = await open();
+      final read = reader.gate = Completer<void>();
+
+      final moved = send(container, move: true);
+      // While page 3 is read, a teammate's edit renames Bolt A.
+      final lineUps = container.read(lineUpProvider.notifier);
+      lineUps.mergeRemote(LineUpGraph(
+        origins: container.read(lineUpProvider).origins,
+        landings: container.read(lineUpProvider).landings,
+        links: [
+          for (final link in container.read(lineUpProvider).links)
+            link.id == 'link-a' ? link.copyWith(name: 'Renamed') : link,
+        ],
+      ));
+      read.complete();
+
+      expect(await moved, LineUpPageResult.done);
+      expect(
+        _entries(cloudPayloadData(adds(container).single.payload), 'links')
+            .map((link) => link['name']),
+        ['Bolt A', 'Bolt B'],
+      );
+      await _settle();
+    });
+
+    test('a move finishing after a lineup went from this page leaves the rest',
+        () async {
+      final (container, _, reader) = await open();
+      final read = reader.gate = Completer<void>();
+
+      final moved = send(container, move: true);
+      // While page 3 is read, a teammate deletes Bolt B.
+      final now = container.read(lineUpProvider);
+      container.read(lineUpProvider.notifier).mergeRemote(LineUpGraph(
+            origins: now.origins,
+            landings: now.landings,
+            links: [
+              for (final link in now.links)
+                if (link.id != 'link-b') link,
+            ],
+          ));
+      read.complete();
+
+      expect(await moved, LineUpPageResult.copiedInstead);
+      expect(adds(container), hasLength(1));
+      expect(linksHere(container), {'link-a', 'link-solo'});
+      await _settle();
     });
   });
 }
