@@ -2804,50 +2804,40 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ? original
           : successor;
 
-  /// [op], made to wait behind [predecessor], which lands first. When the
-  /// predecessor is this canvas's own work ([drawn]), a merge names what it
-  /// changes from what the predecessor writes, so a field the predecessor
-  /// sets and the user then set back is written again; its base, for each
-  /// field the predecessor writes, is that value. Work the canvas never drew
-  /// (recovered after a restart) is no base for the user's edits, which
-  /// were made against what the canvas showed, so [op] stays as it is. A
-  /// change from the predecessor that cannot merge (what the element is
-  /// changed) is a whole write. Worked out as the successor is made, while
-  /// [drawn] is known, and saved with it.
+  /// [op], made to wait behind [predecessor], which is sent first. When the
+  /// predecessor is this canvas's own work ([drawn]) and merges by field,
+  /// [op]'s merge also names every field the predecessor does, with the
+  /// user's current values: a field the user set back meanwhile is written
+  /// again, and should the predecessor be refused and the user keep theirs,
+  /// this one change still carries all of it. Its base, for those fields, is
+  /// what the predecessor writes, which the server holds once it lands.
+  /// Work the canvas never drew (recovered after a restart) is left out:
+  /// the user's edits were made against what the canvas showed. Worked out
+  /// as the successor is made, while [drawn] is known, and saved with it.
   static StrategyOp _asSuccessorOf(
     StrategyOp op,
     StrategyOp predecessor, {
     required bool drawn,
   }) {
     final merge = op.merge;
-    final written = predecessor.payload;
-    final desired = op.payload;
-    if (merge == null || written == null || desired == null || !drawn) {
+    final written = predecessor.merge;
+    final writtenPayload = predecessor.payload;
+    if (merge == null || written == null || writtenPayload == null || !drawn) {
       return op;
     }
     final lineup = op is LineupPatchOp;
-    final changed = lineup
-        ? lineupMergeFields(written, desired)
-        : elementMergeFields(written, desired);
-    if (changed == null) return op.withMerge(null);
-    final predecessorMerge = predecessor.merge;
-    bool wrote(String field) =>
-        predecessorMerge == null || predecessorMerge.fields.contains(field);
-    final moved = op.sortIndex != null && op.sortIndex != predecessor.sortIndex;
-    final fields = [...changed, if (moved) placeMergeField];
+    final fields = {...written.fields, ...merge.fields}.toList()..sort();
     final base = merge.base;
     if (base == null) return op.withMerge(FieldMerge(fields: fields));
     final rebased = <String, Object?>{};
     for (final field in fields) {
-      if (field == placeMergeField) {
-        final at = wrote(field) ? predecessor.sortIndex : base[field];
-        if (at != null) rebased[field] = at;
-      } else if (wrote(field)) {
-        final value = mergeFieldValue(written, field, lineup: lineup);
+      if (!written.fields.contains(field)) {
+        if (base.containsKey(field)) rebased[field] = base[field];
+      } else if (field == placeMergeField) {
+        if (predecessor.sortIndex case final at?) rebased[field] = at;
+      } else {
+        final value = mergeFieldValue(writtenPayload, field, lineup: lineup);
         if (value.present) rebased[field] = value.value;
-      } else if (base.containsKey(field)) {
-        // The server still holds what this client last saw of it.
-        rebased[field] = base[field];
       }
     }
     return op.withMerge(FieldMerge(fields: fields, base: rebased));

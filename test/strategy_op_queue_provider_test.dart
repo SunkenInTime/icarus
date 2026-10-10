@@ -3899,10 +3899,58 @@ void main() {
       await sending;
 
       final promoted = store.load().records.single.pending.op;
-      expect(promoted.merge?.fields, ['weapon', placeMergeField]);
-      // The place from the predecessor's own sort index; the weapon still
-      // absent, as the server has it.
-      expect(promoted.merge?.base, {placeMergeField: 0});
+      // It also names the field its predecessor wrote, based on what that
+      // wrote; its own fields keep the base they had (the place's, and the
+      // weapon absent, as the server has it).
+      expect(promoted.merge?.fields, [placeMergeField, 'isAlly', 'weapon']);
+      expect(promoted.merge?.base, {placeMergeField: 0, 'isAlly': false});
+    });
+
+    test(
+        'Keep mine after the first send is refused keeps both its change '
+        'and the one made behind it', () async {
+      final online = StateProvider<bool>((ref) => false);
+      final gate = Completer<void>();
+      final repository = _ScriptedRepository(
+          hold: gate, refusals: [OpRejectionReason.fieldConflict]);
+      final (container, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+      // Made offline: the side changes.
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      container.read(online.notifier).state = true;
+      final sending = notifier.flushNow();
+      await repository.started.future;
+      // While it is on its way, the user also equips a weapon.
+      await notifier.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {
+            'kind': 'agent',
+            'payloadVersion': 1,
+            'data': {'id': 'element-1', 'isAlly': false, 'weapon': 'vandal'},
+          },
+          sortIndex: 0,
+          expectedElementRevision: 1,
+          merge: const FieldMerge(
+            fields: ['isAlly', 'weapon'],
+            base: {'isAlly': true},
+          ),
+        ),
+        flushImmediately: false,
+      );
+      gate.complete();
+      await sending;
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+          contains(key));
+
+      await notifier.retryRejected(flushImmediately: false);
+      await notifier.flushNow();
+
+      final kept = repository.calls.last.single;
+      expect(kept.merge?.fields, ['isAlly', 'weapon']);
+      expect(((kept.payload as Map)['data'] as Map)['isAlly'], isFalse);
     });
 
     test('a whole successor after a merge keeps the revision it was made from',
