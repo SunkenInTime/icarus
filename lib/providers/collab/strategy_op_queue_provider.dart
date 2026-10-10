@@ -7,6 +7,7 @@ import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -223,6 +224,42 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// [forgetCanvasWork].
   final Set<String> _canvasOpIds = {};
   int _canvasSession = 0;
+
+  /// Op IDs of work made while connected, with no disconnect since: it is
+  /// sent as the last write (see StrategyOp.forSend). Work queued across a
+  /// disconnect or recovered after a restart is not here, so it carries its
+  /// merge's base and cannot silently overwrite a teammate's change made
+  /// meanwhile. Cleared whenever the connection drops.
+  final Set<String> _liveOpIds = {};
+
+  /// Whether the Convex connection is up, as last reported. False until it
+  /// reports, so work made before then is treated as made offline.
+  bool _connected = false;
+
+  /// How many times the connection has dropped. Work made while connected
+  /// is stamped with it ([liveStamp]) and is live only if it has not moved
+  /// on by the time the work is queued.
+  int _disconnects = 0;
+
+  /// [syncDesiredOpsForPage]'s default madeLive: judge it as the call is
+  /// made. (Real stamps count disconnects, so are never negative.)
+  static const _judgeLiveNow = -1;
+
+  /// The stamp for work made now: null while disconnected. A caller that
+  /// waits on anything before queueing its work takes this first and passes
+  /// it on (syncDesiredOpsForPage's madeLive).
+  int? get liveStamp => _connected ? _disconnects : null;
+
+  /// Marks [op] live if it was made while connected ([madeLive], its stamp)
+  /// with no disconnect since, and any work it merged in ([from]) was live
+  /// too: an edit folded into work that waited offline still carries that
+  /// work's earlier changes.
+  void _markLive(StrategyOp op, {required int? madeLive, StrategyOp? from}) {
+    if (madeLive == null || madeLive != _disconnects || !_connected) return;
+    if (from != null && !_liveOpIds.contains(from.opId)) return;
+    _liveOpIds.add(op.opId);
+  }
+
   final Set<String> _uncertainOversizedParking = {};
   final Set<String> _uncertainDurableRecords = {};
   final Map<String, DurableOutboxRecord> _uncertainDurableIntents = {};
@@ -263,6 +300,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     ref.listen<bool>(clientUpgradeRequiredProvider, (previous, next) {
       if (previous == true && !next) retryCurrentAccount();
     });
+    void connectionIs(bool connected) {
+      if (_connected && !connected) _disconnects++;
+      _connected = connected;
+      if (!connected) _liveOpIds.clear();
+    }
+
+    ref.listen<bool>(
+      convexConnectionSnapshotProvider,
+      (_, next) => connectionIs(next),
+      // No client to ask (tests that never connect): offline.
+      onError: (_, __) => connectionIs(false),
+      fireImmediately: true,
+    );
     ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
       if (previous?.valueOrNull != true && next.valueOrNull == true) {
         _scheduleBackgroundDrain(ignoreBackoff: true);
@@ -529,11 +579,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }) async {
     final key = EntitySyncKey.forStrategyOp(op)!;
     final canvasSession = _canvasSession;
+    final madeLive = liveStamp;
     await _serializeWrite(() => _syncDesiredLocked(
           keys: <EntitySyncKey>{key},
           desiredOps: <EntitySyncKey, StrategyOp?>{key: op},
           flushImmediately: flushImmediately,
           canvasSession: canvasSession,
+          madeLive: madeLive,
           onCanvas: false,
         ));
     return state.pending.any(
@@ -548,11 +600,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     bool flushImmediately = false,
   }) {
     final canvasSession = _canvasSession;
+    final madeLive = liveStamp;
     return _serializeWrite(() => _syncDesiredLocked(
           keys: <EntitySyncKey>{entityKey},
           desiredOps: <EntitySyncKey, StrategyOp?>{entityKey: desiredOp},
           flushImmediately: flushImmediately,
           canvasSession: canvasSession,
+          madeLive: madeLive,
         ));
   }
 
@@ -561,8 +615,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
     bool flushImmediately = false,
+    int? madeLive = _judgeLiveNow,
   }) {
     final canvasSession = _canvasSession;
+    // Whether this work is made live is judged now, as it is made, not when
+    // its turn to be written comes, unless the caller judged it earlier
+    // (null: made offline).
+    if (madeLive == _judgeLiveNow) madeLive = liveStamp;
     // A desired op the queue already holds is work kept as it is (live sync
     // keeps recovered work this way), not a new edit. Read now: by the time
     // this write runs it may have landed and left the queue.
@@ -589,6 +648,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         flushImmediately: flushImmediately,
         canvasSession: canvasSession,
         heldOpIds: heldOpIds,
+        madeLive: madeLive,
       );
     });
   }
@@ -599,15 +659,26 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// then, so it is not the canvas's work; if it has landed or been
   /// replaced since, whatever the queue now holds for its entity is left as
   /// it is. Ops made with [onCanvas] false are never the canvas's work.
+  /// [madeLive] is the live stamp the work was made with (see [_markLive]).
   Future<void> _syncDesiredLocked({
     required Set<EntitySyncKey> keys,
     required Map<EntitySyncKey, StrategyOp?> desiredOps,
     required bool flushImmediately,
     required int canvasSession,
+    required int? madeLive,
     Set<String> heldOpIds = const {},
     bool onCanvas = true,
   }) async {
-    void writtenByCanvas(PendingOp pending, StrategyOp desired) {
+    void writtenByCanvas(
+      PendingOp pending,
+      StrategyOp desired, {
+      StrategyOp? from,
+    }) {
+      // Work the queue already held (recovered after a restart, say) is
+      // not newly made, live or not.
+      if (!heldOpIds.contains(desired.opId)) {
+        _markLive(pending.op, madeLive: madeLive, from: from);
+      }
       if (onCanvas &&
           canvasSession == _canvasSession &&
           !heldOpIds.contains(desired.opId)) {
@@ -728,7 +799,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             clientId: successorIntent?.pending.clientId ??
                 attentionIntent.pending.clientId,
           );
-          writtenByCanvas(pending, desired);
+          writtenByCanvas(pending, desired, from: successorIntent?.pending.op);
           final recoveredOversizedParking =
               _uncertainOversizedParking.contains(current.storageKey);
           await _putRecord(current.copyWith(
@@ -787,14 +858,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               _sameIntent(successorIntent.pending.op, desired)) {
             continue;
           }
+          final predecessor = inFlightIntent.pending.op;
           final pending = PendingOp(
-            op: successorIntent == null
-                ? desired
-                : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
-                    desired,
+            op: _asSuccessorOf(
+              successorIntent == null
+                  ? desired
+                  : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                      desired,
+              predecessor,
+              drawn: _canvasOpIds.contains(predecessor.opId),
+            ),
             clientId: successorIntent?.pending.clientId ?? state.clientId!,
           );
-          writtenByCanvas(pending, desired);
+          writtenByCanvas(pending, desired, from: successorIntent?.pending.op);
           await _putRecord(_recordFor(
             key: key,
             pending: inFlightIntent.pending,
@@ -826,11 +902,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
           final pending = PendingOp(
-            op: _mergeQueuedIntent(successorIntent.pending.op, desired) ??
-                desired,
+            op: _asSuccessorOf(
+              _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                  desired,
+              existing.pending.op,
+              drawn: _canvasOpIds.contains(existing.pending.op.opId),
+            ),
             clientId: successorIntent.pending.clientId,
           );
-          writtenByCanvas(pending, desired);
+          writtenByCanvas(pending, desired, from: successorIntent.pending.op);
           await _putRecord(_recordFor(
             key: key,
             pending: existing.pending,
@@ -870,7 +950,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           attempts: base?.pending.attempts ?? 0,
           lastAttemptAt: base?.pending.lastAttemptAt,
         );
-        writtenByCanvas(pending, desired);
+        writtenByCanvas(pending, desired, from: base?.pending.op);
         final record = _recordFor(
           key: key,
           pending: pending,
@@ -1049,10 +1129,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             if (restore == null) continue;
             rebasedOp = restore;
           } else {
-            rebasedOp = _rebaseRejectedOp(
-              retryOp,
-              retryRevision!,
-              preserveAdd: isTombstoneRestore,
+            rebasedOp = _keptMine(
+              _rebaseRejectedOp(
+                retryOp,
+                retryRevision!,
+                preserveAdd: isTombstoneRestore,
+              ),
+              refusal: record?.lastError,
+              serverHas: record?.latestServerPayload,
             );
           }
           _keepCanvasWritten(retryOp, rebasedOp);
@@ -1486,7 +1570,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       final acks = await _repo.applyBatch(
         strategyPublicId: strategyPublicId,
         clientId: batchClientId,
-        ops: batch.map((record) => record.pending.op).toList(growable: false),
+        ops: [
+          for (final record in batch)
+            record.pending.op.forSend(
+              live: _liveOpIds.contains(record.pending.op.opId),
+            ),
+        ],
         // The transport can deliver this after a later sign-in (it resends
         // pending requests on reconnect), so the server checks the batch's
         // own account, not whoever is signed in then.
@@ -1628,14 +1717,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final predecessorCreatedEntity =
             sent.pending.op is ElementAddOp || sent.pending.op is LineupAddOp;
         final promoted = PendingOp(
-          op: _rebaseRejectedOp(
-            successor.op,
-            successorRevision,
-            preserveAdd: !predecessorCreatedEntity,
+          op: _onLandedPredecessor(
+            _rebaseRejectedOp(
+              successor.op,
+              successorRevision,
+              preserveAdd: !predecessorCreatedEntity,
+            ),
+            original: successor.op,
+            predecessor: sent.pending.op,
           ),
           clientId: successor.clientId,
         );
-        _keepCanvasWritten(successor.op, promoted.op);
+        _keepCanvasWritten(successor.op, promoted.op, keepLive: true);
         final isPromotedOversized = cloudOperationExceedsPolicy(promoted.op);
         await _putRecord(current.copyWith(
           pending: promoted,
@@ -1655,6 +1748,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           lastError: ack.reason ??
               'The final change is waiting for conflict resolution.',
           latestServerRevision: ack.latestRevision,
+          latestServerPayload: ack.latestPayload,
         );
         await _putRecord(retained);
       } else if (ack.isAck) {
@@ -1673,6 +1767,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           updatedAt: DateTime.now(),
           lastError: ack.reason ?? 'The server rejected this change.',
           latestServerRevision: ack.latestRevision,
+          latestServerPayload: ack.latestPayload,
         );
         await _putRecord(rejected);
       }
@@ -1939,6 +2034,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required String lastError,
     required bool countsAsFailure,
   }) async {
+    // A send that failed is retried later, by when a teammate may have
+    // changed the same fields: it goes checked.
+    _liveOpIds.removeAll([
+      for (final sent in batch) sent.pending.op.opId,
+    ]);
     final retrying = <PendingOp>[];
     try {
       for (final sent in batch) {
@@ -2624,6 +2724,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     if (existing case ElementPatchOp()) {
       if (desired case ElementPatchOp()) {
+        // Live sync names every field changed since the version both were
+        // drawn from, so the newer merge covers the older one's too.
         return ElementPatchOp(
           opId: replacementOpId,
           elementPublicId: desired.elementPublicId,
@@ -2631,6 +2733,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           payload: desired.payload ?? existing.payload,
           sortIndex: desired.sortIndex ?? existing.sortIndex,
           expectedElementRevision: desired.expectedElementRevision,
+          merge: desired.merge,
         );
       }
     }
@@ -2643,6 +2746,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           payload: desired.payload ?? existing.payload,
           sortIndex: desired.sortIndex ?? existing.sortIndex,
           expectedLineupRevision: desired.expectedLineupRevision,
+          merge: desired.merge,
         );
       }
     }
@@ -2651,15 +2755,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
   /// [resent] carries [original]'s work under a new op ID: the canvas's
   /// work stays the canvas's.
-  void _keepCanvasWritten(StrategyOp original, StrategyOp resent) {
+  void _keepCanvasWritten(
+    StrategyOp original,
+    StrategyOp resent, {
+    bool keepLive = false,
+  }) {
     if (_canvasOpIds.contains(original.opId)) _canvasOpIds.add(resent.opId);
+    // Only a successor promoted behind its predecessor is the same live
+    // work; a retry, made or chosen later, is sent checked.
+    if (keepLive && _liveOpIds.contains(original.opId)) {
+      _liveOpIds.add(resent.opId);
+    }
   }
 
   /// Forgets the IDs of canvas work that landed or was dropped. Runs only
   /// inside a serialized write, so no op another write marked is still
   /// waiting for its record to be stored.
   void _pruneCanvasOpIds() {
-    _canvasOpIds.retainAll({
+    final pendingOpIds = {
       for (final record in [
         ..._recordsByStorageKey.values,
         ..._uncertainDurableIntents.values,
@@ -2667,7 +2780,98 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         record.pending.op.opId,
         if (record.successorPending case final successor?) successor.op.opId,
       ],
-    });
+    };
+    _canvasOpIds.retainAll(pendingOpIds);
+    _liveOpIds.retainAll(pendingOpIds);
+  }
+
+  /// [op], refused for [refusal], as Keep mine sends it. After a field
+  /// collision the user's fields win over what the server held when it
+  /// refused ([serverHas]): the merge's base becomes that, so a teammate's
+  /// change made after it still asks. (Its place is no longer named: a
+  /// refusal does not say where the server has the row.) After a merge that
+  /// left a group that can't stand, the user's whole group replaces the
+  /// server's, revision-checked as any whole write is.
+  static StrategyOp _keptMine(
+    StrategyOp op, {
+    required String? refusal,
+    required CloudPayload? serverHas,
+  }) {
+    final merge = op.merge;
+    if (merge == null) return op;
+    if (refusal == OpRejectionReason.fieldConflict.wireName) {
+      if (serverHas == null || merge.base == null) {
+        return op.withMerge(merge.withoutBase());
+      }
+      final lineup = op is LineupPatchOp;
+      final fields = [
+        for (final field in merge.fields)
+          if (field != placeMergeField) field,
+      ];
+      return op.withMerge(FieldMerge(
+        fields: fields,
+        base: mergeBaseValues(serverHas, fields, lineup: lineup),
+      ));
+    }
+    if (refusal == OpRejectionReason.mergeInvalid.wireName) {
+      return op.withMerge(null);
+    }
+    return op;
+  }
+
+  /// [successor] (rebased onto the revision [predecessor] landed at) once
+  /// [predecessor] landed. After a merge, that revision may also hold a
+  /// teammate's fields this client never drew, so a whole write or a delete
+  /// keeps claiming the revision it was [original]ly made from. A merge
+  /// already names its change from the predecessor (see [_asSuccessorOf]).
+  static StrategyOp _onLandedPredecessor(
+    StrategyOp successor, {
+    required StrategyOp original,
+    required StrategyOp predecessor,
+  }) =>
+      successor.merge == null && predecessor.merge != null
+          ? original
+          : successor;
+
+  /// [op], made to wait behind [predecessor], which is sent first. When the
+  /// predecessor is this canvas's own work ([drawn]) and merges by field,
+  /// [op]'s merge also names every field the predecessor does, with the
+  /// user's current values: a field the user set back meanwhile is written
+  /// again, and should the predecessor be refused and the user keep theirs,
+  /// this one change still carries all of it. Its base, for those fields, is
+  /// what the predecessor writes, which the server holds once it lands.
+  /// Behind a whole write, [op] is whole too. Work the canvas never drew (recovered after a restart) is left out:
+  /// the user's edits were made against what the canvas showed. Worked out
+  /// as the successor is made, while [drawn] is known, and saved with it.
+  static StrategyOp _asSuccessorOf(
+    StrategyOp op,
+    StrategyOp predecessor, {
+    required bool drawn,
+  }) {
+    final merge = op.merge;
+    final written = predecessor.merge;
+    final writtenPayload = predecessor.payload;
+    if (merge == null || writtenPayload == null || !drawn) return op;
+    // Behind a whole write of the canvas's own, the server holds exactly
+    // what the canvas drew once it lands: this one is whole too, so a field
+    // the user set back meanwhile is written again.
+    if (written == null) return op.withMerge(null);
+    final lineup = op is LineupPatchOp;
+    final fields = {...written.fields, ...merge.fields}.toList()..sort();
+    final base = merge.base;
+    if (base == null) return op.withMerge(FieldMerge(fields: fields));
+    final rebased = <String, Object?>{};
+    for (final field in fields) {
+      if (!written.fields.contains(field)) {
+        if (base.containsKey(field)) rebased[field] = base[field];
+      } else if (field == placeMergeField) {
+        if (predecessor.sortIndex case final at?) rebased[field] = at;
+      } else {
+        final value = mergeFieldValue(writtenPayload, field, lineup: lineup);
+        if (value.present) rebased[field] = value.value;
+      }
+    }
+    return op.withMerge(FieldMerge(fields: fields, base: rebased));
   }
 
   /// [op] as an add bringing its element or lineup back over the tombstone
@@ -2793,6 +2997,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         :final pagePublicId,
         :final payload,
         :final sortIndex,
+        :final merge,
       ) =>
         ElementPatchOp(
           opId: opId,
@@ -2801,6 +3006,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           payload: payload,
           sortIndex: sortIndex,
           expectedElementRevision: revision,
+          merge: merge,
         ),
       ElementDeleteOp(:final elementPublicId, :final pagePublicId) =>
         ElementDeleteOp(
@@ -2849,6 +3055,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         :final pagePublicId,
         :final payload,
         :final sortIndex,
+        :final merge,
       ) =>
         LineupPatchOp(
           opId: opId,
@@ -2857,6 +3064,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           payload: payload,
           sortIndex: sortIndex,
           expectedLineupRevision: revision,
+          merge: merge,
         ),
       LineupDeleteOp(:final lineupPublicId, :final pagePublicId) =>
         LineupDeleteOp(

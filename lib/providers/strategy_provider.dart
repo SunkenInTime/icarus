@@ -901,8 +901,26 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     return [
       for (final direction in PageTransitionDirection.values)
-        if (_adjacentCloudPageId(snapshot, direction) != null) direction,
+        if (_adjacentCloudPageId(snapshot, direction) case final pageId?)
+          if (_copyFitsOutbox(pageId, widgetId)) direction,
     ];
+  }
+
+  /// Whether a copy of [widgetId] onto [pageId] can be stored to send. Hive
+  /// refuses keys over 255 characters, and an op is stored under one naming
+  /// its account, strategy, page and item. Only an item imported with an
+  /// unusually long id fails this, and it is then not offered.
+  bool _copyFitsOutbox(String pageId, String widgetId) {
+    final accountId = ref.read(strategyOpQueueProvider).accountId;
+    final strategyId = state.strategyId;
+    return accountId != null &&
+        strategyId != null &&
+        DurableOutboxRecord.createStorageKey(
+              accountId: accountId,
+              strategyPublicId: strategyId,
+              entityKey: EntitySyncKey.element(pageId, newPageCopyId(widgetId)),
+            ).length <=
+            255;
   }
 
   String? _adjacentCloudPageId(
