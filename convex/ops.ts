@@ -480,6 +480,42 @@ function setIfChanged(
   if (!valuesEqual(currentValue, nextValue)) patch[key] = nextValue;
 }
 
+/// A refusal recorded for a merge, as told to a client replaying the op
+/// without one: a client from before field merging (an older tab reading
+/// the outbox a newer one wrote) cannot read the merge reasons, and to it
+/// the op was a whole write refused for a teammate's change.
+function replayedReason(
+  reason: string | undefined,
+  op: StrategyOp,
+): string | undefined {
+  if (
+    op.merge === undefined &&
+    (reason === "field_conflict" || reason === "merge_invalid")
+  ) {
+    return "revision_mismatch";
+  }
+  return reason;
+}
+
+/// Whether an offline merge that names its place collides on it: the row
+/// was restacked since the client last saw it, somewhere other than where
+/// this op puts it.
+function placeChanged(
+  merge: FieldMerge | undefined,
+  currentSortIndex: number,
+  sortIndex: number | undefined,
+): boolean {
+  if (merge?.base === undefined || !merge.fields.includes(PLACE_FIELD)) {
+    return false;
+  }
+  const base = merge.base.find((entry) => entry.field === PLACE_FIELD);
+  return (
+    base !== undefined &&
+    base.value !== currentSortIndex &&
+    sortIndex !== currentSortIndex
+  );
+}
+
 /// Refuses a merge that names too many fields, names one twice, or has a
 /// base that leaves out a field it changes (that field would then skip the
 /// offline check).
@@ -1318,6 +1354,13 @@ async function applyElementOp(
         : undefined;
     if (op.merge !== undefined) assertMergeShape(op.merge);
     if (merge !== undefined) checkRevision = false;
+    if (placeChanged(merge, existing.sortIndex, op.sortIndex)) {
+      return rejected(
+        "field_conflict",
+        { revision: existing.revision, payload: existing.payload },
+        existing.pageId,
+      );
+    }
     if (op.payload !== undefined) {
       let payload = assertElementPayload(op.payload);
       if (payload.kind !== existing.elementType) {
@@ -1524,6 +1567,13 @@ async function applyLineupOp(
     if (op.merge !== undefined) {
       assertMergeShape(op.merge);
       checkRevision = false;
+      if (placeChanged(op.merge, existing.sortIndex, op.sortIndex)) {
+        return rejected(
+          "field_conflict",
+          { revision: existing.revision, payload: existing.payload },
+          existing.pageId,
+        );
+      }
     }
     if (op.payload !== undefined) {
       let payload = assertLineupPayload(op.payload, publicId);
@@ -1781,7 +1831,7 @@ export const applyBatch = mutation({
             : existingEvent.status === "rejected"
               ? {
                   status: "reject",
-                  reason: existingEvent.reason,
+                  reason: replayedReason(existingEvent.reason, op),
                   latestRevision: latest?.revision,
                   latestPayload: latest?.payload,
                 }

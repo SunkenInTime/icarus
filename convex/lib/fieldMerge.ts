@@ -15,7 +15,8 @@ import { cloudJsonValueValidator } from "./payloadValidators";
 /// [PLACE_FIELD] names the row's place: the op's sortIndex is written only
 /// when it is named (the op always carries one, so Keep mine can restore
 /// the item where the user has it). A base entry without a value means the
-/// field was absent; the place's base is not checked.
+/// field was absent. The place's base is checked by the caller, which holds
+/// the row's sortIndex.
 export const fieldMergeValidator = v.object({
   fields: v.array(v.string()),
   base: v.optional(

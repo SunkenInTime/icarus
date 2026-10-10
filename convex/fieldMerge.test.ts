@@ -698,7 +698,8 @@ describe("lineup group merge by item", () => {
     const result = await applyOne(
       me,
       "me",
-      groupMerge(removed, ["links/k2", "landings/l2"], 1),
+      // Only the lineup is named: its landing goes because nothing uses it.
+      groupMerge(removed, ["links/k2"], 1),
     );
     expect(result.status).toBe("applied");
     const row = await lineup(me, "g");
@@ -845,5 +846,118 @@ describe("lineup group merge by item", () => {
       status: "rejected",
       reason: "revision_mismatch",
     });
+  });
+});
+
+describe("merge edge cases", () => {
+  test("an offline restack of an element a teammate restacked meanwhile is refused", async () => {
+    const { me, teammate } = await createHarness();
+    await addAgent(me);
+    await applyOne(teammate, "teammate", {
+      ...mergePatch(agentData(), ["@sortIndex"], 1),
+      sortIndex: 9,
+    });
+
+    const offline = await applyOne(me, "me", {
+      ...mergePatch(agentData(), ["@sortIndex"], 1, { "@sortIndex": 0 }),
+      sortIndex: 7,
+    });
+    expect(offline).toMatchObject({
+      status: "rejected",
+      reason: "field_conflict",
+    });
+    expect((await element(me, "agent-1")).sortIndex).toBe(9);
+  });
+
+  test("a base that says a field was absent differs from one that says it was null", async () => {
+    const { me } = await createHarness();
+    // The stored agent holds lineUpID: null.
+    await addAgent(me);
+
+    const absent = await applyOne(
+      me,
+      "me",
+      mergePatch(agentData({ lineUpID: "spot-1" }), ["lineUpID"], 1, {}),
+    );
+    expect(absent).toMatchObject({
+      status: "rejected",
+      reason: "field_conflict",
+    });
+
+    const wasNull = await applyOne(
+      me,
+      "me",
+      mergePatch(agentData({ lineUpID: "spot-1" }), ["lineUpID"], 1, {
+        lineUpID: null,
+      }),
+    );
+    expect(wasNull.status).toBe("applied");
+    expect((await element(me, "agent-1")).payload.data.lineUpID).toBe("spot-1");
+  });
+
+  test("a merge refusal replayed by a client that sends no merge reads as a revision mismatch", async () => {
+    const { me, teammate } = await createHarness();
+    await addAgent(me);
+    await applyOne(
+      teammate,
+      "teammate",
+      mergePatch(agentData({ isAlly: false }), ["isAlly"], 1),
+    );
+    const op = mergePatch(agentData({ isAlly: true }), ["isAlly"], 1, {
+      isAlly: true,
+    });
+    const refused = await applyOne(me, "me", op);
+    expect(refused).toMatchObject({
+      status: "rejected",
+      reason: "field_conflict",
+    });
+
+    // An older tab sends the same op from the shared outbox, without the
+    // merge it cannot read.
+    const { merge: _, ...withoutMerge } = op;
+    const replayed = await applyOne(me, "me", withoutMerge);
+    expect(replayed).toMatchObject({
+      status: "rejected",
+      reason: "revision_mismatch",
+    });
+    // The merge client replaying it still hears its own reason.
+    expect(await applyOne(me, "me", op)).toMatchObject({
+      status: "rejected",
+      reason: "field_conflict",
+    });
+  });
+
+  test("a merged group that would take a spot another group holds fails as any overlap does", async () => {
+    const { me } = await createHarness();
+    await addGroup(me);
+    const other = await applyOne(me, "setup", {
+      opId: nextOpId(),
+      type: "lineup.add",
+      lineupPublicId: "h",
+      pagePublicId,
+      payload: lineupsPayload("h", {
+        origins: [{ id: "o9" }],
+        landings: [{ id: "l9" }],
+        links: [{ id: "k9", originId: "o9", landingId: "l9" }],
+      }),
+      sortIndex: 1,
+    });
+    expect(other.status).toBe("applied");
+
+    const taking: TestLineupGroup = {
+      origins: twoLinks.origins,
+      landings: [...twoLinks.landings, { id: "l9" }],
+      links: [...twoLinks.links, { id: "k3", originId: "o1", landingId: "l9" }],
+    };
+    const result = await applyOne(
+      me,
+      "me",
+      groupMerge(taking, ["landings/l9", "links/k3"], 1),
+    );
+    expect(result).toMatchObject({
+      status: "failed",
+      code: "INVALID_LINEUP_PAYLOAD_DATA",
+    });
+    expect(linkNames(await lineup(me, "g"))).toEqual({ k1: "One", k2: "Two" });
   });
 });
