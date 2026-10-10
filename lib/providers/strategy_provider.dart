@@ -37,6 +37,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/strategy_capabilities.dart';
@@ -943,9 +944,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// [widgetId] on the page on screen as cloud element data, or null when it
-  /// cannot go to another cloud page. An image's id also names its file on
-  /// the server, so a copy of one needs its own file; images stay local-only
-  /// for now.
+  /// cannot go to another cloud page.
   ({String kind, Map<String, dynamic> data})? _cloudElementOnScreen(
     String widgetId,
   ) {
@@ -971,6 +970,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     for (final utility in ref.read(utilityProvider)) {
       if (utility.id == widgetId) return element('utility', utility.toJson());
+    }
+    for (final image in ref.read(placedImageProvider).images) {
+      if (image.id == widgetId) {
+        return element('image', cloudImagePayloadFromPlacedImage(image));
+      }
     }
     return null;
   }
@@ -1060,7 +1064,15 @@ class StrategyProvider extends Notifier<StrategyState> {
                 pagePublicId: targetPageId,
                 payload: cloudElementPayload(
                   kind: element.kind,
-                  data: {...element.data, 'id': copyId},
+                  data: {
+                    ...element.data,
+                    'id': copyId,
+                    // A copied image shows its original's picture: nothing
+                    // is copied or uploaded, and nothing waits on an upload
+                    // still under way (see PlacedImage.assetId).
+                    if (element.kind == 'image')
+                      'assetId': element.data['assetId'] ?? widgetId,
+                  },
                 ),
                 sortIndex: 1 + onTarget.values.fold<int>(-1, max),
               ),

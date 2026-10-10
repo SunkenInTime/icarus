@@ -11614,26 +11614,67 @@ void main() {
       expect(adds(container).single.pagePublicId, 'page-3');
     });
 
-    test('an image is not offered: its copy would need a file of its own',
-        () async {
-      final (container, _, _) = await open();
-      container.read(placedImageProvider.notifier).fromHive([
-        PlacedImage(
-          id: 'image',
-          position: Offset.zero,
-          aspectRatio: 1,
-          scale: 100,
-          fileExtension: '.png',
-        ),
-      ]);
-      await _settle();
+    group('an image', () {
+      /// Opens page 2 with a placed image on it, showing picture
+      /// [assetId] when given (it is itself a copy), else its own.
+      Future<ProviderContainer> openWithImage({String? assetId}) async {
+        final (container, _, _) = await open();
+        container.read(placedImageProvider.notifier).fromHive([
+          PlacedImage(
+            id: 'image',
+            position: const Offset(12, 34),
+            aspectRatio: 1.5,
+            scale: 100,
+            fileExtension: '.png',
+            assetId: assetId,
+          ),
+        ]);
+        await _settle();
+        return container;
+      }
 
-      expect(
-        container
-            .read(strategyProvider.notifier)
-            .copyDirectionsForPlacedWidget('image'),
-        isEmpty,
-      );
+      Iterable<ElementAddOp> copies(ProviderContainer container) =>
+          adds(container).where((op) => op.pagePublicId == 'page-3');
+
+      Future<PageCopyResult> copy(ProviderContainer container) => container
+          .read(strategyProvider.notifier)
+          .copyPlacedWidgetToAdjacentPage(
+            widgetId: 'image',
+            direction: PageTransitionDirection.forward,
+          );
+
+      test('is copied showing its picture, however far its upload has got',
+          () async {
+        final container = await openWithImage();
+        expect(
+          container
+              .read(strategyProvider.notifier)
+              .copyDirectionsForPlacedWidget('image'),
+          [PageTransitionDirection.forward, PageTransitionDirection.backward],
+        );
+
+        expect(await copy(container), PageCopyResult.copied);
+
+        final add = copies(container).single;
+        expect(add.payload['kind'], 'image');
+        final data = cloudPayloadData(add.payload);
+        expect(data['id'], add.elementPublicId);
+        expect(pageCopyRoot(add.elementPublicId), 'image');
+        // The copy shows the original's picture.
+        expect(data['assetId'], 'image');
+        expect(data['aspectRatio'], 1.5);
+        await _settle();
+      });
+
+      test("a copy's copy shows the first picture", () async {
+        final container = await openWithImage(assetId: 'first-image');
+
+        expect(await copy(container), PageCopyResult.copied);
+
+        expect(cloudPayloadData(copies(container).single.payload)['assetId'],
+            'first-image');
+        await _settle();
+      });
     });
   });
 
