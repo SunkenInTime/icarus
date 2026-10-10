@@ -36,6 +36,7 @@ enum ConvexErrorCode {
   pageDescriptorRequiresPageOp('PAGE_DESCRIPTOR_REQUIRES_PAGE_OP'),
   pageSettingsRequirePageContent('PAGE_SETTINGS_REQUIRE_PAGE_CONTENT'),
   pageStrategyMismatch('PAGE_STRATEGY_MISMATCH'),
+  pageTooLargeToCopy('PAGE_TOO_LARGE_TO_COPY'),
   r2ObjectKeyMismatch('R2_OBJECT_KEY_MISMATCH'),
   shareLinkRevoked('SHARE_LINK_REVOKED'),
   strategyTooLargeToDuplicate('STRATEGY_TOO_LARGE_TO_DUPLICATE'),

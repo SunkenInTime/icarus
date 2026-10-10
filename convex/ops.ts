@@ -38,6 +38,7 @@ import {
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
 import { valuesEqual } from "./lib/canonicalValues";
+import { ContentCopy, CopyBudget, type PageToCopy } from "./lib/contentCopy";
 import { assertLineupGroupAlone, syncLineupItems } from "./lib/lineupItems";
 import { LINEUPS_PAYLOAD_VERSION } from "./lib/payloadValidators";
 import {
@@ -82,6 +83,7 @@ type StrategyOp = {
   expectedRevision?: number;
   merge?: FieldMerge;
   lastWriterWins?: boolean;
+  copyContentFromPagePublicId?: string;
 };
 type TargetSnapshot = {
   revision: number;
@@ -124,6 +126,7 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
         payload: op.payload,
         sortIndex: op.sortIndex,
         expectedRevision: op.expectedStrategyRevision,
+        copyContentFromPagePublicId: op.copyContentFromPagePublicId,
       };
     case "page.patch":
       return {
@@ -905,6 +908,44 @@ async function applyStrategyOp(
   };
 }
 
+/// The live content of the page a page add copies, read and charged to the
+/// copy's budget. None when the add copies nothing, or when its page has
+/// gone (deleted, or in the trash) by the time the add lands: the page is
+/// then added empty, as a teammate's delete leaves nothing to copy.
+async function readPageToCopy(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  pagePublicId: string | undefined,
+  userId: Id<"users">,
+  now: number,
+): Promise<{ content: ContentCopy; page: PageToCopy } | null> {
+  if (pagePublicId === undefined) return null;
+  const source = await getPageByPublicIdOrNull(ctx, pagePublicId);
+  if (
+    source === null ||
+    source.strategyId !== strategy._id ||
+    isTrashed(source)
+  ) {
+    return null;
+  }
+  const content = new ContentCopy(ctx, {
+    sourceStrategyId: strategy._id,
+    targetStrategyId: strategy._id,
+    userId,
+    now,
+    budget: new CopyBudget(() =>
+      errorWithCode(
+        "PAGE_TOO_LARGE_TO_COPY",
+        "This page is too large to copy.",
+      ),
+    ),
+    // The page goes in without an image still uploading, rather than not
+    // at all: the app sees the gap and says so.
+    uploadingImages: "leaveOut",
+  });
+  return { content, page: await content.read(source._id) };
+}
+
 async function applyPageOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
@@ -960,6 +1001,15 @@ async function applyPageOp(
     }
 
     const now = Date.now();
+    // Read before anything is written: a page too large to copy refuses
+    // the add, and an op's failure must leave nothing of it behind.
+    const copy = await readPageToCopy(
+      ctx,
+      strategy,
+      op.copyContentFromPagePublicId,
+      userId,
+      now,
+    );
     const pages = await listLivePages(ctx, strategy._id);
     const orderedPages = sortByNumberField(pages, "sortIndex");
     const desiredSortIndex = clampPageIndex(
@@ -1005,6 +1055,7 @@ async function applyPageOp(
       createdAt: now,
       updatedAt: now,
     });
+    if (copy !== null) await copy.content.write(copy.page, pageId);
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
     return {

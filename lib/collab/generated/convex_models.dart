@@ -2130,7 +2130,9 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
     required this.pagePublicId,
     required this.payload,
     required this.sortIndex,
+    this.copyContentFromPagePublicId = const ConvexOptional.absent(),
   });
+  final ConvexOptional<String> copyContentFromPagePublicId;
   final double expectedStrategyRevision;
   final String opId;
   final String pagePublicId;
@@ -2144,6 +2146,7 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
       'type',
+      'copyContentFromPagePublicId',
       'expectedStrategyRevision',
       'opId',
       'pagePublicId',
@@ -2151,6 +2154,15 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
       'sortIndex',
     });
     return OpsApplyBatchArgsOpsItemPageAdd(
+      copyContentFromPagePublicId:
+          object.value.containsKey('copyContentFromPagePublicId')
+          ? ConvexOptional.present(
+              _decodeString(
+                object.value['copyContentFromPagePublicId']!,
+                '$path.copyContentFromPagePublicId',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedStrategyRevision: _decodeNumber(
         object.value['expectedStrategyRevision'] ??
             _missing(path, 'expectedStrategyRevision'),
@@ -2179,6 +2191,10 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('page.add'),
+      if (copyContentFromPagePublicId.isPresent)
+        'copyContentFromPagePublicId': ConvexString(
+          copyContentFromPagePublicId.value,
+        ),
       'expectedStrategyRevision': _encodeNumber(
         expectedStrategyRevision,
         '$path.expectedStrategyRevision',
