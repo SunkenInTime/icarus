@@ -12,7 +12,10 @@ import { cloudJsonValueValidator } from "./payloadValidators";
 ///
 /// An element's fields are top-level keys of its payload's `data`. A lineup
 /// group's are its items: `origins/<id>`, `landings/<id>` or `links/<id>`.
-/// A base entry without a value means the field was absent.
+/// [PLACE_FIELD] names the row's place: the op's sortIndex is written only
+/// when it is named (the op always carries one, so Keep mine can restore
+/// the item where the user has it). A base entry without a value means the
+/// field was absent; the place's base is not checked.
 export const fieldMergeValidator = v.object({
   fields: v.array(v.string()),
   base: v.optional(
@@ -26,6 +29,15 @@ export const fieldMergeValidator = v.object({
 });
 
 export type FieldMerge = Infer<typeof fieldMergeValidator>;
+
+/// The field that names a row's place (its sortIndex) rather than its
+/// payload.
+export const PLACE_FIELD = "@sortIndex";
+
+/// The payload fields [merge] names: all but the place.
+function payloadFields(merge: FieldMerge): string[] {
+  return merge.fields.filter((field) => field !== PLACE_FIELD);
+}
 
 /// The most fields one op may name. A lineup group edit names each item it
 /// adds, changes or removes, so this is generous.
@@ -99,9 +111,10 @@ export function mergeElementPayload(
   ) {
     return { status: "whole" };
   }
+  const fields = payloadFields(merge);
   for (const key of ELEMENT_IDENTITY_KEYS) {
     if (
-      merge.fields.includes(key) ||
+      fields.includes(key) ||
       !same(
         has(current.data, key),
         current.data[key],
@@ -112,7 +125,7 @@ export function mergeElementPayload(
       return { status: "whole" };
     }
   }
-  if (merge.fields.some(unsafeKey)) return { status: "whole" };
+  if (fields.some(unsafeKey)) return { status: "whole" };
 
   const read = (record: Record<string, unknown>, field: string) => ({
     present: has(record, field),
@@ -127,7 +140,7 @@ export function mergeElementPayload(
   }
 
   const data: Record<string, unknown> = { ...current.data };
-  for (const field of merge.fields) {
+  for (const field of fields) {
     if (has(desired.data, field)) {
       data[field] = desired.data[field];
     } else {
@@ -198,7 +211,7 @@ export function mergeLineupPayload(
   ) {
     return { status: "whole" };
   }
-  const named = merge.fields.map(lineupField);
+  const named = payloadFields(merge).map(lineupField);
   if (named.some((entry) => entry === null)) return { status: "whole" };
   const items = named as Array<{ collection: LineupCollection; id: string }>;
 
@@ -262,6 +275,7 @@ function baseChanged(
 ): boolean {
   if (merge.base === undefined) return false;
   for (const entry of merge.base) {
+    if (entry.field === PLACE_FIELD) continue;
     if (!merge.fields.includes(entry.field)) continue;
     const now = current(entry.field);
     const wanted = desired(entry.field);

@@ -498,7 +498,7 @@ describe("element field merge", () => {
     });
   });
 
-  test("a sort index alone moves by last writer", async () => {
+  test("a place named by the merge moves by last writer", async () => {
     const { me, teammate } = await createHarness();
     await addAgent(me);
     await applyOne(
@@ -507,13 +507,63 @@ describe("element field merge", () => {
       mergePatch(agentData({ isAlly: false }), ["isAlly"], 1),
     );
     const result = await applyOne(me, "me", {
-      ...mergePatch(agentData(), [], 1),
+      ...mergePatch(agentData(), ["@sortIndex"], 1),
       sortIndex: 7,
     });
     expect(result.status).toBe("applied");
     const row = await element(me, "agent-1");
     expect(row.sortIndex).toBe(7);
     expect(row.payload.data.isAlly).toBe(false);
+  });
+
+  test("a place the merge does not name stays where a teammate put it", async () => {
+    const { me, teammate } = await createHarness();
+    await addAgent(me);
+    await applyOne(teammate, "teammate", {
+      ...mergePatch(agentData(), ["@sortIndex"], 1),
+      sortIndex: 5,
+    });
+    // My edit carries the place I last saw, without naming it.
+    const result = await applyOne(me, "me", {
+      ...mergePatch(agentData({ isAlly: false }), ["isAlly"], 1),
+      sortIndex: 0,
+    });
+    expect(result.status).toBe("applied");
+    const row = await element(me, "agent-1");
+    expect(row.sortIndex).toBe(5);
+    expect(row.payload.data.isAlly).toBe(false);
+  });
+
+  test("a merge naming another page than the row's is a revision-checked write", async () => {
+    const { me, teammate } = await createHarness();
+    await addAgent(me);
+    await me.mutation(makeFunctionReference<"mutation">("pages:add"), {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId,
+      expectedRevision: 0,
+      pagePublicId: "merge-page-2",
+      name: "Page 2",
+      sortIndex: 1,
+      isAttack: false,
+    });
+    // A teammate moves the agent to page 2.
+    await applyOne(teammate, "teammate", {
+      opId: nextOpId(),
+      type: "element.patch",
+      elementPublicId: "agent-1",
+      pagePublicId: "merge-page-2",
+      expectedElementRevision: 1,
+    });
+    // My edit still names page 1: merging it would move the agent back.
+    const result = await applyOne(
+      me,
+      "me",
+      mergePatch(agentData({ isAlly: false }), ["isAlly"], 1),
+    );
+    expect(result).toMatchObject({
+      status: "rejected",
+      reason: "revision_mismatch",
+    });
   });
 });
 

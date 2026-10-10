@@ -44,6 +44,7 @@ import {
   MAX_MERGE_FIELDS,
   mergeElementPayload,
   mergeLineupPayload,
+  PLACE_FIELD,
   type FieldMerge,
   type MergeOutcome,
 } from "./lib/fieldMerge";
@@ -1303,10 +1304,20 @@ async function applyElementOp(
   // revision is not checked; one that falls back to a whole write is.
   let checkRevision = true;
   if (op.kind === "patch") {
-    if (op.merge !== undefined) {
-      assertMergeShape(op.merge);
-      checkRevision = false;
-    }
+    const targetPage =
+      op.pagePublicId === undefined
+        ? null
+        : await requireTargetPage(ctx, strategy, op.pagePublicId);
+    // A merge is an edit in place. One naming another page than the row's
+    // (a teammate moved the element meanwhile) is written whole, so the
+    // move is not undone by an edit made before it.
+    const merge =
+      op.merge !== undefined &&
+      (targetPage === null || targetPage._id === existing.pageId)
+        ? op.merge
+        : undefined;
+    if (op.merge !== undefined) assertMergeShape(op.merge);
+    if (merge !== undefined) checkRevision = false;
     if (op.payload !== undefined) {
       let payload = assertElementPayload(op.payload);
       if (payload.kind !== existing.elementType) {
@@ -1315,12 +1326,8 @@ async function applyElementOp(
           "elementType_payloadKind_mismatch",
         );
       }
-      if (op.merge !== undefined) {
-        const outcome = mergeElementPayload(
-          existing.payload,
-          payload,
-          op.merge,
-        );
+      if (merge !== undefined) {
+        const outcome = mergeElementPayload(existing.payload, payload, merge);
         if (outcome.status === "conflict") {
           return rejected(
             "field_conflict",
@@ -1344,13 +1351,17 @@ async function applyElementOp(
         payload.payloadVersion,
       );
     }
-    if (op.sortIndex !== undefined) {
+    // A merged patch carries its place but moves there only when it names
+    // it (see PLACE_FIELD).
+    if (
+      op.sortIndex !== undefined &&
+      (checkRevision || merge?.fields.includes(PLACE_FIELD))
+    ) {
       setIfChanged(patch, "sortIndex", existing.sortIndex, op.sortIndex);
     }
-    if (op.pagePublicId !== undefined) {
-      const page = await requireTargetPage(ctx, strategy, op.pagePublicId);
-      setIfChanged(patch, "pageId", existing.pageId, page._id);
-      eventPageId = page._id;
+    if (targetPage !== null) {
+      setIfChanged(patch, "pageId", existing.pageId, targetPage._id);
+      eventPageId = targetPage._id;
     }
   } else if (op.kind === "reorder") {
     setIfChanged(
@@ -1551,7 +1562,11 @@ async function applyLineupOp(
         payload.payloadVersion,
       );
     }
-    if (op.sortIndex !== undefined) {
+    // As for elements: a merged patch moves only when it names its place.
+    if (
+      op.sortIndex !== undefined &&
+      (checkRevision || op.merge?.fields.includes(PLACE_FIELD))
+    ) {
       setIfChanged(patch, "sortIndex", existing.sortIndex, op.sortIndex);
     }
     if (op.pagePublicId !== undefined) {
