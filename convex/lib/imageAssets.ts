@@ -185,18 +185,58 @@ export async function getActiveAssetForStrategy(
     return strategyAsset;
   }
 
-  const legacyCandidates = await ctx.db
-    .query("imageAssets")
-    .withIndex("by_publicId", (q) => q.eq("publicId", assetPublicId))
-    .order("desc")
-    .take(20);
-  return (
-    legacyCandidates.find(
-      (asset) =>
-        (asset.strategyId === undefined || asset.strategyId === strategyId) &&
-        isVisibleAsset(asset),
-    ) ?? null
-  );
+  // Rows from before upload statuses, this strategy's then those of no
+  // strategy. Each is read on its own: copies into other strategies keep
+  // their pictures' ids, so a read of every strategy's rows could fill its
+  // limit with theirs.
+  for (const owner of [strategyId, undefined]) {
+    const legacyCandidates = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_strategyId_and_publicId", (q) =>
+        q.eq("strategyId", owner).eq("publicId", assetPublicId),
+      )
+      .order("desc")
+      .take(20);
+    const visible = legacyCandidates.find(isVisibleAsset);
+    if (visible !== undefined) return visible;
+  }
+  return null;
+}
+
+/// The picture image [itemPublicId] of the strategy shows, when the image
+/// shows another's (see collectAssetIdFromElementPayload): builds from
+/// before pictures had their own id ask for a picture by the image's id.
+export async function pictureShownByImage(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  itemPublicId: string,
+): Promise<string | null> {
+  const element = await ctx.db
+    .query("elements")
+    .withIndex("by_publicId", (q) => q.eq("publicId", itemPublicId))
+    .first();
+  if (
+    element === null ||
+    element.deleted ||
+    element.strategyId !== strategyId ||
+    element.elementType !== "image"
+  ) {
+    return null;
+  }
+  const pictureId = collectAssetIdFromElementPayload(element.payload);
+  return pictureId === itemPublicId ? null : pictureId;
+}
+
+/// [payload] as builds from before pictures had their own id hold it: they
+/// keep no `assetId`, so one sent to them reads as a change they made.
+/// They find the picture by the image's own id (withPictureAliases), and a
+/// write of theirs keeps the stored picture (keepPictureId).
+export function withoutPictureId(
+  payload: Doc<"elements">["payload"],
+): Doc<"elements">["payload"] {
+  if (!("assetId" in payload.data)) return payload;
+  const { assetId: _assetId, ...data } = payload.data;
+  return { ...payload, data };
 }
 
 /// A row recording that a strategy's content shows an image whose upload has
