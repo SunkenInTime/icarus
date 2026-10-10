@@ -1277,8 +1277,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     try {
       await box.put(updated.id, updated);
     } catch (error) {
-      log('Could not put lineups on page $pageId: $error');
-      return LineUpPageResult.notSaved;
+      log('Writing lineups to page $pageId failed: $error');
+      // Hive can store a write and then fail tidying its file, so what the
+      // box holds decides whether the lineups are there.
+      final copied = {for (final link in lineUps.links) link.id};
+      final stored = box.get(strategyId)?.pages.where((p) => p.id == pageId);
+      final landed = stored != null &&
+          stored.any((page) =>
+              page.lineUpLinks.any((link) => copied.contains(link.id)));
+      if (!landed) return LineUpPageResult.notSaved;
     }
     return LineUpPageResult.done;
   }
