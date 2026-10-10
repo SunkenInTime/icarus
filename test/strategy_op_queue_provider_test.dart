@@ -7,6 +7,7 @@ import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -3590,6 +3591,214 @@ void main() {
       expect(container.read(strategyOpQueueProvider).pending, isEmpty);
     });
   });
+
+  group('field merge sending', () {
+    const key = EntitySyncKey.element('page-1', 'element-1');
+    const merge = FieldMerge(fields: ['isAlly'], base: {'isAlly': true});
+
+    ElementPatchOp patch(String opId, {bool isAlly = false}) => ElementPatchOp(
+          opId: opId,
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {
+            'kind': 'agent',
+            'payloadVersion': 1,
+            'data': {'id': 'element-1', 'isAlly': isAlly},
+          },
+          sortIndex: 0,
+          expectedElementRevision: 1,
+          merge: merge,
+        );
+
+    const delete = ElementDeleteOp(
+      opId: 'delete-1',
+      elementPublicId: 'element-2',
+      pagePublicId: 'page-1',
+      expectedElementRevision: 1,
+    );
+
+    /// A queue sending to [repository], connected while [online] holds.
+    (ProviderContainer, StrategyOpQueueNotifier) open(
+      DurableStrategyOutboxStore store,
+      ConvexStrategyRepository repository,
+      StateProvider<bool> online,
+    ) {
+      final container = ProviderContainer(overrides: [
+        durableStrategyOutboxStoreProvider.overrideWithValue(store),
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        authProvider.overrideWith(_CloudReadyAuthProvider.new),
+        convexConnectionSnapshotProvider
+            .overrideWith((ref) => ref.watch(online)),
+      ]);
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      return (container, notifier);
+    }
+
+    test('work made and sent while connected wins as the last write', () async {
+      final online = StateProvider<bool>((ref) => true);
+      final repository = _ScriptedRepository();
+      final (_, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(delete, flushImmediately: false);
+      await notifier.flushNow();
+
+      final sent = repository.calls.expand((batch) => batch).toList();
+      expect(sent.whereType<ElementPatchOp>().single.merge?.base, isNull);
+      expect(sent.whereType<ElementDeleteOp>().single.lastWriterWins, isTrue);
+    });
+
+    test('work queued while disconnected carries its base', () async {
+      final online = StateProvider<bool>((ref) => false);
+      final repository = _ScriptedRepository();
+      final (container, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(delete, flushImmediately: false);
+      container.read(online.notifier).state = true;
+      await notifier.flushNow();
+
+      final sent = repository.calls.expand((batch) => batch).toList();
+      expect(sent.whereType<ElementPatchOp>().single.merge?.base,
+          {'isAlly': true});
+      expect(sent.whereType<ElementDeleteOp>().single.lastWriterWins, isFalse);
+    });
+
+    test('a disconnect before sending turns live work into checked work',
+        () async {
+      final online = StateProvider<bool>((ref) => true);
+      final repository = _ScriptedRepository();
+      final (container, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      container.read(online.notifier).state = false;
+      await Future<void>.delayed(Duration.zero);
+      container.read(online.notifier).state = true;
+      await notifier.flushNow();
+
+      expect(
+        repository.calls.single.single.merge?.base,
+        {'isAlly': true},
+      );
+    });
+
+    test('an edit folded into work that waited offline stays checked',
+        () async {
+      final online = StateProvider<bool>((ref) => false);
+      final repository = _ScriptedRepository();
+      final (container, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      container.read(online.notifier).state = true;
+      await notifier.enqueue(patch('op-2', isAlly: true),
+          flushImmediately: false);
+      await notifier.flushNow();
+
+      expect(repository.calls.single.single.merge?.base, isNotNull);
+    });
+
+    test('work recovered after a restart carries its base', () async {
+      final online = StateProvider<bool>((ref) => true);
+      final store = MemoryDurableStrategyOutboxStore();
+      final (first, firstQueue) = open(store, _ScriptedRepository(), online);
+      await firstQueue.enqueue(patch('op-1'), flushImmediately: false);
+      first.dispose();
+
+      final repository = _ScriptedRepository();
+      final (_, notifier) = open(store, repository, online);
+      await notifier.flushNow();
+      // The restored queue drains in the background.
+      for (var i = 0; i < 20 && repository.calls.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(
+        repository.calls.single.single.merge?.base,
+        {'isAlly': true},
+      );
+    });
+
+    test('Keep mine after a field collision sends the merge without its base',
+        () async {
+      final online = StateProvider<bool>((ref) => false);
+      final repository =
+          _ScriptedRepository(refusals: [OpRejectionReason.fieldConflict]);
+      final (container, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      container.read(online.notifier).state = true;
+      await notifier.flushNow();
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+          contains(key));
+
+      await notifier.retryRejected(flushImmediately: false);
+      await notifier.flushNow();
+
+      final kept = repository.calls.last.single;
+      expect(kept.merge?.fields, ['isAlly']);
+      expect(kept.merge?.base, isNull);
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+          isEmpty);
+    });
+
+    test('Keep mine after a merge that could not stand sends the whole item',
+        () async {
+      final online = StateProvider<bool>((ref) => true);
+      final repository =
+          _ScriptedRepository(refusals: [OpRejectionReason.mergeInvalid]);
+      final (container, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.flushNow();
+
+      await notifier.retryRejected(flushImmediately: false);
+      await notifier.flushNow();
+
+      final kept = repository.calls.last.single as ElementPatchOp;
+      expect(kept.merge, isNull);
+      expect(kept.expectedElementRevision, 5);
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+          isEmpty);
+    });
+
+    test("a successor's base becomes what its predecessor wrote", () async {
+      final online = StateProvider<bool>((ref) => false);
+      final store = MemoryDurableStrategyOutboxStore();
+      final gate = Completer<void>();
+      final repository = _ScriptedRepository(hold: gate);
+      final (container, notifier) = open(store, repository, online);
+      // Queued offline, so both stay checked.
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      container.read(online.notifier).state = true;
+      final sending = notifier.flushNow();
+      await repository.started.future;
+      // A later edit sets the field back, and waits behind the first.
+      await notifier.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: patch('op-2', isAlly: true).payload,
+          sortIndex: 0,
+          expectedElementRevision: 1,
+          merge: merge,
+        ),
+        flushImmediately: false,
+      );
+      gate.complete();
+      await sending;
+
+      final promoted = store.load().records.single.pending.op;
+      expect(promoted.merge?.base, {'isAlly': false});
+      expect(promoted.expectedRevision, 2);
+    });
+  });
 }
 
 /// Lets sends already started, and the writes after them, finish.
@@ -4098,5 +4307,45 @@ class _BlockingReplacementStore extends MemoryDurableStrategyOutboxStore {
       await allowReplacement.future;
     }
     await super.put(record);
+  }
+}
+
+/// Records each batch it is sent, holds the first one while [hold] is
+/// unfinished, and refuses its first ops with [refusals] in turn (each at
+/// revision 5), accepting the rest at revision 2.
+class _ScriptedRepository extends ConvexStrategyRepository {
+  _ScriptedRepository({List<OpRejectionReason> refusals = const [], this.hold})
+      : _refusals = [...refusals],
+        super(IcarusConvexApi(_UnusedTransport()));
+
+  final List<OpRejectionReason> _refusals;
+  Completer<void>? hold;
+  final List<List<StrategyOp>> calls = [];
+  final started = Completer<void>();
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+    String? accountSubject,
+  }) async {
+    calls.add(List<StrategyOp>.from(ops));
+    if (!started.isCompleted) started.complete();
+    if (hold case final gate?) {
+      hold = null;
+      await gate.future;
+    }
+    return [
+      for (final op in ops)
+        if (_refusals.isNotEmpty)
+          RejectedOpAck(
+            opId: op.opId,
+            rejectionReason: _refusals.removeAt(0),
+            current: ElementCurrentSnapshot(revision: 5, value: const {}),
+          )
+        else
+          AppliedOpAck(opId: op.opId, revision: 2),
+    ];
   }
 }
