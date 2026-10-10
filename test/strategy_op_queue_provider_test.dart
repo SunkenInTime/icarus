@@ -157,6 +157,7 @@ void main() {
           },
           sortIndex: 1,
           expectedStrategyRevision: 4,
+          copyContentFromPagePublicId: 'page-1',
         ),
         flushImmediately: false,
       );
@@ -171,6 +172,10 @@ void main() {
       expect(intent.value.pending.op.opId, 'add-page');
       expect(intent.value.pending.op.kind, StrategyOpKind.add);
       expect(intent.value.pending.op.expectedRevision, 4);
+      expect(
+        (intent.value.pending.op as PageAddOp).copyContentFromPagePublicId,
+        'page-1',
+      );
     });
 
     test('restart while in flight replays the same event key', () async {

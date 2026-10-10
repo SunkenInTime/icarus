@@ -323,13 +323,15 @@ sealed class StrategyOp {
             'payload': payload,
             'expectedStrategyRevision': expectedRevision,
           },
-        PageAddOp() => {
+        PageAddOp(:final copyContentFromPagePublicId) => {
             'opId': opId,
             'type': type.wireName,
             'pagePublicId': pagePublicId,
             'payload': payload,
             'sortIndex': sortIndex,
             'expectedStrategyRevision': expectedRevision,
+            if (copyContentFromPagePublicId != null)
+              'copyContentFromPagePublicId': copyContentFromPagePublicId,
           },
         PagePatchOp() => {
             'opId': opId,
@@ -448,6 +450,8 @@ sealed class StrategyOp {
           sortIndex: _requiredInt(json['sortIndex']),
           expectedStrategyRevision:
               _requiredInt(json['expectedStrategyRevision']),
+          copyContentFromPagePublicId:
+              json['copyContentFromPagePublicId'] as String?,
         ),
       StrategyOpType.pagePatch => PagePatchOp(
           opId: opId,
@@ -633,6 +637,7 @@ sealed class StrategyOp {
           :final payload,
           :final sortIndex,
           :final expectedStrategyRevision,
+          :final copyContentFromPagePublicId,
         ) =>
           PageAddOp(
             opId: value,
@@ -640,6 +645,7 @@ sealed class StrategyOp {
             payload: payload,
             sortIndex: sortIndex,
             expectedStrategyRevision: expectedStrategyRevision,
+            copyContentFromPagePublicId: copyContentFromPagePublicId,
           ),
         PagePatchOp(
           :final pagePublicId,
@@ -821,6 +827,7 @@ final class PageAddOp extends StrategyOp {
     required this.payload,
     required this.sortIndex,
     required this.expectedStrategyRevision,
+    this.copyContentFromPagePublicId,
   });
   @override
   final String opId;
@@ -831,6 +838,10 @@ final class PageAddOp extends StrategyOp {
   @override
   final int sortIndex;
   final int expectedStrategyRevision;
+
+  /// The page whose items and lineups the server copies onto this one as
+  /// it adds it ("+"), under copy ids (see page_copy_id.dart).
+  final String? copyContentFromPagePublicId;
   @override
   StrategyOpType get type => StrategyOpType.pageAdd;
 }

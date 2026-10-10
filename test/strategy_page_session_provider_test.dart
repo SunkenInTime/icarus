@@ -1527,7 +1527,91 @@ void main() {
       intent.key,
       EntitySyncKey.pageDescriptor(pending.op.entityPublicId!),
     );
+    // The server copies the page on screen onto it.
+    expect((pending.op as PageAddOp).copyContentFromPagePublicId, 'page-1');
     expect(queue.flushNowCount, 1);
+  });
+
+  test(
+      '"+" on a cloud strategy turns to the copy the server made, and counts '
+      'the images it left out', () async {
+    RemoteElement image(String pageId, String id) => RemoteElement(
+          publicId: id,
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: pageId,
+          elementType: 'image',
+          payload: cloudElementPayload(kind: 'image', data: {
+            ...cloudImagePayloadFromPlacedImage(PlacedImage(
+              id: id,
+              position: const Offset(10, 20),
+              aspectRatio: 1,
+              scale: ImageScalePolicy.defaultWidth,
+              fileExtension: '.png',
+            )),
+            'elementType': 'image',
+          }),
+          sortIndex: 0,
+          revision: 1,
+          deleted: false,
+        );
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, elements: [
+        image('page-1', 'uploaded'),
+        image('page-1', 'uploading'),
+      ]),
+      shellRevision: 8,
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    await _settle();
+    expect(container.read(placedImageProvider).images, hasLength(2));
+    PageAddOp? sent;
+    queue.onFlush = () async {
+      final add = queue.state.queuedByEntityKey.values
+          .map((intent) => intent.pending.op)
+          .whereType<PageAddOp>()
+          .firstOrNull;
+      if (add == null) return queue.ackQueued();
+      sent = add;
+      // The server adds the page with a copy of page 1, leaving out the
+      // image whose upload has not finished.
+      final added = _page(sent!.pagePublicId, 1);
+      remote.pageCatalog[added.publicId] = _pageSnapshot(added, elements: [
+        image(
+          added.publicId,
+          'uploaded~cp1~0f8fad5b-d9cb-469f-a165-70867728950e',
+        ),
+      ]);
+      remote.initialSnapshot = _editorSnapshot(
+        pages: [page, added],
+        activePage: remote.initialSnapshot.activePage!,
+        shellRevision: 9,
+      );
+      queue.ackQueued();
+    };
+
+    final leftOut = await container.read(strategyProvider.notifier).addPage();
+
+    expect(sent!.copyContentFromPagePublicId, 'page-1');
+    expect(
+      container.read(strategyPageSessionProvider).activePageId,
+      sent!.pagePublicId,
+    );
+    expect(
+      container.read(placedImageProvider).images.map((image) => image.id),
+      ['uploaded~cp1~0f8fad5b-d9cb-469f-a165-70867728950e'],
+    );
+    expect(leftOut, 1);
+    await _settle();
   });
 
   test('cloud page rename is persisted with the page revision', () async {

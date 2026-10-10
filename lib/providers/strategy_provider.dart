@@ -1513,11 +1513,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     return null;
   }
 
-  Future<void> addPage([String? name]) async {
-    if (!_currentStrategyCanEditPages()) return;
+  /// Adds a copy of the page on screen after it, and turns to it. Returns
+  /// how many of the page's images the copy left out: in the cloud, an
+  /// image whose upload has not finished is not copied (see
+  /// convex/lib/contentCopy.ts).
+  Future<int> addPage([String? name]) async {
+    if (!_currentStrategyCanEditPages()) return 0;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null) return;
+      if (snapshot == null) return 0;
       final pages = [...snapshot.pages]
         ..sortBySortIndex((item) => item.sortIndex);
       final pageID = const Uuid().v4();
@@ -1528,6 +1532,15 @@ class StrategyProvider extends Notifier<StrategyState> {
       final sourceIndex = activeIndex >= 0 ? activeIndex : pages.length - 1;
       final nextIndex = sourceIndex + 1;
       final isAutoNamed = name == null;
+      // Edits made just before "+" go ahead of the add, so the server's
+      // copy has them.
+      await ref.read(strategyPageSessionProvider.notifier).flushCurrentPage();
+      final imagesOnScreen = activeIndex < 0
+          ? const <String>{}
+          : {
+              for (final image in ref.read(placedImageProvider).images)
+                pageCopyRoot(image.id),
+            };
       final ack = await _enqueueCloudPageDescriptorOp(PageAddOp(
         opId: const Uuid().v4(),
         pagePublicId: pageID,
@@ -1539,17 +1552,25 @@ class StrategyProvider extends Notifier<StrategyState> {
         },
         sortIndex: nextIndex,
         expectedStrategyRevision: snapshot.header.revision,
+        copyContentFromPagePublicId:
+            pages.isEmpty ? null : pages[sourceIndex].publicId,
       ));
-      if (ack?.isAck ?? false) {
-        await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-        await ref
-            .read(strategyPageSessionProvider.notifier)
-            .setActivePageAnimated(
-              pageID,
-              direction: PageTransitionDirection.forward,
-            );
+      if (!(ack?.isAck ?? false)) return 0;
+      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+      await ref
+          .read(strategyPageSessionProvider.notifier)
+          .setActivePageAnimated(
+            pageID,
+            direction: PageTransitionDirection.forward,
+          );
+      if (ref.read(strategyPageSessionProvider).activePageId != pageID) {
+        return 0;
       }
-      return;
+      final imagesCopied = {
+        for (final image in ref.read(placedImageProvider).images)
+          pageCopyRoot(image.id),
+      };
+      return imagesOnScreen.difference(imagesCopied).length;
     }
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -1558,9 +1579,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     await _syncCurrentPageToHive();
 
     final strategyId = state.strategyId;
-    if (strategyId == null) return;
+    if (strategyId == null) return 0;
     final strat = box.get(strategyId);
-    if (strat == null || strat.pages.isEmpty) return;
+    if (strat == null || strat.pages.isEmpty) return 0;
 
     final orderedPages = [...strat.pages]
       ..sortBySortIndex((item) => item.sortIndex);
@@ -1590,6 +1611,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
 
     await setActivePageAnimated(newPage.id);
+    return 0;
   }
 
   Future<void> renamePage(String pageId, String newName) async {
