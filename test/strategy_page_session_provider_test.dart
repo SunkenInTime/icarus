@@ -10919,6 +10919,27 @@ void main() {
       await _settle();
     });
 
+    test('a move goes through when the lineups only came back in a new order',
+        () async {
+      final (container, _, reader) = await open();
+      final read = reader.gate = Completer<void>();
+
+      final moved = send(container, move: true);
+      // While page 3 is read, the page is drawn again from the same rows,
+      // in another order.
+      final now = container.read(lineUpProvider);
+      container.read(lineUpProvider.notifier).mergeRemote(LineUpGraph(
+            origins: now.origins.reversed.toList(),
+            landings: now.landings.reversed.toList(),
+            links: now.links.reversed.toList(),
+          ));
+      read.complete();
+
+      expect(await moved, LineUpPageResult.done);
+      expect(linksHere(container), {'link-solo'});
+      await _settle();
+    });
+
     test('a move leaves the lineups here if a spot of theirs moved meanwhile',
         () async {
       final (container, _, reader) = await open();

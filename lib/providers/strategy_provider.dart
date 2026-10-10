@@ -1186,7 +1186,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strategyId = state.strategyId;
     final sourcePageId = ref.read(strategyPageSessionProvider).activePageId;
     final graph = ref.read(lineUpProvider).graph;
-    final asked = jsonEncode(graph.linksWithSpots(linkIds).toJson());
+    final asked = _lineUpsAsSent(graph, linkIds);
     final copy = graph.copyOfLinks(linkIds);
     if (strategyId == null ||
         sourcePageId == null ||
@@ -1217,14 +1217,28 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     // Only what was sent leaves: if the lineups or their spots changed
     // meanwhile (a teammate's edit), the changed ones stay here.
-    final now = ref.read(lineUpProvider).graph.linksWithSpots(linkIds);
     if (state.strategyId != strategyId ||
         ref.read(strategyPageSessionProvider).activePageId != sourcePageId ||
-        jsonEncode(now.toJson()) != asked) {
+        _lineUpsAsSent(ref.read(lineUpProvider).graph, linkIds) != asked) {
       return LineUpPageResult.copiedInstead;
     }
     ref.read(lineUpProvider.notifier).deleteLinks(linkIds);
     return LineUpPageResult.done;
+  }
+
+  /// The lineups [linkIds] in [graph] and their spots, in an order that
+  /// does not depend on the graph's, to tell whether they changed.
+  static String _lineUpsAsSent(LineUpGraph graph, Set<String> linkIds) {
+    final part = graph.linksWithSpots(linkIds);
+    int byId(Map<String, dynamic> a, Map<String, dynamic> b) =>
+        (a['id'] as String).compareTo(b['id'] as String);
+    List<Map<String, dynamic>> sorted(Iterable<Map<String, dynamic>> json) =>
+        json.toList()..sort(byId);
+    return jsonEncode({
+      'origins': sorted(part.origins.map((origin) => origin.toJson())),
+      'landings': sorted(part.landings.map((landing) => landing.toJson())),
+      'links': sorted(part.links.map((link) => link.toJson())),
+    });
   }
 
   Future<LineUpPageResult> _addLineUpsToLocalPage({
@@ -1232,7 +1246,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String pageId,
     required LineUpGraph lineUps,
   }) async {
-    await _syncCurrentPageToHive();
+    try {
+      await _syncCurrentPageToHive();
+    } catch (error) {
+      log('Could not save page before putting lineups on $pageId: $error');
+      return LineUpPageResult.notSaved;
+    }
     if (state.strategyId != strategyId) return LineUpPageResult.unavailable;
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strat = box.get(strategyId);
@@ -1255,7 +1274,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       ],
       lastEdited: DateTime.now(),
     );
-    await box.put(updated.id, updated);
+    try {
+      await box.put(updated.id, updated);
+    } catch (error) {
+      log('Could not put lineups on page $pageId: $error');
+      return LineUpPageResult.notSaved;
+    }
     return LineUpPageResult.done;
   }
 
