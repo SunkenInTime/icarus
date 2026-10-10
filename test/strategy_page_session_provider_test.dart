@@ -6800,12 +6800,13 @@ void main() {
       // The copy is sent, and its answer held back.
       final hold = repository.hold = Completer<void>();
       expect(
-        await container.read(strategyProvider.notifier).sendLineUpsToPage(
+        await container
+            .read(strategyProvider.notifier)
+            .copyLineUpsToAdjacentPage(
           linkIds: {'link-a'},
-          pageId: target.publicId,
-          move: false,
+          direction: PageTransitionDirection.forward,
         ),
-        LineUpPageResult.done,
+        PageCopyResult.copied,
       );
       await _until(() => batches.isNotEmpty);
       final groupId = (batches.single.single as LineupAddOp).lineupPublicId;
@@ -10737,7 +10738,7 @@ void main() {
     });
   });
 
-  group('moving and copying lineups to another cloud page', () {
+  group('copying lineups to the next or previous cloud page', () {
     final pages = [_page('page-1', 0), _page('page-2', 1), _page('page-3', 2)];
 
     // On page 2, lineups a and b meet at one landing; solo is on its own.
@@ -10754,10 +10755,10 @@ void main() {
       ],
     );
 
-    /// Opens the strategy on page 2; the repository reads page 3 with a
-    /// lineup group of its own at sortIndex 6.
-    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier, _PageReader)>
-        open() async {
+    /// Opens the strategy on page 2; the repository reads page 3 with
+    /// [nextPage] on it.
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier, _PageReader)> open(
+        {List<RemoteLineup>? nextPage}) async {
       final onScreen = _pageSnapshot(
         pages[1],
         lineups: [shared, _lineup('page-2', 'solo', sortIndex: 1)],
@@ -10766,7 +10767,7 @@ void main() {
       final reader = _PageReader({
         'page-3': _pageSnapshot(
           pages[2],
-          lineups: [_lineup('page-3', 'there', sortIndex: 6)],
+          lineups: nextPage ?? [_lineup('page-3', 'there', sortIndex: 6)],
         ),
       });
       final container = await _cloudContainer(
@@ -10798,31 +10799,28 @@ void main() {
     Set<String> linksHere(ProviderContainer container) =>
         {for (final link in container.read(lineUpProvider).links) link.id};
 
-    Future<LineUpPageResult> send(
-      ProviderContainer container, {
-      required bool move,
-    }) =>
-        container.read(strategyProvider.notifier).sendLineUpsToPage(
+    Future<PageCopyResult> copyBolts(ProviderContainer container) =>
+        container.read(strategyProvider.notifier).copyLineUpsToAdjacentPage(
           linkIds: {'link-a', 'link-b'},
-          pageId: 'page-3',
-          move: move,
+          direction: PageTransitionDirection.forward,
         );
 
-    test('offers every other page', () async {
+    test('offers both neighbours', () async {
       final (container, _, _) = await open();
       expect(
-        container.read(strategyProvider.notifier).lineUpPageTargets(),
-        [
-          (id: 'page-1', name: 'Page 1', offset: -1),
-          (id: 'page-3', name: 'Page 3', offset: 1),
-        ],
+        container
+            .read(strategyProvider.notifier)
+            .copyDirectionsForLineUps({'link-a', 'link-b'}),
+        [PageTransitionDirection.forward, PageTransitionDirection.backward],
       );
     });
 
-    test('a copy is sent as a new group after the page\'s own', () async {
+    test(
+        'a copy is sent as one group after the page\'s own, with ids that '
+        'carry the originals\'', () async {
       final (container, queue, _) = await open();
 
-      expect(await send(container, move: false), LineUpPageResult.done);
+      expect(await copyBolts(container), PageCopyResult.copied);
 
       final add = adds(container).single;
       expect(add.sortIndex, 7);
@@ -10830,185 +10828,112 @@ void main() {
       expect(data['id'], add.lineupPublicId);
       final links = _entries(data, 'links');
       expect(links.map((link) => link['name']), ['Bolt A', 'Bolt B']);
-      expect(_entries(data, 'origins'), hasLength(2));
-      expect(_entries(data, 'landings'), hasLength(1));
-      expect(links.map((link) => link['landingId']).toSet(), hasLength(1));
-      final ids = {
-        add.lineupPublicId,
-        for (final field in ['origins', 'landings', 'links'])
-          for (final entry in _entries(data, field)) entry['id'],
-      };
       expect(
-        ids.intersection({
-          'link-a',
-          'link-b',
-          'stand-a',
-          'stand-b',
-          'land-ab',
-          'link-there'
-        }),
-        isEmpty,
+        links.map((link) => pageCopyRoot(link['id'] as String)),
+        ['link-a', 'link-b'],
       );
+      expect(
+        _entries(data, 'origins').map((o) => pageCopyRoot(o['id'] as String)),
+        ['stand-a', 'stand-b'],
+      );
+      final landing = _entries(data, 'landings').single;
+      expect(pageCopyRoot(landing['id'] as String), 'land-ab');
+      expect(links.map((link) => link['landingId']).toSet(), {landing['id']});
+      expect(add.lineupPublicId, isNot('link-a'));
       expect(queue.flushNowCount, greaterThan(0));
       expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
     });
 
-    test('a move takes the lineups off this page once they are sent', () async {
-      final (container, _, _) = await open();
+    test('a page that already has a copy of the lineups gets no other',
+        () async {
+      final copyId = 'link-b~cp1~${const Uuid().v4()}';
+      final (container, _, _) = await open(nextPage: [
+        _groupRow(
+          'page-3',
+          copyId,
+          origins: [_originJson('stand-copy')],
+          landings: [_landingJson('land-copy')],
+          links: [
+            _linkJson(copyId, originId: 'stand-copy', landingId: 'land-copy'),
+          ],
+        ),
+      ]);
 
-      expect(await send(container, move: true), LineUpPageResult.done);
-
-      expect(adds(container), hasLength(1));
-      expect(linksHere(container), {'link-solo'});
-      await _settle();
+      expect(await copyBolts(container), PageCopyResult.alreadyThere);
+      expect(adds(container), isEmpty);
     });
 
-    test('a page that cannot be read gets nothing, and the lineups stay',
-        () async {
+    test('copying twice at once sends one copy', () async {
+      final (container, queue, _) = await open();
+
+      // The first copy's write to the outbox takes a while.
+      final write = queue.writeGate = Completer<void>();
+      final copies = Future.wait([copyBolts(container), copyBolts(container)]);
+      await _settle();
+      queue.writeGate = null;
+      write.complete();
+
+      expect(
+          await copies, [PageCopyResult.copied, PageCopyResult.alreadyThere]);
+      expect(adds(container), hasLength(1));
+    });
+
+    test('a page that cannot be read gets nothing', () async {
       final (container, _, reader) = await open();
       reader.fails = true;
 
-      expect(await send(container, move: true), LineUpPageResult.unreachable);
+      expect(await copyBolts(container), PageCopyResult.unreachable);
       expect(adds(container), isEmpty);
-      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
     });
 
-    test('lineups this device cannot store to send stay here', () async {
+    test('a copy this device cannot store is not reported as copied', () async {
       final (container, queue, _) = await open();
       queue.offCanvasStoreFails = true;
 
-      expect(await send(container, move: true), LineUpPageResult.notSaved);
-      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
+      expect(await copyBolts(container), PageCopyResult.notSaved);
       expect(container.read(strategySaveStateProvider).hasPendingCloudSync,
           isFalse);
     });
 
-    test(
-        'the lineups are sent as they were when the user asked, and stay '
-        'here if they changed meanwhile', () async {
-      final (container, _, reader) = await open();
-      final read = reader.gate = Completer<void>();
-
-      final moved = send(container, move: true);
-      // While page 3 is read, a teammate's edit renames Bolt A.
-      final lineUps = container.read(lineUpProvider.notifier);
-      lineUps.mergeRemote(LineUpGraph(
-        origins: container.read(lineUpProvider).origins,
-        landings: container.read(lineUpProvider).landings,
-        links: [
-          for (final link in container.read(lineUpProvider).links)
-            link.id == 'link-a' ? link.copyWith(name: 'Renamed') : link,
-        ],
-      ));
-      read.complete();
-
-      // The copy is what the user asked to move; the renamed lineup stays.
-      expect(await moved, LineUpPageResult.copiedInstead);
-      expect(
-        _entries(cloudPayloadData(adds(container).single.payload), 'links')
-            .map((link) => link['name']),
-        ['Bolt A', 'Bolt B'],
-      );
-      expect(
-        {
-          for (final link in container.read(lineUpProvider).links)
-            link.id: link.name,
-        },
-        {'link-a': 'Renamed', 'link-b': 'Bolt B', 'link-solo': ''},
-      );
-      await _settle();
-    });
-
-    test('lineups that share no spot are not sent, so none goes half-way',
+    test('lineups that share no spot are not copied, so none goes half-way',
         () async {
       final (container, _, _) = await open();
 
       expect(
-        await container.read(strategyProvider.notifier).sendLineUpsToPage(
+        await container
+            .read(strategyProvider.notifier)
+            .copyLineUpsToAdjacentPage(
           linkIds: {'link-a', 'link-solo'},
-          pageId: 'page-3',
-          move: true,
+          direction: PageTransitionDirection.forward,
         ),
-        LineUpPageResult.unavailable,
+        PageCopyResult.unavailable,
       );
       expect(adds(container), isEmpty);
-      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
     });
 
-    test('a move goes through when the lineups only came back in a new order',
-        () async {
+    test('the lineups are copied as they were when the user asked', () async {
       final (container, _, reader) = await open();
       final read = reader.gate = Completer<void>();
 
-      final moved = send(container, move: true);
-      // While page 3 is read, the page is drawn again from the same rows,
-      // in another order.
-      final now = container.read(lineUpProvider);
-      container.read(lineUpProvider.notifier).mergeRemote(LineUpGraph(
-            origins: now.origins.reversed.toList(),
-            landings: now.landings.reversed.toList(),
-            links: now.links.reversed.toList(),
-          ));
-      read.complete();
-
-      expect(await moved, LineUpPageResult.done);
-      expect(linksHere(container), {'link-solo'});
-      await _settle();
-    });
-
-    test('a move leaves the lineups here if a spot of theirs moved meanwhile',
-        () async {
-      final (container, _, reader) = await open();
-      final read = reader.gate = Completer<void>();
-
-      final moved = send(container, move: true);
-      // While page 3 is read, a teammate moves the landing both aim at.
-      final now = container.read(lineUpProvider);
-      container.read(lineUpProvider.notifier).mergeRemote(LineUpGraph(
-            origins: now.origins,
-            landings: [
-              for (final landing in now.landings)
-                landing.id == 'land-ab'
-                    ? landing.copyWith(
-                        ability: landing.ability
-                            .copyWith(position: const Offset(500, 500)),
-                      )
-                    : landing,
-            ],
-            links: now.links,
-          ));
-      read.complete();
-
-      expect(await moved, LineUpPageResult.copiedInstead);
-      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
-      expect(
-        container.read(lineUpProvider).landingById('land-ab')!.ability.position,
-        const Offset(500, 500),
-      );
-      await _settle();
-    });
-
-    test('a move finishing after a lineup went from this page leaves the rest',
-        () async {
-      final (container, _, reader) = await open();
-      final read = reader.gate = Completer<void>();
-
-      final moved = send(container, move: true);
-      // While page 3 is read, a teammate deletes Bolt B.
+      final copied = copyBolts(container);
+      // While page 3 is read, a teammate's edit renames Bolt A.
       final now = container.read(lineUpProvider);
       container.read(lineUpProvider.notifier).mergeRemote(LineUpGraph(
             origins: now.origins,
             landings: now.landings,
             links: [
               for (final link in now.links)
-                if (link.id != 'link-b') link,
+                link.id == 'link-a' ? link.copyWith(name: 'Renamed') : link,
             ],
           ));
       read.complete();
 
-      expect(await moved, LineUpPageResult.copiedInstead);
-      expect(adds(container), hasLength(1));
-      expect(linksHere(container), {'link-a', 'link-solo'});
+      expect(await copied, PageCopyResult.copied);
+      expect(
+        _entries(cloudPayloadData(adds(container).single.payload), 'links')
+            .map((link) => link['name']),
+        ['Bolt A', 'Bolt B'],
+      );
       await _settle();
     });
   });

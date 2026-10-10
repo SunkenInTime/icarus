@@ -31,7 +31,6 @@ import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:icarus/widgets/draggable_widgets/lineup_page_menu.dart';
 
 /// Grayscale color matrix for dead agents
 const List<double> _identityColorMatrix = <double>[
@@ -256,10 +255,18 @@ class AgentWidget extends ConsumerWidget {
             ),
             isAttack: mapState.isAttack,
           );
-    final adjacentPageCopyItems =
-        canInteract && lineUpId == null && placedAgentNode != null
-            ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
-            : const <ShadContextMenuItem>[];
+    final adjacentPageCopyItems = !canInteract
+        ? const <ShadContextMenuItem>[]
+        : lineUpId != null
+            ? buildLineUpAdjacentPageCopyMenuItems(ref, {
+                for (final link in ref
+                    .read(lineUpProvider.notifier)
+                    .linksFromOrigin(lineUpId!))
+                  link.id,
+              })
+            : placedAgentNode != null
+                ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
+                : const <ShadContextMenuItem>[];
     final hasContextMenuItemsBelow = canInteract &&
         (lineUpId != null ||
             (plainAgent != null && plainAgent.id.isNotEmpty) ||
@@ -315,11 +322,6 @@ class AgentWidget extends ConsumerWidget {
                 .read(interactionStateProvider.notifier)
                 .editLineUpPlacement(links.first.id);
           },
-        ),
-      if (canInteract && lineUpId != null)
-        ...buildLineUpPageMenuItems(
-          ref,
-          ref.read(lineUpProvider.notifier).linksFromOrigin(lineUpId!),
         ),
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(

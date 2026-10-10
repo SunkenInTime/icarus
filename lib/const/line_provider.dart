@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -372,12 +373,12 @@ class LineUpGraph {
     );
   }
 
-  /// The lineups [linkIds] and the spots they aim at, under new ids, ready
-  /// to be put on another page. Spots they share stay shared in the copy.
+  /// The lineups [linkIds] and the spots they aim at, ready to be put on
+  /// another page, each under a new id that carries its original's (see
+  /// page_copy_id.dart). Spots they share stay shared in the copy.
   LineUpGraph copyOfLinks(Set<String> linkIds) {
-    const uuid = Uuid();
     final newIds = <String, String>{};
-    String renamed(String id) => newIds[id] ??= uuid.v4();
+    String renamed(String id) => newIds[id] ??= newPageCopyId(id);
     final part = linksWithSpots(linkIds);
     return LineUpGraph(
       origins: [
@@ -401,7 +402,7 @@ class LineUpGraph {
       links: [
         for (final link in part.links)
           link.deepCopy().copyWith(
-                id: uuid.v4(),
+                id: renamed(link.id),
                 originId: renamed(link.originId),
                 landingId: renamed(link.landingId),
               ),
@@ -1383,12 +1384,6 @@ class LineUpProvider extends Notifier<LineUpState> {
   void deleteLink(String linkId) {
     if (state.linkById(linkId) == null) return;
     _recordDeletion(linkId, {linkId});
-  }
-
-  /// Removes [linkIds] as one deletion, for lineups moved to another page.
-  void deleteLinks(Set<String> linkIds) {
-    if (linkIds.isEmpty) return;
-    _recordDeletion((linkIds.toList()..sort()).first, linkIds);
   }
 
   void deleteOrigin(String originId) {

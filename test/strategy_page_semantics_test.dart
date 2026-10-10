@@ -9,13 +9,13 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/migrations/page_name_provenance_migration.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -330,27 +330,27 @@ void main() {
     },
   );
 
-  group('moving and copying lineups to another page', () {
+  group('copying lineups to the next or previous page', () {
     // Sova stands at two spots. Two lineups from them meet at one landing;
     // a third goes from the first spot to another landing.
-    LineUpGraph sovaLineUps() {
+    LineUpGraph sovaLineUps({String prefix = ''}) {
       final ability = AgentData.agents[AgentType.sova]!.abilities.first;
       LineUpOrigin origin(String id, Offset at) => LineUpOrigin(
-            id: id,
+            id: '$prefix$id',
             agent: PlacedAgent(
-              id: 'agent-$id',
+              id: 'agent-$prefix$id',
               type: AgentType.sova,
               position: at,
-              lineUpID: id,
+              lineUpID: '$prefix$id',
             ),
           );
       LineUpLanding landing(String id, Offset at) => LineUpLanding(
-            id: id,
+            id: '$prefix$id',
             ability: PlacedAbility(
-              id: 'ability-$id',
+              id: 'ability-$prefix$id',
               data: ability,
               position: at,
-              lineUpID: id,
+              lineUpID: '$prefix$id',
             ),
           );
       return LineUpGraph(
@@ -364,23 +364,23 @@ void main() {
         ],
         links: [
           LineUpLink(
-            id: 'bolt-a',
-            originId: 'stand-1',
-            landingId: 'land-1',
+            id: '${prefix}bolt-a',
+            originId: '${prefix}stand-1',
+            landingId: '${prefix}land-1',
             name: 'Bolt A',
             notes: 'Jump throw',
             images: [SimpleImageData(id: 'shot-a', fileExtension: '.png')],
           ),
           LineUpLink(
-            id: 'bolt-b',
-            originId: 'stand-2',
-            landingId: 'land-1',
+            id: '${prefix}bolt-b',
+            originId: '${prefix}stand-2',
+            landingId: '${prefix}land-1',
             name: 'Bolt B',
           ),
           LineUpLink(
-            id: 'recon',
-            originId: 'stand-1',
-            landingId: 'land-2',
+            id: '${prefix}recon',
+            originId: '${prefix}stand-1',
+            landingId: '${prefix}land-2',
             name: 'Recon',
           ),
         ],
@@ -388,7 +388,7 @@ void main() {
     }
 
     Future<ProviderContainer> open({
-      LineUpGraph targetLineUps = LineUpGraph.empty,
+      LineUpGraph nextPageLineUps = LineUpGraph.empty,
     }) async {
       final pages = [
         _page(id: 'page-1', name: 'Page 1', sortIndex: 0),
@@ -398,12 +398,11 @@ void main() {
           sortIndex: 1,
           lineUps: sovaLineUps(),
         ),
-        _page(id: 'page-3', name: 'Page 3', sortIndex: 2),
         _page(
-          id: 'page-4',
-          name: 'Retake',
-          sortIndex: 3,
-          lineUps: targetLineUps,
+          id: 'page-3',
+          name: 'Page 3',
+          sortIndex: 2,
+          lineUps: nextPageLineUps,
         ),
       ];
       final strategy = _strategy(pages);
@@ -420,65 +419,50 @@ void main() {
         .singleWhere((page) => page.id == pageId)
         .lineUpGraph;
 
-    test('every other page is offered, in order', () async {
-      final container = await open();
-      expect(
-        container.read(strategyProvider.notifier).lineUpPageTargets(),
-        [
-          (id: 'page-1', name: 'Page 1', offset: -1),
-          (id: 'page-3', name: 'Page 3', offset: 1),
-          (id: 'page-4', name: 'Retake', offset: 2),
-        ],
-      );
-    });
+    Future<PageCopyResult> copyBolts(
+      ProviderContainer container,
+      PageTransitionDirection direction,
+    ) =>
+        container.read(strategyProvider.notifier).copyLineUpsToAdjacentPage(
+          linkIds: {'bolt-a', 'bolt-b'},
+          direction: direction,
+        );
 
     test(
-        'a move puts the lineups on the page under new ids and leaves a '
-        'spot another lineup here still uses', () async {
+        'lineups at a spot copy to the next page with ids that carry their '
+        'originals', () async {
       final container = await open();
-
       expect(
-        await container.read(strategyProvider.notifier).sendLineUpsToPage(
-          linkIds: {'bolt-a', 'bolt-b'},
-          pageId: 'page-4',
-          move: true,
-        ),
-        LineUpPageResult.done,
+        container
+            .read(strategyProvider.notifier)
+            .copyDirectionsForLineUps({'bolt-a', 'bolt-b'}),
+        [PageTransitionDirection.backward, PageTransitionDirection.forward],
       );
 
-      // This page keeps Recon and the spot it stands at.
-      final here = container.read(lineUpProvider);
-      expect(here.links.map((link) => link.id), ['recon']);
-      expect(here.origins.map((origin) => origin.id), ['stand-1']);
-      expect(here.landings.map((landing) => landing.id), ['land-2']);
+      expect(
+        await copyBolts(container, PageTransitionDirection.forward),
+        PageCopyResult.copied,
+      );
 
-      // The other page has both lineups, still meeting at one landing, with
+      // The next page has both lineups, still meeting at one landing, with
       // their names, notes and screenshots, where they were.
-      final there = savedLineUps('page-4');
+      final there = savedLineUps('page-3');
       expect(there.links.map((link) => link.name), ['Bolt A', 'Bolt B']);
-      expect(there.origins, hasLength(2));
-      expect(there.landings, hasLength(1));
-      final ids = {
-        for (final origin in there.origins) origin.id,
-        for (final landing in there.landings) landing.id,
-        for (final link in there.links) link.id,
-      };
-      expect(ids, hasLength(5));
       expect(
-        ids.intersection(
-          {'stand-1', 'stand-2', 'land-1', 'land-2', 'bolt-a', 'bolt-b'},
-        ),
-        isEmpty,
+        there.links.map((link) => pageCopyRoot(link.id)),
+        ['bolt-a', 'bolt-b'],
       );
+      expect(
+        there.origins.map((origin) => pageCopyRoot(origin.id)),
+        ['stand-1', 'stand-2'],
+      );
+      expect(pageCopyRoot(there.landings.single.id), 'land-1');
       expect(
         there.links.map((link) => link.landingId).toSet(),
         {there.landings.single.id},
       );
-      expect(
-        there.links.map((link) => link.originId).toSet(),
-        {for (final origin in there.origins) origin.id},
-      );
       for (final origin in there.origins) {
+        expect(origin.id, isNot(pageCopyRoot(origin.id)));
         expect(origin.agent.lineUpID, origin.id);
       }
       expect(there.landings.single.ability.lineUpID, there.landings.single.id);
@@ -493,43 +477,51 @@ void main() {
             .position,
         const Offset(10, 10),
       );
-    });
-
-    test('undo after a move brings the lineups back to this page', () async {
-      final container = await open();
-      await container.read(strategyProvider.notifier).sendLineUpsToPage(
-        linkIds: {'bolt-a', 'bolt-b'},
-        pageId: 'page-4',
-        move: true,
-      );
-
-      container.read(actionProvider.notifier).undoAction();
-
-      expect(
-        container.read(lineUpProvider).links.map((link) => link.id).toSet(),
-        {'bolt-a', 'bolt-b', 'recon'},
-      );
-    });
-
-    test('a copy leaves this page as it was and adds to what is there',
-        () async {
-      final container = await open(targetLineUps: sovaLineUps());
-
-      expect(
-        await container.read(strategyProvider.notifier).sendLineUpsToPage(
-          linkIds: {'recon'},
-          pageId: 'page-4',
-          move: false,
-        ),
-        LineUpPageResult.done,
-      );
-
+      // This page is left as it was.
       expect(container.read(lineUpProvider).links, hasLength(3));
-      final there = savedLineUps('page-4');
+    });
+
+    test(
+        'a page that already has the lineups, or copies of them, is not '
+        'offered and gets no others', () async {
+      final container = await open();
+      final notifier = container.read(strategyProvider.notifier);
+      await copyBolts(container, PageTransitionDirection.forward);
+
+      expect(notifier.copyDirectionsForLineUps({'bolt-a', 'bolt-b'}), [
+        PageTransitionDirection.backward,
+      ]);
+      expect(
+        await copyBolts(container, PageTransitionDirection.forward),
+        PageCopyResult.alreadyThere,
+      );
+      expect(savedLineUps('page-3').links, hasLength(2));
+      // Another lineup can still go.
+      expect(notifier.copyDirectionsForLineUps({'recon'}), [
+        PageTransitionDirection.backward,
+        PageTransitionDirection.forward,
+      ]);
+    });
+
+    test('a copy adds to the lineups already on the page', () async {
+      final container =
+          await open(nextPageLineUps: sovaLineUps(prefix: 'other-'));
+
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyLineUpsToAdjacentPage(
+          linkIds: {'recon'},
+          direction: PageTransitionDirection.forward,
+        ),
+        PageCopyResult.copied,
+      );
+
+      final there = savedLineUps('page-3');
       expect(there.links.map((link) => link.name),
           ['Bolt A', 'Bolt B', 'Recon', 'Recon']);
       final copy = there.links.last;
-      expect(copy.id, isNot('recon'));
+      expect(pageCopyRoot(copy.id), 'recon');
       expect(
         there.origins
             .singleWhere((origin) => origin.id == copy.originId)

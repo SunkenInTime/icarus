@@ -9,6 +9,10 @@ import 'package:uuid/uuid.dart';
 /// of the item first copied, and a copy of a copy keeps that root, so ids
 /// never nest. The transition pairs items by root when their ids differ.
 ///
+/// A copied lineup and its spots get these ids on local strategies too: a
+/// cloud lineup group needs an id no other group in the strategy has, and
+/// one rule for both keeps a copied lineup the same wherever it lives.
+///
 /// Storage, ops, edits, deletes and undo use the full id. The root is only
 /// read to pair items across pages and to see whether a page already has one.
 const _copyMark = '~cp1~';

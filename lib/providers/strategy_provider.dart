@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
@@ -75,32 +74,6 @@ enum PageCopyResult {
   notSaved,
 
   /// There was nothing to copy, or no page to copy it to.
-  unavailable,
-}
-
-/// A page lineups can be moved or copied to: every page but the one on
-/// screen, in page order. [offset] is its distance from the page on screen,
-/// so -1 is the previous page and 1 the next.
-typedef LineUpPageTarget = ({String id, String name, int offset});
-
-/// What became of moving or copying lineups to another page.
-enum LineUpPageResult {
-  /// The lineups are on the other page, and, for a move, gone from this one.
-  done,
-
-  /// A move put the lineups on the other page, but before they could be
-  /// taken off this one, the page on screen changed or one of them did (a
-  /// teammate's edit), so they are on both.
-  copiedInstead,
-
-  /// The cloud page could not be read, so nothing was moved or copied.
-  unreachable,
-
-  /// This device could not store the lineups to send, so nothing was moved
-  /// or copied.
-  notSaved,
-
-  /// There was nothing to move or copy, or no such page.
   unavailable,
 }
 
@@ -1124,37 +1097,40 @@ class StrategyProvider extends Notifier<StrategyState> {
     return elements;
   }
 
-  /// The pages lineups on screen can be moved or copied to.
-  List<LineUpPageTarget> lineUpPageTargets() {
-    final pages = _orderedPagesForLineUps();
+  /// The pages next to the one on screen that the lineups [linkIds] can be
+  /// copied to, as for a placed item: a local neighbour that already has
+  /// one of them, or a copy of it, is left out. Only the page on screen of
+  /// a cloud strategy is read, so there the check waits for the copy.
+  List<PageTransitionDirection> copyDirectionsForLineUps(
+    Set<String> linkIds,
+  ) {
+    if (linkIds.isEmpty) return const [];
+    if (_currentStrategyIsCloud()) {
+      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+      if (snapshot == null || !_currentStrategyCanEditPages()) return const [];
+      return [
+        for (final direction in PageTransitionDirection.values)
+          if (_adjacentCloudPageId(snapshot, direction) != null) direction,
+      ];
+    }
+    final pages = _orderedLocalPages();
     final currentIndex = pages.indexWhere(
       (page) => page.id == ref.read(strategyPageSessionProvider).activePageId,
     );
     if (currentIndex < 0) return const [];
+    final roots = {for (final id in linkIds) pageCopyRoot(id)};
+    bool has(StrategyPage page) =>
+        page.lineUpLinks.any((link) => roots.contains(pageCopyRoot(link.id)));
     return [
-      for (final (index, page) in pages.indexed)
-        if (index != currentIndex)
-          (id: page.id, name: page.name, offset: index - currentIndex),
+      if (currentIndex > 0 && !has(pages[currentIndex - 1]))
+        PageTransitionDirection.backward,
+      if (currentIndex < pages.length - 1 && !has(pages[currentIndex + 1]))
+        PageTransitionDirection.forward,
     ];
   }
 
-  /// The strategy's pages in order, as ids and names, or none when lineups
-  /// cannot be sent to them.
-  List<({String id, String name})> _orderedPagesForLineUps() {
-    if (_currentStrategyIsCloud()) {
-      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null ||
-          snapshot.header.publicId != state.strategyId ||
-          !_currentStrategyCanEditPages()) {
-        return const [];
-      }
-      return [
-        for (final page in [
-          ...snapshot.pages
-        ]..sortBySortIndex((item) => item.sortIndex))
-          (id: page.publicId, name: page.name),
-      ];
-    }
+  /// The local strategy's pages in order, or none.
+  List<StrategyPage> _orderedLocalPages() {
     final strategyId = state.strategyId;
     if (strategyId == null || !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
       return const [];
@@ -1162,107 +1138,91 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strat =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
     if (strat == null) return const [];
-    return [
-      for (final page in [
-        ...strat.pages
-      ]..sortBySortIndex((item) => item.sortIndex))
-        (id: page.id, name: page.name),
-    ];
+    return [...strat.pages]..sortBySortIndex((item) => item.sortIndex);
   }
 
-  /// Puts a copy of the lineups [linkIds] on screen, and the spots they aim
-  /// at, on page [pageId] under new ids, and for a [move] then takes them
-  /// off this page as a delete would (spots another lineup here still uses
-  /// stay). [linkIds] share a spot, as the menus pick them; on a cloud
-  /// strategy lineups that don't are not sent. The copies keep their media:
-  /// an image is only cleaned up once nothing in the strategy shows it.
-  ///
-  /// The lineups are taken as they are when the user asks. They go on the
-  /// other page before they leave this one, so a failure never loses them.
-  Future<LineUpPageResult> sendLineUpsToPage({
+  /// Copies the lineups [linkIds] on screen, and the spots they aim at, to
+  /// the next or previous page, as copying a placed item does. Each copied
+  /// lineup and spot gets an id that carries the original's (see
+  /// page_copy_id.dart), so a page that already has one of them, or a copy
+  /// of it, gets no other. [linkIds] share a spot, as the menus pick them;
+  /// on a cloud strategy lineups that don't are not copied. The copies keep
+  /// their media: an image is only cleaned up once nothing in the strategy
+  /// shows it. The lineups are taken as they are when the user asks.
+  Future<PageCopyResult> copyLineUpsToAdjacentPage({
     required Set<String> linkIds,
-    required String pageId,
-    required bool move,
+    required PageTransitionDirection direction,
   }) async {
     final strategyId = state.strategyId;
-    final sourcePageId = ref.read(strategyPageSessionProvider).activePageId;
-    final graph = ref.read(lineUpProvider).graph;
-    final asked = _lineUpsAsSent(graph, linkIds);
-    final copy = graph.copyOfLinks(linkIds);
-    if (strategyId == null ||
-        sourcePageId == null ||
-        copy.links.isEmpty ||
-        !lineUpPageTargets().any((page) => page.id == pageId)) {
-      return LineUpPageResult.unavailable;
+    final copy = ref.read(lineUpProvider).graph.copyOfLinks(linkIds);
+    if (strategyId == null || copy.links.isEmpty) {
+      return PageCopyResult.unavailable;
     }
-
-    final LineUpPageResult placed;
     if (_currentStrategyIsCloud()) {
-      final queued = _cloudCopies.then(
-        (_) => _addLineUpsToCloudPage(
+      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+      final pageId =
+          snapshot == null ? null : _adjacentCloudPageId(snapshot, direction);
+      if (pageId == null || !_currentStrategyCanEditPages()) {
+        return PageCopyResult.unavailable;
+      }
+      final result = _cloudCopies.then(
+        (_) => _copyLineUpsToCloudPage(
           strategyId: strategyId,
           pageId: pageId,
           lineUps: copy,
         ),
       );
-      _cloudCopies = queued.then((_) {}, onError: (_) {});
-      placed = await queued;
-    } else {
-      placed = await _addLineUpsToLocalPage(
-        strategyId: strategyId,
-        pageId: pageId,
-        lineUps: copy,
-      );
+      _cloudCopies = result.then((_) {}, onError: (_) {});
+      return result;
     }
-    if (placed != LineUpPageResult.done || !move) return placed;
-
-    // Only what was sent leaves: if the lineups or their spots changed
-    // meanwhile (a teammate's edit), the changed ones stay here.
-    if (state.strategyId != strategyId ||
-        ref.read(strategyPageSessionProvider).activePageId != sourcePageId ||
-        _lineUpsAsSent(ref.read(lineUpProvider).graph, linkIds) != asked) {
-      return LineUpPageResult.copiedInstead;
-    }
-    ref.read(lineUpProvider.notifier).deleteLinks(linkIds);
-    return LineUpPageResult.done;
+    return _copyLineUpsToLocalPage(
+      strategyId: strategyId,
+      direction: direction,
+      lineUps: copy,
+    );
   }
 
-  /// The lineups [linkIds] in [graph] and their spots, in an order that
-  /// does not depend on the graph's, to tell whether they changed.
-  static String _lineUpsAsSent(LineUpGraph graph, Set<String> linkIds) {
-    final part = graph.linksWithSpots(linkIds);
-    int byId(Map<String, dynamic> a, Map<String, dynamic> b) =>
-        (a['id'] as String).compareTo(b['id'] as String);
-    List<Map<String, dynamic>> sorted(Iterable<Map<String, dynamic>> json) =>
-        json.toList()..sort(byId);
-    return jsonEncode({
-      'origins': sorted(part.origins.map((origin) => origin.toJson())),
-      'landings': sorted(part.landings.map((landing) => landing.toJson())),
-      'links': sorted(part.links.map((link) => link.toJson())),
-    });
+  /// Whether [links] holds one of [lineUps]' lineups, or a copy of it.
+  static bool _hasAnyOf(Iterable<String> links, LineUpGraph lineUps) {
+    final roots = {for (final link in lineUps.links) pageCopyRoot(link.id)};
+    return links.any((id) => roots.contains(pageCopyRoot(id)));
   }
 
-  Future<LineUpPageResult> _addLineUpsToLocalPage({
+  Future<PageCopyResult> _copyLineUpsToLocalPage({
     required String strategyId,
-    required String pageId,
+    required PageTransitionDirection direction,
     required LineUpGraph lineUps,
   }) async {
     try {
       await _syncCurrentPageToHive();
     } catch (error) {
-      log('Could not save page before putting lineups on $pageId: $error');
-      return LineUpPageResult.notSaved;
+      log('Could not save the page before copying lineups: $error');
+      return PageCopyResult.notSaved;
     }
-    if (state.strategyId != strategyId) return LineUpPageResult.unavailable;
+    if (state.strategyId != strategyId) return PageCopyResult.unavailable;
+    final pages = _orderedLocalPages();
+    final currentIndex = pages.indexWhere(
+      (page) => page.id == ref.read(strategyPageSessionProvider).activePageId,
+    );
+    final targetIndex = switch (direction) {
+      PageTransitionDirection.backward => currentIndex - 1,
+      PageTransitionDirection.forward => currentIndex + 1,
+    };
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= pages.length) {
+      return PageCopyResult.unavailable;
+    }
+    final target = pages[targetIndex];
+    if (_hasAnyOf(target.lineUpLinks.map((link) => link.id), lineUps)) {
+      return PageCopyResult.alreadyThere;
+    }
+
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strat = box.get(strategyId);
-    if (strat == null || !strat.pages.any((page) => page.id == pageId)) {
-      return LineUpPageResult.unavailable;
-    }
+    if (strat == null) return PageCopyResult.unavailable;
     final updated = strat.copyWith(
       pages: [
         for (final page in strat.pages)
-          if (page.id == pageId)
+          if (page.id == target.id)
             page.copyWith(
               lineUpGraph: LineUpGraph(
                 origins: [...page.lineUpOrigins, ...lineUps.origins],
@@ -1278,36 +1238,50 @@ class StrategyProvider extends Notifier<StrategyState> {
     try {
       await box.put(updated.id, updated);
     } catch (error) {
-      log('Writing lineups to page $pageId failed: $error');
+      log('Writing lineups to page ${target.id} failed: $error');
       // Hive can store a write and then fail tidying its file, so what the
       // box holds decides whether the lineups are there.
-      final copied = {for (final link in lineUps.links) link.id};
-      final stored = box.get(strategyId)?.pages.where((p) => p.id == pageId);
+      final stored = box.get(strategyId)?.pages.where((p) => p.id == target.id);
       final landed = stored != null &&
-          stored.any((page) =>
-              page.lineUpLinks.any((link) => copied.contains(link.id)));
-      if (!landed) return LineUpPageResult.notSaved;
+          stored.any((page) => page.lineUpLinks.any(
+              (link) => lineUps.links.any((copied) => copied.id == link.id)));
+      if (!landed) return PageCopyResult.notSaved;
     }
-    return LineUpPageResult.done;
+    return PageCopyResult.copied;
   }
 
   /// Queues [lineUps] onto cloud page [pageId] as one new lineup group after
-  /// the page's own. The page is read from the server first, for where its
-  /// groups end; if it cannot be read, nothing is queued.
-  Future<LineUpPageResult> _addLineUpsToCloudPage({
+  /// the page's own. The page is read from the server first, with the work
+  /// still queued for it laid over: if it has one of the lineups, or a copy
+  /// of it, nothing is queued, and if it cannot be read, neither.
+  Future<PageCopyResult> _copyLineUpsToCloudPage({
     required String strategyId,
     required String pageId,
     required LineUpGraph lineUps,
   }) async {
     // The lineups at one spot share it, so they make one group, and the
-    // copy is one write that lands whole or not at all. Every id in it is
-    // new, so the group's id (its smallest lineup id) is one no row in the
-    // strategy has.
+    // copy is one write that lands whole or not at all. Its ids are new, so
+    // the group's id (its smallest lineup id) is one no row has.
     final rows = cloudLineupRows(lineUps).rows;
-    if (rows.length != 1 || state.strategyId != strategyId) {
-      return LineUpPageResult.unavailable;
+    final accountId = ref.read(strategyOpQueueProvider).accountId;
+    if (rows.length != 1 ||
+        accountId == null ||
+        state.strategyId != strategyId) {
+      return PageCopyResult.unavailable;
     }
     final group = rows.single;
+    // Hive refuses keys over 255 characters, and an op is stored under one
+    // naming its account, strategy, page and group. Only a lineup imported
+    // with an unusually long id could get here.
+    if (DurableOutboxRecord.createStorageKey(
+          accountId: accountId,
+          strategyPublicId: strategyId,
+          entityKey: EntitySyncKey.lineup(pageId, group.publicId),
+        ).length >
+        255) {
+      return PageCopyResult.unavailable;
+    }
+
     final RemotePageSnapshot targetPage;
     try {
       targetPage =
@@ -1316,10 +1290,19 @@ class StrategyProvider extends Notifier<StrategyState> {
                 pagePublicId: pageId,
               );
     } catch (error) {
-      log('Could not read page $pageId to put lineups on it: $error');
-      return LineUpPageResult.unreachable;
+      log('Could not read page $pageId to copy lineups onto it: $error');
+      return PageCopyResult.unreachable;
     }
-    if (state.strategyId != strategyId) return LineUpPageResult.unavailable;
+    if (state.strategyId != strategyId) return PageCopyResult.unavailable;
+
+    final onTarget = _cloudLineupGroupsOn(targetPage);
+    final linksThere = [
+      for (final payload in onTarget.values.map((group) => group.payload))
+        if (payload != null)
+          for (final link in cloudPayloadData(payload)['links'] as List? ?? [])
+            if (link is Map && link['id'] is String) link['id'] as String,
+    ];
+    if (_hasAnyOf(linksThere, lineUps)) return PageCopyResult.alreadyThere;
 
     // The canvas never draws the group: its page shows it from the server.
     final queued =
@@ -1330,27 +1313,37 @@ class StrategyProvider extends Notifier<StrategyState> {
                 pagePublicId: pageId,
                 payload: group.payload,
                 sortIndex: 1 +
-                    _cloudLineupSortIndexesOn(targetPage).fold<int>(-1, max),
+                    onTarget.values
+                        .map((group) => group.sortIndex)
+                        .fold<int>(-1, max),
               ),
               flushImmediately: true,
             );
-    if (!queued) return LineUpPageResult.notSaved;
+    if (!queued) return PageCopyResult.notSaved;
     ref.read(strategySaveStateProvider.notifier)
       ..markDirty()
       ..setPendingCloudSync(true)
       ..setCloudSyncError(null);
-    return LineUpPageResult.done;
+    return PageCopyResult.copied;
   }
 
-  /// The sortIndexes of the lineup groups on [page] as the server has them,
-  /// with the work still queued for it laid over.
-  Iterable<int> _cloudLineupSortIndexesOn(RemotePageSnapshot page) {
+  /// The lineup groups on [page] as the server has them, with the work still
+  /// queued for it laid over, refused work waiting for the user's choice
+  /// included: by id, their sortIndexes and what they hold.
+  Map<String, ({int sortIndex, CloudPayload? payload})> _cloudLineupGroupsOn(
+    RemotePageSnapshot page,
+  ) {
     final pageId = page.page.publicId;
-    final groups = <String, int>{
+    final groups = <String, ({int sortIndex, CloudPayload? payload})>{
       for (final lineup in page.lineups)
-        if (!lineup.deleted) lineup.publicId: lineup.sortIndex,
+        if (!lineup.deleted)
+          lineup.publicId: (
+            sortIndex: lineup.sortIndex,
+            payload: lineup.payload,
+          ),
     };
     final queue = ref.read(strategyOpQueueProvider);
+    // Later entries win: a sent op over a paused one, its successor over it.
     for (final pendingByKey in [
       queue.attentionByEntityKey.map((k, v) => MapEntry(k, v.pending)),
       queue.pausedByEntityKey.map((k, v) => MapEntry(k, v.pending)),
@@ -1362,15 +1355,19 @@ class StrategyProvider extends Notifier<StrategyState> {
         if (key.kind != EntitySyncKeyKind.lineup || key.pageId != pageId) {
           return;
         }
+        final id = key.entityId!;
         switch (pending.op) {
           case LineupDeleteOp():
-            groups.remove(key.entityId);
+            groups.remove(id);
           case final op:
-            groups[key.entityId!] = op.sortIndex ?? groups[key.entityId!] ?? 0;
+            groups[id] = (
+              sortIndex: op.sortIndex ?? groups[id]?.sortIndex ?? 0,
+              payload: op.payload as CloudPayload? ?? groups[id]?.payload,
+            );
         }
       });
     }
-    return groups.values;
+    return groups;
   }
 
   static StrategyPage? _copyPlacedWidgetBetweenPages({
