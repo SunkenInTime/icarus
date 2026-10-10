@@ -1,4 +1,5 @@
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -51,10 +52,12 @@ class TransitionPlanner {
   ) {
     final entries = <PageTransitionEntry>[];
     var order = 0;
+    final copiedFrom = _pairedCopies(prev, next);
+    final paired = copiedFrom.values.toSet();
 
     // Move / appear
     next.forEach((id, to) {
-      final from = prev[id];
+      final from = prev[id] ?? prev[copiedFrom[id]];
       if (from != null) {
         if (PageTransitionEntry.visualsDiffer(from, to)) {
           entries
@@ -71,13 +74,48 @@ class TransitionPlanner {
 
     // Disappear
     prev.forEach((id, from) {
-      if (!next.containsKey(id)) {
+      if (!next.containsKey(id) && !paired.contains(id)) {
         entries.add(PageTransitionEntry.disappear(from: from, order: order));
         order++;
       }
     });
 
     return entries;
+  }
+
+  /// Items of [next] paired with an item of [prev] by the id they were
+  /// copied from (see page_copy_id.dart), next id to prev id. Items with
+  /// the same id pair first. Then a root pairs two items only when it is on
+  /// each page exactly once and both are the same kind of item; anything
+  /// else would be a guess, so those items appear and disappear instead.
+  static Map<String, String> _pairedCopies(
+    Map<String, PlacedWidget> prev,
+    Map<String, PlacedWidget> next,
+  ) {
+    Map<String, List<String>> byRoot(Map<String, PlacedWidget> page) {
+      final roots = <String, List<String>>{};
+      for (final id in page.keys) {
+        (roots[pageCopyRoot(id)] ??= []).add(id);
+      }
+      return roots;
+    }
+
+    final prevByRoot = byRoot(prev);
+    final nextByRoot = byRoot(next);
+    final pairs = <String, String>{};
+    nextByRoot.forEach((root, nextIds) {
+      final prevIds = prevByRoot[root];
+      if (nextIds.length != 1 || prevIds == null || prevIds.length != 1) {
+        return;
+      }
+      final nextId = nextIds.single;
+      final prevId = prevIds.single;
+      if (nextId == prevId) return;
+      if (next.containsKey(prevId) || prev.containsKey(nextId)) return;
+      if (next[nextId]!.runtimeType != prev[prevId]!.runtimeType) return;
+      pairs[nextId] = prevId;
+    });
+    return pairs;
   }
 
   /// Whether the drawing layer changes between two pages, and therefore

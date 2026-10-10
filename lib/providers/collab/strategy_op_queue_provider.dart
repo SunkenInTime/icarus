@@ -517,6 +517,31 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
+  /// Queues [op], work for a page the canvas did not draw it on (an item
+  /// copied to another page). Its ack is marked restored: if that page is
+  /// on screen by then, it shows the item from the server's copy, like a
+  /// teammate's, instead of taking it as something the canvas removed.
+  /// Returns whether the queue holds [op]: nothing on screen keeps it, so
+  /// when the outbox could not store it, the caller must say so.
+  Future<bool> enqueueOffCanvas(
+    StrategyOp op, {
+    bool flushImmediately = false,
+  }) async {
+    final key = EntitySyncKey.forStrategyOp(op)!;
+    final canvasSession = _canvasSession;
+    await _serializeWrite(() => _syncDesiredLocked(
+          keys: <EntitySyncKey>{key},
+          desiredOps: <EntitySyncKey, StrategyOp?>{key: op},
+          flushImmediately: flushImmediately,
+          canvasSession: canvasSession,
+          onCanvas: false,
+        ));
+    return state.pending.any(
+          (pending) => EntitySyncKey.forStrategyOp(pending.op) == key,
+        ) ||
+        state.lastAckBatch.any((acked) => acked.entityKey == key);
+  }
+
   Future<void> syncDesiredGenericOp({
     required EntitySyncKey entityKey,
     required StrategyOp? desiredOp,
@@ -573,16 +598,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// been drawn fresh since. A desired op in [heldOpIds] was already queued
   /// then, so it is not the canvas's work; if it has landed or been
   /// replaced since, whatever the queue now holds for its entity is left as
-  /// it is.
+  /// it is. Ops made with [onCanvas] false are never the canvas's work.
   Future<void> _syncDesiredLocked({
     required Set<EntitySyncKey> keys,
     required Map<EntitySyncKey, StrategyOp?> desiredOps,
     required bool flushImmediately,
     required int canvasSession,
     Set<String> heldOpIds = const {},
+    bool onCanvas = true,
   }) async {
     void writtenByCanvas(PendingOp pending, StrategyOp desired) {
-      if (canvasSession == _canvasSession &&
+      if (onCanvas &&
+          canvasSession == _canvasSession &&
           !heldOpIds.contains(desired.opId)) {
         _canvasOpIds.add(pending.op.opId);
       }

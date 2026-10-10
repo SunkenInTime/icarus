@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
+import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -55,6 +58,23 @@ export 'package:icarus/strategy/strategy_models.dart'
 
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
+
+/// What became of copying an item to the next or previous page.
+enum PageCopyResult {
+  copied,
+
+  /// The page already has the item, or a copy of it.
+  alreadyThere,
+
+  /// The cloud page could not be read, so nothing was copied.
+  unreachable,
+
+  /// This device could not store the copy to send, so nothing was copied.
+  notSaved,
+
+  /// There was nothing to copy, or no page to copy it to.
+  unavailable,
+}
 
 class StrategyProvider extends Notifier<StrategyState> {
   @override
@@ -756,11 +776,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   List<PageTransitionDirection> copyDirectionsForPlacedWidget(
     String widgetId,
   ) {
-    if (_currentStrategyIsCloud() ||
-        widgetId.isEmpty ||
-        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
-      return const [];
-    }
+    if (widgetId.isEmpty) return const [];
+    if (_currentStrategyIsCloud()) return _cloudCopyDirections(widgetId);
+    if (!Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return const [];
 
     final strategyId = state.strategyId;
     if (strategyId == null) return const [];
@@ -789,23 +807,30 @@ class StrategyProvider extends Notifier<StrategyState> {
     return directions;
   }
 
-  Future<bool> copyPlacedWidgetToAdjacentPage({
+  Future<PageCopyResult> copyPlacedWidgetToAdjacentPage({
     required String widgetId,
     required PageTransitionDirection direction,
   }) async {
-    if (_currentStrategyIsCloud() ||
-        widgetId.isEmpty ||
-        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
-      return false;
+    if (widgetId.isEmpty) return PageCopyResult.unavailable;
+    if (_currentStrategyIsCloud()) {
+      return _copyPlacedWidgetToAdjacentCloudPage(
+        widgetId: widgetId,
+        direction: direction,
+      );
+    }
+    if (!Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
+      return PageCopyResult.unavailable;
     }
 
     await _syncCurrentPageToHive();
 
     final strategyId = state.strategyId;
-    if (strategyId == null) return false;
+    if (strategyId == null) return PageCopyResult.unavailable;
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strat = box.get(strategyId);
-    if (strat == null || strat.pages.length < 2) return false;
+    if (strat == null || strat.pages.length < 2) {
+      return PageCopyResult.unavailable;
+    }
 
     final orderedPages = [...strat.pages]
       ..sortBySortIndex((item) => item.sortIndex);
@@ -813,24 +838,28 @@ class StrategyProvider extends Notifier<StrategyState> {
     final currentIndex = orderedPages.indexWhere(
       (page) => page.id == currentPageId,
     );
-    if (currentIndex < 0) return false;
+    if (currentIndex < 0) return PageCopyResult.unavailable;
 
     final targetIndex = switch (direction) {
       PageTransitionDirection.backward => currentIndex - 1,
       PageTransitionDirection.forward => currentIndex + 1,
     };
-    if (targetIndex < 0 || targetIndex >= orderedPages.length) return false;
+    if (targetIndex < 0 || targetIndex >= orderedPages.length) {
+      return PageCopyResult.unavailable;
+    }
 
     final sourcePage = orderedPages[currentIndex];
     final targetPage = orderedPages[targetIndex];
-    if (_pageContainsPlacedWidget(targetPage, widgetId)) return false;
+    if (_pageContainsPlacedWidget(targetPage, widgetId)) {
+      return PageCopyResult.alreadyThere;
+    }
 
     final updatedTarget = _copyPlacedWidgetBetweenPages(
       widgetId: widgetId,
       source: sourcePage,
       target: targetPage,
     );
-    if (updatedTarget == null) return false;
+    if (updatedTarget == null) return PageCopyResult.unavailable;
 
     final updatedPages = [
       for (final page in strat.pages)
@@ -841,18 +870,230 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
     await box.put(updated.id, updated);
-    return true;
+    return PageCopyResult.copied;
   }
 
+  /// Whether [page] has [widgetId] or a copy of the same item (see
+  /// page_copy_id.dart).
   static bool _pageContainsPlacedWidget(
     StrategyPage page,
     String widgetId,
   ) {
-    return page.agentData.any((widget) => widget.id == widgetId) ||
-        page.abilityData.any((widget) => widget.id == widgetId) ||
-        page.textData.any((widget) => widget.id == widgetId) ||
-        page.imageData.any((widget) => widget.id == widgetId) ||
-        page.utilityData.any((widget) => widget.id == widgetId);
+    final root = pageCopyRoot(widgetId);
+    bool same(PlacedWidget widget) => pageCopyRoot(widget.id) == root;
+    return page.agentData.any(same) ||
+        page.abilityData.any(same) ||
+        page.textData.any(same) ||
+        page.imageData.any(same) ||
+        page.utilityData.any(same);
+  }
+
+  /// The pages before and after the one on screen in a cloud strategy. Only
+  /// the page on screen is read, so whether a neighbour already has the item
+  /// is checked when the copy is made.
+  List<PageTransitionDirection> _cloudCopyDirections(String widgetId) {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null ||
+        !_currentStrategyCanEditPages() ||
+        _cloudElementOnScreen(widgetId) == null) {
+      return const [];
+    }
+    return [
+      for (final direction in PageTransitionDirection.values)
+        if (_adjacentCloudPageId(snapshot, direction) != null) direction,
+    ];
+  }
+
+  String? _adjacentCloudPageId(
+    RemoteEditorSnapshot snapshot,
+    PageTransitionDirection direction,
+  ) {
+    final pages = [...snapshot.pages]
+      ..sortBySortIndex((item) => item.sortIndex);
+    final currentIndex = pages.indexWhere(
+      (page) =>
+          page.publicId == ref.read(strategyPageSessionProvider).activePageId,
+    );
+    if (currentIndex < 0) return null;
+    final targetIndex = switch (direction) {
+      PageTransitionDirection.backward => currentIndex - 1,
+      PageTransitionDirection.forward => currentIndex + 1,
+    };
+    if (targetIndex < 0 || targetIndex >= pages.length) return null;
+    return pages[targetIndex].publicId;
+  }
+
+  /// [widgetId] on the page on screen as cloud element data, or null when it
+  /// cannot go to another cloud page. An image's id also names its file on
+  /// the server, so a copy of one needs its own file; images stay local-only
+  /// for now.
+  ({String kind, Map<String, dynamic> data})? _cloudElementOnScreen(
+    String widgetId,
+  ) {
+    ({String kind, Map<String, dynamic> data}) element(
+      String kind,
+      Map<String, dynamic> json,
+    ) =>
+        (
+          kind: kind,
+          data: Map<String, dynamic>.from(json)
+            ..putIfAbsent('elementType', () => kind),
+        );
+
+    for (final agent in ref.read(agentProvider)) {
+      if (agent.id == widgetId) return element('agent', agent.toJson());
+    }
+    for (final ability in ref.read(abilityProvider)) {
+      if (ability.id == widgetId) return element('ability', ability.toJson());
+    }
+    for (final text
+        in ref.read(textProvider.notifier).snapshotForPersistence()) {
+      if (text.id == widgetId) return element('text', text.toJson());
+    }
+    for (final utility in ref.read(utilityProvider)) {
+      if (utility.id == widgetId) return element('utility', utility.toJson());
+    }
+    return null;
+  }
+
+  /// Copies [widgetId] to the next or previous page of a cloud strategy, as
+  /// a new item whose id carries the original's (see page_copy_id.dart).
+  /// The target page is read from the server first: a copy goes after the
+  /// page's items, and never beside the item or another copy of it. If the
+  /// page cannot be read, nothing is copied. The item is taken as it is when
+  /// the user asks; copies then run one at a time, so a second one sees the
+  /// first already queued.
+  Future<PageCopyResult> _copyPlacedWidgetToAdjacentCloudPage({
+    required String widgetId,
+    required PageTransitionDirection direction,
+  }) {
+    final strategyId = state.strategyId;
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final element = _cloudElementOnScreen(widgetId);
+    final targetPageId =
+        snapshot == null ? null : _adjacentCloudPageId(snapshot, direction);
+    if (strategyId == null ||
+        element == null ||
+        targetPageId == null ||
+        !_currentStrategyCanEditPages()) {
+      return Future.value(PageCopyResult.unavailable);
+    }
+    final result = _cloudCopies.then(
+      (_) => _copyToCloudPage(
+        strategyId: strategyId,
+        targetPageId: targetPageId,
+        widgetId: widgetId,
+        element: element,
+      ),
+    );
+    _cloudCopies = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<void> _cloudCopies = Future<void>.value();
+
+  Future<PageCopyResult> _copyToCloudPage({
+    required String strategyId,
+    required String targetPageId,
+    required String widgetId,
+    required ({String kind, Map<String, dynamic> data}) element,
+  }) async {
+    if (state.strategyId != strategyId) return PageCopyResult.unavailable;
+    final RemotePageSnapshot targetPage;
+    try {
+      targetPage =
+          await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
+                strategyPublicId: strategyId,
+                pagePublicId: targetPageId,
+              );
+    } catch (error) {
+      log('Could not read page $targetPageId to copy onto it: $error');
+      return PageCopyResult.unreachable;
+    }
+    if (state.strategyId != strategyId) return PageCopyResult.unavailable;
+
+    final onTarget = _cloudElementsOn(targetPage);
+    final root = pageCopyRoot(widgetId);
+    if (onTarget.keys.any((id) => pageCopyRoot(id) == root)) {
+      return PageCopyResult.alreadyThere;
+    }
+
+    final accountId = ref.read(strategyOpQueueProvider).accountId;
+    final copyId = newPageCopyId(widgetId);
+    // Hive refuses keys over 255 characters, and an op is stored under one
+    // naming its account, strategy, page and item. Only an imported item
+    // with an unusually long id could get here.
+    if (accountId == null ||
+        DurableOutboxRecord.createStorageKey(
+              accountId: accountId,
+              strategyPublicId: strategyId,
+              entityKey: EntitySyncKey.element(targetPageId, copyId),
+            ).length >
+            255) {
+      return PageCopyResult.unavailable;
+    }
+    // The canvas never draws the copy: its page shows it from the server.
+    final queued =
+        await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
+              ElementAddOp(
+                opId: const Uuid().v4(),
+                elementPublicId: copyId,
+                pagePublicId: targetPageId,
+                payload: cloudElementPayload(
+                  kind: element.kind,
+                  data: {...element.data, 'id': copyId},
+                ),
+                sortIndex: 1 + onTarget.values.fold<int>(-1, max),
+              ),
+              flushImmediately: true,
+            );
+    if (!queued) return PageCopyResult.notSaved;
+    ref.read(strategySaveStateProvider.notifier)
+      ..markDirty()
+      ..setPendingCloudSync(true)
+      ..setCloudSyncError(null);
+    return PageCopyResult.copied;
+  }
+
+  /// The items on [page] as the server has them with the work still queued
+  /// for it laid over, refused work waiting for the user's choice included,
+  /// by id, with their sortIndexes.
+  Map<String, int> _cloudElementsOn(RemotePageSnapshot page) {
+    final pageId = page.page.publicId;
+    final elements = <String, int>{
+      for (final element in page.elements)
+        if (!element.deleted) element.publicId: element.sortIndex,
+    };
+    final queue = ref.read(strategyOpQueueProvider);
+    // Later entries win: a sent op over a paused one, its successor over it.
+    final queued = <EntitySyncKey, StrategyOp>{
+      for (final (key, pending) in [
+        for (final MapEntry(:key, :value) in queue.attentionByEntityKey.entries)
+          (key, value.pending),
+        for (final MapEntry(:key, :value) in queue.pausedByEntityKey.entries)
+          (key, value.pending),
+        for (final MapEntry(:key, :value) in queue.queuedByEntityKey.entries)
+          (key, value.pending),
+        for (final MapEntry(:key, :value) in queue.inFlightByEntityKey.entries)
+          (key, value.pending),
+        for (final MapEntry(:key, :value) in queue.successorByEntityKey.entries)
+          (key, value.pending),
+      ])
+        if (key.kind == EntitySyncKeyKind.element && key.pageId == pageId)
+          key: pending.op,
+    };
+    queued.forEach((key, op) {
+      final id = key.entityId!;
+      switch (op) {
+        case ElementDeleteOp():
+          elements.remove(id);
+        case ElementAddOp(:final sortIndex):
+          elements[id] = sortIndex;
+        default:
+          elements[id] = op.sortIndex ?? elements[id] ?? 0;
+      }
+    });
+    return elements;
   }
 
   static StrategyPage? _copyPlacedWidgetBetweenPages({

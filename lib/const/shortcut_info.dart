@@ -17,6 +17,8 @@ enum IcarusShortcutAction {
   switchSide,
   switchSideThisPage,
   openDeleteMenu,
+  rotateClockwise,
+  rotateCounterclockwise,
   saveStrategy,
   pasteImage,
   openInAppDebug,
@@ -303,6 +305,23 @@ class ShortcutInfo {
       searchAliases: ['delete'],
     ),
     IcarusShortcutDefinition(
+      action: IcarusShortcutAction.rotateClockwise,
+      title: 'Rotate Clockwise',
+      defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyX),
+      intent: RotateHoveredIntent(clockwise: true),
+      searchAliases: ['rotate', 'turn', 'clockwise'],
+    ),
+    IcarusShortcutDefinition(
+      action: IcarusShortcutAction.rotateCounterclockwise,
+      title: 'Rotate Counterclockwise',
+      defaultBinding: IcarusKeyBinding(
+        trigger: LogicalKeyboardKey.keyX,
+        shift: true,
+      ),
+      intent: RotateHoveredIntent(clockwise: false),
+      searchAliases: ['rotate', 'turn', 'counterclockwise', 'anticlockwise'],
+    ),
+    IcarusShortcutDefinition(
       action: IcarusShortcutAction.saveStrategy,
       title: 'Save Strategy',
       defaultBinding: IcarusKeyBinding(
@@ -347,7 +366,12 @@ class ShortcutInfo {
         shift: true,
         platform: platform,
       ): const RedoActionIntent(),
-      for (final definition in editableShortcuts)
+      // Later entries win a shared key, so a key the user chose beats a
+      // default that arrived after they chose it.
+      for (final definition in [
+        ...editableShortcuts.where((d) => !customBindings.containsKey(d.id)),
+        ...editableShortcuts.where((d) => customBindings.containsKey(d.id)),
+      ])
         effectiveBindingFor(definition.id, customBindings)
             .toActivator(platform: platform): definition.intent,
     };
@@ -499,6 +523,12 @@ class ToggleErasingIntent extends Intent {
 
 class ContextualDeleteIntent extends Intent {
   const ContextualDeleteIntent();
+}
+
+class RotateHoveredIntent extends Intent {
+  const RotateHoveredIntent({required this.clockwise});
+
+  final bool clockwise;
 }
 
 class EnterTextIntent extends Intent {

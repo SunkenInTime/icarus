@@ -252,7 +252,7 @@ void main() {
           widgetId: id,
           direction: PageTransitionDirection.forward,
         ),
-        isTrue,
+        PageCopyResult.copied,
       );
     }
 
@@ -310,14 +310,14 @@ void main() {
           widgetId: sourceAgent.id,
           direction: PageTransitionDirection.backward,
         ),
-        isFalse,
+        PageCopyResult.unavailable,
       );
       expect(
         await notifier.copyPlacedWidgetToAdjacentPage(
           widgetId: sourceAgent.id,
           direction: PageTransitionDirection.forward,
         ),
-        isFalse,
+        PageCopyResult.alreadyThere,
       );
 
       final savedTarget = strategyBox
