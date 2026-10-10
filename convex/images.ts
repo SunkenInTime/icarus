@@ -88,9 +88,6 @@ export const markDeletedStrategyImageAssetsRef =
   makeFunctionReference<"mutation">("images:markDeletedStrategyImageAssets");
 export const processAssetReclaimCandidatesRef =
   makeFunctionReference<"mutation">("images:processAssetReclaimCandidates");
-const reclaimCopiedAssetIfUnusedRef = makeFunctionReference<"mutation">(
-  "images:reclaimCopiedAssetIfUnused",
-);
 const markDeletedPageImageAssetsRef = makeFunctionReference<"mutation">(
   "images:markDeletedPageImageAssets",
 );
@@ -400,9 +397,10 @@ export const createR2UploadIntent = internalMutation({
 /// source's, so there is nothing to copy yet, or one under the target's id);
 /// "unavailable" means the strategy cannot show the source either.
 ///
-/// Content that never arrives (its page deleted first, say) would leave the
-/// row unused for good, so a day later the copy goes through the reclaim
-/// check, which removes it only if nothing shows it.
+/// The row is not swept on a timer: the copy's content may wait in a
+/// device's outbox for days and still needs it. It goes as any image does,
+/// once content that showed it is purged, or with the strategy; a copy whose
+/// content never arrives keeps its row until then.
 export const copyAsset = mutation({
   args: {
     ...cloudProtocolArgs,
@@ -448,25 +446,7 @@ export const copyAsset = mutation({
     if (target !== null && isUploadPlaceholder(target)) {
       await ctx.db.delete(target._id);
     }
-    await ctx.scheduler.runAfter(
-      staleUploadAgeMs,
-      reclaimCopiedAssetIfUnusedRef,
-      { strategyId: strategy._id, assetPublicId: args.targetAssetPublicId },
-    );
     return copied;
-  },
-});
-
-/// Puts a copied image through the reclaim check a day after the copy (see
-/// [copyAsset]): it is removed only if no content, live or restorable,
-/// shows it.
-export const reclaimCopiedAssetIfUnused = internalMutation({
-  args: {
-    strategyId: v.id("strategies"),
-    assetPublicId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await queueAssetReclaim(ctx, args.strategyId, [args.assetPublicId]);
   },
 });
 
