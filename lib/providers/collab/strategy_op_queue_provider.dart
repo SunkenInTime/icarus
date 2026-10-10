@@ -2811,7 +2811,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// again, and should the predecessor be refused and the user keep theirs,
   /// this one change still carries all of it. Its base, for those fields, is
   /// what the predecessor writes, which the server holds once it lands.
-  /// Work the canvas never drew (recovered after a restart) is left out:
+  /// Behind a whole write, [op] is whole too. Work the canvas never drew (recovered after a restart) is left out:
   /// the user's edits were made against what the canvas showed. Worked out
   /// as the successor is made, while [drawn] is known, and saved with it.
   static StrategyOp _asSuccessorOf(
@@ -2822,9 +2822,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final merge = op.merge;
     final written = predecessor.merge;
     final writtenPayload = predecessor.payload;
-    if (merge == null || written == null || writtenPayload == null || !drawn) {
-      return op;
-    }
+    if (merge == null || writtenPayload == null || !drawn) return op;
+    // Behind a whole write of the canvas's own, the server holds exactly
+    // what the canvas drew once it lands: this one is whole too, so a field
+    // the user set back meanwhile is written again.
+    if (written == null) return op.withMerge(null);
     final lineup = op is LineupPatchOp;
     final fields = {...written.fields, ...merge.fields}.toList()..sort();
     final base = merge.base;

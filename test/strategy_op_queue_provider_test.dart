@@ -4112,6 +4112,57 @@ void main() {
       expect(((setBack.payload as Map)['data'] as Map)['isAlly'], isTrue);
     });
 
+    test('a change set back behind a whole write is written whole', () async {
+      final online = StateProvider<bool>((ref) => true);
+      final store = MemoryDurableStrategyOutboxStore();
+      final gate = Completer<void>();
+      final (first, firstQueue) =
+          open(store, _ScriptedRepository(hold: gate), online);
+      // A whole write, as Keep mine sends after a merge that could not stand.
+      await firstQueue.enqueue(
+        patch('op-1').withMerge(null),
+        flushImmediately: false,
+      );
+      unawaited(firstQueue.flushNow());
+      for (var i = 0;
+          i < 50 &&
+              store.load().records.single.status !=
+                  DurableOutboxStatus.inFlight;
+          i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      // Set back while it is on its way; then the app closes before its
+      // answer arrives.
+      await firstQueue.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: patch('op-2', isAlly: true).payload,
+          sortIndex: 0,
+          expectedElementRevision: 1,
+          merge: const FieldMerge(fields: [], base: {}),
+        ),
+        flushImmediately: false,
+      );
+      first.dispose();
+
+      final repository = _ScriptedRepository();
+      final (_, notifier) = open(store, repository, online);
+      await notifier.flushNow();
+      for (var i = 0; i < 50 && repository.calls.length < 2; i++) {
+        await notifier.flushNow();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      final setBack = repository.calls[1].single;
+      expect(setBack.merge, isNull);
+      expect(((setBack.payload as Map)['data'] as Map)['isAlly'], isTrue);
+      // Claiming the revision the whole write landed at, which holds
+      // exactly what the canvas drew.
+      expect(setBack.expectedRevision, 2);
+    });
+
     test('a send that failed is retried checked', () async {
       final online = StateProvider<bool>((ref) => true);
       final repository = _ScriptedRepository(failFirst: true);
