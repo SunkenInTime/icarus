@@ -90,21 +90,23 @@ type CopiedLineupAgent = Pick<
 /// its copy will read and write, so a copy too large is refused before any
 /// of it is written.
 ///
-/// A placed image's asset id is its element id, which the copy renames, so
-/// each copied placed image gets an asset row of its own, sharing the
-/// source's stored bytes. Lineup images keep their ids: asset ids are
-/// scoped to a strategy, so within one strategy the copy shows the same
-/// asset row, and only a copy into another strategy copies it.
+/// A copy shows the same pictures as its source: a copied placed image
+/// names its source's picture (`assetId`, see
+/// collectAssetIdFromElementPayload), and lineup images keep their ids.
+/// Picture ids are scoped to a strategy, so within one strategy nothing
+/// more is needed, however far the picture's upload has got; a copy into
+/// another strategy gives it each picture once, under the same id, sharing
+/// the stored bytes.
 export class ContentCopy {
   /// The elements copied, and the agents of the lineups copied, for the
   /// target strategy's agent summary.
   readonly elements: ReferencingElement[] = [];
   readonly lineupAgents: CopiedLineupAgent[] = [];
   private readonly newLineupId = lineupIdMap();
-  private readonly copiedAssetIds = new Set<string>();
-  // Lineup images the budget has been charged for: lineups on several pages
-  // can show one image, which the copy copies once.
-  private readonly chargedLineupAssetIds = new Set<string>();
+  // Pictures the budget has been charged for, and those copied: pictures
+  // shown on several pages are copied once.
+  private readonly chargedPictureIds = new Set<string>();
+  private readonly copiedPictureIds = new Set<string>();
 
   constructor(
     private readonly ctx: MutationCtx,
@@ -114,9 +116,6 @@ export class ContentCopy {
       userId: Id<"users">;
       now: number;
       budget: CopyBudget;
-      /// What becomes of a placed image whose upload has not finished:
-      /// left out of the copy, or the whole copy refused.
-      uploadingImages: "leaveOut" | "refuse";
     },
   ) {}
 
@@ -140,49 +139,43 @@ export class ContentCopy {
           .withIndex("by_pageId", (q) => q.eq("pageId", pageId)),
       )
     ).filter((lineup) => !lineup.deleted);
-    for (const element of elements) {
-      budget.spend({ documents: assetIdsOfRow(element).size });
-      if (placedImageAssetId(element) !== null) {
+    const chargePictures = (pictureIds: Iterable<string>) => {
+      if (!this.acrossStrategies) return;
+      for (const pictureId of pictureIds) {
+        if (this.chargedPictureIds.has(pictureId)) continue;
+        this.chargedPictureIds.add(pictureId);
         budget.spend({ bytes: imageCopyReadBytes });
       }
+    };
+    for (const element of elements) {
+      const pictures = assetIdsOfRow(element);
+      budget.spend({ documents: pictures.size });
+      chargePictures(pictures);
     }
     for (const lineup of lineups) {
+      const pictures = assetIdsOfRow(lineup);
       budget.spend({
         documents:
-          assetIdsOfRow(lineup).size +
+          pictures.size +
           lineupAgentsOf(lineup.payload).length +
           lineupGroupItems(lineup.payload).size,
       });
-      if (!this.acrossStrategies) continue;
-      for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
-        if (this.chargedLineupAssetIds.has(assetId)) continue;
-        this.chargedLineupAssetIds.add(assetId);
-        budget.spend({ bytes: imageCopyReadBytes });
-      }
+      chargePictures(pictures);
     }
     return { elements, lineups };
   }
 
-  /// Writes [page]'s copy onto [pageId]. Returns how many placed images it
-  /// left out because their uploads had not finished.
-  async write(
-    page: PageToCopy,
-    pageId: Id<"pages">,
-  ): Promise<{ imagesLeftOut: number }> {
+  /// Writes [page]'s copy onto [pageId].
+  async write(page: PageToCopy, pageId: Id<"pages">): Promise<void> {
     const { ctx } = this;
     const { targetStrategyId: strategyId, now } = this.args;
-    let imagesLeftOut = 0;
     for (const element of page.elements) {
       const publicId = pageCopyId(element.publicId, createPublicId);
-      const sourceAssetId = placedImageAssetId(element);
-      if (
-        sourceAssetId !== null &&
-        (await this.copyAsset(sourceAssetId, publicId)) === "uploading"
-      ) {
-        if (this.args.uploadingImages === "refuse") throw imageUploading();
-        imagesLeftOut += 1;
-        continue;
-      }
+      const pictureId =
+        element.elementType === "image"
+          ? collectAssetIdFromElementPayload(element.payload)
+          : null;
+      if (pictureId !== null) await this.bringPicture(pictureId);
       const copiedElement = {
         publicId,
         strategyId,
@@ -192,7 +185,11 @@ export class ContentCopy {
         payloadVersion: element.payloadVersion,
         payload: {
           ...element.payload,
-          data: { ...element.payload.data, id: publicId },
+          data: {
+            ...element.payload.data,
+            id: publicId,
+            ...(pictureId === null ? {} : { assetId: pictureId }),
+          },
         },
         sortIndex: element.sortIndex,
         revision: 1,
@@ -206,14 +203,10 @@ export class ContentCopy {
     }
 
     for (const lineup of page.lineups) {
-      if (this.acrossStrategies) {
-        for (const assetId of collectAssetIdsFromLineupPayload(
-          lineup.payload,
-        )) {
-          if ((await this.copyAsset(assetId, assetId)) === "uploading") {
-            throw imageUploading();
-          }
-        }
+      for (const pictureId of collectAssetIdsFromLineupPayload(
+        lineup.payload,
+      )) {
+        await this.bringPicture(pictureId);
       }
       const copy = copiedLineupRow(lineup.payload, this.newLineupId);
       const copiedLineup = {
@@ -244,39 +237,29 @@ export class ContentCopy {
         await ctx.db.insert("lineupItems", { pageId, lineupId, item });
       }
     }
-    return { imagesLeftOut };
   }
 
-  /// Gives the copy an asset row for [targetAssetId], once.
-  private async copyAsset(
-    sourceAssetId: string,
-    targetAssetId: string,
-  ): Promise<"copied" | "uploading" | "unavailable"> {
-    if (this.copiedAssetIds.has(targetAssetId)) return "copied";
-    this.copiedAssetIds.add(targetAssetId);
-    return await copyActiveAssetToStrategy(this.ctx, {
+  /// Gives a copy into another strategy picture [pictureId], once. A copy
+  /// within the strategy already has it.
+  private async bringPicture(pictureId: string): Promise<void> {
+    if (!this.acrossStrategies || this.copiedPictureIds.has(pictureId)) return;
+    this.copiedPictureIds.add(pictureId);
+    const copied = await copyActiveAssetToStrategy(this.ctx, {
       sourceStrategyId: this.args.sourceStrategyId,
-      sourceAssetPublicId: sourceAssetId,
+      sourceAssetPublicId: pictureId,
       targetStrategyId: this.args.targetStrategyId,
-      targetAssetPublicId: targetAssetId,
+      targetAssetPublicId: pictureId,
       userId: this.args.userId,
       now: this.args.now,
     });
+    if (copied === "uploading") {
+      // Throwing discards the whole copy. A retry once the upload lands
+      // copies the picture instead of leaving the copy without it for good.
+      throw conflictError(
+        "An image in this strategy is still uploading. Try again once it finishes.",
+      );
+    }
   }
-}
-
-function placedImageAssetId(element: Doc<"elements">): string | null {
-  return element.elementType === "image"
-    ? collectAssetIdFromElementPayload(element.payload)
-    : null;
-}
-
-function imageUploading() {
-  // Throwing discards the whole copy. A retry once the upload lands copies
-  // the image instead of leaving the copy without it for good.
-  return conflictError(
-    "An image in this strategy is still uploading. Try again once it finishes.",
-  );
 }
 
 type LineupPayload = Doc<"lineups">["payload"];

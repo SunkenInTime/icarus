@@ -37,6 +37,7 @@ const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 const getFullSnapshot = makeFunctionReference<"query">(
   "strategy:getFullSnapshot",
 );
+const getPageSnapshot = makeFunctionReference<"query">("page:getSnapshot");
 const listImages = makeFunctionReference<"query">("images:listForStrategy");
 const createShare = makeFunctionReference<"mutation">("shares:create");
 const redeemShare = makeFunctionReference<"mutation">("shares:redeem");
@@ -376,6 +377,7 @@ describe("strategies:duplicate", () => {
     expect(image.publicId).not.toBe("placed-image");
     expect(image.payload.data).toEqual({
       id: image.publicId,
+      assetId: "placed-image",
       elementType: "image",
       scale: 2,
     });
@@ -415,7 +417,7 @@ describe("strategies:duplicate", () => {
     });
 
     expect(await imageUrls(owner, "duplicate-copy")).toEqual({
-      [image.publicId]:
+      "placed-image":
         `https://media.duplicate.test/strategies/${source}/placed-image.png`,
       "lineup-image":
         `https://media.duplicate.test/strategies/${source}/lineup-image.png`,
@@ -1581,6 +1583,7 @@ describe('"+": a page added as a copy of another', () => {
     expect(image!.publicId).not.toBe("placed-image");
     expect(image!.payload.data).toEqual({
       id: image!.publicId,
+      assetId: "placed-image",
       elementType: "image",
       scale: 2,
     });
@@ -1613,12 +1616,9 @@ describe('"+": a page added as a copy of another', () => {
       ["item-1"],
     );
 
-    // The placed image's copy shows the same bytes under its own asset row;
-    // the lineup's image is the strategy's one asset.
-    const placedUrl = `https://media.duplicate.test/strategies/${source}/placed-image.png`;
+    // Both copies show the strategy's own pictures: none is added.
     expect(await imageUrls(owner, source)).toEqual({
-      "placed-image": placedUrl,
-      [image!.publicId]: placedUrl,
+      "placed-image": `https://media.duplicate.test/strategies/${source}/placed-image.png`,
       "lineup-image": `https://media.duplicate.test/strategies/${source}/lineup-image.png`,
     });
     // The copy's rows are kept like any other: its image references, and
@@ -1647,7 +1647,7 @@ describe('"+": a page added as a copy of another', () => {
       };
     });
     expect(kept).toEqual({
-      imageReferences: [image!.publicId],
+      imageReferences: ["placed-image"],
       lineupReferences: ["lineup-image"],
       agents: ["sova"],
       items: 3,
@@ -1668,44 +1668,35 @@ describe('"+": a page added as a copy of another', () => {
     expect(onPage(after.lineups, "copy-of-2")).toHaveLength(1);
   });
 
-  test("an image still uploading is left out, and the rest copied", async () => {
+  test("an image still uploading is copied too, to show its picture once it lands", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);
-    await t.run(async (ctx) => {
-      const [placed] = await ctx.db
-        .query("imageAssets")
-        .withIndex("by_publicId", (q) => q.eq("publicId", "placed-image"))
-        .collect();
-      await ctx.db.patch(placed!._id, { uploadStatus: "pending" });
-    });
-    await owner.mutation(applyBatch, {
-      ...protocol,
-      strategyPublicId: source,
-      clientId: "seed-text",
-      ops: [
-        {
-          opId: "add-text",
-          type: "element.add",
-          elementPublicId: "kept-text",
-          pagePublicId: firstPage,
-          payload: {
-            kind: "text",
-            payloadVersion: 1,
-            data: { id: "kept-text", text: "here" },
-          },
-          sortIndex: 5,
-        },
-      ],
-    });
+    const setPlacedStatus = async (uploadStatus: "pending" | "active") =>
+      await t.run(async (ctx) => {
+        const [placed] = await ctx.db
+          .query("imageAssets")
+          .withIndex("by_publicId", (q) => q.eq("publicId", "placed-image"))
+          .collect();
+        await ctx.db.patch(placed!._id, { uploadStatus });
+      });
+    await setPlacedStatus("pending");
 
     expect(await addCopyOf(t, owner, firstPage, "copy-of-1")).toMatchObject({
       status: "applied",
     });
+    const [image] = onPage((await snapshot(owner)).elements, "copy-of-1");
+    expect(image!.payload.data.assetId).toBe("placed-image");
 
-    const copied = onPage((await snapshot(owner)).elements, "copy-of-1");
-    expect(copied.map((row) => pageCopyRoot(row.publicId))).toEqual([
-      "kept-text",
-    ]);
+    // The upload lands: the copy's page shows the picture.
+    await setPlacedStatus("active");
+    const copyPage = (await owner.query(getPageSnapshot, {
+      ...protocol,
+      strategyPublicId: source,
+      pagePublicId: "copy-of-1",
+    })) as { assets: Array<Record<string, any>> };
+    expect(copyPage.assets.map((asset) => asset.publicId).sort()).toEqual(
+      [image!.publicId, "placed-image"].sort(),
+    );
   });
 
   test("a page gone by the time the add lands leaves the new page empty", async () => {
@@ -1893,7 +1884,6 @@ describe("copies sharing a transaction", () => {
         userId: sourceStrategy.ownerId,
         now: Date.now(),
         budget: new CountingBudget(() => new Error("too large")),
-        uploadingImages: "refuse",
       });
       // Page 2 twice, as two pages whose lineups show one image.
       await copy.read(page!._id);

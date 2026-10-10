@@ -936,9 +936,6 @@ async function readPageToCopy(
     userId,
     now,
     budget,
-    // The page goes in without an image still uploading, rather than not
-    // at all: the app sees the gap and says so.
-    uploadingImages: "leaveOut",
   });
   return { content, page: await content.read(source._id) };
 }
