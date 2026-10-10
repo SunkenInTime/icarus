@@ -1436,7 +1436,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (!kIsWeb) {
       List<String> allImageIds = [];
       for (final page in newStrat.pages) {
-        allImageIds.addAll(page.imageData.map((image) => image.id));
+        allImageIds.addAll(page.imageData.map((image) => image.pictureId));
         for (final link in page.lineUpLinks) {
           allImageIds.addAll(link.images.map((image) => image.id));
         }

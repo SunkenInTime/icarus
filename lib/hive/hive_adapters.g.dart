@@ -218,13 +218,14 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
       link: fields[3] == null ? '' : fields[3] as String,
+      assetId: fields[11] as String?,
     )..isDeleted = fields[5] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
@@ -242,7 +243,9 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..writeByte(9)
       ..write(obj.tagColorValue)
       ..writeByte(10)
-      ..write(obj.sizeVersion);
+      ..write(obj.sizeVersion)
+      ..writeByte(11)
+      ..write(obj.assetId);
   }
 
   @override

@@ -774,6 +774,7 @@ class PlacedWidgetPreview {
         aspectRatio: w.aspectRatio,
         scale: scale ?? w.scale,
         id: w.id,
+        pictureId: w.pictureId,
         tagColorValue: w.tagColorValue,
       );
     }

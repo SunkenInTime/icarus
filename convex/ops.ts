@@ -8,6 +8,7 @@ import {
 } from "./lib/strategyAgentSummary";
 import {
   expectAssets,
+  keepPictureId,
   referencedAssetIds,
   staleUploadAgeMs,
 } from "./lib/imageAssets";
@@ -1231,7 +1232,9 @@ async function applyElementOp(
       throw errorWithCode("MISSING_PAGE_PUBLIC_ID", "Missing pagePublicId");
     }
     const page = await requireTargetPage(ctx, strategy, op.pagePublicId);
-    const payload = assertElementPayload(op.payload);
+    const sent = assertElementPayload(op.payload);
+    const payload =
+      existing === null ? sent : keepPictureId(existing.payload, sent);
     if (existing !== null) {
       if (existing.strategyId !== strategy._id) {
         return rejected("element_strategy_mismatch");
@@ -1379,6 +1382,7 @@ async function applyElementOp(
           checkRevision = true;
         }
       }
+      payload = keepPictureId(existing.payload, payload);
       setIfChanged(patch, "payload", existing.payload, payload);
       setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
       setIfChanged(

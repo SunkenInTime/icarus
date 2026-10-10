@@ -202,6 +202,7 @@ Widget _imageApp({
               // ignore: prefer_const_constructors
               ImageWidget(
                 id: _imageId,
+                pictureId: _imageId,
                 aspectRatio: 16 / 9,
                 scale: 320,
                 fileExtension: '.png',
