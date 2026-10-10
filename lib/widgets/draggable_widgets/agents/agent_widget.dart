@@ -255,10 +255,18 @@ class AgentWidget extends ConsumerWidget {
             ),
             isAttack: mapState.isAttack,
           );
-    final adjacentPageCopyItems =
-        canInteract && lineUpId == null && placedAgentNode != null
-            ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
-            : const <ShadContextMenuItem>[];
+    final adjacentPageCopyItems = !canInteract
+        ? const <ShadContextMenuItem>[]
+        : lineUpId != null
+            ? buildLineUpAdjacentPageCopyMenuItems(ref, {
+                for (final link in ref
+                    .read(lineUpProvider.notifier)
+                    .linksFromOrigin(lineUpId!))
+                  link.id,
+              })
+            : placedAgentNode != null
+                ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
+                : const <ShadContextMenuItem>[];
     final hasContextMenuItemsBelow = canInteract &&
         (lineUpId != null ||
             (plainAgent != null && plainAgent.id.isNotEmpty) ||

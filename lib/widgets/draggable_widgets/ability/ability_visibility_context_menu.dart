@@ -52,7 +52,10 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   );
   final adjacentPageItems = landingId == null
       ? buildAdjacentPageCopyMenuItems(ref, ability.id)
-      : const <ShadContextMenuItem>[];
+      : buildLineUpAdjacentPageCopyMenuItems(ref, {
+          for (final link in ref.read(lineUpProvider).linksToLanding(landingId))
+            link.id,
+        });
   final lineUpItems = landingId == null
       ? const <ShadContextMenuItem>[]
       : buildLandingLineUpMenuItems(ref, landingId, context: context);

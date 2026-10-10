@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -369,6 +370,64 @@ class LineUpGraph {
               : landing.copyWith(ability: ability(landing.ability)),
       ],
       links: links,
+    );
+  }
+
+  /// The lineups [linkIds] and the spots they aim at, ready to be put on
+  /// another page, each under a new id that carries its original's (see
+  /// page_copy_id.dart). Spots they share stay shared in the copy.
+  LineUpGraph copyOfLinks(Set<String> linkIds) {
+    final newIds = <String, String>{};
+    String renamed(String id) => newIds[id] ??= newPageCopyId(id);
+    final part = linksWithSpots(linkIds);
+    return LineUpGraph(
+      origins: [
+        for (final origin in part.origins)
+          LineUpOrigin(
+            id: renamed(origin.id),
+            agent: origin.agent
+                .deepCopy<PlacedAgent>()
+                .copyWith(lineUpID: renamed(origin.id)),
+          ),
+      ],
+      landings: [
+        for (final landing in part.landings)
+          LineUpLanding(
+            id: renamed(landing.id),
+            ability: landing.ability
+                .deepCopy<PlacedAbility>()
+                .copyWith(lineUpID: renamed(landing.id)),
+          ),
+      ],
+      links: [
+        for (final link in part.links)
+          link.deepCopy().copyWith(
+                id: renamed(link.id),
+                originId: renamed(link.originId),
+                landingId: renamed(link.landingId),
+              ),
+      ],
+    );
+  }
+
+  /// The lineups [linkIds] and the spots they aim at.
+  LineUpGraph linksWithSpots(Set<String> linkIds) {
+    final picked = [
+      for (final link in links)
+        if (linkIds.contains(link.id)) link,
+    ];
+    final originIds = {for (final link in picked) link.originId};
+    final landingIds = {for (final link in picked) link.landingId};
+    return LineUpGraph(
+      origins: [
+        for (final origin in origins)
+          if (originIds.contains(origin.id)) origin,
+      ],
+      landings: [
+        for (final landing in landings)
+          if (landingIds.contains(landing.id)) landing,
+      ],
+      links: picked,
     );
   }
 
