@@ -54,6 +54,11 @@ const teammateDeletedCannotRestoreMessage =
 /// sent again.
 const pageDeletedMessage = 'This page was deleted';
 
+/// The server's refusal of a page add whose copy of another page
+/// (PageAddOp.copyContentFromPagePublicId) is too large to make in one go
+/// (PAGE_TOO_LARGE_TO_COPY, convex/ops.ts).
+const pageTooLargeToCopyMessage = 'This page is too large to copy.';
+
 /// How long the server keeps a deleted page restorable (the server's
 /// PAGE_TRASH_RETENTION_MS), for copy that promises it.
 const pageTrashRetentionDays = 30;

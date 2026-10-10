@@ -35,7 +35,8 @@ bool isSpecificAttentionReason(String error) {
       lower.contains(lineupOverlapMessage.toLowerCase()) ||
       lower.contains(retiredLineupOpMessage.toLowerCase()) ||
       lower.contains(teammateDeletedMessage.toLowerCase()) ||
-      lower.contains(pageDeletedMessage.toLowerCase());
+      lower.contains(pageDeletedMessage.toLowerCase()) ||
+      lower.contains(pageTooLargeToCopyMessage.toLowerCase());
 }
 
 /// A cloud change whose write to the durable outbox failed, or could not be
@@ -124,6 +125,10 @@ String friendlyCloudSyncError(String raw) {
   if (lower.contains('retry paused')) {
     return 'A saved cloud change is paused after repeated failures. Retry '
         'when the connection and account are healthy.';
+  }
+  if (lower.contains(pageTooLargeToCopyMessage.toLowerCase())) {
+    return 'A new page was too large for the cloud to copy, so it was not '
+        'added. Keep mine tries again; Use cloud drops it.';
   }
   if (lower.contains('too large for cloud sync')) {
     return 'A saved change is too large for cloud sync. It remains saved on '
