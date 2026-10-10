@@ -26,6 +26,7 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/agents.dart';
@@ -6599,7 +6600,7 @@ void main() {
     /// sends to [server] through [repository] and reads it back after every
     /// batch. A batch waits for [hold] while it is set. The queue reaches
     /// the server while [_online] holds. Returns the container and the
-    /// batches sent.
+    /// batches sent. The server's header names [themeProfileId], if given.
     Future<(ProviderContainer, List<List<StrategyOp>>)> openOnRealQueue(
       RemotePage page, {
       DurableStrategyOutboxStore? store,
@@ -7877,6 +7878,389 @@ void main() {
       expect(store.load().records, isEmpty);
       expect(container.read(strategyConflictProvider), isEmpty);
       expect(container.read(lineupConflictsProvider), isNull);
+    });
+
+    /// The fan-in group's edit is refused beside a teammate's and waits, as
+    /// in refusedBesideTeammate, with lineup Z, a group of its own, on the
+    /// page too. The user then opens Edit placement on [editing] and drags
+    /// [landing] to [dragTo]. The outbox is kept in [store]. The server's
+    /// header has the theme the client uses, so redrawing the page queues no
+    /// strategy change of its own. Returns the container.
+    Future<ProviderContainer> refusedWhileEditing(
+      RemotePage page, {
+      required String editing,
+      required String landing,
+      required Offset dragTo,
+      DurableStrategyOutboxStore? store,
+    }) async {
+      server = _FakeServer(page.publicId, lineups: [
+        fanIn(page.publicId),
+        _lineup(page.publicId, 'z', sortIndex: 1),
+      ]);
+      final (container, _) = await openOnRealQueue(page,
+          store: store, themeProfileId: 'immutable-default-map-theme');
+      server.teammateEdit('link-a',
+          (data) => _entry(data, 'links', 'link-b')['notes'] = 'theirs');
+      container.read(lineUpProvider.notifier).updateLink(container
+          .read(lineUpProvider)
+          .linkById('link-a')!
+          .copyWith(notes: 'mine'));
+      await _until(() => container
+          .read(strategyOpQueueProvider)
+          .attentionByEntityKey
+          .containsKey(keyOf(page, 'link-a')));
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container
+          .read(interactionStateProvider.notifier)
+          .editLineUpPlacement(editing);
+      container
+          .read(lineUpProvider.notifier)
+          .moveEditedLanding(landing, dragTo);
+      return container;
+    }
+
+    /// Where the server has lineup Z's landing.
+    Offset serverLandingZ() =>
+        lineUpGraphFromRemoteLineups([server.row('link-z')])
+            .landings
+            .single
+            .ability
+            .position;
+
+    Future<void> settled(ProviderContainer container) async {
+      await _until(
+          () => container.read(strategyOpQueueProvider).pending.isEmpty);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+    }
+
+    for (final keepBoth in [false, true]) {
+      test(
+          '${keepBoth ? 'Keep both' : 'Use cloud'} on another group keeps a '
+          'placement edit open, and Save sends its drag as one undo step',
+          () async {
+        final page = _page('page-1', 0);
+        const dragTo = Offset(400, 250);
+        final container = await refusedWhileEditing(page,
+            editing: 'link-z', landing: 'landing-z', dragTo: dragTo);
+
+        final session = container.read(strategyPageSessionProvider.notifier);
+        if (keepBoth) {
+          expect(await session.keepBothForRejected(), KeepBothOutcome.kept);
+        } else {
+          expect(await session.useCloudVersionsForRejected(), isTrue);
+        }
+        await settled(container);
+
+        // The cloud's version of the other group is on screen, and the edit
+        // is still open with its drag.
+        expect(
+            container.read(lineUpProvider).linkById('link-b')!.notes, 'theirs');
+        expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+            isEmpty);
+        expect(container.read(interactionStateProvider),
+            InteractionState.lineUpEditing);
+        final edit = container.read(lineUpProvider).edit!;
+        expect(edit.linkIds, {'link-z'});
+        expect(edit.movedLandings, {'landing-z': dragTo});
+        expect(serverLandingZ(), const Offset(30, 40));
+
+        final undoSteps = container.read(actionProvider).length;
+        container.read(lineUpProvider.notifier).saveEdit();
+        container
+            .read(interactionStateProvider.notifier)
+            .update(InteractionState.navigation);
+        await _until(() => serverLandingZ() == dragTo);
+        await settled(container);
+
+        expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+            isEmpty);
+        expect(container.read(actionProvider), hasLength(undoSteps + 1));
+        container.read(actionProvider.notifier).undoAction();
+        expect(
+          container
+              .read(lineUpProvider)
+              .landingById('landing-z')!
+              .ability
+              .position,
+          const Offset(30, 40),
+        );
+        await _until(() => serverLandingZ() == const Offset(30, 40));
+        await settled(container);
+      });
+    }
+
+    test(
+        'Use cloud keeps a drag of a spot a teammate moved meanwhile, and '
+        'Save of it is checked against the version the edit started from',
+        () async {
+      // This server checks each group whole, as servers did before they
+      // merged by field: Save waits as a conflict instead of overwriting the
+      // teammate's move. One that merges is the next test.
+      final page = _page('page-1', 0);
+      const dragTo = Offset(400, 250);
+      const theirs = Offset(90, 90);
+      final container = await refusedWhileEditing(page,
+          editing: 'link-z', landing: 'landing-z', dragTo: dragTo);
+      server.teammateEdit(
+          'link-z',
+          (data) => _entry(data, 'landings', 'landing-z')['ability'] =
+              _abilityJson('landing-z', theirs));
+      // The live read shows it; the edit holds it back.
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      await settled(container);
+      // The teammate's move waits behind the edit, which keeps the drag.
+      expect(container.read(lineUpProvider).edit!.movedLandings,
+          {'landing-z': dragTo});
+
+      container.read(lineUpProvider.notifier).saveEdit();
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.navigation);
+      await _until(() => container
+          .read(strategyOpQueueProvider)
+          .attentionByEntityKey
+          .containsKey(keyOf(page, 'link-z')));
+
+      expect(serverLandingZ(), theirs);
+      expect(
+        container
+            .read(lineUpProvider)
+            .landingById('landing-z')!
+            .ability
+            .position,
+        dragTo,
+      );
+    });
+
+    test(
+        "Save of a drag merges by spot: it wins over a teammate's move of "
+        'that spot, and their move of another stays', () async {
+      final page = _page('page-1', 0);
+      const dragTo = Offset(400, 250);
+      server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)])
+        ..mergesByField = true;
+      final (container, batches) = await openOnRealQueue(page,
+          themeProfileId: 'immutable-default-map-theme');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container
+          .read(interactionStateProvider.notifier)
+          .editLineUpPlacement('link-a');
+      container
+          .read(lineUpProvider.notifier)
+          .moveEditedLanding('landing', dragTo);
+      // Meanwhile a teammate moves that landing and origin B, which the edit
+      // also holds: both wait behind it.
+      server.teammateEdit('link-a', (data) {
+        _entry(data, 'landings', 'landing')['ability'] =
+            _abilityJson('landing', const Offset(90, 90));
+        _entry(data, 'origins', 'origin-b')['agent'] =
+            _agentJson('origin-b', const Offset(70, 70));
+      });
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      container.read(lineUpProvider.notifier).saveEdit();
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.navigation);
+      await _until(() => sentFor(batches, keyOf(page, 'link-a')).isNotEmpty);
+      await settled(container);
+
+      // Save names only the spot the user dragged, measured from the version
+      // the edit started from, so the origin the teammate moved is not sent
+      // back to where it was.
+      final saved = sentFor(batches, keyOf(page, 'link-a')).last;
+      expect(saved.merge?.fields, ['landings/landing']);
+      final row = lineUpGraphFromRemoteLineups([server.row('link-a')]);
+      expect(row.landings.single.ability.position, dragTo);
+      expect(row.origins.singleWhere((o) => o.id == 'origin-b').agent.position,
+          const Offset(70, 70));
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+          isEmpty);
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.landingById('landing')!.ability.position, dragTo);
+      expect(
+          lineUps.originById('origin-b')!.agent.position, const Offset(70, 70));
+    });
+
+    test(
+        'Use cloud on the group being edited takes its cloud version and '
+        'ends the edit', () async {
+      final page = _page('page-1', 0);
+      final container = await refusedWhileEditing(page,
+          editing: 'link-a',
+          landing: 'landing',
+          dragTo: const Offset(400, 250));
+      expect(
+          container.read(lineUpProvider).edit!.linkIds, {'link-a', 'link-b'});
+
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      await settled(container);
+
+      expect(container.read(lineUpProvider).edit, isNull);
+      expect(container.read(interactionStateProvider),
+          InteractionState.navigation);
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.linkById('link-a')!.notes, 'remote lineup');
+      expect(lineUps.linkById('link-b')!.notes, 'theirs');
+      expect(lineUps.landingById('landing')!.ability.position, newer);
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+          isEmpty);
+    });
+
+    test(
+        'Use cloud takes the cloud version of a group the user is placing a '
+        'lineup from', () async {
+      final page = _page('page-1', 0);
+      final (container, _, _) = await refusedBesideTeammate(page);
+      container.read(lineUpProvider.notifier).startFromOrigin('origin-a');
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.lineUpPlacing);
+
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      await settled(container);
+
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.linkById('link-a')!.notes, 'remote lineup');
+      expect(lineUps.linkById('link-b')!.notes, 'theirs');
+      expect(lineUps.placement?.pinnedOriginId, 'origin-a');
+      expect(container.read(interactionStateProvider),
+          InteractionState.lineUpPlacing);
+    });
+
+    test(
+        "a teammate's move a placement edit held back applies once the user "
+        'ends the edit while Use cloud discards', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      const theirs = Offset(90, 90);
+      final container = await refusedWhileEditing(page,
+          editing: 'link-z',
+          landing: 'landing-z',
+          dragTo: const Offset(400, 250),
+          store: store);
+      server.teammateEdit(
+          'link-z',
+          (data) => _entry(data, 'landings', 'landing-z')['ability'] =
+              _abilityJson('landing-z', theirs));
+      // The live read shows it; the edit holds it back.
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      var ended = false;
+      store.onRemove = (storageKey) {
+        if (ended) return;
+        ended = true;
+        container
+            .read(interactionStateProvider.notifier)
+            .update(InteractionState.navigation);
+      };
+
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      expect(ended, isTrue);
+      await settled(container);
+
+      await _until(() =>
+          container
+              .read(lineUpProvider)
+              .landingById('landing-z')!
+              .ability
+              .position ==
+          theirs);
+      expect(serverLandingZ(), theirs);
+    });
+
+    test(
+        "Use cloud whose discard fails puts the user's version back on a "
+        'group they are placing a lineup from', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, _, _) = await refusedBesideTeammate(page, store: store);
+      container.read(lineUpProvider.notifier).startFromOrigin('origin-a');
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.lineUpPlacing);
+      store.failRemove = (storageKey) => true;
+
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isFalse);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // The refused work still waits, and the canvas shows it.
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.linkById('link-a')!.notes, 'mine');
+      expect(lineUps.linkById('link-b')!.notes, 'remote lineup');
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+          [keyOf(page, 'link-a')]);
+    });
+
+    test(
+        "a drag made while Use cloud loads the cloud's version stays, and "
+        'the conflict still resolves', () async {
+      final page = _page('page-1', 0);
+      final container = await refusedWhileEditing(page,
+          editing: 'link-z',
+          landing: 'landing-z',
+          dragTo: const Offset(400, 250));
+      final refreshes = liveRead.refreshCount;
+      final gate = liveRead.refreshGate = Completer<void>();
+
+      final useCloud = container
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      await _until(() => liveRead.refreshCount > refreshes);
+      const dragTo = Offset(420, 260);
+      container
+          .read(lineUpProvider.notifier)
+          .moveEditedLanding('landing-z', dragTo);
+      gate.complete();
+
+      expect(await useCloud, isTrue);
+      await settled(container);
+      expect(
+          container.read(lineUpProvider).linkById('link-b')!.notes, 'theirs');
+      expect(container.read(lineUpProvider).edit!.movedLandings,
+          {'landing-z': dragTo});
     });
 
     test(
