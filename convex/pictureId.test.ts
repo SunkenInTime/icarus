@@ -266,7 +266,7 @@ describe("an image showing another image's picture", () => {
   });
 });
 
-test("a picture from before upload statuses is found beside copies in other strategies", async () => {
+test("a picture from before upload statuses is found beside copies elsewhere and failed attempts", async () => {
   const { t, owner } = await seed();
   const otherStrategy = "picture-other";
   await owner.mutation(createStrategy, {
@@ -307,6 +307,18 @@ test("a picture from before upload statuses is found beside copies in other stra
         fileExtension: ".png",
         createdAt: now + index + 1,
         updatedAt: now + index + 1,
+      });
+    }
+    // Ten newer failed attempts at the same picture in this strategy.
+    for (let index = 0; index < 10; index += 1) {
+      await ctx.db.insert("imageAssets", {
+        publicId: "legacy-picture",
+        provider: "r2",
+        strategyId: mine,
+        uploadStatus: "failed",
+        fileExtension: ".png",
+        createdAt: now + 100 + index,
+        updatedAt: now + 100 + index,
       });
     }
     const found = await getActiveAssetForStrategy(ctx, mine, "legacy-picture");
