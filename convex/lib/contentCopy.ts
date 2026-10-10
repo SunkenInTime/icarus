@@ -99,6 +99,9 @@ export class ContentCopy {
   readonly lineupAgents: CopiedLineupAgent[] = [];
   private readonly newLineupId = lineupIdMap();
   private readonly copiedAssetIds = new Set<string>();
+  // Lineup images the budget has been charged for: lineups on several pages
+  // can show one image, which the copy copies once.
+  private readonly chargedLineupAssetIds = new Set<string>();
 
   constructor(
     private readonly ctx: MutationCtx,
@@ -147,12 +150,11 @@ export class ContentCopy {
           lineupAgentsOf(lineup.payload).length +
           lineupGroupItems(lineup.payload).size,
       });
-      if (this.acrossStrategies) {
-        budget.spend({
-          bytes:
-            imageCopyReadBytes *
-            collectAssetIdsFromLineupPayload(lineup.payload).size,
-        });
+      if (!this.acrossStrategies) continue;
+      for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
+        if (this.chargedLineupAssetIds.has(assetId)) continue;
+        this.chargedLineupAssetIds.add(assetId);
+        budget.spend({ bytes: imageCopyReadBytes });
       }
     }
     return { elements, lineups };
