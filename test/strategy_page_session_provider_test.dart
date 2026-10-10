@@ -1504,7 +1504,14 @@ void main() {
       queue: queue,
     );
 
-    await container.read(strategyProvider.notifier).addPage('Execute');
+    // The server answers nothing here, so "+" waits out a short window.
+    StrategyProvider.cloudPageCopyLandingWait =
+        const Duration(milliseconds: 100);
+    addTearDown(() =>
+        StrategyProvider.cloudPageCopyLandingWait = const Duration(seconds: 3));
+    final gaps =
+        await container.read(strategyProvider.notifier).addPage('Execute');
+    expect(gaps?.pageWaiting, isTrue);
 
     final intent = container
         .read(strategyOpQueueProvider)
@@ -1527,7 +1534,7 @@ void main() {
       intent.key,
       EntitySyncKey.pageDescriptor(pending.op.entityPublicId!),
     );
-    expect(queue.flushNowCount, 1);
+    expect(queue.flushNowCount, greaterThan(0));
   });
 
   test('cloud page rename is persisted with the page revision', () async {
@@ -11673,6 +11680,8 @@ void main() {
 
       setUp(() => StrategyProvider.cloudPageCopyLandingWait =
           const Duration(seconds: 2));
+      tearDown(() => StrategyProvider.cloudPageCopyLandingWait =
+          const Duration(seconds: 3));
 
       Iterable<ElementAddOp> elementCopies(List<StrategyOp> sent) {
         final pages = sent.whereType<PageAddOp>().map((op) => op.pagePublicId);
@@ -11738,8 +11747,10 @@ void main() {
 
         expect(gaps?.pageWaiting, isTrue);
         expect(elementCopies(sent), isEmpty);
-        // The cloud answers: the page lands, then its copy is sent.
+        // The cloud answers the queue's next retry: the page lands, then
+        // its copy is sent.
         answering = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
         await _until(() => elementCopies(sent).length == 2);
         expect(
           elementCopies(sent).map((op) => pageCopyRoot(op.elementPublicId)),

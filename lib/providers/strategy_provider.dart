@@ -95,6 +95,8 @@ typedef NewPageCopyGaps = ({int imagesLeft, bool notSaved, bool pageWaiting});
 class StrategyProvider extends Notifier<StrategyState> {
   @override
   StrategyState build() {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
     _registerPersistenceTrackingListeners();
     ref.listen<AppAuthState>(authProvider, (previous, next) {
       final strategyId = state.strategyId;
@@ -1686,10 +1688,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     return fits ? copyId : const Uuid().v4();
   }
 
-  /// Whether the queued ops [opIds] of strategy [strategyId] land: true once
-  /// all have, false once one is refused (it waits for the user's choice)
-  /// or the strategy is left, null if [deadline] comes first. Keeps the
-  /// queue sending meanwhile; it may be busy with an earlier batch.
+  bool _disposed = false;
+
+  /// Whether the queued ops [ids] of strategy [strategyId] land: true once
+  /// all have, false once one is refused (it waits for the user's choice),
+  /// the strategy is left or this is disposed, null if [deadline] comes
+  /// first. With a deadline the user is waiting, so the queue is kept
+  /// sending (it may be busy with an earlier batch); without one this only
+  /// watches, leaving the queue's own retries alone.
   Future<bool?> _untilLanded(
     String strategyId,
     Set<String> ids,
@@ -1698,6 +1704,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final queue = ref.read(strategyOpQueueProvider.notifier);
     var nextFlush = DateTime.now();
     while (true) {
+      if (_disposed) return false;
       final queueState = ref.read(strategyOpQueueProvider);
       if (queueState.attentionByEntityKey.values
           .any((intent) => ids.contains(intent.pending.op.opId))) {
@@ -1710,8 +1717,12 @@ class StrategyProvider extends Notifier<StrategyState> {
           queueState.strategyPublicId != strategyId) {
         return false;
       }
+      if (deadline == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        continue;
+      }
       final now = DateTime.now();
-      if (deadline != null && !now.isBefore(deadline)) return null;
+      if (!now.isBefore(deadline)) return null;
       if (!now.isBefore(nextFlush)) {
         unawaited(queue.flushNow());
         nextFlush = now.add(const Duration(milliseconds: 500));
