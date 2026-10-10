@@ -11,6 +11,7 @@ import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
 import { lineupsPayload, oneLineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
+import { pageCopyRoot } from "./lib/pageCopyId";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
   "users:ensureCurrentUser",
@@ -283,6 +284,58 @@ afterEach(() => {
 });
 
 describe("strategies:duplicate", () => {
+  test("copies keep their roots, so items copied between pages still pair", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    // The agent on page 2 was copied back to page 1, as the app copies.
+    const agentCopy = "placed-agent~cp1~6f1c2d0e-3b4a-4c5d-8e9f-0a1b2c3d4e5f";
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "copy-agent",
+      ops: [
+        {
+          opId: "add-agent-copy",
+          type: "element.add",
+          elementPublicId: agentCopy,
+          pagePublicId: firstPage,
+          payload: {
+            kind: "agent",
+            payloadVersion: 1,
+            data: { id: agentCopy, type: "jett" },
+          },
+          sortIndex: 5,
+        },
+      ],
+    });
+
+    await duplicate(owner);
+
+    type Row = Record<string, any>;
+    const copy = (await owner.query(getFullSnapshot, {
+      ...protocol,
+      strategyPublicId: "duplicate-copy",
+    })) as { elements: Row[]; lineups: Row[] };
+    const agents = copy.elements.filter((row) => row.elementType === "agent");
+    expect(agents).toHaveLength(2);
+    // Both agents in the copy are copies of the same root, under new ids.
+    expect(agents.map((row) => pageCopyRoot(row.publicId))).toEqual([
+      "placed-agent",
+      "placed-agent",
+    ]);
+    expect(new Set(agents.map((row) => row.publicId)).size).toBe(2);
+    for (const agent of agents) {
+      expect([agentCopy, "placed-agent"]).not.toContain(agent.publicId);
+      expect(agent.payload.data.id).toBe(agent.publicId);
+    }
+    const image = copy.elements.find((row) => row.elementType === "image")!;
+    expect(pageCopyRoot(image.publicId)).toBe("placed-image");
+    // Lineups keep their roots too.
+    const lineup = copy.lineups[0]!;
+    expect(pageCopyRoot(lineup.publicId)).toBe("item-1");
+    expect(pageCopyRoot(lineup.payload.data.origins[0].id)).toBe("origin-1");
+  });
+
   test("copies pages, live content, and images under fresh ids", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);
