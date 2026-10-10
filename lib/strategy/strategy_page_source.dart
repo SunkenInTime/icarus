@@ -321,6 +321,9 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
   @override
   Future<void> flushCurrentPage() async {
+    // Whether this work is made live is judged as the canvas hands it over,
+    // before it waits on anything (see StrategyOpQueueNotifier.liveStamp).
+    final madeLive = ref.read(strategyOpQueueProvider.notifier).liveStamp;
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null ||
         snapshot.header.publicId != strategyId ||
@@ -347,6 +350,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
           pageId: pageId,
           desiredOpsByEntityKey: desiredOpsByEntityKey,
           flushImmediately: false,
+          madeLive: madeLive,
         );
   }
 

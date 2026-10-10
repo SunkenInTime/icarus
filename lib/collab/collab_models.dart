@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
+import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/const/sort_index_order.dart';
 
 const currentCloudProtocolVersion = 5;
@@ -367,7 +368,7 @@ sealed class StrategyOp {
             if (expectedRevision != null)
               'expectedElementRevision': expectedRevision,
           },
-        ElementPatchOp() => {
+        ElementPatchOp(:final merge) => {
             'opId': opId,
             'type': type.wireName,
             'elementPublicId': entityPublicId,
@@ -375,13 +376,15 @@ sealed class StrategyOp {
             if (payload != null) 'payload': payload,
             if (sortIndex != null) 'sortIndex': sortIndex,
             'expectedElementRevision': expectedRevision,
+            if (merge != null) 'merge': merge.toJson(),
           },
-        ElementDeleteOp() => {
+        ElementDeleteOp(:final lastWriterWins) => {
             'opId': opId,
             'type': type.wireName,
             'elementPublicId': entityPublicId,
             'pagePublicId': pagePublicId,
             'expectedElementRevision': expectedRevision,
+            if (lastWriterWins) 'lastWriterWins': true,
           },
         ElementReorderOp() => {
             'opId': opId,
@@ -401,7 +404,7 @@ sealed class StrategyOp {
             if (expectedRevision != null)
               'expectedLineupRevision': expectedRevision,
           },
-        LineupPatchOp() => {
+        LineupPatchOp(:final merge) => {
             'opId': opId,
             'type': type.wireName,
             'lineupPublicId': entityPublicId,
@@ -409,13 +412,15 @@ sealed class StrategyOp {
             if (payload != null) 'payload': payload,
             if (sortIndex != null) 'sortIndex': sortIndex,
             'expectedLineupRevision': expectedRevision,
+            if (merge != null) 'merge': merge.toJson(),
           },
-        LineupDeleteOp() => {
+        LineupDeleteOp(:final lastWriterWins) => {
             'opId': opId,
             'type': type.wireName,
             'lineupPublicId': entityPublicId,
             'pagePublicId': pagePublicId,
             'expectedLineupRevision': expectedRevision,
+            if (lastWriterWins) 'lastWriterWins': true,
           },
         LineupReorderOp() => {
             'opId': opId,
@@ -487,6 +492,7 @@ sealed class StrategyOp {
           sortIndex: (json['sortIndex'] as num?)?.toInt(),
           expectedElementRevision:
               _requiredInt(json['expectedElementRevision']),
+          merge: FieldMerge.fromJson(json['merge']),
         ),
       StrategyOpType.elementDelete => ElementDeleteOp(
           opId: opId,
@@ -494,6 +500,7 @@ sealed class StrategyOp {
           pagePublicId: json['pagePublicId'] as String,
           expectedElementRevision:
               _requiredInt(json['expectedElementRevision']),
+          lastWriterWins: json['lastWriterWins'] == true,
         ),
       StrategyOpType.elementReorder => ElementReorderOp(
           opId: opId,
@@ -519,12 +526,14 @@ sealed class StrategyOp {
           payload: _optionalMap(json['payload']),
           sortIndex: (json['sortIndex'] as num?)?.toInt(),
           expectedLineupRevision: _requiredInt(json['expectedLineupRevision']),
+          merge: FieldMerge.fromJson(json['merge']),
         ),
       StrategyOpType.lineupDelete => LineupDeleteOp(
           opId: opId,
           lineupPublicId: json['lineupPublicId'] as String,
           pagePublicId: json['pagePublicId'] as String,
           expectedLineupRevision: _requiredInt(json['expectedLineupRevision']),
+          lastWriterWins: json['lastWriterWins'] == true,
         ),
       StrategyOpType.lineupReorder => LineupReorderOp(
           opId: opId,
@@ -535,6 +544,82 @@ sealed class StrategyOp {
         ),
     };
   }
+
+  /// This op as it goes to the server. Work a client made and sends while
+  /// it stays connected ([live]) wins as the last write: a merge without its
+  /// base, a delete over whatever the row holds now. Any other work (queued
+  /// while offline, or recovered after a restart) sends its merge's base and
+  /// a revision-checked delete, so it cannot silently overwrite a teammate's
+  /// change made meanwhile.
+  StrategyOp forSend({required bool live}) => switch (this) {
+        ElementPatchOp(merge: final merge?) when live && merge.base != null =>
+          ElementPatchOp(
+            opId: opId,
+            elementPublicId: entityPublicId!,
+            pagePublicId: pagePublicId,
+            payload: payload as CloudPayload?,
+            sortIndex: sortIndex,
+            expectedElementRevision: expectedRevision!,
+            merge: merge.withoutBase(),
+          ),
+        LineupPatchOp(merge: final merge?) when live && merge.base != null =>
+          LineupPatchOp(
+            opId: opId,
+            lineupPublicId: entityPublicId!,
+            pagePublicId: pagePublicId,
+            payload: payload as CloudPayload?,
+            sortIndex: sortIndex,
+            expectedLineupRevision: expectedRevision!,
+            merge: merge.withoutBase(),
+          ),
+        ElementDeleteOp(:final lastWriterWins) when lastWriterWins != live =>
+          ElementDeleteOp(
+            opId: opId,
+            elementPublicId: entityPublicId!,
+            pagePublicId: pagePublicId!,
+            expectedElementRevision: expectedRevision!,
+            lastWriterWins: live,
+          ),
+        LineupDeleteOp(:final lastWriterWins) when lastWriterWins != live =>
+          LineupDeleteOp(
+            opId: opId,
+            lineupPublicId: entityPublicId!,
+            pagePublicId: pagePublicId!,
+            expectedLineupRevision: expectedRevision!,
+            lastWriterWins: live,
+          ),
+        _ => this,
+      };
+
+  /// The field merge of an element or lineup patch; null for any other op.
+  FieldMerge? get merge => switch (this) {
+        ElementPatchOp(:final merge) || LineupPatchOp(:final merge) => merge,
+        _ => null,
+      };
+
+  /// This op with [merge] in place of its own, if it is an element or
+  /// lineup patch; any other op as it is.
+  StrategyOp withMerge(FieldMerge? merge) => switch (this) {
+        ElementPatchOp() => ElementPatchOp(
+            opId: opId,
+            elementPublicId: entityPublicId!,
+            pagePublicId: pagePublicId,
+            payload: payload as CloudPayload?,
+            sortIndex: sortIndex,
+            expectedElementRevision: expectedRevision!,
+            merge: merge,
+          ),
+        LineupPatchOp() => LineupPatchOp(
+            opId: opId,
+            lineupPublicId: entityPublicId!,
+            pagePublicId: pagePublicId,
+            payload: payload as CloudPayload?,
+            sortIndex: sortIndex,
+            expectedLineupRevision: expectedRevision!,
+            merge: merge,
+          ),
+        _ => this,
+      };
 
   StrategyOp withOpId(String value) => switch (this) {
         StrategyPatchOp(:final payload, :final expectedStrategyRevision) =>
@@ -616,6 +701,7 @@ sealed class StrategyOp {
           :final payload,
           :final sortIndex,
           :final expectedElementRevision,
+          :final merge,
         ) =>
           ElementPatchOp(
             opId: value,
@@ -624,17 +710,20 @@ sealed class StrategyOp {
             payload: payload,
             sortIndex: sortIndex,
             expectedElementRevision: expectedElementRevision,
+            merge: merge,
           ),
         ElementDeleteOp(
           :final elementPublicId,
           :final pagePublicId,
           :final expectedElementRevision,
+          :final lastWriterWins,
         ) =>
           ElementDeleteOp(
             opId: value,
             elementPublicId: elementPublicId,
             pagePublicId: pagePublicId,
             expectedElementRevision: expectedElementRevision,
+            lastWriterWins: lastWriterWins,
           ),
         ElementReorderOp(
           :final elementPublicId,
@@ -670,6 +759,7 @@ sealed class StrategyOp {
           :final payload,
           :final sortIndex,
           :final expectedLineupRevision,
+          :final merge,
         ) =>
           LineupPatchOp(
             opId: value,
@@ -678,17 +768,20 @@ sealed class StrategyOp {
             payload: payload,
             sortIndex: sortIndex,
             expectedLineupRevision: expectedLineupRevision,
+            merge: merge,
           ),
         LineupDeleteOp(
           :final lineupPublicId,
           :final pagePublicId,
           :final expectedLineupRevision,
+          :final lastWriterWins,
         ) =>
           LineupDeleteOp(
             opId: value,
             lineupPublicId: lineupPublicId,
             pagePublicId: pagePublicId,
             expectedLineupRevision: expectedLineupRevision,
+            lastWriterWins: lastWriterWins,
           ),
         LineupReorderOp(
           :final lineupPublicId,
@@ -841,6 +934,7 @@ final class ElementPatchOp extends StrategyOp {
     this.pagePublicId,
     this.payload,
     this.sortIndex,
+    this.merge,
   });
   @override
   final String opId;
@@ -852,6 +946,10 @@ final class ElementPatchOp extends StrategyOp {
   @override
   final int? sortIndex;
   final int expectedElementRevision;
+
+  /// Set when the patch writes only these fields of [payload] (see
+  /// FieldMerge); null for a whole, revision-checked write.
+  final FieldMerge? merge;
   @override
   StrategyOpType get type => StrategyOpType.elementPatch;
 }
@@ -862,6 +960,7 @@ final class ElementDeleteOp extends StrategyOp {
     required this.elementPublicId,
     required this.pagePublicId,
     required this.expectedElementRevision,
+    this.lastWriterWins = false,
   });
   @override
   final String opId;
@@ -869,6 +968,10 @@ final class ElementDeleteOp extends StrategyOp {
   @override
   final String pagePublicId;
   final int expectedElementRevision;
+
+  /// Deletes whatever the row holds now, unchecked: set only as the op is
+  /// sent by a client that stayed connected (see StrategyOp.forSend).
+  final bool lastWriterWins;
   @override
   StrategyOpType get type => StrategyOpType.elementDelete;
 }
@@ -924,6 +1027,7 @@ final class LineupPatchOp extends StrategyOp {
     this.pagePublicId,
     this.payload,
     this.sortIndex,
+    this.merge,
   });
   @override
   final String opId;
@@ -935,6 +1039,10 @@ final class LineupPatchOp extends StrategyOp {
   @override
   final int? sortIndex;
   final int expectedLineupRevision;
+
+  /// Set when the patch writes only these fields of [payload] (see
+  /// FieldMerge); null for a whole, revision-checked write.
+  final FieldMerge? merge;
   @override
   StrategyOpType get type => StrategyOpType.lineupPatch;
 }
@@ -945,6 +1053,7 @@ final class LineupDeleteOp extends StrategyOp {
     required this.lineupPublicId,
     required this.pagePublicId,
     required this.expectedLineupRevision,
+    this.lastWriterWins = false,
   });
   @override
   final String opId;
@@ -952,6 +1061,10 @@ final class LineupDeleteOp extends StrategyOp {
   @override
   final String pagePublicId;
   final int expectedLineupRevision;
+
+  /// Deletes whatever the row holds now, unchecked: set only as the op is
+  /// sent by a client that stayed connected (see StrategyOp.forSend).
+  final bool lastWriterWins;
   @override
   StrategyOpType get type => StrategyOpType.lineupDelete;
 }
@@ -1058,7 +1171,13 @@ enum OpRejectionReason {
   missingExpectedRevision('missing_expected_revision'),
   notFound('not_found'),
   pageStrategyMismatch('page_strategy_mismatch'),
-  revisionMismatch('revision_mismatch');
+  revisionMismatch('revision_mismatch'),
+  // A field this work changed while it waited offline was changed on the
+  // server meanwhile (see FieldMerge).
+  fieldConflict('field_conflict'),
+  // The lineup group merging this work would leave can't be stored, say a
+  // lineup whose spot a teammate removed.
+  mergeInvalid('merge_invalid');
 
   const OpRejectionReason(this.wireName);
   final String wireName;
