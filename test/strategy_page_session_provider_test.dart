@@ -7995,8 +7995,11 @@ void main() {
 
     test(
         'Use cloud keeps a drag of a spot a teammate moved meanwhile, and '
-        'Save of it waits as a conflict instead of overwriting theirs',
+        'Save of it is checked against the version the edit started from',
         () async {
+      // This server checks each group whole, as servers did before they
+      // merged by field: Save waits as a conflict instead of overwriting the
+      // teammate's move. One that merges is the next test.
       final page = _page('page-1', 0);
       const dragTo = Offset(400, 250);
       const theirs = Offset(90, 90);
@@ -8040,6 +8043,65 @@ void main() {
             .position,
         dragTo,
       );
+    });
+
+    test(
+        "Save of a drag merges by spot: it wins over a teammate's move of "
+        'that spot, and their move of another stays', () async {
+      final page = _page('page-1', 0);
+      const dragTo = Offset(400, 250);
+      server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)])
+        ..mergesByField = true;
+      final (container, batches) = await openOnRealQueue(page,
+          themeProfileId: 'immutable-default-map-theme');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container
+          .read(interactionStateProvider.notifier)
+          .editLineUpPlacement('link-a');
+      container
+          .read(lineUpProvider.notifier)
+          .moveEditedLanding('landing', dragTo);
+      // Meanwhile a teammate moves that landing and origin B, which the edit
+      // also holds: both wait behind it.
+      server.teammateEdit('link-a', (data) {
+        _entry(data, 'landings', 'landing')['ability'] =
+            _abilityJson('landing', const Offset(90, 90));
+        _entry(data, 'origins', 'origin-b')['agent'] =
+            _agentJson('origin-b', const Offset(70, 70));
+      });
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      container.read(lineUpProvider.notifier).saveEdit();
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.navigation);
+      await _until(() => sentFor(batches, keyOf(page, 'link-a')).isNotEmpty);
+      await settled(container);
+
+      // Save names only the spot the user dragged, measured from the version
+      // the edit started from, so the origin the teammate moved is not sent
+      // back to where it was.
+      final saved = sentFor(batches, keyOf(page, 'link-a')).last;
+      expect(saved.merge?.fields, ['landings/landing']);
+      final row = lineUpGraphFromRemoteLineups([server.row('link-a')]);
+      expect(row.landings.single.ability.position, dragTo);
+      expect(row.origins.singleWhere((o) => o.id == 'origin-b').agent.position,
+          const Offset(70, 70));
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+          isEmpty);
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.landingById('landing')!.ability.position, dragTo);
+      expect(
+          lineUps.originById('origin-b')!.agent.position, const Offset(70, 70));
     });
 
     test(
