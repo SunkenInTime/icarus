@@ -41,6 +41,13 @@ import { valuesEqual } from "./lib/canonicalValues";
 import { assertLineupGroupAlone, syncLineupItems } from "./lib/lineupItems";
 import { LINEUPS_PAYLOAD_VERSION } from "./lib/payloadValidators";
 import {
+  MAX_MERGE_FIELDS,
+  mergeElementPayload,
+  mergeLineupPayload,
+  type FieldMerge,
+  type MergeOutcome,
+} from "./lib/fieldMerge";
+import {
   errorWithCode,
   invalidPayloadError,
   pageDeletedError,
@@ -72,6 +79,8 @@ type StrategyOp = {
   payload?: unknown;
   sortIndex?: number;
   expectedRevision?: number;
+  merge?: FieldMerge;
+  lastWriterWins?: boolean;
 };
 type TargetSnapshot = {
   revision: number;
@@ -181,6 +190,7 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
         payload: op.payload,
         sortIndex: op.sortIndex,
         expectedRevision: op.expectedElementRevision,
+        merge: op.merge,
       };
     case "element.delete":
       return {
@@ -191,6 +201,7 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
         entityPublicId: op.elementPublicId,
         pagePublicId: op.pagePublicId,
         expectedRevision: op.expectedElementRevision,
+        lastWriterWins: op.lastWriterWins,
       };
     case "element.reorder":
       return {
@@ -226,6 +237,7 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
         payload: op.payload,
         sortIndex: op.sortIndex,
         expectedRevision: op.expectedLineupRevision,
+        merge: op.merge,
       };
     case "lineup.delete":
       return {
@@ -236,6 +248,7 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
         entityPublicId: op.lineupPublicId,
         pagePublicId: op.pagePublicId,
         expectedRevision: op.expectedLineupRevision,
+        lastWriterWins: op.lastWriterWins,
       };
     case "lineup.reorder":
       return {
@@ -466,6 +479,39 @@ function setIfChanged(
   if (!valuesEqual(currentValue, nextValue)) patch[key] = nextValue;
 }
 
+/// Refuses a merge that names too many fields, names one twice, or has a
+/// base that leaves out a field it changes (that field would then skip the
+/// offline check).
+function assertMergeShape(merge: FieldMerge): void {
+  const fields = new Set(merge.fields);
+  if (
+    merge.fields.length > MAX_MERGE_FIELDS ||
+    fields.size !== merge.fields.length
+  ) {
+    throw errorWithCode("INVALID_OP", "Invalid field merge");
+  }
+  if (merge.base === undefined) return;
+  const based = new Set(merge.base.map((entry) => entry.field));
+  if (based.size !== merge.base.length || based.size !== fields.size) {
+    throw errorWithCode("INVALID_OP", "Invalid field merge");
+  }
+  for (const field of fields) {
+    if (!based.has(field)) {
+      throw errorWithCode("INVALID_OP", "Invalid field merge");
+    }
+  }
+}
+
+/// A merged payload too large to store fails as an oversized op does.
+function assertMergedSize(outcome: MergeOutcome<unknown>): void {
+  if (
+    outcome.status === "merged" &&
+    cloudOperationExceedsPolicy(outcome.value)
+  ) {
+    throw errorWithCode("INVALID_PAYLOAD", CLOUD_OPERATION_TOO_LARGE_MESSAGE);
+  }
+}
+
 function requireExpectedRevision(op: StrategyOp, currentRevision: number) {
   if (op.expectedRevision === undefined) {
     return { status: "reject" as const, reason: "missing_expected_revision" };
@@ -692,7 +738,9 @@ function isRejectionReason(
     reason === "missing_expected_revision" ||
     reason === "not_found" ||
     reason === "page_strategy_mismatch" ||
-    reason === "revision_mismatch"
+    reason === "revision_mismatch" ||
+    reason === "field_conflict" ||
+    reason === "merge_invalid"
   );
 }
 
@@ -1220,7 +1268,9 @@ async function applyElementOp(
       checkTrashedPageDeletes,
     );
     if (offLivePage !== null) return offLivePage;
-    const mismatch = requireExpectedRevision(op, existing.revision);
+    const mismatch = op.lastWriterWins
+      ? null
+      : requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
       return rejected(
         mismatch.reason,
@@ -1249,14 +1299,41 @@ async function applyElementOp(
   if (deleted !== null) return deleted;
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
+  // A patch merged by field writes over whatever the row holds now, so its
+  // revision is not checked; one that falls back to a whole write is.
+  let checkRevision = true;
   if (op.kind === "patch") {
+    if (op.merge !== undefined) {
+      assertMergeShape(op.merge);
+      checkRevision = false;
+    }
     if (op.payload !== undefined) {
-      const payload = assertElementPayload(op.payload);
+      let payload = assertElementPayload(op.payload);
       if (payload.kind !== existing.elementType) {
         throw errorWithCode(
           "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH",
           "elementType_payloadKind_mismatch",
         );
+      }
+      if (op.merge !== undefined) {
+        const outcome = mergeElementPayload(
+          existing.payload,
+          payload,
+          op.merge,
+        );
+        if (outcome.status === "conflict") {
+          return rejected(
+            "field_conflict",
+            { revision: existing.revision, payload: existing.payload },
+            existing.pageId,
+          );
+        }
+        assertMergedSize(outcome);
+        if (outcome.status === "merged") {
+          payload = outcome.value as ElementPayload;
+        } else {
+          checkRevision = true;
+        }
       }
       setIfChanged(patch, "payload", existing.payload, payload);
       setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
@@ -1288,7 +1365,9 @@ async function applyElementOp(
   if (Object.keys(patch).length === 0) {
     return noop(existing.revision, eventPageId);
   }
-  const mismatch = requireExpectedRevision(op, existing.revision);
+  const mismatch = checkRevision
+    ? requireExpectedRevision(op, existing.revision)
+    : null;
   if (mismatch !== null) {
     return rejected(
       mismatch.reason,
@@ -1397,7 +1476,9 @@ async function applyLineupOp(
       checkTrashedPageDeletes,
     );
     if (offLivePage !== null) return offLivePage;
-    const mismatch = requireExpectedRevision(op, existing.revision);
+    const mismatch = op.lastWriterWins
+      ? null
+      : requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
       return rejected(
         mismatch.reason,
@@ -1426,9 +1507,41 @@ async function applyLineupOp(
   if (deleted !== null) return deleted;
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
+  // As for elements: a patch merged by item is not revision-checked.
+  let checkRevision = true;
   if (op.kind === "patch") {
+    if (op.merge !== undefined) {
+      assertMergeShape(op.merge);
+      checkRevision = false;
+    }
     if (op.payload !== undefined) {
-      const payload = assertLineupPayload(op.payload, publicId);
+      let payload = assertLineupPayload(op.payload, publicId);
+      if (op.merge !== undefined) {
+        const current = { revision: existing.revision, payload: existing.payload };
+        const outcome = mergeLineupPayload(
+          existing.payload,
+          payload,
+          op.merge,
+        );
+        if (outcome.status === "conflict") {
+          return rejected("field_conflict", current, existing.pageId);
+        }
+        assertMergedSize(outcome);
+        if (outcome.status === "merged") {
+          // The client's group was whole; the merged one must be too, say
+          // when a teammate removed a spot one of its lineups stands on.
+          try {
+            payload = assertLineupPayload(outcome.value, publicId);
+          } catch (error) {
+            if (error instanceof ConvexError) {
+              return rejected("merge_invalid", current, existing.pageId);
+            }
+            throw error;
+          }
+        } else {
+          checkRevision = true;
+        }
+      }
       setIfChanged(patch, "payload", existing.payload, payload);
       setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
       setIfChanged(
@@ -1473,7 +1586,9 @@ async function applyLineupOp(
   if (Object.keys(patch).length === 0) {
     return noop(existing.revision, eventPageId);
   }
-  const mismatch = requireExpectedRevision(op, existing.revision);
+  const mismatch = checkRevision
+    ? requireExpectedRevision(op, existing.revision)
+    : null;
   if (mismatch !== null) {
     return rejected(
       mismatch.reason,
