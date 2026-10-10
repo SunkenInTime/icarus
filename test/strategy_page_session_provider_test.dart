@@ -11564,7 +11564,13 @@ void main() {
           [PageTransitionDirection.forward, PageTransitionDirection.backward],
         );
 
-        expect(await copy(container), PageCopyResult.copied);
+        // Nothing is queued until the picture is copied.
+        final picture = reader.imageCopyGate = Completer<void>();
+        final copied = copy(container);
+        await _settle();
+        expect(copies(container), isEmpty);
+        picture.complete();
+        expect(await copied, PageCopyResult.copied);
 
         final add = copies(container).single;
         expect(add.payload['kind'], 'image');
@@ -11579,6 +11585,31 @@ void main() {
       test('still uploading is not copied yet', () async {
         final (container, _) =
             await openWithImage(CloudImageCopyResult.uploading);
+
+        expect(await copy(container), PageCopyResult.imageUploading);
+        expect(copies(container), isEmpty);
+      });
+
+      test('this device is still uploading is not copied yet', () async {
+        final (container, _) =
+            await openWithImage(CloudImageCopyResult.unavailable);
+        container.read(cloudMediaUploadQueueProvider.notifier).state =
+            CloudMediaUploadQueueState(
+          jobs: [
+            CloudMediaUploadJob(
+              jobId: 'image',
+              accountId: 'account-a',
+              strategyPublicId: 'cloud-strategy',
+              assetPublicId: 'image',
+              fileExtension: '.png',
+              mimeType: 'image/png',
+              state: CloudMediaJobState.pendingUpload,
+              attempts: 0,
+              updatedAt: DateTime.utc(2026),
+            ),
+          ],
+          isProcessing: false,
+        );
 
         expect(await copy(container), PageCopyResult.imageUploading);
         expect(copies(container), isEmpty);
@@ -11617,6 +11648,9 @@ class _PageReader extends Fake implements ConvexStrategyRepository {
   /// What copying an image's picture returns; null: the call fails.
   CloudImageCopyResult? imageCopy = CloudImageCopyResult.copied;
 
+  /// While set, copying an image's picture waits for it.
+  Completer<void>? imageCopyGate;
+
   /// The pictures copied, as (source, target) image ids.
   final List<(String, String)> imageCopies = [];
 
@@ -11626,6 +11660,7 @@ class _PageReader extends Fake implements ConvexStrategyRepository {
     required String sourceAssetPublicId,
     required String targetAssetPublicId,
   }) async {
+    await imageCopyGate?.future;
     final result = imageCopy;
     if (result == null) throw const SocketException('offline');
     imageCopies.add((sourceAssetPublicId, targetAssetPublicId));

@@ -1080,7 +1080,18 @@ class StrategyProvider extends Notifier<StrategyState> {
         case CloudImageCopyResult.uploading:
           return PageCopyResult.imageUploading;
         case CloudImageCopyResult.unavailable:
-          return PageCopyResult.imageUnavailable;
+          // An image this device placed may not have reached the server yet.
+          final stillUploading = ref
+              .read(cloudMediaUploadQueueProvider)
+              .jobsForStrategy(strategyId)
+              .any(
+                (job) =>
+                    job.assetPublicId == widgetId &&
+                    job.state != CloudMediaJobState.failed,
+              );
+          return stillUploading
+              ? PageCopyResult.imageUploading
+              : PageCopyResult.imageUnavailable;
         case CloudImageCopyResult.copied:
           break;
       }
