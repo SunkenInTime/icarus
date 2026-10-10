@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
@@ -34,6 +35,46 @@ void main() {
     expect(args.value['acceptsTrashedPagesLeftOut'], isA<ConvexBoolean>());
     expect((args.value['acceptsTrashedPagesLeftOut'] as ConvexBoolean).value,
         isTrue);
+  });
+
+  test("reads and writes as a client that keeps images' picture ids", () async {
+    final transport = _RecordingTransport();
+    final repository = ConvexStrategyRepository(IcarusConvexApi(transport));
+
+    await expectLater(
+        repository.fetchFullSnapshot('strategy-a'), throwsStateError);
+    await expectLater(
+      repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy-a',
+        pagePublicId: 'page-1',
+      ),
+      throwsStateError,
+    );
+    await expectLater(
+      repository.applyBatch(
+        strategyPublicId: 'strategy-a',
+        clientId: 'client-a',
+        ops: const [
+          ElementDeleteOp(
+            opId: 'op-1',
+            pagePublicId: 'page-1',
+            elementPublicId: 'image-1',
+            expectedElementRevision: 1,
+          ),
+        ],
+      ),
+      throwsStateError,
+    );
+
+    expect(transport.calls.map((call) => call.$1), [
+      'strategy:getFullSnapshot',
+      'page:getSnapshot',
+      'ops:applyBatch',
+    ]);
+    for (final (name, args) in transport.calls) {
+      expect((args.value['acceptsPictureIds'] as ConvexBoolean?)?.value, isTrue,
+          reason: name);
+    }
   });
 
   test('cannot tell if any batch cannot', () async {
@@ -79,6 +120,12 @@ final class _RecordingTransport implements ConvexTransport {
 
   @override
   Future<ConvexValue> query(String name, ConvexObject args) async {
+    calls.add((name, args));
+    throw StateError('not answered in this test');
+  }
+
+  @override
+  Future<ConvexValue> mutation(String name, ConvexObject args) async {
     calls.add((name, args));
     throw StateError('not answered in this test');
   }
