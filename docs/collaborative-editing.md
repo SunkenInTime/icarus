@@ -88,18 +88,38 @@ not two.
 
 ## What the client promises
 
-- The base it records for an acknowledged edit is the payload it sent, never
-  the merged row. The merged row shows up as an ordinary remote change and is
+- **Its base after an acknowledged edit is the payload it sent, never the
+  merged row.** The merged row shows up as an ordinary remote change and is
   drawn like any teammate's edit. If the client took the merged row as its
   base, the next diff would see a teammate's fields as the user's own edits
   and write them back.
-- An op is sent with `base` unless the client both made it and sent it during
-  one connected session. That covers work queued while disconnected and work
-  recovered after a restart, including a replay of an op whose answer was
-  lost. The server only remembers op ids for 30 days, so an unguarded replay
-  after that could overwrite newer work.
-- A pending edit's own fields stay on screen until the server's copy includes
-  them.
+- **A whole write claims only a revision whose content the client drew.**
+  After its own merge lands, the row's new revision also holds a teammate's
+  fields that the client has not drawn yet. So a whole write made before the
+  client reads the row again claims the revision before the merge, and is
+  refused rather than overwriting those fields. A base never goes back to an
+  older revision when a page is read late.
+- **An op sends `base` unless it is live.** Live means the user made it while
+  connected, with no disconnect before the queue took it. That rules out
+  three kinds of work: work queued while disconnected, work recovered after
+  a restart (including a replay of an op whose answer was lost), and
+  automatic retries. The server only remembers op ids for 30 days, so an
+  unguarded replay after that could overwrite newer work.
+- **Keep mine after `field_conflict` sends the user's fields with a base of
+  what the server held when it refused.** So a teammate's change made after
+  that still asks.
+- **A successor that waited behind an in-flight op is recomputed when that op
+  lands.** It names what it changes from what the in-flight op wrote, so a
+  change the user set back in the meantime is still sent.
+- **Outbox records that hold merged work are version 3.** Builds from before
+  field merging leave them alone rather than send them as whole writes.
+- **A pending edit's own fields stay on screen until the server's copy
+  includes them.**
+
+One known limit: if the connection drops while a live op is already on its
+way, the transport can resend that op once the connection returns, as it was
+made: without a base. The user made that edit while online, so it lands as
+the last write instead of asking.
 
 ## Compatibility
 
