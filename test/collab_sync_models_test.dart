@@ -62,6 +62,37 @@ void main() {
       expect(StrategyOp.fromJson(json), isA<PageContentPatchOp>());
     });
 
+    test('a page add keeps the page it copies, through storage and retries',
+        () {
+      const op = PageAddOp(
+        opId: 'op-1',
+        pagePublicId: 'page-2',
+        payload: {'name': 'Page 2'},
+        sortIndex: 1,
+        expectedStrategyRevision: 4,
+        copyContentFromPagePublicId: 'page-1',
+      );
+      final json = op.toConvexJson();
+      expect(json['copyContentFromPagePublicId'], 'page-1');
+      final stored = StrategyOp.fromJson(json) as PageAddOp;
+      expect(stored.copyContentFromPagePublicId, 'page-1');
+      expect(
+        (stored.withOpId('op-2') as PageAddOp).copyContentFromPagePublicId,
+        'page-1',
+      );
+      // A page added without copying sends no copy field, as before.
+      expect(
+        const PageAddOp(
+          opId: 'op-3',
+          pagePublicId: 'page-3',
+          payload: {},
+          sortIndex: 2,
+          expectedStrategyRevision: 4,
+        ).toConvexJson().containsKey('copyContentFromPagePublicId'),
+        isFalse,
+      );
+    });
+
     test('withOpId changes identity without changing typed intent', () {
       const original = LineupPatchOp(
         opId: 'op-2',

@@ -78,6 +78,11 @@ enum PageCopyResult {
   unavailable,
 }
 
+/// What a new cloud page may lack, and whether it has reached the cloud
+/// yet (see StrategyProvider.addPage): edits to the page it copies that
+/// the server refused, which its copy never had.
+typedef NewPageGaps = ({bool unsavedEdits, bool waitingForCloud});
+
 class StrategyProvider extends Notifier<StrategyState> {
   @override
   StrategyState build() {
@@ -397,6 +402,34 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..markDirty()
       ..setPendingCloudSync(true)
       ..setCloudSyncError(null);
+  }
+
+  /// Queues [op], sends it, and returns the server's answer if it comes
+  /// within [wait] of the call, sending included. None when it doesn't
+  /// (offline, or behind other work): the op stays queued and lands later.
+  Future<OpAck?> _sendAndAwaitAnswer(StrategyOp op, Duration wait) async {
+    final answered = Completer<OpAck?>();
+    void answer(OpAck? ack) {
+      if (!answered.isCompleted) answered.complete(ack);
+    }
+
+    final subscription = ref.listen(strategyOpQueueProvider, (_, next) {
+      final ack = next.lastAcks.where((ack) => ack.opId == op.opId).firstOrNull;
+      if (ack != null) answer(ack);
+    });
+    final deadline = Timer(wait, () => answer(null));
+    unawaited(_enqueueCloudPageDescriptorOp(op).then(
+      (ack) {
+        if (ack != null) answer(ack);
+      },
+      onError: (Object error) => log('Could not send ${op.opId}: $error'),
+    ));
+    try {
+      return await answered.future;
+    } finally {
+      deadline.cancel();
+      subscription.close();
+    }
   }
 
   Future<OpAck?> _enqueueCloudPageDescriptorOp(StrategyOp op) async {
@@ -1475,11 +1508,22 @@ class StrategyProvider extends Notifier<StrategyState> {
     return null;
   }
 
-  Future<void> addPage([String? name]) async {
-    if (!_currentStrategyCanEditPages()) return;
+  /// How long "+" waits for the server to add a cloud page before saying
+  /// it will appear once it gets there.
+  @visibleForTesting
+  static Duration cloudPageAddWait = const Duration(seconds: 5);
+
+  /// Adds a copy of the page on screen after it, and turns to it. In the
+  /// cloud the server makes the copy (convex/lib/contentCopy.ts); what the
+  /// copy may lack, or that it hasn't landed yet, is returned for the
+  /// caller to say.
+  Future<NewPageGaps> addPage([String? name]) async {
+    const none = (unsavedEdits: false, waitingForCloud: false);
+    if (!_currentStrategyCanEditPages()) return none;
     if (_currentStrategyIsCloud()) {
+      final strategyId = state.strategyId;
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null) return;
+      if (strategyId == null || snapshot == null) return none;
       final pages = [...snapshot.pages]
         ..sortBySortIndex((item) => item.sortIndex);
       final pageID = const Uuid().v4();
@@ -1490,28 +1534,60 @@ class StrategyProvider extends Notifier<StrategyState> {
       final sourceIndex = activeIndex >= 0 ? activeIndex : pages.length - 1;
       final nextIndex = sourceIndex + 1;
       final isAutoNamed = name == null;
-      final ack = await _enqueueCloudPageDescriptorOp(PageAddOp(
-        opId: const Uuid().v4(),
-        pagePublicId: pageID,
-        payload: {
-          'name': name ?? 'Page ${nextIndex + 1}',
-          'isAutoNamed': isAutoNamed,
-          'isAttack': pages.isNotEmpty ? pages[sourceIndex].isAttack : true,
-          'settings': ref.read(strategySettingsProvider).toJson(),
-        },
-        sortIndex: nextIndex,
-        expectedStrategyRevision: snapshot.header.revision,
-      ));
-      if (ack?.isAck ?? false) {
-        await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-        await ref
-            .read(strategyPageSessionProvider.notifier)
-            .setActivePageAnimated(
-              pageID,
-              direction: PageTransitionDirection.forward,
-            );
+      final sourcePageId = pages.isEmpty ? null : pages[sourceIndex].publicId;
+      // Edits made just before "+" go ahead of the add, so the server's
+      // copy has them.
+      await ref.read(strategyPageSessionProvider.notifier).flushCurrentPage();
+      if (state.strategyId != strategyId) return none;
+      // Edits to the page the server refused: the copy, made from the
+      // server's page, doesn't have them.
+      bool sourceEditsRefused() =>
+          activeIndex >= 0 &&
+          ref
+              .read(strategyOpQueueProvider)
+              .attentionByEntityKey
+              .keys
+              .any((key) => key.pageId == sourcePageId);
+      final refusedBefore = sourceEditsRefused();
+      final answer = await _sendAndAwaitAnswer(
+        PageAddOp(
+          opId: const Uuid().v4(),
+          pagePublicId: pageID,
+          payload: {
+            'name': name ?? 'Page ${nextIndex + 1}',
+            'isAutoNamed': isAutoNamed,
+            'isAttack': pages.isNotEmpty ? pages[sourceIndex].isAttack : true,
+            'settings': ref.read(strategySettingsProvider).toJson(),
+          },
+          sortIndex: nextIndex,
+          expectedStrategyRevision: snapshot.header.revision,
+          copyContentFromPagePublicId: sourcePageId,
+        ),
+        cloudPageAddWait,
+      );
+      if (answer == null) {
+        // Offline, or behind other work: the page lands later.
+        return (unsavedEdits: refusedBefore, waitingForCloud: true);
       }
-      return;
+      // A refusal waits in the sync panel like any other.
+      if (!answer.isAck || state.strategyId != strategyId) {
+        return (unsavedEdits: refusedBefore, waitingForCloud: false);
+      }
+      // Edits sent ahead of the add have their answers too by now, and the
+      // server may have refused some of them.
+      final landed = (
+        unsavedEdits: sourceEditsRefused(),
+        waitingForCloud: false,
+      );
+      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+      if (state.strategyId != strategyId) return landed;
+      await ref
+          .read(strategyPageSessionProvider.notifier)
+          .setActivePageAnimated(
+            pageID,
+            direction: PageTransitionDirection.forward,
+          );
+      return landed;
     }
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -1520,9 +1596,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     await _syncCurrentPageToHive();
 
     final strategyId = state.strategyId;
-    if (strategyId == null) return;
+    if (strategyId == null) return none;
     final strat = box.get(strategyId);
-    if (strat == null || strat.pages.isEmpty) return;
+    if (strat == null || strat.pages.isEmpty) return none;
 
     final orderedPages = [...strat.pages]
       ..sortBySortIndex((item) => item.sortIndex);
@@ -1552,6 +1628,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
 
     await setActivePageAnimated(newPage.id);
+    return none;
   }
 
   Future<void> renamePage(String pageId, String newName) async {

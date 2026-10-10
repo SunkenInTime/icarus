@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -121,14 +123,23 @@ class TransitionPlanner {
   /// Whether the drawing layer changes between two pages, and therefore
   /// whether it should fade in early during the transition. Compares the
   /// serialized form so geometry/style edits count, not just added or
-  /// removed strokes.
+  /// removed strokes. A copied stroke counts as its original (see
+  /// page_copy_id.dart): a cloud page copy gives each its own id.
   static bool drawingsChanged(
     List<DrawingElement> prev,
     List<DrawingElement> next,
   ) {
     if (identical(prev, next)) return false;
     if (prev.length != next.length) return true;
-    return DrawingProvider.objectToJson(prev) !=
-        DrawingProvider.objectToJson(next);
+    return _drawingsByRoot(prev) != _drawingsByRoot(next);
   }
+
+  static String _drawingsByRoot(List<DrawingElement> drawings) => jsonEncode([
+        for (final drawing
+            in jsonDecode(DrawingProvider.objectToJson(drawings)) as List)
+          {
+            ...drawing as Map,
+            if (drawing['id'] case final String id) 'id': pageCopyRoot(id),
+          },
+      ]);
 }

@@ -72,6 +72,15 @@ void main() {
     );
   });
 
+  test('explains a page copy too large to make', () {
+    final message = friendlyCloudSyncError(pageTooLargeToCopyMessage);
+
+    expect(message, contains('too large for the cloud to copy'));
+    expect(message, contains('Keep mine'));
+    expect(message, contains('Use cloud'));
+    expect(isSpecificAttentionReason(pageTooLargeToCopyMessage), isTrue);
+  });
+
   test('lineup refusals and oversized work are specific attention reasons', () {
     expect(isSpecificAttentionReason(lineupPageMismatchMessage), isTrue);
     expect(isSpecificAttentionReason(retiredLineupOpMessage), isTrue);

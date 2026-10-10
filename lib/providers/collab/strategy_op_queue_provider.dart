@@ -2676,6 +2676,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           payload: {...existing.payload, ...desired.payload},
           sortIndex: existing.sortIndex,
           expectedStrategyRevision: existing.expectedStrategyRevision,
+          copyContentFromPagePublicId: existing.copyContentFromPagePublicId,
         );
       }
     }
@@ -2937,13 +2938,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           payload: payload,
           expectedStrategyRevision: revision,
         ),
-      PageAddOp(:final pagePublicId, :final payload, :final sortIndex) =>
+      PageAddOp(
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+        :final copyContentFromPagePublicId,
+      ) =>
         PageAddOp(
           opId: opId,
           pagePublicId: pagePublicId,
           payload: payload,
           sortIndex: sortIndex,
           expectedStrategyRevision: revision,
+          copyContentFromPagePublicId: copyContentFromPagePublicId,
         ),
       PagePatchOp(:final pagePublicId, :final payload) => PagePatchOp(
           opId: opId,
