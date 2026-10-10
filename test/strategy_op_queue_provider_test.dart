@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -4018,6 +4019,66 @@ void main() {
 
       expect(repository.calls.last.single.merge?.base, {'isAlly': 'theirs'});
     });
+
+    test('a change set back in flight is still sent after a restart', () async {
+      final online = StateProvider<bool>((ref) => true);
+      final store = MemoryDurableStrategyOutboxStore();
+      final gate = Completer<void>();
+      final (first, firstQueue) =
+          open(store, _ScriptedRepository(hold: gate), online);
+      await firstQueue.enqueue(patch('op-1'), flushImmediately: false);
+      unawaited(firstQueue.flushNow());
+      for (var i = 0;
+          i < 50 &&
+              store.load().records.single.status !=
+                  DurableOutboxStatus.inFlight;
+          i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      // Set back while the first send is on its way; then the app closes
+      // before its answer arrives.
+      await firstQueue.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: patch('op-2', isAlly: true).payload,
+          sortIndex: 0,
+          expectedElementRevision: 1,
+          merge: const FieldMerge(fields: [], base: {}),
+        ),
+        flushImmediately: false,
+      );
+      first.dispose();
+
+      final repository = _ScriptedRepository();
+      final (_, notifier) = open(store, repository, online);
+      await notifier.flushNow();
+      for (var i = 0; i < 50 && repository.calls.length < 2; i++) {
+        await notifier.flushNow();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      final setBack = repository.calls[1].single;
+      expect(setBack.merge?.fields, ['isAlly']);
+      expect(((setBack.payload as Map)['data'] as Map)['isAlly'], isTrue);
+    });
+
+    test('a send that failed is retried checked', () async {
+      final online = StateProvider<bool>((ref) => true);
+      final repository = _ScriptedRepository(failFirst: true);
+      final (_, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.flushNow();
+      for (var i = 0; i < 100 && repository.calls.length < 2; i++) {
+        await notifier.flushNow();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      expect(repository.calls.first.single.merge?.base, isNull);
+      expect(repository.calls[1].single.merge?.base, {'isAlly': true});
+    });
   });
 }
 
@@ -4534,9 +4595,15 @@ class _BlockingReplacementStore extends MemoryDurableStrategyOutboxStore {
 /// unfinished, and refuses its first ops with [refusals] in turn (each at
 /// revision 5), accepting the rest at revision 2.
 class _ScriptedRepository extends ConvexStrategyRepository {
-  _ScriptedRepository({List<OpRejectionReason> refusals = const [], this.hold})
-      : _refusals = [...refusals],
+  _ScriptedRepository({
+    List<OpRejectionReason> refusals = const [],
+    this.hold,
+    this.failFirst = false,
+  })  : _refusals = [...refusals],
         super(IcarusConvexApi(_UnusedTransport()));
+
+  /// Whether the first batch fails in transit, as a dropped request does.
+  bool failFirst;
 
   final List<OpRejectionReason> _refusals;
   Completer<void>? hold;
@@ -4555,6 +4622,10 @@ class _ScriptedRepository extends ConvexStrategyRepository {
     if (hold case final gate?) {
       hold = null;
       await gate.future;
+    }
+    if (failFirst) {
+      failFirst = false;
+      throw const SocketException('The request was lost.');
     }
     return [
       for (final op in ops)

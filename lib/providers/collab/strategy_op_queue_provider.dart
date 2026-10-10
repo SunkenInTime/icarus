@@ -829,11 +829,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               _sameIntent(successorIntent.pending.op, desired)) {
             continue;
           }
+          final predecessor = inFlightIntent.pending.op;
           final pending = PendingOp(
-            op: successorIntent == null
-                ? desired
-                : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
-                    desired,
+            op: _asSuccessorOf(
+              successorIntent == null
+                  ? desired
+                  : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                      desired,
+              predecessor,
+              drawn: _canvasOpIds.contains(predecessor.opId),
+            ),
             clientId: successorIntent?.pending.clientId ?? state.clientId!,
           );
           writtenByCanvas(pending, desired, from: successorIntent?.pending.op);
@@ -868,8 +873,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
           final pending = PendingOp(
-            op: _mergeQueuedIntent(successorIntent.pending.op, desired) ??
-                desired,
+            op: _asSuccessorOf(
+              _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                  desired,
+              existing.pending.op,
+              drawn: _canvasOpIds.contains(existing.pending.op.opId),
+            ),
             clientId: successorIntent.pending.clientId,
           );
           writtenByCanvas(pending, desired, from: successorIntent.pending.op);
@@ -1687,7 +1696,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             ),
             original: successor.op,
             predecessor: sent.pending.op,
-            predecessorDrawn: _canvasOpIds.contains(sent.pending.op.opId),
           ),
           clientId: successor.clientId,
         );
@@ -1997,6 +2005,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required String lastError,
     required bool countsAsFailure,
   }) async {
+    // A send that failed is retried later, by when a teammate may have
+    // changed the same fields: it goes checked.
+    _liveOpIds.removeAll([
+      for (final sent in batch) sent.pending.op.opId,
+    ]);
     final retrying = <PendingOp>[];
     try {
       for (final sent in batch) {
@@ -2778,47 +2791,52 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   /// [successor] (rebased onto the revision [predecessor] landed at) once
-  /// [predecessor] landed. A merge names what it changes from what the
-  /// predecessor wrote, so a field the predecessor set and the user then set
-  /// back is written again. Its base, for each field the predecessor wrote,
-  /// becomes that value, since the server now holds it from this client.
-  /// When the change from the predecessor cannot merge (what the element is
-  /// changed), the successor goes as a whole write at the revision it
-  /// [original]ly claimed: the revision the predecessor landed at may also
-  /// hold a teammate's fields this client never drew.
+  /// [predecessor] landed. After a merge, that revision may also hold a
+  /// teammate's fields this client never drew, so a whole write or a delete
+  /// keeps claiming the revision it was [original]ly made from. A merge
+  /// already names its change from the predecessor (see [_asSuccessorOf]).
   static StrategyOp _onLandedPredecessor(
     StrategyOp successor, {
     required StrategyOp original,
     required StrategyOp predecessor,
-    required bool predecessorDrawn,
+  }) =>
+      successor.merge == null && predecessor.merge != null
+          ? original
+          : successor;
+
+  /// [op], made to wait behind [predecessor], which lands first. When the
+  /// predecessor is this canvas's own work ([drawn]), a merge names what it
+  /// changes from what the predecessor writes, so a field the predecessor
+  /// sets and the user then set back is written again; its base, for each
+  /// field the predecessor writes, is that value. Work the canvas never drew
+  /// (recovered after a restart) is no base for the user's edits, which
+  /// were made against what the canvas showed, so [op] stays as it is. A
+  /// change from the predecessor that cannot merge (what the element is
+  /// changed) is a whole write. Worked out as the successor is made, while
+  /// [drawn] is known, and saved with it.
+  static StrategyOp _asSuccessorOf(
+    StrategyOp op,
+    StrategyOp predecessor, {
+    required bool drawn,
   }) {
-    final merge = successor.merge;
-    // After a merge, the revision it landed at may hold a teammate's fields
-    // this client never drew: a whole write or a delete keeps claiming the
-    // revision it was made from.
-    if (merge == null) {
-      return predecessor.merge != null ? original : successor;
-    }
+    final merge = op.merge;
     final written = predecessor.payload;
-    final desired = successor.payload;
-    // Work the canvas never drew (recovered after a restart) is no base for
-    // the user's edits: they were made against what the canvas showed.
-    if (written == null || desired == null || !predecessorDrawn) {
-      return successor;
+    final desired = op.payload;
+    if (merge == null || written == null || desired == null || !drawn) {
+      return op;
     }
-    final lineup = successor is LineupPatchOp;
+    final lineup = op is LineupPatchOp;
     final changed = lineup
         ? lineupMergeFields(written, desired)
         : elementMergeFields(written, desired);
-    if (changed == null) return original.withMerge(null);
+    if (changed == null) return op.withMerge(null);
     final predecessorMerge = predecessor.merge;
     bool wrote(String field) =>
         predecessorMerge == null || predecessorMerge.fields.contains(field);
-    final moved = successor.sortIndex != null &&
-        successor.sortIndex != predecessor.sortIndex;
+    final moved = op.sortIndex != null && op.sortIndex != predecessor.sortIndex;
     final fields = [...changed, if (moved) placeMergeField];
     final base = merge.base;
-    if (base == null) return successor.withMerge(FieldMerge(fields: fields));
+    if (base == null) return op.withMerge(FieldMerge(fields: fields));
     final rebased = <String, Object?>{};
     for (final field in fields) {
       if (field == placeMergeField) {
@@ -2832,7 +2850,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         rebased[field] = base[field];
       }
     }
-    return successor.withMerge(FieldMerge(fields: fields, base: rebased));
+    return op.withMerge(FieldMerge(fields: fields, base: rebased));
   }
 
   /// [op] as an add bringing its element or lineup back over the tombstone
