@@ -85,10 +85,12 @@ enum PageCopyResult {
   imageUnavailable,
 }
 
-/// What of a cloud page could not be copied onto a new page: images whose
-/// pictures could not be copied yet, and whether this device failed to
-/// store some of the copy to send.
-typedef NewPageCopyGaps = ({int imagesLeft, bool notSaved});
+/// What of a cloud page could not be copied onto a new page, or is still on
+/// its way: images whose pictures could not be copied yet; whether some of
+/// the copy could not be stored to send (or the strategy was left first);
+/// and whether the new page itself is still waiting for the cloud, its copy
+/// to follow once it is added.
+typedef NewPageCopyGaps = ({int imagesLeft, bool notSaved, bool pageWaiting});
 
 class StrategyProvider extends Notifier<StrategyState> {
   @override
@@ -1534,8 +1536,12 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// Adds a copy of the page on screen after it and turns to it. On a cloud
-  /// strategy, returns what of the page could not be copied, if anything.
-  Future<NewPageCopyGaps?> addPage([String? name]) async {
+  /// strategy, returns what of the page could not be copied, if anything;
+  /// when the page is added later, [onLaterGaps] hears what its copy missed.
+  Future<NewPageCopyGaps?> addPage([
+    String? name,
+    void Function(NewPageCopyGaps gaps)? onLaterGaps,
+  ]) async {
     if (!_currentStrategyCanEditPages()) return null;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
@@ -1554,15 +1560,23 @@ class StrategyProvider extends Notifier<StrategyState> {
       // local "+" does, each item and lineup under a copy id (see
       // page_copy_id.dart) so the turn to it glides rather than fades.
       final strategyId = state.strategyId;
+      if (strategyId == null) return null;
       final elements = activeIndex >= 0
           ? ref
               .read(activePageLiveSyncProvider.notifier)
               .elementRowsAsDrawn(activePageId!)
           : const <({String publicId, CloudPayload payload, int sortIndex})>[];
       final lineUps = ref.read(lineUpProvider).graph;
-      final lineUpCopies =
-          lineUps.copyOfLinks({for (final link in lineUps.links) link.id});
-      final ack = await _enqueueCloudPageDescriptorOp(PageAddOp(
+      final lineUpCopies = lineUps.copyOfLinks(
+        {for (final link in lineUps.links) link.id},
+        newId: (id) => _storableCopyId(
+          strategyId,
+          id,
+          (copyId) => EntitySyncKey.lineup(pageID, copyId),
+        ),
+      );
+      final deadline = DateTime.now().add(cloudPageCopyLandingWait);
+      final pageOp = PageAddOp(
         opId: const Uuid().v4(),
         pagePublicId: pageID,
         payload: {
@@ -1573,17 +1587,31 @@ class StrategyProvider extends Notifier<StrategyState> {
         },
         sortIndex: nextIndex,
         expectedStrategyRevision: snapshot.header.revision,
-      ));
-      NewPageCopyGaps? gaps;
-      if (ack?.isAck ?? false) {
-        if (strategyId != null && state.strategyId == strategyId) {
-          gaps = await _copyPageRowsToCloudPage(
+      );
+      await enqueueOps([pageOp]);
+      Future<NewPageCopyGaps> copy({DateTime? until}) =>
+          _copyPageRowsToCloudPage(
             strategyId: strategyId,
             pageId: pageID,
             elements: elements,
             lineUps: lineUpCopies,
+            deadline: until,
           );
-        }
+      final added = await _untilLanded(strategyId, {pageOp.opId}, deadline);
+      if (added == null) {
+        // The cloud is slow to answer (busy, or offline): the page is added
+        // when it does, and its copy follows then.
+        unawaited(() async {
+          if (await _untilLanded(strategyId, {pageOp.opId}, null) == true) {
+            final gaps = await copy();
+            if (gaps.imagesLeft > 0 || gaps.notSaved) onLaterGaps?.call(gaps);
+          }
+        }());
+        return (imagesLeft: 0, notSaved: false, pageWaiting: true);
+      }
+      if (!added) return null;
+      final gaps = await copy(until: deadline);
+      if (state.strategyId == strategyId) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
         await ref
             .read(strategyPageSessionProvider.notifier)
@@ -1636,55 +1664,134 @@ class StrategyProvider extends Notifier<StrategyState> {
     return null;
   }
 
-  /// How long a new cloud page waits for its copied items to land before it
-  /// is shown, so it opens with them rather than filling in as they arrive.
+  /// A copy id for [id] (see page_copy_id.dart), or a plain id when a change
+  /// to the copy, stored under [keyOf] its id, would pass Hive's
+  /// 255-character key limit. Only an item imported with an unusually long
+  /// id gets a plain one, and it then fades between pages rather than
+  /// gliding.
+  String _storableCopyId(
+    String strategyId,
+    String id,
+    EntitySyncKey Function(String copyId) keyOf,
+  ) {
+    final copyId = newPageCopyId(id);
+    final accountId = ref.read(strategyOpQueueProvider).accountId;
+    final fits = accountId != null &&
+        DurableOutboxRecord.createStorageKey(
+              accountId: accountId,
+              strategyPublicId: strategyId,
+              entityKey: keyOf(copyId),
+            ).length <=
+            255;
+    return fits ? copyId : const Uuid().v4();
+  }
+
+  /// Whether the queued ops [opIds] of strategy [strategyId] land: true once
+  /// all have, false once one is refused (it waits for the user's choice)
+  /// or the strategy is left, null if [deadline] comes first. Keeps the
+  /// queue sending meanwhile; it may be busy with an earlier batch.
+  Future<bool?> _untilLanded(
+    String strategyId,
+    Set<String> ids,
+    DateTime? deadline,
+  ) async {
+    final queue = ref.read(strategyOpQueueProvider.notifier);
+    var nextFlush = DateTime.now();
+    while (true) {
+      final queueState = ref.read(strategyOpQueueProvider);
+      if (queueState.attentionByEntityKey.values
+          .any((intent) => ids.contains(intent.pending.op.opId))) {
+        return false;
+      }
+      if (!queueState.pending.any((pending) => ids.contains(pending.op.opId))) {
+        return true;
+      }
+      if (state.strategyId != strategyId ||
+          queueState.strategyPublicId != strategyId) {
+        return false;
+      }
+      final now = DateTime.now();
+      if (deadline != null && !now.isBefore(deadline)) return null;
+      if (!now.isBefore(nextFlush)) {
+        unawaited(queue.flushNow());
+        nextFlush = now.add(const Duration(milliseconds: 500));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+  }
+
+  /// How long "+" on a cloud strategy waits for the new page, and then its
+  /// copied items, to land before showing it, so it opens full rather than
+  /// filling in. Past it, the page is shown (or, not yet added, arrives
+  /// later with its copy) and the queue keeps sending.
   @visibleForTesting
   static Duration cloudPageCopyLandingWait = const Duration(seconds: 3);
 
   /// Sends copies of the page rows [elements] (under copy ids made here) and
   /// the lineups [lineUps] (already under copy ids) to new cloud page
-  /// [pageId], then waits a little for them to land. An image whose picture
-  /// cannot be copied is left out. Returns what did not make it.
+  /// [pageId] of strategy [strategyId], then waits for them to land, until
+  /// [deadline] if given. An image whose picture cannot be copied (in time)
+  /// is left out; leaving the strategy stops the copy. Returns what did not
+  /// make it.
   Future<NewPageCopyGaps> _copyPageRowsToCloudPage({
     required String strategyId,
     required String pageId,
     required List<({String publicId, CloudPayload payload, int sortIndex})>
         elements,
     required LineUpGraph lineUps,
+    DateTime? deadline,
   }) async {
     final queue = ref.read(strategyOpQueueProvider.notifier);
-    final accountId = ref.read(strategyOpQueueProvider).accountId;
-    // A copy id too long for this device to store a change under (only an
-    // item imported with an unusually long id) is a plain one: that item
-    // then fades between the two pages rather than gliding.
-    String copyIdOf(String id) {
-      final copyId = newPageCopyId(id);
-      final fits = accountId != null &&
-          DurableOutboxRecord.createStorageKey(
-                accountId: accountId,
-                strategyPublicId: strategyId,
-                entityKey: EntitySyncKey.element(pageId, copyId),
-              ).length <=
-              255;
-      return fits ? copyId : const Uuid().v4();
-    }
-
-    final sent = <EntitySyncKey>{};
+    // Ops go through the queue of the strategy open now, so none is queued
+    // once another is.
+    bool stillOpen() =>
+        state.strategyId == strategyId &&
+        ref.read(strategyOpQueueProvider).strategyPublicId == strategyId;
+    final sent = <String>{};
     var imagesLeft = 0;
     var notSaved = false;
-    for (final element in elements) {
-      final copyId = copyIdOf(element.publicId);
-      if (element.payload['kind'] == 'image' &&
-          await _copyImagePicture(
-                strategyId: strategyId,
-                imageId: element.publicId,
-                copyId: copyId,
-              ) !=
-              null) {
-        imagesLeft++;
-        continue;
+    Future<void> send(StrategyOp op) async {
+      if (!stillOpen()) {
+        notSaved = true;
+        return;
       }
-      final queued = await queue.enqueueOffCanvas(
+      if (await queue.enqueueOffCanvas(op)) {
+        sent.add(op.opId);
+      } else {
+        notSaved = true;
+      }
+    }
+
+    for (final element in elements) {
+      final copyId = _storableCopyId(
+        strategyId,
+        element.publicId,
+        (copyId) => EntitySyncKey.element(pageId, copyId),
+      );
+      if (element.payload['kind'] == 'image') {
+        final remaining = deadline?.difference(DateTime.now());
+        final picture = _copyImagePicture(
+          strategyId: strategyId,
+          imageId: element.publicId,
+          copyId: copyId,
+        );
+        final PageCopyResult? left;
+        try {
+          left = remaining == null
+              ? await picture
+              : await picture.timeout(
+                  remaining.isNegative ? Duration.zero : remaining,
+                );
+        } on TimeoutException {
+          imagesLeft++;
+          continue;
+        }
+        if (left != null) {
+          imagesLeft++;
+          continue;
+        }
+      }
+      await send(
         ElementAddOp(
           opId: const Uuid().v4(),
           elementPublicId: copyId,
@@ -1696,14 +1803,9 @@ class StrategyProvider extends Notifier<StrategyState> {
           sortIndex: element.sortIndex,
         ),
       );
-      if (queued) {
-        sent.add(EntitySyncKey.element(pageId, copyId));
-      } else {
-        notSaved = true;
-      }
     }
     for (final (index, row) in cloudLineupRows(lineUps).rows.indexed) {
-      final queued = await queue.enqueueOffCanvas(
+      await send(
         LineupAddOp(
           opId: const Uuid().v4(),
           lineupPublicId: row.publicId,
@@ -1712,27 +1814,19 @@ class StrategyProvider extends Notifier<StrategyState> {
           sortIndex: index,
         ),
       );
-      if (queued) {
-        sent.add(EntitySyncKey.lineup(pageId, row.publicId));
-      } else {
-        notSaved = true;
-      }
     }
-    if (sent.isNotEmpty) {
+    if (sent.isNotEmpty && stillOpen()) {
       ref.read(strategySaveStateProvider.notifier)
         ..markDirty()
         ..setPendingCloudSync(true)
         ..setCloudSyncError(null);
-      await queue.flushNow();
-      final deadline = DateTime.now().add(cloudPageCopyLandingWait);
-      bool waiting() => ref.read(strategyOpQueueProvider).pending.any(
-            (pending) => sent.contains(EntitySyncKey.forStrategyOp(pending.op)),
-          );
-      while (waiting() && DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+      if (deadline != null) {
+        await _untilLanded(strategyId, sent, deadline);
+      } else {
+        unawaited(queue.flushNow());
       }
     }
-    return (imagesLeft: imagesLeft, notSaved: notSaved);
+    return (imagesLeft: imagesLeft, notSaved: notSaved, pageWaiting: false);
   }
 
   Future<void> renamePage(String pageId, String newName) async {

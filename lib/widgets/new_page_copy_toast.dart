@@ -5,7 +5,13 @@ import 'package:icarus/providers/strategy_provider.dart';
 /// anything (see StrategyProvider.addPage).
 void showNewPageCopyGaps(NewPageCopyGaps? gaps) {
   if (gaps == null) return;
-  if (gaps.notSaved) {
+  if (gaps.pageWaiting) {
+    Settings.showToast(
+      message: 'The cloud is slow to answer. The new page will appear, '
+          'copied, once it does.',
+      backgroundColor: Settings.tacticalVioletTheme.primary,
+    );
+  } else if (gaps.notSaved) {
     Settings.showToast(
       message: "Couldn't save all of the page's copy on this device, so some "
           'of it is missing from the new page.',

@@ -11622,15 +11622,20 @@ void main() {
     group('"+" on a cloud strategy', () {
       /// Opens page 2 with its text, a lineup and an image on the canvas,
       /// the server answering every op sent; returns every op sent.
+      /// While [answering] is false, the server answers nothing.
+      var answering = true;
+
       Future<(ProviderContainer, List<StrategyOp>, _PageReader)> openToCopy({
         CloudImageCopyResult image = CloudImageCopyResult.copied,
       }) async {
+        answering = true;
         final (container, queue, reader) = await open();
         reader.imageCopy = image;
         final sent = <StrategyOp>[];
         final remote = container.read(remoteEditorSnapshotProvider.notifier)
             as _FakeRemoteEditorNotifier;
         queue.onFlush = () {
+          if (!answering) return;
           final ops = [
             for (final intent in queue.state.queuedByEntityKey.values)
               intent.pending.op,
@@ -11666,7 +11671,15 @@ void main() {
         return (container, sent, reader);
       }
 
-      setUp(() => StrategyProvider.cloudPageCopyLandingWait = Duration.zero);
+      setUp(() => StrategyProvider.cloudPageCopyLandingWait =
+          const Duration(seconds: 2));
+
+      Iterable<ElementAddOp> elementCopies(List<StrategyOp> sent) {
+        final pages = sent.whereType<PageAddOp>().map((op) => op.pagePublicId);
+        return sent
+            .whereType<ElementAddOp>()
+            .where((op) => pages.contains(op.pagePublicId));
+      }
 
       test('copies the page on screen under copy ids, in its order', () async {
         final (container, sent, reader) = await openToCopy();
@@ -11711,6 +11724,102 @@ void main() {
               op.pagePublicId == 'page-2' &&
               (op is ElementDeleteOp || op is LineupDeleteOp)),
           isEmpty,
+        );
+        await _settle();
+      });
+
+      test('a page the cloud adds late gets its copy once it does', () async {
+        final (container, sent, _) = await openToCopy();
+        StrategyProvider.cloudPageCopyLandingWait =
+            const Duration(milliseconds: 200);
+        answering = false;
+
+        final gaps = await container.read(strategyProvider.notifier).addPage();
+
+        expect(gaps?.pageWaiting, isTrue);
+        expect(elementCopies(sent), isEmpty);
+        // The cloud answers: the page lands, then its copy is sent.
+        answering = true;
+        await _until(() => elementCopies(sent).length == 2);
+        expect(
+          elementCopies(sent).map((op) => pageCopyRoot(op.elementPublicId)),
+          containsAll(['text-page-2', 'image']),
+        );
+        await _settle();
+      });
+
+      test('leaving the strategy while copying stops the copy', () async {
+        final (container, sent, reader) = await openToCopy();
+        final picture = reader.imageCopyGate = Completer<void>();
+
+        final adding = container.read(strategyProvider.notifier).addPage();
+        await _until(() => sent.whereType<PageAddOp>().isNotEmpty);
+        // While the image's picture is copied, another strategy opens.
+        container.read(strategyProvider.notifier).setFromState(
+              const StrategyState(
+                strategyId: 'other-strategy',
+                strategyName: 'Other',
+                source: StrategySource.cloud,
+                storageDirectory: null,
+                isOpen: true,
+              ),
+            );
+        picture.complete();
+        final gaps = await adding;
+
+        expect(gaps?.notSaved, isTrue);
+        expect(
+          container
+              .read(strategyOpQueueProvider)
+              .pending
+              .where((pending) => pending.op.type == StrategyOpType.elementAdd),
+          isEmpty,
+        );
+        await _settle();
+      });
+
+      test('an image whose picture takes too long is left out, in time',
+          () async {
+        final (container, sent, reader) = await openToCopy();
+        StrategyProvider.cloudPageCopyLandingWait =
+            const Duration(milliseconds: 300);
+        reader.imageCopyGate = Completer<void>();
+
+        final started = DateTime.now();
+        final gaps = await container.read(strategyProvider.notifier).addPage();
+
+        expect(DateTime.now().difference(started).inSeconds, lessThan(2));
+        expect(gaps?.imagesLeft, 1);
+        expect(
+          elementCopies(sent).map((op) => pageCopyRoot(op.elementPublicId)),
+          ['text-page-2'],
+        );
+        await _settle();
+      });
+
+      test('a lineup whose copy id could not be stored gets a plain one',
+          () async {
+        final (container, sent, _) = await openToCopy();
+        final long = 'x' * 150;
+        container.read(lineUpProvider.notifier).mergeRemote(
+              lineUpGraphFromCloudRows([
+                CloudLineupRow.remote(_lineup('page-2', long)),
+              ]).graph,
+            );
+        await _settle();
+        sent.clear();
+
+        final gaps = await container.read(strategyProvider.notifier).addPage();
+
+        expect(gaps?.notSaved, isFalse);
+        final page = sent.whereType<PageAddOp>().single.pagePublicId;
+        final lineup = sent
+            .whereType<LineupAddOp>()
+            .singleWhere((op) => op.pagePublicId == page);
+        expect(lineup.lineupPublicId, isNot(contains('~cp1~')));
+        expect(
+          _entries(cloudPayloadData(lineup.payload), 'links').single['id'],
+          lineup.lineupPublicId,
         );
         await _settle();
       });
