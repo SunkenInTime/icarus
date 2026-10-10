@@ -163,6 +163,7 @@ class ConvexStrategyRepository {
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
             shareToken: _optional(shareToken),
+            acceptsPictureIds: const ConvexOptional.present(true),
           )
           .fetch(),
     );
@@ -179,6 +180,8 @@ class ConvexStrategyRepository {
           strategyPublicId: strategyPublicId,
           pagePublicId: pagePublicId,
           shareToken: _optional(shareToken),
+          // This client keeps an image's picture id (PlacedImage.assetId).
+          acceptsPictureIds: const ConvexOptional.present(true),
         )
         .watch()
         .map(_pageSnapshot);
@@ -226,6 +229,7 @@ class ConvexStrategyRepository {
             // This client checks image references apart, so it can take a
             // snapshot without the pages in the server's trash.
             acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
+            acceptsPictureIds: const ConvexOptional.present(true),
           )
           .fetch(),
     ));
@@ -351,6 +355,8 @@ class ConvexStrategyRepository {
       accountSubject: _optional(accountSubject),
       // This client restores deleted pages, so it sends such a delete again.
       checkTrashedPageDeletes: const ConvexOptional.present(true),
+      // This client keeps an image's picture id (PlacedImage.assetId).
+      acceptsPictureIds: const ConvexOptional.present(true),
     );
     return result.results.map(_opAck).toList(growable: false);
   }

@@ -10,6 +10,7 @@ import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
 import { modules } from "./test.setup";
+import { getActiveAssetForStrategy } from "./lib/imageAssets";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
   "users:ensureCurrentUser",
@@ -22,6 +23,7 @@ const getPageSnapshot = makeFunctionReference<"query">("page:getSnapshot");
 const getFullSnapshot = makeFunctionReference<"query">(
   "strategy:getFullSnapshot",
 );
+const getAssetUrl = makeFunctionReference<"query">("images:getAssetUrl");
 
 type Harness = TestConvexForDataModel<DataModel>;
 type RootHarness = TestConvexForDataModelAndIdentity<DataModel>;
@@ -226,4 +228,90 @@ describe("an image showing another image's picture", () => {
     expect(copy.deleted).toBe(false);
     expect(copy.payload.data.assetId).toBe("original");
   });
+
+  test("is sent to builds that keep picture ids with it, and to others without", async () => {
+    const { owner } = await seed();
+    const copyData = async (acceptsPictureIds?: boolean) => {
+      const snapshot = (await owner.query(getPageSnapshot, {
+        ...protocol,
+        strategyPublicId: strategy,
+        pagePublicId: page,
+        ...(acceptsPictureIds === undefined ? {} : { acceptsPictureIds }),
+      })) as { elements: Row[] };
+      return snapshot.elements.find((row) => row.publicId === "copy")!.payload
+        .data;
+    };
+
+    expect(await copyData(true)).toEqual({
+      id: "copy",
+      assetId: "original",
+      scale: 1,
+    });
+    // An older build holds the copy as it would write it, so it reads as
+    // unchanged; it finds the picture under the copy's id.
+    expect(await copyData()).toEqual({ id: "copy", scale: 1 });
+  });
+
+  test("gives its picture's address to builds that ask by its own id", async () => {
+    const { owner } = await seed();
+
+    for (const assetPublicId of ["original", "copy"]) {
+      expect(
+        await owner.query(getAssetUrl, {
+          strategyPublicId: strategy,
+          assetPublicId,
+        }),
+      ).toEqual({ url: pictureUrl });
+    }
+  });
+});
+
+test("a picture from before upload statuses is found beside copies in other strategies", async () => {
+  const { t, owner } = await seed();
+  const otherStrategy = "picture-other";
+  await owner.mutation(createStrategy, {
+    ...protocol,
+    publicId: otherStrategy,
+    name: "Other",
+    mapData: "ascent",
+    initialPagePublicId: "other-page",
+    initialPageName: "Page 1",
+    initialPageIsAttack: true,
+  });
+  const found = await t.run(async (ctx) => {
+    const strategyId = async (publicId: string) =>
+      (await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+        .unique())!._id;
+    const mine = await strategyId(strategy);
+    const other = await strategyId(otherStrategy);
+    const now = Date.now();
+    // This strategy's picture, stored in Convex before upload statuses.
+    const storageId = await ctx.storage.store(new Blob(["picture"]));
+    await ctx.db.insert("imageAssets", {
+      publicId: "legacy-picture",
+      strategyId: mine,
+      storageId,
+      fileExtension: ".png",
+      createdAt: now,
+      updatedAt: now,
+    });
+    // Twenty newer rows of the same picture, copied into another strategy.
+    for (let index = 0; index < 20; index += 1) {
+      await ctx.db.insert("imageAssets", {
+        publicId: "legacy-picture",
+        strategyId: other,
+        storageId,
+        uploadStatus: "deleted",
+        fileExtension: ".png",
+        createdAt: now + index + 1,
+        updatedAt: now + index + 1,
+      });
+    }
+    const found = await getActiveAssetForStrategy(ctx, mine, "legacy-picture");
+    return found?.strategyId === mine && found.uploadStatus === undefined;
+  });
+
+  expect(found).toBe(true);
 });
