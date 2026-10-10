@@ -1,4 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
+import { withoutPictureId } from "./imageAssets";
 
 export function serializeStrategyHeader(
   strategy: Doc<"strategies">,
@@ -45,17 +46,22 @@ export function serializePageContent(pageContent: Doc<"pageContents">) {
   };
 }
 
+/// [element] as a client sees it. One that doesn't [acceptsPictureIds]
+/// gets its payload without the picture id (see withoutPictureId).
 export function serializeElement(
   strategyPublicId: string,
   pagePublicId: string,
   element: Doc<"elements">,
+  acceptsPictureIds: boolean,
 ) {
   return {
     publicId: element.publicId,
     strategyPublicId,
     pagePublicId,
     elementType: element.elementType,
-    payload: element.payload,
+    payload: acceptsPictureIds
+      ? element.payload
+      : withoutPictureId(element.payload),
     sortIndex: element.sortIndex,
     revision: element.revision,
     deleted: element.deleted,
