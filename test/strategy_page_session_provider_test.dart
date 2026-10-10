@@ -10878,6 +10878,25 @@ void main() {
       expect(adds(container), hasLength(1));
     });
 
+    test('a lineup whose copy could not be stored to send is not offered',
+        () async {
+      final (container, _, _) = await open();
+      final long = 'x' * 200;
+      container.read(lineUpProvider.notifier).mergeRemote(
+            lineUpGraphFromCloudRows([
+              CloudLineupRow.remote(_lineup('page-2', long)),
+            ]).graph,
+          );
+
+      expect(
+        container
+            .read(strategyProvider.notifier)
+            .copyDirectionsForLineUps({'link-$long'}),
+        isEmpty,
+      );
+      await _settle();
+    });
+
     test('a page that cannot be read gets nothing', () async {
       final (container, _, reader) = await open();
       reader.fails = true;

@@ -1110,7 +1110,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (snapshot == null || !_currentStrategyCanEditPages()) return const [];
       return [
         for (final direction in PageTransitionDirection.values)
-          if (_adjacentCloudPageId(snapshot, direction) != null) direction,
+          if (_adjacentCloudPageId(snapshot, direction) case final pageId?)
+            if (_lineUpCopyFitsOutbox(pageId, linkIds)) direction,
       ];
     }
     final pages = _orderedLocalPages();
@@ -1127,6 +1128,27 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (currentIndex < pages.length - 1 && !has(pages[currentIndex + 1]))
         PageTransitionDirection.forward,
     ];
+  }
+
+  /// Whether a cloud copy of the lineups [linkIds] onto [pageId] can be
+  /// stored to send. Hive refuses keys over 255 characters, and an op is
+  /// stored under one naming its account, strategy, page and group, whose id
+  /// is one of the copies' lineup ids. Only a lineup imported with an
+  /// unusually long id fails this, and it is then not offered.
+  bool _lineUpCopyFitsOutbox(String pageId, Set<String> linkIds) {
+    final accountId = ref.read(strategyOpQueueProvider).accountId;
+    final strategyId = state.strategyId;
+    return accountId != null &&
+        strategyId != null &&
+        linkIds.every(
+          (id) =>
+              DurableOutboxRecord.createStorageKey(
+                accountId: accountId,
+                strategyPublicId: strategyId,
+                entityKey: EntitySyncKey.lineup(pageId, newPageCopyId(id)),
+              ).length <=
+              255,
+        );
   }
 
   /// The local strategy's pages in order, or none.

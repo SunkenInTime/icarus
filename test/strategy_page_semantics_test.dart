@@ -503,6 +503,26 @@ void main() {
       ]);
     });
 
+    test(
+        'a throw spot whose other lineup is on the next page does not offer '
+        'it, and that lineup still can go from its own landing', () async {
+      final container = await open();
+      final notifier = container.read(strategyProvider.notifier);
+      await notifier.copyLineUpsToAdjacentPage(
+        linkIds: {'recon'},
+        direction: PageTransitionDirection.forward,
+      );
+
+      // Stand 1 throws Bolt A and Recon; Recon is already there.
+      expect(notifier.copyDirectionsForLineUps({'bolt-a', 'recon'}), [
+        PageTransitionDirection.backward,
+      ]);
+      expect(notifier.copyDirectionsForLineUps({'bolt-a'}), [
+        PageTransitionDirection.backward,
+        PageTransitionDirection.forward,
+      ]);
+    });
+
     test('a copy adds to the lineups already on the page', () async {
       final container =
           await open(nextPageLineUps: sovaLineUps(prefix: 'other-'));
