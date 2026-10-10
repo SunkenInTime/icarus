@@ -195,6 +195,37 @@ void main() {
       expect(state.peers['s1']!.cursor, isNotNull);
     });
 
+    test('a peer changing items is outlining them, on their page only', () {
+      var state = applyPresenceMessage(empty, {
+        't': 'welcome',
+        'uid': 'me',
+        'peers': [peer('s1', 'ana'), peer('s2', 'ben'), peer('s3', 'me')],
+      });
+      for (final (sid, items) in [
+        ('s1', ['i1', 'i2']),
+        ('s2', ['i2', 'i3']),
+        // This user's own other window.
+        ('s3', ['i4']),
+      ]) {
+        state = applyPresenceMessage(state, {
+          't': 'editing',
+          'sid': sid,
+          'page': 'p1',
+          'groups': <String>[],
+          'items': items,
+        });
+      }
+      expect(
+        state.peers['s1']!.editing,
+        const PresenceEditing(pageId: 'p1', itemIds: {'i1', 'i2'}),
+      );
+      expect(
+        state.itemEditorsOn('p1').map((item, peer) => MapEntry(item, peer.uid)),
+        {'i1': 'ana', 'i2': 'ana', 'i3': 'ben'},
+      );
+      expect(state.itemEditorsOn('p2'), isEmpty);
+    });
+
     test('editing from an unknown peer changes nothing', () {
       final state = applyPresenceMessage(empty, {
         't': 'welcome',
@@ -282,6 +313,16 @@ void main() {
         {
           'page': 'p1',
           'groups': [1, '', null],
+        },
+        {
+          'page': 'p1',
+          'groups': ['g1'],
+          'items': 'i1',
+        },
+        {
+          'page': 'p1',
+          'groups': <String>[],
+          'items': [1, '', null],
         },
       ];
       for (final editing in malformed) {
@@ -596,6 +637,7 @@ void main() {
           't': 'editing',
           'page': 'p1',
           'groups': ['g1', 'g2'],
+          'items': <String>[],
         });
 
         // The room ignores a message naming more than eight.
@@ -607,8 +649,39 @@ void main() {
           't': 'editing',
           'page': 'p1',
           'groups': ['g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7'],
+          'items': <String>[],
         });
         expect(sockets.single.sentEditing, hasLength(2));
+        presence.dispose();
+      });
+    });
+
+    test('sends the items this user changes, sorted, and at most 24', () {
+      fakeAsync((async) {
+        final presence = room()..start();
+        async.flushMicrotasks();
+        welcome(async, sockets.single);
+
+        presence.setEditing(const PresenceEditing(
+          pageId: 'p1',
+          itemIds: {'i2', 'i1'},
+        ));
+        expect(sockets.single.sent.last, {
+          't': 'editing',
+          'page': 'p1',
+          'groups': <String>[],
+          'items': ['i1', 'i2'],
+        });
+
+        // The room ignores a message naming more than 24.
+        async.elapse(interval);
+        presence.setEditing(PresenceEditing(
+          pageId: 'p1',
+          itemIds: {for (var i = 30; i >= 0; i--) 'i$i'},
+        ));
+        final items = sockets.single.sentEditing.last['items'] as List;
+        expect(items, hasLength(24));
+        expect(items, [...items]..sort());
         presence.dispose();
       });
     });
@@ -633,6 +706,7 @@ void main() {
           't': 'editing',
           'page': 'p2',
           'groups': ['g3'],
+          'items': <String>[],
         });
         final at = sockets.single.sentEditingAt;
         expect(at[1].difference(at[0]), interval);
@@ -666,6 +740,7 @@ void main() {
           't': 'editing',
           'page': 'p2',
           'groups': <String>[],
+          'items': <String>[],
         });
 
         // A clear that waits out the interval still names the page.
@@ -678,6 +753,7 @@ void main() {
           't': 'editing',
           'page': 'p3',
           'groups': <String>[],
+          'items': <String>[],
         });
 
         // Something that never went out needs no clear.
@@ -739,6 +815,7 @@ void main() {
             't': 'editing',
             'page': 'p1',
             'groups': ['g2'],
+            'items': <String>[],
           },
         ]);
         async.elapse(const Duration(seconds: 1));

@@ -5,10 +5,11 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
-import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 
 /// The editor showing page p1, without the session's cloud machinery.
 class _FixedSession extends StrategyPageSessionNotifier {
@@ -78,41 +79,75 @@ void main() {
       ..noteLineupGroups('p2', {'landing-a': 'group-a2'});
   });
 
-  PresenceEditing? editing() => container.read(myLineupEditingProvider);
+  PresenceEditing? editing() => container.read(myEditingProvider);
 
   test('nothing edited is null', () {
     expect(editing(), isNull);
   });
 
-  test('a held lineup spot is editing its group', () {
+  test('a held lineup spot is editing it and its group', () {
     container.read(editorPointersProvider.notifier).holdEntity(1, 'landing-a');
     expect(
       editing(),
-      const PresenceEditing(pageId: 'p1', groupIds: {'group-a'}),
+      const PresenceEditing(
+        pageId: 'p1',
+        groupIds: {'group-a'},
+        itemIds: {'landing-a'},
+      ),
     );
   });
 
-  test('held items that are not lineups are ignored', () {
+  test('a held item that is not a lineup is editing it, in no group', () async {
     final pointers = container.read(editorPointersProvider.notifier);
     pointers.holdEntity(1, 'some-agent');
-    expect(editing(), isNull);
-    pointers.holdEntity(1, 'origin-b');
     expect(
       editing(),
-      const PresenceEditing(pageId: 'p1', groupIds: {'group-b'}),
+      const PresenceEditing(pageId: 'p1', itemIds: {'some-agent'}),
     );
+    pointers.holdEntity(2, 'origin-b');
+    expect(
+      editing(),
+      const PresenceEditing(
+        pageId: 'p1',
+        groupIds: {'group-b'},
+        itemIds: {'some-agent', 'origin-b'},
+      ),
+    );
+    pointers.release(1);
+    pointers.release(2);
+    // A release lands once the drag's own callbacks have run.
+    await Future<void>.delayed(Duration.zero);
+    expect(editing(), isNull);
   });
 
-  test('placing from a pinned spot is editing its group', () {
+  test('an open text draft is editing its text', () {
+    container.read(textDraftProvider.notifier).setDraft('text-1', 'gg');
+    expect(
+      editing(),
+      const PresenceEditing(pageId: 'p1', itemIds: {'text-1'}),
+    );
+    container.read(textDraftProvider.notifier).clearDraft('text-1');
+    expect(editing(), isNull);
+  });
+
+  test('placing from a pinned spot is editing it and its group', () {
     container.read(lineUpProvider.notifier).startFromOrigin('origin-b');
     expect(
       editing(),
-      const PresenceEditing(pageId: 'p1', groupIds: {'group-b'}),
+      const PresenceEditing(
+        pageId: 'p1',
+        groupIds: {'group-b'},
+        itemIds: {'origin-b'},
+      ),
     );
     container.read(lineUpProvider.notifier).startToLanding('landing-a');
     expect(
       editing(),
-      const PresenceEditing(pageId: 'p1', groupIds: {'group-a'}),
+      const PresenceEditing(
+        pageId: 'p1',
+        groupIds: {'group-a'},
+        itemIds: {'landing-a'},
+      ),
     );
     // A fresh lineup belongs to no group yet.
     container.read(lineUpProvider.notifier).startFresh();
@@ -155,7 +190,11 @@ void main() {
     container.read(_role.notifier).state = 'editor';
     expect(
       editing(),
-      const PresenceEditing(pageId: 'p1', groupIds: {'group-a', 'group-b'}),
+      const PresenceEditing(
+        pageId: 'p1',
+        groupIds: {'group-a', 'group-b'},
+        itemIds: {'landing-a'},
+      ),
     );
   });
 
@@ -165,9 +204,14 @@ void main() {
     container
         .read(openLineUpItemsProvider.notifier)
         .open(Object(), {'origin-b'});
+    // A dialog's lineups are not on the canvas being changed.
     expect(
       editing(),
-      const PresenceEditing(pageId: 'p1', groupIds: {'group-a', 'group-b'}),
+      const PresenceEditing(
+        pageId: 'p1',
+        groupIds: {'group-a', 'group-b'},
+        itemIds: {'link-a', 'landing-a'},
+      ),
     );
   });
 

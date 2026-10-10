@@ -15,7 +15,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
-import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/widgets/lineup_editors_notice.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -185,7 +185,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         _initialImageIds.addAll(link.images.map((image) => image.id));
       }
       // Editing a lineup counts as editing its group (see
-      // myLineupEditingProvider); providers change after this frame.
+      // myEditingProvider); providers change after this frame.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ref

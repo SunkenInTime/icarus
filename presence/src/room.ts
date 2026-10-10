@@ -2,9 +2,9 @@ import { DurableObject } from "cloudflare:workers";
 import { verifyPass, type PassClaims, type PassRole } from "./pass";
 
 // One room per strategy. The room is a relay: it remembers who is connected,
-// where their cursor last was, and which lineup groups they are editing, only
-// for as long as they are connected. Nothing here is written to storage; a
-// cursor is worth nothing a second after it moves.
+// where their cursor last was, and which lineup groups and canvas items they
+// are editing, only for as long as they are connected. Nothing here is
+// written to storage; a cursor is worth nothing a second after it moves.
 
 export interface Env {
   PRESENCE_ROOM: DurableObjectNamespace<PresenceRoom>;
@@ -17,10 +17,14 @@ export interface Cursor {
   y: number;
 }
 
-/** The lineup groups one session is editing on one page. Never empty. */
+/**
+ * What one session is editing on one page: lineup groups, and the canvas
+ * items it holds. Never both empty.
+ */
 export interface Editing {
   page: string;
   groups: string[];
+  items: string[];
 }
 
 export interface Peer {
@@ -53,10 +57,12 @@ const MIN_CURSOR_INTERVAL_MS = 25;
 const MIN_EDITING_INTERVAL_MS = 100;
 /** Clients renew once a minute; anything faster is ignored unverified. */
 const MIN_RENEW_INTERVAL_MS = 10_000;
-const MAX_MESSAGE_CHARS = 2048;
+/** Room for a full editing message: every id in it at its longest. */
+const MAX_MESSAGE_CHARS = 8192;
 const MAX_PAGE_ID_CHARS = 128;
-const MAX_GROUP_ID_CHARS = 128;
+const MAX_ID_CHARS = 128;
 const MAX_EDITING_GROUPS = 8;
+const MAX_EDITING_ITEMS = 24;
 /** The map is 1000 units tall and 1778 wide; allow the margin around it. */
 const COORDINATE_LIMIT = 10_000;
 
@@ -172,7 +178,7 @@ export class PresenceRoom extends DurableObject<Env> {
         ws.serializeAttachment({ ...self, editing, lastEditingAt: now });
         this.broadcast(
           editing === null
-            ? { t: "editing", sid: self.sid, page: null, groups: [] }
+            ? { t: "editing", sid: self.sid, page: null, groups: [], items: [] }
             : { t: "editing", sid: self.sid, ...editing },
           ws,
         );
@@ -345,30 +351,44 @@ function parseCursor(m: Record<string, unknown>): Cursor | null {
 }
 
 /**
- * The groups an `editing` message names, sorted with duplicates dropped, or
- * null when it names none. Undefined when the message is malformed.
+ * The groups and items an `editing` message names, each sorted with
+ * duplicates dropped, or null when it names none. Undefined when the message
+ * is malformed. Clients from before items were relayed send no `items`.
  */
 function parseEditing(m: Record<string, unknown>): Editing | null | undefined {
   const { page, groups } = m;
+  const items = m.items ?? [];
   if (
     typeof page !== "string" ||
     page.length === 0 ||
     page.length > MAX_PAGE_ID_CHARS ||
-    !Array.isArray(groups) ||
-    !groups.every(isGroupId)
+    !isIdList(groups) ||
+    !isIdList(items)
   ) {
     return undefined;
   }
-  const unique = [...new Set(groups)].sort();
-  if (unique.length > MAX_EDITING_GROUPS) return undefined;
-  return unique.length === 0 ? null : { page, groups: unique };
+  const uniqueGroups = [...new Set(groups)].sort();
+  const uniqueItems = [...new Set(items)].sort();
+  if (
+    uniqueGroups.length > MAX_EDITING_GROUPS ||
+    uniqueItems.length > MAX_EDITING_ITEMS
+  ) {
+    return undefined;
+  }
+  return uniqueGroups.length === 0 && uniqueItems.length === 0
+    ? null
+    : { page, groups: uniqueGroups, items: uniqueItems };
 }
 
-function isGroupId(value: unknown): value is string {
+function isIdList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isId);
+}
+
+function isId(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.length > 0 &&
-    value.length <= MAX_GROUP_ID_CHARS
+    value.length <= MAX_ID_CHARS
   );
 }
 
@@ -376,9 +396,13 @@ function sameEditing(a: Editing | null, b: Editing | null): boolean {
   if (a === null || b === null) return a === b;
   return (
     a.page === b.page &&
-    a.groups.length === b.groups.length &&
-    a.groups.every((group, i) => group === b.groups[i])
+    sameIds(a.groups, b.groups) &&
+    sameIds(a.items, b.items)
   );
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
 function isCoordinate(value: unknown): value is number {

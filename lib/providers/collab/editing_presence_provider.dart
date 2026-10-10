@@ -39,12 +39,13 @@ class OpenLineUpItemsNotifier extends Notifier<Map<Object, Set<String>>> {
   String? pageOf(Object owner) => _pageOf[owner];
 }
 
-/// The lineup groups this user is editing on the page on screen: those of
-/// the lineup spots they hold, the spot a lineup is being placed from, the
-/// lineups whose placement is being edited, and the lineups an open dialog
-/// shows. Null for none, and always null for a
-/// reader who can only view: holding or opening a lineup is not editing it.
-final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
+/// What this user is editing on the page on screen. Its items are the canvas
+/// items they hold or have open (a text draft, a lineup placement's pinned
+/// spot, a placement edit's lineups). Its groups are the lineup groups of
+/// those items, plus those of the lineups an open dialog shows. Null for
+/// nothing, and always null for a reader who can only view: holding or
+/// opening an item is not editing it.
+final myEditingProvider = Provider<PresenceEditing?>((ref) {
   final canEdit = ref.watch(
     currentStrategyCapabilitiesProvider.select(
       (capabilities) => capabilities.canEditPages,
@@ -72,8 +73,25 @@ final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
     })
       if (liveSync.lineupGroupOf(pageId, id) case final group?) group,
   };
-  if (groupIds.isEmpty) return null;
-  return PresenceEditing(pageId: pageId, groupIds: groupIds);
+  if (groupIds.isEmpty && held.isEmpty) return null;
+  return PresenceEditing(pageId: pageId, groupIds: groupIds, itemIds: held);
+});
+
+/// The first teammate changing each canvas item on the page on screen, by
+/// item, so the item can be outlined in their color.
+final itemEditorsProvider = Provider.autoDispose<Map<String, PresencePeer>>((
+  ref,
+) {
+  final pageId =
+      ref.watch(strategyPageSessionProvider.select((s) => s.activePageId));
+  if (pageId == null) return const {};
+  // As below: rebuild when who is changing what changes, not on cursors.
+  ref.watch(strategyPresenceProvider.select((s) => jsonEncode([
+        for (final MapEntry(key: item, value: peer)
+            in s.itemEditorsOn(pageId).entries)
+          [item, peer.uid],
+      ])));
+  return ref.read(strategyPresenceProvider).itemEditorsOn(pageId);
 });
 
 /// Teammates editing the lineup group [itemId] (a lineup, origin or landing

@@ -284,8 +284,8 @@ describe("editing", () => {
     return { ana, ben, benSid };
   }
 
-  function editing(page: unknown, groups: unknown): string {
-    return JSON.stringify({ t: "editing", page, groups });
+  function editing(page: unknown, groups: unknown, items?: unknown): string {
+    return JSON.stringify({ t: "editing", page, groups, items });
   }
 
   it("relays editing to others without echoing it back", async () => {
@@ -296,9 +296,37 @@ describe("editing", () => {
       sid: benSid,
       page: "p1",
       groups: ["g1", "g2"],
+      items: [],
     });
     await sleep(100);
     expect(ben.messages).toEqual([]);
+  });
+
+  it("relays the canvas items being held, with or without groups", async () => {
+    const { ana, ben, benSid } = await anaAndBen();
+    ben.ws.send(editing("p1", [], ["i2", "i1", "i2"]));
+    expect(await ana.next("editing")).toEqual({
+      t: "editing",
+      sid: benSid,
+      page: "p1",
+      groups: [],
+      items: ["i1", "i2"],
+    });
+    await sleep(PAST_INTERVAL_MS);
+
+    ben.ws.send(editing("p1", ["g1"], ["i1", "i2"]));
+    expect(await ana.next("editing")).toMatchObject({
+      groups: ["g1"],
+      items: ["i1", "i2"],
+    });
+    await sleep(PAST_INTERVAL_MS);
+
+    // Only the items changing is a change.
+    ben.ws.send(editing("p1", ["g1"], ["i1"]));
+    expect(await ana.next("editing")).toMatchObject({
+      groups: ["g1"],
+      items: ["i1"],
+    });
   });
 
   it("tells a newcomer what everyone is editing", async () => {
@@ -311,6 +339,7 @@ describe("editing", () => {
     expect(peers.find((p: any) => p.sid === benSid).editing).toEqual({
       page: "p1",
       groups: ["g1"],
+      items: [],
     });
     expect(peers.find((p: any) => p.name === "Ana").editing).toBeNull();
     // Peers already in the room hear about Cy, who is editing nothing.
@@ -329,6 +358,7 @@ describe("editing", () => {
       sid: benSid,
       page: null,
       groups: [],
+      items: [],
     });
     const cy = await connect(await signPass(claims({ uid: "u-cy", name: "Cy" }), SECRET));
     const peers = (await cy.next("welcome")).peers;
@@ -349,6 +379,10 @@ describe("editing", () => {
     ben.ws.send(JSON.stringify({ t: "editing", groups: ["g1"] }));
     ben.ws.send(editing("", ["g1"]));
     ben.ws.send(editing(7, ["g1"]));
+    ben.ws.send(editing("p1", ["g1"], "i1"));
+    ben.ws.send(editing("p1", ["g1"], [""]));
+    ben.ws.send(editing("p1", ["g1"], ["i".repeat(129)]));
+    ben.ws.send(editing("p1", [], Array.from({ length: 25 }, (_, i) => `i${i}`)));
     // Malformed messages don't start the rate limit, so this one lands.
     ben.ws.send(editing("p1", ["g1", "g1", "g1", "g1", "g1", "g1", "g1", "g1", "g2"]));
     expect(await ana.next("editing")).toMatchObject({ page: "p1", groups: ["g1", "g2"] });
@@ -418,6 +452,7 @@ describe("editing", () => {
     expect(peers.find((p: any) => p.sid === benSid).editing).toEqual({
       page: "p1",
       groups: ["g1"],
+      items: [],
     });
   });
 });
