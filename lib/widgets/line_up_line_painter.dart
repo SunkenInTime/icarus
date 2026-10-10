@@ -83,6 +83,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
 
 /// One line per distinct (origin, landing spot) pair. Hovering an origin
 /// lights every line out of it, hovering a landing spot every line into it.
+/// Lines placement editing is moving are left to its own layer.
 class LinePainter extends CustomPainter {
   final HoveredLineUpTarget? hoveredLineUpTarget;
   final LineUpState lineUpState;
@@ -92,6 +93,7 @@ class LinePainter extends CustomPainter {
   final double mapScale;
   final bool isAttack;
   final int resizeCounter;
+  final Color color;
 
   LinePainter({
     super.repaint,
@@ -103,12 +105,13 @@ class LinePainter extends CustomPainter {
     required this.agentSize,
     required this.mapScale,
     required this.isAttack,
+    this.color = Colors.white70,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white70
+      ..color = color
       ..strokeWidth = coordinateSystem.scale(Settings.brushSize)
       ..style = PaintingStyle.stroke
       ..isAntiAlias = true;
@@ -122,7 +125,10 @@ class LinePainter extends CustomPainter {
     final originAnchors = <String, Offset>{};
     final landingAnchors = <String, Offset>{};
 
+    final edit = lineUpState.edit;
     for (final (originId, landingId) in lineUpState.connectorPairs) {
+      // Every lineup at an edited origin is part of the edit.
+      if (edit?.originIds.contains(originId) ?? false) continue;
       final origin = lineUpState.originById(originId);
       final landing = lineUpState.landingById(landingId);
       if (origin == null || landing == null) continue;
@@ -166,6 +172,7 @@ class LinePainter extends CustomPainter {
           oldDelegate.agentSize != agentSize ||
           oldDelegate.mapScale != mapScale ||
           oldDelegate.isAttack != isAttack ||
+          oldDelegate.color != color ||
           oldDelegate.resizeCounter != resizeCounter;
     }
     return false;

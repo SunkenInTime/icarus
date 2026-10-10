@@ -87,25 +87,33 @@ final editorHeldEntitiesProvider = Provider<Set<String>?>((ref) {
   if (holds.any((hold) => !hold.onCanvas)) return null;
   final placement =
       ref.watch(lineUpProvider.select((state) => state.placement));
+  // The edit's lineups stay the same while its ends move, so a drag does not
+  // recompute this every frame.
+  final editing =
+      ref.watch(lineUpProvider.select((state) => state.edit?.linkIds)) != null;
   final drafts = ref.watch(textDraftProvider.select((drafts) => drafts.keys));
   return {
     for (final hold in holds) ...hold.entityIds,
     ...drafts,
     if (placement?.pinnedOriginId case final id?) id,
     if (placement?.pinnedLandingId case final id?) id,
+    if (editing) ...ref.read(lineUpProvider).edit!.itemIds,
   };
 });
 
 /// Whether anything at all is mid-way: a press, a stroke, a lineup placement
-/// or a text draft. Replacing the whole page (a different page than the one on
-/// screen) waits for this; merging into the page on screen does not.
+/// or placement edit, or a text draft. Replacing the whole page (a different
+/// page than the one on screen) waits for this; merging into the page on
+/// screen does not.
 final editorBusyProvider = Provider<bool>((ref) {
   final pointers = ref.watch(editorPointersProvider);
   final drawing = ref.watch(
     drawingProvider.select((state) => state.currentElement != null),
   );
   final placement = ref.watch(
-    lineUpProvider.select((state) => state.placement != null),
+    lineUpProvider.select(
+      (state) => state.placement != null || state.edit != null,
+    ),
   );
   final text =
       ref.watch(textDraftProvider.select((drafts) => drafts.isNotEmpty));
