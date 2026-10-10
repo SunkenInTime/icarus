@@ -12,6 +12,7 @@ import schema from "./schema";
 import { lineupsPayload, oneLineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
 import { pageCopyRoot } from "./lib/pageCopyId";
+import { ContentCopy, CopyBudget } from "./lib/contentCopy";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
   "users:ensureCurrentUser",
@@ -1771,5 +1772,121 @@ describe('"+": a page added as a copy of another', () => {
     );
     expect(after.pages.map((page) => page.sortIndex).sort()).toEqual([0, 1]);
     expect(await strategyRevision(t)).toBe(revisionBefore);
+  });
+});
+
+describe("copies sharing a transaction", () => {
+  type Row = Record<string, any>;
+
+  async function seedHeavyPage(t: RootHarness, rows: number) {
+    await t.run(async (ctx) => {
+      const page = await ctx.db
+        .query("pages")
+        .withIndex("by_publicId", (q) => q.eq("publicId", firstPage))
+        .unique();
+      const now = Date.now();
+      for (let index = 0; index < rows; index += 1) {
+        await ctx.db.insert("elements", {
+          publicId: `heavy-${index}`,
+          strategyId: page!.strategyId,
+          pageId: page!._id,
+          elementType: "drawing",
+          payloadKind: "drawing",
+          payloadVersion: 1,
+          payload: {
+            kind: "drawing",
+            payloadVersion: 1,
+            data: { id: `heavy-${index}`, points: "x".repeat(700 * 1024) },
+          },
+          sortIndex: 10 + index,
+          revision: 1,
+          deleted: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+  }
+
+  test("two copies in one batch share its budget, so the batch never outgrows a transaction", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    // 10 rows of 700 KiB: one copy fits the 12 MiB budget, two do not.
+    await seedHeavyPage(t, 10);
+    const revision = await t.run(async (ctx) => {
+      const strategy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", source))
+        .unique();
+      return strategy!.revision;
+    });
+    const add = (opId: string, pagePublicId: string, sortIndex: number) => ({
+      opId,
+      type: "page.add",
+      pagePublicId,
+      payload: { name: "Page", isAutoNamed: true, isAttack: true },
+      sortIndex,
+      expectedStrategyRevision: revision,
+      copyContentFromPagePublicId: firstPage,
+    });
+
+    const { results } = (await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "plus-twice",
+      ops: [add("plus-1", "copy-a", 1), add("plus-2", "copy-b", 2)],
+    })) as { results: Row[] };
+
+    expect(results[0]).toMatchObject({ status: "applied" });
+    expect(results[1]).toMatchObject({
+      status: "failed",
+      code: "PAGE_TOO_LARGE_TO_COPY",
+    });
+    const pages = await t.run(
+      async (ctx) => await ctx.db.query("pages").collect(),
+    );
+    expect(pages.map((page) => page.publicId)).toContain("copy-a");
+    expect(pages.map((page) => page.publicId)).not.toContain("copy-b");
+  });
+
+  test("an image lineups share is charged to a copy once", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await duplicate(owner, "copy-target");
+    const charged = await t.run(async (ctx) => {
+      const strategyOf = async (publicId: string) =>
+        (await ctx.db
+          .query("strategies")
+          .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+          .unique())!;
+      const sourceStrategy = await strategyOf(source);
+      const page = await ctx.db
+        .query("pages")
+        .withIndex("by_publicId", (q) => q.eq("publicId", secondPage))
+        .unique();
+      let bytes = 0;
+      class CountingBudget extends CopyBudget {
+        override spend(cost: { bytes?: number; documents?: number }) {
+          bytes += cost.bytes ?? 0;
+          super.spend(cost);
+        }
+      }
+      const copy = new ContentCopy(ctx, {
+        sourceStrategyId: sourceStrategy._id,
+        // Another strategy, so the lineup's image is copied, and charged.
+        targetStrategyId: (await strategyOf("copy-target"))._id,
+        userId: sourceStrategy.ownerId,
+        now: Date.now(),
+        budget: new CountingBudget(() => new Error("too large")),
+        uploadingImages: "refuse",
+      });
+      // Page 2 twice, as two pages whose lineups show one image.
+      await copy.read(page!._id);
+      const first = bytes;
+      await copy.read(page!._id);
+      return { first, second: bytes - first };
+    });
+    // The second read is charged its rows only, not the image again.
+    expect(charged.first - charged.second).toBe(22 * 1024);
   });
 });

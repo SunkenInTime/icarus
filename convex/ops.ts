@@ -908,16 +908,17 @@ async function applyStrategyOp(
   };
 }
 
-/// The live content of the page a page add copies, read and charged to the
-/// copy's budget. None when the add copies nothing, or when its page has
-/// gone (deleted, or in the trash) by the time the add lands: the page is
-/// then added empty, as a teammate's delete leaves nothing to copy.
+/// The live content of the page a page add copies, read and charged to
+/// [budget]. None when the add copies nothing, or when its page has gone
+/// (deleted, or in the trash) by the time the add lands: the page is then
+/// added empty, as a teammate's delete leaves nothing to copy.
 async function readPageToCopy(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   pagePublicId: string | undefined,
   userId: Id<"users">,
   now: number,
+  budget: CopyBudget,
 ): Promise<{ content: ContentCopy; page: PageToCopy } | null> {
   if (pagePublicId === undefined) return null;
   const source = await getPageByPublicIdOrNull(ctx, pagePublicId);
@@ -933,12 +934,7 @@ async function readPageToCopy(
     targetStrategyId: strategy._id,
     userId,
     now,
-    budget: new CopyBudget(() =>
-      errorWithCode(
-        "PAGE_TOO_LARGE_TO_COPY",
-        "This page is too large to copy.",
-      ),
-    ),
+    budget,
     // The page goes in without an image still uploading, rather than not
     // at all: the app sees the gap and says so.
     uploadingImages: "leaveOut",
@@ -951,6 +947,7 @@ async function applyPageOp(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   userId: Id<"users">,
+  copyBudget: CopyBudget,
 ): Promise<{ strategy: Doc<"strategies">; result: OperationResult }> {
   const publicId = op.entityPublicId ?? op.pagePublicId;
   if (publicId === undefined) {
@@ -1009,6 +1006,7 @@ async function applyPageOp(
       op.copyContentFromPagePublicId,
       userId,
       now,
+      copyBudget,
     );
     const pages = await listLivePages(ctx, strategy._id);
     const orderedPages = sortByNumberField(pages, "sortIndex");
@@ -1858,6 +1856,16 @@ export const applyBatch = mutation({
     // Images deleted elements showed, whose upload placeholders may go once
     // the whole batch has applied and nothing shows them any more.
     const placeholderCandidates = new Set<string>();
+    // One budget for every page the batch copies: the batch is one
+    // transaction, and Convex's limits are the transaction's. A copy past
+    // what is left fails alone; past Convex's limits the whole batch would
+    // fail, and fail again on every retry.
+    const copyBudget = new CopyBudget(() =>
+      errorWithCode(
+        "PAGE_TOO_LARGE_TO_COPY",
+        "This page is too large to copy.",
+      ),
+    );
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
@@ -1933,7 +1941,13 @@ export const applyBatch = mutation({
             strategy = applied.strategy;
             result = applied.result;
           } else if (op.entityType === "page") {
-            const applied = await applyPageOp(ctx, strategy, op, user._id);
+            const applied = await applyPageOp(
+              ctx,
+              strategy,
+              op,
+              user._id,
+              copyBudget,
+            );
             strategy = applied.strategy;
             result = applied.result;
           } else if (op.entityType === "pageContent") {
