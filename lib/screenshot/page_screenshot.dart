@@ -47,10 +47,11 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
 
   final images = await resolveCaptureImages(
     {
+      // By picture, as the captured page's images look them up.
       for (final image in page.imageData)
-        image.id: readStrategyImageSource(
+        image.pictureId: readStrategyImageSource(
           ref,
-          (id: image.id, fileExtension: image.fileExtension),
+          (id: image.pictureId, fileExtension: image.fileExtension),
         ),
     },
     fetch: (imageId, url, client) => downloadCloudImageBytes(

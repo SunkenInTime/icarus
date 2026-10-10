@@ -19,6 +19,7 @@ import {
   collectReferencedAssetIds,
   getViewerAssetForStrategy,
   serializeAssetForViewer,
+  withPictureAliases,
 } from "./lib/imageAssets";
 import {
   serializeElement,
@@ -157,12 +158,13 @@ export const getFullSnapshot = query({
             lineup,
           ),
         ),
-      assets: (
+      assets: withPictureAliases(
         await Promise.all(
           assets
             .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
             .map((asset) => serializeAssetForViewer(ctx, asset)),
-        )
+        ),
+        visibleElements,
       ).sort((left, right) => left.publicId.localeCompare(right.publicId)),
     };
   },

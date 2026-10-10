@@ -149,18 +149,19 @@ Future<VideoExportSource> loadVideoExportSource(
   final images = await resolveCaptureImages(
     {
       for (final page in pages)
+        // By picture, as the captured pages' images look them up.
         for (final image in page.imageData)
-          image.id: resolveStrategyImageSource(
+          image.pictureId: resolveStrategyImageSource(
             localFilePath: findLocalImageFile(
               storageDirectory: state.storageDirectory,
-              imageId: image.id,
+              imageId: image.pictureId,
               fileExtension: image.fileExtension,
             ),
             isCloudStrategy: isCloud,
             // The whole strategy was just read, and this device has
             // nothing left to upload.
             assetsLoaded: true,
-            remoteAsset: assets[image.id],
+            remoteAsset: assets[image.pictureId],
             uploadMayBeQueuedHere: false,
           ),
     },

@@ -449,21 +449,24 @@ class CloudMediaUploadQueueNotifier
           assetPublicId: assetPublicId,
         );
 
+    // By picture: a copy of an image shows its original's picture, which
+    // is uploaded once, for the original.
     for (final image in placedImages) {
-      final asset = assetsById[image.id];
+      final pictureId = image.pictureId;
+      final asset = assetsById[pictureId];
       final hasActiveRemote =
           asset?.uploadStatus == 'active' && (asset?.url?.isNotEmpty ?? false);
-      if (hasActiveRemote || _getJob(image.id) != null) {
+      if (hasActiveRemote || _getJob(pictureId) != null) {
         continue;
       }
 
       final bytes = await _findMediaBytes(
-        keyFor(image.id),
+        keyFor(pictureId),
         fileExtension: image.fileExtension ?? '',
       );
       if (bytes == null) {
         _logMedia(
-          'reconcile.local_missing image=${image.id} '
+          'reconcile.local_missing image=$pictureId '
           'strategy=$strategyPublicId status=${asset?.uploadStatus ?? 'none'}',
         );
         continue;
@@ -471,7 +474,7 @@ class CloudMediaUploadQueueNotifier
 
       await enqueueJobForLocalBytes(
         strategyPublicId: strategyPublicId,
-        assetPublicId: image.id,
+        assetPublicId: pictureId,
         fileExtension: image.fileExtension ?? '',
       );
     }
@@ -1192,10 +1195,10 @@ class CloudMediaUploadQueueNotifier
 
   bool _opReferencesAsset(StrategyOp op, String assetPublicId) {
     if (op is ElementAddOp) {
-      return op.elementPublicId == assetPublicId;
+      return _pictureOf(op.elementPublicId, op.payload) == assetPublicId;
     }
     if (op is ElementPatchOp) {
-      return op.elementPublicId == assetPublicId;
+      return _pictureOf(op.elementPublicId, op.payload) == assetPublicId;
     }
     if (op is LineupAddOp) {
       return _jsonContainsAssetId(op.payload, assetPublicId);
@@ -1204,6 +1207,14 @@ class CloudMediaUploadQueueNotifier
       return _jsonContainsAssetId(op.payload, assetPublicId);
     }
     return false;
+  }
+
+  /// The picture an element op shows when it is an image: its payload's
+  /// `assetId`, else the element's own id (see PlacedImage.pictureId).
+  static String _pictureOf(String elementPublicId, CloudPayload? payload) {
+    final assetId =
+        payload == null ? null : cloudPayloadData(payload)['assetId'];
+    return assetId is String && assetId.isNotEmpty ? assetId : elementPublicId;
   }
 
   bool _jsonContainsAssetId(Object? value, String assetPublicId) {

@@ -63,16 +63,6 @@ List<ShadContextMenuItem> _copyMenuItems(
               'copied.',
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
-      case PageCopyResult.imageUploading:
-        Settings.showToast(
-          message: 'The image is still uploading. Copy it again in a moment.',
-          backgroundColor: Settings.tacticalVioletTheme.primary,
-        );
-      case PageCopyResult.imageUnavailable:
-        Settings.showToast(
-          message: "The cloud doesn't have this image, so it wasn't copied.",
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
-        );
       case PageCopyResult.copied || PageCopyResult.unavailable:
         break;
     }

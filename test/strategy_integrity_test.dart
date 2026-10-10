@@ -16,6 +16,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -770,6 +771,102 @@ void main() {
         'current schema export -> import preserves custom shapes',
       );
       expect(reExported, equals(exported));
+    });
+
+    test(
+        'an image showing another image\'s picture round-trips, and opening '
+        'keeps the picture while only the copy shows it', () async {
+      final harness = await _IcaHarness.open();
+      addTearDown(harness.close);
+      Map<String, dynamic> image(String id, {String? assetId}) => {
+            'id': id,
+            'isDeleted': false,
+            'position': {'dx': 500.0, 'dy': 600.0},
+            'aspectRatio': 1.0,
+            'fileExtension': '.png',
+            'scale': 220.0,
+            'tagColorValue': null,
+            if (assetId != null) 'assetId': assetId,
+          };
+      final payload = <String, dynamic>{
+        'versionNumber': '${Settings.versionNumber}',
+        'mapData': 'ascent',
+        'pages': [
+          {
+            'id': 'page-1',
+            'sortIndex': '0',
+            'name': 'Page 1',
+            'isAutoNamed': true,
+            'drawingData': <dynamic>[],
+            'agentData': <dynamic>[],
+            'abilityData': <dynamic>[],
+            'textData': <dynamic>[],
+            'imageData': [image('img-1'), image('img-copy', assetId: 'img-1')],
+            'utilityData': <dynamic>[],
+            'isAttack': 'true',
+            'settings': {'agentSize': 35.0, 'abilitySize': 25.0},
+            'lineUpData': <dynamic>[],
+          },
+        ],
+      };
+      final picture = [137, 80, 78, 71, 13, 10, 26, 10];
+      final json = utf8.encode(jsonEncode(payload));
+      final archive = Archive()
+        ..addFile(ArchiveFile('Pictures.json', json.length, json))
+        ..addFile(ArchiveFile('img-1.png', picture.length, picture));
+      final file = File(path.join(harness.directory.path, 'Pictures.ica'));
+      await file.writeAsBytes(ZipEncoder().encodeBytes(archive));
+
+      final imported = await harness.importIca(file);
+      final images = {
+        for (final image in imported.pages.single.imageData) image.id: image,
+      };
+      expect(images['img-1']!.pictureId, 'img-1');
+      expect(images['img-copy']!.assetId, 'img-1');
+      expect(images['img-copy']!.pictureId, 'img-1');
+
+      // Exported: the copy names the picture, which is packed once.
+      final exported = await harness.exportIca(imported);
+      final exportedImages = ((await _readIcaJson(exported))['pages'] as List)
+          .cast<Map<String, dynamic>>()
+          .single['imageData'] as List;
+      expect(
+        {for (final image in exportedImages) image['id']: image['assetId']},
+        {'img-1': null, 'img-copy': 'img-1'},
+      );
+      expect((await _icaAttachments(exported)).keys, ['img-1.png']);
+      final reImported = await harness.importIca(exported);
+      expect(
+        reImported.pages.single.imageData
+            .singleWhere((image) => image.id == 'img-copy')
+            .pictureId,
+        'img-1',
+      );
+
+      // The original is deleted; opening the strategy keeps the picture the
+      // copy still shows.
+      final onlyCopy = reImported.copyWith(pages: [
+        reImported.pages.single.copyWith(
+          imageData: [
+            reImported.pages.single.imageData
+                .singleWhere((image) => image.id == 'img-copy'),
+          ],
+        ),
+      ]);
+      await harness.strategies.put(onlyCopy.id, onlyCopy);
+      CoordinateSystem(playAreaSize: const Size(1920, 1080));
+      await harness.container
+          .read(strategyProvider.notifier)
+          .loadFromHive(onlyCopy.id);
+      expect(
+        File(path.join(
+          harness.directory.path,
+          onlyCopy.id,
+          'images',
+          'img-1.png',
+        )).existsSync(),
+        isTrue,
+      );
     });
 
     test('custom shape utility dimensions support undo and redo', () {

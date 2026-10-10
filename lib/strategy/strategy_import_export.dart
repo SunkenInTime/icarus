@@ -2408,7 +2408,11 @@ class StrategyImportExportService {
         if (element.deleted || element.elementType != 'image') {
           continue;
         }
-        assetIds.add(element.publicId);
+        // The picture it shows (PlacedImage.pictureId).
+        final assetId = cloudPayloadData(element.payload)['assetId'];
+        assetIds.add(
+          assetId is String && assetId.isNotEmpty ? assetId : element.publicId,
+        );
       }
 
       final lineups = lineUpGraphFromRemoteLineups(

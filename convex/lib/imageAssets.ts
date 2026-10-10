@@ -46,10 +46,54 @@ export function inferFileExtension(
   return match?.[1]?.toLowerCase() ?? "";
 }
 
+/// The picture an image element shows: its `assetId` when it has one, else
+/// its own id. A copy of an image is a new element showing its original's
+/// picture, so it needs no picture of its own, and is never waiting on an
+/// upload its original is still making. Only images have an `assetId`.
 export function collectAssetIdFromElementPayload(
   payload: Doc<"elements">["payload"],
 ): string | null {
-  return typeof payload.data.id === "string" ? payload.data.id : null;
+  const { assetId, id } = payload.data;
+  if (typeof assetId === "string" && assetId.length > 0) return assetId;
+  return typeof id === "string" ? id : null;
+}
+
+/// [next] keeping the picture [current] shows, when it leaves the picture
+/// out. An image never changes picture, and builds from before pictures had
+/// their own id write an image's whole payload without the field: moving a
+/// copy there must not cut it off from its picture.
+export function keepPictureId(
+  current: Doc<"elements">["payload"],
+  next: Doc<"elements">["payload"],
+): Doc<"elements">["payload"] {
+  const assetId = current.data.assetId;
+  if (typeof assetId !== "string" || "assetId" in next.data) return next;
+  return { ...next, data: { ...next.data, assetId } };
+}
+
+/// [assets] as builds from before pictures had their own id can read them:
+/// they look an image's picture up under the image's own id. Each live image
+/// showing another id's picture gets that picture under its own id too.
+export function withPictureAliases<T extends { publicId: string }>(
+  assets: T[],
+  elements: Doc<"elements">[],
+): T[] {
+  const byId = new Map(assets.map((asset) => [asset.publicId, asset]));
+  const aliases: T[] = [];
+  for (const element of elements) {
+    if (element.deleted || element.elementType !== "image") continue;
+    const id = element.payload.data.id;
+    const pictureId = collectAssetIdFromElementPayload(element.payload);
+    if (typeof id !== "string" || pictureId === null || pictureId === id) {
+      continue;
+    }
+    const picture = byId.get(pictureId);
+    if (picture === undefined || byId.has(id)) continue;
+    const alias = { ...picture, publicId: id };
+    byId.set(id, alias);
+    aliases.push(alias);
+  }
+  return [...assets, ...aliases];
 }
 
 /// The images a lineup group shows: links[*].images[*].id, across every

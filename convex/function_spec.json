@@ -40105,59 +40105,6 @@
       "args": {
         "type": "object",
         "value": {
-          "clientProtocolVersion": {
-            "fieldType": {
-              "type": "number"
-            },
-            "optional": false
-          },
-          "sourceAssetPublicId": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": false
-          },
-          "strategyPublicId": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": false
-          },
-          "targetAssetPublicId": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": false
-          }
-        }
-      },
-      "functionType": "Mutation",
-      "identifier": "images.js:copyAsset",
-      "returns": {
-        "type": "union",
-        "value": [
-          {
-            "type": "literal",
-            "value": "copied"
-          },
-          {
-            "type": "literal",
-            "value": "uploading"
-          },
-          {
-            "type": "literal",
-            "value": "unavailable"
-          }
-        ]
-      },
-      "visibility": {
-        "kind": "public"
-      }
-    },
-    {
-      "args": {
-        "type": "object",
-        "value": {
           "assetPublicId": {
             "fieldType": {
               "type": "string"

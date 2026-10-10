@@ -408,12 +408,6 @@ abstract interface class ImagesModule {
     ConvexOptional<String> uploadId = const ConvexOptional.absent(),
     ConvexOptional<double> width = const ConvexOptional.absent(),
   });
-  Future<ImagesCopyAssetResult> copyAsset({
-    required double clientProtocolVersion,
-    required String sourceAssetPublicId,
-    required String strategyPublicId,
-    required String targetAssetPublicId,
-  });
   Future<FoldersDeleteResult> deleteAssetRef({
     required String assetPublicId,
     required double clientProtocolVersion,
@@ -481,25 +475,6 @@ final class _ImagesModule implements ImagesModule {
     return _invoke(
       () => _transport.action('images:completeUpload', args),
       decodeImagesCompleteUploadResult,
-    );
-  }
-
-  @override
-  Future<ImagesCopyAssetResult> copyAsset({
-    required double clientProtocolVersion,
-    required String sourceAssetPublicId,
-    required String strategyPublicId,
-    required String targetAssetPublicId,
-  }) {
-    final args = encodeImagesCopyAssetArgs(
-      clientProtocolVersion: clientProtocolVersion,
-      sourceAssetPublicId: sourceAssetPublicId,
-      strategyPublicId: strategyPublicId,
-      targetAssetPublicId: targetAssetPublicId,
-    );
-    return _invoke(
-      () => _transport.mutation('images:copyAsset', args),
-      decodeImagesCopyAssetResult,
     );
   }
 

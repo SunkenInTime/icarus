@@ -388,6 +388,7 @@ void main() {
                 ImageWidget(
                   key: const ValueKey('image-card'),
                   id: image.id,
+                  pictureId: image.pictureId,
                   aspectRatio: image.aspectRatio,
                   scale: image.scale,
                   fileExtension: image.fileExtension,
