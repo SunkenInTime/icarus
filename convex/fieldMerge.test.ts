@@ -961,3 +961,47 @@ describe("merge edge cases", () => {
     expect(linkNames(await lineup(me, "g"))).toEqual({ k1: "One", k2: "Two" });
   });
 });
+
+describe("merge fallbacks keep the older rules", () => {
+  test("an offline merge that must write whole is revision-checked, not place-checked", async () => {
+    const { me, teammate } = await createHarness();
+    await addAgent(me);
+    await applyOne(teammate, "teammate", {
+      ...mergePatch(agentData(), ["@sortIndex"], 1),
+      sortIndex: 9,
+    });
+
+    // A change of kind can't merge. From the row's own revision, it is
+    // written whole, place and all, however stale its place's base.
+    const whole = await applyOne(me, "me", {
+      ...mergePatch(
+        agentData({ kind: "circle" }),
+        ["kind", "@sortIndex"],
+        2,
+        { kind: "plain", "@sortIndex": 0 },
+      ),
+      sortIndex: 7,
+    });
+    expect(whole.status).toBe("applied");
+    const row = await element(me, "agent-1");
+    expect(row.payload.data.kind).toBe("circle");
+    expect(row.sortIndex).toBe(7);
+  });
+
+  test("a whole patch is checked for its kind before its page, as before", async () => {
+    const { me } = await createHarness();
+    await addAgent(me);
+    const result = await applyOne(me, "old-client", {
+      opId: nextOpId(),
+      type: "element.patch",
+      elementPublicId: "agent-1",
+      pagePublicId: "no-such-page",
+      payload: { kind: "ability", payloadVersion: 1, data: {} },
+      expectedElementRevision: 1,
+    });
+    expect(result).toMatchObject({
+      status: "failed",
+      code: "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH",
+    });
+  });
+});
