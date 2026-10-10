@@ -188,7 +188,8 @@ export async function getActiveAssetForStrategy(
   // Rows from before upload statuses, this strategy's then those of no
   // strategy. Each is read on its own: copies into other strategies keep
   // their pictures' ids, so a read of every strategy's rows could fill its
-  // limit with theirs.
+  // limit with theirs. Ten each keeps the whole lookup to 22 rows, as a
+  // copy's budget counts it (convex/lib/contentCopy.ts).
   for (const owner of [strategyId, undefined]) {
     const legacyCandidates = await ctx.db
       .query("imageAssets")
@@ -196,7 +197,7 @@ export async function getActiveAssetForStrategy(
         q.eq("strategyId", owner).eq("publicId", assetPublicId),
       )
       .order("desc")
-      .take(20);
+      .take(10);
     const visible = legacyCandidates.find(isVisibleAsset);
     if (visible !== undefined) return visible;
   }
