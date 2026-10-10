@@ -75,12 +75,6 @@ enum PageCopyResult {
 
   /// There was nothing to copy, or no page to copy it to.
   unavailable,
-
-  /// The image's upload has not finished, so it cannot be copied yet.
-  imageUploading,
-
-  /// The server cannot show the image, so it was not copied.
-  imageUnavailable,
 }
 
 class StrategyProvider extends Notifier<StrategyState> {
@@ -1060,46 +1054,6 @@ class StrategyProvider extends Notifier<StrategyState> {
             255) {
       return PageCopyResult.unavailable;
     }
-    // An image's id also names its picture on the server, so the copy gets
-    // the original's picture under its own id first. It shares the stored
-    // bytes, so nothing is uploaded again.
-    if (element.kind == 'image') {
-      final CloudImageCopyResult picture;
-      try {
-        picture =
-            await ref.read(convexStrategyRepositoryProvider).copyImageAsset(
-                  strategyPublicId: strategyId,
-                  sourceAssetPublicId: widgetId,
-                  targetAssetPublicId: copyId,
-                );
-      } catch (error) {
-        log('Could not copy the picture of image $widgetId: $error');
-        return PageCopyResult.unreachable;
-      }
-      switch (picture) {
-        case CloudImageCopyResult.uploading:
-          return PageCopyResult.imageUploading;
-        case CloudImageCopyResult.unavailable:
-          // An image this device placed may not have reached the server yet.
-          // Its upload only goes once the image itself is saved to send
-          // (referenceDurable); one whose save failed never will.
-          final stillUploading = ref
-              .read(cloudMediaUploadQueueProvider)
-              .jobsForStrategy(strategyId)
-              .any(
-                (job) =>
-                    job.assetPublicId == widgetId &&
-                    job.referenceDurable &&
-                    job.state != CloudMediaJobState.failed,
-              );
-          return stillUploading
-              ? PageCopyResult.imageUploading
-              : PageCopyResult.imageUnavailable;
-        case CloudImageCopyResult.copied:
-          break;
-      }
-      if (state.strategyId != strategyId) return PageCopyResult.unavailable;
-    }
     // The canvas never draws the copy: its page shows it from the server.
     final queued =
         await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
@@ -1109,7 +1063,15 @@ class StrategyProvider extends Notifier<StrategyState> {
                 pagePublicId: targetPageId,
                 payload: cloudElementPayload(
                   kind: element.kind,
-                  data: {...element.data, 'id': copyId},
+                  data: {
+                    ...element.data,
+                    'id': copyId,
+                    // A copied image shows its original's picture: nothing
+                    // is copied or uploaded, and nothing waits on an upload
+                    // still under way (see PlacedImage.assetId).
+                    if (element.kind == 'image')
+                      'assetId': element.data['assetId'] ?? widgetId,
+                  },
                 ),
                 sortIndex: 1 + onTarget.values.fold<int>(-1, max),
               ),

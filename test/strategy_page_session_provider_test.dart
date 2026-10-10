@@ -11524,13 +11524,10 @@ void main() {
     });
 
     group('an image', () {
-      /// Opens page 2 with a placed image on it, whose picture the server
-      /// copies with [result] (null: the call fails, as when offline).
-      Future<(ProviderContainer, _PageReader)> openWithImage(
-        CloudImageCopyResult? result,
-      ) async {
-        final (container, _, reader) = await open();
-        reader.imageCopy = result;
+      /// Opens page 2 with a placed image on it, showing picture
+      /// [assetId] when given (it is itself a copy), else its own.
+      Future<ProviderContainer> openWithImage({String? assetId}) async {
+        final (container, _, _) = await open();
         container.read(placedImageProvider.notifier).fromHive([
           PlacedImage(
             id: 'image',
@@ -11538,10 +11535,11 @@ void main() {
             aspectRatio: 1.5,
             scale: 100,
             fileExtension: '.png',
+            assetId: assetId,
           ),
         ]);
         await _settle();
-        return (container, reader);
+        return container;
       }
 
       Iterable<ElementAddOp> copies(ProviderContainer container) =>
@@ -11554,9 +11552,9 @@ void main() {
             direction: PageTransitionDirection.forward,
           );
 
-      test('gets its picture copied under the new id, then is sent', () async {
-        final (container, reader) =
-            await openWithImage(CloudImageCopyResult.copied);
+      test('is copied showing its picture, however far its upload has got',
+          () async {
+        final container = await openWithImage();
         expect(
           container
               .read(strategyProvider.notifier)
@@ -11564,97 +11562,27 @@ void main() {
           [PageTransitionDirection.forward, PageTransitionDirection.backward],
         );
 
-        // Nothing is queued until the picture is copied.
-        final picture = reader.imageCopyGate = Completer<void>();
-        final copied = copy(container);
-        await _settle();
-        expect(copies(container), isEmpty);
-        picture.complete();
-        expect(await copied, PageCopyResult.copied);
+        expect(await copy(container), PageCopyResult.copied);
 
         final add = copies(container).single;
         expect(add.payload['kind'], 'image');
         final data = cloudPayloadData(add.payload);
         expect(data['id'], add.elementPublicId);
-        expect(data['aspectRatio'], 1.5);
         expect(pageCopyRoot(add.elementPublicId), 'image');
-        expect(reader.imageCopies, [('image', add.elementPublicId)]);
+        // The copy shows the original's picture.
+        expect(data['assetId'], 'image');
+        expect(data['aspectRatio'], 1.5);
         await _settle();
       });
 
-      test('still uploading is not copied yet', () async {
-        final (container, _) =
-            await openWithImage(CloudImageCopyResult.uploading);
+      test("a copy's copy shows the first picture", () async {
+        final container = await openWithImage(assetId: 'first-image');
 
-        expect(await copy(container), PageCopyResult.imageUploading);
-        expect(copies(container), isEmpty);
-      });
+        expect(await copy(container), PageCopyResult.copied);
 
-      /// Opens the image, unknown to the server, with this device's upload
-      /// of it in [state]; [saved] false: the image's own save failed, so
-      /// its upload never goes.
-      Future<ProviderContainer> openUploading(
-        CloudMediaJobState state, {
-        bool saved = true,
-      }) async {
-        final (container, _) =
-            await openWithImage(CloudImageCopyResult.unavailable);
-        container.read(cloudMediaUploadQueueProvider.notifier).state =
-            CloudMediaUploadQueueState(
-          jobs: [
-            CloudMediaUploadJob(
-              jobId: 'image',
-              accountId: 'account-a',
-              strategyPublicId: 'cloud-strategy',
-              assetPublicId: 'image',
-              fileExtension: '.png',
-              mimeType: 'image/png',
-              state: state,
-              attempts: 0,
-              updatedAt: DateTime.utc(2026),
-              referenceDurable: saved,
-            ),
-          ],
-          isProcessing: false,
-        );
-        return container;
-      }
-
-      test('this device is still uploading is not copied yet', () async {
-        for (final state in [
-          CloudMediaJobState.pendingUpload,
-          CloudMediaJobState.pendingAttach,
-        ]) {
-          final container = await openUploading(state);
-          expect(await copy(container), PageCopyResult.imageUploading);
-          expect(copies(container), isEmpty);
-        }
-      });
-
-      test('whose upload failed or will never go is not called uploading',
-          () async {
-        for (final container in [
-          await openUploading(CloudMediaJobState.failed),
-          await openUploading(CloudMediaJobState.pendingUpload, saved: false),
-        ]) {
-          expect(await copy(container), PageCopyResult.imageUnavailable);
-          expect(copies(container), isEmpty);
-        }
-      });
-
-      test('the cloud cannot show is not copied', () async {
-        final (container, _) =
-            await openWithImage(CloudImageCopyResult.unavailable);
-
-        expect(await copy(container), PageCopyResult.imageUnavailable);
-        expect(copies(container), isEmpty);
-      });
-
-      test('whose picture cannot be copied right now is not copied', () async {
-        final (container, _) = await openWithImage(null);
-
-        expect(await copy(container), PageCopyResult.unreachable);
-        expect(copies(container), isEmpty);
+        expect(cloudPayloadData(copies(container).single.payload)['assetId'],
+            'first-image');
+        await _settle();
       });
     });
   });
@@ -11671,28 +11599,6 @@ class _PageReader extends Fake implements ConvexStrategyRepository {
 
   /// While set, a read waits for it.
   Completer<void>? gate;
-
-  /// What copying an image's picture returns; null: the call fails.
-  CloudImageCopyResult? imageCopy = CloudImageCopyResult.copied;
-
-  /// While set, copying an image's picture waits for it.
-  Completer<void>? imageCopyGate;
-
-  /// The pictures copied, as (source, target) image ids.
-  final List<(String, String)> imageCopies = [];
-
-  @override
-  Future<CloudImageCopyResult> copyImageAsset({
-    required String strategyPublicId,
-    required String sourceAssetPublicId,
-    required String targetAssetPublicId,
-  }) async {
-    await imageCopyGate?.future;
-    final result = imageCopy;
-    if (result == null) throw const SocketException('offline');
-    imageCopies.add((sourceAssetPublicId, targetAssetPublicId));
-    return result;
-  }
 
   @override
   Future<RemotePageSnapshot> fetchPageSnapshot({
