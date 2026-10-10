@@ -261,7 +261,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
             break;
           case 'image':
             final hydrated = PlacedImage.fromJson(payload);
-            final remoteAsset = snapshot.assetsById[hydrated.id];
+            final remoteAsset = snapshot.assetsById[hydrated.pictureId];
             images.add(hydrated);
             if (remoteAsset != null) {
               ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
@@ -440,7 +440,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
             break;
           case 'image':
             final hydrated = PlacedImage.fromJson(payload);
-            final remoteAsset = snapshot.assetsById[hydrated.id];
+            final remoteAsset = snapshot.assetsById[hydrated.pictureId];
             images.add(hydrated);
             if (remoteAsset != null) {
               ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(

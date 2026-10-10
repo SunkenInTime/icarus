@@ -366,5 +366,48 @@ void main() {
 
       expect(restored.link, isEmpty);
     });
+
+    test('a placed image stored before picture ids shows its own picture', () {
+      final restored = PlacedImageAdapter().read(
+        _legacyFieldReader({
+          1: 1.5,
+          2: 200.0,
+          3: '',
+          4: 'legacy-image',
+          5: false,
+          6: const Offset(3, 4),
+          8: '.png',
+          9: 0xFF3B82F6,
+          10: worldSizedMediaVersion,
+        }),
+      );
+
+      expect(restored.assetId, isNull);
+      expect(restored.pictureId, 'legacy-image');
+      // Its JSON, and so its cloud payload, is as it was.
+      expect(restored.toJson().containsKey('assetId'), isFalse);
+    });
+
+    test("a placed image showing another image's picture keeps it", () {
+      final restored = PlacedImageAdapter().read(
+        _legacyFieldReader({
+          1: 1.5,
+          2: 200.0,
+          3: '',
+          4: 'copy-image',
+          5: false,
+          6: const Offset(3, 4),
+          8: '.png',
+          10: worldSizedMediaVersion,
+          11: 'original-image',
+        }),
+      );
+
+      expect(restored.pictureId, 'original-image');
+      final reloaded = PlacedImage.fromJson(restored.toJson());
+      expect(reloaded.id, 'copy-image');
+      expect(reloaded.pictureId, 'original-image');
+      expect(restored.copyWith(scale: 300).pictureId, 'original-image');
+    });
   });
 }

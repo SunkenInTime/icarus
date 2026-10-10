@@ -218,9 +218,20 @@ class PlacedImage extends PlacedWidget {
     this.sizeVersion,
     this.tagColorValue,
     this.link = '',
+    this.assetId,
   });
 
   final double aspectRatio;
+
+  /// The picture this image shows, when it isn't the image's own id: a
+  /// copy of an image is a new item showing its original's picture, with
+  /// nothing copied or uploaded. Absent on every image made before copies
+  /// shared pictures. Use [pictureId] to find the picture.
+  @JsonKey(includeIfNull: false)
+  final String? assetId;
+
+  /// The id the image's picture is stored, uploaded and found under.
+  String get pictureId => assetId ?? id;
 
   final String? fileExtension;
   double scale;
@@ -264,6 +275,7 @@ class PlacedImage extends PlacedWidget {
     int? tagColorValue,
     bool? isDeleted,
     String? link,
+    String? assetId,
   }) {
     final cloned = PlacedImage(
       position: position ?? this.position,
@@ -273,6 +285,7 @@ class PlacedImage extends PlacedWidget {
       fileExtension: fileExtension ?? this.fileExtension,
       sizeVersion: sizeVersion ?? this.sizeVersion,
       tagColorValue: tagColorValue ?? this.tagColorValue,
+      assetId: assetId ?? this.assetId,
     );
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;

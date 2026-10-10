@@ -75,7 +75,7 @@ types:
         index: 7
   PlacedImage:
     typeId: 5
-    nextIndex: 11
+    nextIndex: 12
     fields:
       aspectRatio:
         index: 1
@@ -95,6 +95,8 @@ types:
         index: 9
       sizeVersion:
         index: 10
+      assetId:
+        index: 11
   MapValue:
     typeId: 6
     nextIndex: 13

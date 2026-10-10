@@ -57,7 +57,11 @@ void appendMigratedPageOps(
 
   for (final image in page.imageData) {
     final elementId = nextUniqueMigrationId(image.id, usedElementIds);
-    final payload = cloudImagePayloadFromPlacedImage(image)
+    // A renamed image keeps showing its picture, which is stored under its
+    // old id.
+    final payload = cloudImagePayloadFromPlacedImage(
+      elementId == image.id ? image : image.copyWith(assetId: image.pictureId),
+    )
       ..putIfAbsent('elementType', () => 'image')
       ..['id'] = elementId;
     ops.add(

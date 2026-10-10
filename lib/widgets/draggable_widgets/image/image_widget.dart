@@ -45,7 +45,6 @@ class _ImageFullScreenOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () {
@@ -129,13 +128,20 @@ class ImageWidget extends ConsumerStatefulWidget {
     required this.scale,
     required this.fileExtension,
     required this.id,
+    required this.pictureId,
     this.tagColorValue,
     this.isFeedback = false,
   });
   final double aspectRatio;
   final double scale;
   final String? fileExtension;
+
+  /// The placed image's id, which its hero tag carries: unique on a page.
   final String id;
+
+  /// The id of the picture it shows (PlacedImage.pictureId), which images
+  /// on several pages, or a copy and its original, can share.
+  final String pictureId;
   final int? tagColorValue;
   final bool isFeedback;
 
@@ -161,7 +167,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
         .clamp(1.0, double.infinity);
     final source = watchStrategyImageSource(
       ref,
-      (id: widget.id, fileExtension: widget.fileExtension),
+      (id: widget.pictureId, fileExtension: widget.fileExtension),
     );
     final image = source.imageProvider;
 
@@ -170,7 +176,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
           // while its cloud URL loads, and no other image's frame carries
           // over.
           LocalImageFile() || RemoteImageUrl() || ImageBytes() => Image(
-              key: ValueKey(widget.id),
+              key: ValueKey(widget.pictureId),
               image: image!,
               fit: BoxFit.contain,
               gaplessPlayback: true,
