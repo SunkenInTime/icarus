@@ -316,6 +316,7 @@ describe("strategies:duplicate", () => {
     type Row = Record<string, any>;
     const copy = (await owner.query(getFullSnapshot, {
       ...protocol,
+      acceptsPictureIds: true,
       strategyPublicId: "duplicate-copy",
     })) as { elements: Row[]; lineups: Row[] };
     const agents = copy.elements.filter((row) => row.elementType === "agent");
@@ -347,6 +348,7 @@ describe("strategies:duplicate", () => {
     type Row = Record<string, any>;
     const copy = (await owner.query(getFullSnapshot, {
       ...protocol,
+      acceptsPictureIds: true,
       strategyPublicId: "duplicate-copy",
     })) as { header: Row; pages: Row[]; elements: Row[]; lineups: Row[] };
     expect(copy.header).toMatchObject({
@@ -582,6 +584,7 @@ describe("strategies:duplicate", () => {
     };
     const copy = (await owner.query(getFullSnapshot, {
       ...protocol,
+      acceptsPictureIds: true,
       strategyPublicId: "duplicate-copy",
     })) as {
       pages: Array<{ publicId: string; sortIndex: number }>;
@@ -722,6 +725,7 @@ describe("strategies:duplicate", () => {
     type Row = Record<string, any>;
     const copy = (await owner.query(getFullSnapshot, {
       ...protocol,
+      acceptsPictureIds: true,
       strategyPublicId: "duplicate-copy",
     })) as { pages: Row[]; elements: Row[] };
     const copyImage = copy.elements.find((row) => row.elementType === "image")!;
@@ -1482,6 +1486,7 @@ describe("strategies:duplicate access", () => {
     await expect(
       owner.query(getFullSnapshot, {
         ...protocol,
+        acceptsPictureIds: true,
         strategyPublicId: "editor-copy",
       }),
     ).rejects.toThrow("Forbidden");
@@ -1552,6 +1557,7 @@ describe('"+": a page added as a copy of another', () => {
   async function snapshot(owner: Harness) {
     return (await owner.query(getFullSnapshot, {
       ...protocol,
+      acceptsPictureIds: true,
       strategyPublicId: source,
       acceptsTrashedPagesLeftOut: true,
     })) as { pages: Row[]; elements: Row[]; lineups: Row[] };
@@ -1691,6 +1697,7 @@ describe('"+": a page added as a copy of another', () => {
     await setPlacedStatus("active");
     const copyPage = (await owner.query(getPageSnapshot, {
       ...protocol,
+      acceptsPictureIds: true,
       strategyPublicId: source,
       pagePublicId: "copy-of-1",
     })) as { assets: Array<Record<string, any>> };
