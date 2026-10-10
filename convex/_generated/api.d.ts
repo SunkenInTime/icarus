@@ -24,6 +24,7 @@ import type * as lib_fieldMerge from "../lib/fieldMerge.js";
 import type * as lib_imageAssets from "../lib/imageAssets.js";
 import type * as lib_lineupItems from "../lib/lineupItems.js";
 import type * as lib_opTypes from "../lib/opTypes.js";
+import type * as lib_pageCopyId from "../lib/pageCopyId.js";
 import type * as lib_payloadValidators from "../lib/payloadValidators.js";
 import type * as lib_profile from "../lib/profile.js";
 import type * as lib_publicValidators from "../lib/publicValidators.js";
@@ -64,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   "lib/imageAssets": typeof lib_imageAssets;
   "lib/lineupItems": typeof lib_lineupItems;
   "lib/opTypes": typeof lib_opTypes;
+  "lib/pageCopyId": typeof lib_pageCopyId;
   "lib/payloadValidators": typeof lib_payloadValidators;
   "lib/profile": typeof lib_profile;
   "lib/publicValidators": typeof lib_publicValidators;

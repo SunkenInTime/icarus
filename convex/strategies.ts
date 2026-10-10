@@ -24,6 +24,7 @@ import {
 } from "./lib/auth";
 import type { StrategyRole } from "./lib/auth";
 import { lineupGroupItems } from "./lib/lineupItems";
+import { pageCopyId } from "./lib/pageCopyId";
 import {
   getFolderByPublicId,
   getStrategyByPublicId,
@@ -540,12 +541,16 @@ type LineupPayload = Doc<"lineups">["payload"];
 /// New ids for a copied strategy's lineups: one map shared by every row and
 /// every id in it, so one source id always becomes one copy id. Ids the
 /// source repeats within a group (a landing may take its lineup's id, a
-/// link names its origin and landing) repeat in the copy the same way.
+/// link names its origin and landing) repeat in the copy the same way. Each
+/// keeps its root (see lib/pageCopyId.ts), so lineups copied between the
+/// source's pages are still copies of each other in the copy.
 function lineupIdMap() {
   const ids = new Map<string, string>();
   return (id: string): string => {
     let next = ids.get(id);
-    if (next === undefined) ids.set(id, (next = createPublicId()));
+    if (next === undefined) {
+      ids.set(id, (next = pageCopyId(id, createPublicId)));
+    }
     return next;
   };
 }
@@ -793,7 +798,9 @@ export const duplicate = mutation({
     for (const element of sourceElements) {
       const pageId = pageIdMap.get(element.pageId);
       if (element.deleted || pageId === undefined) continue;
-      const publicId = createPublicId();
+      // The copy keeps the item's root, so items copied between the
+      // source's pages still pair up, and glide, in the copy.
+      const publicId = pageCopyId(element.publicId, createPublicId);
       const sourceAssetId =
         element.elementType === "image"
           ? collectAssetIdFromElementPayload(element.payload)
