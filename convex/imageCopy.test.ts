@@ -25,6 +25,8 @@ const purgeOldTombstones = makeFunctionReference<"mutation">(
 );
 const listImages = makeFunctionReference<"query">("images:listForStrategy");
 const copyAsset = makeFunctionReference<"mutation">("images:copyAsset");
+const createShare = makeFunctionReference<"mutation">("shares:create");
+const redeemShare = makeFunctionReference<"mutation">("shares:redeem");
 
 type Harness = TestConvexForDataModel<DataModel>;
 type RootHarness = TestConvexForDataModelAndIdentity<DataModel>;
@@ -204,6 +206,62 @@ describe("images:copyAsset", () => {
     expect(await rowsFor(t, copy)).toHaveLength(1);
   });
 
+  test("a copy replaces a failed upload under its id", async () => {
+    const { t, owner } = await createHarness();
+    await t.run(async (ctx) => {
+      const strategy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+        .unique();
+      const now = Date.now();
+      await ctx.db.insert("imageAssets", {
+        publicId: copy,
+        provider: "r2",
+        strategyId: strategy!._id,
+        uploadAttemptPublicId: "failed-attempt",
+        objectKey: `strategies/${strategyPublicId}/failed.png`,
+        uploadStatus: "failed",
+        fileExtension: ".png",
+        mimeType: "image/png",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    await addImage(owner, copy, secondPage);
+
+    expect(await copyImage(owner)).toBe("copied");
+    expect((await images(owner))[copy]).toEqual(["active", url]);
+  });
+
+  test("a copy nothing shows is removed a day later; one in use stays", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { t, owner } = await createHarness();
+    const unused = `placed-image~cp1~0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d`;
+    await copyImage(owner);
+    await addImage(owner, copy, secondPage);
+    await owner.mutation(copyAsset, {
+      ...protocol,
+      strategyPublicId,
+      sourceAssetPublicId: original,
+      targetAssetPublicId: unused,
+    });
+
+    vi.setSystemTime(Date.now() + 25 * 60 * 60 * 1000);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect((await rowsFor(t, unused)).map((row) => row.uploadStatus)).toEqual(
+      [],
+    );
+    // Its bytes are the original's, so they stay.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await images(owner)).toEqual({
+      [original]: ["active", url],
+      [copy]: ["active", url],
+    });
+  });
+
   test("an image still uploading has nothing to copy yet", async () => {
     const { t, owner } = await createHarness("pending");
     await addImage(owner, copy, secondPage);
@@ -232,6 +290,21 @@ describe("images:copyAsset", () => {
     const { owner, other } = await createHarness();
 
     await expect(copyImage(other)).rejects.toThrow();
+    // A collaborator who may only view cannot copy; an editor can.
+    for (const role of ["viewer", "editor"] as const) {
+      await owner.mutation(createShare, {
+        ...protocol,
+        targetType: "strategy",
+        targetPublicId: strategyPublicId,
+        token: `as-${role}`,
+        role,
+      });
+    }
+    await other.mutation(redeemShare, { ...protocol, token: "as-viewer" });
+    await expect(copyImage(other)).rejects.toThrow();
+    await other.mutation(redeemShare, { ...protocol, token: "as-editor" });
+    expect(await copyImage(other)).toBe("copied");
+
     await expect(
       owner.mutation(copyAsset, {
         ...protocol,
