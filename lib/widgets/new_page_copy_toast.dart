@@ -5,11 +5,10 @@ import 'package:icarus/providers/strategy_provider.dart';
 /// anything (see StrategyProvider.addPage).
 void showNewPageCopyGaps(NewPageCopyGaps? gaps) {
   if (gaps == null) return;
-  if (gaps.pageWaiting) {
+  if (gaps.pageNotAdded) {
     Settings.showToast(
-      message: 'The cloud is slow to answer. The new page will appear, '
-          'copied, once it does.',
-      backgroundColor: Settings.tacticalVioletTheme.primary,
+      message: "Couldn't reach the cloud, so no page was added.",
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   } else if (gaps.notSaved) {
     Settings.showToast(

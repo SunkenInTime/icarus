@@ -145,9 +145,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
               if (!capabilities.canAddPage) return null;
               _dismissDeleteMenu();
               showNewPageCopyGaps(
-                await ref
-                    .read(strategyProvider.notifier)
-                    .addPage(null, showNewPageCopyGaps),
+                await ref.read(strategyProvider.notifier).addPage(),
               );
               return null;
             },

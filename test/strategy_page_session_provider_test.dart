@@ -278,8 +278,13 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   Future<bool> enqueueOffCanvas(
     StrategyOp op, {
     bool flushImmediately = false,
+    String? strategyPublicId,
   }) async {
     if (offCanvasStoreFails) return false;
+    if (strategyPublicId != null &&
+        strategyPublicId != state.strategyPublicId) {
+      return false;
+    }
     final key = EntitySyncKey.forStrategyOp(op)!;
     await syncDesiredOpsForPage(
       pageId: key.pageId!,
@@ -1492,49 +1497,50 @@ void main() {
     expect(queue.flushNowCount, 1);
   });
 
-  test('cloud page add is persisted with its descriptor and content', () async {
+  test('cloud page add is added on the server with its descriptor and content',
+      () async {
     final page = _page('page-1', 0);
     final queue = _FakeStrategyOpQueueNotifier();
-    final container = await _cloudContainer(
-      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
-        pages: [page],
+    final reader = _PageReader({});
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page),
+      shellRevision: 8,
+    ));
+    reader.onAddPage = (pageId, sortIndex) {
+      final added = _page(pageId, sortIndex);
+      remote.pageCatalog[pageId] = _pageSnapshot(added);
+      remote.initialSnapshot = _editorSnapshot(
+        pages: [page, added],
         activePage: _pageSnapshot(page),
-        shellRevision: 8,
-      )),
+        shellRevision: 9,
+      );
+    };
+    final container = await _cloudContainer(
+      remote: remote,
       queue: queue,
+      repository: reader,
     );
 
-    // The server answers nothing here, so "+" waits out a short window.
-    StrategyProvider.cloudPageCopyLandingWait =
-        const Duration(milliseconds: 100);
-    addTearDown(() =>
-        StrategyProvider.cloudPageCopyLandingWait = const Duration(seconds: 3));
     final gaps =
         await container.read(strategyProvider.notifier).addPage('Execute');
-    expect(gaps?.pageWaiting, isTrue);
 
-    final intent = container
-        .read(strategyOpQueueProvider)
-        .queuedByEntityKey
-        .entries
-        .single;
-    final pending = intent.value.pending;
-    expect(pending.op.entityType, StrategyOpEntityType.page);
-    expect(pending.op.kind, StrategyOpKind.add);
-    expect(pending.op.entityPublicId, isNotEmpty);
-    expect(pending.op.sortIndex, 1);
-    expect(pending.op.expectedRevision, 8);
-    expect(pending.op.payload, {
-      'name': 'Execute',
-      'isAutoNamed': false,
-      'isAttack': true,
-      'settings': container.read(strategySettingsProvider).toJson(),
-    });
+    expect(gaps?.pageNotAdded, isFalse);
+    expect(reader.addedPages, hasLength(1));
+    final added = reader.lastAddedPage!;
+    expect(added.name, 'Execute');
+    expect(added.isAutoNamed, isFalse);
+    expect(added.sortIndex, 1);
+    expect(added.isAttack, isTrue);
+    expect(added.expectedRevision, 8);
+    expect(added.settings, container.read(strategySettingsProvider).toJson());
+    // Nothing is queued for the page itself.
     expect(
-      intent.key,
-      EntitySyncKey.pageDescriptor(pending.op.entityPublicId!),
+      queue.state.queuedByEntityKey.keys
+          .where((key) => key.kind == EntitySyncKeyKind.pageDescriptor),
+      isEmpty,
     );
-    expect(queue.flushNowCount, greaterThan(0));
+    await _settle();
   });
 
   test('cloud page rename is persisted with the page revision', () async {
@@ -11627,36 +11633,30 @@ void main() {
     });
 
     group('"+" on a cloud strategy', () {
-      /// Opens page 2 with its text, a lineup and an image on the canvas,
-      /// the server answering every op sent; returns every op sent.
-      /// While [answering] is false, the server answers nothing.
-      var answering = true;
-
+      /// Opens page 2 with its text, a lineup and an image on the canvas.
+      /// The server adds pages asked for, and answers every op sent; returns
+      /// every op sent.
       Future<(ProviderContainer, List<StrategyOp>, _PageReader)> openToCopy({
         CloudImageCopyResult image = CloudImageCopyResult.copied,
       }) async {
-        answering = true;
         final (container, queue, reader) = await open();
         reader.imageCopy = image;
         final sent = <StrategyOp>[];
         final remote = container.read(remoteEditorSnapshotProvider.notifier)
             as _FakeRemoteEditorNotifier;
+        reader.onAddPage = (pageId, sortIndex) {
+          final page = _page(pageId, sortIndex);
+          remote.pageCatalog[page.publicId] = _pageSnapshot(page);
+          remote.initialSnapshot = _editorSnapshot(
+            pages: [...pages, page],
+            activePage: remote.initialSnapshot.activePage!,
+          );
+        };
         queue.onFlush = () {
-          if (!answering) return;
-          final ops = [
+          sent.addAll([
             for (final intent in queue.state.queuedByEntityKey.values)
               intent.pending.op,
-          ];
-          sent.addAll(ops);
-          // The server now has each page added, as yet empty.
-          for (final op in ops.whereType<PageAddOp>()) {
-            final page = _page(op.pagePublicId, op.sortIndex);
-            remote.pageCatalog[page.publicId] = _pageSnapshot(page);
-            remote.initialSnapshot = _editorSnapshot(
-              pages: [...pages, page],
-              activePage: remote.initialSnapshot.activePage!,
-            );
-          }
+          ]);
           queue.ackQueued();
         };
         container.read(placedImageProvider.notifier).fromHive([
@@ -11683,23 +11683,24 @@ void main() {
       tearDown(() => StrategyProvider.cloudPageCopyLandingWait =
           const Duration(seconds: 3));
 
-      Iterable<ElementAddOp> elementCopies(List<StrategyOp> sent) {
-        final pages = sent.whereType<PageAddOp>().map((op) => op.pagePublicId);
-        return sent
-            .whereType<ElementAddOp>()
-            .where((op) => pages.contains(op.pagePublicId));
-      }
+      /// The ops sent for pages the server was asked to add.
+      Iterable<T> onNewPages<T extends StrategyOp>(
+        List<StrategyOp> sent,
+        _PageReader reader,
+      ) =>
+          sent
+              .whereType<T>()
+              .where((op) => reader.addedPages.contains(op.pagePublicId));
 
-      test('copies the page on screen under copy ids, in its order', () async {
+      test('adds the page, then copies the page on screen under copy ids',
+          () async {
         final (container, sent, reader) = await openToCopy();
 
         await container.read(strategyProvider.notifier).addPage();
 
-        final page = sent.whereType<PageAddOp>().single.pagePublicId;
-        final elements = sent
-            .whereType<ElementAddOp>()
-            .where((op) => op.pagePublicId == page)
-            .toList();
+        expect(reader.addedPages, hasLength(1));
+        expect(sent.whereType<PageAddOp>(), isEmpty);
+        final elements = onNewPages<ElementAddOp>(sent, reader).toList();
         expect(
           {
             for (final op in elements)
@@ -11718,9 +11719,7 @@ void main() {
             .singleWhere((op) => pageCopyRoot(op.elementPublicId) == 'image');
         expect(reader.imageCopies, [('image', image.elementPublicId)]);
 
-        final lineup = sent
-            .whereType<LineupAddOp>()
-            .singleWhere((op) => op.pagePublicId == page);
+        final lineup = onNewPages<LineupAddOp>(sent, reader).single;
         final data = cloudPayloadData(lineup.payload);
         expect(
           _entries(data, 'links').map((link) => pageCopyRoot(link['id'])),
@@ -11737,25 +11736,48 @@ void main() {
         await _settle();
       });
 
-      test('a page the cloud adds late gets its copy once it does', () async {
-        final (container, sent, _) = await openToCopy();
-        StrategyProvider.cloudPageCopyLandingWait =
-            const Duration(milliseconds: 200);
-        answering = false;
+      test('a page the cloud cannot add gets no copy, and says so', () async {
+        final (container, sent, reader) = await openToCopy();
+        reader.addPageFailures.add(const SocketException('offline'));
 
         final gaps = await container.read(strategyProvider.notifier).addPage();
 
-        expect(gaps?.pageWaiting, isTrue);
-        expect(elementCopies(sent), isEmpty);
-        // The cloud answers the queue's next retry: the page lands, then
-        // its copy is sent.
-        answering = true;
-        await container.read(strategyOpQueueProvider.notifier).flushNow();
-        await _until(() => elementCopies(sent).length == 2);
+        expect(gaps?.pageNotAdded, isTrue);
+        expect(sent.whereType<ElementAddOp>(), isEmpty);
+        expect(sent.whereType<LineupAddOp>(), isEmpty);
+        await _settle();
+      });
+
+      test('a teammate\'s change to the strategy is read, then the page added',
+          () async {
+        final (container, sent, reader) = await openToCopy();
+        reader.addPageFailures.add(const ConvexFunctionException(
+          code: ConvexErrorCode.conflict,
+          rawCode: 'CONFLICT',
+          message: 'stale revision',
+        ));
+
+        final gaps = await container.read(strategyProvider.notifier).addPage();
+
+        expect(gaps?.pageNotAdded, isFalse);
+        expect(reader.addPageCalls, 2);
+        expect(onNewPages<ElementAddOp>(sent, reader), hasLength(2));
+        await _settle();
+      });
+
+      test('leaves out an image still uploading and copies the rest', () async {
+        final (container, sent, reader) =
+            await openToCopy(image: CloudImageCopyResult.uploading);
+
+        final gaps = await container.read(strategyProvider.notifier).addPage();
+
+        expect(gaps?.imagesLeft, 1);
         expect(
-          elementCopies(sent).map((op) => pageCopyRoot(op.elementPublicId)),
-          containsAll(['text-page-2', 'image']),
+          onNewPages<ElementAddOp>(sent, reader)
+              .map((op) => pageCopyRoot(op.elementPublicId)),
+          ['text-page-2'],
         );
+        expect(onNewPages<LineupAddOp>(sent, reader), hasLength(1));
         await _settle();
       });
 
@@ -11764,7 +11786,7 @@ void main() {
         final picture = reader.imageCopyGate = Completer<void>();
 
         final adding = container.read(strategyProvider.notifier).addPage();
-        await _until(() => sent.whereType<PageAddOp>().isNotEmpty);
+        await _until(() => reader.addedPages.isNotEmpty);
         // While the image's picture is copied, another strategy opens.
         container.read(strategyProvider.notifier).setFromState(
               const StrategyState(
@@ -11779,13 +11801,16 @@ void main() {
         final gaps = await adding;
 
         expect(gaps?.notSaved, isTrue);
+        // The image's copy, due after the switch, is not queued.
         expect(
-          container
-              .read(strategyOpQueueProvider)
-              .pending
-              .where((pending) => pending.op.type == StrategyOpType.elementAdd),
+          container.read(strategyOpQueueProvider).pending.where((pending) =>
+              pending.op is ElementAddOp &&
+              reader.addedPages.contains(pending.op.pagePublicId) &&
+              pageCopyRoot((pending.op as ElementAddOp).elementPublicId) ==
+                  'image'),
           isEmpty,
         );
+        expect(reader.imageCopies, hasLength(1));
         await _settle();
       });
 
@@ -11802,7 +11827,8 @@ void main() {
         expect(DateTime.now().difference(started).inSeconds, lessThan(2));
         expect(gaps?.imagesLeft, 1);
         expect(
-          elementCopies(sent).map((op) => pageCopyRoot(op.elementPublicId)),
+          onNewPages<ElementAddOp>(sent, reader)
+              .map((op) => pageCopyRoot(op.elementPublicId)),
           ['text-page-2'],
         );
         await _settle();
@@ -11810,7 +11836,7 @@ void main() {
 
       test('a lineup whose copy id could not be stored gets a plain one',
           () async {
-        final (container, sent, _) = await openToCopy();
+        final (container, sent, reader) = await openToCopy();
         final long = 'x' * 150;
         container.read(lineUpProvider.notifier).mergeRemote(
               lineUpGraphFromCloudRows([
@@ -11823,35 +11849,11 @@ void main() {
         final gaps = await container.read(strategyProvider.notifier).addPage();
 
         expect(gaps?.notSaved, isFalse);
-        final page = sent.whereType<PageAddOp>().single.pagePublicId;
-        final lineup = sent
-            .whereType<LineupAddOp>()
-            .singleWhere((op) => op.pagePublicId == page);
+        final lineup = onNewPages<LineupAddOp>(sent, reader).single;
         expect(lineup.lineupPublicId, isNot(contains('~cp1~')));
         expect(
           _entries(cloudPayloadData(lineup.payload), 'links').single['id'],
           lineup.lineupPublicId,
-        );
-        await _settle();
-      });
-
-      test('leaves out an image still uploading and copies the rest', () async {
-        final (container, sent, _) =
-            await openToCopy(image: CloudImageCopyResult.uploading);
-
-        await container.read(strategyProvider.notifier).addPage();
-
-        final page = sent.whereType<PageAddOp>().single.pagePublicId;
-        expect(
-          sent
-              .whereType<ElementAddOp>()
-              .where((op) => op.pagePublicId == page)
-              .map((op) => pageCopyRoot(op.elementPublicId)),
-          ['text-page-2'],
-        );
-        expect(
-          sent.whereType<LineupAddOp>().where((op) => op.pagePublicId == page),
-          hasLength(1),
         );
         await _settle();
       });
@@ -12230,6 +12232,49 @@ class _PageReader extends Fake implements ConvexStrategyRepository {
 
   /// While set, copying an image's picture waits for it.
   Completer<void>? imageCopyGate;
+
+  /// The pages added, by id; what each next add throws, in turn; and how
+  /// many adds were asked for.
+  final List<String> addedPages = [];
+  final List<Object> addPageFailures = [];
+  int addPageCalls = 0;
+
+  /// Called for each page added, as the server's read would then show it.
+  void Function(String pageId, int sortIndex)? onAddPage;
+
+  @override
+  Future<void> addPage({
+    required String strategyPublicId,
+    required String pagePublicId,
+    required String name,
+    bool? isAutoNamed,
+    required int sortIndex,
+    required bool isAttack,
+    required int expectedRevision,
+    Map<String, dynamic>? settings,
+  }) async {
+    addPageCalls++;
+    lastAddedPage = (
+      name: name,
+      isAutoNamed: isAutoNamed,
+      sortIndex: sortIndex,
+      isAttack: isAttack,
+      expectedRevision: expectedRevision,
+      settings: settings,
+    );
+    if (addPageFailures.isNotEmpty) throw addPageFailures.removeAt(0);
+    addedPages.add(pagePublicId);
+    onAddPage?.call(pagePublicId, sortIndex);
+  }
+
+  ({
+    String name,
+    bool? isAutoNamed,
+    int sortIndex,
+    bool isAttack,
+    int expectedRevision,
+    Map<String, dynamic>? settings,
+  })? lastAddedPage;
 
   /// The pictures copied, as (source, target) image ids.
   final List<(String, String)> imageCopies = [];

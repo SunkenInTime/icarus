@@ -572,22 +572,34 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// on screen by then, it shows the item from the server's copy, like a
   /// teammate's, instead of taking it as something the canvas removed.
   /// Returns whether the queue holds [op]: nothing on screen keeps it, so
-  /// when the outbox could not store it, the caller must say so.
+  /// when the outbox could not store it, the caller must say so. Given a
+  /// [strategyPublicId], [op] is queued only if that strategy is still the
+  /// active one when its turn to be written comes.
   Future<bool> enqueueOffCanvas(
     StrategyOp op, {
     bool flushImmediately = false,
+    String? strategyPublicId,
   }) async {
     final key = EntitySyncKey.forStrategyOp(op)!;
     final canvasSession = _canvasSession;
     final madeLive = liveStamp;
-    await _serializeWrite(() => _syncDesiredLocked(
-          keys: <EntitySyncKey>{key},
-          desiredOps: <EntitySyncKey, StrategyOp?>{key: op},
-          flushImmediately: flushImmediately,
-          canvasSession: canvasSession,
-          madeLive: madeLive,
-          onCanvas: false,
-        ));
+    var otherStrategy = false;
+    await _serializeWrite(() async {
+      if (strategyPublicId != null &&
+          state.strategyPublicId != strategyPublicId) {
+        otherStrategy = true;
+        return;
+      }
+      await _syncDesiredLocked(
+        keys: <EntitySyncKey>{key},
+        desiredOps: <EntitySyncKey, StrategyOp?>{key: op},
+        flushImmediately: flushImmediately,
+        canvasSession: canvasSession,
+        madeLive: madeLive,
+        onCanvas: false,
+      );
+    });
+    if (otherStrategy) return false;
     return state.pending.any(
           (pending) => EntitySyncKey.forStrategyOp(pending.op) == key,
         ) ||

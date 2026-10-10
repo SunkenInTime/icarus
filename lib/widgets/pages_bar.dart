@@ -217,11 +217,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   Future<void> _addPage() async {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canAddPage) return;
-    showNewPageCopyGaps(
-      await ref
-          .read(strategyProvider.notifier)
-          .addPage(null, showNewPageCopyGaps),
-    );
+    showNewPageCopyGaps(await ref.read(strategyProvider.notifier).addPage());
   }
 
   Future<void> _selectPage(String id) async {
