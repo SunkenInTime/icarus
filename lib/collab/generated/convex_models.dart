@@ -286,7 +286,9 @@ enum OpsApplyBatchResultResultsItemRejectedReason {
   alreadyExists('already_exists'),
   deleted('deleted'),
   elementStrategyMismatch('element_strategy_mismatch'),
+  fieldConflict('field_conflict'),
   lineupStrategyMismatch('lineup_strategy_mismatch'),
+  mergeInvalid('merge_invalid'),
   missingExpectedRevision('missing_expected_revision'),
   notFound('not_found'),
   pageStrategyMismatch('page_strategy_mismatch'),
@@ -1425,9 +1427,11 @@ final class OpsApplyBatchArgsOpsItemElementDelete
     required this.expectedElementRevision,
     required this.opId,
     required this.pagePublicId,
+    this.lastWriterWins = const ConvexOptional.absent(),
   });
   final String elementPublicId;
   final double expectedElementRevision;
+  final ConvexOptional<bool> lastWriterWins;
   final String opId;
   final String pagePublicId;
 
@@ -1440,6 +1444,7 @@ final class OpsApplyBatchArgsOpsItemElementDelete
       'type',
       'elementPublicId',
       'expectedElementRevision',
+      'lastWriterWins',
       'opId',
       'pagePublicId',
     });
@@ -1453,6 +1458,14 @@ final class OpsApplyBatchArgsOpsItemElementDelete
             _missing(path, 'expectedElementRevision'),
         '$path.expectedElementRevision',
       ),
+      lastWriterWins: object.value.containsKey('lastWriterWins')
+          ? ConvexOptional.present(
+              _decodeBoolean(
+                object.value['lastWriterWins']!,
+                '$path.lastWriterWins',
+              ),
+            )
+          : const ConvexOptional.absent(),
       opId: _decodeString(
         object.value['opId'] ?? _missing(path, 'opId'),
         '$path.opId',
@@ -1473,6 +1486,8 @@ final class OpsApplyBatchArgsOpsItemElementDelete
         expectedElementRevision,
         '$path.expectedElementRevision',
       ),
+      if (lastWriterWins.isPresent)
+        'lastWriterWins': ConvexBoolean(lastWriterWins.value),
       'opId': ConvexString(opId),
       'pagePublicId': ConvexString(pagePublicId),
     });
@@ -1485,12 +1500,14 @@ final class OpsApplyBatchArgsOpsItemElementPatch
     required this.elementPublicId,
     required this.expectedElementRevision,
     required this.opId,
+    this.merge = const ConvexOptional.absent(),
     this.pagePublicId = const ConvexOptional.absent(),
     this.payload = const ConvexOptional.absent(),
     this.sortIndex = const ConvexOptional.absent(),
   });
   final String elementPublicId;
   final double expectedElementRevision;
+  final ConvexOptional<OpsApplyBatchArgsOpsItemElementPatchMerge> merge;
   final String opId;
   final ConvexOptional<String> pagePublicId;
   final ConvexOptional<CloudPayload> payload;
@@ -1505,6 +1522,7 @@ final class OpsApplyBatchArgsOpsItemElementPatch
       'type',
       'elementPublicId',
       'expectedElementRevision',
+      'merge',
       'opId',
       'pagePublicId',
       'payload',
@@ -1520,6 +1538,14 @@ final class OpsApplyBatchArgsOpsItemElementPatch
             _missing(path, 'expectedElementRevision'),
         '$path.expectedElementRevision',
       ),
+      merge: object.value.containsKey('merge')
+          ? ConvexOptional.present(
+              OpsApplyBatchArgsOpsItemElementPatchMerge.decode(
+                object.value['merge']!,
+                '$path.merge',
+              ),
+            )
+          : const ConvexOptional.absent(),
       opId: _decodeString(
         object.value['opId'] ?? _missing(path, 'opId'),
         '$path.opId',
@@ -1557,6 +1583,7 @@ final class OpsApplyBatchArgsOpsItemElementPatch
         expectedElementRevision,
         '$path.expectedElementRevision',
       ),
+      if (merge.isPresent) 'merge': merge.value.encode('$path.merge'),
       'opId': ConvexString(opId),
       if (pagePublicId.isPresent)
         'pagePublicId': ConvexString(pagePublicId.value),
@@ -1567,6 +1594,113 @@ final class OpsApplyBatchArgsOpsItemElementPatch
         ),
       if (sortIndex.isPresent)
         'sortIndex': _encodeNumber(sortIndex.value, '$path.sortIndex'),
+    });
+  }
+}
+
+final class OpsApplyBatchArgsOpsItemElementPatchMerge {
+  const OpsApplyBatchArgsOpsItemElementPatchMerge({
+    required this.fields,
+    this.baseValue = const ConvexOptional.absent(),
+  });
+  final ConvexOptional<List<OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem>>
+  baseValue;
+  final List<String> fields;
+
+  factory OpsApplyBatchArgsOpsItemElementPatchMerge.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'base', 'fields'});
+    return OpsApplyBatchArgsOpsItemElementPatchMerge(
+      baseValue: object.value.containsKey('base')
+          ? ConvexOptional.present(
+              _decodeArray(object.value['base']!, '$path.base').value.indexed
+                  .map(
+                    (entry) =>
+                        OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem.decode(
+                          entry.$2,
+                          _indexPath('$path.base', entry.$1),
+                        ),
+                  )
+                  .toList(growable: false),
+            )
+          : const ConvexOptional.absent(),
+      fields:
+          _decodeArray(
+                object.value['fields'] ?? _missing(path, 'fields'),
+                '$path.fields',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.fields', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      if (baseValue.isPresent)
+        'base': ConvexArray(
+          baseValue.value.indexed
+              .map(
+                (entry) => entry.$2.encode(_indexPath('$path.base', entry.$1)),
+              )
+              .toList(growable: false),
+        ),
+      'fields': ConvexArray(
+        fields.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
+    });
+  }
+}
+
+final class OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem {
+  const OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem({
+    required this.field,
+    this.value = const ConvexOptional.absent(),
+  });
+  final String field;
+  final ConvexOptional<ConvexValue> value;
+
+  factory OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'field', 'value'});
+    return OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem(
+      field: _decodeString(
+        object.value['field'] ?? _missing(path, 'field'),
+        '$path.field',
+      ),
+      value: object.value.containsKey('value')
+          ? ConvexOptional.present(
+              _decodeRaw(
+                object.value['value']!,
+                '$path.value',
+                _validateOpsApplyBatchArgsOpsItemElementPatchMergeBaseItemValue,
+              ),
+            )
+          : const ConvexOptional.absent(),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'field': ConvexString(field),
+      if (value.isPresent)
+        'value': _decodeRaw(
+          value.value,
+          '$path.value',
+          _validateOpsApplyBatchArgsOpsItemElementPatchMergeBaseItemValue,
+        ),
     });
   }
 }
@@ -1730,8 +1864,10 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
     required this.lineupPublicId,
     required this.opId,
     required this.pagePublicId,
+    this.lastWriterWins = const ConvexOptional.absent(),
   });
   final double expectedLineupRevision;
+  final ConvexOptional<bool> lastWriterWins;
   final String lineupPublicId;
   final String opId;
   final String pagePublicId;
@@ -1744,6 +1880,7 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
     _checkObjectFields(object, path, const {
       'type',
       'expectedLineupRevision',
+      'lastWriterWins',
       'lineupPublicId',
       'opId',
       'pagePublicId',
@@ -1754,6 +1891,14 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
             _missing(path, 'expectedLineupRevision'),
         '$path.expectedLineupRevision',
       ),
+      lastWriterWins: object.value.containsKey('lastWriterWins')
+          ? ConvexOptional.present(
+              _decodeBoolean(
+                object.value['lastWriterWins']!,
+                '$path.lastWriterWins',
+              ),
+            )
+          : const ConvexOptional.absent(),
       lineupPublicId: _decodeString(
         object.value['lineupPublicId'] ?? _missing(path, 'lineupPublicId'),
         '$path.lineupPublicId',
@@ -1777,6 +1922,8 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
         expectedLineupRevision,
         '$path.expectedLineupRevision',
       ),
+      if (lastWriterWins.isPresent)
+        'lastWriterWins': ConvexBoolean(lastWriterWins.value),
       'lineupPublicId': ConvexString(lineupPublicId),
       'opId': ConvexString(opId),
       'pagePublicId': ConvexString(pagePublicId),
@@ -1790,12 +1937,14 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
     required this.expectedLineupRevision,
     required this.lineupPublicId,
     required this.opId,
+    this.merge = const ConvexOptional.absent(),
     this.pagePublicId = const ConvexOptional.absent(),
     this.payload = const ConvexOptional.absent(),
     this.sortIndex = const ConvexOptional.absent(),
   });
   final double expectedLineupRevision;
   final String lineupPublicId;
+  final ConvexOptional<OpsApplyBatchArgsOpsItemElementPatchMerge> merge;
   final String opId;
   final ConvexOptional<String> pagePublicId;
   final ConvexOptional<CloudPayload> payload;
@@ -1810,6 +1959,7 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
       'type',
       'expectedLineupRevision',
       'lineupPublicId',
+      'merge',
       'opId',
       'pagePublicId',
       'payload',
@@ -1825,6 +1975,14 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
         object.value['lineupPublicId'] ?? _missing(path, 'lineupPublicId'),
         '$path.lineupPublicId',
       ),
+      merge: object.value.containsKey('merge')
+          ? ConvexOptional.present(
+              OpsApplyBatchArgsOpsItemElementPatchMerge.decode(
+                object.value['merge']!,
+                '$path.merge',
+              ),
+            )
+          : const ConvexOptional.absent(),
       opId: _decodeString(
         object.value['opId'] ?? _missing(path, 'opId'),
         '$path.opId',
@@ -1862,6 +2020,7 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
         '$path.expectedLineupRevision',
       ),
       'lineupPublicId': ConvexString(lineupPublicId),
+      if (merge.isPresent) 'merge': merge.value.encode('$path.merge'),
       'opId': ConvexString(opId),
       if (pagePublicId.isPresent)
         'pagePublicId': ConvexString(pagePublicId.value),
@@ -4895,16 +5054,101 @@ bool _matchesRaw13(ConvexValue value) =>
     (value.value['role'] != null && _matchesRaw8(value.value['role']!)) &&
     (value.value['token'] != null && _matchesRaw11(value.value['token']!));
 
-bool _validatePagesAddResult(ConvexValue value) =>
-    (_matchesRaw14(value) || _matchesRaw15(value));
+bool _validateOpsApplyBatchArgsOpsItemElementPatchMergeBaseItemValue(
+  ConvexValue value,
+) => (_matchesRaw14(value) || _matchesRaw15(value) || _matchesRaw31(value));
 
 bool _matchesRaw14(ConvexValue value) =>
+    (_matchesRaw6(value) ||
+    _matchesRaw7(value) ||
+    _matchesRaw4(value) ||
+    _matchesRaw11(value));
+
+bool _matchesRaw15(ConvexValue value) =>
+    value is ConvexArray && value.value.every((item) => _matchesRaw16(item));
+
+bool _matchesRaw16(ConvexValue value) =>
+    (_matchesRaw14(value) || _matchesRaw17(value) || _matchesRaw30(value));
+
+bool _matchesRaw17(ConvexValue value) =>
+    value is ConvexArray && value.value.every((item) => _matchesRaw18(item));
+
+bool _matchesRaw18(ConvexValue value) =>
+    (_matchesRaw14(value) || _matchesRaw19(value) || _matchesRaw29(value));
+
+bool _matchesRaw19(ConvexValue value) =>
+    value is ConvexArray && value.value.every((item) => _matchesRaw20(item));
+
+bool _matchesRaw20(ConvexValue value) =>
+    (_matchesRaw14(value) || _matchesRaw21(value) || _matchesRaw28(value));
+
+bool _matchesRaw21(ConvexValue value) =>
+    value is ConvexArray && value.value.every((item) => _matchesRaw22(item));
+
+bool _matchesRaw22(ConvexValue value) =>
+    (_matchesRaw14(value) || _matchesRaw23(value) || _matchesRaw27(value));
+
+bool _matchesRaw23(ConvexValue value) =>
+    value is ConvexArray && value.value.every((item) => _matchesRaw24(item));
+
+bool _matchesRaw24(ConvexValue value) =>
+    (_matchesRaw14(value) || _matchesRaw25(value) || _matchesRaw26(value));
+
+bool _matchesRaw25(ConvexValue value) =>
+    value is ConvexArray && value.value.every((item) => _matchesRaw14(item));
+
+bool _matchesRaw26(ConvexValue value) =>
+    value is ConvexObject &&
+    value.value.entries.every(
+      (entry) =>
+          _matchesRaw11(ConvexString(entry.key)) && _matchesRaw14(entry.value),
+    );
+
+bool _matchesRaw27(ConvexValue value) =>
+    value is ConvexObject &&
+    value.value.entries.every(
+      (entry) =>
+          _matchesRaw11(ConvexString(entry.key)) && _matchesRaw24(entry.value),
+    );
+
+bool _matchesRaw28(ConvexValue value) =>
+    value is ConvexObject &&
+    value.value.entries.every(
+      (entry) =>
+          _matchesRaw11(ConvexString(entry.key)) && _matchesRaw22(entry.value),
+    );
+
+bool _matchesRaw29(ConvexValue value) =>
+    value is ConvexObject &&
+    value.value.entries.every(
+      (entry) =>
+          _matchesRaw11(ConvexString(entry.key)) && _matchesRaw20(entry.value),
+    );
+
+bool _matchesRaw30(ConvexValue value) =>
+    value is ConvexObject &&
+    value.value.entries.every(
+      (entry) =>
+          _matchesRaw11(ConvexString(entry.key)) && _matchesRaw18(entry.value),
+    );
+
+bool _matchesRaw31(ConvexValue value) =>
+    value is ConvexObject &&
+    value.value.entries.every(
+      (entry) =>
+          _matchesRaw11(ConvexString(entry.key)) && _matchesRaw16(entry.value),
+    );
+
+bool _validatePagesAddResult(ConvexValue value) =>
+    (_matchesRaw32(value) || _matchesRaw33(value));
+
+bool _matchesRaw32(ConvexValue value) =>
     value is ConvexObject &&
     value.value.keys.every(const {'ok', 'revision'}.contains) &&
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!)) &&
     (value.value['revision'] != null && _matchesRaw4(value.value['revision']!));
 
-bool _matchesRaw15(ConvexValue value) =>
+bool _matchesRaw33(ConvexValue value) =>
     value is ConvexObject &&
     value.value.keys.every(const {'ok', 'reused', 'revision'}.contains) &&
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!)) &&
