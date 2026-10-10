@@ -233,33 +233,20 @@ describe("images:copyAsset", () => {
     expect((await images(owner))[copy]).toEqual(["active", url]);
   });
 
-  test("a copy nothing shows is removed a day later; one in use stays", async () => {
+  test("a copy whose content arrives days later still has its picture", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
     const { t, owner } = await createHarness();
-    const unused = `placed-image~cp1~0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d`;
     await copyImage(owner);
-    await addImage(owner, copy, secondPage);
-    await owner.mutation(copyAsset, {
-      ...protocol,
-      strategyPublicId,
-      sourceAssetPublicId: original,
-      targetAssetPublicId: unused,
-    });
 
-    vi.setSystemTime(Date.now() + 25 * 60 * 60 * 1000);
+    // The copy waited in a device's outbox, offline, for three days.
+    vi.setSystemTime(Date.now() + 3 * 24 * 60 * 60 * 1000);
     await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await addImage(owner, copy, secondPage);
 
-    expect((await rowsFor(t, unused)).map((row) => row.uploadStatus)).toEqual(
-      [],
-    );
-    // Its bytes are the original's, so they stay.
+    expect((await images(owner))[copy]).toEqual(["active", url]);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(await images(owner)).toEqual({
-      [original]: ["active", url],
-      [copy]: ["active", url],
-    });
   });
 
   test("an image still uploading has nothing to copy yet", async () => {
