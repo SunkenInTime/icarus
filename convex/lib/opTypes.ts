@@ -24,6 +24,10 @@ const pageAddOpValidator = v.object({
   payload: pagePayloadValidator,
   sortIndex: v.number(),
   expectedStrategyRevision: v.number(),
+  // Set by "+": the page to copy onto the new one. The server copies its
+  // live content as the page is added, in the same transaction, so the
+  // new page never shows up without its content.
+  copyContentFromPagePublicId: v.optional(v.string()),
 });
 
 const pagePatchOpValidator = v.object({
