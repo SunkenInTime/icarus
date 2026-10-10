@@ -41,7 +41,8 @@ export function createPublicId(): string {
 const copyMaxBytes = 12 * 1024 * 1024;
 const copyMaxDocuments = 4000;
 // An image's asset copy reads at most 22 asset rows (one active row, up to
-// 20 legacy rows, one upload placeholder), each well under 1 KiB.
+// 20 legacy rows, one upload placeholder; see getActiveAssetForStrategy),
+// each well under 1 KiB.
 const imageCopyReadBytes = 22 * 1024;
 
 /// Counts a copy's reads and writes against its budget, and refuses the
