@@ -142,6 +142,19 @@ class CloudMediaUploadJob {
   }
 }
 
+/// What became of giving a copied image the picture of the image it was
+/// copied from (images:copyAsset).
+enum CloudImageCopyResult {
+  /// The copy shows the original's picture.
+  copied,
+
+  /// The original's upload has not finished, so there is nothing to copy yet.
+  uploading,
+
+  /// The strategy cannot show the original either.
+  unavailable,
+}
+
 class CloudImageUploadIntent {
   const CloudImageUploadIntent({
     required this.provider,

@@ -11523,26 +11523,81 @@ void main() {
       expect(adds(container).single.pagePublicId, 'page-3');
     });
 
-    test('an image is not offered: its copy would need a file of its own',
-        () async {
-      final (container, _, _) = await open();
-      container.read(placedImageProvider.notifier).fromHive([
-        PlacedImage(
-          id: 'image',
-          position: Offset.zero,
-          aspectRatio: 1,
-          scale: 100,
-          fileExtension: '.png',
-        ),
-      ]);
-      await _settle();
+    group('an image', () {
+      /// Opens page 2 with a placed image on it, whose picture the server
+      /// copies with [result] (null: the call fails, as when offline).
+      Future<(ProviderContainer, _PageReader)> openWithImage(
+        CloudImageCopyResult? result,
+      ) async {
+        final (container, _, reader) = await open();
+        reader.imageCopy = result;
+        container.read(placedImageProvider.notifier).fromHive([
+          PlacedImage(
+            id: 'image',
+            position: const Offset(12, 34),
+            aspectRatio: 1.5,
+            scale: 100,
+            fileExtension: '.png',
+          ),
+        ]);
+        await _settle();
+        return (container, reader);
+      }
 
-      expect(
-        container
-            .read(strategyProvider.notifier)
-            .copyDirectionsForPlacedWidget('image'),
-        isEmpty,
-      );
+      Iterable<ElementAddOp> copies(ProviderContainer container) =>
+          adds(container).where((op) => op.pagePublicId == 'page-3');
+
+      Future<PageCopyResult> copy(ProviderContainer container) => container
+          .read(strategyProvider.notifier)
+          .copyPlacedWidgetToAdjacentPage(
+            widgetId: 'image',
+            direction: PageTransitionDirection.forward,
+          );
+
+      test('gets its picture copied under the new id, then is sent', () async {
+        final (container, reader) =
+            await openWithImage(CloudImageCopyResult.copied);
+        expect(
+          container
+              .read(strategyProvider.notifier)
+              .copyDirectionsForPlacedWidget('image'),
+          [PageTransitionDirection.forward, PageTransitionDirection.backward],
+        );
+
+        expect(await copy(container), PageCopyResult.copied);
+
+        final add = copies(container).single;
+        expect(add.payload['kind'], 'image');
+        final data = cloudPayloadData(add.payload);
+        expect(data['id'], add.elementPublicId);
+        expect(data['aspectRatio'], 1.5);
+        expect(pageCopyRoot(add.elementPublicId), 'image');
+        expect(reader.imageCopies, [('image', add.elementPublicId)]);
+        await _settle();
+      });
+
+      test('still uploading is not copied yet', () async {
+        final (container, _) =
+            await openWithImage(CloudImageCopyResult.uploading);
+
+        expect(await copy(container), PageCopyResult.imageUploading);
+        expect(copies(container), isEmpty);
+      });
+
+      test('the cloud cannot show is not copied', () async {
+        final (container, _) =
+            await openWithImage(CloudImageCopyResult.unavailable);
+
+        expect(await copy(container), PageCopyResult.imageUnavailable);
+        expect(copies(container), isEmpty);
+      });
+
+      test('whose picture cannot be copied right now is not copied', () async {
+        final (container, _) = await openWithImage(null);
+
+        expect(await copy(container), PageCopyResult.unreachable);
+        expect(copies(container), isEmpty);
+      });
     });
   });
 }
@@ -11558,6 +11613,24 @@ class _PageReader extends Fake implements ConvexStrategyRepository {
 
   /// While set, a read waits for it.
   Completer<void>? gate;
+
+  /// What copying an image's picture returns; null: the call fails.
+  CloudImageCopyResult? imageCopy = CloudImageCopyResult.copied;
+
+  /// The pictures copied, as (source, target) image ids.
+  final List<(String, String)> imageCopies = [];
+
+  @override
+  Future<CloudImageCopyResult> copyImageAsset({
+    required String strategyPublicId,
+    required String sourceAssetPublicId,
+    required String targetAssetPublicId,
+  }) async {
+    final result = imageCopy;
+    if (result == null) throw const SocketException('offline');
+    imageCopies.add((sourceAssetPublicId, targetAssetPublicId));
+    return result;
+  }
 
   @override
   Future<RemotePageSnapshot> fetchPageSnapshot({

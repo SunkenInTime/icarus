@@ -37,6 +37,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -74,6 +75,12 @@ enum PageCopyResult {
 
   /// There was nothing to copy, or no page to copy it to.
   unavailable,
+
+  /// The image's upload has not finished, so it cannot be copied yet.
+  imageUploading,
+
+  /// The server cannot show the image, so it was not copied.
+  imageUnavailable,
 }
 
 class StrategyProvider extends Notifier<StrategyState> {
@@ -942,9 +949,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// [widgetId] on the page on screen as cloud element data, or null when it
-  /// cannot go to another cloud page. An image's id also names its file on
-  /// the server, so a copy of one needs its own file; images stay local-only
-  /// for now.
+  /// cannot go to another cloud page.
   ({String kind, Map<String, dynamic> data})? _cloudElementOnScreen(
     String widgetId,
   ) {
@@ -970,6 +975,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     for (final utility in ref.read(utilityProvider)) {
       if (utility.id == widgetId) return element('utility', utility.toJson());
+    }
+    for (final image in ref.read(placedImageProvider).images) {
+      if (image.id == widgetId) {
+        return element('image', cloudImagePayloadFromPlacedImage(image));
+      }
     }
     return null;
   }
@@ -1049,6 +1059,32 @@ class StrategyProvider extends Notifier<StrategyState> {
             ).length >
             255) {
       return PageCopyResult.unavailable;
+    }
+    // An image's id also names its picture on the server, so the copy gets
+    // the original's picture under its own id first. It shares the stored
+    // bytes, so nothing is uploaded again.
+    if (element.kind == 'image') {
+      final CloudImageCopyResult picture;
+      try {
+        picture =
+            await ref.read(convexStrategyRepositoryProvider).copyImageAsset(
+                  strategyPublicId: strategyId,
+                  sourceAssetPublicId: widgetId,
+                  targetAssetPublicId: copyId,
+                );
+      } catch (error) {
+        log('Could not copy the picture of image $widgetId: $error');
+        return PageCopyResult.unreachable;
+      }
+      switch (picture) {
+        case CloudImageCopyResult.uploading:
+          return PageCopyResult.imageUploading;
+        case CloudImageCopyResult.unavailable:
+          return PageCopyResult.imageUnavailable;
+        case CloudImageCopyResult.copied:
+          break;
+      }
+      if (state.strategyId != strategyId) return PageCopyResult.unavailable;
     }
     // The canvas never draws the copy: its page shows it from the server.
     final queued =

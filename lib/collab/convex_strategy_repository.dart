@@ -231,6 +231,27 @@ class ConvexStrategyRepository {
     ));
   }
 
+  /// Gives image [targetAssetPublicId] the picture the strategy shows as
+  /// [sourceAssetPublicId], sharing its stored bytes: for a placed image
+  /// copied to another page, whose id is also its image's id.
+  Future<CloudImageCopyResult> copyImageAsset({
+    required String strategyPublicId,
+    required String sourceAssetPublicId,
+    required String targetAssetPublicId,
+  }) async {
+    final result = await _api.images.copyAsset(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+      sourceAssetPublicId: sourceAssetPublicId,
+      targetAssetPublicId: targetAssetPublicId,
+    );
+    return switch (result) {
+      ImagesCopyAssetResult.copied => CloudImageCopyResult.copied,
+      ImagesCopyAssetResult.uploading => CloudImageCopyResult.uploading,
+      ImagesCopyAssetResult.unavailable => CloudImageCopyResult.unavailable,
+    };
+  }
+
   Future<CloudImageUploadIntent> generateImageUploadUrl({
     required String strategyPublicId,
     required String assetPublicId,
