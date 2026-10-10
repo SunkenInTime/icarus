@@ -1605,17 +1605,20 @@ class StrategyProvider extends Notifier<StrategyState> {
       // copy has them.
       await ref.read(strategyPageSessionProvider.notifier).flushCurrentPage();
       if (state.strategyId != strategyId) return none;
+      // Edits to the page the server refused: the copy, made from the
+      // server's page, doesn't have them.
+      bool sourceEditsRefused() => ref
+          .read(strategyOpQueueProvider)
+          .attentionByEntityKey
+          .keys
+          .any((key) => key.pageId == sourcePageId);
       // What the copy may lack is known now, from what the page on screen
       // holds: the server copies the page as it has it.
       final gaps = activeIndex < 0
           ? none
           : (
               imagesUploading: _imagesStillUploading(strategyId),
-              unsavedEdits: ref
-                  .read(strategyOpQueueProvider)
-                  .attentionByEntityKey
-                  .keys
-                  .any((key) => key.pageId == sourcePageId),
+              unsavedEdits: sourceEditsRefused(),
               waitingForCloud: false,
             );
       final answer = await _sendAndAwaitAnswer(
@@ -1644,15 +1647,22 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       // A refusal waits in the sync panel like any other.
       if (!answer.isAck || state.strategyId != strategyId) return gaps;
+      // Edits sent ahead of the add have their answers too by now, and the
+      // server may have refused some of them.
+      final landed = (
+        imagesUploading: gaps.imagesUploading,
+        unsavedEdits: activeIndex >= 0 && sourceEditsRefused(),
+        waitingForCloud: false,
+      );
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-      if (state.strategyId != strategyId) return gaps;
+      if (state.strategyId != strategyId) return landed;
       await ref
           .read(strategyPageSessionProvider.notifier)
           .setActivePageAnimated(
             pageID,
             direction: PageTransitionDirection.forward,
           );
-      return gaps;
+      return landed;
     }
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);

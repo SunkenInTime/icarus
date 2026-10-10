@@ -1744,6 +1744,37 @@ void main() {
       expect(gaps.unsavedEdits, isTrue);
       await _settle();
     });
+
+    test('names an edit to the page refused in the same send as the add',
+        () async {
+      final (container, queue, land) = await open();
+      queue.onFlush = () async {
+        final add = queuedAdd(queue);
+        if (add == null) return queue.ackQueued();
+        land(add, [image(add.pagePublicId, 'uploaded~cp1~$_copyUuid')]);
+        // The server refused an edit to page 1 sent ahead of the add.
+        queue.state = queue.state.copyWith(attentionByEntityKey: {
+          const EntitySyncKey.element('page-1', 'uploaded'):
+              const QueuedEntityIntent(
+            entityKey: EntitySyncKey.element('page-1', 'uploaded'),
+            pending: PendingOp(
+              op: ElementDeleteOp(
+                opId: 'refused-op',
+                pagePublicId: 'page-1',
+                elementPublicId: 'uploaded',
+                expectedElementRevision: 1,
+              ),
+              clientId: 'test-client',
+            ),
+          ),
+        });
+      };
+
+      final gaps = await container.read(strategyProvider.notifier).addPage();
+
+      expect(gaps.unsavedEdits, isTrue);
+      await _settle();
+    });
   });
 
   test('cloud page rename is persisted with the page revision', () async {
