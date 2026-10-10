@@ -41022,6 +41022,32 @@
       "args": {
         "type": "object",
         "value": {
+          "assetPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "strategyId": {
+            "fieldType": {
+              "tableName": "strategies",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:reclaimCopiedAssetIfUnused",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "assetIds": {
             "fieldType": {
               "type": "array",

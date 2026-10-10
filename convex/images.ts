@@ -88,6 +88,9 @@ export const markDeletedStrategyImageAssetsRef =
   makeFunctionReference<"mutation">("images:markDeletedStrategyImageAssets");
 export const processAssetReclaimCandidatesRef =
   makeFunctionReference<"mutation">("images:processAssetReclaimCandidates");
+const reclaimCopiedAssetIfUnusedRef = makeFunctionReference<"mutation">(
+  "images:reclaimCopiedAssetIfUnused",
+);
 const markDeletedPageImageAssetsRef = makeFunctionReference<"mutation">(
   "images:markDeletedPageImageAssets",
 );
@@ -392,9 +395,14 @@ export const createR2UploadIntent = internalMutation({
 /// images do (`copyActiveAssetToStrategy`), so nothing is uploaded twice.
 ///
 /// The copy's content may reach the server first and leave a placeholder;
-/// the copied row replaces it. Copying again is harmless. "uploading" means
-/// the source's upload has not finished, so there is nothing to copy yet;
+/// the copied row replaces it, as it replaces a failed upload's. Copying
+/// again is harmless. "uploading" means an upload is still on its way (the
+/// source's, so there is nothing to copy yet, or one under the target's id);
 /// "unavailable" means the strategy cannot show the source either.
+///
+/// Content that never arrives (its page deleted first, say) would leave the
+/// row unused for good, so a day later the copy goes through the reclaim
+/// check, which removes it only if nothing shows it.
 export const copyAsset = mutation({
   args: {
     ...cloudProtocolArgs,
@@ -421,7 +429,12 @@ export const copyAsset = mutation({
       args.targetAssetPublicId,
     );
     if (target !== null && !isUploadPlaceholder(target)) {
-      return inferUploadStatus(target) === "active" ? "copied" : "uploading";
+      const status = inferUploadStatus(target);
+      if (status === "active") return "copied";
+      if (status === "pending") return "uploading";
+      // A failed upload under the target's id: the copied row, being newer,
+      // is the one readers see, and the stale-upload sweep removes the
+      // failed one.
     }
     const copied = await copyActiveAssetToStrategy(ctx, {
       sourceStrategyId: strategy._id,
@@ -431,10 +444,29 @@ export const copyAsset = mutation({
       userId: user._id,
       now: Date.now(),
     });
-    if (copied === "copied" && target !== null) {
+    if (copied !== "copied") return copied;
+    if (target !== null && isUploadPlaceholder(target)) {
       await ctx.db.delete(target._id);
     }
+    await ctx.scheduler.runAfter(
+      staleUploadAgeMs,
+      reclaimCopiedAssetIfUnusedRef,
+      { strategyId: strategy._id, assetPublicId: args.targetAssetPublicId },
+    );
     return copied;
+  },
+});
+
+/// Puts a copied image through the reclaim check a day after the copy (see
+/// [copyAsset]): it is removed only if no content, live or restorable,
+/// shows it.
+export const reclaimCopiedAssetIfUnused = internalMutation({
+  args: {
+    strategyId: v.id("strategies"),
+    assetPublicId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await queueAssetReclaim(ctx, args.strategyId, [args.assetPublicId]);
   },
 });
 
