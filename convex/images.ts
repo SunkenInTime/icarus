@@ -7,6 +7,7 @@ import {
   isAssetReferenced,
 } from "./lib/assetReferences";
 import {
+  copyActiveAssetToStrategy,
   getActiveAssetForStrategy,
   inferFileExtension,
   getViewerAssetForStrategy,
@@ -23,6 +24,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  mutation,
   query,
   type MutationCtx,
   type QueryCtx,
@@ -380,6 +382,59 @@ export const createR2UploadIntent = internalMutation({
       objectKey: args.objectKey,
       issuedAt: now,
     };
+  },
+});
+
+/// Gives image `targetAssetPublicId` the picture the strategy already shows
+/// as `sourceAssetPublicId`, for a placed image copied to another page: a
+/// placed image's id is also its image's id, so the copy needs a row of its
+/// own. The row points at the same stored bytes, as a duplicated strategy's
+/// images do (`copyActiveAssetToStrategy`), so nothing is uploaded twice.
+///
+/// The copy's content may reach the server first and leave a placeholder;
+/// the copied row replaces it. Copying again is harmless. "uploading" means
+/// the source's upload has not finished, so there is nothing to copy yet;
+/// "unavailable" means the strategy cannot show the source either.
+export const copyAsset = mutation({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicId: v.string(),
+    sourceAssetPublicId: v.string(),
+    targetAssetPublicId: v.string(),
+  },
+  returns: v.union(
+    v.literal("copied"),
+    v.literal("uploading"),
+    v.literal("unavailable"),
+  ),
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    if (args.sourceAssetPublicId === args.targetAssetPublicId) {
+      throw invalidPayloadError("An image cannot be copied onto itself.");
+    }
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    const { user } = await assertStrategyRole(ctx, strategy, "editor");
+
+    const target = await getViewerAssetForStrategy(
+      ctx,
+      strategy._id,
+      args.targetAssetPublicId,
+    );
+    if (target !== null && !isUploadPlaceholder(target)) {
+      return inferUploadStatus(target) === "active" ? "copied" : "uploading";
+    }
+    const copied = await copyActiveAssetToStrategy(ctx, {
+      sourceStrategyId: strategy._id,
+      sourceAssetPublicId: args.sourceAssetPublicId,
+      targetStrategyId: strategy._id,
+      targetAssetPublicId: args.targetAssetPublicId,
+      userId: user._id,
+      now: Date.now(),
+    });
+    if (copied === "copied" && target !== null) {
+      await ctx.db.delete(target._id);
+    }
+    return copied;
   },
 });
 
