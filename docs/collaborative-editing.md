@@ -107,7 +107,9 @@ not two.
   unguarded replay after that could overwrite newer work.
 - **Keep mine after `field_conflict` sends the user's fields with a base of
   what the server held when it refused.** So a teammate's change made after
-  that still asks.
+  that still asks. A refusal doesn't say where the server has the row in the
+  stack, so Keep mine no longer names the place: the row stays where the
+  server has it.
 - **A successor that waited behind an in-flight op is recomputed when that op
   lands.** It names what it changes from what the in-flight op wrote, so a
   change the user set back in the meantime is still sent.
