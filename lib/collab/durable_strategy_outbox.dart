@@ -9,6 +9,12 @@ import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 
 const durableOutboxRecordVersion = 2;
 const _legacyDurableOutboxRecordVersion = 1;
+
+/// The version of a record whose work merges by field (see FieldMerge):
+/// a build from before field merging cannot read it, so it leaves the
+/// record alone rather than send its op as a whole write. Every other record
+/// stays at [durableOutboxRecordVersion], readable by those builds.
+const fieldMergeOutboxRecordVersion = 3;
 const durableOutboxVersionKey = '__outbox_record_version__';
 
 Future<void> prepareDurableStrategyOutbox() async {
@@ -53,6 +59,7 @@ class DurableOutboxRecord {
     this.successorPending,
     this.lastError,
     this.latestServerRevision,
+    this.latestServerPayload,
   });
 
   final String accountId;
@@ -65,6 +72,11 @@ class DurableOutboxRecord {
   final PendingOp? successorPending;
   final String? lastError;
   final int? latestServerRevision;
+
+  /// What the server holds now, as it told a refusal: Keep mine after a
+  /// field collision checks against it, so a teammate's later change still
+  /// asks.
+  final CloudPayload? latestServerPayload;
 
   String get storageKey => createStorageKey(
         accountId: accountId,
@@ -91,6 +103,7 @@ class DurableOutboxRecord {
     bool clearError = false,
     int? latestServerRevision,
     bool clearLatestServerRevision = false,
+    CloudPayload? latestServerPayload,
   }) {
     return DurableOutboxRecord(
       accountId: accountId,
@@ -107,11 +120,30 @@ class DurableOutboxRecord {
       latestServerRevision: clearLatestServerRevision
           ? null
           : (latestServerRevision ?? this.latestServerRevision),
+      latestServerPayload: clearLatestServerRevision
+          ? null
+          : (latestServerPayload ?? this.latestServerPayload),
     );
   }
 
+  /// Whether this record holds work a build from before field merging must
+  /// not send.
+  bool get _mergesByField => [
+        pending.op,
+        if (successorPending case final successor?) successor.op,
+      ].any((op) =>
+          op.merge != null ||
+          switch (op) {
+            ElementDeleteOp(:final lastWriterWins) ||
+            LineupDeleteOp(:final lastWriterWins) =>
+              lastWriterWins,
+            _ => false,
+          });
+
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'outboxVersion': durableOutboxRecordVersion,
+        'outboxVersion': _mergesByField
+            ? fieldMergeOutboxRecordVersion
+            : durableOutboxRecordVersion,
         'accountId': accountId,
         'strategyPublicId': strategyPublicId,
         'entityKey': entityKey.toString(),
@@ -129,12 +161,15 @@ class DurableOutboxRecord {
         if (lastError != null) 'lastError': lastError,
         if (latestServerRevision != null)
           'latestServerRevision': latestServerRevision,
+        if (latestServerPayload != null)
+          'latestServerPayload': latestServerPayload,
       };
 
   factory DurableOutboxRecord.fromJson(Map<String, dynamic> json) {
     final version = (json['outboxVersion'] as num?)?.toInt();
     if (version != _legacyDurableOutboxRecordVersion &&
-        version != durableOutboxRecordVersion) {
+        version != durableOutboxRecordVersion &&
+        version != fieldMergeOutboxRecordVersion) {
       throw FormatException('Unsupported outbox record version: $version');
     }
     final opJson = _object(json['op'], field: 'op');
@@ -176,6 +211,9 @@ class DurableOutboxRecord {
       updatedAt: _requiredDate(json['updatedAt'], field: 'updatedAt'),
       lastError: json['lastError'] as String?,
       latestServerRevision: (json['latestServerRevision'] as num?)?.toInt(),
+      latestServerPayload: json['latestServerPayload'] is Map
+          ? Map<String, dynamic>.from(json['latestServerPayload'] as Map)
+          : null,
     );
   }
 

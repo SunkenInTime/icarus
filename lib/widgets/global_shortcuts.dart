@@ -18,6 +18,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
+import 'package:icarus/widgets/rotate_helpers.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:uuid/uuid.dart';
@@ -68,6 +69,10 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
       ref.read(duplicateDragModifierProvider.notifier).clear();
     }
   }
+
+  // A held button means a drag or a rotation handle is mid-edit; the widget
+  // commits its own angle on release, which would overwrite a keyed turn.
+  int _pointersDown = 0;
 
   void _dismissDeleteMenu() {
     ref.read(deleteMenuProvider.notifier).requestClose();
@@ -192,6 +197,19 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
               return null;
             },
           ),
+          RotateHoveredIntent: CallbackAction<RotateHoveredIntent>(
+            onInvoke: (intent) {
+              if (!capabilities.canEditPages || _pointersDown > 0) return null;
+              final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+              if (hoveredTarget == null) return null;
+              rotateHoveredTarget(
+                ref,
+                hoveredTarget,
+                clockwise: intent.clockwise,
+              );
+              return null;
+            },
+          ),
           UndoActionIntent: CallbackAction<UndoActionIntent>(
             onInvoke: (intent) {
               if (!capabilities.canEditPages) return null;
@@ -295,7 +313,15 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
         child: Focus(
           focusNode: _focusNode,
           autofocus: true,
-          child: widget.child,
+          child: Listener(
+            onPointerDown: (_) => _pointersDown++,
+            onPointerUp: (_) => _pointersDown--,
+            onPointerCancel: (_) => _pointersDown--,
+            // A two-finger trackpad drag can hold a handle too.
+            onPointerPanZoomStart: (_) => _pointersDown++,
+            onPointerPanZoomEnd: (_) => _pointersDown--,
+            child: widget.child,
+          ),
         ),
       ),
     );
