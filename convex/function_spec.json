@@ -48540,6 +48540,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "copyContentFromPagePublicId": {
+                        "fieldType": {
+                          "type": "string"
+                        },
+                        "optional": true
+                      },
                       "expectedStrategyRevision": {
                         "fieldType": {
                           "type": "number"

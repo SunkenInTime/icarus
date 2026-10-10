@@ -18,6 +18,7 @@ import type * as lib_assetReferences from "../lib/assetReferences.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_canonicalValues from "../lib/canonicalValues.js";
 import type * as lib_cloudProtocol from "../lib/cloudProtocol.js";
+import type * as lib_contentCopy from "../lib/contentCopy.js";
 import type * as lib_entities from "../lib/entities.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_fieldMerge from "../lib/fieldMerge.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/canonicalValues": typeof lib_canonicalValues;
   "lib/cloudProtocol": typeof lib_cloudProtocol;
+  "lib/contentCopy": typeof lib_contentCopy;
   "lib/entities": typeof lib_entities;
   "lib/errors": typeof lib_errors;
   "lib/fieldMerge": typeof lib_fieldMerge;

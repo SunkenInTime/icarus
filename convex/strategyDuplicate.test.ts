@@ -1505,3 +1505,271 @@ describe("strategies:duplicate access", () => {
     );
   });
 });
+
+describe('"+": a page added as a copy of another', () => {
+  type Row = Record<string, any>;
+
+  async function strategyRevision(t: RootHarness) {
+    return await t.run(async (ctx) => {
+      const strategy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", source))
+        .unique();
+      return strategy!.revision;
+    });
+  }
+
+  /// Adds `pagePublicId` after page 2, copying `from`, as "+" does.
+  async function addCopyOf(
+    t: RootHarness,
+    owner: Harness,
+    from: string,
+    pagePublicId: string,
+    opId = `add-${pagePublicId}`,
+  ) {
+    const { results } = (await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "plus",
+      ops: [
+        {
+          opId,
+          type: "page.add",
+          pagePublicId,
+          payload: { name: "Page 3", isAutoNamed: true, isAttack: true },
+          sortIndex: 2,
+          expectedStrategyRevision: await strategyRevision(t),
+          copyContentFromPagePublicId: from,
+        },
+      ],
+    })) as { results: Row[] };
+    return results[0]!;
+  }
+
+  async function snapshot(owner: Harness) {
+    return (await owner.query(getFullSnapshot, {
+      ...protocol,
+      strategyPublicId: source,
+      acceptsTrashedPagesLeftOut: true,
+    })) as { pages: Row[]; elements: Row[]; lineups: Row[] };
+  }
+
+  /// The live rows on a page.
+  const onPage = (rows: Row[], pagePublicId: string) =>
+    rows.filter((row) => row.pagePublicId === pagePublicId && !row.deleted);
+
+  test("copies the page's live items under copy ids as the page is added", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+
+    expect(await addCopyOf(t, owner, firstPage, "copy-of-1")).toMatchObject({
+      status: "applied",
+    });
+    expect(await addCopyOf(t, owner, secondPage, "copy-of-2")).toMatchObject({
+      status: "applied",
+    });
+
+    const after = await snapshot(owner);
+    expect(after.pages.map((page) => page.publicId)).toEqual(
+      expect.arrayContaining(["copy-of-1", "copy-of-2"]),
+    );
+    // Page 1's image, without the text deleted before the copy.
+    const [image, ...otherOnOne] = onPage(after.elements, "copy-of-1");
+    expect(otherOnOne).toEqual([]);
+    expect(pageCopyRoot(image!.publicId)).toBe("placed-image");
+    expect(image!.publicId).not.toBe("placed-image");
+    expect(image!.payload.data).toEqual({
+      id: image!.publicId,
+      elementType: "image",
+      scale: 2,
+    });
+    expect(image!.sortIndex).toBe(3);
+    // Page 2's agent and lineup group, its ids renamed together.
+    const [agent] = onPage(after.elements, "copy-of-2");
+    expect(pageCopyRoot(agent!.publicId)).toBe("placed-agent");
+    expect(agent!.payload.data).toEqual({ id: agent!.publicId, type: "jett" });
+    const [lineup, ...otherLineups] = onPage(after.lineups, "copy-of-2");
+    expect(otherLineups).toEqual([]);
+    const { id, origins } = lineup!.payload.data;
+    expect(pageCopyRoot(id)).toBe("item-1");
+    expect(lineup!.publicId).toBe(id);
+    expect(pageCopyRoot(origins[0].id)).toBe("origin-1");
+    expect(lineup!.payload.data.links).toEqual([
+      {
+        id,
+        originId: origins[0].id,
+        landingId: id,
+        name: "Shock dart",
+        notes: "Two bounces",
+        images: [{ id: "lineup-image" }],
+      },
+    ]);
+    // The pages copied from are as they were.
+    expect(
+      onPage(after.elements, firstPage).map((row) => row.publicId),
+    ).toEqual(["placed-image"]);
+    expect(onPage(after.lineups, secondPage).map((row) => row.publicId)).toEqual(
+      ["item-1"],
+    );
+
+    // The placed image's copy shows the same bytes under its own asset row;
+    // the lineup's image is the strategy's one asset.
+    const placedUrl = `https://media.duplicate.test/strategies/${source}/placed-image.png`;
+    expect(await imageUrls(owner, source)).toEqual({
+      "placed-image": placedUrl,
+      [image!.publicId]: placedUrl,
+      "lineup-image": `https://media.duplicate.test/strategies/${source}/lineup-image.png`,
+    });
+    // The copy's rows are kept like any other: its image references, and
+    // its lineup's agents and items.
+    const kept = await t.run(async (ctx) => {
+      const copiedLineup = (await ctx.db.query("lineups").collect()).find(
+        (row) => row.publicId === id,
+      )!;
+      const copiedImage = (await ctx.db.query("elements").collect()).find(
+        (row) => row.publicId === image!.publicId,
+      )!;
+      const references = await ctx.db.query("assetReferences").collect();
+      return {
+        imageReferences: references
+          .filter((ref) => ref.elementId === copiedImage._id)
+          .map((ref) => ref.assetPublicId),
+        lineupReferences: references
+          .filter((ref) => ref.lineupId === copiedLineup._id)
+          .map((ref) => ref.assetPublicId),
+        agents: (await ctx.db.query("lineupAgents").collect())
+          .filter((row) => row.lineupId === copiedLineup._id)
+          .map((row) => row.agentType),
+        items: (await ctx.db.query("lineupItems").collect()).filter(
+          (row) => row.lineupId === copiedLineup._id,
+        ).length,
+      };
+    });
+    expect(kept).toEqual({
+      imageReferences: [image!.publicId],
+      lineupReferences: ["lineup-image"],
+      agents: ["sova"],
+      items: 3,
+    });
+  });
+
+  test("a retried add copies once", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+
+    await addCopyOf(t, owner, secondPage, "copy-of-2", "plus-1");
+    expect(
+      await addCopyOf(t, owner, secondPage, "copy-of-2", "plus-1"),
+    ).toMatchObject({ status: "noop" });
+
+    const after = await snapshot(owner);
+    expect(onPage(after.elements, "copy-of-2")).toHaveLength(1);
+    expect(onPage(after.lineups, "copy-of-2")).toHaveLength(1);
+  });
+
+  test("an image still uploading is left out, and the rest copied", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await t.run(async (ctx) => {
+      const [placed] = await ctx.db
+        .query("imageAssets")
+        .withIndex("by_publicId", (q) => q.eq("publicId", "placed-image"))
+        .collect();
+      await ctx.db.patch(placed!._id, { uploadStatus: "pending" });
+    });
+    await owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: source,
+      clientId: "seed-text",
+      ops: [
+        {
+          opId: "add-text",
+          type: "element.add",
+          elementPublicId: "kept-text",
+          pagePublicId: firstPage,
+          payload: {
+            kind: "text",
+            payloadVersion: 1,
+            data: { id: "kept-text", text: "here" },
+          },
+          sortIndex: 5,
+        },
+      ],
+    });
+
+    expect(await addCopyOf(t, owner, firstPage, "copy-of-1")).toMatchObject({
+      status: "applied",
+    });
+
+    const copied = onPage((await snapshot(owner)).elements, "copy-of-1");
+    expect(copied.map((row) => pageCopyRoot(row.publicId))).toEqual([
+      "kept-text",
+    ]);
+  });
+
+  test("a page gone by the time the add lands leaves the new page empty", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    await owner.mutation(deletePage, {
+      ...protocol,
+      strategyPublicId: source,
+      pagePublicId: secondPage,
+      expectedRevision: await strategyRevision(t),
+    });
+
+    expect(await addCopyOf(t, owner, secondPage, "copy-of-2")).toMatchObject({
+      status: "applied",
+    });
+
+    const after = await snapshot(owner);
+    expect(after.pages.map((page) => page.publicId)).toContain("copy-of-2");
+    expect(onPage(after.elements, "copy-of-2")).toEqual([]);
+    expect(onPage(after.lineups, "copy-of-2")).toEqual([]);
+  });
+
+  test("a page too large to copy is refused, leaving nothing of the add", async () => {
+    const { t, owner } = await createHarness();
+    await seedSource(t, owner);
+    // 18 rows of 700 KiB: past the copy's 12 MiB budget.
+    await t.run(async (ctx) => {
+      const page = await ctx.db
+        .query("pages")
+        .withIndex("by_publicId", (q) => q.eq("publicId", firstPage))
+        .unique();
+      const now = Date.now();
+      for (let index = 0; index < 18; index += 1) {
+        await ctx.db.insert("elements", {
+          publicId: `big-${index}`,
+          strategyId: page!.strategyId,
+          pageId: page!._id,
+          elementType: "drawing",
+          payloadKind: "drawing",
+          payloadVersion: 1,
+          payload: {
+            kind: "drawing",
+            payloadVersion: 1,
+            data: { id: `big-${index}`, points: "x".repeat(700 * 1024) },
+          },
+          sortIndex: 10 + index,
+          revision: 1,
+          deleted: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+    const revisionBefore = await strategyRevision(t);
+
+    expect(await addCopyOf(t, owner, firstPage, "copy-of-1")).toMatchObject({
+      status: "failed",
+      code: "PAGE_TOO_LARGE_TO_COPY",
+    });
+
+    const after = await snapshot(owner);
+    expect(after.pages.map((page) => page.publicId).sort()).toEqual(
+      [firstPage, secondPage].sort(),
+    );
+    expect(after.pages.map((page) => page.sortIndex).sort()).toEqual([0, 1]);
+    expect(await strategyRevision(t)).toBe(revisionBefore);
+  });
+});
