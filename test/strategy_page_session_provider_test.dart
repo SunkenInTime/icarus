@@ -1506,6 +1506,10 @@ void main() {
       )),
       queue: queue,
     );
+    // This server never answers; "+" stops waiting at once.
+    StrategyProvider.cloudPageAddWait = Duration.zero;
+    addTearDown(() =>
+        StrategyProvider.cloudPageAddWait = const Duration(seconds: 5));
 
     await container.read(strategyProvider.notifier).addPage('Execute');
 
