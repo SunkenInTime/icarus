@@ -1849,6 +1849,21 @@ describe("copies sharing a transaction", () => {
     expect(pages.map((page) => page.publicId)).not.toContain("copy-b");
   });
 
+  test("a spent budget reads nothing more", async () => {
+    const budget = new CopyBudget(() => new Error("too large"));
+    expect(() => budget.spend({ bytes: 13 * 1024 * 1024 })).toThrow();
+    let pulled = 0;
+    async function* rows() {
+      for (;;) {
+        pulled += 1;
+        yield { size: "x" };
+      }
+    }
+
+    await expect(budget.read(rows())).rejects.toThrow("too large");
+    expect(pulled).toBe(0);
+  });
+
   test("an image lineups share is charged to a copy once", async () => {
     const { t, owner } = await createHarness();
     await seedSource(t, owner);

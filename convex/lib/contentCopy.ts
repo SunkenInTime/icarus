@@ -59,8 +59,11 @@ export class CopyBudget {
     if (this.bytes < 0 || this.documents < 0) throw this.tooLarge();
   }
 
-  /// Reads a query's rows, each charged its stored size.
+  /// Reads a query's rows, each charged its stored size. A spent budget
+  /// reads nothing: copies sharing a transaction stop at the first one past
+  /// it, so the reads past the budget are at most the row that spent it.
   async read<T extends Value>(rows: AsyncIterable<T>): Promise<T[]> {
+    this.spend({});
     const result: T[] = [];
     for await (const row of rows) {
       this.spend({ bytes: getConvexSize(row), documents: 1 });
