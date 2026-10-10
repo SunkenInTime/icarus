@@ -1173,8 +1173,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// Puts a copy of the lineups [linkIds] on screen, and the spots they aim
   /// at, on page [pageId] under new ids, and for a [move] then takes them
   /// off this page as a delete would (spots another lineup here still uses
-  /// stay). The copies keep their media: an image is only cleaned up once
-  /// nothing in the strategy shows it.
+  /// stay). [linkIds] share a spot, as the menus pick them; on a cloud
+  /// strategy lineups that don't are not sent. The copies keep their media:
+  /// an image is only cleaned up once nothing in the strategy shows it.
   ///
   /// The lineups are taken as they are when the user asks. They go on the
   /// other page before they leave this one, so a failure never loses them.
@@ -1290,7 +1291,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     return LineUpPageResult.done;
   }
 
-  /// Queues [lineUps] onto cloud page [pageId] as new lineup groups after
+  /// Queues [lineUps] onto cloud page [pageId] as one new lineup group after
   /// the page's own. The page is read from the server first, for where its
   /// groups end; if it cannot be read, nothing is queued.
   Future<LineUpPageResult> _addLineUpsToCloudPage({
@@ -1298,7 +1299,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String pageId,
     required LineUpGraph lineUps,
   }) async {
-    if (state.strategyId != strategyId) return LineUpPageResult.unavailable;
+    // The lineups at one spot share it, so they make one group, and the
+    // copy is one write that lands whole or not at all. Every id in it is
+    // new, so the group's id (its smallest lineup id) is one no row in the
+    // strategy has.
+    final rows = cloudLineupRows(lineUps).rows;
+    if (rows.length != 1 || state.strategyId != strategyId) {
+      return LineUpPageResult.unavailable;
+    }
+    final group = rows.single;
     final RemotePageSnapshot targetPage;
     try {
       targetPage =
@@ -1312,26 +1321,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     if (state.strategyId != strategyId) return LineUpPageResult.unavailable;
 
-    // Every id in the copy is new, so each group's id (its smallest lineup
-    // id) is one no row in the strategy has.
-    final rows = cloudLineupRows(lineUps).rows;
-    var sortIndex =
-        1 + _cloudLineupSortIndexesOn(targetPage).fold<int>(-1, max);
-    final queue = ref.read(strategyOpQueueProvider.notifier);
-    for (final row in rows) {
-      // The canvas never draws these: their page shows them from the server.
-      final queued = await queue.enqueueOffCanvas(
-        LineupAddOp(
-          opId: const Uuid().v4(),
-          lineupPublicId: row.publicId,
-          pagePublicId: pageId,
-          payload: row.payload,
-          sortIndex: sortIndex++,
-        ),
-        flushImmediately: true,
-      );
-      if (!queued) return LineUpPageResult.notSaved;
-    }
+    // The canvas never draws the group: its page shows it from the server.
+    final queued =
+        await ref.read(strategyOpQueueProvider.notifier).enqueueOffCanvas(
+              LineupAddOp(
+                opId: const Uuid().v4(),
+                lineupPublicId: group.publicId,
+                pagePublicId: pageId,
+                payload: group.payload,
+                sortIndex: 1 +
+                    _cloudLineupSortIndexesOn(targetPage).fold<int>(-1, max),
+              ),
+              flushImmediately: true,
+            );
+    if (!queued) return LineUpPageResult.notSaved;
     ref.read(strategySaveStateProvider.notifier)
       ..markDirty()
       ..setPendingCloudSync(true)

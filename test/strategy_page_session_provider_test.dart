@@ -10919,6 +10919,22 @@ void main() {
       await _settle();
     });
 
+    test('lineups that share no spot are not sent, so none goes half-way',
+        () async {
+      final (container, _, _) = await open();
+
+      expect(
+        await container.read(strategyProvider.notifier).sendLineUpsToPage(
+          linkIds: {'link-a', 'link-solo'},
+          pageId: 'page-3',
+          move: true,
+        ),
+        LineUpPageResult.unavailable,
+      );
+      expect(adds(container), isEmpty);
+      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
+    });
+
     test('a move goes through when the lineups only came back in a new order',
         () async {
       final (container, _, reader) = await open();
