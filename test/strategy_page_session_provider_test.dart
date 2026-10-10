@@ -210,6 +210,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
     bool flushImmediately = false,
+    int? madeLive,
   }) async {
     final gate = writeGate;
     if (gate != null) await gate.future;
@@ -7370,6 +7371,118 @@ void main() {
       final data = server.element('text-b').payload['data'] as Map;
       expect(data['text'], 'theirs');
       expect(data['position'], {'dx': 320.0, 'dy': 320.0});
+    });
+
+    /// Opens text A and text B on a server that merges by field, with a
+    /// teammate's change to text A held back behind the user's open draft,
+    /// so a page read is waiting to apply. Returns the container and the
+    /// batches sent.
+    Future<(ProviderContainer, List<List<StrategyOp>>)> withHeldBackChange(
+      RemotePage page,
+    ) async {
+      server = _FakeServer(page.publicId, elements: [
+        _textElement(page.publicId, 'text-a', 'a', worldSized: true),
+        _textElement(page.publicId, 'text-b', 'b',
+            worldSized: true, sortIndex: 1),
+      ])
+        ..mergesByField = true;
+      final (container, batches) = await openOnRealQueue(page,
+          themeProfileId: 'immutable-default-map-theme');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container.read(textDraftProvider.notifier).setDraft('text-a', 'a');
+      server.teammateEditElement(
+          'text-a', (data) => data['position'] = {'dx': 90.0, 'dy': 90.0});
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      return (container, batches);
+    }
+
+    test(
+        'an offline delete after a merge landed claims the revision the '
+        'client drew, so it asks', () async {
+      final page = _page('page-1', 0);
+      final (container, batches) = await withHeldBackChange(page);
+      final key = EntitySyncKey.element(page.publicId, 'text-b');
+
+      // The user moves text B; a teammate rewords it meanwhile; the move
+      // merges in at revision 3, and the page read after it is held up.
+      final hold = repository.hold = Completer<void>();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'text-b');
+      await _until(() => batches.isNotEmpty);
+      server.teammateEditElement('text-b', (data) => data['text'] = 'theirs');
+      container.read(textDraftProvider.notifier).clearDraft('text-a');
+      final gate = liveRead.refreshGate = Completer<void>();
+      repository.hold = null;
+      hold.complete();
+      for (var i = 0; i < 20; i++) {
+        await _settle();
+      }
+      expect(server.element('text-b').revision, 3);
+
+      // Offline, the user deletes it, never having seen the new words.
+      container.read(_online.notifier).state = false;
+      container.read(textProvider.notifier).removeText('text-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container.read(_online.notifier).state = true;
+      await container.read(strategyOpQueueProvider.notifier).flushNow();
+      await _until(() => container
+          .read(strategyOpQueueProvider)
+          .attentionByEntityKey
+          .containsKey(key));
+      gate.complete();
+
+      final delete = sentFor(batches, key).last as ElementDeleteOp;
+      expect(delete.lastWriterWins, isFalse);
+      expect(delete.expectedElementRevision, 1);
+      expect(server.element('text-b').deleted, isFalse);
+    });
+
+    test('an edit to a text added while the page read waits still merges',
+        () async {
+      final page = _page('page-1', 0);
+      final (container, batches) = await withHeldBackChange(page);
+      final key = EntitySyncKey.element(page.publicId, 'text-c');
+
+      // The user adds text C; the page read after it is held up.
+      final hold = repository.hold = Completer<void>();
+      container
+          .read(textProvider.notifier)
+          .addText(PlacedText(id: 'text-c', position: const Offset(40, 40))
+            ..text = 'c'
+            ..markSizeAsWorld());
+      await _until(() => batches.isNotEmpty);
+      container.read(textDraftProvider.notifier).clearDraft('text-a');
+      final gate = liveRead.refreshGate = Completer<void>();
+      repository.hold = null;
+      hold.complete();
+      for (var i = 0; i < 20; i++) {
+        await _settle();
+      }
+
+      // Before the page is read again, the user moves it.
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(60, 60), 'text-c');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      gate.complete();
+      await _until(
+          () => container.read(strategyOpQueueProvider).pending.isEmpty);
+
+      final sent = sentFor(batches, key);
+      expect(sent.first, isA<ElementAddOp>());
+      expect(sent.last.merge, isNotNull);
+      expect((server.element('text-c').payload['data'] as Map)['position'],
+          {'dx': 60.0, 'dy': 60.0});
     });
 
     /// The fan-in group is on the server and on screen; a teammate's notes

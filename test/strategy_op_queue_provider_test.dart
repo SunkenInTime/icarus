@@ -3903,6 +3903,121 @@ void main() {
       // absent, as the server has it.
       expect(promoted.merge?.base, {placeMergeField: 0});
     });
+
+    test('a whole successor after a merge keeps the revision it was made from',
+        () async {
+      final online = StateProvider<bool>((ref) => true);
+      final store = MemoryDurableStrategyOutboxStore();
+      final gate = Completer<void>();
+      final repository = _ScriptedRepository(hold: gate);
+      final (_, notifier) = open(store, repository, online);
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      final sending = notifier.flushNow();
+      await repository.started.future;
+      // The element is turned into something else: a whole write.
+      await notifier.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {
+            'kind': 'agent',
+            'payloadVersion': 1,
+            'data': {'id': 'element-1', 'kind': 'viewCone'},
+          },
+          sortIndex: 0,
+          expectedElementRevision: 1,
+        ),
+        flushImmediately: false,
+      );
+      gate.complete();
+      await sending;
+
+      final promoted = store.load().records.single.pending.op;
+      expect(promoted.merge, isNull);
+      // Not the merge's revision (2), which also holds fields never drawn.
+      expect(promoted.expectedRevision, 1);
+    });
+
+    test('a successor behind recovered work keeps the fields the user changed',
+        () async {
+      final online = StateProvider<bool>((ref) => true);
+      final store = MemoryDurableStrategyOutboxStore();
+      final (first, firstQueue) = open(store, _ScriptedRepository(), online);
+      // Saved before a restart: it changed the side.
+      await firstQueue.enqueue(patch('op-1'), flushImmediately: false);
+      first.dispose();
+
+      final gate = Completer<void>();
+      final repository = _ScriptedRepository(hold: gate);
+      final (_, notifier) = open(store, repository, online);
+      final sending = notifier.flushNow();
+      await repository.started.future;
+      // The canvas, drawn without the recovered side, moves the element.
+      await notifier.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {
+            'kind': 'agent',
+            'payloadVersion': 1,
+            'data': {
+              'id': 'element-1',
+              'isAlly': true,
+              'position': {'dx': 5.0, 'dy': 5.0},
+            },
+          },
+          sortIndex: 0,
+          expectedElementRevision: 1,
+          merge: const FieldMerge(fields: ['position'], base: {}),
+        ),
+        flushImmediately: false,
+      );
+      gate.complete();
+      await sending;
+      await notifier.flushNow();
+      for (var i = 0; i < 50 && repository.calls.length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      // The move does not undo the recovered side it never showed.
+      final promoted = repository.calls[1].single;
+      expect(promoted.merge?.fields, ['position']);
+    });
+
+    test('work a caller judged made offline stays checked', () async {
+      final online = StateProvider<bool>((ref) => true);
+      final repository = _ScriptedRepository();
+      final (_, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {key: patch('op-1')},
+        clearMissing: false,
+        madeLive: null,
+      );
+      await notifier.flushNow();
+
+      expect(repository.calls.single.single.merge?.base, {'isAlly': true});
+    });
+
+    test('a retry of live work is sent checked', () async {
+      final online = StateProvider<bool>((ref) => true);
+      final repository =
+          _ScriptedRepository(refusals: [OpRejectionReason.fieldConflict]);
+      final (_, notifier) =
+          open(MemoryDurableStrategyOutboxStore(), repository, online);
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.flushNow();
+      expect(repository.calls.single.single.merge?.base, isNull);
+
+      await notifier.retryRejected(flushImmediately: false);
+      await notifier.flushNow();
+
+      expect(repository.calls.last.single.merge?.base, {'isAlly': 'theirs'});
+    });
   });
 }
 

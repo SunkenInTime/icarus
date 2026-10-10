@@ -247,7 +247,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         in _hydratedBaseByEntityKey.entries) {
       if (key.pageId != pageId) continue;
       final remote = remoteEntities[key];
-      if (remote != null && remote.revision < base.revision) {
+      // An added row the read does not hold yet keeps the base its ack set
+      // while its overlay waits for it.
+      final waitingAdd = remote == null &&
+          !base.deleted &&
+          state.overlayByEntityKey.containsKey(key);
+      if (waitingAdd || (remote != null && remote.revision < base.revision)) {
         remoteEntities[key] = base;
       }
     }
@@ -1264,7 +1269,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             opId: const Uuid().v4(),
             elementPublicId: entityId,
             pagePublicId: pageId,
-            expectedElementRevision: baseRevision,
+            expectedElementRevision: _claimableRevision(overlay, baseRevision),
           );
         }
         final payload =
@@ -1302,7 +1307,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             opId: const Uuid().v4(),
             lineupPublicId: entityId,
             pagePublicId: pageId,
-            expectedLineupRevision: baseRevision,
+            expectedLineupRevision: _claimableRevision(overlay, baseRevision),
           );
         }
         final payload =
@@ -1380,6 +1385,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       overlay.desiredSortIndex,
       overlay.baseRevision!,
     );
+  }
+
+  /// The revision a revision-checked write of [overlay]'s entity may claim:
+  /// [revision] (its overlay's base), or older when the server at that
+  /// revision also holds fields this client never drew (see
+  /// _NormalizedEntity.claimableRevision).
+  int _claimableRevision(ActivePageOverlayEntry overlay, int revision) {
+    final base = _hydratedBaseByEntityKey[overlay.entityKey];
+    return base == null ? revision : min(revision, base.claimableRevision);
   }
 
   bool _overlayMatchesRemote(

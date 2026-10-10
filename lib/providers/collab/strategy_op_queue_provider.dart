@@ -237,12 +237,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   bool _connected = false;
 
   /// How many times the connection has dropped. Work made while connected
-  /// is stamped with it ([_liveStamp]) and is live only if it has not moved
+  /// is stamped with it ([liveStamp]) and is live only if it has not moved
   /// on by the time the work is queued.
   int _disconnects = 0;
 
-  /// The stamp for work made now: null while disconnected.
-  int? get _liveStamp => _connected ? _disconnects : null;
+  /// [syncDesiredOpsForPage]'s default madeLive: judge it as the call is
+  /// made. (Real stamps count disconnects, so are never negative.)
+  static const _judgeLiveNow = -1;
+
+  /// The stamp for work made now: null while disconnected. A caller that
+  /// waits on anything before queueing its work takes this first and passes
+  /// it on (syncDesiredOpsForPage's madeLive).
+  int? get liveStamp => _connected ? _disconnects : null;
 
   /// Marks [op] live if it was made while connected ([madeLive], its stamp)
   /// with no disconnect since, and any work it merged in ([from]) was live
@@ -567,7 +573,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     bool flushImmediately = false,
   }) {
     final canvasSession = _canvasSession;
-    final madeLive = _liveStamp;
+    final madeLive = liveStamp;
     return _serializeWrite(() => _syncDesiredLocked(
           keys: <EntitySyncKey>{entityKey},
           desiredOps: <EntitySyncKey, StrategyOp?>{entityKey: desiredOp},
@@ -582,11 +588,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
     bool flushImmediately = false,
+    int? madeLive = _judgeLiveNow,
   }) {
     final canvasSession = _canvasSession;
     // Whether this work is made live is judged now, as it is made, not when
-    // its turn to be written comes.
-    final madeLive = _liveStamp;
+    // its turn to be written comes, unless the caller judged it earlier
+    // (null: made offline).
+    if (madeLive == _judgeLiveNow) madeLive = liveStamp;
     // A desired op the queue already holds is work kept as it is (live sync
     // keeps recovered work this way), not a new edit. Read now: by the time
     // this write runs it may have landed and left the queue.
@@ -1679,10 +1687,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             ),
             original: successor.op,
             predecessor: sent.pending.op,
+            predecessorDrawn: _canvasOpIds.contains(sent.pending.op.opId),
           ),
           clientId: successor.clientId,
         );
-        _keepCanvasWritten(successor.op, promoted.op);
+        _keepCanvasWritten(successor.op, promoted.op, keepLive: true);
         final isPromotedOversized = cloudOperationExceedsPolicy(promoted.op);
         await _putRecord(current.copyWith(
           pending: promoted,
@@ -2704,9 +2713,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
   /// [resent] carries [original]'s work under a new op ID: the canvas's
   /// work stays the canvas's.
-  void _keepCanvasWritten(StrategyOp original, StrategyOp resent) {
+  void _keepCanvasWritten(
+    StrategyOp original,
+    StrategyOp resent, {
+    bool keepLive = false,
+  }) {
     if (_canvasOpIds.contains(original.opId)) _canvasOpIds.add(resent.opId);
-    if (_liveOpIds.contains(original.opId)) _liveOpIds.add(resent.opId);
+    // Only a successor promoted behind its predecessor is the same live
+    // work; a retry, made or chosen later, is sent checked.
+    if (keepLive && _liveOpIds.contains(original.opId)) {
+      _liveOpIds.add(resent.opId);
+    }
   }
 
   /// Forgets the IDs of canvas work that landed or was dropped. Runs only
@@ -2773,11 +2790,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     StrategyOp successor, {
     required StrategyOp original,
     required StrategyOp predecessor,
+    required bool predecessorDrawn,
   }) {
     final merge = successor.merge;
+    // After a merge, the revision it landed at may hold a teammate's fields
+    // this client never drew: a whole write or a delete keeps claiming the
+    // revision it was made from.
+    if (merge == null) {
+      return predecessor.merge != null ? original : successor;
+    }
     final written = predecessor.payload;
     final desired = successor.payload;
-    if (merge == null || written == null || desired == null) {
+    // Work the canvas never drew (recovered after a restart) is no base for
+    // the user's edits: they were made against what the canvas showed.
+    if (written == null || desired == null || !predecessorDrawn) {
       return successor;
     }
     final lineup = successor is LineupPatchOp;
