@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -136,6 +137,44 @@ void main() {
       expect(move.kind, TransitionKind.move);
       expect(move.from, onPage2);
       expect(move.to, onPage3);
+    });
+  });
+
+  group('drawings between pages', () {
+    Line stroke(String id, {Offset end = const Offset(100, 100)}) => Line(
+          id: id,
+          lineStart: const Offset(10, 10),
+          lineEnd: end,
+          colorValue: 0xFFFFFFFF,
+          isDotted: false,
+          hasArrow: false,
+        );
+
+    test('a copied stroke counts as its original', () {
+      expect(
+        TransitionPlanner.drawingsChanged(
+          [stroke('stroke-1')],
+          [stroke('stroke-1~cp1~$_occurrence')],
+        ),
+        isFalse,
+      );
+    });
+
+    test('a copied stroke that moved, or another stroke, is a change', () {
+      expect(
+        TransitionPlanner.drawingsChanged(
+          [stroke('stroke-1')],
+          [stroke('stroke-1~cp1~$_occurrence', end: const Offset(200, 50))],
+        ),
+        isTrue,
+      );
+      expect(
+        TransitionPlanner.drawingsChanged(
+          [stroke('stroke-1')],
+          [stroke('stroke-2')],
+        ),
+        isTrue,
+      );
     });
   });
 }

@@ -11373,6 +11373,11 @@ void main() {
       final container = await _cloudContainer(
         remote: _FakeRemoteEditorNotifier(
           _editorSnapshot(pages: pages, activePage: onScreen),
+          pageCatalog: {
+            'page-1': _pageSnapshot(pages[0]),
+            'page-2': onScreen,
+            'page-3': _pageSnapshot(pages[2], elements: nextPage),
+          },
         ),
         queue: queue,
         repository: reader,
@@ -11612,6 +11617,124 @@ void main() {
         PageCopyResult.copied,
       );
       expect(adds(container).single.pagePublicId, 'page-3');
+    });
+
+    group('"+" on a cloud strategy', () {
+      /// Opens page 2 with its text, a lineup and an image on the canvas,
+      /// the server answering every op sent; returns every op sent.
+      Future<(ProviderContainer, List<StrategyOp>, _PageReader)> openToCopy({
+        CloudImageCopyResult image = CloudImageCopyResult.copied,
+      }) async {
+        final (container, queue, reader) = await open();
+        reader.imageCopy = image;
+        final sent = <StrategyOp>[];
+        final remote = container.read(remoteEditorSnapshotProvider.notifier)
+            as _FakeRemoteEditorNotifier;
+        queue.onFlush = () {
+          final ops = [
+            for (final intent in queue.state.queuedByEntityKey.values)
+              intent.pending.op,
+          ];
+          sent.addAll(ops);
+          // The server now has each page added, as yet empty.
+          for (final op in ops.whereType<PageAddOp>()) {
+            final page = _page(op.pagePublicId, op.sortIndex);
+            remote.pageCatalog[page.publicId] = _pageSnapshot(page);
+            remote.initialSnapshot = _editorSnapshot(
+              pages: [...pages, page],
+              activePage: remote.initialSnapshot.activePage!,
+            );
+          }
+          queue.ackQueued();
+        };
+        container.read(placedImageProvider.notifier).fromHive([
+          PlacedImage(
+            id: 'image',
+            position: const Offset(12, 34),
+            aspectRatio: 1.5,
+            scale: 100,
+            fileExtension: '.png',
+          ),
+        ]);
+        container.read(lineUpProvider.notifier).mergeRemote(
+              lineUpGraphFromCloudRows([
+                CloudLineupRow.remote(_lineup('page-2', 'a')),
+              ]).graph,
+            );
+        await _settle();
+        sent.clear();
+        return (container, sent, reader);
+      }
+
+      setUp(() => StrategyProvider.cloudPageCopyLandingWait = Duration.zero);
+
+      test('copies the page on screen under copy ids, in its order', () async {
+        final (container, sent, reader) = await openToCopy();
+
+        await container.read(strategyProvider.notifier).addPage();
+
+        final page = sent.whereType<PageAddOp>().single.pagePublicId;
+        final elements = sent
+            .whereType<ElementAddOp>()
+            .where((op) => op.pagePublicId == page)
+            .toList();
+        expect(
+          {
+            for (final op in elements)
+              pageCopyRoot(op.elementPublicId): op.payload['kind'],
+          },
+          {'text-page-2': 'text', 'image': 'image'},
+        );
+        for (final op in elements) {
+          expect(op.elementPublicId, contains('~cp1~'));
+          expect(cloudPayloadData(op.payload)['id'], op.elementPublicId);
+        }
+        final text = elements.singleWhere(
+            (op) => pageCopyRoot(op.elementPublicId) == 'text-page-2');
+        expect(cloudPayloadData(text.payload)['text'], 'two');
+        final image = elements
+            .singleWhere((op) => pageCopyRoot(op.elementPublicId) == 'image');
+        expect(reader.imageCopies, [('image', image.elementPublicId)]);
+
+        final lineup = sent
+            .whereType<LineupAddOp>()
+            .singleWhere((op) => op.pagePublicId == page);
+        final data = cloudPayloadData(lineup.payload);
+        expect(
+          _entries(data, 'links').map((link) => pageCopyRoot(link['id'])),
+          ['link-a'],
+        );
+        expect(pageCopyRoot(_entries(data, 'origins').single['id']), 'a');
+        // The page copied from is left as it was.
+        expect(
+          sent.where((op) =>
+              op.pagePublicId == 'page-2' &&
+              (op is ElementDeleteOp || op is LineupDeleteOp)),
+          isEmpty,
+        );
+        await _settle();
+      });
+
+      test('leaves out an image still uploading and copies the rest', () async {
+        final (container, sent, _) =
+            await openToCopy(image: CloudImageCopyResult.uploading);
+
+        await container.read(strategyProvider.notifier).addPage();
+
+        final page = sent.whereType<PageAddOp>().single.pagePublicId;
+        expect(
+          sent
+              .whereType<ElementAddOp>()
+              .where((op) => op.pagePublicId == page)
+              .map((op) => pageCopyRoot(op.elementPublicId)),
+          ['text-page-2'],
+        );
+        expect(
+          sent.whereType<LineupAddOp>().where((op) => op.pagePublicId == page),
+          hasLength(1),
+        );
+        await _settle();
+      });
     });
 
     group('an image', () {
