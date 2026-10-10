@@ -108,7 +108,7 @@ async function applyOne(
   op: Record<string, unknown>,
 ): Promise<Result> {
   const [result] = await apply(user, clientId, [op]);
-  return result;
+  return result!;
 }
 
 async function snapshot(user: Harness): Promise<{
@@ -693,7 +693,7 @@ describe("lineup group merge by item", () => {
     const removed: TestLineupGroup = {
       origins: twoLinks.origins,
       landings: [{ id: "l1" }],
-      links: [twoLinks.links[0]],
+      links: [twoLinks.links[0]!],
     };
     const result = await applyOne(
       me,
@@ -717,7 +717,7 @@ describe("lineup group merge by item", () => {
       teammate,
       "teammate",
       groupMerge(
-        { origins: twoLinks.origins, landings: [{ id: "l1" }], links: [twoLinks.links[0]] },
+        { origins: twoLinks.origins, landings: [{ id: "l1" }], links: [twoLinks.links[0]!] },
         ["links/k2", "landings/l2"],
         1,
       ),
@@ -809,7 +809,7 @@ describe("lineup group merge by item", () => {
       teammate,
       "teammate",
       groupMerge(
-        { origins: twoLinks.origins, landings: [{ id: "l1" }], links: [twoLinks.links[0]] },
+        { origins: twoLinks.origins, landings: [{ id: "l1" }], links: [twoLinks.links[0]!] },
         ["links/k2", "landings/l2"],
         1,
       ),
@@ -818,7 +818,7 @@ describe("lineup group merge by item", () => {
       me,
       "me",
       groupMerge(
-        { origins: twoLinks.origins, landings: [{ id: "l2" }], links: [twoLinks.links[1]] },
+        { origins: twoLinks.origins, landings: [{ id: "l2" }], links: [twoLinks.links[1]!] },
         ["links/k1", "landings/l1"],
         1,
       ),
