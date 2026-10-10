@@ -865,14 +865,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           strategyId: strategyId,
           activePageId: () => state.activePageId,
         );
-        // Redrawn only if nothing was edited since the first redraw.
+        // Redrawn only if nothing was edited since the first redraw. The
+        // work that stays comes back over the cloud's version drawn first.
         final pageData = await pageSource.loadAuthoritativePage(
           targetPageId,
           discardedEntities: discarded,
         );
         await _showCloudVersions(
           pageData,
-          of: discarded,
+          of: rejected.keys.toSet(),
           strategyId: strategyId,
           canApply: () =>
               !_disposed &&
@@ -905,19 +906,22 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       ref
           .read(strategyOpQueueProvider.notifier)
           .completeRemoteAdoption(discarded);
-      _pendingRemoteReapply = false;
       return discarded.length == rejected.length;
     } finally {
       _isResolvingConflicts = false;
+      // A teammate's change that waited for this, or for a hold the user
+      // let go of meanwhile, applies now.
+      if (!_disposed) _resumePendingRemoteReapplyIfPossible();
     }
   }
 
-  /// Draws [pageData], which has the cloud's version of the entities in
-  /// [of]. The page on screen takes it item by item, as it takes a
+  /// Draws [pageData], which has the version of the entities in [of] that
+  /// the user's choice left: the cloud's, or their own where it could not be
+  /// discarded. The page on screen takes it item by item, as it takes a
   /// teammate's change, so what the user is in the middle of stays as it is:
-  /// a placement edit of other lineups keeps its drags. A placement edit of
-  /// a lineup in [of] ends, since the user chose the cloud's version of it.
-  /// Any other page loads whole.
+  /// a placement edit of other lineups keeps its drags. The entities in [of]
+  /// take [pageData]'s version even when held, and a placement edit of a
+  /// lineup among them ends. Any other page loads whole.
   Future<void> _showCloudVersions(
     StrategyEditorPageData pageData, {
     required Set<EntitySyncKey> of,
@@ -951,7 +955,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             .listPageIds();
     if (!canApply()) return;
     // Whether the canvas item [id] (an element, or a lineup or one of its
-    // spots) is one the user chose the cloud's version of.
+    // spots) is in [of].
     bool chosen(String id) =>
         of.contains(EntitySyncKey.element(pageId, id)) ||
         switch (liveSync.lineupGroupOf(pageId, id)) {
@@ -968,9 +972,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       pageData,
       strategyId: strategyId,
       snapshot: loadedRemoteSnapshot,
-      // What the user is in the middle of stays, except what they chose the
-      // cloud's version of. A press off the canvas (on the conflict panel,
-      // say) holds nothing on it.
+      // What the user is in the middle of stays, except what is in [of]. A
+      // press off the canvas (on the conflict panel, say) holds nothing on
+      // it.
       holding: {
         for (final id in ref.read(editorHeldCanvasItemsProvider))
           if (!chosen(id)) id,

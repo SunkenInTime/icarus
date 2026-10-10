@@ -6490,12 +6490,13 @@ void main() {
     /// sends to [server] through [repository] and reads it back after every
     /// batch. A batch waits for [hold] while it is set. The queue reaches
     /// the server while [_online] holds. Returns the container and the
-    /// batches sent.
+    /// batches sent. The server's header names [themeProfileId], if given.
     Future<(ProviderContainer, List<List<StrategyOp>>)> openOnRealQueue(
       RemotePage page, {
       DurableStrategyOutboxStore? store,
       Completer<void>? hold,
       List<RemotePage> otherPages = const [],
+      String? themeProfileId,
     }) async {
       final others = {
         for (final other in otherPages)
@@ -6504,6 +6505,7 @@ void main() {
       var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
             pages: [page, ...otherPages],
+            themeProfileId: themeProfileId,
             activePage: others[shown] ??
                 _pageSnapshot(
                   page,
@@ -7375,18 +7377,22 @@ void main() {
     /// The fan-in group's edit is refused beside a teammate's and waits, as
     /// in refusedBesideTeammate, with lineup Z, a group of its own, on the
     /// page too. The user then opens Edit placement on [editing] and drags
-    /// [landing] to [dragTo]. Returns the container.
+    /// [landing] to [dragTo]. The outbox is kept in [store]. The server's
+    /// header has the theme the client uses, so redrawing the page queues no
+    /// strategy change of its own. Returns the container.
     Future<ProviderContainer> refusedWhileEditing(
       RemotePage page, {
       required String editing,
       required String landing,
       required Offset dragTo,
+      DurableStrategyOutboxStore? store,
     }) async {
       server = _FakeServer(page.publicId, lineups: [
         fanIn(page.publicId),
         _lineup(page.publicId, 'z', sortIndex: 1),
       ]);
-      final (container, _) = await openOnRealQueue(page);
+      final (container, _) = await openOnRealQueue(page,
+          store: store, themeProfileId: 'immutable-default-map-theme');
       server.teammateEdit('link-a',
           (data) => _entry(data, 'links', 'link-b')['notes'] = 'theirs');
       container.read(lineUpProvider.notifier).updateLink(container
@@ -7494,6 +7500,11 @@ void main() {
           'link-z',
           (data) => _entry(data, 'landings', 'landing-z')['ability'] =
               _abilityJson('landing-z', theirs));
+      // The live read shows it; the edit holds it back.
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
 
       expect(
           await container
@@ -7560,6 +7571,9 @@ void main() {
       final page = _page('page-1', 0);
       final (container, _, _) = await refusedBesideTeammate(page);
       container.read(lineUpProvider.notifier).startFromOrigin('origin-a');
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.lineUpPlacing);
 
       expect(
           await container
@@ -7572,6 +7586,84 @@ void main() {
       expect(lineUps.linkById('link-a')!.notes, 'remote lineup');
       expect(lineUps.linkById('link-b')!.notes, 'theirs');
       expect(lineUps.placement?.pinnedOriginId, 'origin-a');
+      expect(container.read(interactionStateProvider),
+          InteractionState.lineUpPlacing);
+    });
+
+    test(
+        "a teammate's move a placement edit held back applies once the user "
+        'ends the edit while Use cloud discards', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      const theirs = Offset(90, 90);
+      final container = await refusedWhileEditing(page,
+          editing: 'link-z',
+          landing: 'landing-z',
+          dragTo: const Offset(400, 250),
+          store: store);
+      server.teammateEdit(
+          'link-z',
+          (data) => _entry(data, 'landings', 'landing-z')['ability'] =
+              _abilityJson('landing-z', theirs));
+      // The live read shows it; the edit holds it back.
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      var ended = false;
+      store.onRemove = (storageKey) {
+        if (ended) return;
+        ended = true;
+        container
+            .read(interactionStateProvider.notifier)
+            .update(InteractionState.navigation);
+      };
+
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      expect(ended, isTrue);
+      await settled(container);
+
+      await _until(() =>
+          container
+              .read(lineUpProvider)
+              .landingById('landing-z')!
+              .ability
+              .position ==
+          theirs);
+      expect(serverLandingZ(), theirs);
+    });
+
+    test(
+        "Use cloud whose discard fails puts the user's version back on a "
+        'group they are placing a lineup from', () async {
+      final page = _page('page-1', 0);
+      final store = _FailingOutboxStore();
+      final (container, _, _) = await refusedBesideTeammate(page, store: store);
+      container.read(lineUpProvider.notifier).startFromOrigin('origin-a');
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.lineUpPlacing);
+      store.failRemove = (storageKey) => true;
+
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isFalse);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // The refused work still waits, and the canvas shows it.
+      final lineUps = container.read(lineUpProvider);
+      expect(lineUps.linkById('link-a')!.notes, 'mine');
+      expect(lineUps.linkById('link-b')!.notes, 'remote lineup');
+      expect(container.read(strategyOpQueueProvider).attentionByEntityKey.keys,
+          [keyOf(page, 'link-a')]);
     });
 
     test(
