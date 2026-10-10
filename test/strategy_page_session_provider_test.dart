@@ -11590,7 +11590,13 @@ void main() {
         expect(copies(container), isEmpty);
       });
 
-      test('this device is still uploading is not copied yet', () async {
+      /// Opens the image, unknown to the server, with this device's upload
+      /// of it in [state]; [saved] false: the image's own save failed, so
+      /// its upload never goes.
+      Future<ProviderContainer> openUploading(
+        CloudMediaJobState state, {
+        bool saved = true,
+      }) async {
         final (container, _) =
             await openWithImage(CloudImageCopyResult.unavailable);
         container.read(cloudMediaUploadQueueProvider.notifier).state =
@@ -11603,16 +11609,37 @@ void main() {
               assetPublicId: 'image',
               fileExtension: '.png',
               mimeType: 'image/png',
-              state: CloudMediaJobState.pendingUpload,
+              state: state,
               attempts: 0,
               updatedAt: DateTime.utc(2026),
+              referenceDurable: saved,
             ),
           ],
           isProcessing: false,
         );
+        return container;
+      }
 
-        expect(await copy(container), PageCopyResult.imageUploading);
-        expect(copies(container), isEmpty);
+      test('this device is still uploading is not copied yet', () async {
+        for (final state in [
+          CloudMediaJobState.pendingUpload,
+          CloudMediaJobState.pendingAttach,
+        ]) {
+          final container = await openUploading(state);
+          expect(await copy(container), PageCopyResult.imageUploading);
+          expect(copies(container), isEmpty);
+        }
+      });
+
+      test('whose upload failed or will never go is not called uploading',
+          () async {
+        for (final container in [
+          await openUploading(CloudMediaJobState.failed),
+          await openUploading(CloudMediaJobState.pendingUpload, saved: false),
+        ]) {
+          expect(await copy(container), PageCopyResult.imageUnavailable);
+          expect(copies(container), isEmpty);
+        }
       });
 
       test('the cloud cannot show is not copied', () async {

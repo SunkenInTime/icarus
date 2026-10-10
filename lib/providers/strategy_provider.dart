@@ -1081,12 +1081,15 @@ class StrategyProvider extends Notifier<StrategyState> {
           return PageCopyResult.imageUploading;
         case CloudImageCopyResult.unavailable:
           // An image this device placed may not have reached the server yet.
+          // Its upload only goes once the image itself is saved to send
+          // (referenceDurable); one whose save failed never will.
           final stillUploading = ref
               .read(cloudMediaUploadQueueProvider)
               .jobsForStrategy(strategyId)
               .any(
                 (job) =>
                     job.assetPublicId == widgetId &&
+                    job.referenceDurable &&
                     job.state != CloudMediaJobState.failed,
               );
           return stillUploading
