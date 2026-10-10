@@ -48407,6 +48407,12 @@
       "args": {
         "type": "object",
         "value": {
+          "acceptsPictureIds": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "accountSubject": {
             "fieldType": {
               "type": "string"
@@ -144197,6 +144203,12 @@
       "args": {
         "type": "object",
         "value": {
+          "acceptsPictureIds": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"
@@ -169716,6 +169728,12 @@
       "args": {
         "type": "object",
         "value": {
+          "acceptsPictureIds": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "acceptsTrashedPagesLeftOut": {
             "fieldType": {
               "type": "boolean"

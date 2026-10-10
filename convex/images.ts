@@ -13,6 +13,7 @@ import {
   inferProvider,
   inferUploadStatus,
   isUploadPlaceholder,
+  pictureShownByImage,
   serializeAssetForViewer,
   staleUploadAgeMs,
   type Provider,
@@ -799,16 +800,18 @@ export const getAssetUrl = query({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyReadable(ctx, strategy, args.shareToken);
 
-    if (
-      !(await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId))
-    ) {
+    // Builds from before pictures had their own id ask by the image's id.
+    const pictureId =
+      (await pictureShownByImage(ctx, strategy._id, args.assetPublicId)) ??
+      args.assetPublicId;
+    if (!(await strategyReferencesAsset(ctx, strategy._id, pictureId))) {
       throw notFoundError("Asset", args.assetPublicId);
     }
 
     const asset = await getActiveAssetForStrategy(
       ctx,
       strategy._id,
-      args.assetPublicId,
+      pictureId,
     );
     if (asset === null) {
       throw notFoundError("Asset", args.assetPublicId);
