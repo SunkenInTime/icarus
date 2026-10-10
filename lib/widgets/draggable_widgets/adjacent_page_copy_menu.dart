@@ -10,15 +10,39 @@ List<ShadContextMenuItem> buildAdjacentPageCopyMenuItems(
   String widgetId,
 ) {
   if (widgetId.isEmpty) return const [];
-
   final notifier = ref.read(strategyProvider.notifier);
-  final directions = notifier.copyDirectionsForPlacedWidget(widgetId);
-
-  Future<void> copy(PageTransitionDirection direction) async {
-    final result = await notifier.copyPlacedWidgetToAdjacentPage(
+  return _copyMenuItems(
+    notifier.copyDirectionsForPlacedWidget(widgetId),
+    (direction) => notifier.copyPlacedWidgetToAdjacentPage(
       widgetId: widgetId,
       direction: direction,
-    );
+    ),
+  );
+}
+
+/// The same items for the lineups [linkIds]: every lineup at the spot the
+/// user right-clicked, copied together with the spots they aim at.
+List<ShadContextMenuItem> buildLineUpAdjacentPageCopyMenuItems(
+  WidgetRef ref,
+  Set<String> linkIds,
+) {
+  if (linkIds.isEmpty) return const [];
+  final notifier = ref.read(strategyProvider.notifier);
+  return _copyMenuItems(
+    notifier.copyDirectionsForLineUps(linkIds),
+    (direction) => notifier.copyLineUpsToAdjacentPage(
+      linkIds: linkIds,
+      direction: direction,
+    ),
+  );
+}
+
+List<ShadContextMenuItem> _copyMenuItems(
+  List<PageTransitionDirection> directions,
+  Future<PageCopyResult> Function(PageTransitionDirection direction) copyTo,
+) {
+  Future<void> copy(PageTransitionDirection direction) async {
+    final result = await copyTo(direction);
     final page = direction == PageTransitionDirection.forward
         ? 'next page'
         : 'previous page';
