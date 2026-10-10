@@ -217,7 +217,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   Future<void> _addPage() async {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canAddPage) return;
-    showImagesLeftOutOfNewPage(
+    showNewPageGaps(
       await ref.read(strategyProvider.notifier).addPage(),
     );
   }

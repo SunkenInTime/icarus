@@ -144,7 +144,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             onInvoke: (intent) async {
               if (!capabilities.canAddPage) return null;
               _dismissDeleteMenu();
-              showImagesLeftOutOfNewPage(
+              showNewPageGaps(
                 await ref.read(strategyProvider.notifier).addPage(),
               );
               return null;

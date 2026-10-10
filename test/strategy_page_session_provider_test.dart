@@ -683,6 +683,9 @@ class _ServerRepository implements ConvexStrategyRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+const _copyUuid = '0f8fad5b-d9cb-469f-a165-70867728950e';
+const _copyUuid2 = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
 RemotePage _page(String id, int index,
     {int revision = 1, String? name, bool isAttack = true}) {
   final now = DateTime.utc(2026);
@@ -1532,9 +1535,7 @@ void main() {
     expect(queue.flushNowCount, 1);
   });
 
-  test(
-      '"+" on a cloud strategy turns to the copy the server made, and counts '
-      'the images it left out', () async {
+  group('"+" on a cloud strategy', () {
     RemoteElement image(String pageId, String id) => RemoteElement(
           publicId: id,
           strategyPublicId: 'cloud-strategy',
@@ -1554,64 +1555,167 @@ void main() {
           revision: 1,
           deleted: false,
         );
-    final page = _page('page-1', 0);
-    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
-      pages: [page],
-      activePage: _pageSnapshot(page, elements: [
-        image('page-1', 'uploaded'),
-        image('page-1', 'uploading'),
-      ]),
-      shellRevision: 8,
-    ));
-    final queue = _FakeStrategyOpQueueNotifier();
-    final container = await _cloudContainer(remote: remote, queue: queue);
-    await container
-        .read(strategyPageSessionProvider.notifier)
-        .initializeForStrategy(
-          strategyId: 'cloud-strategy',
-          source: StrategySource.cloud,
-          selectFirstPageIfNeeded: true,
+
+    /// Opens page 1, showing two images. [land] makes the server add the
+    /// page "+" sends, with the copy of page 1 it makes, and answers it.
+    Future<
+        (
+          ProviderContainer,
+          _FakeStrategyOpQueueNotifier,
+          void Function(PageAddOp add, List<RemoteElement> copied) land,
+        )> open() async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, elements: [
+          image('page-1', 'uploaded'),
+          image('page-1', 'uploading'),
+        ]),
+        shellRevision: 8,
+      ));
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(remote: remote, queue: queue);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      await _settle();
+      expect(container.read(placedImageProvider).images, hasLength(2));
+      void land(PageAddOp add, List<RemoteElement> copied) {
+        final added = _page(add.pagePublicId, 1);
+        remote.pageCatalog[added.publicId] =
+            _pageSnapshot(added, elements: copied);
+        remote.initialSnapshot = _editorSnapshot(
+          pages: [page, added],
+          activePage: remote.initialSnapshot.activePage!,
+          shellRevision: 9,
         );
-    await _settle();
-    expect(container.read(placedImageProvider).images, hasLength(2));
-    PageAddOp? sent;
-    queue.onFlush = () async {
-      final add = queue.state.queuedByEntityKey.values
-          .map((intent) => intent.pending.op)
-          .whereType<PageAddOp>()
-          .firstOrNull;
-      if (add == null) return queue.ackQueued();
-      sent = add;
-      // The server adds the page with a copy of page 1, leaving out the
-      // image whose upload has not finished.
-      final added = _page(sent!.pagePublicId, 1);
-      remote.pageCatalog[added.publicId] = _pageSnapshot(added, elements: [
-        image(
-          added.publicId,
-          'uploaded~cp1~0f8fad5b-d9cb-469f-a165-70867728950e',
-        ),
-      ]);
-      remote.initialSnapshot = _editorSnapshot(
-        pages: [page, added],
-        activePage: remote.initialSnapshot.activePage!,
-        shellRevision: 9,
+        queue.ackQueued();
+      }
+
+      return (container, queue, land);
+    }
+
+    PageAddOp? queuedAdd(_FakeStrategyOpQueueNotifier queue) =>
+        queue.state.queuedByEntityKey.values
+            .map((intent) => intent.pending.op)
+            .whereType<PageAddOp>()
+            .firstOrNull;
+
+    tearDown(() => StrategyProvider.cloudPageAddWait =
+        const Duration(seconds: 5));
+
+    test('turns to the copy the server made, and counts the images it left out',
+        () async {
+      final (container, queue, land) = await open();
+      PageAddOp? sent;
+      queue.onFlush = () async {
+        final add = queuedAdd(queue);
+        if (add == null) return queue.ackQueued();
+        sent = add;
+        // The server leaves out the image whose upload has not finished.
+        // The copy of the other has a plain id, as a copy of an item whose
+        // id is too long to keep its root does.
+        land(add, [
+          image(add.pagePublicId, '0f8fad5b-d9cb-469f-a165-70867728950e'),
+        ]);
+      };
+
+      final gaps = await container.read(strategyProvider.notifier).addPage();
+
+      expect(sent!.copyContentFromPagePublicId, 'page-1');
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        sent!.pagePublicId,
       );
-      queue.ackQueued();
-    };
+      expect(container.read(placedImageProvider).images, hasLength(1));
+      expect(gaps, (
+        imagesLeftOut: 1,
+        unsavedEditsLeftOut: false,
+        waitingForCloud: false,
+      ));
+      await _settle();
+    });
 
-    final leftOut = await container.read(strategyProvider.notifier).addPage();
+    test('an answer that comes after the first send still turns to the page',
+        () async {
+      final (container, queue, land) = await open();
+      // The add waits behind another send; the server answers later.
+      PageAddOp? sent;
+      queue.onFlush = () async {
+        final add = queuedAdd(queue);
+        if (add == null) return queue.ackQueued();
+        sent = add;
+        Timer(const Duration(milliseconds: 200), () {
+          land(add, [image(add.pagePublicId, 'uploaded~cp1~$_copyUuid')]);
+        });
+      };
 
-    expect(sent!.copyContentFromPagePublicId, 'page-1');
-    expect(
-      container.read(strategyPageSessionProvider).activePageId,
-      sent!.pagePublicId,
-    );
-    expect(
-      container.read(placedImageProvider).images.map((image) => image.id),
-      ['uploaded~cp1~0f8fad5b-d9cb-469f-a165-70867728950e'],
-    );
-    expect(leftOut, 1);
-    await _settle();
+      final gaps = await container.read(strategyProvider.notifier).addPage();
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        sent!.pagePublicId,
+      );
+      expect(gaps.waitingForCloud, isFalse);
+      expect(gaps.imagesLeftOut, 1);
+      await _settle();
+    });
+
+    test('says when the page has not reached the cloud yet', () async {
+      final (container, queue, _) = await open();
+      StrategyProvider.cloudPageAddWait = const Duration(milliseconds: 200);
+
+      final gaps = await container.read(strategyProvider.notifier).addPage();
+
+      expect(gaps.waitingForCloud, isTrue);
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          'page-1');
+      // The add stays queued, to land later.
+      expect(queuedAdd(queue), isNotNull);
+      await _settle();
+    });
+
+    test('says when edits to the page were refused, so are not in its copy',
+        () async {
+      final (container, queue, land) = await open();
+      queue.onFlush = () async {
+        final add = queuedAdd(queue);
+        if (add == null) return queue.ackQueued();
+        land(add, [
+          image(add.pagePublicId, 'uploaded~cp1~$_copyUuid'),
+          image(add.pagePublicId, 'uploading~cp1~$_copyUuid2'),
+        ]);
+        // The server refused an edit to page 1 sent ahead of the add.
+        queue.state = queue.state.copyWith(attentionByEntityKey: {
+          const EntitySyncKey.element('page-1', 'uploaded'):
+              const QueuedEntityIntent(
+            entityKey: EntitySyncKey.element('page-1', 'uploaded'),
+            pending: PendingOp(
+              op: ElementDeleteOp(
+                opId: 'refused-op',
+                pagePublicId: 'page-1',
+                elementPublicId: 'uploaded',
+                expectedElementRevision: 1,
+              ),
+              clientId: 'test-client',
+            ),
+          ),
+        });
+      };
+
+      final gaps = await container.read(strategyProvider.notifier).addPage();
+
+      expect(gaps, (
+        imagesLeftOut: 0,
+        unsavedEditsLeftOut: true,
+        waitingForCloud: false,
+      ));
+      await _settle();
+    });
   });
 
   test('cloud page rename is persisted with the page revision', () async {
