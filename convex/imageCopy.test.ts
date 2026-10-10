@@ -206,6 +206,35 @@ describe("images:copyAsset", () => {
     expect(await rowsFor(t, copy)).toHaveLength(1);
   });
 
+  test("an id that already shows another image is refused", async () => {
+    const { t, owner } = await createHarness();
+    await t.run(async (ctx) => {
+      const strategy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+        .unique();
+      const now = Date.now();
+      await ctx.db.insert("imageAssets", {
+        publicId: copy,
+        provider: "r2",
+        strategyId: strategy!._id,
+        uploadAttemptPublicId: "other-attempt",
+        objectKey: `strategies/${strategyPublicId}/other.png`,
+        uploadStatus: "active",
+        fileExtension: ".png",
+        mimeType: "image/png",
+        uploadedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await expect(copyImage(owner)).rejects.toThrow();
+    expect((await rowsFor(t, copy)).map((row) => row.objectKey)).toEqual([
+      `strategies/${strategyPublicId}/other.png`,
+    ]);
+  });
+
   test("a copy replaces a failed upload under its id", async () => {
     const { t, owner } = await createHarness();
     await t.run(async (ctx) => {

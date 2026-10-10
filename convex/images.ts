@@ -428,7 +428,23 @@ export const copyAsset = mutation({
     );
     if (target !== null && !isUploadPlaceholder(target)) {
       const status = inferUploadStatus(target);
-      if (status === "active") return "copied";
+      if (status === "active") {
+        // Copied before, or another image entirely: only a row with the
+        // source's bytes is this copy.
+        const source = await getActiveAssetForStrategy(
+          ctx,
+          strategy._id,
+          args.sourceAssetPublicId,
+        );
+        if (
+          source !== null &&
+          (source.objectKey !== target.objectKey ||
+            source.storageId !== target.storageId)
+        ) {
+          throw conflictError("That image id already shows another image.");
+        }
+        return "copied";
+      }
       if (status === "pending") return "uploading";
       // A failed upload under the target's id: the copied row, being newer,
       // is the one readers see, and the stale-upload sweep removes the
