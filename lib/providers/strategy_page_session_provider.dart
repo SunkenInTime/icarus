@@ -22,6 +22,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -836,14 +837,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         bool unchangedCanvas() => !waitingChanged() && _sameCanvas(savedCanvas);
         if (!unchangedCanvas()) return false;
         var redrawn = false;
-        await _applyLoadedPageData(
+        await _showCloudVersions(
           pageData,
+          of: rejected.keys.toSet(),
           strategyId: strategyId,
-          source: StrategySource.cloud,
           canApply: () => redrawn = unchangedCanvas(),
-          hydrationKey: _buildRemotePageHydrationKey(snapshot, targetPageId),
-          preserveTextDrafts: true,
-          loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+          loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot!,
           preservedMetadata:
               rejected.containsKey(const EntitySyncKey.strategy())
                   ? null
@@ -871,16 +870,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           targetPageId,
           discardedEntities: discarded,
         );
-        await _applyLoadedPageData(
+        await _showCloudVersions(
           pageData,
+          of: discarded,
           strategyId: strategyId,
-          source: StrategySource.cloud,
           canApply: () =>
               !_disposed &&
               generation == _pageSessionGeneration &&
               _sameCanvas(redrawnCanvas),
-          preserveTextDrafts: true,
-          loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+          loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot!,
           preservedMetadata: discarded.contains(const EntitySyncKey.strategy())
               ? null
               : localMetadata,
@@ -912,6 +910,73 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     } finally {
       _isResolvingConflicts = false;
     }
+  }
+
+  /// Draws [pageData], which has the cloud's version of the entities in
+  /// [of]. The page on screen takes it item by item, as it takes a
+  /// teammate's change, so what the user is in the middle of stays as it is:
+  /// a placement edit of other lineups keeps its drags. A placement edit of
+  /// a lineup in [of] ends, since the user chose the cloud's version of it.
+  /// Any other page loads whole.
+  Future<void> _showCloudVersions(
+    StrategyEditorPageData pageData, {
+    required Set<EntitySyncKey> of,
+    required String strategyId,
+    required bool Function() canApply,
+    required RemoteEditorSnapshot loadedRemoteSnapshot,
+    ({MapValue map, StrategyThemeState theme})? preservedMetadata,
+  }) async {
+    final pageId = pageData.pageId;
+    final liveSync = ref.read(activePageLiveSyncProvider.notifier);
+    final onScreen =
+        _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
+            _lastHydratedRemotePageKey?.pageId == pageId &&
+            ref.read(activePageLiveSyncProvider).hydratedPageId == pageId;
+    if (!onScreen) {
+      await _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: StrategySource.cloud,
+        canApply: canApply,
+        preserveTextDrafts: true,
+        loadedRemoteSnapshot: loadedRemoteSnapshot,
+        preservedMetadata: preservedMetadata,
+      );
+      return;
+    }
+    // The cloud's version of a page (one this device added, say) can change
+    // the list of pages.
+    final availablePageIds =
+        await _resolvePageSource(strategyId, StrategySource.cloud)
+            .listPageIds();
+    if (!canApply()) return;
+    // Whether the canvas item [id] (an element, or a lineup or one of its
+    // spots) is one the user chose the cloud's version of.
+    bool chosen(String id) =>
+        of.contains(EntitySyncKey.element(pageId, id)) ||
+        switch (liveSync.lineupGroupOf(pageId, id)) {
+          final group? => of.contains(EntitySyncKey.lineup(pageId, group)),
+          null => false,
+        };
+    if (ref.read(lineUpProvider).edit?.linkIds.any(chosen) ?? false) {
+      ref
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.navigation);
+    }
+    state = state.copyWith(availablePageIds: availablePageIds);
+    _mergeRemotePage(
+      pageData,
+      strategyId: strategyId,
+      snapshot: loadedRemoteSnapshot,
+      // What the user is in the middle of stays, except what they chose the
+      // cloud's version of. A press off the canvas (on the conflict panel,
+      // say) holds nothing on it.
+      holding: {
+        for (final id in ref.read(editorHeldCanvasItemsProvider))
+          if (!chosen(id)) id,
+      },
+      preservedMetadata: preservedMetadata,
+    );
   }
 
   /// The strategy's map and theme on screen, while a change to them is still
@@ -1535,11 +1600,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   /// Brings the page on screen up to [snapshot] item by item, leaving what
   /// the user is in the middle of changing. A held item's change applies once
-  /// the hold ends.
+  /// the hold ends. [holding] defaults to what the editor holds now;
+  /// [preservedMetadata] is as for [_applyLoadedPageData].
   void _mergeRemotePage(
     StrategyEditorPageData pageData, {
     required String strategyId,
     required RemoteEditorSnapshot snapshot,
+    Set<String>? holding,
+    ({MapValue map, StrategyThemeState theme})? preservedMetadata,
   }) {
     final pageId = pageData.pageId;
     final liveSync = ref.read(activePageLiveSyncProvider.notifier);
@@ -1551,13 +1619,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         ref,
         pageData,
         changed: liveSync.remoteChangesSinceHydration(snapshot, pageId),
-        holding: ref.read(editorHeldEntitiesProvider)!,
-        themeProfileId:
-            _resolveThemeProfileId(StrategySource.cloud, strategyId),
-        themeOverridePalette: _resolveThemeOverridePalette(
-          StrategySource.cloud,
-          strategyId,
-        ),
+        holding: holding ?? ref.read(editorHeldEntitiesProvider)!,
+        themeProfileId: preservedMetadata != null
+            ? preservedMetadata.theme.profileId
+            : _resolveThemeProfileId(StrategySource.cloud, strategyId),
+        themeOverridePalette: preservedMetadata != null
+            ? preservedMetadata.theme.overridePalette
+            : _resolveThemeOverridePalette(StrategySource.cloud, strategyId),
+        mapOverride: preservedMetadata?.map,
       );
     } finally {
       state = state.copyWith(isApplyingPage: false);

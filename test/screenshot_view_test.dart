@@ -162,7 +162,7 @@ class _NoopLineUpProvider extends LineUpProvider {
   LineUpState build() => const LineUpState();
 
   @override
-  void fromHive(LineUpGraph graph, {bool samePage = false}) {}
+  void fromHive(LineUpGraph graph) {}
 }
 
 void main() {

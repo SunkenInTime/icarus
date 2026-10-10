@@ -32,6 +32,7 @@ Future<void> applyStrategyEditorPageData(
   ref.read(textProvider.notifier).clearAll();
   ref.read(placedImageProvider.notifier).clearAll();
   ref.read(utilityProvider.notifier).clearAll();
+  ref.read(lineUpProvider.notifier).clearAll();
   if (!preserveHistory) {
     ref.read(actionProvider.notifier).clearActionHistory();
   }
@@ -41,12 +42,7 @@ Future<void> applyStrategyEditorPageData(
   ref.read(textProvider.notifier).fromHive(data.texts);
   ref.read(placedImageProvider.notifier).fromHive(data.images);
   ref.read(utilityProvider.notifier).fromHive(data.utilities);
-  // Only a reload of the page on screen keeps its undo history, and only
-  // that one keeps a placement edit open; fromHive replaces the lineups, so
-  // they are not cleared first.
-  ref
-      .read(lineUpProvider.notifier)
-      .fromHive(data.lineUpGraph, samePage: preserveHistory);
+  ref.read(lineUpProvider.notifier).fromHive(data.lineUpGraph);
   ref
       .read(mapProvider.notifier)
       .fromHive(mapOverride ?? data.map, data.isAttack);

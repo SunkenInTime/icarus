@@ -85,6 +85,14 @@ class EditorPointersNotifier extends Notifier<Map<int, EditorPointerHold>> {
 final editorHeldEntitiesProvider = Provider<Set<String>?>((ref) {
   final holds = ref.watch(editorPointersProvider).values;
   if (holds.any((hold) => !hold.onCanvas)) return null;
+  return ref.watch(editorHeldCanvasItemsProvider);
+});
+
+/// The canvas items the user is in the middle of changing, whatever else is
+/// pressed: the items pressed on the canvas, open text drafts, a lineup
+/// placement's pinned ends, and the lineups a placement edit is moving.
+final editorHeldCanvasItemsProvider = Provider<Set<String>>((ref) {
+  final holds = ref.watch(editorPointersProvider).values;
   final placement =
       ref.watch(lineUpProvider.select((state) => state.placement));
   // The edit's lineups stay the same while its ends move, so a drag does not

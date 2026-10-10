@@ -1048,32 +1048,25 @@ class LineUpProvider extends Notifier<LineUpState> {
   void startEdit(String linkId) {
     final start = state.linkById(linkId);
     if (start == null) return;
-    state = state.copyWith(edit: _editOf([start], within: state));
-  }
-
-  /// An edit of [links] and every lineup in [within] joined to them through
-  /// a shared origin or landing, with nothing moved yet.
-  static LineUpPlacementEdit _editOf(
-    Iterable<LineUpLink> links, {
-    required LineUpState within,
-  }) {
     final linkIds = <String>{};
     final originIds = <String>{};
     final landingIds = <String>{};
-    final pending = [...links];
+    final pending = [start];
     while (pending.isNotEmpty) {
       final link = pending.removeLast();
       if (!linkIds.add(link.id)) continue;
       originIds.add(link.originId);
       landingIds.add(link.landingId);
-      pending.addAll(within.links.where((other) =>
+      pending.addAll(state.links.where((other) =>
           other.originId == link.originId ||
           other.landingId == link.landingId));
     }
-    return LineUpPlacementEdit(
-      linkIds: linkIds,
-      originIds: originIds,
-      landingIds: landingIds,
+    state = state.copyWith(
+      edit: LineUpPlacementEdit(
+        linkIds: linkIds,
+        originIds: originIds,
+        landingIds: landingIds,
+      ),
     );
   }
 
@@ -1574,88 +1567,19 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   // --- Lifecycle and serialization -----------------------------------------
 
-  /// Replaces the page's lineups. A placement edit ends with them unless
-  /// [graph] is a newer copy of the same page, say after a cloud conflict
-  /// was resolved: its ids may name lineups a copied page shares, and saving
-  /// it there would move the wrong page's lineups.
-  ///
-  /// On the same page the edit stays open on whichever of its lineups are
-  /// still there, joined to any that now share their spots. A drag stays
-  /// while the newer copy has its end where the drag started; an end the
-  /// newer copy moved or removed shows the newer copy, and the user is told.
-  void fromHive(LineUpGraph graph, {bool samePage = false}) {
-    final before = state;
+  /// Replaces the page's lineups. A placement edit ends with them: its ids
+  /// may name lineups a copied page shares, and saving it there would move
+  /// the wrong page's lineups.
+  void fromHive(LineUpGraph graph) {
     final copy = graph.deepCopy();
-    final loaded = before.copyWith(
+    final droppedMoves = state.editMovesAnything;
+    state = state.copyWith(
       origins: copy.origins,
       landings: copy.landings,
       links: copy.links,
       edit: null,
     );
-    // Set once, so nothing watching sees the edit end on the way.
-    final (edit, lost) = samePage
-        ? _reopenEdit(before, loaded)
-        : (
-            null,
-            before.editMovesAnything
-                ? 'The page changed, so the placement edit closed without '
-                    'saving.'
-                : null,
-          );
-    state = loaded.copyWith(edit: edit);
-    if (lost != null) _toastDroppedEdit(lost);
-  }
-
-  /// [before]'s placement edit on [loaded], a newer copy of the same page
-  /// (see [fromHive]), and what to tell the user if drags were lost.
-  static (LineUpPlacementEdit?, String?) _reopenEdit(
-    LineUpState before,
-    LineUpState loaded,
-  ) {
-    final edit = before.edit;
-    if (edit == null) return (null, null);
-    final survivors = edit.linkIds.map(loaded.linkById).nonNulls;
-    if (survivors.isEmpty) {
-      return (
-        null,
-        before.editMovesAnything
-            ? 'The lineups you were moving are no longer on this page, so '
-                'the placement edit closed without saving.'
-            : null,
-      );
-    }
-    final reopened = _editOf(survivors, within: loaded);
-    var dropped = false;
-    Map<String, Offset> keptDrags(
-      Map<String, Offset> drags,
-      Set<String> ids,
-      Offset? Function(LineUpState state, String id) positionOf,
-    ) {
-      final kept = <String, Offset>{};
-      for (final MapEntry(key: id, value: draft) in drags.entries) {
-        final was = positionOf(before, id);
-        if (was == null || was == draft) continue;
-        if (ids.contains(id) && positionOf(loaded, id) == was) {
-          kept[id] = draft;
-        } else {
-          dropped = true;
-        }
-      }
-      return kept;
-    }
-
-    return (
-      reopened.copyWith(
-        movedOrigins: keptDrags(edit.movedOrigins, reopened.originIds,
-            (state, id) => state.originById(id)?.agent.position),
-        movedLandings: keptDrags(edit.movedLandings, reopened.landingIds,
-            (state, id) => state.landingById(id)?.ability.position),
-      ),
-      dropped
-          ? "The cloud's version changed a spot you dragged, so that drag "
-              'was undone.'
-          : null,
-    );
+    if (droppedMoves) _toastDroppedEdit();
   }
 
   /// Takes [graph] as the server's lineups merged with the ones the user
@@ -1705,15 +1629,13 @@ class LineUpProvider extends Notifier<LineUpState> {
   void clearAll() {
     final droppedMoves = state.editMovesAnything;
     state = state.copyWith(origins: [], landings: [], links: [], edit: null);
-    if (droppedMoves) {
-      _toastDroppedEdit('The page changed, so the placement edit closed '
-          'without saving.');
-    }
+    if (droppedMoves) _toastDroppedEdit();
   }
 
-  void _toastDroppedEdit(String message) {
+  void _toastDroppedEdit() {
     Settings.showToast(
-      message: message,
+      message: 'The page changed, so the placement edit closed without '
+          'saving.',
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   }
