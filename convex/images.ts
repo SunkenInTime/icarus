@@ -7,7 +7,6 @@ import {
   isAssetReferenced,
 } from "./lib/assetReferences";
 import {
-  copyActiveAssetToStrategy,
   getActiveAssetForStrategy,
   inferFileExtension,
   getViewerAssetForStrategy,
@@ -24,7 +23,6 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
-  mutation,
   query,
   type MutationCtx,
   type QueryCtx,
@@ -382,87 +380,6 @@ export const createR2UploadIntent = internalMutation({
       objectKey: args.objectKey,
       issuedAt: now,
     };
-  },
-});
-
-/// Gives image `targetAssetPublicId` the picture the strategy already shows
-/// as `sourceAssetPublicId`, for a placed image copied to another page: a
-/// placed image's id is also its image's id, so the copy needs a row of its
-/// own. The row points at the same stored bytes, as a duplicated strategy's
-/// images do (`copyActiveAssetToStrategy`), so nothing is uploaded twice.
-///
-/// The copy's content may reach the server first and leave a placeholder;
-/// the copied row replaces it, as it replaces a failed upload's. Copying
-/// again is harmless. "uploading" means an upload is still on its way (the
-/// source's, so there is nothing to copy yet, or one under the target's id);
-/// "unavailable" means the strategy cannot show the source either.
-///
-/// The row is not swept on a timer: the copy's content may wait in a
-/// device's outbox for days and still needs it. It goes as any image does,
-/// once content that showed it is purged, or with the strategy; a copy whose
-/// content never arrives keeps its row until then.
-export const copyAsset = mutation({
-  args: {
-    ...cloudProtocolArgs,
-    strategyPublicId: v.string(),
-    sourceAssetPublicId: v.string(),
-    targetAssetPublicId: v.string(),
-  },
-  returns: v.union(
-    v.literal("copied"),
-    v.literal("uploading"),
-    v.literal("unavailable"),
-  ),
-  handler: async (ctx, args) => {
-    assertSupportedCloudProtocol(args.clientProtocolVersion);
-    if (args.sourceAssetPublicId === args.targetAssetPublicId) {
-      throw invalidPayloadError("An image cannot be copied onto itself.");
-    }
-    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    const { user } = await assertStrategyRole(ctx, strategy, "editor");
-
-    const target = await getViewerAssetForStrategy(
-      ctx,
-      strategy._id,
-      args.targetAssetPublicId,
-    );
-    if (target !== null && !isUploadPlaceholder(target)) {
-      const status = inferUploadStatus(target);
-      if (status === "active") {
-        // Copied before, or another image entirely: only a row with the
-        // source's bytes is this copy.
-        const source = await getActiveAssetForStrategy(
-          ctx,
-          strategy._id,
-          args.sourceAssetPublicId,
-        );
-        if (
-          source !== null &&
-          (source.objectKey !== target.objectKey ||
-            source.storageId !== target.storageId)
-        ) {
-          throw conflictError("That image id already shows another image.");
-        }
-        return "copied";
-      }
-      if (status === "pending") return "uploading";
-      // A failed upload under the target's id: the copied row, being newer,
-      // is the one readers see, and the stale-upload sweep removes the
-      // failed one.
-    }
-    const copied = await copyActiveAssetToStrategy(ctx, {
-      sourceStrategyId: strategy._id,
-      sourceAssetPublicId: args.sourceAssetPublicId,
-      targetStrategyId: strategy._id,
-      targetAssetPublicId: args.targetAssetPublicId,
-      userId: user._id,
-      now: Date.now(),
-    });
-    if (copied !== "copied") return copied;
-    if (target !== null && isUploadPlaceholder(target)) {
-      await ctx.db.delete(target._id);
-    }
-    return copied;
   },
 });
 

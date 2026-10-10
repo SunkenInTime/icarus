@@ -221,25 +221,6 @@ enum ImagesCompleteUploadArgsProvider {
   }
 }
 
-enum ImagesCopyAssetResult {
-  copied('copied'),
-  unavailable('unavailable'),
-  uploading('uploading');
-
-  const ImagesCopyAssetResult(this.wireName);
-  final String wireName;
-
-  static ImagesCopyAssetResult fromWireName(String wireName, String path) {
-    for (final value in values) {
-      if (value.wireName == wireName) return value;
-    }
-    throw ConvexDecodingException(
-      path,
-      'unknown ImagesCopyAssetResult $wireName',
-    );
-  }
-}
-
 enum ImagesGenerateUploadUrlResultProvider {
   r2('r2');
 
@@ -5428,27 +5409,6 @@ ImagesCompleteUploadResult decodeImagesCompleteUploadResult(
   value,
   'images.js:completeUpload.returns',
 );
-
-ConvexObject encodeImagesCopyAssetArgs({
-  required double clientProtocolVersion,
-  required String sourceAssetPublicId,
-  required String strategyPublicId,
-  required String targetAssetPublicId,
-}) => ConvexObject({
-  'clientProtocolVersion': _encodeNumber(
-    clientProtocolVersion,
-    'images.js:copyAsset.args.clientProtocolVersion',
-  ),
-  'sourceAssetPublicId': ConvexString(sourceAssetPublicId),
-  'strategyPublicId': ConvexString(strategyPublicId),
-  'targetAssetPublicId': ConvexString(targetAssetPublicId),
-});
-
-ImagesCopyAssetResult decodeImagesCopyAssetResult(ConvexValue value) =>
-    ImagesCopyAssetResult.fromWireName(
-      _decodeString(value, 'images.js:copyAsset.returns'),
-      'images.js:copyAsset.returns',
-    );
 
 ConvexObject encodeImagesDeleteAssetRefArgs({
   required String assetPublicId,
