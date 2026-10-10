@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/collab/field_merge.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 
 Map<String, dynamic> _element(String kind, Map<String, dynamic> data,
         {int payloadVersion = 1}) =>
@@ -260,6 +262,82 @@ void main() {
       final legacy = Map<String, dynamic>.from(patch.toConvexJson())
         ..remove('merge');
       expect(StrategyOp.fromJson(legacy).merge, isNull);
+    });
+  });
+
+  group('review round 1', () {
+    test('a field one side lacks and the other holds as null is unchanged', () {
+      final before = _agent();
+      final after = _agent({'visionElevation': null});
+      expect(elementMergeFields(before, after), isEmpty);
+    });
+
+    test("a utility's groups follow its type", () {
+      Map<String, dynamic> utility(String type,
+              [Map<String, dynamic> more = const {}]) =>
+          _element('utility', {
+            'id': 'u',
+            'elementType': 'utility',
+            'type': type,
+            'position': {'dx': 0.0, 'dy': 0.0},
+            'rotation': 0.0,
+            'length': 1.0,
+            'customWidth': 2.0,
+            'customLength': 3.0,
+            ...more,
+          });
+      // Moving a view cone leaves its rotation to whoever turns it.
+      expect(
+        elementMergeFields(
+            utility('viewCone90'),
+            utility('viewCone90', {
+              'position': {'dx': 5.0, 'dy': 5.0}
+            })),
+        ['position'],
+      );
+      // A custom rectangle's resize moves it about its rotation.
+      expect(
+        elementMergeFields(utility('customRectangle'),
+            utility('customRectangle', {'customWidth': 4.0})),
+        ['customLength', 'customWidth', 'position', 'rotation'],
+      );
+    });
+
+    test('an outbox record of merged work is one older builds skip', () {
+      DurableOutboxRecord record(StrategyOp op) => DurableOutboxRecord(
+            accountId: 'a',
+            strategyPublicId: 's',
+            entityKey: EntitySyncKey.forStrategyOp(op)!,
+            pending: PendingOp(op: op, clientId: 'c'),
+            status: DurableOutboxStatus.queued,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+            latestServerPayload: const {'kind': 'agent'},
+          );
+      final merged = ElementPatchOp(
+        opId: 'op',
+        elementPublicId: 'agent-1',
+        pagePublicId: 'page',
+        payload: _agent(),
+        sortIndex: 0,
+        expectedElementRevision: 1,
+        merge: const FieldMerge(fields: ['isAlly'], base: {'isAlly': true}),
+      );
+      final whole = ElementPatchOp(
+        opId: 'op',
+        elementPublicId: 'agent-1',
+        pagePublicId: 'page',
+        payload: _agent(),
+        sortIndex: 0,
+        expectedElementRevision: 1,
+      );
+      expect(record(merged).toJson()['outboxVersion'],
+          fieldMergeOutboxRecordVersion);
+      expect(
+          record(whole).toJson()['outboxVersion'], durableOutboxRecordVersion);
+      final restored = DurableOutboxRecord.fromJson(record(merged).toJson());
+      expect(restored.pending.op.merge, merged.merge);
+      expect(restored.latestServerPayload, {'kind': 'agent'});
     });
   });
 }

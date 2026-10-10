@@ -253,7 +253,7 @@ void main() {
 
     test('unknown future outbox records fail closed instead of converting', () {
       final future = record(status: DurableOutboxStatus.queued).toJson()
-        ..['outboxVersion'] = durableOutboxRecordVersion + 1;
+        ..['outboxVersion'] = fieldMergeOutboxRecordVersion + 1;
 
       expect(
         () => DurableOutboxRecord.fromJson(future),
@@ -3724,8 +3724,9 @@ void main() {
       );
     });
 
-    test('Keep mine after a field collision sends the merge without its base',
-        () async {
+    test(
+        "Keep mine after a field collision checks against the server's "
+        'value, not the old base', () async {
       final online = StateProvider<bool>((ref) => false);
       final repository =
           _ScriptedRepository(refusals: [OpRejectionReason.fieldConflict]);
@@ -3740,9 +3741,10 @@ void main() {
       await notifier.retryRejected(flushImmediately: false);
       await notifier.flushNow();
 
+      // A teammate changing it again after the refusal would still ask.
       final kept = repository.calls.last.single;
       expect(kept.merge?.fields, ['isAlly']);
-      expect(kept.merge?.base, isNull);
+      expect(kept.merge?.base, {'isAlly': 'theirs'});
       expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
           isEmpty);
     });
@@ -3797,6 +3799,109 @@ void main() {
       final promoted = store.load().records.single.pending.op;
       expect(promoted.merge?.base, {'isAlly': false});
       expect(promoted.expectedRevision, 2);
+    });
+
+    test('a change set back while the first send is on its way is sent back',
+        () async {
+      final online = StateProvider<bool>((ref) => true);
+      final gate = Completer<void>();
+      final repository = _ScriptedRepository(hold: gate);
+      final store = MemoryDurableStrategyOutboxStore();
+      final (_, notifier) = open(store, repository, online);
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      final sending = notifier.flushNow();
+      await repository.started.future;
+      // Set back to what the user first saw: against that, nothing changed.
+      await notifier.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: patch('op-2', isAlly: true).payload,
+          sortIndex: 0,
+          expectedElementRevision: 1,
+          merge: const FieldMerge(fields: [], base: {}),
+        ),
+        flushImmediately: false,
+      );
+      gate.complete();
+      await sending;
+      await notifier.flushNow();
+      for (var i = 0; i < 50 && repository.calls.length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      // The server holds the first send's value now, so it is named again.
+      final setBack = repository.calls.last.single;
+      expect(setBack.merge?.fields, ['isAlly']);
+      expect(((setBack.payload as Map)['data'] as Map)['isAlly'], isTrue);
+    });
+
+    test(
+        'work made offline stays checked though it is queued after reconnecting',
+        () async {
+      final online = StateProvider<bool>((ref) => false);
+      final gate = Completer<void>();
+      final store = _GatedPutStore(gate);
+      final repository = _ScriptedRepository();
+      final (container, notifier) = open(store, repository, online);
+
+      // Made offline; its write waits behind the store.
+      final queued = notifier.enqueue(patch('op-1'), flushImmediately: false);
+      container.read(online.notifier).state = true;
+      await Future<void>.delayed(Duration.zero);
+      gate.complete();
+      await queued;
+      await notifier.flushNow();
+
+      expect(repository.calls.single.single.merge?.base, {'isAlly': true});
+    });
+
+    test(
+        "a promoted successor's base comes only from what its predecessor wrote",
+        () async {
+      final online = StateProvider<bool>((ref) => false);
+      final store = MemoryDurableStrategyOutboxStore();
+      final gate = Completer<void>();
+      final repository = _ScriptedRepository(hold: gate);
+      final (container, notifier) = open(store, repository, online);
+      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      container.read(online.notifier).state = true;
+      final sending = notifier.flushNow();
+      await repository.started.future;
+      // The successor also restacks the item and changes a field the
+      // predecessor did not write, whose base was absent.
+      await notifier.enqueue(
+        ElementPatchOp(
+          opId: 'op-2',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {
+            'kind': 'agent',
+            'payloadVersion': 1,
+            'data': {
+              'id': 'element-1',
+              'isAlly': false,
+              'weapon': 'vandal',
+            },
+          },
+          sortIndex: 4,
+          expectedElementRevision: 1,
+          merge: const FieldMerge(
+            fields: ['isAlly', 'weapon', placeMergeField],
+            base: {'isAlly': true, placeMergeField: 0},
+          ),
+        ),
+        flushImmediately: false,
+      );
+      gate.complete();
+      await sending;
+
+      final promoted = store.load().records.single.pending.op;
+      expect(promoted.merge?.fields, ['weapon', placeMergeField]);
+      // The place from the predecessor's own sort index; the weapon still
+      // absent, as the server has it.
+      expect(promoted.merge?.base, {placeMergeField: 0});
     });
   });
 }
@@ -4342,10 +4447,30 @@ class _ScriptedRepository extends ConvexStrategyRepository {
           RejectedOpAck(
             opId: op.opId,
             rejectionReason: _refusals.removeAt(0),
-            current: ElementCurrentSnapshot(revision: 5, value: const {}),
+            current: ElementCurrentSnapshot(
+              revision: 5,
+              value: const {
+                'kind': 'agent',
+                'payloadVersion': 1,
+                'data': {'id': 'element-1', 'isAlly': 'theirs'},
+              },
+            ),
           )
         else
           AppliedOpAck(opId: op.opId, revision: 2),
     ];
+  }
+}
+
+/// Holds every write until [gate] completes.
+class _GatedPutStore extends MemoryDurableStrategyOutboxStore {
+  _GatedPutStore(this.gate);
+
+  final Completer<void> gate;
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    await gate.future;
+    await super.put(record);
   }
 }

@@ -7183,14 +7183,15 @@ void main() {
         expect(lineupsIn(server.liveRows),
             ['Heaven: theirs', 'Mid: remote lineup']);
 
-        // Keep mine: the user's lineup wins, as the last write.
+        // Keep mine: the user's lineup wins over the one the server held
+        // when it refused, which is now the base a later change must keep.
         final opQueue = container.read(strategyOpQueueProvider.notifier);
         await opQueue.retryRejected(flushImmediately: false);
         await opQueue.flushNow();
         await drained(container);
         final kept = sentFor(batches, key).last as LineupPatchOp;
         expect(kept.merge?.fields, ['links/link-a']);
-        expect(kept.merge?.base, isNull);
+        expect((kept.merge?.base?['links/link-a'] as Map?)?['notes'], 'theirs');
         expect(queueState().attentionByEntityKey, isEmpty);
         expect(
             lineupsIn(server.liveRows), ['Heaven: mine', 'Mid: remote lineup']);
@@ -7302,6 +7303,73 @@ void main() {
       await _until(() => positionOf('text-a') == const Offset(90, 90));
       expect(positionOf('text-b'), moved);
       expect(lost, isFalse);
+    });
+
+    test(
+        'an edit made while a merged edit waits to be read again still '
+        'merges', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId, elements: [
+        _textElement(page.publicId, 'text-a', 'a', worldSized: true),
+        _textElement(page.publicId, 'text-b', 'b',
+            worldSized: true, sortIndex: 1),
+      ])
+        ..mergesByField = true;
+      final (container, batches) = await openOnRealQueue(page,
+          themeProfileId: 'immutable-default-map-theme');
+      final key = EntitySyncKey.element(page.publicId, 'text-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // A teammate's change to text A waits behind the user's open draft.
+      container.read(textDraftProvider.notifier).setDraft('text-a', 'a');
+      server.teammateEditElement(
+          'text-a', (data) => data['position'] = {'dx': 90.0, 'dy': 90.0});
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      // The user moves text B; while that is on its way, a teammate
+      // rewords it, and the move merges in beside the new words.
+      final hold = repository.hold = Completer<void>();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'text-b');
+      await _until(() => batches.isNotEmpty);
+      server.teammateEditElement('text-b', (data) => data['text'] = 'theirs');
+      container.read(textDraftProvider.notifier).clearDraft('text-a');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      final gate = liveRead.refreshGate = Completer<void>();
+      repository.hold = null;
+      hold.complete();
+      for (var i = 0; i < 20; i++) {
+        await _settle();
+      }
+
+      // Before the page is read again, the user moves it once more.
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(320, 320), 'text-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      gate.complete();
+      await _until(
+          () => container.read(strategyOpQueueProvider).pending.isEmpty);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // Both moves merged; the teammate's words stand.
+      // (A text's position moves with its size.)
+      expect(sentFor(batches, key).map((op) => op.merge?.fields),
+          everyElement(['fontSize', 'position', 'size', 'sizeVersion']));
+      final data = server.element('text-b').payload['data'] as Map;
+      expect(data['text'], 'theirs');
+      expect(data['position'], {'dx': 320.0, 'dy': 320.0});
     });
 
     /// The fan-in group is on the server and on screen; a teammate's notes

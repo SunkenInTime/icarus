@@ -85,36 +85,42 @@ const placeMergeField = '@sortIndex';
 /// server falls back the same way).
 const _elementIdentityKeys = {'id', 'elementType', 'kind', 'type', 'data'};
 
-/// Keys of an element's data that only make sense together, by payload
-/// kind: when any of a group changes, the merge names all of them, so a
-/// teammate's half of the group never mixes with this edit's.
-const _elementFieldGroups = <String, List<Set<String>>>{
-  'agent': [
-    {'rotation', 'length'},
-  ],
-  'ability': [
-    {'rotation', 'length'},
-  ],
-  'drawing': [
-    {
-      'listOfPoints',
-      'lineStart',
-      'lineEnd',
-      'start',
-      'end',
-      'boundingBox',
-    },
-  ],
-  'text': [
-    {'position', 'size', 'fontSize', 'sizeVersion'},
-  ],
-  'image': [
-    {'position', 'scale', 'sizeVersion'},
-  ],
-  'utility': [
-    {'position', 'rotation', 'length', 'customWidth', 'customLength'},
-  ],
-};
+/// Keys of an element's data that only make sense together, for a payload
+/// of [kind] holding [data]: when any of a group changes, the merge names
+/// all of them, so a teammate's half of the group never mixes with this
+/// edit's.
+List<Set<String>> _fieldGroups(Object? kind, Map<String, Object?> data) =>
+    switch (kind) {
+      // A view cone's handle sets its rotation and length together.
+      'agent' || 'ability' => const [
+          {'rotation', 'length'},
+        ],
+      'drawing' => const [
+          {
+            'listOfPoints',
+            'lineStart',
+            'lineEnd',
+            'start',
+            'end',
+            'boundingBox',
+          },
+        ],
+      // Resizing from the defending side moves the box as it scales it.
+      'text' => const [
+          {'position', 'size', 'fontSize', 'sizeVersion'},
+        ],
+      'image' => const [
+          {'position', 'scale', 'sizeVersion'},
+        ],
+      // A custom rectangle resizes about its rotation, moving as it does.
+      'utility' when data['type'] == 'customRectangle' => const [
+          {'position', 'rotation', 'customWidth', 'customLength'},
+        ],
+      'utility' => const [
+          {'rotation', 'length'},
+        ],
+      _ => const [],
+    };
 
 Map<String, Object?>? _dataOf(Object? payload) {
   if (payload is! Map) return null;
@@ -122,12 +128,15 @@ Map<String, Object?>? _dataOf(Object? payload) {
   return data is Map ? Map<String, Object?>.from(data) : null;
 }
 
-/// Whether two maps agree on [key]: both lack it, or both hold equal values.
+/// Whether two maps agree on [key]. A key one lacks and the other holds as
+/// null agree: models write their unset optional fields as null, so an older
+/// payload that lacks one reads back with it, though nobody set it.
 bool _sameKey(
-    Map<String, Object?> left, Map<String, Object?> right, String key) {
-  if (left.containsKey(key) != right.containsKey(key)) return false;
-  return cloudJsonEquivalent(left[key], right[key]);
-}
+  Map<String, Object?> left,
+  Map<String, Object?> right,
+  String key,
+) =>
+    cloudJsonEquivalent(left[key], right[key]);
 
 /// The fields of an element's data that [desired] changes from [base]
 /// (both cloud payloads), with every field it moves together, or null when
@@ -158,7 +167,7 @@ List<String>? elementMergeFields(
     for (final key in {...baseData.keys, ...desiredData.keys})
       if (!_sameKey(baseData, desiredData, key)) key,
   };
-  for (final group in _elementFieldGroups[desired['kind']] ?? const []) {
+  for (final group in _fieldGroups(desired['kind'], desiredData)) {
     if (changed.any(group.contains)) {
       changed.addAll(group.where(
         (key) => baseData.containsKey(key) || desiredData.containsKey(key),

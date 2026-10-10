@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:math' show max;
+import 'dart:math' show max, min;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
@@ -238,7 +238,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         sortIndex: serverSortIndex ?? drawnBase.sortIndex,
         revision: drawnBase.revision,
         deleted: drawnBase.deleted,
+        claimableRevision: drawnBase.claimableRevision,
       );
+    }
+    // A base never goes back to an older revision: a page read before this
+    // client's own edit landed must not undo the base that edit set.
+    for (final MapEntry(:key, value: base)
+        in _hydratedBaseByEntityKey.entries) {
+      if (key.pageId != pageId) continue;
+      final remote = remoteEntities[key];
+      if (remote != null && remote.revision < base.revision) {
+        remoteEntities[key] = base;
+      }
     }
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
     _hydratedBaseByEntityKey.addAll(remoteEntities);
@@ -344,7 +355,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         landedRevisions[key] ?? 0,
       );
       final row = remote[key];
-      return row == null || row.revision >= landedAt;
+      // An added row the page read does not hold yet waits for it, as an
+      // edit waits for its revision.
+      if (row == null) return overlay.deletion || landedAt == 0;
+      return row.revision >= landedAt;
     }
 
     final overlays = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
@@ -396,12 +410,19 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       if (revision == null) {
         continue;
       }
-      final accepted = _normalizedAcceptedEntity(
+      final normalized = _normalizedAcceptedEntity(
         key: key,
         op: intent.op,
         revision: revision,
       );
-      if (accepted == null) continue;
+      if (normalized == null) continue;
+      // A merge landed onto whatever the row held, which this client may
+      // not have drawn: a whole write still claims only the revision before.
+      final accepted = intent.op.merge == null
+          ? normalized
+          : normalized.withClaimableRevision(
+              _hydratedBaseByEntityKey[key]?.claimableRevision ?? revision - 1,
+            );
 
       // The user's newer edit to it, if any, follows the op onto this
       // revision, as the queue's successor does.
@@ -1261,13 +1282,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
                 overlay,
                 payload,
                 lineup: false,
-                build: (merge, sortIndex) => ElementPatchOp(
+                build: (merge, sortIndex, expectedRevision) => ElementPatchOp(
                   opId: const Uuid().v4(),
                   elementPublicId: entityId,
                   pagePublicId: pageId,
                   payload: payload,
                   sortIndex: sortIndex,
-                  expectedElementRevision: overlay.baseRevision!,
+                  expectedElementRevision: expectedRevision,
                   merge: merge,
                 ),
               );
@@ -1299,13 +1320,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
                 overlay,
                 payload,
                 lineup: true,
-                build: (merge, sortIndex) => LineupPatchOp(
+                build: (merge, sortIndex, expectedRevision) => LineupPatchOp(
                   opId: const Uuid().v4(),
                   lineupPublicId: entityId,
                   pagePublicId: pageId,
                   payload: payload,
                   sortIndex: sortIndex,
-                  expectedLineupRevision: overlay.baseRevision!,
+                  expectedLineupRevision: expectedRevision,
                   merge: merge,
                 ),
               );
@@ -1323,7 +1344,11 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     ActivePageOverlayEntry overlay,
     Object payload, {
     required bool lineup,
-    required StrategyOp Function(FieldMerge? merge, int? sortIndex) build,
+    required StrategyOp Function(
+      FieldMerge? merge,
+      int? sortIndex,
+      int expectedRevision,
+    ) build,
   }) {
     final base = _hydratedBaseByEntityKey[overlay.entityKey];
     final fields =
@@ -1335,7 +1360,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
                 : elementMergeFields(base.payload, payload,
                     normalize: _withFieldDefaults);
     if (base == null || fields == null) {
-      return build(null, overlay.desiredSortIndex);
+      // A whole write claims no newer revision than the one at which the
+      // server held exactly what this client drew.
+      final claimable = base == null
+          ? overlay.baseRevision!
+          : min(overlay.baseRevision!, base.claimableRevision);
+      return build(null, overlay.desiredSortIndex, claimable);
     }
     final moved = overlay.desiredSortIndex != null &&
         overlay.desiredSortIndex != base.sortIndex;
@@ -1348,6 +1378,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         },
       ),
       overlay.desiredSortIndex,
+      overlay.baseRevision!,
     );
   }
 
@@ -1470,7 +1501,8 @@ class _NormalizedEntity {
     required this.sortIndex,
     required this.revision,
     required this.deleted,
-  });
+    int? claimableRevision,
+  }) : _claimableRevision = claimableRevision;
 
   final EntitySyncKey key;
   final ActivePageOverlayEntityType overlayEntityType;
@@ -1478,6 +1510,23 @@ class _NormalizedEntity {
   final int? sortIndex;
   final int revision;
   final bool deleted;
+  final int? _claimableRevision;
+
+  /// The revision at which the server held exactly [payload]: what a whole,
+  /// revision-checked write from it may claim. Behind [revision] once a
+  /// merge from this client landed, since the server then also holds a
+  /// teammate's fields that [payload] (what this client sent) lacks.
+  int get claimableRevision => _claimableRevision ?? revision;
+
+  _NormalizedEntity withClaimableRevision(int claimable) => _NormalizedEntity(
+        key: key,
+        overlayEntityType: overlayEntityType,
+        payload: payload,
+        sortIndex: sortIndex,
+        revision: revision,
+        deleted: deleted,
+        claimableRevision: claimable,
+      );
 }
 
 class _CollabElementEnvelope {
