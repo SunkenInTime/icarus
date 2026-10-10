@@ -185,19 +185,30 @@ export async function getActiveAssetForStrategy(
     return strategyAsset;
   }
 
-  // Rows from before upload statuses, this strategy's then those of no
-  // strategy. Each is read on its own: copies into other strategies keep
-  // their pictures' ids, so a read of every strategy's rows could fill its
-  // limit with theirs.
-  for (const owner of [strategyId, undefined]) {
-    const legacyCandidates = await ctx.db
+  // The other rows that can still show the picture: this strategy's from
+  // before upload statuses, then rows of no strategy, active or from before
+  // statuses. Each set is read from its own index range, so neither copies
+  // in other strategies (which keep pictures' ids) nor failed upload
+  // attempts can crowd it out. Five each, with the active row and an upload
+  // placeholder, stays within the 22 rows a copy's budget charges for
+  // (convex/lib/contentCopy.ts).
+  const ranges = [
+    [strategyId, undefined],
+    [undefined, "active"],
+    [undefined, undefined],
+  ] as const;
+  for (const [owner, uploadStatus] of ranges) {
+    const candidates = await ctx.db
       .query("imageAssets")
-      .withIndex("by_strategyId_and_publicId", (q) =>
-        q.eq("strategyId", owner).eq("publicId", assetPublicId),
+      .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+        q
+          .eq("strategyId", owner)
+          .eq("publicId", assetPublicId)
+          .eq("uploadStatus", uploadStatus),
       )
       .order("desc")
-      .take(20);
-    const visible = legacyCandidates.find(isVisibleAsset);
+      .take(5);
+    const visible = candidates.find(isVisibleAsset);
     if (visible !== undefined) return visible;
   }
   return null;
