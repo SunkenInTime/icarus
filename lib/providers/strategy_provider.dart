@@ -79,14 +79,9 @@ enum PageCopyResult {
 }
 
 /// What a new cloud page may lack, and whether it has reached the cloud
-/// yet (see StrategyProvider.addPage): images whose uploads hadn't
-/// finished, which the server leaves out of its copy, and edits to the page
-/// the server refused, which it never had.
-typedef NewPageGaps = ({
-  int imagesUploading,
-  bool unsavedEdits,
-  bool waitingForCloud,
-});
+/// yet (see StrategyProvider.addPage): edits to the page it copies that
+/// the server refused, which its copy never had.
+typedef NewPageGaps = ({bool unsavedEdits, bool waitingForCloud});
 
 class StrategyProvider extends Notifier<StrategyState> {
   @override
@@ -435,25 +430,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       deadline.cancel();
       subscription.close();
     }
-  }
-
-  /// Images on the page on screen whose uploads haven't finished, as far
-  /// as this device knows: the server's, or this device's own, still on
-  /// their way.
-  int _imagesStillUploading(String strategyId) {
-    final assets =
-        ref.read(remoteEditorSnapshotProvider).valueOrNull?.assetsById ??
-            const <String, RemoteImageAsset>{};
-    final uploads =
-        ref.read(cloudMediaUploadQueueProvider).jobsForStrategy(strategyId);
-    return ref.read(placedImageProvider).images.where((image) {
-      final status = assets[image.id]?.uploadStatus;
-      if (status == 'active') return false;
-      return status == 'pending' ||
-          uploads.any((job) =>
-              job.assetPublicId == image.id &&
-              job.state != CloudMediaJobState.failed);
-    }).length;
   }
 
   Future<OpAck?> _enqueueCloudPageDescriptorOp(StrategyOp op) async {
@@ -1542,11 +1518,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// copy may lack, or that it hasn't landed yet, is returned for the
   /// caller to say.
   Future<NewPageGaps> addPage([String? name]) async {
-    const none = (
-      imagesUploading: 0,
-      unsavedEdits: false,
-      waitingForCloud: false,
-    );
+    const none = (unsavedEdits: false, waitingForCloud: false);
     if (!_currentStrategyCanEditPages()) return none;
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
@@ -1569,20 +1541,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (state.strategyId != strategyId) return none;
       // Edits to the page the server refused: the copy, made from the
       // server's page, doesn't have them.
-      bool sourceEditsRefused() => ref
-          .read(strategyOpQueueProvider)
-          .attentionByEntityKey
-          .keys
-          .any((key) => key.pageId == sourcePageId);
-      // What the copy may lack is known now, from what the page on screen
-      // holds: the server copies the page as it has it.
-      final gaps = activeIndex < 0
-          ? none
-          : (
-              imagesUploading: _imagesStillUploading(strategyId),
-              unsavedEdits: sourceEditsRefused(),
-              waitingForCloud: false,
-            );
+      bool sourceEditsRefused() =>
+          activeIndex >= 0 &&
+          ref
+              .read(strategyOpQueueProvider)
+              .attentionByEntityKey
+              .keys
+              .any((key) => key.pageId == sourcePageId);
+      final refusedBefore = sourceEditsRefused();
       final answer = await _sendAndAwaitAnswer(
         PageAddOp(
           opId: const Uuid().v4(),
@@ -1601,19 +1567,16 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
       if (answer == null) {
         // Offline, or behind other work: the page lands later.
-        return (
-          imagesUploading: gaps.imagesUploading,
-          unsavedEdits: gaps.unsavedEdits,
-          waitingForCloud: true,
-        );
+        return (unsavedEdits: refusedBefore, waitingForCloud: true);
       }
       // A refusal waits in the sync panel like any other.
-      if (!answer.isAck || state.strategyId != strategyId) return gaps;
+      if (!answer.isAck || state.strategyId != strategyId) {
+        return (unsavedEdits: refusedBefore, waitingForCloud: false);
+      }
       // Edits sent ahead of the add have their answers too by now, and the
       // server may have refused some of them.
       final landed = (
-        imagesUploading: gaps.imagesUploading,
-        unsavedEdits: activeIndex >= 0 && sourceEditsRefused(),
+        unsavedEdits: sourceEditsRefused(),
         waitingForCloud: false,
       );
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();

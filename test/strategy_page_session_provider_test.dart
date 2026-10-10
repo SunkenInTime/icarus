@@ -1508,8 +1508,8 @@ void main() {
     );
     // This server never answers; "+" stops waiting at once.
     StrategyProvider.cloudPageAddWait = Duration.zero;
-    addTearDown(() =>
-        StrategyProvider.cloudPageAddWait = const Duration(seconds: 5));
+    addTearDown(
+        () => StrategyProvider.cloudPageAddWait = const Duration(seconds: 5));
 
     await container.read(strategyProvider.notifier).addPage('Execute');
 
@@ -1540,7 +1540,8 @@ void main() {
   });
 
   group('"+" on a cloud strategy', () {
-    RemoteElement image(String pageId, String id) => RemoteElement(
+    RemoteElement image(String pageId, String id, {String? assetId}) =>
+        RemoteElement(
           publicId: id,
           strategyPublicId: 'cloud-strategy',
           pagePublicId: pageId,
@@ -1552,6 +1553,7 @@ void main() {
               aspectRatio: 1,
               scale: ImageScalePolicy.defaultWidth,
               fileExtension: '.png',
+              assetId: assetId,
             )),
             'elementType': 'image',
           }),
@@ -1627,19 +1629,24 @@ void main() {
             .whereType<PageAddOp>()
             .firstOrNull;
 
-    tearDown(() => StrategyProvider.cloudPageAddWait =
-        const Duration(seconds: 5));
+    tearDown(
+        () => StrategyProvider.cloudPageAddWait = const Duration(seconds: 5));
 
-    test('turns to the copy the server made, and warns of an image still '
-        'uploading', () async {
+    test('turns to the copy the server made', () async {
       final (container, queue, land) = await open();
       PageAddOp? sent;
       queue.onFlush = () async {
         final add = queuedAdd(queue);
         if (add == null) return queue.ackQueued();
         sent = add;
-        // The server leaves out the image whose upload has not finished.
-        land(add, [image(add.pagePublicId, 'uploaded~cp1~$_copyUuid')]);
+        // The server copies both images, the one still uploading too: each
+        // copy shows its original's picture.
+        land(add, [
+          image(add.pagePublicId, 'uploaded~cp1~$_copyUuid',
+              assetId: 'uploaded'),
+          image(add.pagePublicId, 'uploading~cp1~$_copyUuid',
+              assetId: 'uploading'),
+        ]);
       };
 
       final gaps = await container.read(strategyProvider.notifier).addPage();
@@ -1649,12 +1656,11 @@ void main() {
         container.read(strategyPageSessionProvider).activePageId,
         sent!.pagePublicId,
       );
-      expect(container.read(placedImageProvider).images, hasLength(1));
-      expect(gaps, (
-        imagesUploading: 1,
-        unsavedEdits: false,
-        waitingForCloud: false,
-      ));
+      expect(
+        container.read(placedImageProvider).images.map((i) => i.pictureId),
+        unorderedEquals(['uploaded', 'uploading']),
+      );
+      expect(gaps, (unsavedEdits: false, waitingForCloud: false));
       await _settle();
     });
 
@@ -1688,14 +1694,9 @@ void main() {
 
       final gaps = await container.read(strategyProvider.notifier).addPage();
 
-      // What the copy may lack is said all the same.
-      expect(gaps, (
-        imagesUploading: 1,
-        unsavedEdits: false,
-        waitingForCloud: true,
-      ));
-      expect(container.read(strategyPageSessionProvider).activePageId,
-          'page-1');
+      expect(gaps, (unsavedEdits: false, waitingForCloud: true));
+      expect(
+          container.read(strategyPageSessionProvider).activePageId, 'page-1');
       // The add stays queued, to land later.
       expect(queuedAdd(queue), isNotNull);
       await _settle();
