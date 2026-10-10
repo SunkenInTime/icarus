@@ -19,6 +19,7 @@ import {
   collectReferencedAssetIds,
   getViewerAssetForStrategy,
   serializeAssetForViewer,
+  withPictureAliases,
 } from "./lib/imageAssets";
 import {
   serializeElement,
@@ -81,6 +82,11 @@ export const getFullSnapshot = query({
     // the trash's pages out cannot make them drop one. Older clients are
     // refused while the strategy holds trashed pages (see below).
     acceptsTrashedPagesLeftOut: v.optional(v.boolean()),
+    // Set by clients that keep an image's picture id (assetId, see
+    // collectAssetIdFromElementPayload). Older clients get image payloads
+    // without it, as they would write them, and find pictures under each
+    // image's own id (withPictureAliases).
+    acceptsPictureIds: v.optional(v.boolean()),
   },
   returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {
@@ -146,6 +152,7 @@ export const getFullSnapshot = query({
             strategy.publicId,
             pagePublicIds.get(element.pageId)!,
             element,
+            args.acceptsPictureIds === true,
           ),
         ),
       lineups: visibleLineups
@@ -157,12 +164,13 @@ export const getFullSnapshot = query({
             lineup,
           ),
         ),
-      assets: (
+      assets: withPictureAliases(
         await Promise.all(
           assets
             .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
             .map((asset) => serializeAssetForViewer(ctx, asset)),
-        )
+        ),
+        visibleElements,
       ).sort((left, right) => left.publicId.localeCompare(right.publicId)),
     };
   },

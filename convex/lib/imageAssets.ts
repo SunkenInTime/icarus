@@ -46,10 +46,54 @@ export function inferFileExtension(
   return match?.[1]?.toLowerCase() ?? "";
 }
 
+/// The picture an image element shows: its `assetId` when it has one, else
+/// its own id. A copy of an image is a new element showing its original's
+/// picture, so it needs no picture of its own, and is never waiting on an
+/// upload its original is still making. Only images have an `assetId`.
 export function collectAssetIdFromElementPayload(
   payload: Doc<"elements">["payload"],
 ): string | null {
-  return typeof payload.data.id === "string" ? payload.data.id : null;
+  const { assetId, id } = payload.data;
+  if (typeof assetId === "string" && assetId.length > 0) return assetId;
+  return typeof id === "string" ? id : null;
+}
+
+/// [next] keeping the picture [current] shows, when it leaves the picture
+/// out. An image never changes picture, and builds from before pictures had
+/// their own id write an image's whole payload without the field: moving a
+/// copy there must not cut it off from its picture.
+export function keepPictureId(
+  current: Doc<"elements">["payload"],
+  next: Doc<"elements">["payload"],
+): Doc<"elements">["payload"] {
+  const assetId = current.data.assetId;
+  if (typeof assetId !== "string" || "assetId" in next.data) return next;
+  return { ...next, data: { ...next.data, assetId } };
+}
+
+/// [assets] as builds from before pictures had their own id can read them:
+/// they look an image's picture up under the image's own id. Each live image
+/// showing another id's picture gets that picture under its own id too.
+export function withPictureAliases<T extends { publicId: string }>(
+  assets: T[],
+  elements: Doc<"elements">[],
+): T[] {
+  const byId = new Map(assets.map((asset) => [asset.publicId, asset]));
+  const aliases: T[] = [];
+  for (const element of elements) {
+    if (element.deleted || element.elementType !== "image") continue;
+    const id = element.payload.data.id;
+    const pictureId = collectAssetIdFromElementPayload(element.payload);
+    if (typeof id !== "string" || pictureId === null || pictureId === id) {
+      continue;
+    }
+    const picture = byId.get(pictureId);
+    if (picture === undefined || byId.has(id)) continue;
+    const alias = { ...picture, publicId: id };
+    byId.set(id, alias);
+    aliases.push(alias);
+  }
+  return [...assets, ...aliases];
 }
 
 /// The images a lineup group shows: links[*].images[*].id, across every
@@ -141,18 +185,69 @@ export async function getActiveAssetForStrategy(
     return strategyAsset;
   }
 
-  const legacyCandidates = await ctx.db
-    .query("imageAssets")
-    .withIndex("by_publicId", (q) => q.eq("publicId", assetPublicId))
-    .order("desc")
-    .take(20);
-  return (
-    legacyCandidates.find(
-      (asset) =>
-        (asset.strategyId === undefined || asset.strategyId === strategyId) &&
-        isVisibleAsset(asset),
-    ) ?? null
-  );
+  // The other rows that can still show the picture: this strategy's from
+  // before upload statuses, then rows of no strategy, active or from before
+  // statuses. Each set is read from its own index range, so neither copies
+  // in other strategies (which keep pictures' ids) nor failed upload
+  // attempts can crowd it out. Five each, with the active row and an upload
+  // placeholder, stays within the 22 rows a copy's budget charges for
+  // (convex/lib/contentCopy.ts).
+  const ranges = [
+    [strategyId, undefined],
+    [undefined, "active"],
+    [undefined, undefined],
+  ] as const;
+  for (const [owner, uploadStatus] of ranges) {
+    const candidates = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
+        q
+          .eq("strategyId", owner)
+          .eq("publicId", assetPublicId)
+          .eq("uploadStatus", uploadStatus),
+      )
+      .order("desc")
+      .take(5);
+    const visible = candidates.find(isVisibleAsset);
+    if (visible !== undefined) return visible;
+  }
+  return null;
+}
+
+/// The picture image [itemPublicId] of the strategy shows, when the image
+/// shows another's (see collectAssetIdFromElementPayload): builds from
+/// before pictures had their own id ask for a picture by the image's id.
+export async function pictureShownByImage(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  itemPublicId: string,
+): Promise<string | null> {
+  const element = await ctx.db
+    .query("elements")
+    .withIndex("by_publicId", (q) => q.eq("publicId", itemPublicId))
+    .first();
+  if (
+    element === null ||
+    element.deleted ||
+    element.strategyId !== strategyId ||
+    element.elementType !== "image"
+  ) {
+    return null;
+  }
+  const pictureId = collectAssetIdFromElementPayload(element.payload);
+  return pictureId === itemPublicId ? null : pictureId;
+}
+
+/// [payload] as builds from before pictures had their own id hold it: they
+/// keep no `assetId`, so one sent to them reads as a change they made.
+/// They find the picture by the image's own id (withPictureAliases), and a
+/// write of theirs keeps the stored picture (keepPictureId).
+export function withoutPictureId(
+  payload: Doc<"elements">["payload"],
+): Doc<"elements">["payload"] {
+  if (!("assetId" in payload.data)) return payload;
+  const { assetId: _assetId, ...data } = payload.data;
+  return { ...payload, data };
 }
 
 /// A row recording that a strategy's content shows an image whose upload has

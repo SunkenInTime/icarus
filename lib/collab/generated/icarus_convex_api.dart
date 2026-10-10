@@ -725,6 +725,7 @@ final class _LineupsModule implements LineupsModule {
 
 abstract interface class OpsModule {
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
@@ -742,6 +743,7 @@ final class _OpsModule implements OpsModule {
   final ConvexTransport _transport;
   @override
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
@@ -753,6 +755,7 @@ final class _OpsModule implements OpsModule {
     required String strategyPublicId,
   }) {
     final args = encodeOpsApplyBatchArgs(
+      acceptsPictureIds: acceptsPictureIds,
       accountSubject: accountSubject,
       checkLineupEndDeletes: checkLineupEndDeletes,
       checkLineupLinkEnds: checkLineupLinkEnds,
@@ -771,6 +774,7 @@ final class _OpsModule implements OpsModule {
 
 abstract interface class PageModule {
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
@@ -783,12 +787,14 @@ final class _PageModule implements PageModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodePageGetSnapshotArgs(
+      acceptsPictureIds: acceptsPictureIds,
       clientProtocolVersion: clientProtocolVersion,
       pagePublicId: pagePublicId,
       shareToken: shareToken,
@@ -1417,6 +1423,7 @@ final class _StrategiesModule implements StrategiesModule {
 
 abstract interface class StrategyModule {
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
     required double clientProtocolVersion,
@@ -1435,6 +1442,7 @@ final class _StrategyModule implements StrategyModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<StrategyGetFullSnapshotResult> getFullSnapshot({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
     required double clientProtocolVersion,
@@ -1442,6 +1450,7 @@ final class _StrategyModule implements StrategyModule {
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetFullSnapshotArgs(
+      acceptsPictureIds: acceptsPictureIds,
       acceptsTrashedPagesLeftOut: acceptsTrashedPagesLeftOut,
       clientProtocolVersion: clientProtocolVersion,
       shareToken: shareToken,

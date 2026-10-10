@@ -8,6 +8,7 @@ import {
   collectReferencedAssetIds,
   getViewerAssetForStrategy,
   serializeAssetForViewer,
+  withPictureAliases,
 } from "./lib/imageAssets";
 import {
   serializeElement,
@@ -27,6 +28,11 @@ export const getSnapshot = query({
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
     shareToken: v.optional(v.string()),
+    // Set by clients that keep an image's picture id (assetId, see
+    // collectAssetIdFromElementPayload). Older clients get image payloads
+    // without it, as they would write them, and find pictures under each
+    // image's own id (withPictureAliases).
+    acceptsPictureIds: v.optional(v.boolean()),
   },
   returns: pageSnapshotValidator,
   handler: async (ctx, args) => {
@@ -69,19 +75,25 @@ export const getSnapshot = query({
       elements: elements
         .sort((left, right) => left.sortIndex - right.sortIndex)
         .map((element) =>
-          serializeElement(strategy.publicId, page.publicId, element),
+          serializeElement(
+            strategy.publicId,
+            page.publicId,
+            element,
+            args.acceptsPictureIds === true,
+          ),
         ),
       lineups: lineups
         .sort((left, right) => left.sortIndex - right.sortIndex)
         .map((lineup) =>
           serializeLineup(strategy.publicId, page.publicId, lineup),
         ),
-      assets: (
+      assets: withPictureAliases(
         await Promise.all(
           assets
             .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
             .map((asset) => serializeAssetForViewer(ctx, asset)),
-        )
+        ),
+        elements,
       ).sort((left, right) => left.publicId.localeCompare(right.publicId)),
     };
   },

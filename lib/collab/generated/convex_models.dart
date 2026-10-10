@@ -5635,6 +5635,7 @@ List<LineupsListForPageResultItem> decodeLineupsListForStrategyResult(
     .toList(growable: false);
 
 ConvexObject encodeOpsApplyBatchArgs({
+  ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
   ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
   ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
@@ -5644,6 +5645,8 @@ ConvexObject encodeOpsApplyBatchArgs({
   required List<OpsApplyBatchArgsOpsItem> ops,
   required String strategyPublicId,
 }) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
   if (accountSubject.isPresent)
     'accountSubject': ConvexString(accountSubject.value),
   if (checkLineupEndDeletes.isPresent)
@@ -5673,11 +5676,14 @@ OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
     OpsApplyBatchResult.decode(value, 'ops.js:applyBatch.returns');
 
 ConvexObject encodePageGetSnapshotArgs({
+  ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'page.js:getSnapshot.args.clientProtocolVersion',
@@ -6173,12 +6179,15 @@ ConvexValue decodeStrategiesUpdateResult(ConvexValue value) =>
     _decodeRaw(value, 'strategies.js:update.returns', _validatePagesAddResult);
 
 ConvexObject encodeStrategyGetFullSnapshotArgs({
+  ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
   ConvexOptional<bool> acceptsTrashedPagesLeftOut =
       const ConvexOptional.absent(),
   required double clientProtocolVersion,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
   if (acceptsTrashedPagesLeftOut.isPresent)
     'acceptsTrashedPagesLeftOut': ConvexBoolean(
       acceptsTrashedPagesLeftOut.value,
