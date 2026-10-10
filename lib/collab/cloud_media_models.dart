@@ -170,7 +170,7 @@ Set<String> collectStrategyImageAssetIds(StrategyDataLike strategy) {
   final assetIds = <String>{};
   for (final page in strategy.pages) {
     for (final image in page.imageData) {
-      assetIds.add(image.id);
+      assetIds.add(image.pictureId);
     }
     for (final link in page.lineUpLinks) {
       for (final image in link.images) {

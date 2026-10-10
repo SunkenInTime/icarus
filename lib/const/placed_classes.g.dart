@@ -54,6 +54,7 @@ PlacedImage _$PlacedImageFromJson(Map<String, dynamic> json) => PlacedImage(
       sizeVersion: (json['sizeVersion'] as num?)?.toInt(),
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
       link: json['link'] as String? ?? '',
+      assetId: json['assetId'] as String?,
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
@@ -62,6 +63,7 @@ Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
       'isDeleted': instance.isDeleted,
       'position': const OffsetConverter().toJson(instance.position),
       'aspectRatio': instance.aspectRatio,
+      if (instance.assetId case final value?) 'assetId': value,
       'fileExtension': instance.fileExtension,
       'scale': instance.scale,
       'sizeVersion': instance.sizeVersion,

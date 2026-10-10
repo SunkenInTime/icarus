@@ -549,6 +549,49 @@ void main() {
     );
   });
 
+  test("a copy showing another image's picture uploads it once, under it",
+      () async {
+    final bytesStore = MemoryPendingMediaBytesStore();
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    final container =
+        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    PlacedImage image(String id, {String? assetId}) => PlacedImage(
+          id: id,
+          position: Offset.zero,
+          aspectRatio: 1,
+          scale: 1,
+          fileExtension: '.png',
+          assetId: assetId,
+        );
+    await container
+        .read(pendingMediaBytesProvider.notifier)
+        .put(_key('original'), _imageBytes);
+
+    // Only the copy is on the page: its picture is the original's.
+    await queue.reconcilePageMedia(
+      strategyPublicId: 'strategy-a',
+      placedImages: [image('copy', assetId: 'original')],
+      assetsById: const {},
+    );
+    expect(
+      container
+          .read(cloudMediaUploadQueueProvider)
+          .jobs
+          .map((job) => job.assetPublicId),
+      ['original'],
+    );
+
+    // With the original beside it, still the one upload.
+    await queue.reconcilePageMedia(
+      strategyPublicId: 'strategy-a',
+      placedImages: [image('original'), image('copy', assetId: 'original')],
+      assetsById: const {},
+    );
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, hasLength(1));
+  });
+
   group('the painted copy goes once attached and served from the cloud', () {
     Future<void> race({required bool urlFirst}) async {
       final gate = Completer<void>();

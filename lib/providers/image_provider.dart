@@ -679,7 +679,7 @@ class PlacedImageSerializer {
   ///
   /// It uses the application support directory, creates a custom folder based
   /// on [strategyID] and an `images` subfolder, and forms the filename from the
-  /// image's [id] and [fileExtension].
+  /// image's picture id ([PlacedImage.pictureId]) and [fileExtension].
   static Future<String> _computeFilePath(
       PlacedImage image, String strategyID) async {
     // Get the system's application support directory.
@@ -699,8 +699,11 @@ class PlacedImageSerializer {
       await imagesDirectory.create(recursive: true);
     }
 
-    // The final file path: [id][fileExtension]
-    return path.join(imagesDirectory.path, '${image.id}${image.fileExtension}');
+    // The final file path: [pictureId][fileExtension]
+    return path.join(
+      imagesDirectory.path,
+      '${image.pictureId}${image.fileExtension}',
+    );
   }
 
   static String? detectImageFormat(Uint8List bytes) {
