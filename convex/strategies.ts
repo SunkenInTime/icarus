@@ -589,7 +589,6 @@ export const duplicate = mutation({
       userId: user._id,
       now,
       budget,
-      uploadingImages: "refuse",
     });
     // Pages in the trash are not copied, nor read, so content on them
     // cannot push the copy over its budget.
