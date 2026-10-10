@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
@@ -1184,7 +1185,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final strategyId = state.strategyId;
     final sourcePageId = ref.read(strategyPageSessionProvider).activePageId;
-    final copy = ref.read(lineUpProvider).graph.copyOfLinks(linkIds);
+    final graph = ref.read(lineUpProvider).graph;
+    final asked = jsonEncode(graph.linksWithSpots(linkIds).toJson());
+    final copy = graph.copyOfLinks(linkIds);
     if (strategyId == null ||
         sourcePageId == null ||
         copy.links.isEmpty ||
@@ -1212,10 +1215,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     if (placed != LineUpPageResult.done || !move) return placed;
 
-    final lineUps = ref.read(lineUpProvider);
+    // Only what was sent leaves: if the lineups or their spots changed
+    // meanwhile (a teammate's edit), the changed ones stay here.
+    final now = ref.read(lineUpProvider).graph.linksWithSpots(linkIds);
     if (state.strategyId != strategyId ||
         ref.read(strategyPageSessionProvider).activePageId != sourcePageId ||
-        !linkIds.every((id) => lineUps.linkById(id) != null)) {
+        jsonEncode(now.toJson()) != asked) {
       return LineUpPageResult.copiedInstead;
     }
     ref.read(lineUpProvider.notifier).deleteLinks(linkIds);

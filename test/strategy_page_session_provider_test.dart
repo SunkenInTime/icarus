@@ -10902,11 +10902,51 @@ void main() {
       ));
       read.complete();
 
-      expect(await moved, LineUpPageResult.done);
+      // The copy is what the user asked to move; the renamed lineup stays.
+      expect(await moved, LineUpPageResult.copiedInstead);
       expect(
         _entries(cloudPayloadData(adds(container).single.payload), 'links')
             .map((link) => link['name']),
         ['Bolt A', 'Bolt B'],
+      );
+      expect(
+        {
+          for (final link in container.read(lineUpProvider).links)
+            link.id: link.name,
+        },
+        {'link-a': 'Renamed', 'link-b': 'Bolt B', 'link-solo': ''},
+      );
+      await _settle();
+    });
+
+    test('a move leaves the lineups here if a spot of theirs moved meanwhile',
+        () async {
+      final (container, _, reader) = await open();
+      final read = reader.gate = Completer<void>();
+
+      final moved = send(container, move: true);
+      // While page 3 is read, a teammate moves the landing both aim at.
+      final now = container.read(lineUpProvider);
+      container.read(lineUpProvider.notifier).mergeRemote(LineUpGraph(
+            origins: now.origins,
+            landings: [
+              for (final landing in now.landings)
+                landing.id == 'land-ab'
+                    ? landing.copyWith(
+                        ability: landing.ability
+                            .copyWith(position: const Offset(500, 500)),
+                      )
+                    : landing,
+            ],
+            links: now.links,
+          ));
+      read.complete();
+
+      expect(await moved, LineUpPageResult.copiedInstead);
+      expect(linksHere(container), {'link-a', 'link-b', 'link-solo'});
+      expect(
+        container.read(lineUpProvider).landingById('land-ab')!.ability.position,
+        const Offset(500, 500),
       );
       await _settle();
     });

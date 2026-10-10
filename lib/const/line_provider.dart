@@ -378,41 +378,55 @@ class LineUpGraph {
     const uuid = Uuid();
     final newIds = <String, String>{};
     String renamed(String id) => newIds[id] ??= uuid.v4();
-    final copied = [
-      for (final link in links)
-        if (linkIds.contains(link.id)) link,
-    ];
-    final originIds = {for (final link in copied) link.originId};
-    final landingIds = {for (final link in copied) link.landingId};
+    final part = linksWithSpots(linkIds);
     return LineUpGraph(
       origins: [
-        for (final origin in origins)
-          if (originIds.contains(origin.id))
-            LineUpOrigin(
-              id: renamed(origin.id),
-              agent: origin.agent
-                  .deepCopy<PlacedAgent>()
-                  .copyWith(lineUpID: renamed(origin.id)),
-            ),
+        for (final origin in part.origins)
+          LineUpOrigin(
+            id: renamed(origin.id),
+            agent: origin.agent
+                .deepCopy<PlacedAgent>()
+                .copyWith(lineUpID: renamed(origin.id)),
+          ),
       ],
       landings: [
-        for (final landing in landings)
-          if (landingIds.contains(landing.id))
-            LineUpLanding(
-              id: renamed(landing.id),
-              ability: landing.ability
-                  .deepCopy<PlacedAbility>()
-                  .copyWith(lineUpID: renamed(landing.id)),
-            ),
+        for (final landing in part.landings)
+          LineUpLanding(
+            id: renamed(landing.id),
+            ability: landing.ability
+                .deepCopy<PlacedAbility>()
+                .copyWith(lineUpID: renamed(landing.id)),
+          ),
       ],
       links: [
-        for (final link in copied)
+        for (final link in part.links)
           link.deepCopy().copyWith(
                 id: uuid.v4(),
                 originId: renamed(link.originId),
                 landingId: renamed(link.landingId),
               ),
       ],
+    );
+  }
+
+  /// The lineups [linkIds] and the spots they aim at.
+  LineUpGraph linksWithSpots(Set<String> linkIds) {
+    final picked = [
+      for (final link in links)
+        if (linkIds.contains(link.id)) link,
+    ];
+    final originIds = {for (final link in picked) link.originId};
+    final landingIds = {for (final link in picked) link.landingId};
+    return LineUpGraph(
+      origins: [
+        for (final origin in origins)
+          if (originIds.contains(origin.id)) origin,
+      ],
+      landings: [
+        for (final landing in landings)
+          if (landingIds.contains(landing.id)) landing,
+      ],
+      links: picked,
     );
   }
 
