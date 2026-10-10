@@ -11029,11 +11029,18 @@ void main() {
       expect(await copy(), PageCopyResult.alreadyThere);
     });
 
-    test('an item whose id is too long to store a copy of is not copied',
-        () async {
+    test(
+        'an item whose id is too long to store a copy of is not offered or '
+        'copied', () async {
       final longId = 'x' * 200;
       final (container, _, _) = await open(onScreenId: longId);
 
+      expect(
+        container
+            .read(strategyProvider.notifier)
+            .copyDirectionsForPlacedWidget(longId),
+        isEmpty,
+      );
       expect(
         await container
             .read(strategyProvider.notifier)
