@@ -780,54 +780,6 @@ void main() {
     expect(container.read(strategyOpQueueProvider).pending, hasLength(1));
   });
 
-  test(
-      'work queued off the canvas for a strategy is dropped if another opens '
-      'before its write', () async {
-    final store = _BlockingStore();
-    final container = ProviderContainer(overrides: [
-      durableStrategyOutboxStoreProvider.overrideWithValue(store),
-      strategyOutboxSessionProvider.overrideWithValue(
-        const StrategyOutboxSession(
-          accountId: null,
-          isReady: false,
-          hasAuthIncident: false,
-        ),
-      ),
-    ]);
-    addTearDown(container.dispose);
-    final notifier = container.read(strategyOpQueueProvider.notifier)
-      ..setActiveStrategy('strategy-1', accountId: 'account-a');
-    container
-        .read(cloudCollabModeProvider.notifier)
-        .setForceLocalFallback(true);
-    // An earlier write holds the queue while a copy for strategy 1 waits
-    // its turn; meanwhile strategy 2 opens.
-    final earlier = notifier.enqueue(_cloudElementOp());
-    final copy = notifier.enqueueOffCanvas(
-      const ElementAddOp(
-        opId: 'copy-1',
-        elementPublicId: 'element-1~cp1~0f8fad5b-d9cb-469f-a165-70867728950e',
-        pagePublicId: 'page-2',
-        payload: {'value': 'copy'},
-        sortIndex: 0,
-      ),
-      strategyPublicId: 'strategy-1',
-    );
-    await Future<void>.delayed(Duration.zero);
-    notifier.setActiveStrategy('strategy-2', accountId: 'account-a');
-    store.allowWrite.complete();
-    await earlier;
-
-    expect(await copy, isFalse);
-    expect(
-      container
-          .read(strategyOpQueueProvider)
-          .pending
-          .where((pending) => pending.op.opId == 'copy-1'),
-      isEmpty,
-    );
-  });
-
   test('replacement stays hidden until the durable record is written',
       () async {
     final store = _BlockingReplacementStore();

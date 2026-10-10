@@ -22,7 +22,6 @@ import 'package:icarus/widgets/rotate_helpers.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:uuid/uuid.dart';
-import 'package:icarus/widgets/new_page_copy_toast.dart';
 
 class GlobalShortcuts extends ConsumerStatefulWidget {
   const GlobalShortcuts({super.key, required this.child});
@@ -144,9 +143,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             onInvoke: (intent) async {
               if (!capabilities.canAddPage) return null;
               _dismissDeleteMenu();
-              showNewPageCopyGaps(
-                await ref.read(strategyProvider.notifier).addPage(),
-              );
+              await ref.read(strategyProvider.notifier).addPage();
               return null;
             },
           ),

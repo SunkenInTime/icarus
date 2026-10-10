@@ -46,7 +46,6 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
-import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
@@ -85,17 +84,9 @@ enum PageCopyResult {
   imageUnavailable,
 }
 
-/// What of a cloud page could not be copied onto a new page: images whose
-/// pictures could not be copied yet; whether some of the copy could not be
-/// stored to send (or the strategy was left first); and whether the new page
-/// could not be added at all (the cloud could not be reached).
-typedef NewPageCopyGaps = ({int imagesLeft, bool notSaved, bool pageNotAdded});
-
 class StrategyProvider extends Notifier<StrategyState> {
   @override
   StrategyState build() {
-    _disposed = false;
-    ref.onDispose(() => _disposed = true);
     _registerPersistenceTrackingListeners();
     ref.listen<AppAuthState>(authProvider, (previous, next) {
       final strategyId = state.strategyId;
@@ -1074,12 +1065,40 @@ class StrategyProvider extends Notifier<StrategyState> {
     // the original's picture under its own id first. It shares the stored
     // bytes, so nothing is uploaded again.
     if (element.kind == 'image') {
-      final picture = await _copyImagePicture(
-        strategyId: strategyId,
-        imageId: widgetId,
-        copyId: copyId,
-      );
-      if (picture != null) return picture;
+      final CloudImageCopyResult picture;
+      try {
+        picture =
+            await ref.read(convexStrategyRepositoryProvider).copyImageAsset(
+                  strategyPublicId: strategyId,
+                  sourceAssetPublicId: widgetId,
+                  targetAssetPublicId: copyId,
+                );
+      } catch (error) {
+        log('Could not copy the picture of image $widgetId: $error');
+        return PageCopyResult.unreachable;
+      }
+      switch (picture) {
+        case CloudImageCopyResult.uploading:
+          return PageCopyResult.imageUploading;
+        case CloudImageCopyResult.unavailable:
+          // An image this device placed may not have reached the server yet.
+          // Its upload only goes once the image itself is saved to send
+          // (referenceDurable); one whose save failed never will.
+          final stillUploading = ref
+              .read(cloudMediaUploadQueueProvider)
+              .jobsForStrategy(strategyId)
+              .any(
+                (job) =>
+                    job.assetPublicId == widgetId &&
+                    job.referenceDurable &&
+                    job.state != CloudMediaJobState.failed,
+              );
+          return stillUploading
+              ? PageCopyResult.imageUploading
+              : PageCopyResult.imageUnavailable;
+        case CloudImageCopyResult.copied:
+          break;
+      }
       if (state.strategyId != strategyId) return PageCopyResult.unavailable;
     }
     // The canvas never draws the copy: its page shows it from the server.
@@ -1103,48 +1122,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..setPendingCloudSync(true)
       ..setCloudSyncError(null);
     return PageCopyResult.copied;
-  }
-
-  /// Has the server give image [copyId] the picture of image [imageId],
-  /// sharing its stored bytes. Null once it has; otherwise why not.
-  Future<PageCopyResult?> _copyImagePicture({
-    required String strategyId,
-    required String imageId,
-    required String copyId,
-  }) async {
-    final CloudImageCopyResult picture;
-    try {
-      picture = await ref.read(convexStrategyRepositoryProvider).copyImageAsset(
-            strategyPublicId: strategyId,
-            sourceAssetPublicId: imageId,
-            targetAssetPublicId: copyId,
-          );
-    } catch (error) {
-      log('Could not copy the picture of image $imageId: $error');
-      return PageCopyResult.unreachable;
-    }
-    switch (picture) {
-      case CloudImageCopyResult.copied:
-        return null;
-      case CloudImageCopyResult.uploading:
-        return PageCopyResult.imageUploading;
-      case CloudImageCopyResult.unavailable:
-        // An image this device placed may not have reached the server yet.
-        // Its upload only goes once the image itself is saved to send
-        // (referenceDurable); one whose save failed never will.
-        final stillUploading = ref
-            .read(cloudMediaUploadQueueProvider)
-            .jobsForStrategy(strategyId)
-            .any(
-              (job) =>
-                  job.assetPublicId == imageId &&
-                  job.referenceDurable &&
-                  job.state != CloudMediaJobState.failed,
-            );
-        return stillUploading
-            ? PageCopyResult.imageUploading
-            : PageCopyResult.imageUnavailable;
-    }
   }
 
   /// The items on [page] as the server has them with the work still queued
@@ -1536,13 +1513,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     return null;
   }
 
-  /// Adds a copy of the page on screen after it and turns to it. On a cloud
-  /// strategy, returns what of the page could not be copied, if anything.
-  Future<NewPageCopyGaps?> addPage([String? name]) async {
-    if (!_currentStrategyCanEditPages()) return null;
+  Future<void> addPage([String? name]) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null) return null;
+      if (snapshot == null) return;
       final pages = [...snapshot.pages]
         ..sortBySortIndex((item) => item.sortIndex);
       final pageID = const Uuid().v4();
@@ -1553,72 +1528,28 @@ class StrategyProvider extends Notifier<StrategyState> {
       final sourceIndex = activeIndex >= 0 ? activeIndex : pages.length - 1;
       final nextIndex = sourceIndex + 1;
       final isAutoNamed = name == null;
-      // The new page copies the page on screen as it is drawn now, as a
-      // local "+" does, each item and lineup under a copy id (see
-      // page_copy_id.dart) so the turn to it glides rather than fades.
-      final strategyId = state.strategyId;
-      if (strategyId == null) return null;
-      final elements = activeIndex >= 0
-          ? ref
-              .read(activePageLiveSyncProvider.notifier)
-              .elementRowsAsDrawn(activePageId!)
-          : const <({String publicId, CloudPayload payload, int sortIndex})>[];
-      final lineUps = ref.read(lineUpProvider).graph;
-      final lineUpCopies = lineUps.copyOfLinks(
-        {for (final link in lineUps.links) link.id},
-        newId: (id) => _storableCopyId(
-          strategyId,
-          id,
-          (copyId) => EntitySyncKey.lineup(pageID, copyId),
-        ),
-      );
-      final deadline = DateTime.now().add(cloudPageCopyLandingWait);
-      // The page is added on the server directly, not queued: its copy can
-      // only go once the page exists, and the call says plainly whether it
-      // does. Offline, no page is added.
-      if (!await _addCloudPageNow(
-        strategyId: strategyId,
-        pageId: pageID,
-        name: name ?? 'Page ${nextIndex + 1}',
-        isAutoNamed: isAutoNamed,
+      final ack = await _enqueueCloudPageDescriptorOp(PageAddOp(
+        opId: const Uuid().v4(),
+        pagePublicId: pageID,
+        payload: {
+          'name': name ?? 'Page ${nextIndex + 1}',
+          'isAutoNamed': isAutoNamed,
+          'isAttack': pages.isNotEmpty ? pages[sourceIndex].isAttack : true,
+          'settings': ref.read(strategySettingsProvider).toJson(),
+        },
         sortIndex: nextIndex,
-        isAttack: pages.isNotEmpty ? pages[sourceIndex].isAttack : true,
-        expectedRevision: snapshot.header.revision,
-      )) {
-        return (imagesLeft: 0, notSaved: false, pageNotAdded: true);
+        expectedStrategyRevision: snapshot.header.revision,
+      ));
+      if (ack?.isAck ?? false) {
+        await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+        await ref
+            .read(strategyPageSessionProvider.notifier)
+            .setActivePageAnimated(
+              pageID,
+              direction: PageTransitionDirection.forward,
+            );
       }
-      final gaps = await _copyPageRowsToCloudPage(
-        strategyId: strategyId,
-        pageId: pageID,
-        elements: elements,
-        lineUps: lineUpCopies,
-        deadline: deadline,
-      );
-      if (!_disposed && state.strategyId == strategyId) {
-        final remaining = deadline.difference(DateTime.now());
-        try {
-          await ref
-              .read(remoteEditorSnapshotProvider.notifier)
-              .refresh()
-              .timeout(remaining.isNegative ? Duration.zero : remaining);
-        } on TimeoutException {
-          // The page is shown with whatever the read has by then.
-        }
-        if (!_disposed && state.strategyId == strategyId) {
-          unawaited(
-            ref
-                .read(strategyPageSessionProvider.notifier)
-                .setActivePageAnimated(
-                  pageID,
-                  direction: PageTransitionDirection.forward,
-                )
-                .catchError((Object error) {
-              log('Could not turn to new cloud page $pageID: $error');
-            }),
-          );
-        }
-      }
-      return gaps;
+      return;
     }
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -1627,9 +1558,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     await _syncCurrentPageToHive();
 
     final strategyId = state.strategyId;
-    if (strategyId == null) return null;
+    if (strategyId == null) return;
     final strat = box.get(strategyId);
-    if (strat == null || strat.pages.isEmpty) return null;
+    if (strat == null || strat.pages.isEmpty) return;
 
     final orderedPages = [...strat.pages]
       ..sortBySortIndex((item) => item.sortIndex);
@@ -1659,213 +1590,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
 
     await setActivePageAnimated(newPage.id);
-    return null;
-  }
-
-  /// A copy id for [id] (see page_copy_id.dart), or a plain id when a change
-  /// to the copy, stored under [keyOf] its id, would pass Hive's
-  /// 255-character key limit. Only an item imported with an unusually long
-  /// id gets a plain one, and it then fades between pages rather than
-  /// gliding.
-  String _storableCopyId(
-    String strategyId,
-    String id,
-    EntitySyncKey Function(String copyId) keyOf,
-  ) {
-    final copyId = newPageCopyId(id);
-    final accountId = ref.read(strategyOpQueueProvider).accountId;
-    final fits = accountId != null &&
-        DurableOutboxRecord.createStorageKey(
-              accountId: accountId,
-              strategyPublicId: strategyId,
-              entityKey: keyOf(copyId),
-            ).length <=
-            255;
-    return fits ? copyId : const Uuid().v4();
-  }
-
-  bool _disposed = false;
-
-  /// Waits, until [deadline], for the queued ops [ids] of strategy
-  /// [strategyId] to leave the queue, keeping it sending meanwhile (it may
-  /// be busy with an earlier batch). Stops early once one is refused, the
-  /// strategy is left or this is disposed. Only paces the turn to a new
-  /// page: the ops stay queued either way.
-  Future<void> _untilSent(
-    String strategyId,
-    Set<String> ids,
-    DateTime deadline,
-  ) async {
-    final queue = ref.read(strategyOpQueueProvider.notifier);
-    var nextFlush = DateTime.now();
-    while (!_disposed && state.strategyId == strategyId) {
-      final queueState = ref.read(strategyOpQueueProvider);
-      if (queueState.strategyPublicId != strategyId ||
-          queueState.attentionByEntityKey.values
-              .any((intent) => ids.contains(intent.pending.op.opId)) ||
-          !queueState.pending.any((pending) => ids.contains(pending.op.opId))) {
-        return;
-      }
-      final now = DateTime.now();
-      if (!now.isBefore(deadline)) return;
-      if (!now.isBefore(nextFlush)) {
-        unawaited(queue.flushNow());
-        nextFlush = now.add(const Duration(milliseconds: 500));
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    }
-  }
-
-  /// Adds cloud page [pageId] on the server now, rather than through the
-  /// queue, so what follows knows it exists. A teammate's change to the
-  /// strategy since [expectedRevision] is read and the add tried once more.
-  /// False when the page could not be added.
-  Future<bool> _addCloudPageNow({
-    required String strategyId,
-    required String pageId,
-    required String name,
-    required bool isAutoNamed,
-    required int sortIndex,
-    required bool isAttack,
-    required int expectedRevision,
-  }) async {
-    final repository = ref.read(convexStrategyRepositoryProvider);
-    final settings = ref.read(strategySettingsProvider).toJson();
-    Future<void> add(int revision) => repository.addPage(
-          strategyPublicId: strategyId,
-          pagePublicId: pageId,
-          name: name,
-          isAutoNamed: isAutoNamed,
-          sortIndex: sortIndex,
-          isAttack: isAttack,
-          expectedRevision: revision,
-          settings: settings,
-        );
-    try {
-      await add(expectedRevision);
-      return true;
-    } catch (error) {
-      if (!isTypedConvexConflictError(error) || _disposed) {
-        log('Could not add cloud page $pageId: $error');
-        return false;
-      }
-    }
-    try {
-      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (_disposed ||
-          snapshot == null ||
-          snapshot.header.publicId != strategyId) {
-        return false;
-      }
-      await add(snapshot.header.revision);
-      return true;
-    } catch (error) {
-      log('Could not add cloud page $pageId: $error');
-      return false;
-    }
-  }
-
-  /// How long "+" on a cloud strategy waits, from the press, for the new
-  /// page's copies to be sent before showing it, so it opens full rather
-  /// than filling in. Past it, the page is shown and the queue keeps
-  /// sending.
-  @visibleForTesting
-  static Duration cloudPageCopyLandingWait = const Duration(seconds: 3);
-
-  /// Sends copies of the page rows [elements] (under copy ids made here) and
-  /// the lineups [lineUps] (already under copy ids) to new cloud page
-  /// [pageId] of strategy [strategyId], then waits until [deadline] for
-  /// them to be sent. An image whose picture cannot be copied in time is
-  /// left out; leaving the strategy stops the copy. Returns what did not
-  /// make it.
-  Future<NewPageCopyGaps> _copyPageRowsToCloudPage({
-    required String strategyId,
-    required String pageId,
-    required List<({String publicId, CloudPayload payload, int sortIndex})>
-        elements,
-    required LineUpGraph lineUps,
-    required DateTime deadline,
-  }) async {
-    final queue = ref.read(strategyOpQueueProvider.notifier);
-    // Ops go through the queue of the strategy open now, so none is queued
-    // once another is (the queue checks again as it writes each one).
-    bool stillOpen() =>
-        !_disposed &&
-        state.strategyId == strategyId &&
-        ref.read(strategyOpQueueProvider).strategyPublicId == strategyId;
-    final sent = <String>{};
-    var imagesLeft = 0;
-    var notSaved = false;
-    Future<void> send(StrategyOp op) async {
-      if (!stillOpen()) {
-        notSaved = true;
-        return;
-      }
-      if (await queue.enqueueOffCanvas(op, strategyPublicId: strategyId)) {
-        sent.add(op.opId);
-      } else {
-        notSaved = true;
-      }
-    }
-
-    for (final element in elements) {
-      final copyId = _storableCopyId(
-        strategyId,
-        element.publicId,
-        (copyId) => EntitySyncKey.element(pageId, copyId),
-      );
-      if (element.payload['kind'] == 'image') {
-        final remaining = deadline.difference(DateTime.now());
-        final PageCopyResult? left;
-        try {
-          left = await _copyImagePicture(
-            strategyId: strategyId,
-            imageId: element.publicId,
-            copyId: copyId,
-          ).timeout(remaining.isNegative ? Duration.zero : remaining);
-        } on TimeoutException {
-          imagesLeft++;
-          continue;
-        }
-        if (left != null) {
-          imagesLeft++;
-          continue;
-        }
-      }
-      await send(
-        ElementAddOp(
-          opId: const Uuid().v4(),
-          elementPublicId: copyId,
-          pagePublicId: pageId,
-          payload: {
-            ...element.payload,
-            'data': {...cloudPayloadData(element.payload), 'id': copyId},
-          },
-          sortIndex: element.sortIndex,
-        ),
-      );
-    }
-    for (final (index, row) in cloudLineupRows(lineUps).rows.indexed) {
-      await send(
-        LineupAddOp(
-          opId: const Uuid().v4(),
-          lineupPublicId: row.publicId,
-          pagePublicId: pageId,
-          payload: row.payload,
-          sortIndex: index,
-        ),
-      );
-    }
-    if (sent.isNotEmpty && stillOpen()) {
-      ref.read(strategySaveStateProvider.notifier)
-        ..markDirty()
-        ..setPendingCloudSync(true)
-        ..setCloudSyncError(null);
-      unawaited(queue.flushNow());
-      await _untilSent(strategyId, sent, deadline);
-    }
-    return (imagesLeft: imagesLeft, notSaved: notSaved, pageNotAdded: false);
   }
 
   Future<void> renamePage(String pageId, String newName) async {

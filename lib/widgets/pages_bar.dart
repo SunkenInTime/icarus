@@ -19,7 +19,6 @@ import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
 import 'package:icarus/widgets/dialogs/recently_deleted_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
-import 'package:icarus/widgets/new_page_copy_toast.dart';
 
 const double _pagesBarCornerRadius = 12;
 const double _pagesBarFooterHeight = 48;
@@ -217,7 +216,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   Future<void> _addPage() async {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canAddPage) return;
-    showNewPageCopyGaps(await ref.read(strategyProvider.notifier).addPage());
+    await ref.read(strategyProvider.notifier).addPage();
   }
 
   Future<void> _selectPage(String id) async {

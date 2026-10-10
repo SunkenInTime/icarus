@@ -1005,21 +1005,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     return entities;
   }
 
-  /// The items of page [pageId], the page on screen, as the rows live sync
-  /// keeps for them: what a copy of the page sends. Lineups are left out;
-  /// their groups are written from the lineup graph.
-  List<({String publicId, CloudPayload payload, int sortIndex})>
-      elementRowsAsDrawn(String pageId) => [
-            for (final entity in _normalizedLocalEntities(pageId).values)
-              if (entity.key.kind == EntitySyncKeyKind.element &&
-                  entity.payload is CloudPayload)
-                (
-                  publicId: entity.key.entityId!,
-                  payload: entity.payload as CloudPayload,
-                  sortIndex: entity.sortIndex ?? 0,
-                ),
-          ];
-
   Map<EntitySyncKey, _NormalizedEntity> _normalizedLocalEntities(
       String pageId) {
     final entities = <EntitySyncKey, _NormalizedEntity>{};

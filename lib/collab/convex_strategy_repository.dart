@@ -714,13 +714,6 @@ bool isTypedConvexUnauthenticatedError(Object error) {
           error.rawCode == ConvexErrorCode.unauthenticated.wireName);
 }
 
-bool isTypedConvexConflictError(Object error) {
-  return (error is ConvexFunctionException &&
-          error.code == ConvexErrorCode.conflict) ||
-      (error is ConvexClientFunctionError &&
-          error.rawCode == ConvexErrorCode.conflict.wireName);
-}
-
 bool isTypedConvexNotFoundError(Object error) {
   return (error is ConvexFunctionException &&
           error.code == ConvexErrorCode.notFound) ||

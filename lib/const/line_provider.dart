@@ -375,14 +375,10 @@ class LineUpGraph {
 
   /// The lineups [linkIds] and the spots they aim at, ready to be put on
   /// another page, each under a new id that carries its original's (see
-  /// page_copy_id.dart), or that [newId] makes. Spots they share stay shared
-  /// in the copy.
-  LineUpGraph copyOfLinks(
-    Set<String> linkIds, {
-    String Function(String id) newId = newPageCopyId,
-  }) {
+  /// page_copy_id.dart). Spots they share stay shared in the copy.
+  LineUpGraph copyOfLinks(Set<String> linkIds) {
     final newIds = <String, String>{};
-    String renamed(String id) => newIds[id] ??= newId(id);
+    String renamed(String id) => newIds[id] ??= newPageCopyId(id);
     final part = linksWithSpots(linkIds);
     return LineUpGraph(
       origins: [
