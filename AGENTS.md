@@ -41,7 +41,7 @@ The clay hardened: production Convex holds real users' libraries, and a cloud li
 Every .ica file and library backup from every version we ever shipped must round-trip. When you change what a strategy contains, export and import change with it in the same commit.
 
 ## The server is reading it now
-On main we build the data layer as if a server were already reading it. Here one is. `convex/` reads every byte the client writes and has never seen our widgets, and that stays true: payloads carry a payloadVersion, rows carry a revision, JSON is canonical, and nothing under `lib/collab/` or `convex/` imports UI.
+On main we build the data layer as if a server were already reading it. Here one is. `convex/` reads every byte the client writes and has never seen our widgets, and that stays true: payloads carry a payloadVersion, rows carry a revision, JSON is canonical, and nothing under `lib/collab/` or `convex/` imports UI. Cloud came after the desktop app, so people expect it to behave like the local app they already know. When the data model makes that hard, the gap is worth bringing to me.
 
 ## The user is mid-thought
 People use Icarus while their tactical idea is still hot, the interface must never make them wait or wonder. The network is never in that loop. Edits hit the canvas immediately and the queue catches up behind them. When a feature works but feels wrong, it is not done.
