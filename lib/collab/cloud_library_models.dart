@@ -14,6 +14,14 @@ typedef CloudFolderEntry = ({
   List<AgentType> agentTypes,
 });
 
+/// The user's own cloud library as the server placed it in one moment:
+/// each folder's parent and each strategy's folder, by public id. Null is
+/// the top level.
+typedef CloudLibraryInventory = ({
+  Map<String, String?> folders,
+  Map<String, String?> strategies,
+});
+
 typedef CloudStrategyEntry = ({
   StrategyData strategy,
   int revision,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -191,8 +192,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     final pinned = ref.watch(pinnedItemsProvider);
     final id = _strategyId;
     final isPinned = pinned.containsKey(id);
+    // Moving to the cloud, it can't be opened, changed or moved elsewhere.
+    final isMoving = !_isCloud &&
+        ref.watch(movingToCloudProvider.select((ids) => ids.contains(id)));
 
-    return DragTarget<GridItem>(
+    final tile = DragTarget<GridItem>(
       onWillAcceptWithDetails: (details) {
         final item = details.data;
         return item is StrategyItem &&
@@ -258,7 +262,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             data: _isCloud
                 ? StrategyItem.cloud(_strategyId)
                 : StrategyItem.local(widget.strategyData!),
-            maxSimultaneousDrags: widget.canMove ? null : 0,
+            maxSimultaneousDrags: widget.canMove && !isMoving ? null : 0,
             dragAnchorStrategy: pointerDragAnchorStrategy,
             onDragUpdate: (details) =>
                 _dragTiltController.addDelta(details.delta.dx),
@@ -271,7 +275,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
               onEnter: (_) => setState(() => _isHovered = true),
               onExit: (_) => setState(() => _isHovered = false),
               child: AbsorbPointer(
-                absorbing: _isLoading,
+                absorbing: _isLoading || isMoving,
                 child: ShadContextMenuRegion(
                   controller: _rightClickMenuController,
                   items: _buildMenuItems(),
@@ -319,9 +323,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                         child: StrategyTileThumbnail(
                                           assetPath: viewData.thumbnailAsset,
                                           borderRadius: strategyTileInnerRadius,
-                                          overlay: widget.showDeviceBadge
-                                              ? const DeviceOnlyBadge()
-                                              : viewData.sharedBadge,
+                                          overlay: isMoving
+                                              ? const MovingToCloudBadge()
+                                              : widget.showDeviceBadge
+                                                  ? const DeviceOnlyBadge()
+                                                  : viewData.sharedBadge,
                                         ),
                                       ),
                                       const SizedBox(height: 10),
@@ -405,6 +411,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         );
       },
     );
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 200),
+      opacity: isMoving ? movingToCloudOpacity : 1,
+      child: tile,
+    );
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
@@ -442,6 +453,16 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             : null,
         child: const Text('Duplicate'),
       ),
+      // Signed in, a strategy on this device can join the cloud library.
+      if (widget.showDeviceBadge)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.cloudUpload),
+          child: const Text('Move to cloud'),
+          onPressed: () {
+            _closeMenus();
+            ref.read(moveToCloudProvider.notifier).moveStrategy(_strategyId);
+          },
+        ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
         child: const Text('Export'),
@@ -457,6 +478,22 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           onPressed: () {
             _closeMenus();
             _showShareDialog();
+          },
+        ),
+      if (_isCloud && !_canShare && isAtSharedRoot(ref))
+        ShadContextMenuItem(
+          key: const ValueKey('strategy-tile-leave'),
+          leading: const Icon(LucideIcons.logOut),
+          child: const Text('Leave'),
+          onPressed: () {
+            _closeMenus();
+            leaveSharedItem(
+              context: context,
+              ref: ref,
+              targetType: 'strategy',
+              targetPublicId: _strategyId,
+              name: _strategyName,
+            );
           },
         ),
       ShadContextMenuItem(

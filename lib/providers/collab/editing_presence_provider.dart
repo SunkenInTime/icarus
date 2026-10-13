@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -39,12 +38,13 @@ class OpenLineUpItemsNotifier extends Notifier<Map<Object, Set<String>>> {
   String? pageOf(Object owner) => _pageOf[owner];
 }
 
-/// The lineup groups this user is editing on the page on screen: those of
-/// the lineup spots they hold, the spot a lineup is being placed from, the
-/// lineups whose placement is being edited, and the lineups an open dialog
-/// shows. Null for none, and always null for a
-/// reader who can only view: holding or opening a lineup is not editing it.
-final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
+/// What this user is editing on the page on screen. Its items are the canvas
+/// items they hold or have open (a text draft, a lineup placement's pinned
+/// spot, a placement edit's lineups). Its groups are the lineup groups of
+/// those items, plus those of the lineups an open dialog shows. Null for
+/// nothing, and always null for a reader who can only view: holding or
+/// opening an item is not editing it.
+final myEditingProvider = Provider<PresenceEditing?>((ref) {
   final canEdit = ref.watch(
     currentStrategyCapabilitiesProvider.select(
       (capabilities) => capabilities.canEditPages,
@@ -54,8 +54,9 @@ final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
   final pageId =
       ref.watch(strategyPageSessionProvider.select((s) => s.activePageId));
   if (pageId == null) return null;
-  final held = ref.watch(editorHeldEntitiesProvider) ?? const <String>{};
-  final placement = ref.watch(lineUpProvider.select((s) => s.placement));
+  // Not editorHeldEntitiesProvider: a press off the canvas (a sidebar drag)
+  // does not stop the user changing the items they have open.
+  final items = ref.watch(editorHeldCanvasItemsProvider);
   final edit = ref.watch(lineUpProvider.select((s) => s.edit?.linkIds));
   final open = ref.watch(openLineUpItemsProvider);
   final openNotifier = ref.read(openLineUpItemsProvider.notifier);
@@ -63,17 +64,32 @@ final myLineupEditingProvider = Provider<PresenceEditing?>((ref) {
   final liveSync = ref.read(activePageLiveSyncProvider.notifier);
   final groupIds = {
     for (final id in {
-      ...held,
-      if (placement?.pinnedOriginId case final id?) id,
-      if (placement?.pinnedLandingId case final id?) id,
+      ...items,
       ...?edit,
       for (final MapEntry(key: owner, value: ids) in open.entries)
         if (openNotifier.pageOf(owner) == pageId) ...ids,
     })
       if (liveSync.lineupGroupOf(pageId, id) case final group?) group,
   };
-  if (groupIds.isEmpty) return null;
-  return PresenceEditing(pageId: pageId, groupIds: groupIds);
+  if (groupIds.isEmpty && items.isEmpty) return null;
+  return PresenceEditing(pageId: pageId, groupIds: groupIds, itemIds: items);
+});
+
+/// The first teammate changing each canvas item on the page on screen, by
+/// item, so the item can be outlined in their color.
+final itemEditorsProvider = Provider.autoDispose<Map<String, PresencePeer>>((
+  ref,
+) {
+  final pageId =
+      ref.watch(strategyPageSessionProvider.select((s) => s.activePageId));
+  if (pageId == null) return const {};
+  // As below: rebuild when who is changing what changes, not on cursors.
+  ref.watch(strategyPresenceProvider.select((s) => jsonEncode([
+        for (final MapEntry(key: item, value: peer)
+            in s.itemEditorsOn(pageId).entries)
+          [item, peer.uid],
+      ])));
+  return ref.read(strategyPresenceProvider).itemEditorsOn(pageId);
 });
 
 /// Teammates editing the lineup group [itemId] (a lineup, origin or landing

@@ -301,6 +301,32 @@ class CloudMediaUploadQueueNotifier
     retryNow(ignoreBackoff: true);
   }
 
+  /// Queues the images of a strategy moved from this device, once the
+  /// content that shows them has landed. Their files are already in the
+  /// cloud strategy's image folder.
+  Future<void> enqueueMovedImages({
+    required String strategyPublicId,
+    required Iterable<({String assetPublicId, String fileExtension})> images,
+  }) async {
+    final accountId = _requireActiveAccountId();
+    await _upsertJobsAtomically([
+      for (final image in images)
+        CloudMediaUploadJob(
+          jobId: image.assetPublicId,
+          accountId: accountId,
+          strategyPublicId: strategyPublicId,
+          assetPublicId: image.assetPublicId,
+          fileExtension: normalizeImageExtension(image.fileExtension),
+          mimeType: mimeTypeForImageExtension(image.fileExtension),
+          state: CloudMediaJobState.pendingUpload,
+          referenceDurable: true,
+          attempts: 0,
+          updatedAt: DateTime.now(),
+        ),
+    ]);
+    await retryNow(ignoreBackoff: true);
+  }
+
   Future<void> enqueueLineupMediaJobs({
     required String strategyPublicId,
     required Iterable<SimpleImageData> images,

@@ -71,6 +71,20 @@ const publicMutations = [
   ],
   ["shares:redeem", { token: "token" }],
   [
+    "shares:setMemberRole",
+    {
+      targetType: "strategy",
+      targetPublicId: "strategy",
+      memberId: "member",
+      role: "viewer",
+    },
+  ],
+  [
+    "shares:removeMember",
+    { targetType: "strategy", targetPublicId: "strategy", memberId: "member" },
+  ],
+  ["shares:leave", { targetType: "strategy", targetPublicId: "strategy" }],
+  [
     "strategies:create",
     { publicId: "strategy", name: "Strategy", mapData: "ascent" },
   ],

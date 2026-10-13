@@ -16,6 +16,7 @@ import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class PlacedImageBuilder extends StatefulWidget {
   const PlacedImageBuilder({
@@ -208,21 +209,23 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
                 isDragging = false;
               });
             },
-            child: ShadContextMenuRegion(
-              items: _buildTagColorItems(ref),
-              child: MouseWatch(
-                cursor: SystemMouseCursors.click,
-                deleteTarget: HoveredDeleteTarget.image(
-                  id: widget.placedImage.id,
-                  ownerToken: Object(),
-                ),
-                child: ImageWidget(
-                  fileExtension: widget.placedImage.fileExtension,
-                  aspectRatio: widget.placedImage.aspectRatio,
-                  scale: localScale!,
-                  id: widget.placedImage.id,
-                  pictureId: widget.placedImage.pictureId,
-                  tagColorValue: widget.placedImage.tagColorValue,
+            child: EditorItemOutline(
+              child: ShadContextMenuRegion(
+                items: _buildTagColorItems(ref),
+                child: MouseWatch(
+                  cursor: SystemMouseCursors.click,
+                  deleteTarget: HoveredDeleteTarget.image(
+                    id: widget.placedImage.id,
+                    ownerToken: Object(),
+                  ),
+                  child: ImageWidget(
+                    fileExtension: widget.placedImage.fileExtension,
+                    aspectRatio: widget.placedImage.aspectRatio,
+                    scale: localScale!,
+                    id: widget.placedImage.id,
+                    pictureId: widget.placedImage.pictureId,
+                    tagColorValue: widget.placedImage.tagColorValue,
+                  ),
                 ),
               ),
             ),

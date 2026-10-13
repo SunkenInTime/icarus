@@ -1656,6 +1656,78 @@ class ShareLinkSummary {
   bool get isRevoked => revokedAt != null;
 }
 
+/// Someone other than the owner who can open a shared strategy or folder.
+class ShareMember {
+  const ShareMember({
+    required this.memberId,
+    required this.displayName,
+    required this.avatarUrl,
+    required this.role,
+    required this.joinedAt,
+    required this.shareLinkToken,
+  });
+
+  final String memberId;
+
+  /// Null when the account has never carried a name.
+  final String? displayName;
+  final String? avatarUrl;
+  final String role;
+  final DateTime joinedAt;
+
+  /// The link they joined through, when the server knows it.
+  final String? shareLinkToken;
+}
+
+/// One page of the people a target was shared with directly.
+class ShareMemberPage {
+  const ShareMemberPage({required this.members, required this.nextCursor});
+
+  final List<ShareMember> members;
+
+  /// Pass to the next read for the page after this one; null on the last.
+  final String? nextCursor;
+}
+
+/// Who a share link let in, as far as the server counts.
+class ShareLinkJoins {
+  const ShareLinkJoins({
+    required this.joined,
+    required this.more,
+    required this.names,
+  });
+
+  /// How many joined, up to the server's cap.
+  final int joined;
+
+  /// Whether more than [joined] did.
+  final bool more;
+
+  /// The first few of their names.
+  final List<String> names;
+
+  static const none = ShareLinkJoins(joined: 0, more: false, names: []);
+}
+
+/// What a share link opens, as a signed-in person sees it before adding it.
+class SharePreview {
+  const SharePreview({
+    required this.targetType,
+    required this.publicId,
+    required this.name,
+    required this.linkRole,
+    required this.myRole,
+  });
+
+  final String targetType;
+  final String publicId;
+  final String name;
+  final String linkRole;
+
+  /// The access the person already has, or null.
+  final String? myRole;
+}
+
 class ShareRedemption {
   const ShareRedemption({
     required this.targetType,

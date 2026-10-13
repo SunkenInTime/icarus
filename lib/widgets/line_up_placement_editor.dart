@@ -12,6 +12,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 /// The one thing to do next while editing placement. Empty once something
 /// has moved: the pill would cover what is being dragged, and Save is lit.
@@ -156,95 +157,105 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
           ),
         ),
         for (final origin in origins)
-          LineUpOriginAgentWidget(
-            key: ValueKey('lineup-edit-agent-${origin.id}'),
-            origin: origin,
-            interactive: false,
-            onMove: (details) {
-              final topLeft = _draggedTopLeft(
-                details,
-                topLeft: screenPositionForWidget(
-                  widget: origin.agent,
-                  coordinateSystem: coordinateSystem,
-                  agentSize: settings.agentSize,
-                  isAttack: isAttack,
-                ),
-                position: origin.agent.position,
-              );
-              notifier.moveEditedOrigin(
-                origin.id,
-                storedAgentPositionForRenderedScreenPosition(
-                  coordinateSystem: coordinateSystem,
-                  renderedScreenPosition: topLeft,
-                  agentSize: settings.agentSize,
-                  isAttack: isAttack,
-                ),
-              );
-            },
-            onMoveEnd: () {
-              final start = _drag?.position;
-              final position =
-                  ref.read(lineUpProvider).edit?.movedOrigins[origin.id];
-              endMove(
-                outOfBounds: position != null &&
-                    coordinateSystem
-                        .isOutOfBounds(position + storedAgentAnchor),
-                undo: () {
-                  if (start != null) {
-                    notifier.moveEditedOrigin(origin.id, start);
-                  }
-                },
-              );
-            },
+          ItemOutlineScope(
+            key: ValueKey('lineup-edit-outline-${origin.id}'),
+            // A teammate editing this end too sees it outlined.
+            id: origin.id,
+            child: LineUpOriginAgentWidget(
+              key: ValueKey('lineup-edit-agent-${origin.id}'),
+              origin: origin,
+              interactive: false,
+              onMove: (details) {
+                final topLeft = _draggedTopLeft(
+                  details,
+                  topLeft: screenPositionForWidget(
+                    widget: origin.agent,
+                    coordinateSystem: coordinateSystem,
+                    agentSize: settings.agentSize,
+                    isAttack: isAttack,
+                  ),
+                  position: origin.agent.position,
+                );
+                notifier.moveEditedOrigin(
+                  origin.id,
+                  storedAgentPositionForRenderedScreenPosition(
+                    coordinateSystem: coordinateSystem,
+                    renderedScreenPosition: topLeft,
+                    agentSize: settings.agentSize,
+                    isAttack: isAttack,
+                  ),
+                );
+              },
+              onMoveEnd: () {
+                final start = _drag?.position;
+                final position =
+                    ref.read(lineUpProvider).edit?.movedOrigins[origin.id];
+                endMove(
+                  outOfBounds: position != null &&
+                      coordinateSystem
+                          .isOutOfBounds(position + storedAgentAnchor),
+                  undo: () {
+                    if (start != null) {
+                      notifier.moveEditedOrigin(origin.id, start);
+                    }
+                  },
+                );
+              },
+            ),
           ),
         for (final landing in landings)
-          LineUpLandingAbilityWidget(
-            key: ValueKey('lineup-edit-ability-${landing.id}'),
-            landing: landing,
-            interactive: false,
-            onMove: (details) {
-              final abilityData = landing.ability.data.abilityData!;
-              final topLeft = _draggedTopLeft(
-                details,
-                topLeft: screenPositionForWidget(
-                  widget: landing.ability,
-                  coordinateSystem: coordinateSystem,
+          ItemOutlineScope(
+            key: ValueKey('lineup-edit-outline-${landing.id}'),
+            // A teammate editing this end too sees it outlined.
+            id: landing.id,
+            child: LineUpLandingAbilityWidget(
+              key: ValueKey('lineup-edit-ability-${landing.id}'),
+              landing: landing,
+              interactive: false,
+              onMove: (details) {
+                final abilityData = landing.ability.data.abilityData!;
+                final topLeft = _draggedTopLeft(
+                  details,
+                  topLeft: screenPositionForWidget(
+                    widget: landing.ability,
+                    coordinateSystem: coordinateSystem,
+                    mapScale: mapScale,
+                    abilitySize: settings.abilitySize,
+                    isAttack: isAttack,
+                  ),
+                  position: landing.ability.position,
+                );
+                notifier.moveEditedLanding(
+                  landing.id,
+                  storedAbilityPositionForRenderedScreenPosition(
+                    ability: abilityData,
+                    coordinateSystem: coordinateSystem,
+                    renderedScreenPosition: topLeft,
+                    mapScale: mapScale,
+                    abilitySize: settings.abilitySize,
+                    isAttack: isAttack,
+                  ),
+                );
+              },
+              onMoveEnd: () {
+                final start = _drag?.position;
+                final position =
+                    ref.read(lineUpProvider).edit?.movedLandings[landing.id];
+                final anchor = storedAbilityAnchor(
+                  ability: landing.ability.data.abilityData!,
                   mapScale: mapScale,
-                  abilitySize: settings.abilitySize,
-                  isAttack: isAttack,
-                ),
-                position: landing.ability.position,
-              );
-              notifier.moveEditedLanding(
-                landing.id,
-                storedAbilityPositionForRenderedScreenPosition(
-                  ability: abilityData,
-                  coordinateSystem: coordinateSystem,
-                  renderedScreenPosition: topLeft,
-                  mapScale: mapScale,
-                  abilitySize: settings.abilitySize,
-                  isAttack: isAttack,
-                ),
-              );
-            },
-            onMoveEnd: () {
-              final start = _drag?.position;
-              final position =
-                  ref.read(lineUpProvider).edit?.movedLandings[landing.id];
-              final anchor = storedAbilityAnchor(
-                ability: landing.ability.data.abilityData!,
-                mapScale: mapScale,
-              );
-              endMove(
-                outOfBounds: position != null &&
-                    coordinateSystem.isOutOfBounds(position + anchor),
-                undo: () {
-                  if (start != null) {
-                    notifier.moveEditedLanding(landing.id, start);
-                  }
-                },
-              );
-            },
+                );
+                endMove(
+                  outOfBounds: position != null &&
+                      coordinateSystem.isOutOfBounds(position + anchor),
+                  undo: () {
+                    if (start != null) {
+                      notifier.moveEditedLanding(landing.id, start);
+                    }
+                  },
+                );
+              },
+            ),
           ),
         if (lineUpEditStatus(state) case final status when status.isNotEmpty)
           LineUpStatusPill(

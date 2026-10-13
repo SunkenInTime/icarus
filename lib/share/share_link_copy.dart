@@ -9,20 +9,37 @@ abstract final class ShareLinkCopy {
   }) =>
       targetType == 'strategy' && opensInBrowser
           ? 'Anyone with a link can view this strategy, no account needed. '
-              'Signing in joins it with the access you choose. Links stay '
-              'active until you disable them.'
-          : 'Links stay active until you disable them. Anyone who opens one '
-              'joins this item with the access you choose.';
+              'People who add it to their library show up here, and links '
+              'stay active until you disable them.'
+          : 'People who join through a link show up here, and links stay '
+              'active until you disable them.';
+
+  /// Shown under the link kind while "Can edit" is picked.
+  static const editLinkWarning =
+      'Anyone who gets this link can change it, including people it is '
+      'forwarded to. Send it only to your team.';
 
   static const disableTitle = 'Disable this link?';
   static const disableDescription =
-      'Disabling this link prevents new people from joining and stops anyone '
-      'viewing through it without an account. People who already joined keep '
-      'their access.';
+      'No one new can join or view through it. People who already joined '
+      'keep their access unless you remove them.';
+  static String removeJoinedLabel(int count, {bool more = false}) =>
+      count == 1 && !more
+          ? 'Also remove the person who joined through it'
+          : 'Also remove the $count${more ? '+' : ''} people who joined '
+              'through it';
   static const disableAction = 'Disable link';
   static const disableFailure = 'Failed to disable share link.';
 
-  static const disabledStatus = 'DISABLED';
+  static const disabledStatus = 'Disabled';
   static const disabledTooltip = 'Link disabled';
   static const disableTooltip = 'Disable link';
+
+  static String removeMemberTitle(String name) => 'Remove $name?';
+  static const removeMemberDescription =
+      'They lose access right away, and it leaves their Shared tab. If they '
+      'still have an active link, they can join again until you disable it.';
+  static const removeMemberAction = 'Remove';
+  static const removeMemberFailure = "Couldn't remove them. Try again.";
+  static const roleChangeFailure = "Couldn't change their access. Try again.";
 }

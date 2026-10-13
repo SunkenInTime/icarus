@@ -99,6 +99,44 @@ class ConvexStrategyRepository {
         );
   }
 
+  /// The folders [scope] reaches, read once.
+  Future<List<CloudFolderEntry>> fetchFolders({String scope = 'owned'}) async {
+    final folders = await _api.folders
+        .listTree(scope: ConvexOptional.present(_folderScope(scope)))
+        .fetch();
+    return folders.map(_folderEntry).toList(growable: false);
+  }
+
+  /// Where every folder and strategy of the caller's own library sits, read
+  /// by the server in one transaction. Null is the top level.
+  Future<CloudLibraryInventory> fetchInventory() async {
+    final inventory = await _api.strategies.listInventory().fetch();
+    return (
+      folders: {
+        for (final folder in inventory.folders)
+          folder.publicId: folder.parentFolderPublicId,
+      },
+      strategies: {
+        for (final strategy in inventory.strategies)
+          strategy.publicId: strategy.folderPublicId,
+      },
+    );
+  }
+
+  /// The strategies in one folder (null is the top level), read once.
+  Future<List<CloudStrategyEntry>> fetchStrategiesForFolder(
+    String? folderPublicId, {
+    String scope = 'owned',
+  }) async {
+    final strategies = await _api.strategies
+        .listForFolder(
+          folderPublicId: _optional(folderPublicId),
+          scope: ConvexOptional.present(_folderScope(scope)),
+        )
+        .fetch();
+    return strategies.map(_strategyEntry).toList(growable: false);
+  }
+
   Stream<List<CloudStrategyEntry>> watchSharedStrategies() {
     return _api.strategies.listSharedWithMe().watch().map(
           (strategies) =>
@@ -464,6 +502,7 @@ class ConvexStrategyRepository {
     String? themeProfileId,
     Map<String, dynamic>? themeOverridePalette,
     Map<String, dynamic>? initialPageSettings,
+    bool unfinishedMove = false,
   }) async {
     await _api.strategies.createWithInitialPage(
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
@@ -478,6 +517,38 @@ class ConvexStrategyRepository {
       themeProfileId: _optional(themeProfileId),
       themeOverridePalette: _themePalette(themeOverridePalette),
       initialPageSettings: _pageSettings(initialPageSettings),
+      // Library lists skip the strategy until [finishMove].
+      unfinishedMove: unfinishedMove
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
+    );
+  }
+
+  /// Deletes [strategyPublicId] only if a move left it unfinished. Says
+  /// whether it was deleted, had finished, or was already gone.
+  Future<AbandonedMove> abandonMove(String strategyPublicId) async {
+    final result = await _api.strategies.abandonMove(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+    );
+    return switch (result.outcome) {
+      StrategiesAbandonMoveResultOutcome.deleted => AbandonedMove.deleted,
+      StrategiesAbandonMoveResultOutcome.finished => AbandonedMove.finished,
+      StrategiesAbandonMoveResultOutcome.missing => AbandonedMove.missing,
+    };
+  }
+
+  /// Shows a strategy made with `unfinishedMove` in library lists, once
+  /// every part of it has landed. Refused when it is no longer in
+  /// [folderPublicId] (null: the top level), the folder the move put it in.
+  Future<void> finishMove(
+    String strategyPublicId, {
+    required String? folderPublicId,
+  }) async {
+    await _api.strategies.finishMove(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+      folderPublicId: _optional(folderPublicId),
     );
   }
 
@@ -629,17 +700,167 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// Disables a link. With [removeMembers], also removes everyone whose
+  /// access came from it.
   Future<void> revokeShareLink({
     required String targetType,
     required String targetPublicId,
     required String token,
+    bool removeMembers = false,
   }) async {
     await _api.shares.revoke(
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       targetType: _shareTargetType(targetType),
       targetPublicId: targetPublicId,
       token: token,
+      removeMembers: removeMembers
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
     );
+  }
+
+  /// Everyone besides the owner who can open the target. Owner only.
+  /// The people the target was shared with directly, a page at a time:
+  /// pass the previous page's [ShareMemberPage.nextCursor] as [cursor].
+  Future<ShareMemberPage> listShareMembers({
+    required String targetType,
+    required String targetPublicId,
+    String? cursor,
+  }) async {
+    final result = await _api.shares
+        .listMembers(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
+          cursor: cursor == null
+              ? const ConvexOptional.absent()
+              : ConvexOptional.present(cursor),
+        )
+        .fetch();
+    return ShareMemberPage(
+      members: result.members
+          .map(
+            (member) => ShareMember(
+              memberId: member.memberId,
+              displayName: member.displayName,
+              avatarUrl: member.avatarUrl,
+              role: member.role.wireName,
+              joinedAt: _dateTime(member.joinedAt),
+              shareLinkToken: member.shareLinkToken,
+            ),
+          )
+          .toList(growable: false),
+      nextCursor: result.nextCursor,
+    );
+  }
+
+  /// The names of the shared folders the target sits in, nearest first:
+  /// their people can open it too.
+  Future<List<String>> listShareFolderAccess({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    final result = await _api.shares
+        .listFolderAccess(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
+        )
+        .fetch();
+    return result.map((folder) => folder.name).toList(growable: false);
+  }
+
+  /// Who each of the target's links let in, by token.
+  Future<Map<String, ShareLinkJoins>> listShareLinkJoins({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    final result = await _api.shares
+        .listLinkJoins(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
+        )
+        .fetch();
+    return {
+      for (final link in result)
+        link.token: ShareLinkJoins(
+          joined: link.joined.round(),
+          more: link.more,
+          names: link.names,
+        ),
+    };
+  }
+
+  Future<void> setShareMemberRole({
+    required String targetType,
+    required String targetPublicId,
+    required String memberId,
+    required String role,
+  }) async {
+    await _api.shares.setMemberRole(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      targetType: _shareTargetType(targetType),
+      targetPublicId: targetPublicId,
+      memberId: memberId,
+      role: _shareRole(role),
+    );
+  }
+
+  Future<void> removeShareMember({
+    required String targetType,
+    required String targetPublicId,
+    required String memberId,
+  }) async {
+    await _api.shares.removeMember(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      targetType: _shareTargetType(targetType),
+      targetPublicId: targetPublicId,
+      memberId: memberId,
+    );
+  }
+
+  /// Ends the signed-in user's own access to something shared with them.
+  Future<void> leaveShared({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    await _api.shares.leave(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      targetType: _shareTargetType(targetType),
+      targetPublicId: targetPublicId,
+    );
+  }
+
+  /// What [token] opens and the access the signed-in user already has.
+  /// Joins nothing. Throws NOT_FOUND or SHARE_LINK_REVOKED like
+  /// [resolveSharedStrategy].
+  Future<SharePreview> previewShareLink(String token) async {
+    return switch (await _api.shares.preview(token: token).fetch()) {
+      SharesPreviewResultStrategy(
+        :final publicId,
+        :final name,
+        :final linkRole,
+        :final myRole,
+      ) =>
+        SharePreview(
+          targetType: 'strategy',
+          publicId: publicId,
+          name: name,
+          linkRole: linkRole.wireName,
+          myRole: myRole?.wireName,
+        ),
+      SharesPreviewResultFolder(
+        :final publicId,
+        :final name,
+        :final linkRole,
+        :final myRole,
+      ) =>
+        SharePreview(
+          targetType: 'folder',
+          publicId: publicId,
+          name: name,
+          linkRole: linkRole.wireName,
+          myRole: myRole?.wireName,
+        ),
+    };
   }
 
   /// The strategy [token] shares, or null when it shares a folder. Needs no
@@ -691,6 +912,10 @@ class ConvexStrategyRepository {
     return reported.isPresent ? reported.value : role == 'owner';
   }
 }
+
+/// What abandoning a move found: the unfinished strategy, now deleted; a
+/// strategy whose move finished, kept; or nothing.
+enum AbandonedMove { deleted, finished, missing }
 
 bool isTypedConvexUnauthenticatedError(Object error) {
   return (error is ConvexFunctionException &&

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
@@ -24,17 +25,24 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final opQueue = ref.watch(strategyOpQueueProvider);
-    final mediaQueue = ref.watch(cloudMediaUploadQueueProvider);
+    // A strategy moving from this device shows its uploads on its own tile,
+    // and its cloud copy can't be opened until the move ends.
+    final moving = ref.watch(movingToCloudProvider);
+    final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
+    final mediaJobs = [
+      for (final job in mediaQueueState.jobs)
+        if (!moving.contains(job.strategyPublicId)) job,
+    ];
     final auth = ref.watch(authProvider);
     final strategyNames = ref.watch(cloudStrategyNamesProvider);
     final connected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
     final strategyIds = <String>{
       ...opQueue.accountOutbox.strategies.keys,
-      for (final job in mediaQueue.jobs) job.strategyPublicId,
+      for (final job in mediaJobs) job.strategyPublicId,
     };
-    final workCount = opQueue.accountOutbox.workCount + mediaQueue.jobs.length;
+    final workCount = opQueue.accountOutbox.workCount + mediaJobs.length;
     final failedMediaByStrategy = <String, int>{};
-    for (final job in mediaQueue.jobs.where((job) => job.isFailed)) {
+    for (final job in mediaJobs.where((job) => job.isFailed)) {
       failedMediaByStrategy.update(
         job.strategyPublicId,
         (count) => count + 1,
@@ -52,9 +60,9 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
     final deletedChangeCount =
         deletedStrategies.values.fold<int>(0, (total, count) => total + count);
     final hasDurabilityProblem = !opQueue.outboxIsReliable ||
-        !mediaQueue.outboxIsReliable ||
+        !mediaQueueState.outboxIsReliable ||
         opQueue.loadIssues.isNotEmpty ||
-        mediaQueue.loadIssues.isNotEmpty;
+        mediaQueueState.loadIssues.isNotEmpty;
     final authBlocked = workCount > 0 &&
         (auth.hasActiveAuthIncident || !auth.isConvexUserReady);
     // The server refuses this build, so none of the work is being sent. Work

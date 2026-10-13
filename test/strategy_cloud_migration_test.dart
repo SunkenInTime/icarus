@@ -62,14 +62,14 @@ LineUpGraph _sharedIdLineup() => LineUpGraph(
 
 List<LineupAddOp> _upload(
   LineUpGraph graph, {
-  Set<String>? usedLineupIds,
+  MovedItemIds? ids,
 }) {
   final ops = <StrategyOp>[];
-  appendMigratedPageOps(
+  appendMovedPageOps(
     ops,
     _page('page-1', graph),
-    usedElementIds: <String>{},
-    usedLineupIds: usedLineupIds ?? <String>{},
+    cloudPageId: 'cloud-page-1',
+    ids: ids ?? MovedItemIds(),
   );
   return ops.whereType<LineupAddOp>().toList();
 }
@@ -114,16 +114,16 @@ void main() {
   });
 
   test('a group id another page already took is not reused', () {
-    final usedLineupIds = {'link-1'};
+    final ids = MovedItemIds()..lineupGroupIds.add('link-1');
     final adds = _upload(
       _sharedIdLineup(),
       // A page duplicated from page 1 already uploaded this group.
-      usedLineupIds: usedLineupIds,
+      ids: ids,
     );
 
     final newId = adds.single.lineupPublicId;
     expect(newId, isNot('link-1'));
-    expect(usedLineupIds, {'link-1', newId});
+    expect(ids.lineupGroupIds, {'link-1', newId});
     final data = cloudPayloadData(adds.single.payload);
     expect(data['id'], newId);
     // Ids inside a row only need to be unique in the row, so they stay.
@@ -169,7 +169,8 @@ void main() {
       ],
     );
 
-    final adds = _upload(fanIn);
+    final ids = MovedItemIds();
+    final adds = _upload(fanIn, ids: ids);
 
     // Connected through their spots, the three lineups are one group.
     expect(adds.map((add) => add.lineupPublicId), ['link-a']);
@@ -189,7 +190,20 @@ void main() {
         ('origin-a', 'other', 'From heaven, long'),
       ],
     );
-    expect(hydrated.links.first.images.single.id, 'image-a');
-    expect(_canonical(hydrated.toJson()), _canonical(fanIn.toJson()));
+    // The picture moves under a fresh id; the rest is unchanged.
+    final picture = ids.pictures['image-a']!;
+    expect(picture.fileExtension, '.png');
+    expect(hydrated.links.first.images.single.id, picture.cloudId);
+    final expected = LineUpGraph(
+      origins: fanIn.origins,
+      landings: fanIn.landings,
+      links: [
+        fanIn.links.first.copyWith(images: [
+          SimpleImageData(id: picture.cloudId, fileExtension: '.png'),
+        ]),
+        ...fanIn.links.skip(1),
+      ],
+    );
+    expect(_canonical(hydrated.toJson()), _canonical(expected.toJson()));
   });
 }
