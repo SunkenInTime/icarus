@@ -1047,7 +1047,7 @@ abstract interface class SharesModule {
     required SharesCreateArgsTargetType targetType,
   });
   ConvexQuery<SharesListMembersResult> listMembers({
-    ConvexOptional<double> after = const ConvexOptional.absent(),
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   });
@@ -1173,12 +1173,12 @@ final class _SharesModule implements SharesModule {
 
   @override
   ConvexQuery<SharesListMembersResult> listMembers({
-    ConvexOptional<double> after = const ConvexOptional.absent(),
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   }) {
     final args = encodeSharesListMembersArgs(
-      after: after,
+      cursor: cursor,
       targetPublicId: targetPublicId,
       targetType: targetType,
     );

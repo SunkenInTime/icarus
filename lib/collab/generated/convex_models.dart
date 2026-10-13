@@ -3829,14 +3829,14 @@ final class SharesListLinkJoinsResultItem {
 final class SharesListMembersResult {
   const SharesListMembersResult({
     required this.members,
-    required this.nextAfter,
+    required this.nextCursor,
   });
   final List<SharesListMembersResultMembersItem> members;
-  final double? nextAfter;
+  final String? nextCursor;
 
   factory SharesListMembersResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'members', 'nextAfter'});
+    _checkObjectFields(object, path, const {'members', 'nextCursor'});
     return SharesListMembersResult(
       members:
           _decodeArray(
@@ -3850,13 +3850,13 @@ final class SharesListMembersResult {
                 ),
               )
               .toList(growable: false),
-      nextAfter:
-          (object.value['nextAfter'] ?? _missing(path, 'nextAfter'))
+      nextCursor:
+          (object.value['nextCursor'] ?? _missing(path, 'nextCursor'))
               is ConvexNull
           ? null
-          : _decodeNumber(
-              object.value['nextAfter'] ?? _missing(path, 'nextAfter'),
-              '$path.nextAfter',
+          : _decodeString(
+              object.value['nextCursor'] ?? _missing(path, 'nextCursor'),
+              '$path.nextCursor',
             ),
     );
   }
@@ -3870,9 +3870,9 @@ final class SharesListMembersResult {
             )
             .toList(growable: false),
       ),
-      'nextAfter': nextAfter == null
+      'nextCursor': nextCursor == null
           ? const ConvexNull()
-          : _encodeNumber(nextAfter!, '$path.nextAfter'),
+          : ConvexString(nextCursor!),
     });
   }
 }
@@ -6560,12 +6560,11 @@ List<SharesListLinkJoinsResultItem> decodeSharesListLinkJoinsResult(
     .toList(growable: false);
 
 ConvexObject encodeSharesListMembersArgs({
-  ConvexOptional<double> after = const ConvexOptional.absent(),
+  ConvexOptional<String> cursor = const ConvexOptional.absent(),
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
 }) => ConvexObject({
-  if (after.isPresent)
-    'after': _encodeNumber(after.value, 'shares.js:listMembers.args.after'),
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
   'targetPublicId': ConvexString(targetPublicId),
   'targetType': ConvexString(targetType.wireName),
 });

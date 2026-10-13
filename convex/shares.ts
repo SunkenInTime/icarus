@@ -524,8 +524,8 @@ function memberName(user: Doc<"users"> | null): string | null {
 
 /**
  * The people a strategy or folder was shared with directly, oldest first,
- * [MEMBER_PAGE_SIZE] at a time: pass the previous page's [nextAfter] as
- * [after] for the next. Only the owner can read them. People who reach it
+ * [MEMBER_PAGE_SIZE] at a time: pass the previous page's [nextCursor] as
+ * [cursor] for the next. Only the owner can read them. People who reach it
  * through a folder it sits in are listed with that folder (see
  * [listFolderAccess]).
  */
@@ -533,42 +533,34 @@ export const listMembers = query({
   args: {
     targetType: targetTypeValidator,
     targetPublicId: v.string(),
-    after: v.optional(v.number()),
+    cursor: v.optional(v.string()),
   },
   returns: v.object({
     members: v.array(memberValidator),
-    nextAfter: v.union(v.number(), v.null()),
+    nextCursor: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, args) => {
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
     await assertOwnsTarget(ctx, resolved);
-    const after = args.after ?? -1;
+    const pageOpts = { numItems: MEMBER_PAGE_SIZE, cursor: args.cursor ?? null };
 
-    const rows =
+    const result =
       resolved.strategy !== null
         ? await ctx.db
             .query("strategyCollaborators")
-            .withIndex("by_strategyId", (q) =>
-              q.eq("strategyId", resolved.strategy!._id).gt("_creationTime", after),
-            )
-            .take(MEMBER_PAGE_SIZE + 1)
+            .withIndex("by_strategyId", (q) => q.eq("strategyId", resolved.strategy!._id))
+            .paginate(pageOpts)
         : await ctx.db
             .query("folderCollaborators")
-            .withIndex("by_folderId", (q) =>
-              q.eq("folderId", resolved.folder!._id).gt("_creationTime", after),
-            )
-            .take(MEMBER_PAGE_SIZE + 1);
-    const page = rows.slice(0, MEMBER_PAGE_SIZE);
+            .withIndex("by_folderId", (q) => q.eq("folderId", resolved.folder!._id))
+            .paginate(pageOpts);
     const members = [];
-    for (const row of page) {
+    for (const row of result.page) {
       members.push(await describeMember(ctx, row));
     }
     return {
       members,
-      nextAfter:
-        rows.length > MEMBER_PAGE_SIZE
-          ? page[MEMBER_PAGE_SIZE - 1]!._creationTime
-          : null,
+      nextCursor: result.isDone ? null : result.continueCursor,
     };
   },
 });
