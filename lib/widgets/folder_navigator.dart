@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -22,6 +24,7 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
+import 'package:icarus/widgets/dialogs/welcome_tour/welcome_tour_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/cloud_outbox_summary_banner.dart';
 import 'package:icarus/widgets/library_title_strip.dart';
@@ -66,6 +69,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
         _warnWebView();
       }
+      unawaited(showWelcomeTourAtLaunch(context));
     });
   }
 

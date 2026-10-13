@@ -18,6 +18,7 @@ import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/providers/welcome_tour_provider.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
@@ -173,6 +174,8 @@ void main() {
               ),
             ),
             desktopUpdateControllerProvider.overrideWithValue(null),
+            // The tour has its own tests; here it would cover the library.
+            welcomeTourLaunchCheckedProvider.overrideWith((ref) => true),
           ],
           child: const ToastificationWrapper(
             child: ShadApp(home: FolderNavigator()),

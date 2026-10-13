@@ -133,6 +133,11 @@ class AppPreferences extends HiveObject {
   /// (hidden) to 1 (the original look).
   final double backgroundDotOpacity;
 
+  /// Whether this install has shown the welcome tour, the card that
+  /// introduces accounts, the cloud, and replays. Stores written before the
+  /// tour existed read false, so updating users see it once.
+  final bool welcomeTourSeen;
+
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
@@ -153,6 +158,7 @@ class AppPreferences extends HiveObject {
     this.discordPresenceEnabled = true,
     this.videoExportStepDurationSeconds = 3.0,
     this.backgroundDotOpacity = 1.0,
+    this.welcomeTourSeen = false,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -177,6 +183,7 @@ class AppPreferences extends HiveObject {
     bool? discordPresenceEnabled,
     double? videoExportStepDurationSeconds,
     double? backgroundDotOpacity,
+    bool? welcomeTourSeen,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -208,6 +215,7 @@ class AppPreferences extends HiveObject {
       videoExportStepDurationSeconds:
           videoExportStepDurationSeconds ?? this.videoExportStepDurationSeconds,
       backgroundDotOpacity: backgroundDotOpacity ?? this.backgroundDotOpacity,
+      welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
     );
   }
 }
@@ -689,6 +697,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
       (current) => current.copyWith(
         backgroundDotOpacity: opacity.clamp(0.0, 1.0),
       ),
+    );
+  }
+
+  Future<void> markWelcomeTourSeen() {
+    return _updatePreferences(
+      (current) => current.copyWith(welcomeTourSeen: true),
     );
   }
 

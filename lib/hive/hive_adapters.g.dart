@@ -1145,13 +1145,14 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
           fields[18] == null ? 3.0 : (fields[18] as num).toDouble(),
       backgroundDotOpacity:
           fields[19] == null ? 1.0 : (fields[19] as num).toDouble(),
+      welcomeTourSeen: fields[20] == null ? false : fields[20] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(19)
+      ..writeByte(20)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1189,7 +1190,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(18)
       ..write(obj.videoExportStepDurationSeconds)
       ..writeByte(19)
-      ..write(obj.backgroundDotOpacity);
+      ..write(obj.backgroundDotOpacity)
+      ..writeByte(20)
+      ..write(obj.welcomeTourSeen);
   }
 
   @override

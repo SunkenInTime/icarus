@@ -38,6 +38,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/providers/welcome_tour_provider.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
@@ -225,6 +226,8 @@ Future<void> main(List<String> args) async {
           "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
         );
       }
+      appProviderContainer.read(launchOpensFileOrLinkProvider.notifier).state =
+          launch.fileOpenArgs.isNotEmpty || _bufferedDeepLinks.isNotEmpty;
       runApp(
         UncontrolledProviderScope(
           container: appProviderContainer,
