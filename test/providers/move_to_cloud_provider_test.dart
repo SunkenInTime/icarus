@@ -24,6 +24,7 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -290,6 +291,75 @@ void main() {
     uploads.uploadAll();
     await move;
     expect(container.read(movingToCloudProvider), isEmpty);
+  });
+
+  test('an edit landing as the move finishes keeps the edited original',
+      () async {
+    await putStrategy('s1');
+    open();
+    cloud.onFinish = () async {
+      final edited = strategies().get('s1')!.copyWith(name: 'Strategy s1 v2');
+      await strategies().put('s1', edited);
+    };
+
+    await mover().moveStrategy('s1');
+
+    expect(cloud.strategies.values.single.unfinished, isFalse);
+    expect(strategies().get('s1')!.name, 'Strategy s1 v2');
+    expect(moves().isEmpty, isTrue);
+    expect(messages, [
+      (
+        'Moved "Strategy s1" to the cloud. It changed while moving, so this '
+            'device keeps the latest version too.',
+        true,
+      ),
+    ]);
+  });
+
+  test('a copy that could not be abandoned stays locked', () async {
+    await putStrategy('s1');
+    cloud.refuseBatchesOf = {'Strategy s1'};
+    cloud.refuseAbandon = true;
+    open();
+
+    await mover().moveStrategy('s1');
+
+    final copy = cloud.strategies.keys.single;
+    expect(moves().keys, [copy], reason: 'cleanup will try again');
+    expect(container.read(movingToCloudProvider), {copy});
+    await expectLater(
+      container.read(strategyProvider.notifier).openCloudStrategy(copy),
+      throwsStateError,
+    );
+    expect(strategies().containsKey('s1'), isTrue);
+  });
+
+  test("a folder can't be deleted while something in it moves", () async {
+    await folders().put(
+      'f1',
+      Folder(
+        id: 'f1',
+        name: 'Bind',
+        iconId: 0,
+        color: FolderColor.red,
+        dateCreated: DateTime.utc(2026),
+      ),
+    );
+    await putStrategy('s1', folderID: 'f1');
+    uploads.autoUpload = false;
+    open();
+
+    final move = mover().moveStrategy('s1');
+    await untilUploading();
+    final result = await container
+        .read(folderProvider.notifier)
+        .deleteFolder('f1', workspace: LibraryWorkspace.local);
+    expect(result.didSucceed, isFalse);
+    expect(folders().containsKey('f1'), isTrue);
+    expect(strategies().containsKey('s1'), isTrue);
+    uploads.uploadAll();
+    await move;
+    expect(strategies().containsKey('s1'), isFalse);
   });
 
   test('the original stays until its pictures have landed', () async {
@@ -716,6 +786,8 @@ class _FakeCloud extends ConvexStrategyRepository {
   bool loseOneItem = false;
   bool loseFinishAnswer = false;
   bool loseFolderAnswer = false;
+  bool refuseAbandon = false;
+  Future<void> Function()? onFinish;
 
   @override
   Future<void> createFolder({
@@ -786,6 +858,7 @@ class _FakeCloud extends ConvexStrategyRepository {
     }
     strategies[strategyPublicId]!.unfinished = false;
     finished.add(strategyPublicId);
+    await onFinish?.call();
     if (loseFinishAnswer) throw StateError('connection lost');
   }
 
@@ -910,6 +983,7 @@ class _FakeCloud extends ConvexStrategyRepository {
   Future<AbandonedMove> abandonMove(
     String strategyPublicId,
   ) async {
+    if (refuseAbandon) throw StateError('offline');
     final strategy = strategies[strategyPublicId];
     if (strategy == null) return AbandonedMove.missing;
     if (!strategy.unfinished) return AbandonedMove.finished;

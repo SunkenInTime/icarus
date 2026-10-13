@@ -74,6 +74,10 @@ enum _Outcome {
 
   /// In the cloud, but its copy on this device could not be removed.
   movedLocalKept,
+
+  /// In the cloud as it was read; it changed here meanwhile, so this
+  /// device keeps the changed version too.
+  movedChangedHere,
 }
 
 /// What one strategy's move writes to the cloud.
@@ -117,6 +121,12 @@ class MoveToCloudNotifier extends Notifier<void> {
         if (ready) unawaited(_cleanUpUnfinishedMoves());
       },
     );
+    // Copies a past move left unfinished stay locked until cleanup removes
+    // them: an edit made in one would go with it.
+    final box = _movesBox;
+    if (box != null && box.isNotEmpty) {
+      scheduleMicrotask(() => _markMoving({...box.keys.cast<String>()}));
+    }
     if (ref.read(authProvider).isConvexUserReady) {
       scheduleMicrotask(() => unawaited(_cleanUpUnfinishedMoves()));
     }
@@ -163,6 +173,11 @@ class MoveToCloudNotifier extends Notifier<void> {
             _showFailure(
               'Moved "$name" to the cloud, but its copy on this device '
               "couldn't be removed.",
+            );
+          case _Outcome.movedChangedHere:
+            _showFailure(
+              'Moved "$name" to the cloud. It changed while moving, so this '
+              'device keeps the latest version too.',
             );
         }
       } finally {
@@ -448,7 +463,6 @@ class MoveToCloudNotifier extends Notifier<void> {
       await _verify(cloudId, plan, uploads);
       if (!unchanged()) {
         await _abandon(cloudId);
-        _unmarkMoving({cloudId});
         return _Outcome.changedMeanwhile;
       }
       _requireAccount(accountId);
@@ -460,7 +474,6 @@ class MoveToCloudNotifier extends Notifier<void> {
       await _report('move_strategy', error, stackTrace);
       // A finishMove whose answer was lost did finish the move.
       if (await _abandon(cloudId) != AbandonedMove.finished) {
-        _unmarkMoving({cloudId});
         return _Outcome.notMoved;
       }
     }
@@ -470,16 +483,24 @@ class MoveToCloudNotifier extends Notifier<void> {
     // in both places, not neither.
     try {
       await _forgetUnfinishedMove(cloudId);
+      _unmarkMoving({cloudId});
+      // The original goes only as it was read, whatever wrote to it since:
+      // the check and the removal run with nothing in between.
+      if (!unchanged()) return _Outcome.movedChangedHere;
+      final removal =
+          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(localId);
+      await removal;
       await ref.read(pinnedItemsProvider.notifier).replacePin(localId, cloudId);
-      await ref.read(strategyProvider.notifier).deleteStrategy(
-            localId,
-            source: StrategySource.local,
-          );
+      try {
+        final images = await PlacedImageProvider.getImageFolder(localId);
+        await images.parent.delete(recursive: true);
+      } on FileSystemException {
+        // Only disk space; nothing shows these files any more.
+      }
     } catch (error, stackTrace) {
       await _report('remove_moved_original', error, stackTrace);
       return _Outcome.movedLocalKept;
     } finally {
-      _unmarkMoving({cloudId});
       ref.invalidate(cloudStrategiesProvider);
     }
     return _Outcome.moved;
@@ -746,6 +767,7 @@ class MoveToCloudNotifier extends Notifier<void> {
           await ref.read(convexStrategyRepositoryProvider).abandonMove(cloudId);
       if (outcome == AbandonedMove.finished) {
         await _forgetUnfinishedMove(cloudId);
+        _unmarkMoving({cloudId});
         return outcome;
       }
       await ref
@@ -759,8 +781,10 @@ class MoveToCloudNotifier extends Notifier<void> {
         // Only disk space; nothing shows these files.
       }
       await _forgetUnfinishedMove(cloudId);
+      _unmarkMoving({cloudId});
       return outcome;
     } catch (error, stackTrace) {
+      // The copy stays locked until a later cleanup removes it.
       await _report('abandon_move', error, stackTrace);
       return null;
     }
