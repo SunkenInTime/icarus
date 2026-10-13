@@ -502,6 +502,7 @@ class ConvexStrategyRepository {
     String? themeProfileId,
     Map<String, dynamic>? themeOverridePalette,
     Map<String, dynamic>? initialPageSettings,
+    bool unfinishedMove = false,
   }) async {
     await _api.strategies.createWithInitialPage(
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
@@ -516,6 +517,38 @@ class ConvexStrategyRepository {
       themeProfileId: _optional(themeProfileId),
       themeOverridePalette: _themePalette(themeOverridePalette),
       initialPageSettings: _pageSettings(initialPageSettings),
+      // Library lists skip the strategy until [finishMove].
+      unfinishedMove: unfinishedMove
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
+    );
+  }
+
+  /// Deletes [strategyPublicId] only if a move left it unfinished. Says
+  /// whether it was deleted, had finished, or was already gone.
+  Future<AbandonedMove> abandonMove(String strategyPublicId) async {
+    final result = await _api.strategies.abandonMove(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+    );
+    return switch (result.outcome) {
+      StrategiesAbandonMoveResultOutcome.deleted => AbandonedMove.deleted,
+      StrategiesAbandonMoveResultOutcome.finished => AbandonedMove.finished,
+      StrategiesAbandonMoveResultOutcome.missing => AbandonedMove.missing,
+    };
+  }
+
+  /// Shows a strategy made with `unfinishedMove` in library lists, once
+  /// every part of it has landed. Refused when it is no longer in
+  /// [folderPublicId] (null: the top level), the folder the move put it in.
+  Future<void> finishMove(
+    String strategyPublicId, {
+    required String? folderPublicId,
+  }) async {
+    await _api.strategies.finishMove(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      strategyPublicId: strategyPublicId,
+      folderPublicId: _optional(folderPublicId),
     );
   }
 
@@ -729,6 +762,10 @@ class ConvexStrategyRepository {
     return reported.isPresent ? reported.value : role == 'owner';
   }
 }
+
+/// What abandoning a move found: the unfinished strategy, now deleted; a
+/// strategy whose move finished, kept; or nothing.
+enum AbandonedMove { deleted, finished, missing }
 
 bool isTypedConvexUnauthenticatedError(Object error) {
   return (error is ConvexFunctionException &&

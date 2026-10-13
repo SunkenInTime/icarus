@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -275,6 +276,8 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             ref.read(folderProvider.notifier).findFolderByID(folderId) != null;
       case _StrategyLocation(:final strategyId, source: StrategySource.local):
         return ref.read(platformPolicyProvider).allowsLocalLibrary &&
+            // Moving to the cloud, it can't be opened until the move ends.
+            !ref.read(movingToCloudProvider).contains(strategyId) &&
             Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
                     .get(strategyId) !=
                 null;
@@ -287,9 +290,9 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     final navigator = appNavigatorKey.currentState;
     if (navigator == null || !mounted) return false;
 
-    final bool inStrategyRoute = mouseNavigationRouteObserver
-            .topRoute?.settings.name ==
-        Routes.strategyView;
+    final bool inStrategyRoute =
+        mouseNavigationRouteObserver.topRoute?.settings.name ==
+            Routes.strategyView;
     final bool strategyOpen = ref.read(strategyProvider).stratName != null;
 
     switch (target) {
@@ -345,8 +348,8 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
           );
           return true;
         }
-        final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-            .get(strategyId);
+        final strategy =
+            Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
         if (strategy == null) return false;
         unawaited(
           navigator.push(

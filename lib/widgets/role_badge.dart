@@ -30,12 +30,21 @@ CloudBadgeKind? cloudBadgeKindForRole(String? role) {
 class StrategyBadge extends StatelessWidget {
   const StrategyBadge({
     super.key,
-    required this.icon,
+    required IconData this.icon,
     required this.label,
     required this.tooltip,
-  });
+  }) : leading = null;
 
-  final IconData icon;
+  /// A badge led by [leading] in place of an icon.
+  const StrategyBadge.leading({
+    super.key,
+    required Widget this.leading,
+    required this.label,
+    required this.tooltip,
+  }) : icon = null;
+
+  final IconData? icon;
+  final Widget? leading;
   final String label;
   final String tooltip;
 
@@ -54,7 +63,7 @@ class StrategyBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12, color: theme.foreground),
+            leading ?? Icon(icon, size: 12, color: theme.foreground),
             const SizedBox(width: 5),
             Text(
               label,
@@ -81,6 +90,30 @@ class DeviceOnlyBadge extends StatelessWidget {
       icon: LucideIcons.monitor,
       label: 'On this device',
       tooltip: 'Saved only on this computer',
+    );
+  }
+}
+
+/// How opaque a strategy or folder is while it moves to the cloud: still
+/// readable, plainly not available.
+const double movingToCloudOpacity = 0.45;
+
+/// A strategy on its way from this device to the cloud.
+class MovingToCloudBadge extends StatelessWidget {
+  const MovingToCloudBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StrategyBadge.leading(
+      leading: SizedBox.square(
+        dimension: 10,
+        child: CircularProgressIndicator(
+          strokeWidth: 1.5,
+          color: Settings.tacticalVioletTheme.foreground,
+        ),
+      ),
+      label: 'Moving to cloud',
+      tooltip: 'Stays on this computer until all of it is in the cloud',
     );
   }
 }

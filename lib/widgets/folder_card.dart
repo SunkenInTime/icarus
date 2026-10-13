@@ -4,6 +4,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -20,6 +21,7 @@ import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
+import 'package:icarus/widgets/role_badge.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
@@ -180,6 +182,10 @@ class _FolderCardState extends ConsumerState<FolderCard>
   /// Shared cloud folders can be opened but only their owner reshapes them.
   bool get _canManage => !_isCloud || widget.cloudRole == 'owner';
 
+  // Moving to the cloud, it can't be opened, changed or moved elsewhere.
+  // Read in build.
+  bool _isMovingToCloud = false;
+
   @override
   void initState() {
     super.initState();
@@ -270,14 +276,18 @@ class _FolderCardState extends ConsumerState<FolderCard>
     final pinned = ref.watch(pinnedItemsProvider);
     final id = _folder.id;
     final isPinned = pinned.containsKey(id);
+    _isMovingToCloud = !_isCloud &&
+        !widget.isDemo &&
+        ref.watch(movingToCloudProvider.select((ids) => ids.contains(id)));
 
     // The DragTarget wraps the gutter padding (not just the card) so drops
     // register while hovering the gap between cards; the Draggable sits
     // inside so drags can only start from the card itself.
     return DragTarget<GridItem>(onWillAcceptWithDetails: (details) {
       final item = details.data;
-      if (widget.isDemo) return false;
+      if (widget.isDemo || _isMovingToCloud) return false;
       if (!_canManage) return false;
+      if (_movesToCloud(item)) return true;
       if (item.store != widget.store) return false;
       if (item is FolderItem) {
         return item.folder.id != id && !_isParentFolder(item.folder.id);
@@ -328,6 +338,17 @@ class _FolderCardState extends ConsumerState<FolderCard>
         return;
       }
 
+      if (_movesToCloud(item)) {
+        final moves = ref.read(moveToCloudProvider.notifier);
+        switch (item) {
+          case StrategyItem(:final strategyId):
+            await moves.moveStrategy(strategyId, cloudFolderId: _folder.id);
+          case FolderItem(:final folder):
+            await moves.moveFolder(folder.id, cloudParentId: _folder.id);
+        }
+        return;
+      }
+
       if (item is StrategyItem) {
         await ref.read(strategyProvider.notifier).moveToFolder(
               strategyID: item.strategyId,
@@ -355,76 +376,86 @@ class _FolderCardState extends ConsumerState<FolderCard>
       final isMoveIntoFolderTarget = isDropTarget && !isPinnedDropTarget;
       _syncOpenState(isDropTarget: isMoveIntoFolderTarget);
 
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: folderCardGutterOutset),
-        child: Draggable<GridItem>(
-          feedback: TiltDragFeedback(
-            controller: _dragTiltController,
-            opacity: 0.9,
-            child: _buildDragFeedback(),
-          ),
-          dragAnchorStrategy: pointerDragAnchorStrategy,
-          onDragUpdate: (details) =>
-              _dragTiltController.addDelta(details.delta.dx),
-          data: FolderItem(_folder, store: widget.store),
-          child: MouseRegion(
-            onEnter: (_) {
-              _isHovered = true;
-              _openController.forward();
-            },
-            onExit: (_) {
-              _isHovered = false;
-              if (candidateData.isEmpty) _openController.reverse();
-            },
-            cursor: SystemMouseCursors.click,
-            child: ShadContextMenuRegion(
-              controller: _rightClickMenuController,
-              items: _buildMenuItems(isPinned: isPinned),
-              child: GestureDetector(
-                onTap: () {
-                  if (widget.isDemo) return;
-                  ref.read(folderProvider.notifier).openFolder(
-                        folderId: _folder.id,
-                        store: widget.store,
-                      );
+      return AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: _isMovingToCloud ? movingToCloudOpacity : 1,
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: folderCardGutterOutset),
+          child: Draggable<GridItem>(
+            feedback: TiltDragFeedback(
+              controller: _dragTiltController,
+              opacity: 0.9,
+              child: _buildDragFeedback(),
+            ),
+            dragAnchorStrategy: pointerDragAnchorStrategy,
+            onDragUpdate: (details) =>
+                _dragTiltController.addDelta(details.delta.dx),
+            data: FolderItem(_folder, store: widget.store),
+            maxSimultaneousDrags: _isMovingToCloud ? 0 : null,
+            child: AbsorbPointer(
+              absorbing: _isMovingToCloud,
+              child: MouseRegion(
+                onEnter: (_) {
+                  _isHovered = true;
+                  _openController.forward();
                 },
-                child: AnimatedBuilder(
-                  animation: _open,
-                  builder: (context, _) {
-                    final dropSide = _pinnedDropSide;
-                    final slotKey = dropSide == null
-                        ? null
-                        : dropInsertionSlotKey(
-                            itemId: id,
-                            side: dropSide,
-                            pinnedOrder: pinnedIdsInManualOrder(pinned),
+                onExit: (_) {
+                  _isHovered = false;
+                  if (candidateData.isEmpty) _openController.reverse();
+                },
+                cursor: SystemMouseCursors.click,
+                child: ShadContextMenuRegion(
+                  controller: _rightClickMenuController,
+                  items: _buildMenuItems(isPinned: isPinned),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (widget.isDemo) return;
+                      ref.read(folderProvider.notifier).openFolder(
+                            folderId: _folder.id,
+                            store: widget.store,
                           );
-                    return Transform.scale(
-                      scale: isPinnedDropTarget ? 1 : 1 + 0.015 * _open.value,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          _buildFolderBody(
-                            isMoveIntoFolderTarget: isMoveIntoFolderTarget,
-                            isPinned: isPinned,
-                          ),
-                          if (dropSide != null && slotKey != null)
-                            Positioned.fill(
-                              child: DropInsertionIndicator(
-                                key: ValueKey(slotKey),
-                                slotKey: slotKey,
+                    },
+                    child: AnimatedBuilder(
+                      animation: _open,
+                      builder: (context, _) {
+                        final dropSide = _pinnedDropSide;
+                        final slotKey = dropSide == null
+                            ? null
+                            : dropInsertionSlotKey(
+                                itemId: id,
                                 side: dropSide,
-                                // Matches the grid gutter in FolderContent
-                                // so the caret sits centered in it.
-                                gap: 2 * folderCardGutterOutset,
-                                // Aligns with the folder body below the tab.
-                                topInset: 14,
+                                pinnedOrder: pinnedIdsInManualOrder(pinned),
+                              );
+                        return Transform.scale(
+                          scale:
+                              isPinnedDropTarget ? 1 : 1 + 0.015 * _open.value,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              _buildFolderBody(
+                                isMoveIntoFolderTarget: isMoveIntoFolderTarget,
+                                isPinned: isPinned,
                               ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
+                              if (dropSide != null && slotKey != null)
+                                Positioned.fill(
+                                  child: DropInsertionIndicator(
+                                    key: ValueKey(slotKey),
+                                    slotKey: slotKey,
+                                    side: dropSide,
+                                    // Matches the grid gutter in FolderContent
+                                    // so the caret sits centered in it.
+                                    gap: 2 * folderCardGutterOutset,
+                                    // Aligns with the folder body below the tab.
+                                    topInset: 14,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -617,6 +648,26 @@ class _FolderCardState extends ConsumerState<FolderCard>
 
   Widget _buildFooterRow() {
     final agents = widget.data.agentTypes;
+    final footerStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.55),
+      fontSize: 11,
+      fontWeight: FontWeight.w500,
+    );
+    if (_isMovingToCloud) {
+      return Row(
+        children: [
+          SizedBox.square(
+            dimension: 10,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text('Moving to cloud', style: footerStyle),
+        ],
+      );
+    }
 
     return Row(
       children: [
@@ -628,14 +679,25 @@ class _FolderCardState extends ConsumerState<FolderCard>
                     0 => 'Empty',
                     final count => '$count strateg${count == 1 ? 'y' : 'ies'}',
                   },
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: footerStyle,
                 )
               : _AgentComposition(agents: agents),
         ),
+        // Signed in, a folder only on this computer says so, as local
+        // strategies do.
+        if (!_isCloud &&
+            !widget.isDemo &&
+            ref.watch(isCloudWorkspaceAvailableProvider)) ...[
+          const SizedBox(width: 6),
+          Tooltip(
+            message: 'Saved only on this computer',
+            child: Icon(
+              LucideIcons.monitor,
+              size: 13,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
         if ((widget.data.strategyCount ?? 0) > 0 ||
             widget.data.folderCount > 0) ...[
           const SizedBox(width: 6),
@@ -691,6 +753,17 @@ class _FolderCardState extends ConsumerState<FolderCard>
     );
   }
 
+  /// Whether dropping [item] here moves it from this device into this cloud
+  /// folder.
+  bool _movesToCloud(GridItem item) =>
+      _isCloud &&
+      item.store == LibraryWorkspace.local &&
+      ref.read(isCloudWorkspaceAvailableProvider) &&
+      !ref.read(movingToCloudProvider).contains(switch (item) {
+            StrategyItem(:final strategyId) => strategyId,
+            FolderItem(:final folder) => folder.id,
+          });
+
   List<ShadContextMenuItem> _buildMenuItems({required bool isPinned}) {
     final id = _folder.id;
     return [
@@ -737,6 +810,18 @@ class _FolderCardState extends ConsumerState<FolderCard>
                 title: _folder.name,
               ),
             );
+          },
+        ),
+      // Signed in, a folder on this device can join the cloud library.
+      if (!_isCloud &&
+          !widget.isDemo &&
+          ref.watch(isCloudWorkspaceAvailableProvider))
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.cloudUpload),
+          child: const Text('Move to cloud'),
+          onPressed: () {
+            _closeMenus();
+            ref.read(moveToCloudProvider.notifier).moveFolder(id);
           },
         ),
       ShadContextMenuItem(

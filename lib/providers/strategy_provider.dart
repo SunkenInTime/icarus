@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/page_copy_id.dart';
@@ -326,6 +327,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> openCloudStrategy(String strategyID) async {
+    // A cloud copy still being built by a move from this device is the
+    // mover's: an edit made in it would be lost if the move fails.
+    if (ref.read(movingToCloudProvider).contains(strategyID)) {
+      throw StateError('This strategy is moving to the cloud.');
+    }
     cancelPendingSave();
     ref.read(strategySaveStateProvider.notifier).reset();
 
@@ -1750,6 +1756,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// Opens strategy [id] on its first page, or on [pageId] when given.
   Future<void> loadFromHive(String id, {String? pageId}) async {
     _requireLocalLibrary('open');
+    // Edits made while a strategy moves to the cloud would go with the
+    // local original the move deletes.
+    if (ref.read(movingToCloudProvider).contains(id)) {
+      throw StateError('This strategy is moving to the cloud.');
+    }
     cancelPendingSave();
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
@@ -2127,8 +2138,16 @@ class StrategyProvider extends Notifier<StrategyState> {
       return result;
     }
 
-    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
+    // Its move to the cloud deletes it once its cloud copy is complete. The
+    // check and the removal run with nothing in between, so a move that
+    // starts while this delete waits is never undercut.
+    if (ref.read(movingToCloudProvider).contains(strategyID)) {
+      return CloudLibraryActionResult.failed(
+        'This strategy is moving to the cloud. Delete it once the move ends.',
+      );
+    }
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
 
     final directory = await getApplicationSupportDirectory();
 

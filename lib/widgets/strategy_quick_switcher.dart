@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/config/platform_policy.dart';
@@ -218,8 +219,11 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     required Box<StrategyData> box,
     required String currentStrategyId,
   }) {
+    final moving = ref.read(movingToCloudProvider);
     final strategies = box.values
         .where((strategy) => strategy.id != currentStrategyId)
+        // Moving to the cloud, it can't be opened until the move ends.
+        .where((strategy) => !moving.contains(strategy.id))
         .toList(growable: false);
     strategies.sort((a, b) => b.lastEdited.compareTo(a.lastEdited));
     return strategies;
