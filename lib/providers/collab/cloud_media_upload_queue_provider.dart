@@ -624,9 +624,10 @@ class CloudMediaUploadQueueNotifier
   /// Drops [accountId]'s uploads for [strategyPublicId] that no change on
   /// this device still places, with their bytes: the user just discarded
   /// the changes of a strategy that account lost. An upload a remaining
-  /// change refers to stays, and so does one being sent right now, whose
-  /// answer would write it back: a later discard takes it. Nothing goes
-  /// unless [accountId] is still the one signed in. Returns whether
+  /// change refers to stays. Nothing goes unless [accountId] is still the
+  /// one signed in. An upload whose request is out when it goes can be
+  /// written back by its answer, as with [clearJobsForStrategy]; it then
+  /// shows as unsent again and can be discarded again. Returns whether
   /// nothing failed.
   Future<bool> discardUnreferencedJobs(
     String strategyPublicId, {
@@ -635,8 +636,7 @@ class CloudMediaUploadQueueNotifier
     final jobs = _jobsByStorageKey.values
         .where((job) =>
             job.accountId == accountId &&
-            job.strategyPublicId == strategyPublicId &&
-            durableCloudMediaOutboxStorageKey(job) != _processingJobKey)
+            job.strategyPublicId == strategyPublicId)
         .toList(growable: false);
     try {
       for (final job in jobs) {
@@ -649,9 +649,6 @@ class CloudMediaUploadQueueNotifier
       _refreshState();
     }
   }
-
-  /// The storage key of the upload being worked on, while one is.
-  String? _processingJobKey;
 
   Future<void> clearJobsForStrategy(String strategyPublicId) async {
     final jobs = _readJobs()
@@ -679,12 +676,10 @@ class CloudMediaUploadQueueNotifier
 
     state = state.copyWith(isProcessing: true);
     _logMedia('process.start ${_describeJob(nextJob)}');
-    _processingJobKey = durableCloudMediaOutboxStorageKey(nextJob);
     late final bool madeProgress;
     try {
       madeProgress = await _processJob(nextJob);
     } finally {
-      _processingJobKey = null;
       _refreshState(isProcessing: false);
       _logMedia('process.finish jobs=${state.jobs.length}');
     }
