@@ -19,7 +19,6 @@ import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
-import 'package:icarus/widgets/editor_operation_scope.dart';
 
 Offset viewConeAgentCompositeAgentOffsetVirtual(double agentSize) {
   return Offset(
@@ -130,18 +129,16 @@ class ViewConeAgentComposite extends ConsumerWidget {
               alignment: Alignment.center,
               child: Opacity(
                 opacity: previewOpacity,
-                child: EditorItemOutline(
-                  child: AgentWidget(
-                    state: agent.state,
-                    isAlly: agent.isAlly,
-                    id: agent.id,
-                    agent: AgentData.agents[agent.type]!,
-                    weapon: agent.weapon,
-                    previousWeapon: previousWeapon,
-                    weaponTransitionProgress: weaponTransitionProgress,
-                    forcedAgentSize: agentSize,
-                    isInteractive: isInteractive,
-                  ),
+                child: AgentWidget(
+                  state: agent.state,
+                  isAlly: agent.isAlly,
+                  id: agent.id,
+                  agent: AgentData.agents[agent.type]!,
+                  weapon: agent.weapon,
+                  previousWeapon: previousWeapon,
+                  weaponTransitionProgress: weaponTransitionProgress,
+                  forcedAgentSize: agentSize,
+                  isInteractive: isInteractive,
                 ),
               ),
             ),
@@ -362,14 +359,12 @@ class _PlacedViewConeAgentWidgetState
             });
             widget.onDragEnd(details, dragId);
           },
-          child: EditorItemOutline(
-            child: ViewConeAgentComposite(
-              agent: current,
-              rotation: displayRotation,
-              length: localLength,
-              forcedAgentSize: agentSize,
-              applyRotation: false,
-            ),
+          child: ViewConeAgentComposite(
+            agent: current,
+            rotation: displayRotation,
+            length: localLength,
+            forcedAgentSize: agentSize,
+            applyRotation: false,
           ),
         ),
       ),

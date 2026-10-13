@@ -66,6 +66,18 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     final scaledMaxDiameter = coord.scale(maxDiameterInVirtual);
     final iconSize = coord.scale(Settings.utilityIconSize);
 
+    final circle = SizedBox(
+      width: scaledDiameter,
+      height: scaledDiameter,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: fillOpacity),
+          border: Border.all(color: color, width: coord.scale(2)),
+        ),
+      ),
+    );
+
     return SizedBox(
       width: scaledMaxDiameter,
       height: scaledMaxDiameter,
@@ -73,20 +85,11 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
         children: [
           Center(
             child: IgnorePointer(
-              // Laid out for the largest circle; outline the one drawn.
-              child: EditorItemOutline(
-                child: SizedBox(
-                  width: scaledDiameter,
-                  height: scaledDiameter,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: color.withValues(alpha: fillOpacity),
-                      border: Border.all(color: color, width: coord.scale(2)),
-                    ),
-                  ),
-                ),
-              ),
+              // A circle with its own center marker is an item on its own,
+              // laid out for the largest circle, so it outlines the one
+              // drawn. One around an agent leaves that to the agent's icon.
+              child:
+                  showCenterMarker ? EditorItemOutline(child: circle) : circle,
             ),
           ),
           if (showCenterMarker)

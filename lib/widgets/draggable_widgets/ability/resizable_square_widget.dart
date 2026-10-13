@@ -7,7 +7,6 @@ import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class ResizableSquareWidget extends ConsumerWidget {
   const ResizableSquareWidget({
@@ -104,15 +103,13 @@ class ResizableSquareWidget extends ConsumerWidget {
               key: const ValueKey('square-range-body'),
               opacity: showRangeFill ? rangeOpacity : 0,
               child: IgnorePointer(
-                child: EditorItemOutline(
-                  child: CustomBorderContainer(
-                    height: scaledLength,
-                    width: isWall ? width : scaledWidth,
-                    color: color,
-                    hasTop: hasTopborder,
-                    hasSide: hasSideBorders,
-                    isTransparent: isTransparent,
-                  ),
+                child: CustomBorderContainer(
+                  height: scaledLength,
+                  width: isWall ? width : scaledWidth,
+                  color: color,
+                  hasTop: hasTopborder,
+                  hasSide: hasSideBorders,
+                  isTransparent: isTransparent,
                 ),
               ),
             ),

@@ -59,15 +59,13 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
 
     Widget marker = _PinnedEnd(
       isPinned: isPinned,
-      child: EditorItemOutline(
-        child: AgentWidget(
-          lineUpId: origin.id,
-          agent: AgentData.agents[origin.agent.type]!,
-          isAlly: origin.agent.isAlly,
-          weapon: origin.agent.weapon,
-          id: origin.agent.id,
-          isInteractive: interactive,
-        ),
+      child: AgentWidget(
+        lineUpId: origin.id,
+        agent: AgentData.agents[origin.agent.type]!,
+        isAlly: origin.agent.isAlly,
+        weapon: origin.agent.weapon,
+        id: origin.agent.id,
+        isInteractive: interactive,
       ),
     );
     final canEdit = ref.watch(

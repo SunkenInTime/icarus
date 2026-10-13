@@ -5,7 +5,6 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
-import 'package:icarus/widgets/editor_operation_scope.dart';
 
 Offset abilityVisionConeChildOffsetVirtual({
   required Ability ability,
@@ -130,7 +129,7 @@ class AbilityVisionConeComposite extends StatelessWidget {
               angle: -rotation,
               alignment: Alignment.topLeft,
               origin: abilityAnchor,
-              child: EditorItemOutline(child: child),
+              child: child,
             ),
           ),
         ],
