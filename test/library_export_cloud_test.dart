@@ -14,6 +14,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -157,9 +158,8 @@ void main() {
       ),
       path.join(tempDir.path, 'folder-export.zip'),
     );
-    // A folder may be one shared with the user, so it reads whatever they
-    // can open.
-    expect(repository.scopes, everyElement('all'));
+    // The user's own folder is read from their inventory, not listed.
+    expect(repository.scopes, everyElement('owned'));
 
     final result = await StrategyImportExportService(container)
         .loadFromFileDrop([XFile(export.path)]);
@@ -177,6 +177,32 @@ void main() {
           .values
           .where((strategy) => strategy.name == 'Cloud Root'),
       isEmpty,
+    );
+  });
+
+  test('a shared cloud folder export lists what the user can open', () async {
+    // Shared with the user, the folders are not in their own inventory.
+    repository.ownedFolderIds = const {};
+    final container = signedIn();
+
+    final export = await _zip(
+      await StrategyImportExportService(container)
+          .buildFolderExportDirectoryForTest(
+        'cloud-folder',
+        store: LibraryWorkspace.cloud,
+      ),
+      path.join(tempDir.path, 'shared-folder-export.zip'),
+    );
+    expect(repository.scopes, contains('all'));
+
+    final result = await StrategyImportExportService(container)
+        .loadFromFileDrop([XFile(export.path)]);
+
+    expect(result.issues, isEmpty);
+    expect(result.foldersCreated, 2);
+    expect(
+      _strategyByName('Cloud Deep').folderID,
+      _folderByName('Retakes').id,
     );
   });
 
@@ -318,7 +344,7 @@ void main() {
         isA<LibraryExportIncomplete>().having(
           (error) => error.userMessage,
           'userMessage',
-          contains('strategy that was deleted'),
+          contains("haven't synced"),
         ),
       ),
     );
@@ -342,16 +368,35 @@ void main() {
     expect(repository.snapshotsRead, isEmpty);
   });
 
-  test('a strategy moved between folders mid-backup stops the backup',
+  test('the backup holds a strategy folder-by-folder listing would miss',
       () async {
-    // Once "Cloud Plays" is listed, another device moves "Cloud Deep" out of
-    // "Retakes", not yet listed, into it: neither listing holds it.
-    repository.afterListing = (folderId) {
-      if (folderId == 'cloud-folder') {
-        repository.afterListing = null;
-        repository.move('cloud-deep', 'cloud-folder');
-      }
-    };
+    // As when another device moves it between two folders' listings: the
+    // per-folder lists leave it out, the one-moment inventory has it.
+    repository.listingMisses.add('cloud-deep');
+    final container = signedIn();
+
+    final directory = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+    addTearDown(() => directory.delete(recursive: true));
+
+    final manifest = await _manifest(directory);
+    expect(
+      manifest.strategies.map((entry) => entry.name),
+      unorderedEquals(['Cloud Root', 'Cloud Deep']),
+    );
+    final retakes =
+        manifest.folders.singleWhere((folder) => folder.name == 'Retakes');
+    expect(
+      manifest.strategies
+          .singleWhere((entry) => entry.name == 'Cloud Deep')
+          .folderManifestId,
+      retakes.manifestId,
+    );
+  });
+
+  test('a strategy deleted after the inventory was read stops the backup',
+      () async {
+    repository.deletedAfterInventory.add('cloud-deep');
     final container = signedIn();
 
     await expectLater(
@@ -367,22 +412,28 @@ void main() {
     );
   });
 
-  test('a strategy moved mid-export stops a cloud folder export', () async {
-    repository.afterListing = (folderId) {
-      if (folderId == 'cloud-folder') {
-        repository.afterListing = null;
-        repository.move('cloud-deep', 'cloud-folder');
-      }
+  test('an edit held on a strategy the server no longer lists stops it',
+      () async {
+    // Held for review, the edit is never sent, so the deletion elsewhere is
+    // never found: the strategy stays in this account's outbox, not among
+    // its deleted strategies, and the server's listing no longer names it.
+    queue.unsent = {
+      'deleted-elsewhere': _unsent('deleted-elsewhere', paused: 1)
     };
     final container = signedIn();
 
     await expectLater(
-      StrategyImportExportService(container).buildFolderExportDirectoryForTest(
-        'cloud-folder',
-        store: LibraryWorkspace.cloud,
+      StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest(),
+      throwsA(
+        isA<LibraryExportIncomplete>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          contains("haven't synced"),
+        ),
       ),
-      throwsA(isA<LibraryExportIncomplete>()),
     );
+    expect(repository.snapshotsRead, isEmpty);
   });
 
   test('signed out, the backup is the local library and asks no cloud',
@@ -596,9 +647,15 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
   final unreadable = <String>{};
   var listingFails = false;
 
-  /// Runs after each folder's strategies are listed, as another device
-  /// might change the library between two listings.
-  void Function(String? folderPublicId)? afterListing;
+  /// The folders the user owns, and so their inventory holds; any other is
+  /// shared with them.
+  Set<String> ownedFolderIds = {'cloud-folder', 'cloud-subfolder'};
+
+  /// Strategies the per-folder listings leave out.
+  final listingMisses = <String>{};
+
+  /// Strategies deleted once the inventory was read.
+  final deletedAfterInventory = <String>{};
 
   static final _created = DateTime.utc(2026, 9, 1);
 
@@ -617,7 +674,7 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
     )),
   ];
 
-  final _strategies = <CloudStrategyEntry>[
+  static final _strategies = <CloudStrategyEntry>[
     _strategyEntry('cloud-root', 'Cloud Root', null),
     _strategyEntry('cloud-deep', 'Cloud Deep', 'cloud-subfolder'),
   ];
@@ -662,23 +719,29 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
     String scope = 'owned',
   }) async {
     scopes.add(scope);
-    final listed = [
+    return [
       for (final entry in _strategies)
-        if (entry.strategy.folderID == folderPublicId) entry,
+        if (entry.strategy.folderID == folderPublicId &&
+            !listingMisses.contains(entry.strategy.id))
+          entry,
     ];
-    afterListing?.call(folderPublicId);
-    return listed;
   }
 
-  /// Another device moves [strategyId] into [folderId].
-  void move(String strategyId, String? folderId) {
-    final index =
-        _strategies.indexWhere((entry) => entry.strategy.id == strategyId);
-    final entry = _strategies[index];
-    _strategies[index] = _strategyEntry(
-      strategyId,
-      entry.strategy.name,
-      folderId,
+  @override
+  Future<CloudLibraryInventory> fetchInventory() async {
+    if (listingFails) throw StateError('offline');
+    bool owned(String? folderId) =>
+        folderId == null || ownedFolderIds.contains(folderId);
+    return (
+      folders: {
+        for (final entry in _folders)
+          if (owned(entry.folder.id)) entry.folder.id: entry.folder.parentID,
+      },
+      strategies: {
+        for (final entry in _strategies)
+          if (owned(entry.strategy.folderID))
+            entry.strategy.id: entry.strategy.folderID,
+      },
     );
   }
 
@@ -688,6 +751,13 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
     String? shareToken,
   }) async {
     if (unreadable.contains(strategyPublicId)) throw StateError('offline');
+    if (deletedAfterInventory.contains(strategyPublicId)) {
+      throw const ConvexFunctionException(
+        code: ConvexErrorCode.notFound,
+        rawCode: 'NOT_FOUND',
+        message: 'Strategy not found',
+      );
+    }
     snapshotsRead.add(strategyPublicId);
     final name = _strategies
         .singleWhere((entry) => entry.strategy.id == strategyPublicId)

@@ -107,6 +107,22 @@ class ConvexStrategyRepository {
     return folders.map(_folderEntry).toList(growable: false);
   }
 
+  /// Where every folder and strategy of the caller's own library sits, read
+  /// by the server in one transaction. Null is the top level.
+  Future<CloudLibraryInventory> fetchInventory() async {
+    final inventory = await _api.strategies.listInventory().fetch();
+    return (
+      folders: {
+        for (final folder in inventory.folders)
+          folder.publicId: folder.parentFolderPublicId,
+      },
+      strategies: {
+        for (final strategy in inventory.strategies)
+          strategy.publicId: strategy.folderPublicId,
+      },
+    );
+  }
+
   /// The strategies in one folder (null is the top level), read once.
   Future<List<CloudStrategyEntry>> fetchStrategiesForFolder(
     String? folderPublicId, {
