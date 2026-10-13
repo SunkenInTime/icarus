@@ -404,6 +404,70 @@ void main() {
     });
   });
 
+  test(
+      'discarding a lost strategy\'s uploads keeps one a change being sent '
+      'still places', () async {
+    CloudMediaUploadJob waiting(String id) => CloudMediaUploadJob(
+          jobId: id,
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-a',
+          assetPublicId: id,
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          state: CloudMediaJobState.pendingUpload,
+          attempts: 0,
+          updatedAt: DateTime.utc(2026, 10, 13),
+        );
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.put(waiting('sending-image'));
+    await mediaStore.put(waiting('discarded-image'));
+    // The placement of 'sending-image' is on the wire: it may land.
+    final strategyStore = MemoryDurableStrategyOutboxStore();
+    await strategyStore.put(_durableRecord(const ElementAddOp(
+      opId: 'in-flight',
+      elementPublicId: 'sending-image',
+      pagePublicId: 'page-a',
+      sortIndex: 0,
+      payload: {'id': 'sending-image'},
+    )).copyWith(status: DurableOutboxStatus.inFlight));
+    final container = _container(mediaStore, strategyStore: strategyStore);
+    addTearDown(container.dispose);
+
+    final ok = await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .discardUnreferencedJobs('strategy-a', accountId: 'account-a');
+
+    expect(ok, isTrue);
+    expect(
+      mediaStore.load().jobs.map((job) => job.assetPublicId),
+      ['sending-image'],
+    );
+  });
+
+  test('discarding for an account no longer signed in drops nothing', () async {
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.put(CloudMediaUploadJob(
+      jobId: 'b-image',
+      accountId: 'account-b',
+      strategyPublicId: 'strategy-a',
+      assetPublicId: 'b-image',
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      state: CloudMediaJobState.pendingUpload,
+      attempts: 0,
+      updatedAt: DateTime.utc(2026, 10, 13),
+    ));
+    final container = _container(mediaStore, accountId: 'account-b');
+    addTearDown(container.dispose);
+
+    // Account A asked; B is signed in now.
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .discardUnreferencedJobs('strategy-a', accountId: 'account-a');
+
+    expect(mediaStore.load().jobs.map((job) => job.assetPublicId), ['b-image']);
+  });
+
   test('a successful write cannot clear another media key failure', () async {
     final store = _FailingBatchStore()..failBatch = true;
     final container = _container(store);

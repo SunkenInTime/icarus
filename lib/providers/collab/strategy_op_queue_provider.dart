@@ -1909,9 +1909,43 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
+  /// Drops [accountId]'s changes to [strategyPublicId] that are waiting,
+  /// after the server refused that account the strategy and the user chose
+  /// to discard them. A change being sent right now is left to its answer:
+  /// it may have landed. Returns whether every one was removed.
+  Future<bool> discardUnsendableWork(
+    String strategyPublicId, {
+    required String accountId,
+  }) async {
+    var removedAll = false;
+    await _serializeWrite(() async {
+      final storageKeys = _recordsByStorageKey.values
+          .where((record) =>
+              record.accountId == accountId &&
+              record.strategyPublicId == strategyPublicId &&
+              record.status != DurableOutboxStatus.inFlight)
+          .map((record) => record.storageKey)
+          .toList(growable: false);
+      try {
+        for (final storageKey in storageKeys) {
+          await _removeRecordByStorageKey(storageKey);
+        }
+        removedAll = true;
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+      } finally {
+        _pruneCanvasOpIds();
+      }
+      // The refusal described work that is gone now; keeping its error
+      // would hold the editor's exit for nothing.
+      _refreshActiveQueueView(clearError: removedAll);
+    });
+    return removedAll;
+  }
+
   /// Drops every outbox record of [strategyPublicId] for the current
-  /// account: a strategy the server no longer has, discarded by the user or
-  /// deleted by them on this device.
+  /// account: a strategy the server no longer has, discarded by the user,
+  /// or one they deleted on this device.
   Future<void> discardDeletedStrategy(String strategyPublicId) {
     return _serializeWrite(() async {
       final accountId = state.accountId;

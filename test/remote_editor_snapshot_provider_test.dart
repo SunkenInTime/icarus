@@ -370,7 +370,8 @@ void main() {
       expect(container.read(strategyAccessLostProvider), isFalse);
     });
 
-    test('on a strategy that never opened is not lost access', () async {
+    test('opening a strategy this account was refused is lost access',
+        () async {
       final repository = _Repository()..shellError = forbidden;
       final container = ProviderContainer(overrides: [
         convexStrategyRepositoryProvider.overrideWithValue(repository),
@@ -386,8 +387,9 @@ void main() {
           .read(remoteEditorSnapshotProvider.notifier)
           .openStrategy('strategy');
 
-      expect(container.read(remoteEditorSnapshotProvider).hasError, isTrue);
-      expect(container.read(strategyAccessLostProvider), isFalse);
+      expect(container.read(remoteEditorSnapshotProvider).error,
+          isA<StrategyAccessLost>());
+      expect(container.read(strategyAccessLostProvider), isTrue);
     });
 
     test('stays lost through an offline read, and ends when a read works',

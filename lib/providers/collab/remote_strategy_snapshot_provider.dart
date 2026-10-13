@@ -228,14 +228,15 @@ class RemoteEditorSnapshotNotifier
   }
 
   /// Whether [error], from a fresh read of the shell, means the signed-in
-  /// reader no longer has [strategyPublicId], which they had open. A share
-  /// link's refusals are the link's (see [_readsAsSignedIn]), and a strategy
-  /// never opened was never lost.
+  /// reader cannot open [strategyPublicId], the strategy the editor is on:
+  /// they lost it while it was open, or are opening one they lost (the
+  /// library sends them to review its unsent work). A share link's refusals
+  /// are the link's (see [_readsAsSignedIn]).
   bool _refusesOpenStrategy(Object error, String strategyPublicId) {
     return isTypedConvexForbiddenError(error) &&
         _shareToken == null &&
         ref.read(authProvider).isAuthenticated &&
-        state.valueOrNull?.header.publicId == strategyPublicId;
+        _activeStrategyPublicId == strategyPublicId;
   }
 
   /// Whether the shell held is newer than [shell]: a page just restored, say.

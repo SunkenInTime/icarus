@@ -647,6 +647,35 @@ class CloudMediaUploadQueueNotifier
     await _deleteJob(job, onlyIfUnreferenced: true);
   }
 
+  /// Drops [accountId]'s uploads for [strategyPublicId] that no change on
+  /// this device still places, with their bytes: the user just discarded
+  /// the changes of a strategy that account lost. An upload a remaining
+  /// change refers to stays. Nothing goes unless [accountId] is still the
+  /// one signed in. An upload whose request is out when it goes can be
+  /// written back by its answer, as with [clearJobsForStrategy]; it then
+  /// shows as unsent again and can be discarded again. Returns whether
+  /// nothing failed.
+  Future<bool> discardUnreferencedJobs(
+    String strategyPublicId, {
+    required String accountId,
+  }) async {
+    final jobs = _jobsByStorageKey.values
+        .where((job) =>
+            job.accountId == accountId &&
+            job.strategyPublicId == strategyPublicId)
+        .toList(growable: false);
+    try {
+      for (final job in jobs) {
+        await _deleteJob(job, onlyIfUnreferenced: true);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _refreshState();
+    }
+  }
+
   Future<void> clearJobsForStrategy(String strategyPublicId) async {
     final jobs = _readJobs()
         .where((job) => job.strategyPublicId == strategyPublicId)
