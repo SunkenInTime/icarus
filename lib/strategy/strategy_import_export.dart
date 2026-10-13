@@ -84,6 +84,14 @@ class LibraryExportIncomplete implements Exception {
             'device, so nothing was exported. Review them, then try again.',
         cause = null;
 
+  /// This device keeps unsent changes to a strategy deleted elsewhere, as
+  /// the library's sync banner says, until the user discards them.
+  const LibraryExportIncomplete.cloudWorkForDeletedStrategy()
+      : userMessage = 'Some unsent changes on this device are for a '
+            'strategy that was deleted, so nothing was exported. Discard '
+            'them from your library, then try again.',
+        cause = null;
+
   const LibraryExportIncomplete.cloudChanged()
       : userMessage = 'Your cloud library changed while exporting, so '
             'nothing was exported. Try again.',
@@ -2423,6 +2431,11 @@ class StrategyImportExportService {
       // strategy can be shown to be clear of it.
       if (!opQueue.outboxIsReliable || !uploadQueue.outboxIsReliable) {
         throw const LibraryExportIncomplete.cloudWorkUnreadable();
+      }
+      // Changes kept for a strategy deleted elsewhere are on neither the
+      // server nor its listing, so a backup would hold them nowhere.
+      if (opQueue.accountOutbox.deletedStrategies.isNotEmpty) {
+        throw const LibraryExportIncomplete.cloudWorkForDeletedStrategy();
       }
       final ops = opQueue.accountOutbox.strategies;
       final uploads = uploadQueue.jobs;

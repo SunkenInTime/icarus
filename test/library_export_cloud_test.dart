@@ -304,6 +304,27 @@ void main() {
     expect(repository.snapshotsRead, isEmpty);
   });
 
+  test('changes kept for a strategy deleted elsewhere stop the backup',
+      () async {
+    // Edited offline, then deleted from another device: the work is not on
+    // the server, and the listing no longer names the strategy.
+    queue.deletedStrategies = const {'deleted-elsewhere': 2};
+    final container = signedIn();
+
+    await expectLater(
+      StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest(),
+      throwsA(
+        isA<LibraryExportIncomplete>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          contains('strategy that was deleted'),
+        ),
+      ),
+    );
+    expect(repository.snapshotsRead, isEmpty);
+  });
+
   test('an unreadable saved image upload stops the backup', () async {
     uploads.loadIssues = const [
       DurableCloudMediaOutboxLoadIssue(
@@ -513,23 +534,21 @@ class _Queue extends StrategyOpQueueNotifier {
   Map<String, StrategyOutboxSummary> unsent = const {};
   List<DurableOutboxLoadIssue> loadIssues = const [];
 
-  static StrategyOpQueueState _holding(
-    Map<String, StrategyOutboxSummary> unsent,
-  ) =>
-      StrategyOpQueueState(
-        durableLoaded: true,
-        accountOutbox: AccountStrategyOutboxSummary(strategies: unsent),
-      );
+  /// Unsent changes kept for strategies deleted elsewhere, by strategy.
+  Map<String, int> deletedStrategies = const {};
 
   @override
   StrategyOpQueueState build() => StrategyOpQueueState(
         durableLoaded: true,
         loadIssues: loadIssues,
-        accountOutbox: AccountStrategyOutboxSummary(strategies: unsent),
+        accountOutbox: AccountStrategyOutboxSummary(
+          strategies: unsent,
+          deletedStrategies: deletedStrategies,
+        ),
       );
 
   /// Everything still to send lands.
-  void land() => state = _holding(const {});
+  void land() => state = const StrategyOpQueueState(durableLoaded: true);
 }
 
 class _Uploads extends CloudMediaUploadQueueNotifier {
