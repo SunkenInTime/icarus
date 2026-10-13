@@ -738,6 +738,25 @@ class _FolderCardState extends ConsumerState<FolderCard>
             );
           },
         ),
+      if (_isCloud &&
+          widget.cloudRole != 'owner' &&
+          !widget.isDemo &&
+          isAtSharedRoot(ref))
+        ShadContextMenuItem(
+          key: const ValueKey('folder-card-leave'),
+          leading: const Icon(LucideIcons.logOut),
+          child: const Text('Leave'),
+          onPressed: () {
+            _closeMenus();
+            leaveSharedItem(
+              context: context,
+              ref: ref,
+              targetType: 'folder',
+              targetPublicId: _folder.id,
+              name: _folder.name,
+            );
+          },
+        ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
         child: const Text('Export'),

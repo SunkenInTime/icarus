@@ -251,13 +251,24 @@ void main() {
           .redeemPendingIfPossible();
       expect(container.read(sharedStrategyToOpenProvider), isNull);
 
-      // Signing in redeems the link, and the strategy opens as the
-      // reader's own.
+      // Signing in adds nothing by itself: a view link stays a read-only
+      // view until the reader adds it.
       (container.read(authProvider.notifier) as _SettableAuthProvider)
           .set(_auth(session: true, cloudReady: true));
       await container
           .read(shareLinkControllerProvider.notifier)
           .redeemPendingIfPossible();
+      expect(repository.redeemed, isEmpty);
+      expect(
+        container.read(shareLinkViewProvider),
+        (strategyPublicId: 'strategy-1', token: _code),
+      );
+
+      // Adding it redeems the link, and the strategy opens as the reader's
+      // own.
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .addViewedLinkToLibrary();
       await settleToasts(tester);
       expect(repository.redeemed, [_code]);
       expect(container.read(shareLinkViewProvider), isNull);
@@ -266,11 +277,82 @@ void main() {
       await clearToasts(tester);
     });
 
+    testWidgets('while signed out, an edit link joins once the reader signs in',
+        (tester) async {
+      final repository =
+          _LinkRepository(resolvesTo: 'strategy-1', linkRole: 'editor');
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: false, cloudReady: false),
+        repository: repository,
+      );
+      final controller = container.read(shareLinkControllerProvider.notifier);
+      await controller.handleIncomingUri(link, source: 'test');
+      expect(repository.redeemed, isEmpty);
+
+      (container.read(authProvider.notifier) as _SettableAuthProvider)
+          .set(_auth(session: true, cloudReady: true));
+      await controller.redeemPendingIfPossible();
+      await settleToasts(tester);
+      expect(repository.redeemed, [_code]);
+      expect(container.read(shareLinkViewProvider), isNull);
+      await clearToasts(tester);
+    });
+
+    testWidgets(
+        'signed in, a view link to a new strategy opens read-only until added',
+        (tester) async {
+      final store = MemoryPendingShareCodeStore();
+      final repository = _LinkRepository(resolvesTo: 'strategy-1');
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: true, cloudReady: true),
+        store: store,
+        repository: repository,
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(repository.redeemed, isEmpty, reason: 'nothing joined silently');
+      expect(
+        container.read(shareLinkViewProvider),
+        (strategyPublicId: 'strategy-1', token: _code),
+      );
+      expect(container.read(sharedStrategyToOpenProvider), 'strategy-1');
+      expect(store.read(), _code, reason: 'kept until it is added');
+      await clearToasts(tester);
+    });
+
+    testWidgets('signed in, a link to a strategy they can open just opens it',
+        (tester) async {
+      final repository =
+          _LinkRepository(resolvesTo: 'strategy-1', myRole: 'viewer');
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: true, cloudReady: true),
+        repository: repository,
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(repository.redeemed, [_code]);
+      expect(container.read(shareLinkViewProvider), isNull);
+      expect(container.read(sharedStrategyToOpenProvider), 'strategy-1');
+      await clearToasts(tester);
+    });
+
     testWidgets(
         'a lookup that lands after sign-in redeemed the link is dropped',
         (tester) async {
-      final repository = _LinkRepository(resolvesTo: 'strategy-1')
-        ..holdResolve = Completer<void>();
+      final repository =
+          _LinkRepository(resolvesTo: 'strategy-1', linkRole: 'editor')
+            ..holdResolve = Completer<void>();
       final container = await pumpApp(
         tester,
         auth: _auth(session: false, cloudReady: false),
@@ -458,11 +540,32 @@ class _RedeemingRepository extends Fake implements ConvexStrategyRepository {
 
 /// Answers what a link shares ([resolvesTo] null for a folder), and redeems.
 class _LinkRepository extends Fake implements ConvexStrategyRepository {
-  _LinkRepository({this.resolvesTo, this.resolveError});
+  _LinkRepository({
+    this.resolvesTo,
+    this.resolveError,
+    this.linkRole = 'viewer',
+    this.myRole,
+  });
 
   final String? resolvesTo;
   final Object? resolveError;
+  final String linkRole;
+
+  /// The access the signed-in reader already has.
+  final String? myRole;
   final List<String> redeemed = [];
+
+  @override
+  Future<SharePreview> previewShareLink(String token) async {
+    if (resolveError case final error?) throw error;
+    return SharePreview(
+      targetType: resolvesTo == null ? 'folder' : 'strategy',
+      publicId: resolvesTo ?? 'folder-1',
+      name: 'Shared item',
+      linkRole: linkRole,
+      myRole: myRole,
+    );
+  }
 
   /// When set, lookups wait for it to complete.
   Completer<void>? holdResolve;

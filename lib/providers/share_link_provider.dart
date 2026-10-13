@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -29,9 +30,10 @@ final replaceBrowserUrlProvider =
 final sharedStrategyToOpenProvider = StateProvider<String?>((ref) => null);
 
 /// A strategy open through a share link nobody has redeemed on this device:
-/// the reader is signed out, and the link is their only access. The editor
-/// reads with [token] and shows the reader how to sign in. Cleared once the
-/// link is redeemed.
+/// the link is the reader's only access, whether they are signed out or
+/// signed in without having added it. The editor reads with [token] and
+/// offers sign-in or "Add to my library". Cleared once the link is
+/// redeemed.
 typedef ShareLinkView = ({String strategyPublicId, String token});
 
 final shareLinkViewProvider = StateProvider<ShareLinkView?>((ref) => null);
@@ -65,9 +67,15 @@ class ShareLinkController extends Notifier<String?> {
 
   /// Set [showFailureToasts] to false when the caller (e.g. a dialog)
   /// presents failures inline itself; success toasts always show.
+  ///
+  /// A signed-in person who opens a view link for a strategy they can't
+  /// open yet reads it through the link first, and adds it with
+  /// [addViewedLinkToLibrary]. [explicit] is set when they already asked
+  /// to add it (the Add button, or pasting the link into Add Shared Item).
   Future<bool> redeemPendingIfPossible({
     String source = 'pending',
     bool showFailureToasts = true,
+    bool explicit = false,
   }) async {
     final token = state;
     final generation = _generation;
@@ -85,6 +93,11 @@ class ShareLinkController extends Notifier<String?> {
       // restored but its cloud setup is still running, and an auth incident
       // has its own prompt.
       return false;
+    }
+
+    if (!explicit) {
+      final readOnly = await _viewSignedInIfNew(token, generation);
+      if (readOnly != null) return readOnly;
     }
 
     try {
@@ -195,6 +208,48 @@ class ShareLinkController extends Notifier<String?> {
     }
   }
 
+  /// For a signed-in person, opens a strategy view link read-only when it
+  /// would give them something new, the way it opens for someone signed
+  /// out; they add it to their library from the editor. Returns null when
+  /// the link should be redeemed right away instead: an edit link, a
+  /// folder (a folder can only be browsed by its members), or a strategy
+  /// they can already open.
+  Future<bool?> _viewSignedInIfNew(String token, int generation) async {
+    final SharePreview preview;
+    try {
+      preview =
+          await ref.read(convexStrategyRepositoryProvider).previewShareLink(
+                token,
+              );
+    } catch (_) {
+      // Redeeming reports the failure the way it always has.
+      return null;
+    }
+    if (_superseded(token, generation)) return false;
+    if (preview.targetType != 'strategy' ||
+        preview.linkRole != 'viewer' ||
+        preview.myRole != null) {
+      return null;
+    }
+    if (ref.read(shareLinkViewProvider)?.token == token) {
+      return true; // Already open; an auth update asked again.
+    }
+    ref.read(shareLinkViewProvider.notifier).state =
+        (strategyPublicId: preview.publicId, token: token);
+    ref.read(sharedStrategyToOpenProvider.notifier).state = preview.publicId;
+    return true;
+  }
+
+  /// Adds the strategy open through a view link to the reader's library.
+  Future<bool> addViewedLinkToLibrary() async {
+    final view = ref.read(shareLinkViewProvider);
+    if (view == null) return false;
+    if (state != view.token) {
+      _hold(view.token);
+    }
+    return redeemPendingIfPossible(source: 'add_to_library', explicit: true);
+  }
+
   /// Whether [token]'s attempt is stale: a newer code arrived, or sign-in
   /// redeemed this one while the attempt was waiting on the server.
   bool _superseded(String token, int generation) =>
@@ -212,7 +267,11 @@ class ShareLinkController extends Notifier<String?> {
 
   Future<bool> redeemToken(String token) async {
     _hold(token);
-    return redeemPendingIfPossible(source: 'manual', showFailureToasts: false);
+    return redeemPendingIfPossible(
+      source: 'manual',
+      showFailureToasts: false,
+      explicit: true,
+    );
   }
 
   /// Bumped each time a code becomes pending. A redeem attempt remembers the

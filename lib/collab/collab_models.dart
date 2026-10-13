@@ -1656,6 +1656,55 @@ class ShareLinkSummary {
   bool get isRevoked => revokedAt != null;
 }
 
+/// Someone other than the owner who can open a shared strategy or folder.
+class ShareMember {
+  const ShareMember({
+    required this.memberId,
+    required this.displayName,
+    required this.avatarUrl,
+    required this.role,
+    required this.joinedAt,
+    required this.shareLinkToken,
+    required this.inheritedFromFolderName,
+  });
+
+  final String memberId;
+
+  /// Null when the account has never carried a name.
+  final String? displayName;
+  final String? avatarUrl;
+  final String role;
+  final DateTime joinedAt;
+
+  /// The link they joined through, when the server knows it.
+  final String? shareLinkToken;
+
+  /// Set when their access comes from a folder the target sits in; they are
+  /// managed from that folder's share dialog.
+  final String? inheritedFromFolderName;
+
+  bool get isInherited => inheritedFromFolderName != null;
+}
+
+/// What a share link opens, as a signed-in person sees it before adding it.
+class SharePreview {
+  const SharePreview({
+    required this.targetType,
+    required this.publicId,
+    required this.name,
+    required this.linkRole,
+    required this.myRole,
+  });
+
+  final String targetType;
+  final String publicId;
+  final String name;
+  final String linkRole;
+
+  /// The access the person already has, or null.
+  final String? myRole;
+}
+
 class ShareRedemption {
   const ShareRedemption({
     required this.targetType,
