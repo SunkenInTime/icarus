@@ -757,6 +757,14 @@ class AuthProvider extends Notifier<AppAuthState> {
       return 'An account with this email already exists. Try signing in '
           'instead.';
     }
+    // Supabase hit its project-wide email limit or its mail server failed.
+    // No account is created until the confirmation email goes out, and
+    // waiting "a moment" doesn't bring the limit back, so say so.
+    if (message.contains('over_email_send_rate_limit') ||
+        message.contains('error sending confirmation email')) {
+      return "We couldn't send your confirmation email right now. Try again "
+          'later, or continue with Discord.';
+    }
     if (message.contains('rate limit') || message.contains('too many')) {
       return 'Too many attempts. Wait a moment and try again.';
     }
