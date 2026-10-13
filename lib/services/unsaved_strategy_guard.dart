@@ -157,7 +157,9 @@ Future<bool> _guardCloudStrategyExit({
   // The reader cannot open this strategy, so staying could save nothing.
   // Its unsent changes stay on this device until they are discarded from
   // the access-lost dialog, which the library leads back to.
-  if (ref.read(strategyAccessLostProvider)) {
+  if (ref.read(strategyAccessLostProvider) &&
+      ref.read(strategyOpQueueProvider).outboxIsReliable &&
+      ref.read(cloudMediaUploadQueueProvider).outboxIsReliable) {
     AppErrorReporter.reportInfo(
       'Cloud exit guard allowing leave: access to the strategy is gone.',
       source: 'cloud_media.exit_guard',

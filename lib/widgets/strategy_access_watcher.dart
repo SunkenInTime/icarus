@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -51,14 +52,68 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     );
   }
 
-  /// Changes to the open strategy this device still holds for the cloud.
-  /// None of them can be saved once access is gone.
-  int _unsentChanges() {
+  /// Changes to [strategyId] this device still holds for the cloud, with
+  /// images waiting to upload. None of them can be saved once access is
+  /// gone.
+  int _unsentChanges(String? strategyId) {
     final queue = ref.read(strategyOpQueueProvider);
+    final uploads = ref
+        .read(cloudMediaUploadQueueProvider)
+        .jobs
+        .where((job) => job.strategyPublicId == strategyId)
+        .length;
     return queue.queuedByEntityKey.length +
         queue.inFlightByEntityKey.length +
         queue.pausedByEntityKey.length +
-        queue.attentionByEntityKey.length;
+        queue.attentionByEntityKey.length +
+        uploads;
+  }
+
+  /// Asks the server again, as [accountId], whether it still refuses
+  /// [strategyId]: the dialog may have been open a while, and the owner may
+  /// have given access back meanwhile.
+  Future<_Recheck> _recheck(String strategyId, String accountId) async {
+    bool sameAccount() =>
+        ref.read(strategyOpQueueProvider).accountId == accountId;
+    if (!sameAccount()) return _Recheck.unsure;
+    try {
+      await ref.read(convexStrategyRepositoryProvider).fetchShell(strategyId);
+      return _Recheck.openAgain;
+    } catch (error) {
+      return isTypedConvexForbiddenError(error) && sameAccount()
+          ? _Recheck.refused
+          : _Recheck.unsure;
+    }
+  }
+
+  /// Discards [accountId]'s unsent work for [strategyId] once the server
+  /// has refused it again, and says what happened otherwise.
+  Future<void> _discard(String strategyId, String accountId) async {
+    void tell(String message) => Settings.showToast(
+          message: message,
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+    switch (await _recheck(strategyId, accountId)) {
+      case _Recheck.openAgain:
+        tell('You can open this strategy again, so nothing was discarded.');
+        return;
+      case _Recheck.unsure:
+        tell("Couldn't confirm you lost access, so nothing was discarded.");
+        return;
+      case _Recheck.refused:
+        break;
+    }
+    final removed = await ref
+        .read(strategyOpQueueProvider.notifier)
+        .discardUnsendableWork(strategyId, accountId: accountId);
+    // Images go only with the changes that place them.
+    if (!removed) {
+      tell("Couldn't discard these changes. Try again from the library.");
+      return;
+    }
+    await ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .clearJobsForStrategy(strategyId, accountId: accountId);
   }
 
   static String _unsentNote(int unsent) => switch (unsent) {
@@ -80,7 +135,8 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     final name =
         open.strategyId == strategyId ? open.strategyName?.trim() : null;
     final strategy = name == null || name.isEmpty ? 'this strategy' : '"$name"';
-    final unsent = _unsentChanges();
+    final accountId = ref.read(strategyOpQueueProvider).accountId;
+    final unsent = _unsentChanges(strategyId);
     bool? discard;
     try {
       discard = await showShadDialog<bool>(
@@ -111,14 +167,9 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     }
     if (!mounted) return;
     // Kept, they wait on this device: the library shows them, and leads
-    // back here to discard them.
-    if (discard == true && strategyId != null) {
-      await ref
-          .read(strategyOpQueueProvider.notifier)
-          .discardDeletedStrategy(strategyId);
-      await ref
-          .read(cloudMediaUploadQueueProvider.notifier)
-          .clearJobsForStrategy(strategyId);
+    // back here.
+    if (discard == true && strategyId != null && accountId != null) {
+      await _discard(strategyId, accountId);
       if (!mounted) return;
     }
     // Whatever the reader had open over the editor (a lineup dialog, a
@@ -146,4 +197,16 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     });
     return widget.child;
   }
+}
+
+/// What a second look at a refused strategy found.
+enum _Recheck {
+  /// Still refused, for the same account: its unsent work can go.
+  refused,
+
+  /// It opens again: the work may still land.
+  openAgain,
+
+  /// Offline, or the account changed: nothing is decided.
+  unsure,
 }

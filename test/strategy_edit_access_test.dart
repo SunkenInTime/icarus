@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/const/agents.dart';
@@ -99,9 +101,10 @@ class _RoleSnapshotNotifier extends RemoteEditorSnapshotNotifier {
 
 /// Holds one paused change for the open strategy, and records discards.
 class _UnsentWorkQueue extends StrategyOpQueueNotifier {
-  _UnsentWorkQueue({required this.unsent});
+  _UnsentWorkQueue({required this.unsent, this.discardWorks = true});
 
   final bool unsent;
+  final bool discardWorks;
   final discarded = <String>[];
 
   @override
@@ -128,8 +131,45 @@ class _UnsentWorkQueue extends StrategyOpQueueNotifier {
       );
 
   @override
-  Future<void> discardDeletedStrategy(String strategyPublicId) async {
-    discarded.add(strategyPublicId);
+  Future<bool> discardUnsendableWork(
+    String strategyPublicId, {
+    required String accountId,
+  }) async {
+    discarded.add('$accountId/$strategyPublicId');
+    return discardWorks;
+  }
+}
+
+/// Answers the second look the dialog takes before discarding.
+class _RecheckRepository extends Fake implements ConvexStrategyRepository {
+  _RecheckRepository({required this.refused});
+
+  bool refused;
+
+  @override
+  Future<RemoteStrategyShell> fetchShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
+    if (refused) {
+      throw const ConvexFunctionException(
+        code: ConvexErrorCode.forbidden,
+        rawCode: 'FORBIDDEN',
+        message: 'Forbidden',
+      );
+    }
+    return RemoteStrategyShell(
+      header: RemoteStrategyHeader(
+        publicId: strategyPublicId,
+        name: 'Retake B',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+        role: 'editor',
+      ),
+      pages: const [],
+    );
   }
 }
 
@@ -141,8 +181,11 @@ class _ClearingMediaQueue extends CloudMediaUploadQueueNotifier {
       const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
 
   @override
-  Future<void> clearJobsForStrategy(String strategyPublicId) async {
-    cleared.add(strategyPublicId);
+  Future<void> clearJobsForStrategy(
+    String strategyPublicId, {
+    String? accountId,
+  }) async {
+    cleared.add('$accountId/$strategyPublicId');
   }
 }
 
@@ -500,6 +543,7 @@ Future<(ProviderContainer, List<int>)> _pumpWatcher(
   String role = 'editor',
   _UnsentWorkQueue? queue,
   _ClearingMediaQueue? media,
+  _RecheckRepository? server,
 }) async {
   final container = ProviderContainer(overrides: [
     remoteEditorSnapshotProvider.overrideWith(
@@ -509,6 +553,8 @@ Future<(ProviderContainer, List<int>)> _pumpWatcher(
         .overrideWith(() => queue ?? _UnsentWorkQueue(unsent: false)),
     cloudMediaUploadQueueProvider
         .overrideWith(() => media ?? _ClearingMediaQueue()),
+    convexStrategyRepositoryProvider
+        .overrideWithValue(server ?? _RecheckRepository(refused: true)),
   ]);
   addTearDown(container.dispose);
   await tester.runAsync(
@@ -936,9 +982,52 @@ void main() {
 
       await tester.tap(find.text('Discard'));
       await tester.pumpAndSettle();
-      expect(queue.discarded, ['cloud-strategy']);
-      expect(media.cleared, ['cloud-strategy']);
+      expect(queue.discarded, ['account-a/cloud-strategy']);
+      expect(media.cleared, ['account-a/cloud-strategy']);
       expect(leaves, [1]);
+      await _clearToasts(tester);
+    });
+
+    testWidgets('access back by the time Discard is pressed discards nothing',
+        (tester) async {
+      final queue = _UnsentWorkQueue(unsent: true);
+      final media = _ClearingMediaQueue();
+      final server = _RecheckRepository(refused: true);
+      final (container, leaves) = await _pumpWatcher(tester,
+          queue: queue, media: media, server: server);
+
+      _remote(container).loseAccess();
+      await tester.pumpAndSettle();
+      // The owner adds them back while the dialog is open.
+      server.refused = false;
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+
+      expect(queue.discarded, isEmpty);
+      expect(media.cleared, isEmpty);
+      expect(
+        _toast('You can open this strategy again, so nothing was discarded.'),
+        findsOneWidget,
+      );
+      expect(leaves, [1]);
+      await _clearToasts(tester);
+    });
+
+    testWidgets('images stay when their changes could not be discarded',
+        (tester) async {
+      final queue = _UnsentWorkQueue(unsent: true, discardWorks: false);
+      final media = _ClearingMediaQueue();
+      final (container, _) =
+          await _pumpWatcher(tester, queue: queue, media: media);
+
+      _remote(container).loseAccess();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+
+      expect(queue.discarded, ['account-a/cloud-strategy']);
+      expect(media.cleared, isEmpty);
+      await _clearToasts(tester);
     });
 
     testWidgets('keeping them leaves them for the library', (tester) async {

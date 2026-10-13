@@ -845,6 +845,61 @@ void main() {
       expect(continueCalls, 1);
     });
 
+    testWidgets(
+        'with access gone, work not yet safe on this device still holds the '
+        'exit', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          hasDurabilityFailure: true,
+          lastError: 'Cloud work could not be saved to the durable outbox.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+          strategyAccessLostProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-access-lost-not-durable',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cloud sync pending'), findsOneWidget);
+      expect(find.text('Leave anyway'), findsNothing);
+      await tester.tap(find.text('Stay here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
+      expect(continueCalls, 0);
+    });
+
     testWidgets('non-durable cloud work cannot leave', (tester) async {
       notifier = _FakeGuardStrategyProvider(
         initialState: const StrategyState(

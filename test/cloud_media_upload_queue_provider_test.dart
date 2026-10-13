@@ -107,6 +107,39 @@ class _FixedOpQueue extends StrategyOpQueueNotifier {
   StrategyOpQueueState build() => initialState;
 }
 
+/// Holds an attach until released, then fails it as a refused one would.
+class _HeldAttachRepository implements ConvexStrategyRepository {
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
+    String? mimeType,
+    String? fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    if (!started.isCompleted) started.complete();
+    await release.future;
+    throw const ConvexFunctionException(
+      code: ConvexErrorCode.forbidden,
+      rawCode: 'FORBIDDEN',
+      message: 'Forbidden',
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _GoneUploadRepository implements ConvexStrategyRepository {
   final List<String?> attemptedUploadIds = [];
   @override
@@ -383,6 +416,27 @@ void main() {
       expect(repository.shellChecks, ['strategy-a']);
       expect(repository.completeCalls, 1, reason: 'never retried');
       expect(store.load().jobs, isEmpty);
+      expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    });
+
+    test('a discarded upload whose answer comes late is not written back',
+        () async {
+      final store = MemoryDurableCloudMediaOutboxStore();
+      await store.put(pendingAttach('image-a'));
+      final repository = _HeldAttachRepository();
+      final container = _container(store,
+          cloudReady: true, cloudEnabled: true, repository: repository);
+      addTearDown(container.dispose);
+
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      await repository.started.future;
+      // The attach is on the wire when the user discards the strategy's work.
+      await queue.clearJobsForStrategy('strategy-a', accountId: 'account-a');
+      expect(store.load().jobs, isEmpty);
+
+      repository.release.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(store.load().jobs, isEmpty, reason: 'its failure writes nothing');
       expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
     });
 
