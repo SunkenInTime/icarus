@@ -201,7 +201,15 @@ class _RenderOutlinedItemStack extends RenderStack {
     final outline = _outline;
     final item = firstChild;
     if (outline == null || item == null) return;
-    final box = (item.parentData! as StackParentData).offset & item.size;
+    var box = (item.parentData! as StackParentData).offset & item.size;
+    // Text and images fill the canvas and place their box inside it
+    // (CanonicalPositionedBox), so outline the box they place.
+    if (item is RenderCustomSingleChildLayoutBox) {
+      final placed = item.child;
+      if (placed == null) return;
+      box = box.topLeft + (placed.parentData! as BoxParentData).offset &
+          placed.size;
+    }
     final scale = 1 / _zoom;
     context.canvas.drawRRect(
       RRect.fromRectAndRadius(
