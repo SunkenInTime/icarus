@@ -142,6 +142,8 @@ void main() {
     var container = ProviderContainer();
     await container.read(appPreferencesProvider.notifier).markWelcomeTourSeen();
     container.dispose();
+    await Hive.close();
+    await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
     container = ProviderContainer();
     addTearDown(container.dispose);
     expect(container.read(appPreferencesProvider).welcomeTourSeen, isTrue);
@@ -178,6 +180,8 @@ void main() {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    // A fresh tree, so the stand-in library mounts again as at a launch.
+    await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -235,6 +239,12 @@ void main() {
       expect(find.byKey(const ValueKey('welcome-tour')), findsNothing);
       // Not seen, so the next plain launch still shows it.
       expect(container.read(appPreferencesProvider).welcomeTourSeen, isFalse);
+
+      // The library built again later in the same run doesn't change that:
+      // the tour waits for a launch of its own.
+      container.read(launchOpensFileOrLinkProvider.notifier).state = false;
+      await pumpApp(tester, container, const _Library());
+      expect(find.byKey(const ValueKey('welcome-tour')), findsNothing);
     }
 
     final seen = containerFor();

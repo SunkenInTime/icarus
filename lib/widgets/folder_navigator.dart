@@ -61,19 +61,20 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     super.initState();
 
     // Warn about a missing WebView only once, after the first frame.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       _followCloudAvailability(ref.read(isCloudWorkspaceAvailableProvider));
       if (!_warnedOnce) {
         _warnedOnce = true;
 
-        _warnWebView();
+        await _warnWebView();
       }
-      unawaited(showWelcomeTourAtLaunch(context));
+      // After the WebView warning, if there was one, so the two never stack.
+      if (mounted) unawaited(showWelcomeTourAtLaunch(context));
     });
   }
 
-  void _warnWebView() async {
+  Future<void> _warnWebView() async {
     if (kIsWeb) return;
     if (!_isWindowsDesktop) return;
     await warmUpWebViewEnvironment();
