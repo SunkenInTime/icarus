@@ -106,14 +106,15 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     final removed = await ref
         .read(strategyOpQueueProvider.notifier)
         .discardUnsendableWork(strategyId, accountId: accountId);
-    // Images go only with the changes that place them.
-    if (!removed) {
-      tell("Couldn't discard these changes. Try again from the library.");
-      return;
+    // Images go only with the changes that place them: an upload a change
+    // still refers to (one being sent, say) stays.
+    final uploadsGone = removed &&
+        await ref
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .discardUnreferencedJobs(strategyId);
+    if (!uploadsGone) {
+      tell("Couldn't discard everything. Try again from the library.");
     }
-    await ref
-        .read(cloudMediaUploadQueueProvider.notifier)
-        .clearJobsForStrategy(strategyId, accountId: accountId);
   }
 
   static String _unsentNote(int unsent) => switch (unsent) {
@@ -169,7 +170,14 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     // Kept, they wait on this device: the library shows them, and leads
     // back here.
     if (discard == true && strategyId != null && accountId != null) {
-      await _discard(strategyId, accountId);
+      try {
+        await _discard(strategyId, accountId);
+      } catch (_) {
+        Settings.showToast(
+          message: "Couldn't discard everything. Try again from the library.",
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
       if (!mounted) return;
     }
     // Whatever the reader had open over the editor (a lineup dialog, a

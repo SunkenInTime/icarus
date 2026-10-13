@@ -399,10 +399,7 @@ class _MediaQueue extends CloudMediaUploadQueueNotifier {
       );
 
   @override
-  Future<void> clearJobsForStrategy(
-    String strategyPublicId, {
-    String? accountId,
-  }) async {
+  Future<void> clearJobsForStrategy(String strategyPublicId) async {
     cleared.add(strategyPublicId);
   }
 }

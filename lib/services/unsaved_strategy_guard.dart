@@ -4,7 +4,6 @@ import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
-import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -154,19 +153,6 @@ Future<bool> _guardCloudStrategyExit({
   required WidgetRef ref,
   required Future<void> Function() onContinue,
 }) async {
-  // The reader cannot open this strategy, so staying could save nothing.
-  // Its unsent changes stay on this device until they are discarded from
-  // the access-lost dialog, which the library leads back to.
-  if (ref.read(strategyAccessLostProvider) &&
-      ref.read(strategyOpQueueProvider).outboxIsReliable &&
-      ref.read(cloudMediaUploadQueueProvider).outboxIsReliable) {
-    AppErrorReporter.reportInfo(
-      'Cloud exit guard allowing leave: access to the strategy is gone.',
-      source: 'cloud_media.exit_guard',
-    );
-    await onContinue();
-    return true;
-  }
   final openingStrategy = ref.read(strategyProvider);
   final openingSaveState = ref.read(strategySaveStateProvider);
   if ((ref.read(textDraftProvider).isNotEmpty || openingSaveState.isDirty) &&

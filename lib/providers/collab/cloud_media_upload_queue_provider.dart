@@ -621,29 +621,36 @@ class CloudMediaUploadQueueNotifier
     await _deleteJob(job, onlyIfUnreferenced: true);
   }
 
-  /// Drops every upload of [strategyPublicId], with its bytes, for
-  /// [accountId] or, when it is not given, the signed-in account. An upload
-  /// still on the wire is forgotten too: its answer writes nothing back.
-  Future<void> clearJobsForStrategy(
-    String strategyPublicId, {
-    String? accountId,
-  }) async {
-    final jobs = (accountId == null
-            ? _readJobs()
-            : _jobsByStorageKey.values
-                .where((job) => job.accountId == accountId))
+  /// Drops the signed-in account's uploads for [strategyPublicId] that no
+  /// change on this device still places, with their bytes: the user just
+  /// discarded the changes of a strategy they lost. An upload a remaining
+  /// change refers to (one still being sent, say) stays. Returns whether
+  /// nothing failed.
+  Future<bool> discardUnreferencedJobs(String strategyPublicId) async {
+    final jobs = _readJobs()
+        .where((job) => job.strategyPublicId == strategyPublicId)
+        .toList(growable: false);
+    try {
+      for (final job in jobs) {
+        await _deleteJob(job, onlyIfUnreferenced: true);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _refreshState();
+    }
+  }
+
+  Future<void> clearJobsForStrategy(String strategyPublicId) async {
+    final jobs = _readJobs()
         .where((job) => job.strategyPublicId == strategyPublicId)
         .toList(growable: false);
     for (final job in jobs) {
-      _discardedJobIds.add(job.jobId);
       await _deleteJob(job);
     }
     _refreshState();
   }
-
-  /// Uploads dropped by [clearJobsForStrategy]. Image ids are never reused,
-  /// so one of these coming back can only be a late answer for it.
-  final Set<String> _discardedJobIds = {};
 
   Future<void> _processNextJob({bool ignoreBackoff = false}) async {
     if (state.isProcessing) {
@@ -1346,16 +1353,13 @@ class CloudMediaUploadQueueNotifier
   }
 
   Future<void> _putJob(CloudMediaUploadJob job) async {
-    if (_discardedJobIds.contains(job.jobId)) return;
     await _writeJobs([job], () => _store.put(job));
   }
 
   Future<void> _putJobsAtomically(
     Iterable<CloudMediaUploadJob> jobs,
   ) async {
-    final jobList = jobs
-        .where((job) => !_discardedJobIds.contains(job.jobId))
-        .toList(growable: false);
+    final jobList = jobs.toList(growable: false);
     if (jobList.isEmpty) return;
     await _writeJobs(jobList, () => _store.putAll(jobList));
   }

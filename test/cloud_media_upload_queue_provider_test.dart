@@ -107,39 +107,6 @@ class _FixedOpQueue extends StrategyOpQueueNotifier {
   StrategyOpQueueState build() => initialState;
 }
 
-/// Holds an attach until released, then fails it as a refused one would.
-class _HeldAttachRepository implements ConvexStrategyRepository {
-  final started = Completer<void>();
-  final release = Completer<void>();
-
-  @override
-  Future<void> completeImageUpload({
-    required String strategyPublicId,
-    required String assetPublicId,
-    String? provider,
-    String? uploadId,
-    String? objectKey,
-    String? storageId,
-    String? etag,
-    String? mimeType,
-    String? fileExtension,
-    int? byteSize,
-    int? width,
-    int? height,
-  }) async {
-    if (!started.isCompleted) started.complete();
-    await release.future;
-    throw const ConvexFunctionException(
-      code: ConvexErrorCode.forbidden,
-      rawCode: 'FORBIDDEN',
-      message: 'Forbidden',
-    );
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 class _GoneUploadRepository implements ConvexStrategyRepository {
   final List<String?> attemptedUploadIds = [];
   @override
@@ -419,27 +386,6 @@ void main() {
       expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
     });
 
-    test('a discarded upload whose answer comes late is not written back',
-        () async {
-      final store = MemoryDurableCloudMediaOutboxStore();
-      await store.put(pendingAttach('image-a'));
-      final repository = _HeldAttachRepository();
-      final container = _container(store,
-          cloudReady: true, cloudEnabled: true, repository: repository);
-      addTearDown(container.dispose);
-
-      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
-      await repository.started.future;
-      // The attach is on the wire when the user discards the strategy's work.
-      await queue.clearJobsForStrategy('strategy-a', accountId: 'account-a');
-      expect(store.load().jobs, isEmpty);
-
-      repository.release.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(store.load().jobs, isEmpty, reason: 'its failure writes nothing');
-      expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
-    });
-
     test('keeps retrying when the strategy still exists', () async {
       // e.g. the uploaded image went missing from storage.
       final store = MemoryDurableCloudMediaOutboxStore();
@@ -456,6 +402,46 @@ void main() {
       final kept = store.load().jobs.single;
       expect(kept.state, CloudMediaJobState.failed);
     });
+  });
+
+  test(
+      'discarding a lost strategy\'s uploads keeps one a change being sent '
+      'still places', () async {
+    CloudMediaUploadJob waiting(String id) => CloudMediaUploadJob(
+          jobId: id,
+          accountId: 'account-a',
+          strategyPublicId: 'strategy-a',
+          assetPublicId: id,
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          state: CloudMediaJobState.pendingUpload,
+          attempts: 0,
+          updatedAt: DateTime.utc(2026, 10, 13),
+        );
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.put(waiting('sending-image'));
+    await mediaStore.put(waiting('discarded-image'));
+    // The placement of 'sending-image' is on the wire: it may land.
+    final strategyStore = MemoryDurableStrategyOutboxStore();
+    await strategyStore.put(_durableRecord(const ElementAddOp(
+      opId: 'in-flight',
+      elementPublicId: 'sending-image',
+      pagePublicId: 'page-a',
+      sortIndex: 0,
+      payload: {'id': 'sending-image'},
+    )).copyWith(status: DurableOutboxStatus.inFlight));
+    final container = _container(mediaStore, strategyStore: strategyStore);
+    addTearDown(container.dispose);
+
+    final ok = await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .discardUnreferencedJobs('strategy-a');
+
+    expect(ok, isTrue);
+    expect(
+      mediaStore.load().jobs.map((job) => job.assetPublicId),
+      ['sending-image'],
+    );
   });
 
   test('a successful write cannot clear another media key failure', () async {
