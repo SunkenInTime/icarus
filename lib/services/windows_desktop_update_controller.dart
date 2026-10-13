@@ -30,10 +30,12 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
         _ownsHttpClient = httpClient == null,
         _restartService = restartService ??
             WindowsDesktopUpdateRestartService(updater: updater) {
-    if (autoCheck) {
-      unawaited(checkVersion());
-    }
+    firstCheck = autoCheck ? checkVersion() : Future<void>.value();
   }
+
+  /// Completes when the check started at creation has answered, so callers
+  /// can tell "no update" from "not known yet". It never fails.
+  late final Future<void> firstCheck;
 
   /// Creates a controller pre-seeded with fake update data so the dialog can
   /// be designed/previewed. Download and restart are simulated.

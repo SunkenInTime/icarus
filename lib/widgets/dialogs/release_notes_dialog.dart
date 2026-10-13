@@ -1,32 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/release_notes.dart';
 import 'package:icarus/providers/release_notes_provider.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
+import 'package:icarus/widgets/dialogs/welcome_tour/welcome_tour_dialog.dart';
 import 'package:icarus/widgets/dot_matrix_loaders.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Every shipped version's patch notes, newest first, with the installed
-/// version marked. Read-only: updating stays with the update dialog.
+/// version marked. Read-only: updating stays with the update dialog. On
+/// desktop it also leads back to the welcome tour.
 class ReleaseNotesDialog extends ConsumerWidget {
   const ReleaseNotesDialog({super.key});
 
   static const double _width = 520;
   static const double _bodyHeight = 460;
 
-  static Future<void> show(BuildContext context) {
-    return showShadDialog<void>(
+  static Future<void> show(BuildContext context) async {
+    final showTour = await showShadDialog<bool>(
       context: context,
       builder: (context) => const ReleaseNotesDialog(),
     );
+    // The tour replaces this dialog rather than stacking on it.
+    if (showTour == true && context.mounted) {
+      await WelcomeTourDialog.show(context);
+    }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notes = ref.watch(releaseNotesProvider);
+    final theme = ShadTheme.of(context);
 
     return ShadDialog(
       title: const Text("What's new"),
+      // The web beta never shows the tour, so it has nothing to go back to.
+      description: ref.watch(platformPolicyProvider).isWebBeta
+          ? null
+          : Align(
+              alignment: Alignment.centerLeft,
+              child: ShadButton.link(
+                key: const ValueKey('whats-new-welcome-tour'),
+                height: 20,
+                padding: EdgeInsets.zero,
+                foregroundColor: theme.colorScheme.mutedForeground,
+                hoverForegroundColor: theme.colorScheme.foreground,
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Show the welcome tour'),
+              ),
+            ),
       constraints: const BoxConstraints(maxWidth: _width),
       child: SizedBox(
         height: _bodyHeight,

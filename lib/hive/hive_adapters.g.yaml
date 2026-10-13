@@ -373,7 +373,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 20
+    nextIndex: 21
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -413,6 +413,8 @@ types:
         index: 18
       backgroundDotOpacity:
         index: 19
+      welcomeTourSeen:
+        index: 20
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 11

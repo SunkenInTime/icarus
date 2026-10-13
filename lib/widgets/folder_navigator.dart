@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -22,6 +24,7 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
+import 'package:icarus/widgets/dialogs/welcome_tour/welcome_tour_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/cloud_outbox_summary_banner.dart';
 import 'package:icarus/widgets/library_title_strip.dart';
@@ -58,18 +61,20 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     super.initState();
 
     // Warn about a missing WebView only once, after the first frame.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       _followCloudAvailability(ref.read(isCloudWorkspaceAvailableProvider));
       if (!_warnedOnce) {
         _warnedOnce = true;
 
-        _warnWebView();
+        await _warnWebView();
       }
+      // After the WebView warning, if there was one, so the two never stack.
+      if (mounted) unawaited(showWelcomeTourAtLaunch(context));
     });
   }
 
-  void _warnWebView() async {
+  Future<void> _warnWebView() async {
     if (kIsWeb) return;
     if (!_isWindowsDesktop) return;
     await warmUpWebViewEnvironment();

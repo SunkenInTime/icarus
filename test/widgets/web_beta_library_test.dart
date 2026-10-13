@@ -22,6 +22,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/providers/welcome_tour_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_beta_dialog.dart';
@@ -557,6 +558,8 @@ Future<_Library> _pumpLibrary(
           ),
         ),
         desktopUpdateControllerProvider.overrideWithValue(null),
+        // The tour has its own tests; here it would cover the library.
+        welcomeTourLaunchCheckedProvider.overrideWith((ref) => true),
         cloudFolderTreeProvider.overrideWith(
           (_) => Stream.value(const <CloudFolderEntry>[]),
         ),
