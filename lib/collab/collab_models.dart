@@ -1681,12 +1681,12 @@ class ShareMember {
 
 /// One page of the people a target was shared with directly.
 class ShareMemberPage {
-  const ShareMemberPage({required this.members, required this.nextAfter});
+  const ShareMemberPage({required this.members, required this.nextCursor});
 
   final List<ShareMember> members;
 
   /// Pass to the next read for the page after this one; null on the last.
-  final double? nextAfter;
+  final String? nextCursor;
 }
 
 /// Who a share link let in, as far as the server counts.

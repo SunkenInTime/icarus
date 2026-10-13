@@ -81,8 +81,15 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   List<ShareMember> _members = const [];
 
   /// Where the next page of people starts; null once all are here.
-  double? _nextAfter;
+  String? _nextCursor;
   bool _loadingMore = false;
+
+  /// Moves on whenever the people are read again from the first page, so a
+  /// page asked for before then is dropped instead of appended.
+  int _peopleGeneration = 0;
+
+  /// Links whose joiners the server is still removing, a batch at a time.
+  final Set<String> _removingFrom = {};
 
   /// Shared folders the target sits in: their people can open it too.
   List<String> _sharedFolders = const [];
@@ -111,6 +118,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       ref.read(convexStrategyRepositoryProvider);
 
   Future<void> _load({bool showLoading = true}) async {
+    final generation = ++_peopleGeneration;
     if (showLoading) {
       setState(() => _status = _LoadStatus.loading);
     }
@@ -154,45 +162,65 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
     }
     try {
       final loadedLinks = await links;
-      if (!mounted) return;
+      // A later read has started; it brings fresher people and links.
+      if (!mounted || generation != _peopleGeneration) return;
       setState(() {
+        // Drops any Show more asked for while this read was out.
+        _peopleGeneration++;
+        _loadingMore = false;
         _links = loadedLinks;
         _members = people?.page.members ?? const [];
-        _nextAfter = people?.page.nextAfter;
+        _nextCursor = people?.page.nextCursor;
         _sharedFolders = people?.folders ?? const [];
         _joins = people?.joins ?? const {};
         _membersFailed = people == null;
         _status = _LoadStatus.ready;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || generation != _peopleGeneration) return;
       setState(() => _status = _LoadStatus.error);
     }
   }
 
   Future<void> _loadMore() async {
-    final after = _nextAfter;
-    if (after == null || _loadingMore) return;
+    final cursor = _nextCursor;
+    if (cursor == null || _loadingMore) return;
+    final generation = _peopleGeneration;
     setState(() => _loadingMore = true);
     try {
       final page = await _repository.listShareMembers(
         targetType: widget.targetType,
         targetPublicId: widget.targetPublicId,
-        after: after,
+        cursor: cursor,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _peopleGeneration) return;
       setState(() {
         _members = [..._members, ...page.members];
-        _nextAfter = page.nextAfter;
+        _nextCursor = page.nextCursor;
+        _loadingMore = false;
       });
     } catch (_) {
+      if (!mounted || generation != _peopleGeneration) return;
+      setState(() => _loadingMore = false);
       Settings.showToast(
         message: "Couldn't load more people. Try again.",
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
-    } finally {
-      if (mounted) setState(() => _loadingMore = false);
     }
+  }
+
+  /// A link with many joiners keeps losing them after disabling returns,
+  /// a batch at a time; reads again until they are gone, so the list never
+  /// shows people who no longer have access as if they did.
+  Future<void> _followRemoval(String token) async {
+    for (var i = 0; i < 60; i++) {
+      if (!mounted || (_joins[token]?.joined ?? 0) == 0) break;
+      setState(() => _removingFrom.add(token));
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      await _load(showLoading: false);
+    }
+    if (mounted) setState(() => _removingFrom.remove(token));
   }
 
   @override
@@ -248,6 +276,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         removeMembers: removeMembers,
       );
       await _load(showLoading: false);
+      if (removeMembers) unawaited(_followRemoval(token));
     } catch (_) {
       Settings.showToast(
         message: ShareLinkCopy.disableFailure,
@@ -407,8 +436,9 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         _SectionLabel(
           label: 'People with access',
           // Counted only once everyone is here.
-          count:
-              _membersFailed || _nextAfter != null ? null : _members.length + 1,
+          count: _membersFailed || _nextCursor != null
+              ? null
+              : _members.length + 1,
         ),
         const SizedBox(height: 6),
         _PersonRow(
@@ -444,7 +474,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
               onRemove: () => _remove(member),
             ),
           ),
-        if (_nextAfter != null)
+        if (_nextCursor != null)
           Align(
             alignment: Alignment.centerLeft,
             child: ShadButton.ghost(
@@ -621,6 +651,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
             _ShareLinkTile(
               link: link,
               joins: _joins[link.token] ?? ShareLinkJoins.none,
+              removing: _removingFrom.contains(link.token),
               isDisabling: _disablingToken == link.token,
               onDisable: () => _disableLink(link.token),
             ),
@@ -1017,12 +1048,16 @@ class _ShareLinkTile extends StatefulWidget {
   const _ShareLinkTile({
     required this.link,
     required this.joins,
+    required this.removing,
     required this.isDisabling,
     required this.onDisable,
   });
 
   final ShareLinkSummary link;
   final ShareLinkJoins joins;
+
+  /// Whether its joiners are still being removed.
+  final bool removing;
   final bool isDisabling;
   final VoidCallback onDisable;
 
@@ -1039,9 +1074,11 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
     final link = widget.link;
     final url = buildIcarusShareLink(link.token, origin: currentShareOrigin());
     final joins = widget.joins;
-    final joined = joins.joined == 0
-        ? ''
-        : ' · ${joins.joined}${joins.more ? '+' : ''} joined';
+    final joined = widget.removing
+        ? ' · Removing people…'
+        : joins.joined == 0
+            ? ''
+            : ' · ${joins.joined}${joins.more ? '+' : ''} joined';
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),

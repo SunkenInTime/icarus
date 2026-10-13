@@ -650,19 +650,19 @@ class ConvexStrategyRepository {
 
   /// Everyone besides the owner who can open the target. Owner only.
   /// The people the target was shared with directly, a page at a time:
-  /// pass the previous page's [ShareMemberPage.nextAfter] as [after].
+  /// pass the previous page's [ShareMemberPage.nextCursor] as [cursor].
   Future<ShareMemberPage> listShareMembers({
     required String targetType,
     required String targetPublicId,
-    double? after,
+    String? cursor,
   }) async {
     final result = await _api.shares
         .listMembers(
           targetType: _shareTargetType(targetType),
           targetPublicId: targetPublicId,
-          after: after == null
+          cursor: cursor == null
               ? const ConvexOptional.absent()
-              : ConvexOptional.present(after),
+              : ConvexOptional.present(cursor),
         )
         .fetch();
     return ShareMemberPage(
@@ -678,7 +678,7 @@ class ConvexStrategyRepository {
             ),
           )
           .toList(growable: false),
-      nextAfter: result.nextAfter,
+      nextCursor: result.nextCursor,
     );
   }
 

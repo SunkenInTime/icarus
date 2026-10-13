@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +35,14 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
 
   /// People per page; the rest come with Show more.
   int pageSize = 50;
+
+  /// When set, pages after the first wait for it.
+  Completer<void>? holdLaterPages;
+
+  /// How many of a link's joiners disabling removes before it returns; the
+  /// rest go one batch per later count, as the server's scheduled batches do.
+  int removalBatch = 1000;
+  final Map<String, int> _stillRemoving = {};
   bool failMembers = false;
   bool failRoleChange = false;
   final List<String> roleChanges = [];
@@ -61,14 +71,15 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   Future<ShareMemberPage> listShareMembers({
     required String targetType,
     required String targetPublicId,
-    double? after,
+    String? cursor,
   }) async {
     if (failMembers) throw Exception('shares:listMembers is not deployed');
-    final start = after?.round() ?? 0;
+    final start = cursor == null ? 0 : int.parse(cursor);
+    if (start > 0) await holdLaterPages?.future;
     final end = (start + pageSize).clamp(0, members.length);
     return ShareMemberPage(
       members: members.sublist(start, end),
-      nextAfter: end < members.length ? end.toDouble() : null,
+      nextCursor: end < members.length ? '$end' : null,
     );
   }
 
@@ -92,7 +103,27 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
       return ShareLinkJoins(joined: names.length, more: false, names: names);
     }
 
-    return {_editToken: joinsFor(_editToken), _viewToken: joinsFor(_viewToken)};
+    final joins = {
+      _editToken: joinsFor(_editToken),
+      _viewToken: joinsFor(_viewToken),
+    };
+    for (final token in _stillRemoving.keys.toList()) {
+      _removeJoined(token);
+    }
+    return joins;
+  }
+
+  void _removeJoined(String token) {
+    var batch = removalBatch;
+    members = [
+      for (final m in members)
+        if (m.shareLinkToken != token || batch-- <= 0) m,
+    ];
+    if (members.any((m) => m.shareLinkToken == token)) {
+      _stillRemoving[token] = 1;
+    } else {
+      _stillRemoving.remove(token);
+    }
   }
 
   @override
@@ -131,6 +162,7 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
     bool removeMembers = false,
   }) async {
     revoked.add((token, removeMembers));
+    if (removeMembers) _removeJoined(token);
   }
 }
 
@@ -303,5 +335,60 @@ void main() {
 
     expect(find.text('Renyxx'), findsOneWidget);
     expect(find.byKey(const ValueKey('share-people-more')), findsNothing);
+  });
+
+  testWidgets('a page asked for before the list reloads is dropped',
+      (tester) async {
+    final repository = await _pumpDialog(tester, setUp: (r) {
+      r.pageSize = 2;
+      r.members = [
+        ...r.members,
+        _member('m-sova', 'Sova', token: _viewToken),
+        _member('m-jett', 'Jett', token: _viewToken),
+      ];
+    });
+    await tester.tap(find.byKey(const ValueKey('share-people-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('Sova'), findsOneWidget);
+
+    // The last page is slow; meanwhile a role change reads page one again.
+    repository.holdLaterPages = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('share-people-more')));
+    await tester.pump();
+    final row = find.byKey(const ValueKey('share-member-m-vex'));
+    await tester.tap(find.descendant(of: row, matching: find.text('Can edit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Opens every page, changes nothing').last);
+    await tester.pumpAndSettle();
+    repository.holdLaterPages!.complete();
+    await tester.pumpAndSettle();
+
+    // Page one stands alone, with the rest still behind Show more.
+    expect(find.text('Jett'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('share-people-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('Renyxx'), findsOneWidget);
+    expect(find.text('Sova'), findsOneWidget);
+  });
+
+  testWidgets('removal past one batch is followed until everyone is gone',
+      (tester) async {
+    await _pumpDialog(tester, setUp: (r) => r.removalBatch = 1);
+
+    await tester
+        .tap(find.byKey(const ValueKey('share-link-disable-$_editToken')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('share-link-disable-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Created 4d ago · Removing people…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Vex'), findsNothing);
+    expect(find.text('Kyra'), findsNothing);
+    expect(find.textContaining('Removing people'), findsNothing);
   });
 }
