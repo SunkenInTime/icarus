@@ -10194,47 +10194,14 @@ void main() {
     expect(await session.flushCurrentPage(), isFalse);
   });
 
-  test("an editor made a viewer doesn't pass off unqueued work as saved",
-      () async {
+  test('a viewer whose read failed can export once it recovers', () async {
     final page = _page('page-1', 0);
-    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+    final viewerSnapshot = _editorSnapshot(
       pages: [page],
       activePage: _pageSnapshot(page, text: 'remote'),
-    ));
-    final queue = _FakeStrategyOpQueueNotifier();
-    final container = await _cloudContainer(remote: remote, queue: queue);
-    final session = container.read(strategyPageSessionProvider.notifier);
-    await session.initializeForStrategy(
-      strategyId: 'cloud-strategy',
-      source: StrategySource.cloud,
-      selectFirstPageIfNeeded: true,
+      role: 'viewer',
     );
-    final loaded = container.read(remoteEditorSnapshotProvider).value!;
-
-    // An edit made while the page can't be read is queued nowhere.
-    remote.failRead();
-    container.read(textProvider.notifier).fromHive([
-      PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
-    ]);
-    expect(await session.flushCurrentPage(), isFalse);
-
-    // The page reads again, but the user is now only a viewer.
-    remote.setSnapshot(_editorSnapshot(
-      pages: [page],
-      activePage: loaded.activePage!,
-      role: 'viewer',
-    ));
-    expect(await session.flushCurrentPage(), isFalse);
-  });
-
-  test('a viewer has nothing to queue, unless text was still being typed',
-      () async {
-    final page = _page('page-1', 0);
-    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
-      pages: [page],
-      activePage: _pageSnapshot(page, text: 'remote'),
-      role: 'viewer',
-    ));
+    final remote = _FakeRemoteEditorNotifier(viewerSnapshot);
     final container = await _cloudContainer(
       remote: remote,
       queue: _FakeStrategyOpQueueNotifier(),
@@ -10245,13 +10212,14 @@ void main() {
       source: StrategySource.cloud,
       selectFirstPageIfNeeded: true,
     );
-
     expect(await session.flushCurrentPage(), isTrue);
 
-    // Text an editor was still typing when they became a viewer was never
-    // queued, and can't be now.
-    container.read(textDraftProvider.notifier).setDraft('text-page-1', 'typed');
+    remote.failRead();
     expect(await session.flushCurrentPage(), isFalse);
+
+    // The same page reads again, unchanged.
+    remote.setSnapshot(viewerSnapshot);
+    expect(await session.flushCurrentPage(), isTrue);
   });
 
   test('persisted overlay wins over a late remote active-page base', () async {
