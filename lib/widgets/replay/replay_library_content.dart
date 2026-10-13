@@ -228,29 +228,53 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
     }
   }
 
+  /// Asks, then removes. The dialog says what will be left; if that stops
+  /// being true before the file is deleted, nothing is deleted and it asks
+  /// again with the new answer.
   Future<void> _remove() async {
-    final listing = widget.listing;
-    final confirmed = await ConfirmAlertDialog.show(
-      context: context,
-      title: 'Remove this replay?',
-      content: listing.file.valorantHasCopy
-          ? "This deletes Icarus's copy. Valorant still has its own, so the "
-              'replay stays in the list until Valorant deletes it.'
-          : 'This deletes the replay file from Icarus. Pages you captured '
-              'from it stay in your strategies.',
-      confirmText: 'Remove',
-      isDestructive: true,
-    );
-    if (!confirmed) return;
-    try {
-      await ref.read(replayLibraryProvider.notifier).remove(listing);
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        "Couldn't remove this replay.",
-        error: error,
-        stackTrace: stackTrace,
-        source: 'ReplayTile.remove',
+    final library = ref.read(replayLibraryProvider.notifier);
+    var file = widget.listing.file;
+    while (true) {
+      if (!mounted) return;
+      final confirmed = await ConfirmAlertDialog.show(
+        context: context,
+        title: 'Remove this replay?',
+        content: file.valorantHasCopy
+            ? "This deletes Icarus's copy. Valorant still has its own, so "
+                'the replay stays in the list until Valorant deletes it.'
+            : 'This deletes the replay file from Icarus. Pages you captured '
+                'from it stay in your strategies.',
+        confirmText: 'Remove',
+        isDestructive: true,
       );
+      if (!confirmed) return;
+      try {
+        await library.remove(file);
+        return;
+      } on ReplayRemoveRefused catch (refused) {
+        if (refused.current case final current?
+            when refused.reason == ReplayRemoveRefusal.valorantCopyChanged) {
+          file = current;
+          continue;
+        }
+        Settings.showToast(
+          message: refused.reason == ReplayRemoveRefusal.fileChanged
+              ? 'This replay changed after you chose Remove. Nothing was '
+                  'deleted.'
+              : "Icarus only removes replays from its own folder. Nothing "
+                  'was deleted.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
+      } catch (error, stackTrace) {
+        AppErrorReporter.reportError(
+          "Couldn't remove this replay.",
+          error: error,
+          stackTrace: stackTrace,
+          source: 'ReplayTile.remove',
+        );
+        return;
+      }
     }
   }
 

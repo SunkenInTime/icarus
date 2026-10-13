@@ -112,7 +112,11 @@ void main() {
       valorantDemosPath: demos.path,
     ).list())
         .single;
-    await expectLater(files.remove(valorantOnly), throwsArgumentError);
+    await expectLater(
+      files.remove(valorantOnly),
+      throwsA(isA<ReplayRemoveRefused>().having(
+          (e) => e.reason, 'reason', ReplayRemoveRefusal.outsideIcarus)),
+    );
     expect(await original.exists(), isTrue);
 
     await files.remove(listed);
@@ -131,5 +135,91 @@ void main() {
     await files.remove(onlyKept);
     expect(await File(onlyKept.path).exists(), isFalse);
     expect(await files.readCache(onlyKept, 'v1'), isNull);
+  });
+
+  Matcher refusedFor(ReplayRemoveRefusal reason) => throwsA(
+      isA<ReplayRemoveRefused>().having((e) => e.reason, 'reason', reason));
+
+  test("remove refuses when a folder leads into Valorant's folder", () async {
+    final valorantFile = await writeReplay(demos, 'x');
+
+    // Icarus's replays folder is a link (a junction on Windows) to
+    // Valorant's folder: its files look kept but are Valorant's.
+    final linkedSupport = await Directory(p.join(root.path, 'linked')).create();
+    await Link(p.join(linkedSupport.path, 'replays')).create(demos.path);
+    final linked = ReplayFiles(
+      supportDirectory: () async => linkedSupport,
+      valorantDemosPath: demos.path,
+    );
+    final looksKept = (await linked.list()).single;
+    expect(looksKept.source, ReplaySource.icarus);
+    await expectLater(
+      linked.remove(looksKept),
+      refusedFor(ReplayRemoveRefusal.outsideIcarus),
+    );
+    expect(await valorantFile.exists(), isTrue);
+
+    // The cache folder leads into Valorant's folder.
+    final cacheSupport = await Directory(p.join(root.path, 'cache')).create();
+    await Link(p.join(cacheSupport.path, 'replay_cache')).create(demos.path);
+    final cacheLinked = ReplayFiles(
+      supportDirectory: () async => cacheSupport,
+      valorantDemosPath: demos.path,
+    );
+    final kept = await cacheLinked.import((await writeReplay(root, 'y')).path);
+    await expectLater(
+      cacheLinked.remove(kept),
+      refusedFor(ReplayRemoveRefusal.outsideIcarus),
+    );
+    expect(await File(kept.path).exists(), isTrue);
+    expect(await valorantFile.exists(), isTrue);
+  });
+
+  test('remove deletes nothing once what the user was told stops being true',
+      () async {
+    final original = await writeReplay(demos, 'h');
+    await files.import(original.path);
+    final shown = (await files.list()).single;
+    expect(shown.valorantHasCopy, isTrue);
+
+    // Valorant clears its folder while the dialog says it still has a copy.
+    await original.delete();
+    Object? refused;
+    try {
+      await files.remove(shown);
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused, isA<ReplayRemoveRefused>());
+    final again = refused! as ReplayRemoveRefused;
+    expect(again.reason, ReplayRemoveRefusal.valorantCopyChanged);
+    expect(await File(shown.path).exists(), isTrue);
+    expect(again.current!.valorantHasCopy, isFalse);
+
+    // The file itself is replaced while the dialog is open.
+    await File(shown.path).writeAsBytes([7, 7, 7, 7, 7, 7]);
+    await expectLater(
+      files.remove(again.current!),
+      refusedFor(ReplayRemoveRefusal.fileChanged),
+    );
+    expect(await File(shown.path).readAsBytes(), [7, 7, 7, 7, 7, 7]);
+
+    final current = (await files.list()).single;
+    await files.remove(current);
+    expect(await File(shown.path).exists(), isFalse);
+  });
+
+  test('remove deletes only its own cache, not one whose key it starts',
+      () async {
+    final a = await files.import((await writeReplay(root, 'a')).path);
+    final longer =
+        await files.import((await writeReplay(root, '${a.cacheKey}-x')).path);
+    expect(longer.cacheKey.startsWith('${a.cacheKey}-'), isTrue);
+    await files.writeCache(a, 'v1', Uint8List.fromList([1]));
+    await files.writeCache(longer, 'v1', Uint8List.fromList([2]));
+
+    await files.remove(a);
+    expect(await files.readCache(a, 'v1'), isNull);
+    expect(await files.readCache(longer, 'v1'), [2]);
   });
 }

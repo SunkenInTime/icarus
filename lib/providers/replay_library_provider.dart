@@ -78,9 +78,15 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   final _probes =
       <String, ({ReplayProbe? probe, ReplayDecodeException? error})>{};
 
-  /// The add in progress. Adds run one at a time so two of the same match
-  /// can't both decide it is new.
-  Future<void> _adding = Future.value();
+  /// The change to the replays folder in progress. Adds, keeps and removes
+  /// run one at a time, so none of them acts on a file another is replacing.
+  Future<void> _changing = Future.value();
+
+  Future<T> _oneAtATime<T>(Future<T> Function() change) {
+    final result = _changing.then((_) => change());
+    _changing = result.then((_) {}, onError: (_) {});
+    return result;
+  }
 
   @override
   Future<List<ReplayListing>> build() => _load();
@@ -129,27 +135,28 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   }
 
   /// Copies [path] into Icarus's replays folder and lists it.
-  Future<ReplayListing> import(String path) async {
-    final file = await ref.read(replayFilesProvider).import(path);
-    await refresh();
-    return _listing(file);
-  }
+  Future<ReplayListing> import(String path) => _oneAtATime(() async {
+        final file = await ref.read(replayFilesProvider).import(path);
+        await refresh();
+        return _listing(file);
+      });
 
-  /// Deletes a replay kept in Icarus's folder, and its decoded cache.
-  Future<void> remove(ReplayListing listing) async {
-    await ref.read(replayFilesProvider).remove(listing.file);
-    _probes.remove(listing.file.cacheKey);
-    await refresh();
-  }
+  /// Deletes a replay kept in Icarus's folder, and its decoded cache. See
+  /// [ReplayFiles.remove] for when it refuses.
+  Future<void> remove(ReplayFile file) => _oneAtATime(() async {
+        try {
+          await ref.read(replayFilesProvider).remove(file);
+          _probes.remove(file.cacheKey);
+        } finally {
+          await refresh();
+        }
+      });
 
   /// Brings replay files the user picked or dropped into Icarus's replays
   /// folder. A file whose match is already listed is not copied again, and
   /// one that isn't a replay Icarus can read is not copied at all.
-  Future<ReplayAddResult> add(List<String> paths) {
-    final added = _adding.then((_) => _add(paths));
-    _adding = added.then((_) {}, onError: (_) {});
-    return added;
-  }
+  Future<ReplayAddResult> add(List<String> paths) =>
+      _oneAtATime(() => _add(paths));
 
   Future<ReplayAddResult> _add(List<String> paths) async {
     final files = ref.read(replayFilesProvider);

@@ -13,6 +13,32 @@ enum ReplaySource {
   icarus,
 }
 
+/// Why [ReplayFiles.remove] deleted nothing.
+enum ReplayRemoveRefusal {
+  /// The file isn't in Icarus's own replays folder, or that folder leads
+  /// into Valorant's folder or the cache.
+  outsideIcarus,
+
+  /// The file on disk isn't the one the user chose to remove.
+  fileChanged,
+
+  /// Valorant's folder gained or lost this match since the user was told
+  /// what removing would leave behind.
+  valorantCopyChanged,
+}
+
+class ReplayRemoveRefused implements Exception {
+  const ReplayRemoveRefused(this.reason, {this.current});
+
+  final ReplayRemoveRefusal reason;
+
+  /// The file as it is now, for [ReplayRemoveRefusal.valorantCopyChanged].
+  final ReplayFile? current;
+
+  @override
+  String toString() => 'ReplayRemoveRefused(${reason.name})';
+}
+
 /// One `.vrf` on disk.
 class ReplayFile {
   const ReplayFile({
@@ -204,46 +230,90 @@ class ReplayFiles {
     );
   }
 
-  /// Deletes a replay kept in Icarus's folder and its decoded cache. Never
-  /// deletes anything outside Icarus's own folders: Valorant's folder is
-  /// Valorant's to clear.
+  /// Deletes a replay kept in Icarus's folder and its decoded cache, and
+  /// nothing else: Valorant's folder is Valorant's to clear.
+  ///
+  /// [file] is the replay as the user saw it when they chose Remove. Throws
+  /// [ReplayRemoveRefused], deleting nothing, when the file there now isn't
+  /// that one, or when Valorant's folder no longer matches
+  /// [ReplayFile.valorantHasCopy], which told them what would be left.
   Future<void> remove(ReplayFile file) async {
-    final kept = await icarusReplaysDirectory();
     if (file.source != ReplaySource.icarus ||
-        !p.isWithin(kept.path, file.path)) {
-      throw ArgumentError.value(
-        file.path,
-        'file',
-        "isn't in Icarus's replays folder",
-      );
+        !await _isDirectlyInKeptFolder(file.path)) {
+      throw const ReplayRemoveRefused(ReplayRemoveRefusal.outsideIcarus);
     }
     final replay = File(file.path);
-    if (await replay.exists()) await replay.delete();
+    final FileStat stat = await replay.stat();
+    final valorantCopy = await _valorantCopy(file);
+    final current = ReplayFile(
+      path: file.path,
+      source: ReplaySource.icarus,
+      sizeBytes: stat.size,
+      modified: stat.modified,
+      valorantHasCopy: valorantCopy != null,
+    );
+    if (stat.type == FileSystemEntityType.notFound ||
+        current.cacheKey != file.cacheKey) {
+      throw const ReplayRemoveRefused(ReplayRemoveRefusal.fileChanged);
+    }
+    if (current.valorantHasCopy != file.valorantHasCopy) {
+      throw ReplayRemoveRefused(
+        ReplayRemoveRefusal.valorantCopyChanged,
+        current: current,
+      );
+    }
+    await replay.delete();
     // A copy Keep made is the same file as Valorant's, down to its time, so
     // the two share one cache. Valorant's still needs it.
-    final demos = _valorantDemosPath;
-    if (demos != null) {
-      final original = File(p.join(demos, p.basename(file.path)));
-      if (await original.exists()) {
-        final stat = await original.stat();
-        final valorantCopy = ReplayFile(
-          path: original.path,
-          source: ReplaySource.valorant,
-          sizeBytes: stat.size,
-          modified: stat.modified,
-        );
-        if (valorantCopy.cacheKey == file.cacheKey) return;
-      }
-    }
+    if (valorantCopy?.cacheKey == file.cacheKey) return;
     final cache = await _cacheDirectory();
-    await for (final entity in cache.list()) {
-      final name = p.basename(entity.path);
-      if (entity is File &&
-          name.startsWith('${file.cacheKey}-') &&
-          name.endsWith('.icrp')) {
+    await for (final entity in cache.list(followLinks: false)) {
+      if (entity is File && _isCacheOf(file, p.basename(entity.path))) {
         await entity.delete();
       }
     }
+  }
+
+  /// Whether [path] sits right inside Icarus's replays folder, judged where
+  /// the folders really are: a folder that is a link or junction into
+  /// Valorant's folder or the cache doesn't count as Icarus's.
+  Future<bool> _isDirectlyInKeptFolder(String path) async {
+    final kept = await (await icarusReplaysDirectory()).resolveSymbolicLinks();
+    final cache = await (await _cacheDirectory()).resolveSymbolicLinks();
+    final parent = await Directory(p.dirname(path)).resolveSymbolicLinks();
+    bool overlap(String a, String b) =>
+        p.equals(a, b) || p.isWithin(a, b) || p.isWithin(b, a);
+    if (!p.equals(parent, kept) || overlap(kept, cache)) return false;
+    final demos = _valorantDemosPath;
+    if (demos != null && await Directory(demos).exists()) {
+      final valorant = await Directory(demos).resolveSymbolicLinks();
+      if (overlap(kept, valorant) || overlap(cache, valorant)) return false;
+    }
+    return true;
+  }
+
+  /// Valorant's file of the same match as [file], if its folder has one.
+  Future<ReplayFile?> _valorantCopy(ReplayFile file) async {
+    final demos = _valorantDemosPath;
+    if (demos == null) return null;
+    final original = File(p.join(demos, p.basename(file.path)));
+    final stat = await original.stat();
+    if (stat.type != FileSystemEntityType.file) return null;
+    return ReplayFile(
+      path: original.path,
+      source: ReplaySource.valorant,
+      sizeBytes: stat.size,
+      modified: stat.modified,
+    );
+  }
+
+  /// Whether [name] is a decoded cache of [file] under any decoder version.
+  /// Cache names are `<match id>-<size>-<time>-<decoder version>.icrp`; the
+  /// key is matched whole, so `a.vrf`'s cache never claims the cache of a
+  /// replay whose name only starts with `a`'s key.
+  static bool _isCacheOf(ReplayFile file, String name) {
+    final match = RegExp(r'^(.+)-([^-]+)\.icrp$').firstMatch(name);
+    return match != null && match.group(1) == file.cacheKey;
   }
 
   /// A temporary name beside [target], unique to this write, so two writes
