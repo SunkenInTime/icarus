@@ -41,6 +41,13 @@ String _relativeTime(DateTime time) {
 
 String _memberName(ShareMember member) => member.displayName ?? 'Teammate';
 
+/// The owner's own name as teammates see it: an email sign-in shows the
+/// part before the @, as the server stores it.
+String _ownerName(String displayName) {
+  final at = displayName.indexOf('@');
+  return at > 0 ? displayName.substring(0, at) : displayName;
+}
+
 /// The owner's view of who can open a strategy or folder and the links that
 /// let people in. People come first: what the owner usually checks is who
 /// is in, and the links are how more people get there.
@@ -330,7 +337,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         ),
         const SizedBox(height: 6),
         _PersonRow(
-          name: auth.displayName,
+          name: _ownerName(auth.displayName),
           isYou: true,
           avatarUrl: auth.avatarUrl,
           subtitle: null,

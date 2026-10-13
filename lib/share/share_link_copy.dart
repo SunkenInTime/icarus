@@ -21,9 +21,8 @@ abstract final class ShareLinkCopy {
 
   static const disableTitle = 'Disable this link?';
   static const disableDescription =
-      'No one new can join through it, and anyone viewing through it without '
-      'an account loses the view. People who already joined keep their '
-      'access unless you remove them.';
+      'No one new can join or view through it. People who already joined '
+      'keep their access unless you remove them.';
   static String removeJoinedLabel(int count) => count == 1
       ? 'Also remove the person who joined through it'
       : 'Also remove the $count people who joined through it';

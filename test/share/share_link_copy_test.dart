@@ -7,10 +7,7 @@ void main() {
     expect(ShareLinkCopy.disableDescription, contains('No one new can join'));
     expect(
         ShareLinkCopy.disableDescription, contains('unless you remove them'));
-    expect(
-      ShareLinkCopy.disableDescription,
-      contains('viewing through it without an account'),
-    );
+    expect(ShareLinkCopy.disableDescription, contains('or view through it'));
     for (final targetType in ['strategy', 'folder']) {
       for (final opensInBrowser in [true, false]) {
         expect(
