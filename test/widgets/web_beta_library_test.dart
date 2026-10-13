@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -351,6 +352,51 @@ void main() {
       expect(find.byKey(const ValueKey('web-beta-tag')), findsNothing);
     });
 
+    testWidgets('signed in, local work offers to move to the cloud',
+        (tester) async {
+      await _pumpLibrary(
+        tester,
+        policy: PlatformPolicy.desktop,
+        auth: _ready,
+      );
+
+      // The folder says it is only on this computer, as the strategy does.
+      expect(find.byTooltip('Saved only on this computer'), findsNWidgets(2));
+      await tester.tap(find.text('Local Plan'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Move to cloud'), findsOneWidget);
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Local Folder'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Move to cloud'), findsOneWidget);
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      // A cloud strategy is already there.
+      await tester.tap(find.text('Cloud Plan'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Move to cloud'), findsNothing);
+    });
+
+    testWidgets('signed out, nothing offers to move to the cloud',
+        (tester) async {
+      await _pumpLibrary(
+        tester,
+        policy: PlatformPolicy.desktop,
+        auth: _signedOut,
+      );
+
+      expect(find.byTooltip('Saved only on this computer'), findsNothing);
+      await tester.tap(find.text('Local Plan'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Move to cloud'), findsNothing);
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Local Folder'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Move to cloud'), findsNothing);
+    });
+
     testWidgets('signed in, a replay capture still starts a local strategy',
         (tester) async {
       final library = await _pumpLibrary(
@@ -593,6 +639,7 @@ class _RecordingRepository extends Fake implements ConvexStrategyRepository {
     String? themeProfileId,
     Map<String, dynamic>? themeOverridePalette,
     Map<String, dynamic>? initialPageSettings,
+    bool unfinishedMove = false,
   }) async {
     calls.add('createStrategyWithInitialPage');
     throw StateError('Test server does not open strategies.');

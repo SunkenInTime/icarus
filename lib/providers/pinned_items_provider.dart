@@ -86,6 +86,17 @@ class PinnedItemsProvider extends Notifier<Map<String, int>> {
     await _saveOrder(orderedIds);
   }
 
+  /// Pins [newId] where [oldId] was pinned, and unpins [oldId]. Nothing
+  /// changes when [oldId] is not pinned.
+  Future<void> replacePin(String oldId, String newId) async {
+    await _ensureLoaded();
+    if (!isPinned(oldId)) return;
+
+    await _saveOrder([
+      for (final id in pinnedIdsByManualOrder()) id == oldId ? newId : id,
+    ]);
+  }
+
   Future<void> movePin({
     required String id,
     required String targetId,
