@@ -32,6 +32,7 @@ const setMemberRole = makeFunctionReference<"mutation">("shares:setMemberRole");
 const removeMember = makeFunctionReference<"mutation">("shares:removeMember");
 const leave = makeFunctionReference<"mutation">("shares:leave");
 const preview = makeFunctionReference<"query">("shares:preview");
+const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 
 type Harness = TestConvexForDataModel<DataModel>;
 type Who = "a" | "b" | "c" | "d";
@@ -59,7 +60,6 @@ async function createHarness(): Promise<{
   for (const user of Object.values(users)) {
     await user.mutation(ensureCurrentUser, protocol);
   }
-  currentHarness = t;
   return { t, users };
 }
 
@@ -104,10 +104,12 @@ function shell(who: Harness, strategyPublicId: string) {
   return who.query(getShell, { ...protocol, strategyPublicId });
 }
 
-let currentHarness: TestConvexForDataModelAndIdentity<DataModel>;
-
-async function rename(who: Harness, strategyPublicId: string) {
-  const strategy = await currentHarness.run((ctx) =>
+async function rename(
+  t: TestConvexForDataModelAndIdentity<DataModel>,
+  who: Harness,
+  strategyPublicId: string,
+) {
+  const strategy = await t.run((ctx) =>
     ctx.db
       .query("strategies")
       .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
@@ -175,12 +177,12 @@ describe("share members", () => {
   });
 
   test("a role change reaches the person's next read and write", async () => {
-    const { users } = await createHarness();
+    const { t, users } = await createHarness();
     const { a, b } = users;
     await seedStrategy(a, "s1");
     await share(a, "s1", "edit-link", "editor");
     await redeem(b, "edit-link");
-    await expect(rename(b, "s1")).resolves.toMatchObject({ ok: true });
+    await expect(rename(t, b, "s1")).resolves.toMatchObject({ ok: true });
 
     const memberId = await memberIdOf(a, "s1", "User B");
     await a.mutation(setMemberRole, {
@@ -194,7 +196,7 @@ describe("share members", () => {
     await expect(shell(b, "s1")).resolves.toMatchObject({
       header: { role: "viewer" },
     });
-    await expect(rename(b, "s1")).rejects.toThrow("Forbidden");
+    await expect(rename(t, b, "s1")).rejects.toThrow("Forbidden");
 
     await a.mutation(setMemberRole, {
       ...protocol,
@@ -203,11 +205,11 @@ describe("share members", () => {
       memberId,
       role: "editor",
     });
-    await expect(rename(b, "s1")).resolves.toMatchObject({ ok: true });
+    await expect(rename(t, b, "s1")).resolves.toMatchObject({ ok: true });
   });
 
   test("a removed person loses the strategy at once and can rejoin only through a live link", async () => {
-    const { users } = await createHarness();
+    const { t, users } = await createHarness();
     const { a, b } = users;
     await seedStrategy(a, "s1");
     await share(a, "s1", "edit-link", "editor");
@@ -222,7 +224,15 @@ describe("share members", () => {
     });
 
     await expect(shell(b, "s1")).rejects.toThrow("Forbidden");
-    await expect(rename(b, "s1")).rejects.toThrow("Forbidden");
+    await expect(rename(t, b, "s1")).rejects.toThrow("Forbidden");
+    await expect(
+      b.mutation(applyBatch, {
+        ...protocol,
+        strategyPublicId: "s1",
+        clientId: "b-client",
+        ops: [],
+      }),
+    ).rejects.toThrow("Forbidden");
     await expect(b.query(listSharedWithMe, {})).resolves.toEqual([]);
     await expect(members(a, "s1")).resolves.toEqual([]);
 
@@ -311,7 +321,7 @@ describe("share members", () => {
   });
 
   test("disabling a link without removal keeps everyone who joined", async () => {
-    const { users } = await createHarness();
+    const { t, users } = await createHarness();
     const { a, b } = users;
     await seedStrategy(a, "s1");
     await share(a, "s1", "edit-link", "editor");
@@ -325,7 +335,7 @@ describe("share members", () => {
       token: "edit-link",
     });
 
-    await expect(rename(b, "s1")).resolves.toMatchObject({ ok: true });
+    await expect(rename(t, b, "s1")).resolves.toMatchObject({ ok: true });
   });
 
   test("people who joined before links were recorded are never removed with a link", async () => {
@@ -395,6 +405,69 @@ describe("share members", () => {
       memberId: folderMemberId,
     });
     await expect(shell(b, "inside")).rejects.toThrow("Forbidden");
+  });
+
+  test("nested folders pass access down, and direct access outlives a folder's", async () => {
+    const { users } = await createHarness();
+    const { a, b, c } = users;
+    await a.mutation(createFolder, { ...protocol, publicId: "outer", name: "Outer" });
+    await a.mutation(createFolder, {
+      ...protocol,
+      publicId: "inner",
+      name: "Inner",
+      parentFolderPublicId: "outer",
+    });
+    await seedStrategy(a, "deep", "inner");
+    await share(a, "outer", "outer-link", "editor", "folder");
+    await share(a, "deep", "deep-link", "viewer");
+    await redeem(b, "outer-link");
+    await redeem(c, "outer-link");
+    // C also holds the strategy directly.
+    await redeem(c, "deep-link");
+
+    await expect(members(a, "deep")).resolves.toMatchObject([
+      { displayName: "User C", role: "viewer", inheritedFromFolder: null },
+      {
+        displayName: "User B",
+        role: "editor",
+        inheritedFromFolder: { publicId: "outer", name: "Outer" },
+      },
+      {
+        displayName: "User C",
+        role: "editor",
+        inheritedFromFolder: { publicId: "outer", name: "Outer" },
+      },
+    ]);
+
+    // Demoting at the folder reaches the strategy two levels down.
+    await a.mutation(setMemberRole, {
+      ...protocol,
+      targetType: "folder",
+      targetPublicId: "outer",
+      memberId: await memberIdOf(a, "outer", "User B", "folder"),
+      role: "viewer",
+    });
+    await expect(shell(b, "deep")).resolves.toMatchObject({
+      header: { role: "viewer" },
+    });
+
+    // Leaving the folder ends B's access; C's direct access survives C
+    // being removed from the folder.
+    await b.mutation(leave, {
+      ...protocol,
+      targetType: "folder",
+      targetPublicId: "outer",
+    });
+    await expect(shell(b, "deep")).rejects.toThrow("Forbidden");
+    await a.mutation(removeMember, {
+      ...protocol,
+      targetType: "folder",
+      targetPublicId: "outer",
+      memberId: await memberIdOf(a, "outer", "User C", "folder"),
+    });
+    await expect(shell(c, "deep")).resolves.toMatchObject({
+      header: { role: "viewer" },
+    });
   });
 
   test("a collaborator can leave; an owner cannot", async () => {
