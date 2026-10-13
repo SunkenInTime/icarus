@@ -10227,7 +10227,7 @@ void main() {
     expect(await session.flushCurrentPage(), isFalse);
   });
 
-  test('a viewer with nothing changed on the canvas has nothing to queue',
+  test('a viewer has nothing to queue, unless text was still being typed',
       () async {
     final page = _page('page-1', 0);
     final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
@@ -10247,6 +10247,11 @@ void main() {
     );
 
     expect(await session.flushCurrentPage(), isTrue);
+
+    // Text an editor was still typing when they became a viewer was never
+    // queued, and can't be now.
+    container.read(textDraftProvider.notifier).setDraft('text-page-1', 'typed');
+    expect(await session.flushCurrentPage(), isFalse);
   });
 
   test('persisted overlay wins over a late remote active-page base', () async {

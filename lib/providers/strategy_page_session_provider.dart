@@ -589,8 +589,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         _canvasHoldsUnqueuedWork = false;
       } else {
         // A viewer's flush queues nothing, so it says nothing of work an
-        // editor's flush could not queue before they became a viewer.
-        handedOver = !_canvasHoldsUnqueuedWork;
+        // editor's flush could not queue before they became a viewer. Every
+        // other edit is flushed as it is made; text still being typed isn't.
+        handedOver =
+            !_canvasHoldsUnqueuedWork && ref.read(textDraftProvider).isEmpty;
       }
     }
     if (flushImmediately && strategyState.source == StrategySource.cloud) {
