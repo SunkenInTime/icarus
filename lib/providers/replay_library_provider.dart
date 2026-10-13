@@ -67,7 +67,7 @@ final replayRevealProvider = StateProvider<ReplayReveal?>((ref) => null);
 class ReplayReveal {
   const ReplayReveal(this.paths);
 
-  /// Listed paths, in the order they were added.
+  /// Listed paths of the replays to show.
   final List<String> paths;
 }
 
@@ -77,6 +77,13 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   /// from the file as it is now.
   final _probes =
       <String, ({ReplayProbe? probe, ReplayDecodeException? error})>{};
+
+  /// Counts loads, so one that finishes after a newer one is dropped.
+  var _loads = 0;
+
+  /// The add in progress. Adds run one at a time so two of the same match
+  /// can't both decide it is new.
+  Future<void> _adding = Future.value();
 
   @override
   Future<List<ReplayListing>> build() => _load();
@@ -117,7 +124,9 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   }
 
   Future<void> refresh() async {
-    state = await AsyncValue.guard(_load);
+    final load = ++_loads;
+    final listings = await AsyncValue.guard(_load);
+    if (load == _loads) state = listings;
   }
 
   /// Copies [path] into Icarus's replays folder and lists it.
@@ -130,10 +139,19 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   /// Brings replay files the user picked or dropped into Icarus's replays
   /// folder. A file whose match is already listed is not copied again, and
   /// one that isn't a replay Icarus can read is not copied at all.
-  Future<ReplayAddResult> add(List<String> paths) async {
+  Future<ReplayAddResult> add(List<String> paths) {
+    final added = _adding.then((_) => _add(paths));
+    _adding = added.then((_) {}, onError: (_) {});
+    return added;
+  }
+
+  Future<ReplayAddResult> _add(List<String> paths) async {
     final files = ref.read(replayFilesProvider);
+    // Only a replay whose header was read counts as having its match; an
+    // unreadable file of the same name is what a good copy should replace.
     final listedByMatch = {
-      for (final listing in await _load()) listing.matchId: listing.file.path,
+      for (final listing in await _load())
+        if (listing.probe != null) listing.matchId: listing.file.path,
     };
     final added = <String>[];
     final alreadyListed = <String>[];
@@ -158,7 +176,7 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
         continue;
       }
       try {
-        final copy = await files.import(path);
+        final copy = await files.import(path, matchId: matchId);
         _probes[copy.cacheKey] = header!;
         listedByMatch[matchId] = copy.path;
         added.add(copy.path);

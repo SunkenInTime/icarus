@@ -149,12 +149,18 @@ class ReplayFiles {
     return files;
   }
 
-  /// Copies a replay into Icarus's folder, keeping its match-id name, and
-  /// returns the copy. The same file already there is returned as is; a
-  /// different one of the same name (a partial download) is replaced.
-  Future<ReplayFile> import(String sourcePath) async {
+  /// Copies a replay into Icarus's folder, named after its match, and
+  /// returns the copy. [matchId] is the one the replay's header names, when
+  /// the caller read it; otherwise the file's own name stands for it, as it
+  /// does in Valorant's folder. The same file already there is returned as
+  /// is; a different one of the same name (a partial download) is replaced.
+  Future<ReplayFile> import(String sourcePath, {String? matchId}) async {
     final directory = await icarusReplaysDirectory();
-    final destination = File(p.join(directory.path, p.basename(sourcePath)));
+    // A header is file content, so only a plain id becomes a file name.
+    final named =
+        matchId != null && RegExp(r'^[0-9A-Za-z-]+$').hasMatch(matchId);
+    final name = named ? '$matchId$extension' : p.basename(sourcePath);
+    final destination = File(p.join(directory.path, name));
     final source = File(sourcePath);
     final alreadyKept = await destination.exists() &&
         await destination.length() == await source.length();

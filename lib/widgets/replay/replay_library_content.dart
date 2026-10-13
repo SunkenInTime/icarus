@@ -85,15 +85,15 @@ class _ReplayGridState extends ConsumerState<_ReplayGrid> {
     super.dispose();
   }
 
-  /// Scrolls the first of [reveal]'s replays into view and lights them all
-  /// up for a moment.
+  /// Scrolls the highest of [reveal]'s replays into view and lights them
+  /// all up for a moment. Waits for a listing that has them.
   void _reveal(ReplayReveal reveal) {
-    ref.read(replayRevealProvider.notifier).state = null;
     final indices = [
       for (final (index, listing) in widget.listings.indexed)
         if (reveal.paths.contains(listing.file.path)) index,
     ];
     if (indices.isEmpty) return;
+    ref.read(replayRevealProvider.notifier).state = null;
     if (_scroll.hasClients) {
       final position = _scroll.position;
       const extent = strategyTileGridMainAxisExtent;
@@ -490,7 +490,8 @@ Future<void> addReplays(WidgetRef ref, List<String> paths) async {
         : Settings.tacticalVioletTheme.primary,
   );
   if (shown.isNotEmpty) {
-    reveal.state = ReplayReveal(shown);
+    // Joins any reveal still waiting for the tab to open.
+    reveal.state = ReplayReveal([...?reveal.state?.paths, ...shown]);
   }
 }
 

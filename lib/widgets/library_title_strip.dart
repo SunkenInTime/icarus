@@ -204,7 +204,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           allowedExtensions: const ['vrf'],
           allowMultiple: true,
         );
-        if (result == null) return;
+        if (result == null || !mounted) return;
         await addReplays(ref, [
           for (final file in result.files)
             if (file.path != null) file.path!,

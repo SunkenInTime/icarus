@@ -114,6 +114,10 @@ void main() {
         .toList();
     expect(kept, ['new.vrf']);
     expect(result.added, [p.join(support.path, 'replays', 'new.vrf')]);
+    expect(
+      await File(result.added.single).readAsString(),
+      await fresh.readAsString(),
+    );
     expect(result.alreadyListed, [valorant.path]);
     expect(result.unreadable, [notReplay.path, notVrf.path]);
     expect(result.failed, isEmpty);
@@ -123,5 +127,51 @@ void main() {
       ...result.added,
       valorant.path,
     ]);
+  });
+
+  test('add names copies after their match, so same-named files both stay',
+      () async {
+    final first = await Directory(p.join(root.path, 'first')).create();
+    final second = await Directory(p.join(root.path, 'second')).create();
+    final a = await writeReplay(first, 'scrim.vrf',
+        matchId: 'match-a', playedAt: '2026-07-01T00:00:00Z');
+    final b = await writeReplay(second, 'scrim.vrf',
+        matchId: 'match-b', playedAt: '2026-07-02T00:00:00Z');
+    final library = container.read(replayLibraryProvider.notifier);
+    await container.read(replayLibraryProvider.future);
+
+    // Started together: the second waits for the first, then finds its
+    // match already there.
+    final copyOfA = File(p.join(second.path, 'a again.vrf'));
+    await a.copy(copyOfA.path);
+    final results = await Future.wait([
+      library.add([a.path]),
+      library.add([copyOfA.path, b.path]),
+    ]);
+
+    final replays = p.join(support.path, 'replays');
+    expect(results[0].added, [p.join(replays, 'match-a.vrf')]);
+    expect(results[1].alreadyListed, [p.join(replays, 'match-a.vrf')]);
+    expect(results[1].added, [p.join(replays, 'match-b.vrf')]);
+    expect(await File(p.join(replays, 'match-a.vrf')).readAsString(),
+        await a.readAsString());
+    expect(await File(p.join(replays, 'match-b.vrf')).readAsString(),
+        await b.readAsString());
+  });
+
+  test('a readable replay replaces an unreadable file of its match', () async {
+    final replays = await Directory(p.join(support.path, 'replays')).create();
+    await File(p.join(replays.path, 'match-a.vrf')).writeAsString('partial');
+    final outside = await Directory(p.join(root.path, 'downloads')).create();
+    final good = await writeReplay(outside, 'match-a.vrf',
+        matchId: 'match-a', playedAt: '2026-07-01T00:00:00Z');
+    await container.read(replayLibraryProvider.future);
+
+    final result =
+        await container.read(replayLibraryProvider.notifier).add([good.path]);
+
+    expect(result.added, [p.join(replays.path, 'match-a.vrf')]);
+    expect(await File(result.added.single).readAsString(),
+        await good.readAsString());
   });
 }
