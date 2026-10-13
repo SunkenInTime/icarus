@@ -329,6 +329,28 @@ enum SharesCreateArgsTargetType {
   }
 }
 
+enum StrategiesAbandonMoveResultOutcome {
+  deleted('deleted'),
+  finished('finished'),
+  missing('missing');
+
+  const StrategiesAbandonMoveResultOutcome(this.wireName);
+  final String wireName;
+
+  static StrategiesAbandonMoveResultOutcome fromWireName(
+    String wireName,
+    String path,
+  ) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown StrategiesAbandonMoveResultOutcome $wireName',
+    );
+  }
+}
+
 enum StrategiesListForFolderResultItemAttackLabel {
   attack('Attack'),
   defend('Defend'),
@@ -3951,6 +3973,38 @@ final class SharesResolveResultStrategy extends SharesResolveResult {
   }
 }
 
+final class StrategiesAbandonMoveResult {
+  const StrategiesAbandonMoveResult({required this.ok, required this.outcome});
+  final bool ok;
+  final StrategiesAbandonMoveResultOutcome outcome;
+
+  factory StrategiesAbandonMoveResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'ok', 'outcome'});
+    return StrategiesAbandonMoveResult(
+      ok: _expectLiteral(
+        _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
+        true,
+        '$path.ok',
+      ),
+      outcome: StrategiesAbandonMoveResultOutcome.fromWireName(
+        _decodeString(
+          object.value['outcome'] ?? _missing(path, 'outcome'),
+          '$path.outcome',
+        ),
+        '$path.outcome',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'ok': ConvexBoolean(_expectLiteral(ok, true, '$path.ok')),
+      'outcome': ConvexString(outcome.wireName),
+    });
+  }
+}
+
 final class StrategiesGetHeaderResult {
   const StrategiesGetHeaderResult({
     required this.createdAt,
@@ -5956,6 +6010,24 @@ ConvexObject encodeSharesRevokeArgs({
 
 FoldersDeleteResult decodeSharesRevokeResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'shares.js:revoke.returns');
+
+ConvexObject encodeStrategiesAbandonMoveArgs({
+  required double clientProtocolVersion,
+  required String strategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:abandonMove.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+StrategiesAbandonMoveResult decodeStrategiesAbandonMoveResult(
+  ConvexValue value,
+) => StrategiesAbandonMoveResult.decode(
+  value,
+  'strategies.js:abandonMove.returns',
+);
 
 ConvexObject encodeStrategiesCreateArgs({
   required double clientProtocolVersion,

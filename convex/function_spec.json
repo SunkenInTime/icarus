@@ -168656,6 +168656,62 @@
             },
             "optional": false
           },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "strategies.js:abandonMove",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          },
+          "outcome": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "deleted"
+                },
+                {
+                  "type": "literal",
+                  "value": "finished"
+                },
+                {
+                  "type": "literal",
+                  "value": "missing"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "folderPublicId": {
             "fieldType": {
               "type": "string"

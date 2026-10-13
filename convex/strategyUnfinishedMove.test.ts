@@ -27,6 +27,9 @@ const deleteFolder = makeFunctionReference<"mutation">("folders:delete");
 const duplicate = makeFunctionReference<"mutation">("strategies:duplicate");
 const createShareLink = makeFunctionReference<"mutation">("shares:create");
 const createInvite = makeFunctionReference<"mutation">("invites:create");
+const abandonMove = makeFunctionReference<"mutation">(
+  "strategies:abandonMove",
+);
 
 type Harness = TestConvexForDataModel<DataModel>;
 
@@ -230,4 +233,39 @@ describe("a strategy moving in from a device", () => {
     ).rejects.toThrow();
     expect(await listedIds(owner)).toEqual([]);
   });
+
+  test("abandoning deletes only a strategy whose move didn't finish",
+    async () => {
+      const { owner, other } = await createHarness();
+      await create(owner, "half", { unfinishedMove: true });
+      await create(owner, "done", { unfinishedMove: true });
+      await owner.mutation(finishMove, {
+        ...protocol,
+        strategyPublicId: "done",
+        folderPublicId: null,
+      });
+
+      await expect(
+        other.mutation(abandonMove, { ...protocol, strategyPublicId: "half" }),
+      ).rejects.toThrow();
+      expect(
+        await owner.mutation(abandonMove, {
+          ...protocol,
+          strategyPublicId: "half",
+        }),
+      ).toEqual({ ok: true, outcome: "deleted" });
+      expect(
+        await owner.mutation(abandonMove, {
+          ...protocol,
+          strategyPublicId: "done",
+        }),
+      ).toEqual({ ok: true, outcome: "finished" });
+      expect(
+        await owner.mutation(abandonMove, {
+          ...protocol,
+          strategyPublicId: "half",
+        }),
+      ).toEqual({ ok: true, outcome: "missing" });
+      expect(await listedIds(owner)).toEqual(["done"]);
+    });
 });

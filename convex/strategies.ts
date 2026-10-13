@@ -813,59 +813,100 @@ const deleteStrategy = mutation({
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");
     }
-
-    // Pages in the trash are left to their purge (purgeTrashedPages), which
-    // needs no strategy: one purge scheduled per page must stay within
-    // Convex's scheduling limit however many pages the trash holds. Nothing
-    // can reach or restore them once the strategy is gone.
-    const pages = await livePagesQuery(ctx, strategy._id).collect();
-
-    for (const page of pages) {
-      const pageContents = await ctx.db
-        .query("pageContents")
-        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-        .collect();
-      for (const pageContent of pageContents) {
-        await ctx.db.delete(pageContent._id);
-      }
-      await ctx.db.delete(page._id);
-      await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
-        pageId: page._id,
-        strategyId: strategy._id,
-      });
-    }
-
-    const collaborators = await ctx.db
-      .query("strategyCollaborators")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-    for (const collaborator of collaborators) {
-      await ctx.db.delete(collaborator._id);
-    }
-
-    const invites = await ctx.db
-      .query("inviteTokens")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-    for (const invite of invites) {
-      await ctx.db.delete(invite._id);
-    }
-
-    const shareLinks = await ctx.db
-      .query("shareLinks")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-    for (const shareLink of shareLinks) {
-      await ctx.db.delete(shareLink._id);
-    }
-
-    await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
-      strategyId: strategy._id,
-    });
-    await deleteStrategyAgentSummary(ctx, strategy._id);
-    await ctx.db.delete(strategy._id);
+    await deleteStrategyRecord(ctx, strategy);
     return { ok: true } as const;
   },
 });
 
 export { deleteStrategy as delete };
+
+/// Deletes a strategy a move left unfinished, and only such a strategy:
+/// one whose move failed, or that the moving app quit in the middle of. A
+/// strategy whose move finished belongs in the library and stays. Says
+/// which it found, so a device that lost finishMove's answer can tell its
+/// move did finish.
+export const abandonMove = mutation({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicId: v.string(),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    outcome: v.union(
+      v.literal("deleted"),
+      v.literal("finished"),
+      v.literal("missing"),
+    ),
+  }),
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    const strategy = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.strategyPublicId))
+      .first();
+    if (strategy === null) return { ok: true, outcome: "missing" } as const;
+    await assertStrategyRole(ctx, strategy, "owner");
+    if (strategy.unfinishedMove !== true) {
+      return { ok: true, outcome: "finished" } as const;
+    }
+    await deleteStrategyRecord(ctx, strategy);
+    return { ok: true, outcome: "deleted" } as const;
+  },
+});
+
+/// Deletes [strategy] with everything that belongs to it.
+async function deleteStrategyRecord(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+) {
+  // Pages in the trash are left to their purge (purgeTrashedPages), which
+  // needs no strategy: one purge scheduled per page must stay within
+  // Convex's scheduling limit however many pages the trash holds. Nothing
+  // can reach or restore them once the strategy is gone.
+  const pages = await livePagesQuery(ctx, strategy._id).collect();
+
+  for (const page of pages) {
+    const pageContents = await ctx.db
+      .query("pageContents")
+      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+      .collect();
+    for (const pageContent of pageContents) {
+      await ctx.db.delete(pageContent._id);
+    }
+    await ctx.db.delete(page._id);
+    await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
+      pageId: page._id,
+      strategyId: strategy._id,
+    });
+  }
+
+  const collaborators = await ctx.db
+    .query("strategyCollaborators")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+    .collect();
+  for (const collaborator of collaborators) {
+    await ctx.db.delete(collaborator._id);
+  }
+
+  const invites = await ctx.db
+    .query("inviteTokens")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+    .collect();
+  for (const invite of invites) {
+    await ctx.db.delete(invite._id);
+  }
+
+  const shareLinks = await ctx.db
+    .query("shareLinks")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+    .collect();
+  for (const shareLink of shareLinks) {
+    await ctx.db.delete(shareLink._id);
+  }
+
+  await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
+    strategyId: strategy._id,
+  });
+  await deleteStrategyAgentSummary(ctx, strategy._id);
+  await ctx.db.delete(strategy._id);
+}

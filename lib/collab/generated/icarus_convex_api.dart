@@ -1134,6 +1134,10 @@ final class _SharesModule implements SharesModule {
 }
 
 abstract interface class StrategiesModule {
+  Future<StrategiesAbandonMoveResult> abandonMove({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  });
   Future<ConvexValue> create({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
@@ -1221,6 +1225,21 @@ abstract interface class StrategiesModule {
 final class _StrategiesModule implements StrategiesModule {
   const _StrategiesModule(this._transport);
   final ConvexTransport _transport;
+  @override
+  Future<StrategiesAbandonMoveResult> abandonMove({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  }) {
+    final args = encodeStrategiesAbandonMoveArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      strategyPublicId: strategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('strategies:abandonMove', args),
+      decodeStrategiesAbandonMoveResult,
+    );
+  }
+
   @override
   Future<ConvexValue> create({
     required double clientProtocolVersion,
