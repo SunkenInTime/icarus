@@ -612,6 +612,15 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
+  /// Drops the staged upload of [assetPublicId], with its bytes: the image
+  /// it was queued for was never placed. A job saved work already
+  /// references, or another account's, is left alone.
+  Future<void> discardStagedUpload(String assetPublicId) async {
+    final job = _getJob(assetPublicId);
+    if (job == null || job.referenceDurable) return;
+    await _deleteJob(job, onlyIfUnreferenced: true);
+  }
+
   Future<void> clearJobsForStrategy(String strategyPublicId) async {
     final jobs = _readJobs()
         .where((job) => job.strategyPublicId == strategyPublicId)

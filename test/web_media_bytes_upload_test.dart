@@ -20,6 +20,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
@@ -222,6 +223,24 @@ class _GatedOutboxStore extends MemoryDurableCloudMediaOutboxStore {
   }
 }
 
+/// Holds each single write until [gate] completes, saying when one starts.
+class _HeldPutOutboxStore extends MemoryDurableCloudMediaOutboxStore {
+  final putStarted = Completer<void>();
+  final gate = Completer<void>();
+
+  @override
+  Future<void> put(CloudMediaUploadJob job) async {
+    if (!putStarted.isCompleted) putStarted.complete();
+    await gate.future;
+    await super.put(job);
+  }
+}
+
+/// The reader's edit access, changeable mid-test; the owner's by default.
+final _capabilities = StateProvider<StrategyCapabilities>(
+  (ref) => StrategyCapabilities.fromCloudRole('owner'),
+);
+
 class _OnePngPicker extends FilePicker {
   _OnePngPicker(this.bytes);
   final Uint8List bytes;
@@ -272,10 +291,9 @@ ProviderContainer _webSession({
       convexConnectionSnapshotProvider.overrideWithValue(online),
       convexConnectionProvider.overrideWith((ref) => Stream.value(online)),
       strategyProvider.overrideWith(_CloudStrategy.new),
-      // Saving a lineup asks for edit access; the owner has it.
-      currentStrategyCapabilitiesProvider.overrideWithValue(
-        StrategyCapabilities.fromCloudRole('owner'),
-      ),
+      // Saving a lineup or placing an image asks for edit access.
+      currentStrategyCapabilitiesProvider
+          .overrideWith((ref) => ref.watch(_capabilities)),
       strategyOpQueueProvider.overrideWith(_OpQueue.new),
       cloudMediaReferenceLoaderProvider.overrideWithValue(
         (_, __) async => throw StateError('no server reads in this test'),
@@ -355,6 +373,36 @@ Future<void> _pumpToasts(WidgetTester tester) => tester.pumpWidget(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+      'an image whose upload was staged as the reader lost edit access is '
+      'not placed, and its upload goes', () async {
+    final mediaStore = _HeldPutOutboxStore();
+    final bytesStore = MemoryPendingMediaBytesStore();
+    final container =
+        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+    addTearDown(container.dispose);
+
+    final adding = container.read(placedImageProvider.notifier).addImage(
+          imageBytes: _imageBytes,
+          strategyId: 'strategy-a',
+          strategySource: StrategySource.cloud,
+          fileExtension: '.png',
+          aspectRatio: 1,
+        );
+    // The upload is being staged when the owner makes the reader a viewer.
+    await mediaStore.putStarted.future;
+    expect(bytesStore.values, hasLength(1));
+    container.read(_capabilities.notifier).state =
+        StrategyCapabilities.fromCloudRole('viewer');
+    mediaStore.gate.complete();
+    await adding;
+
+    expect(container.read(placedImageProvider).images, isEmpty);
+    expect(container.read(actionProvider), isEmpty);
+    expect(mediaStore.load().jobs, isEmpty);
+    expect(bytesStore.values, isEmpty);
+  });
 
   testWidgets(
       'picked bytes are saved before the job, survive a refresh, and upload',

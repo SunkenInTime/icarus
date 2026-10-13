@@ -4275,6 +4275,87 @@ void main() {
       expect(current.lastError, isNot(editAccessRemovedMessage));
       expect(store.load().records.single.status, DurableOutboxStatus.queued);
     });
+
+    /// Account A's change, queued, on a device whose account the test
+    /// switches.
+    Future<
+        (
+          StrategyOpQueueNotifier,
+          MemoryDurableStrategyOutboxStore,
+          _SwitchableAuthProvider,
+        )> queuedAsA(_EditAccessRepository server) async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final auth = _SwitchableAuthProvider();
+      final container = ProviderContainer(overrides: [
+        durableStrategyOutboxStoreProvider.overrideWithValue(store),
+        convexStrategyRepositoryProvider.overrideWithValue(server),
+        authProvider.overrideWith(() => auth),
+        convexConnectionSnapshotProvider.overrideWithValue(true),
+      ]);
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(_cloudElementOp());
+      return (notifier, store, auth);
+    }
+
+    test(
+        "is not concluded from another account's session: A's batch refused "
+        'after switching to B waits for A', () async {
+      // B cannot read A's strategy, and the server refuses A's batch for
+      // arriving while B is signed in.
+      final hold = Completer<void>();
+      final server = _EditAccessRepository(shellRefused: true)
+        ..applyHold = hold;
+      final (notifier, store, auth) = await queuedAsA(server);
+      final flushing = notifier.flushNow();
+      await server.applyStarted.future;
+
+      auth.signInAs('account-b');
+      hold.complete();
+      await flushing;
+      await _settle();
+
+      final record = store.load().records.single;
+      expect(record.accountId, 'account-a');
+      expect(record.status, DurableOutboxStatus.queued);
+      expect(record.lastError, isNot(editAccessRemovedMessage));
+
+      // Back as A, who can still edit: the work lands.
+      server
+        ..refusing = false
+        ..shellRefused = false
+        ..role = 'editor';
+      auth.signInAs('account-a');
+      notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+      await _settle();
+      expect(store.load().records, isEmpty);
+    });
+
+    test('is not concluded when the session changes during the check',
+        () async {
+      final hold = Completer<void>();
+      final server = _EditAccessRepository(shellRefused: true)
+        ..shellHold = hold;
+      final (notifier, store, auth) = await queuedAsA(server);
+      final flushing = notifier.flushNow();
+      await server.shellStarted.future;
+
+      // The confirming read answers after B signed in and A signed back
+      // in: it may have run as B.
+      auth
+        ..signInAs('account-b')
+        ..signInAs('account-a');
+      hold.complete();
+      await flushing;
+      await _settle();
+
+      final record = store.load().records.single;
+      expect(record.status, DurableOutboxStatus.queued);
+      expect(record.lastError, isNot(editAccessRemovedMessage));
+      expect(record.pending.attempts, 1);
+    });
   });
 }
 
@@ -4297,6 +4378,14 @@ class _EditAccessRepository extends ConvexStrategyRepository {
   bool refusing = true;
   int calls = 0;
 
+  /// While set, the first send waits for it, after [applyStarted].
+  Completer<void>? applyHold;
+  final applyStarted = Completer<void>();
+
+  /// While set, the first shell read waits for it, after [shellStarted].
+  Completer<void>? shellHold;
+  final shellStarted = Completer<void>();
+
   static const _forbidden = ConvexFunctionException(
     code: ConvexErrorCode.forbidden,
     rawCode: 'FORBIDDEN',
@@ -4308,6 +4397,11 @@ class _EditAccessRepository extends ConvexStrategyRepository {
     String strategyPublicId, {
     String? shareToken,
   }) async {
+    if (!shellStarted.isCompleted) shellStarted.complete();
+    if (shellHold case final hold?) {
+      shellHold = null;
+      await hold.future;
+    }
     if (shellRefused) throw _forbidden;
     return RemoteStrategyShell(
       header: RemoteStrategyHeader(
@@ -4331,6 +4425,11 @@ class _EditAccessRepository extends ConvexStrategyRepository {
     String? accountSubject,
   }) async {
     calls += 1;
+    if (!applyStarted.isCompleted) applyStarted.complete();
+    if (applyHold case final hold?) {
+      applyHold = null;
+      await hold.future;
+    }
     if (refusing) throw _forbidden;
     return [for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2)];
   }
@@ -4521,6 +4620,28 @@ class _CloudReadyAuthProvider extends AuthProvider {
           id: 'account-a',
           appMetadata: <String, dynamic>{},
           userMetadata: <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
+}
+
+/// Signed in, cloud ready, as whichever account the test last chose.
+class _SwitchableAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => _signedInAs('account-a');
+
+  void signInAs(String accountId) => state = _signedInAs(accountId);
+
+  static AppAuthState _signedInAs(String accountId) => AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: accountId,
+          appMetadata: const <String, dynamic>{},
+          userMetadata: const <String, dynamic>{},
           aud: 'authenticated',
           createdAt: '2026-01-01T00:00:00.000Z',
         ),

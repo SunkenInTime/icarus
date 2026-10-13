@@ -194,6 +194,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
             width: null,
             height: null,
           );
+      // Access can drop while the upload is staged too: then the upload
+      // goes and the image is not placed.
+      if (!ref.canEditPages) {
+        await ref
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .discardStagedUpload(placedImage.id);
+        return;
+      }
     }
 
     final action = UserAction(

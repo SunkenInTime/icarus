@@ -1594,7 +1594,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // once edit access is back, so it waits for the user's Retry.
       final editAccessGone = !strategyDeleted &&
           isTypedConvexForbiddenError(error) &&
-          await _editAccessIsConfirmedGone(strategyPublicId);
+          await _editAccessIsConfirmedGone(
+            strategyPublicId,
+            accountId: accountId,
+          );
       if (strategyDeleted) {
         await _resolveDeletedStrategy(
           accountId: accountId,
@@ -1828,18 +1831,28 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
   }
 
-  /// Whether this account can no longer edit [strategyPublicId]: a fresh
-  /// read of its shell names a role that cannot edit, or is itself refused.
-  /// applyBatch also answers FORBIDDEN to a batch bound to another account,
-  /// which is not this; a read that fails otherwise could not tell.
-  Future<bool> _editAccessIsConfirmedGone(String strategyPublicId) async {
+  /// Whether [accountId], whose batch was refused, can no longer edit
+  /// [strategyPublicId]: a fresh read of its shell names a role that cannot
+  /// edit, or is itself refused. applyBatch also answers FORBIDDEN to a
+  /// batch bound to another account, which is not this. So the read must
+  /// run as [accountId], with the session unchanged until it answers: a
+  /// refusal read as anyone else says nothing about this account. A read
+  /// that fails otherwise could not tell either.
+  Future<bool> _editAccessIsConfirmedGone(
+    String strategyPublicId, {
+    required String accountId,
+  }) async {
+    final session = ref.read(authProvider);
+    if (!_canSendAs(accountId)) return false;
+    bool gone;
     try {
       final shell = await _repo.fetchShell(strategyPublicId);
-      return !StrategyCapabilities.fromCloudRole(shell.header.role)
-          .canEditPages;
+      gone =
+          !StrategyCapabilities.fromCloudRole(shell.header.role).canEditPages;
     } catch (error) {
-      return isTypedConvexForbiddenError(error);
+      gone = isTypedConvexForbiddenError(error);
     }
+    return gone && !_isDisposed && identical(ref.read(authProvider), session);
   }
 
   /// Settles every outbox record of a strategy the server no longer has.
