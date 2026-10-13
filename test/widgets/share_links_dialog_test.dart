@@ -39,6 +39,12 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   /// When set, pages after the first wait for it.
   Completer<void>? holdLaterPages;
 
+  /// How many of the next reads of a later page fail.
+  int failLaterPages = 0;
+
+  /// How many of the next join counts fail.
+  int failJoins = 0;
+
   /// How many of a link's joiners disabling removes before it returns; the
   /// rest go one batch per later count, as the server's scheduled batches do.
   int removalBatch = 1000;
@@ -75,7 +81,13 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   }) async {
     if (failMembers) throw Exception('shares:listMembers is not deployed');
     final start = cursor == null ? 0 : int.parse(cursor);
-    if (start > 0) await holdLaterPages?.future;
+    if (start > 0) {
+      await holdLaterPages?.future;
+      if (failLaterPages > 0) {
+        failLaterPages--;
+        throw Exception('InvalidCursor');
+      }
+    }
     final end = (start + pageSize).clamp(0, members.length);
     return ShareMemberPage(
       members: members.sublist(start, end),
@@ -95,6 +107,10 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
     required String targetType,
     required String targetPublicId,
   }) async {
+    if (failJoins > 0) {
+      failJoins--;
+      throw Exception('offline');
+    }
     ShareLinkJoins joinsFor(String token) {
       final names = [
         for (final m in members)
@@ -371,24 +387,50 @@ void main() {
     expect(find.text('Sova'), findsOneWidget);
   });
 
+  testWidgets('a page the server refuses starts the list over', (tester) async {
+    final repository = await _pumpDialog(tester, setUp: (r) => r.pageSize = 2);
+
+    repository.failLaterPages = 1;
+    await tester.tap(find.byKey(const ValueKey('share-people-more')));
+    await tester.pumpAndSettle();
+    toastification.dismissAll(delayForAnimation: false);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+
+    // Asking again reaches the rest.
+    await tester.tap(find.byKey(const ValueKey('share-people-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('Renyxx'), findsOneWidget);
+  });
+
   testWidgets('removal past one batch is followed until everyone is gone',
       (tester) async {
-    await _pumpDialog(tester, setUp: (r) => r.removalBatch = 1);
+    final repository = await _pumpDialog(tester, setUp: (r) {
+      r.removalBatch = 1;
+      r.members = [
+        ...r.members,
+        _member('m-sova', 'Sova', role: 'editor', token: _editToken),
+      ];
+    });
 
     await tester
         .tap(find.byKey(const ValueKey('share-link-disable-$_editToken')));
     await tester.pumpAndSettle();
+    // The first counts after disabling can't be read; that is not zero.
+    repository.failJoins = 2;
     await tester.tap(find.byKey(const ValueKey('share-link-disable-confirm')));
     await tester.pumpAndSettle();
     expect(find.text('Created 4d ago · Removing people…'), findsOneWidget);
 
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+    }
 
     expect(find.text('Vex'), findsNothing);
     expect(find.text('Kyra'), findsNothing);
+    expect(find.text('Sova'), findsNothing);
+    expect(find.text('Renyxx'), findsOneWidget);
     expect(find.textContaining('Removing people'), findsNothing);
   });
 }

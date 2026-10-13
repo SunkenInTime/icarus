@@ -201,26 +201,40 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       });
     } catch (_) {
       if (!mounted || generation != _peopleGeneration) return;
-      setState(() => _loadingMore = false);
       Settings.showToast(
-        message: "Couldn't load more people. Try again.",
+        message: "Couldn't load more people.",
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
+      // The cursor itself may be what the server refused; start over.
+      await _load(showLoading: false);
     }
   }
 
   /// A link with many joiners keeps losing them after disabling returns,
-  /// a batch at a time; reads again until they are gone, so the list never
-  /// shows people who no longer have access as if they did.
+  /// a batch at a time. Watches the link's count until it reaches zero, then
+  /// reads the people again, so the list never shows anyone who is already
+  /// gone.
   Future<void> _followRemoval(String token) async {
     for (var i = 0; i < 60; i++) {
-      if (!mounted || (_joins[token]?.joined ?? 0) == 0) break;
-      setState(() => _removingFrom.add(token));
+      try {
+        final joins = await _repository.listShareLinkJoins(
+          targetType: widget.targetType,
+          targetPublicId: widget.targetPublicId,
+        );
+        if ((joins[token]?.joined ?? 0) == 0) break;
+      } catch (_) {
+        // Not known this time; ask again.
+      }
+      if (!mounted) return;
+      if (!_removingFrom.contains(token)) {
+        setState(() => _removingFrom.add(token));
+      }
       await Future<void>.delayed(const Duration(seconds: 1));
       if (!mounted) return;
-      await _load(showLoading: false);
     }
-    if (mounted) setState(() => _removingFrom.remove(token));
+    if (!mounted || !_removingFrom.contains(token)) return;
+    setState(() => _removingFrom.remove(token));
+    await _load(showLoading: false);
   }
 
   @override
