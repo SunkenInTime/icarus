@@ -162,25 +162,16 @@ export class PresenceRoom extends DurableObject<Env> {
       }
       case "editing": {
         const editing = parseEditing(m);
-        const now = Date.now();
-        // Taking things away always goes through: dropped, it would leave a
-        // notice or outline on everyone's screen. It only follows an accepted
-        // change, so it cannot flood the room.
-        if (
-          editing === undefined ||
-          (!onlyRemoves(self.editing, editing) &&
-            now - self.lastEditingAt < MIN_EDITING_INTERVAL_MS) ||
-          sameEditing(editing, self.editing)
-        ) {
+        if (editing === undefined) return;
+        // Too soon after the last: hold the latest and send it once the
+        // interval is up. Dropped, it would leave a notice or outline on
+        // everyone's screen; sent at once, it could flood the room.
+        const wait = self.lastEditingAt + MIN_EDITING_INTERVAL_MS - Date.now();
+        if (wait > 0 || this.heldEditing.has(ws)) {
+          this.holdEditing(ws, editing, wait);
           return;
         }
-        ws.serializeAttachment({ ...self, editing, lastEditingAt: now });
-        this.broadcast(
-          editing === null
-            ? { t: "editing", sid: self.sid, page: null, groups: [], items: [] }
-            : { t: "editing", sid: self.sid, ...editing },
-          ws,
-        );
+        this.setEditing(ws, self, editing);
         return;
       }
       case "renew": {
@@ -246,6 +237,36 @@ export class PresenceRoom extends DurableObject<Env> {
       ws.serializeAttachment(null);
       this.broadcast({ t: "leave", sid: self.sid }, ws);
     }
+  }
+
+  /**
+   * The latest editing each connection sent within the interval of its last,
+   * by connection, sent when the interval is up.
+   */
+  private readonly heldEditing = new Map<WebSocket, Editing | null>();
+
+  private holdEditing(ws: WebSocket, editing: Editing | null, wait: number) {
+    const timerRunning = this.heldEditing.has(ws);
+    this.heldEditing.set(ws, editing);
+    if (timerRunning) return;
+    setTimeout(() => {
+      const latest = this.heldEditing.get(ws) ?? null;
+      this.heldEditing.delete(ws);
+      // A connection that closed meanwhile has no attachment.
+      const self = attachmentOf(ws);
+      if (self !== null) this.setEditing(ws, self, latest);
+    }, wait);
+  }
+
+  private setEditing(ws: WebSocket, self: Attachment, editing: Editing | null) {
+    if (sameEditing(editing, self.editing)) return;
+    ws.serializeAttachment({ ...self, editing, lastEditingAt: Date.now() });
+    this.broadcast(
+      editing === null
+        ? { t: "editing", sid: self.sid, page: null, groups: [], items: [] }
+        : { t: "editing", sid: self.sid, ...editing },
+      ws,
+    );
   }
 
   /** Closes sockets whose pass ran out; keeps sweeping while anyone is here. */
@@ -397,17 +418,6 @@ function sameEditing(a: Editing | null, b: Editing | null): boolean {
     a.page === b.page &&
     sameIds(a.groups, b.groups) &&
     sameIds(a.items, b.items)
-  );
-}
-
-/** Whether [next] only drops groups or items [prev] named, on its page. */
-function onlyRemoves(prev: Editing | null, next: Editing | null): boolean {
-  if (next === null) return true;
-  return (
-    prev !== null &&
-    prev.page === next.page &&
-    next.groups.every((group) => prev.groups.includes(group)) &&
-    next.items.every((item) => prev.items.includes(item))
   );
 }
 

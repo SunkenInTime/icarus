@@ -120,6 +120,57 @@ void main() {
     );
   });
 
+  testWidgets('an item that marks its drawn part is outlined there only', (
+    tester,
+  ) async {
+    // A circle laid out in the box for the largest one, drawn smaller.
+    await _pump(
+      tester,
+      canvas: const Stack(
+        children: [
+          EditorEntityLayer(
+            id: 'item',
+            child: Positioned(
+              left: 100,
+              top: 50,
+              child: EditorItemOutline(
+                child: SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: Center(
+                    child: EditorItemOutline(
+                      child: SizedBox(width: 30, height: 30),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      editors: {'item': _teammate},
+    );
+
+    final marks = find.byType(EditorItemOutline);
+    final outer = tester.renderObject(marks.first);
+    final inner = tester.renderObject(marks.last);
+    expect(inner, paints..rrect());
+    // The outer one paints its child (which holds the inner outline) only.
+    expect(
+        outer,
+        paints
+          ..rrect(
+              rrect: RRect.fromRectAndRadius(
+            const Rect.fromLTWH(85, 85, 30, 30).inflate(4),
+            const Radius.circular(6),
+          )));
+    expect(
+        outer,
+        isNot(paints
+          ..rrect()
+          ..rrect()));
+  });
+
   testWidgets('a shape outside an item layer (a drag, an export) is bare', (
     tester,
   ) async {

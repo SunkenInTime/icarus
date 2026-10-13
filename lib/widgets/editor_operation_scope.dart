@@ -116,20 +116,37 @@ class EditorEntityLayer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     void hold(PointerEvent event) =>
         ref.read(editorPointersProvider.notifier).holdEntity(event.pointer, id);
-    final editor = ref.watch(itemEditorsProvider.select((items) => items[id]));
     return Positioned.fill(
       child: Listener(
         behavior: HitTestBehavior.deferToChild,
         onPointerDown: hold,
         onPointerPanZoomStart: hold,
-        child: _ItemOutlineStyle(
-          color: editor == null ? null : presenceColorFor(editor.uid),
-          // The outline keeps its width on screen at any zoom; only an
-          // outlined item rebuilds as the zoom changes.
-          zoom: editor == null ? 1 : ref.watch(screenZoomProvider),
+        child: ItemOutlineScope(
+          id: id,
           child: Stack(clipBehavior: Clip.none, children: [child]),
         ),
       ),
+    );
+  }
+}
+
+/// Draws the [EditorItemOutline]s under it in the color of the teammate
+/// changing item [id], if anyone is.
+class ItemOutlineScope extends ConsumerWidget {
+  const ItemOutlineScope({required this.id, required this.child, super.key});
+
+  final String id;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final editor = ref.watch(itemEditorsProvider.select((items) => items[id]));
+    return _ItemOutlineStyle(
+      color: editor == null ? null : presenceColorFor(editor.uid),
+      // The outline keeps its width on screen at any zoom; only an outlined
+      // item rebuilds as the zoom changes.
+      zoom: editor == null ? 1 : ref.watch(screenZoomProvider),
+      child: child,
     );
   }
 }
@@ -153,8 +170,12 @@ class _ItemOutlineStyle extends InheritedWidget {
 
 /// The shape a canvas item draws, which is outlined while a teammate is
 /// changing the item. It sits inside the item's rotation, so the outline
-/// turns with it. Outside an [EditorEntityLayer] (a drag's feedback, an
+/// turns with it. Outside an [ItemOutlineScope] (a drag's feedback, an
 /// export) it draws nothing.
+///
+/// Every item marks what it draws. An item that lays out in a box larger
+/// than it draws (room for a cone or circle at its largest) also marks its
+/// drawn part inside, and the innermost mark is the one outlined.
 class EditorItemOutline extends SingleChildRenderObjectWidget {
   const EditorItemOutline({required super.child, super.key});
 
@@ -205,11 +226,38 @@ class RenderEditorItemOutline extends RenderProxyBox {
     markNeedsPaint();
   }
 
+  /// The mark this one is inside, and how many marks are inside this one.
+  RenderEditorItemOutline? _outer;
+  int _inner = 0;
+
+  void _changeInner(int by) {
+    _inner += by;
+    markNeedsPaint();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    var node = parent;
+    while (node != null && node is! RenderEditorItemOutline) {
+      node = node.parent;
+    }
+    _outer = node as RenderEditorItemOutline?;
+    _outer?._changeInner(1);
+  }
+
+  @override
+  void detach() {
+    _outer?._changeInner(-1);
+    _outer = null;
+    super.detach();
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
     super.paint(context, offset);
     final color = _color;
-    if (color == null) return;
+    if (color == null || _inner > 0) return;
     final scale = 1 / _zoom;
     context.canvas.drawRRect(
       RRect.fromRectAndRadius(

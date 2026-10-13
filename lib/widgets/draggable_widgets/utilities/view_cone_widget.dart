@@ -22,6 +22,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class ViewConeWidget extends ConsumerWidget {
   static const Offset anchorPointVirtual = Offset(
@@ -344,17 +345,19 @@ class ViewConeWidget extends ConsumerWidget {
                 cursor: SystemMouseCursors.click,
                 child: _faded(
                   opacity,
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: Settings.tacticalVioletTheme.border,
+                  EditorItemOutline(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: Settings.tacticalVioletTheme.border,
+                        ),
+                        color: Settings.tacticalVioletTheme.card,
                       ),
-                      color: Settings.tacticalVioletTheme.card,
+                      width: scaledIconSize,
+                      height: scaledIconSize,
+                      child: Image.asset('assets/eye.webp'),
                     ),
-                    width: scaledIconSize,
-                    height: scaledIconSize,
-                    child: Image.asset('assets/eye.webp'),
                   ),
                 ),
               ),

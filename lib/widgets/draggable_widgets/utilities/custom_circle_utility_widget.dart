@@ -8,6 +8,7 @@ import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_context_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class CustomCircleUtilityWidget extends ConsumerWidget {
   const CustomCircleUtilityWidget({
@@ -72,14 +73,17 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
         children: [
           Center(
             child: IgnorePointer(
-              child: SizedBox(
-                width: scaledDiameter,
-                height: scaledDiameter,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: color.withValues(alpha: fillOpacity),
-                    border: Border.all(color: color, width: coord.scale(2)),
+              // Laid out for the largest circle; outline the one drawn.
+              child: EditorItemOutline(
+                child: SizedBox(
+                  width: scaledDiameter,
+                  height: scaledDiameter,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color.withValues(alpha: fillOpacity),
+                      border: Border.all(color: color, width: coord.scale(2)),
+                    ),
                   ),
                 ),
               ),

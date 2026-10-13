@@ -389,30 +389,28 @@ describe("editing", () => {
     expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
   });
 
-  it("never holds back editing that only takes things away", async () => {
+  it("sends at most one editing per 100 ms, and always the last", async () => {
     const { ana, ben } = await anaAndBen();
-    ben.ws.send(editing("p1", ["g1"], ["i1", "i2"]));
-    ben.ws.send(editing("p1", ["g1"], ["i2"]));
+    ben.ws.send(editing("p1", ["g1"], ["i1"]));
+    ben.ws.send(editing("p1", ["g2"]));
     ben.ws.send(editing("p1", ["g1"], []));
-    expect(await ana.next("editing")).toMatchObject({ items: ["i1", "i2"] });
-    expect(await ana.next("editing")).toMatchObject({ items: ["i2"] });
+    expect(await ana.next("editing")).toMatchObject({ groups: ["g1"], items: ["i1"] });
+    await sleep(50);
+    // The burst's last waits for the interval; the one before it never goes.
+    expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
     expect(await ana.next("editing")).toMatchObject({ groups: ["g1"], items: [] });
-    // Adding is still held back.
-    ben.ws.send(editing("p1", ["g1"], ["i3"]));
     await sleep(PAST_INTERVAL_MS);
     expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
   });
 
-  it("ignores editing faster than one per 100 ms", async () => {
+  it("sends nothing when a burst ends where it started", async () => {
     const { ana, ben } = await anaAndBen();
     ben.ws.send(editing("p1", ["g1"]));
-    ben.ws.send(editing("p1", ["g2"]));
     expect(await ana.next("editing")).toMatchObject({ groups: ["g1"] });
+    ben.ws.send(editing("p1", ["g2"]));
+    ben.ws.send(editing("p1", ["g1"]));
     await sleep(PAST_INTERVAL_MS);
     expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
-
-    ben.ws.send(editing("p1", ["g3"]));
-    expect(await ana.next("editing")).toMatchObject({ groups: ["g3"] });
   });
 
   it("relays a clear however soon it follows a change", async () => {

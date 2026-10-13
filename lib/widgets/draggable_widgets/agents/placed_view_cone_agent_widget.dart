@@ -130,16 +130,18 @@ class ViewConeAgentComposite extends ConsumerWidget {
               alignment: Alignment.center,
               child: Opacity(
                 opacity: previewOpacity,
-                child: AgentWidget(
-                  state: agent.state,
-                  isAlly: agent.isAlly,
-                  id: agent.id,
-                  agent: AgentData.agents[agent.type]!,
-                  weapon: agent.weapon,
-                  previousWeapon: previousWeapon,
-                  weaponTransitionProgress: weaponTransitionProgress,
-                  forcedAgentSize: agentSize,
-                  isInteractive: isInteractive,
+                child: EditorItemOutline(
+                  child: AgentWidget(
+                    state: agent.state,
+                    isAlly: agent.isAlly,
+                    id: agent.id,
+                    agent: AgentData.agents[agent.type]!,
+                    weapon: agent.weapon,
+                    previousWeapon: previousWeapon,
+                    weaponTransitionProgress: weaponTransitionProgress,
+                    forcedAgentSize: agentSize,
+                    isInteractive: isInteractive,
+                  ),
                 ),
               ),
             ),
