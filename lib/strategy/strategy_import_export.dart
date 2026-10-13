@@ -27,6 +27,7 @@ import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -260,12 +261,12 @@ class StrategyImportExportService {
 
     return _importZipArchive(
       zipFile: File(filePath),
-      parentFolderId: null,
+      parentFolderId: _localFolderOnScreen(),
     );
   }
 
   Future<ImportBatchResult> loadFromFileDrop(List<XFile> files) async {
-    final targetFolderId = ref.read(folderProvider);
+    final targetFolderId = _localFolderOnScreen();
     var result = const ImportBatchResult.empty();
 
     for (final file in files) {
@@ -279,6 +280,13 @@ class StrategyImportExportService {
 
     return result;
   }
+
+  /// Where an import lands: the local folder on screen, or the top level when
+  /// the screen shows the top level or a cloud folder.
+  String? _localFolderOnScreen() =>
+      ref.read(libraryWorkspaceProvider) == LibraryWorkspace.local
+          ? ref.read(folderProvider)
+          : null;
 
   Future<Directory> getTempDirectory(String strategyID) async {
     String tempDirectoryPath;

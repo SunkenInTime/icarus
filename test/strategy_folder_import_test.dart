@@ -865,12 +865,30 @@ void main() {
       expect(restoredFolder.parentID, isNull);
       expect(_strategyByName('Folder Backup').folderID, restoredFolder.id);
     });
+
+    test('an unzipped library backup lands whole in the local library',
+        () async {
+      final backup = await _libraryBackup(container, tempDir);
+
+      final result =
+          await StrategyImportExportService(cloudContainer).loadFromFileDrop(
+        [XFile(backup.path)],
+      );
+
+      expect(result.strategiesImported, 2);
+      expect(result.foldersCreated, 1);
+      expect(repository.createdFolders, isEmpty);
+      final restoredFolder = _folderByName('Plays');
+      expect(restoredFolder.parentID, isNull);
+      expect(_strategyByName('Folder Backup').folderID, restoredFolder.id);
+    });
   });
 }
 
 /// Backs up a library holding the folder "Plays" with "Folder Backup" in it
-/// and "Root Backup" beside it, then empties the library.
-Future<File> _libraryBackupZip(
+/// and "Root Backup" beside it, then empties the library. Returns the
+/// backup's folder, as Export Library zips it, moved into [tempDir].
+Future<Directory> _libraryBackup(
   ProviderContainer container,
   Directory tempDir,
 ) async {
@@ -881,18 +899,25 @@ Future<File> _libraryBackupZip(
   final exportDirectory = await StrategyImportExportService(container)
       .buildLibraryExportDirectoryForTest();
   try {
-    final zipFile = await _zipDirectory(
-      sourceDirectory: Directory(
-        path.join(exportDirectory.path, libraryBackupRootDirectoryName),
-      ),
-      zipPath: path.join(tempDir.path, 'library-backup.zip'),
-    );
+    final backup = await Directory(
+      path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+    ).rename(path.join(tempDir.path, libraryBackupRootDirectoryName));
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
     await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
-    return zipFile;
+    return backup;
   } finally {
     await exportDirectory.delete(recursive: true);
   }
+}
+
+Future<File> _libraryBackupZip(
+  ProviderContainer container,
+  Directory tempDir,
+) async {
+  return _zipDirectory(
+    sourceDirectory: await _libraryBackup(container, tempDir),
+    zipPath: path.join(tempDir.path, 'library-backup.zip'),
+  );
 }
 
 class _CloudWorkspaceNotifier extends LibraryWorkspaceNotifier {
