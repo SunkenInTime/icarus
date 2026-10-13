@@ -223,6 +223,9 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   /// Closes the dialog, saving nothing, when the reader can no longer edit
   /// the strategy: their access changed while it was open.
   bool _closedForLostEditAccess() {
+    // Closed from outside while saving (leaving an editor whose access is
+    // gone takes its dialogs down): there is nothing left to save into.
+    if (!mounted) return true;
     if (ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
       return false;
     }
@@ -235,8 +238,17 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     ref
         .read(interactionStateProvider.notifier)
         .update(InteractionState.navigation);
-    if (mounted) Navigator.of(context).pop();
+    _close();
     return true;
+  }
+
+  /// Pops this dialog, unless something else already took it down: then
+  /// the route on top is another one, which is not this dialog's to close.
+  void _close() {
+    if (!mounted) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    Navigator.of(context).pop();
   }
 
   /// Saves the lineup and closes. With [thenEditPlacement] the editor then
@@ -320,14 +332,13 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       );
     }
 
+    if (!mounted) return;
     ref
         .read(interactionStateProvider.notifier)
         .update(InteractionState.navigation);
     // Read now: closing the dialog takes its ref with it.
     final interaction = ref.read(interactionStateProvider.notifier);
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
+    _close();
     if (thenEditPlacement && existing != null) {
       interaction.editLineUpPlacement(existing.id);
     }

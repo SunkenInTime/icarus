@@ -938,6 +938,79 @@ void main() {
     container.dispose();
   });
 
+  testWidgets(
+      'a lineup taken down while saving, as access goes, leaves the next '
+      'dialog alone and saves nothing', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final mediaStore = _GatedOutboxStore()..batchGate = Completer<void>();
+    final bytesStore = MemoryPendingMediaBytesStore();
+    final container =
+        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([_breachGroup()]));
+    final linkId = container.read(lineUpProvider).links.single.id;
+    final before = container.read(lineUpProvider).linkById(linkId)!;
+    final png = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    );
+    FilePicker.platform = _OnePngPicker(png);
+    late BuildContext home;
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: ToastificationWrapper(
+        child: ShadApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                home = context;
+                return ShadButton(
+                  onPressed: () => showShadDialog<void>(
+                    context: context,
+                    builder: (_) => CreateLineupDialog(linkId: linkId),
+                  ),
+                  child: const Text('Edit lineup'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('Edit lineup'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Click here to add images'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+
+    // Access goes while the images are queued, and leaving the editor
+    // takes the dialog down and puts its own warning up.
+    container.read(_capabilities.notifier).state =
+        StrategyCapabilities.fromCloudRole('viewer');
+    Navigator.of(home).popUntil((route) => route.isFirst);
+    unawaited(showShadDialog<void>(
+      context: home,
+      builder: (_) => const ShadDialog(child: Text('Leave anyway?')),
+    ));
+    await tester.pump();
+    mediaStore.batchGate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Leave anyway?'), findsOneWidget,
+        reason: "the lineup dialog's save closes only its own route");
+    expect(
+        container.read(lineUpProvider).linkById(linkId)!.images, before.images);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpWidget(const SizedBox());
+    container.dispose();
+  });
+
   test('desktop never opens the pending-bytes box', () async {
     // No Hive box is open here, as on desktop; reading must not need one.
     final container = ProviderContainer();
