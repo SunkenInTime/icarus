@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -49,23 +51,52 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     );
   }
 
+  /// Changes to the open strategy this device still holds for the cloud.
+  /// None of them can be saved once access is gone.
+  int _unsentChanges() {
+    final queue = ref.read(strategyOpQueueProvider);
+    return queue.queuedByEntityKey.length +
+        queue.inFlightByEntityKey.length +
+        queue.pausedByEntityKey.length +
+        queue.attentionByEntityKey.length;
+  }
+
+  static String _unsentNote(int unsent) => switch (unsent) {
+        0 => '',
+        1 => " 1 change you made here hasn't reached the cloud and can't be "
+            'saved.',
+        _ => " $unsent changes you made here haven't reached the cloud and "
+            "can't be saved.",
+      };
+
   Future<void> _showAccessLost() async {
     if (_showingAccessLost) return;
     _showingAccessLost = true;
-    final name = ref.read(strategyProvider).strategyName?.trim();
+    final open = ref.read(strategyProvider);
+    final strategyId = open.strategyId;
+    final name = open.strategyName?.trim();
     final strategy = name == null || name.isEmpty ? 'this strategy' : '"$name"';
+    final unsent = _unsentChanges();
+    bool? discard;
     try {
-      await showShadDialog<void>(
+      discard = await showShadDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (context) => ShadDialog.alert(
           title: const Text('You no longer have access'),
           description: Text(
-            'The owner removed you from $strategy, or stopped sharing it.',
+            'The owner removed you from $strategy, or stopped sharing it.'
+            '${_unsentNote(unsent)}',
           ),
           actions: [
+            if (unsent > 0)
+              ShadButton.destructive(
+                key: const ValueKey('access-lost-discard'),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Discard'),
+              ),
             ShadButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Back to library'),
             ),
           ],
@@ -75,6 +106,17 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
       _showingAccessLost = false;
     }
     if (!mounted) return;
+    // Kept, they wait on this device: the library shows them, and leads
+    // back here to discard them.
+    if (discard == true && strategyId != null) {
+      await ref
+          .read(strategyOpQueueProvider.notifier)
+          .discardDeletedStrategy(strategyId);
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .clearJobsForStrategy(strategyId);
+      if (!mounted) return;
+    }
     // Whatever the reader had open over the editor (a lineup dialog, a
     // menu) goes first, so leaving takes the editor itself off the stack.
     final editorRoute = ModalRoute.of(context);

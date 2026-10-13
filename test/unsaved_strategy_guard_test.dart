@@ -17,6 +17,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
@@ -791,6 +792,57 @@ void main() {
       expect(await guardFuture, isTrue);
       expect(continueCalls, 1);
       expect(opQueue.currentState.pausedByEntityKey, isNotEmpty);
+    });
+
+    testWidgets('a strategy whose access is gone lets go without asking',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          pausedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          lastError: 'Forbidden',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+          strategyAccessLostProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-access-lost',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave anyway'), findsNothing,
+          reason: 'staying could not save anything');
+      expect(await guardFuture, isTrue);
+      expect(continueCalls, 1);
     });
 
     testWidgets('non-durable cloud work cannot leave', (tester) async {

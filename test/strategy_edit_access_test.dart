@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -92,6 +94,55 @@ class _RoleSnapshotNotifier extends RemoteEditorSnapshotNotifier {
   /// A read failed for a reason that says nothing about access.
   void failToRead() {
     state = AsyncError(StateError('offline'), StackTrace.empty);
+  }
+}
+
+/// Holds one paused change for the open strategy, and records discards.
+class _UnsentWorkQueue extends StrategyOpQueueNotifier {
+  _UnsentWorkQueue({required this.unsent});
+
+  final bool unsent;
+  final discarded = <String>[];
+
+  @override
+  StrategyOpQueueState build() => StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'test-client',
+        durableLoaded: true,
+        pausedByEntityKey: unsent
+            ? {
+                const EntitySyncKey.strategy(): const QueuedEntityIntent(
+                  entityKey: EntitySyncKey.strategy(),
+                  pending: PendingOp(
+                    op: StrategyPatchOp(
+                      opId: 'op-1',
+                      payload: <String, dynamic>{'name': 'kept'},
+                      expectedStrategyRevision: 1,
+                    ),
+                    clientId: 'test-client',
+                  ),
+                ),
+              }
+            : const {},
+      );
+
+  @override
+  Future<void> discardDeletedStrategy(String strategyPublicId) async {
+    discarded.add(strategyPublicId);
+  }
+}
+
+class _ClearingMediaQueue extends CloudMediaUploadQueueNotifier {
+  final cleared = <String>[];
+
+  @override
+  CloudMediaUploadQueueState build() =>
+      const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
+
+  @override
+  Future<void> clearJobsForStrategy(String strategyPublicId) async {
+    cleared.add(strategyPublicId);
   }
 }
 
@@ -447,11 +498,17 @@ final _guardedEdits = <String, FutureOr<void> Function(ProviderContainer)>{
 Future<(ProviderContainer, List<int>)> _pumpWatcher(
   WidgetTester tester, {
   String role = 'editor',
+  _UnsentWorkQueue? queue,
+  _ClearingMediaQueue? media,
 }) async {
   final container = ProviderContainer(overrides: [
     remoteEditorSnapshotProvider.overrideWith(
       () => _RoleSnapshotNotifier(role),
     ),
+    strategyOpQueueProvider
+        .overrideWith(() => queue ?? _UnsentWorkQueue(unsent: false)),
+    cloudMediaUploadQueueProvider
+        .overrideWith(() => media ?? _ClearingMediaQueue()),
   ]);
   addTearDown(container.dispose);
   await tester.runAsync(
@@ -856,6 +913,44 @@ void main() {
 
       expect(find.text('Edit lineup'), findsNothing,
           reason: 'the editor route is what leaving pops');
+      expect(leaves, [1]);
+    });
+
+    testWidgets('unsent changes are named, and can be discarded on the way out',
+        (tester) async {
+      final queue = _UnsentWorkQueue(unsent: true);
+      final media = _ClearingMediaQueue();
+      final (container, leaves) =
+          await _pumpWatcher(tester, queue: queue, media: media);
+
+      _remote(container).loseAccess();
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'The owner removed you from "Retake B", or stopped sharing it. '
+          "1 change you made here hasn't reached the cloud and can't be "
+          'saved.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+      expect(queue.discarded, ['cloud-strategy']);
+      expect(media.cleared, ['cloud-strategy']);
+      expect(leaves, [1]);
+    });
+
+    testWidgets('keeping them leaves them for the library', (tester) async {
+      final queue = _UnsentWorkQueue(unsent: true);
+      final (container, leaves) = await _pumpWatcher(tester, queue: queue);
+
+      _remote(container).loseAccess();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Back to library'));
+      await tester.pumpAndSettle();
+
+      expect(queue.discarded, isEmpty);
       expect(leaves, [1]);
     });
 

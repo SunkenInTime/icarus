@@ -1910,8 +1910,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   /// Drops every outbox record of [strategyPublicId] for the current
-  /// account: a strategy the server no longer has, discarded by the user or
-  /// deleted by them on this device.
+  /// account, none of which can ever be sent: a strategy the server no
+  /// longer has, or one this account was just refused, discarded by the
+  /// user; or one they deleted on this device.
   Future<void> discardDeletedStrategy(String strategyPublicId) {
     return _serializeWrite(() async {
       final accountId = state.accountId;
