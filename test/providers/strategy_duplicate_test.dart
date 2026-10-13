@@ -136,7 +136,7 @@ void main() {
       expect(transport.mutations, isEmpty);
       expect(messages, [
         "Some changes to this strategy haven't synced yet, so it wasn't "
-            'duplicated. Let them sync, then try again.',
+            'duplicated. Let them sync, or review them, then try again.',
       ]);
     });
 
@@ -187,7 +187,7 @@ void main() {
       expect(transport.mutations, isEmpty);
       expect(messages, [
         "Some changes to this strategy haven't synced yet, so it wasn't "
-            'duplicated. Let them sync, then try again.',
+            'duplicated. Let them sync, or review them, then try again.',
       ]);
     });
   });

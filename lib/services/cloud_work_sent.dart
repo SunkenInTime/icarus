@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -31,7 +33,7 @@ String cloudStrategyCopyRefusal(CloudWorkNotSent error, String outcome) =>
         ? "Icarus can't read some cloud changes saved on this device, so "
             '$outcome. Review them, then try again.'
         : "Some changes to this strategy haven't synced yet, so $outcome. "
-            'Let them sync, then try again.';
+            'Let them sync, or review them, then try again.';
 
 /// Sends the open page's edits, then waits until this device has nothing
 /// left to send to the cloud for [strategyId], or for any strategy of the
@@ -53,14 +55,17 @@ Future<void> sendCloudWork(
   bool covers(String id) => strategyId == null || id == strategyId;
 
   final open = read(strategyProvider);
-  if (open.source == StrategySource.cloud &&
+  final editorCovered = open.source == StrategySource.cloud &&
       open.strategyId != null &&
-      covers(open.strategyId!)) {
-    // Queues the open page's edits, text still being typed included, and
-    // sends them. Not forceSaveNow: when there is nothing to send, it
-    // leaves the save chip saying syncing.
-    await read(strategyPageSessionProvider.notifier)
-        .flushCurrentPage(flushImmediately: true);
+      covers(open.strategyId!);
+  if (editorCovered) {
+    // Queues the open page's edits, text still being typed included. Not
+    // forceSaveNow: when there is nothing to send, it leaves the save chip
+    // saying syncing.
+    await read(strategyPageSessionProvider.notifier).flushCurrentPage();
+    // Sends them without waiting on the send here: a stalled request must
+    // not hold the copy past the deadline below.
+    unawaited(read(strategyOpQueueProvider.notifier).flushNow());
   }
 
   const step = Duration(milliseconds: 100);
@@ -73,6 +78,12 @@ Future<void> sendCloudWork(
     final media = read(cloudMediaUploadQueueProvider);
     if (!ops.outboxIsReliable || !media.outboxIsReliable) {
       throw const CloudWorkNotSent(unreadable: true);
+    }
+    // Edits on a page a teammate deleted are on screen but in no queue:
+    // the page is gone, so they can never be sent.
+    if (editorCovered &&
+        read(strategyPageSessionProvider).deletedPage != null) {
+      throw const CloudWorkNotSent(unreadable: false);
     }
     final unsent = [
       for (final strategy in ops.accountOutbox.strategies.values)

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -18,6 +19,7 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -74,14 +76,36 @@ class _Queue extends StrategyOpQueueNotifier {
   final StrategyOpQueueState initial;
   var flushes = 0;
 
+  /// Sends that never answer, like a stalled connection.
+  var hangs = false;
+
   @override
   StrategyOpQueueState build() => initial;
 
   @override
-  Future<void> flushNow() async => flushes++;
+  Future<void> flushNow() {
+    flushes++;
+    return hangs ? Completer<void>().future : Future.value();
+  }
 
   /// Everything this device queued has landed.
   void settle() => state = const StrategyOpQueueState(durableLoaded: true);
+}
+
+/// The canvas is on a page a teammate deleted, holding edits the server
+/// never got.
+class _OnDeletedPage extends StrategyPageSessionNotifier {
+  @override
+  StrategyPageSessionState build() => const StrategyPageSessionState(
+        activePageId: 'a',
+        availablePageIds: ['a'],
+        transitionState: PageTransitionState.idle,
+        isApplyingPage: false,
+        deletedPage: (pageId: 'a', name: 'Page a'),
+      );
+
+  @override
+  Future<void> flushCurrentPage({bool flushImmediately = false}) async {}
 }
 
 class _NoUploads extends CloudMediaUploadQueueNotifier {
@@ -280,6 +304,51 @@ void main() {
         onError: (Object caught) => error = caught,
       );
       await tester.pump(cloudWorkSendTimeout + const Duration(seconds: 1));
+
+      expect(error, isA<VideoExportNotSynced>());
+      expect(repository.fetches, 0);
+    });
+
+    testWidgets('a send that never answers still stops at the deadline',
+        (tester) async {
+      final repository = _Repository();
+      final queue = _Queue(const StrategyOpQueueState(
+        durableLoaded: true,
+        isFlushing: true,
+      ))
+        ..hangs = true;
+      final ref = await _pumpRef(tester, cloud(queue, repository));
+
+      Object? error;
+      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+        (_) {},
+        onError: (Object caught) => error = caught,
+      );
+      await tester.pump(cloudWorkSendTimeout + const Duration(seconds: 1));
+
+      expect(queue.flushes, 1);
+      expect(error, isA<VideoExportNotSynced>());
+      expect(repository.fetches, 0);
+    });
+
+    testWidgets('stops at once on a page a teammate deleted under the edits',
+        (tester) async {
+      final repository = _Repository();
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(durableLoaded: true)),
+          repository,
+          more: [strategyPageSessionProvider.overrideWith(_OnDeletedPage.new)],
+        ),
+      );
+
+      Object? error;
+      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+        (_) {},
+        onError: (Object caught) => error = caught,
+      );
+      await tester.pump(const Duration(milliseconds: 1));
 
       expect(error, isA<VideoExportNotSynced>());
       expect(repository.fetches, 0);

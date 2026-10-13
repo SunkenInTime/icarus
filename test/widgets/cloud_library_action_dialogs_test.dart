@@ -241,7 +241,7 @@ void main() {
 
     expect(messages, [
       "Some changes to this strategy haven't synced yet, so nothing was "
-          'exported. Let them sync, then try again.',
+          'exported. Let them sync, or review them, then try again.',
     ]);
   });
 
