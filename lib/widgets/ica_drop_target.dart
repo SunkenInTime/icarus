@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/widgets/replay/open_replays.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 String buildImportSummaryMessage(ImportBatchResult result) {
@@ -95,11 +96,18 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
             isDragging = false;
           });
         }
+        // Replays are taken by ReplayWindowDropTarget, wherever they land.
+        final files = [
+          for (final file in details.files)
+            if (!isReplayPath(file.path)) file,
+        ];
+        if (files.isEmpty) return;
+        // A replay in the same drop switches to the Replays tab, which
+        // disposes this widget mid-import; the app's container outlives it.
+        final container = ProviderScope.containerOf(context, listen: false);
         try {
-          final result =
-              await StrategyImportExportService(ref).loadFromFileDrop(
-            details.files,
-          );
+          final result = await StrategyImportExportService(container)
+              .loadFromFileDrop(files);
 
           if (result.hasImports || result.issues.isNotEmpty) {
             final message = buildImportSummaryMessage(result);
@@ -150,7 +158,7 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
                       height: 10,
                     ),
                     Text(
-                      "Import strategies, folders, or backup archives",
+                      "Import strategies, folders, backups, or replays",
                       style:
                           TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     )

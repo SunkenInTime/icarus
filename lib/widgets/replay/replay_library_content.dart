@@ -198,19 +198,6 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
         _revealing = false;
       });
 
-  void _open() {
-    final listing = widget.listing;
-    final probe = listing.probe;
-    if (probe == null || !probe.supported) {
-      Settings.showToast(
-        message: _unavailableReason(listing),
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
-      return;
-    }
-    Navigator.push(context, ReplayView.route(file: listing.file, probe: probe));
-  }
-
   Future<void> _keep() async {
     try {
       await ref.read(replayLibraryProvider.notifier).import(
@@ -328,7 +315,7 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
               ),
           ],
           child: GestureDetector(
-            onTap: _open,
+            onTap: () => openReplayListing(context, widget.listing),
             child: AnimatedContainer(
               duration: Duration(milliseconds: _revealing ? 250 : 100),
               decoration: BoxDecoration(
@@ -388,6 +375,19 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
       ),
     );
   }
+}
+
+/// Opens [listing] in the viewer, or says why it can't be watched.
+void openReplayListing(BuildContext context, ReplayListing listing) {
+  final probe = listing.probe;
+  if (probe == null || !probe.supported) {
+    Settings.showToast(
+      message: _unavailableReason(listing),
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+    return;
+  }
+  Navigator.push(context, ReplayView.route(file: listing.file, probe: probe));
 }
 
 String _unavailableReason(ReplayListing listing) {
@@ -592,9 +592,10 @@ class _Message extends StatelessWidget {
 }
 
 /// Adds replay files the user picked or dropped, says what happened, and
-/// shows them where the replays landed.
-Future<void> addReplays(WidgetRef ref, List<String> paths) async {
-  if (paths.isEmpty) return;
+/// shows them where the replays landed. Returns what the add did, or null
+/// when it failed outright.
+Future<ReplayAddResult?> addReplays(WidgetRef ref, List<String> paths) async {
+  if (paths.isEmpty) return null;
   // Read before the add: the widget that asked may be gone when it finishes.
   final library = ref.read(replayLibraryProvider.notifier);
   final reveal = ref.read(replayRevealProvider.notifier);
@@ -608,7 +609,7 @@ Future<void> addReplays(WidgetRef ref, List<String> paths) async {
       stackTrace: stackTrace,
       source: 'addReplays',
     );
-    return;
+    return null;
   }
   final shown = [...result.added, ...result.alreadyListed];
   Settings.showToast(
@@ -621,6 +622,7 @@ Future<void> addReplays(WidgetRef ref, List<String> paths) async {
     // Joins any reveal still waiting for the tab to open.
     reveal.state = ReplayReveal([...?reveal.state?.paths, ...shown]);
   }
+  return result;
 }
 
 /// One toast's worth of what an add did, the way strategy imports report.
@@ -648,7 +650,9 @@ String replayAddMessage(ReplayAddResult result) {
   ].join(' ');
 }
 
-/// Adds .vrf files dropped on the Replays tab.
+/// Says what a drop on the Replays tab will do. The replays in it are taken
+/// by `ReplayWindowDropTarget`, which catches them anywhere on the window;
+/// this reports any other files as ones Icarus can't read.
 class ReplayDropTarget extends ConsumerStatefulWidget {
   const ReplayDropTarget({super.key, required this.child});
 
@@ -668,7 +672,12 @@ class _ReplayDropTargetState extends ConsumerState<ReplayDropTarget> {
       onDragExited: (_) => setState(() => _dragging = false),
       onDragDone: (details) {
         setState(() => _dragging = false);
-        addReplays(ref, [for (final file in details.files) file.path]);
+        final others = [
+          for (final file in details.files)
+            if (p.extension(file.path).toLowerCase() != ReplayFiles.extension)
+              file.path,
+        ];
+        if (others.isNotEmpty) addReplays(ref, others);
       },
       child: Stack(
         children: [
