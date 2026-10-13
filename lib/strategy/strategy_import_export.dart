@@ -28,9 +28,7 @@ import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
-import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
-import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -42,6 +40,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/archive_manifest.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -95,9 +94,6 @@ class LibraryExportIncomplete implements Exception {
   @override
   String toString() => 'LibraryExportIncomplete($userMessage, cause: $cause)';
 }
-
-/// How long an export waits for this device's cloud changes to land.
-const cloudExportSyncTimeout = Duration(seconds: 20);
 
 class NewerVersionImportException implements Exception {
   const NewerVersionImportException({
@@ -2265,6 +2261,7 @@ class StrategyImportExportService {
     final stagingDirectory = await Directory.systemTemp.createTemp(prefix);
     try {
       await fill(stagingDirectory);
+      _confirmCloudAccount();
       return stagingDirectory;
     } catch (_) {
       try {
@@ -2466,41 +2463,28 @@ class StrategyImportExportService {
     }
   }
 
+  /// Set once the cloud work was waited on: whether the account it belongs
+  /// to is still the one signed in.
+  SameAccountCheck? _cloudAccountCheck;
+
   /// Waits until this account has nothing left to send to the cloud, for
-  /// any strategy: no edit queued, in flight, held for review or kept for a
-  /// strategy deleted elsewhere, and no image to upload. Only then does the
-  /// server hold everything the user did.
+  /// any strategy (see [sendCloudWork]).
   Future<void> _waitUntilCloudWorkSent() async {
-    final String? accountId = ref.read(authProvider).user?.id;
-    const step = Duration(milliseconds: 100);
-    var waited = Duration.zero;
-    while (true) {
-      final StrategyOpQueueState opQueue = ref.read(strategyOpQueueProvider);
-      final CloudMediaUploadQueueState uploadQueue =
-          ref.read(cloudMediaUploadQueueProvider);
-      // A saved record that could not be read can't be shown to have landed.
-      if (!opQueue.outboxIsReliable || !uploadQueue.outboxIsReliable) {
-        throw const LibraryExportIncomplete.cloudWorkUnreadable();
-      }
-      final outbox = opQueue.accountOutbox;
-      final uploads =
-          uploadQueue.jobs.where((job) => job.accountId == accountId);
-      if (!outbox.hasWork &&
-          outbox.deletedStrategies.isEmpty &&
-          opQueue.pending.isEmpty &&
-          uploads.isEmpty) {
-        return;
-      }
-      // Work held for review, kept for a deleted strategy, or failed to
-      // upload never lands by waiting.
-      final stuck = outbox.needsAttention ||
-          outbox.deletedStrategies.isNotEmpty ||
-          uploads.any((job) => job.isFailed);
-      if (stuck || waited >= cloudExportSyncTimeout) {
-        throw const LibraryExportIncomplete.cloudNotSynced();
-      }
-      await Future<void>.delayed(step);
-      waited += step;
+    try {
+      _cloudAccountCheck = await sendCloudWork(ref.read);
+    } on CloudWorkNotSent catch (error) {
+      throw error.unreadable
+          ? const LibraryExportIncomplete.cloudWorkUnreadable()
+          : const LibraryExportIncomplete.cloudNotSynced();
+    }
+  }
+
+  /// The cloud half was read as the account whose work was waited on.
+  void _confirmCloudAccount() {
+    try {
+      _cloudAccountCheck?.call();
+    } on CloudWorkNotSent {
+      throw const LibraryExportIncomplete.cloudChanged();
     }
   }
 
@@ -2772,10 +2756,16 @@ class StrategyImportExportService {
     }
   }
 
+  /// Writes the server's copy of [strategyId] as an .ica, once this device
+  /// has sent it everything the user did. Throws [CloudWorkNotSent] when
+  /// that work has not landed (see [sendCloudWork]).
   Future<bool> exportCloudStrategy(String strategyId) async {
+    final sameAccount = await sendCloudWork(ref.read, strategyId: strategyId);
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
         .fetchFullSnapshot(strategyId);
+    // Read as the account whose work was waited on, or not written.
+    sameAccount();
     await _ensureRemoteAssetsCached(snapshot);
     final strategy = strategyDataFromRemoteSnapshot(snapshot);
     final outputFile = await FilePicker.platform.saveFile(

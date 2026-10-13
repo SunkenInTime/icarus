@@ -13,12 +13,15 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 void main() {
   group('cloud duplicate', () {
@@ -93,8 +96,94 @@ void main() {
       expect(transport.libraryListBuilds, 0);
     });
 
-    test('an image this device has not uploaded yet holds the duplicate',
-        () async {
+    test('waits for an edit still on its way, then copies', () async {
+      final transport = _RecordingTransport();
+      final messages = <String>[];
+      final ops = _Ops(_unsent(queued: 1));
+      final container = _container(transport, messages, ops: ops);
+      addTearDown(container.dispose);
+
+      final duplicating =
+          container.read(strategyProvider.notifier).duplicateStrategy(
+                'source-strategy',
+                source: StrategySource.cloud,
+              );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      // The server copies what it has, so nothing is asked of it yet.
+      expect(transport.mutations, isEmpty);
+      ops.land();
+      await duplicating;
+
+      expect(transport.mutations.map((call) => call.$1), [
+        'strategies:duplicate',
+      ]);
+      expect(messages, isEmpty);
+    });
+
+    test('an edit held for review refuses the copy and says why', () async {
+      final transport = _RecordingTransport();
+      final messages = <String>[];
+      final container = _container(
+        transport,
+        messages,
+        ops: _Ops(_unsent(paused: 1)),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(strategyProvider.notifier).duplicateStrategy(
+            'source-strategy',
+            source: StrategySource.cloud,
+          );
+
+      expect(transport.mutations, isEmpty);
+      expect(messages, [
+        "Some changes to this strategy haven't synced yet, so it wasn't "
+            'duplicated. Let them sync, or review them, then try again.',
+      ]);
+    });
+
+    test('another account signing in mid-wait makes no copy', () async {
+      final transport = _RecordingTransport();
+      final messages = <String>[];
+      final ops = _Ops(_unsent(queued: 1));
+      final auth = _Auth();
+      final container = _container(transport, messages, ops: ops, auth: auth);
+      addTearDown(container.dispose);
+
+      final duplicating =
+          container.read(strategyProvider.notifier).duplicateStrategy(
+                'source-strategy',
+                source: StrategySource.cloud,
+              );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      // The first account's edit is still unsent; the second one's queue,
+      // now on show, is empty.
+      auth.signInAs('account-b');
+      ops.land();
+      await duplicating;
+
+      expect(transport.mutations, isEmpty);
+      expect(messages, hasLength(1));
+    });
+
+    test("another strategy's unsent edit does not hold this copy", () async {
+      final transport = _RecordingTransport();
+      final container = _container(
+        transport,
+        <String>[],
+        ops: _Ops(_unsent(queued: 1, strategyId: 'other-strategy')),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(strategyProvider.notifier).duplicateStrategy(
+            'source-strategy',
+            source: StrategySource.cloud,
+          );
+
+      expect(transport.mutations, hasLength(1));
+    });
+
+    test('an image that failed to upload refuses the copy', () async {
       final transport = _RecordingTransport();
       final messages = <String>[];
       final container = _container(
@@ -108,8 +197,8 @@ void main() {
             assetPublicId: 'image-1',
             fileExtension: '.png',
             mimeType: 'image/png',
-            state: CloudMediaJobState.pendingUpload,
-            attempts: 0,
+            state: CloudMediaJobState.failed,
+            attempts: 3,
             updatedAt: DateTime.utc(2026),
           ),
         ],
@@ -123,8 +212,8 @@ void main() {
 
       expect(transport.mutations, isEmpty);
       expect(messages, [
-        "This strategy has images that haven't finished uploading. "
-            "Duplicate it once it's synced.",
+        "Some changes to this strategy haven't synced yet, so it wasn't "
+            'duplicated. Let them sync, or review them, then try again.',
       ]);
     });
   });
@@ -181,9 +270,15 @@ ProviderContainer _container(
   _RecordingTransport transport,
   List<String> messages, {
   List<CloudMediaUploadJob> unsentImages = const [],
+  _Ops? ops,
+  _Auth? auth,
 }) {
   return ProviderContainer(overrides: [
+    authProvider.overrideWith(() => auth ?? _Auth()),
     cloudMediaUploadQueueProvider.overrideWith(() => _Queue(unsentImages)),
+    strategyOpQueueProvider.overrideWith(
+      () => ops ?? _Ops(const StrategyOpQueueState(durableLoaded: true)),
+    ),
     cloudStrategiesProvider.overrideWith((ref) {
       transport.libraryListBuilds += 1;
       return const Stream<List<CloudStrategyEntry>>.empty();
@@ -224,6 +319,63 @@ class _Queue extends CloudMediaUploadQueueNotifier {
   CloudMediaUploadQueueState build() =>
       CloudMediaUploadQueueState(jobs: jobs, isProcessing: false);
 }
+
+/// Signed in as one account, then as [signInAs] says.
+class _Auth extends AuthProvider {
+  @override
+  AppAuthState build() => _signedInAs('account-a');
+
+  void signInAs(String accountId) => state = _signedInAs(accountId);
+}
+
+AppAuthState _signedInAs(String accountId) => AppAuthState(
+      isLoading: false,
+      isAuthenticated: true,
+      isConvexUserReady: true,
+      convexAuthStatus: ConvexAuthStatus.ready,
+      user: User(
+        id: accountId,
+        appMetadata: const <String, dynamic>{},
+        userMetadata: const <String, dynamic>{},
+        aud: 'authenticated',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      ),
+    );
+
+/// This device's op queue, set by the test.
+class _Ops extends StrategyOpQueueNotifier {
+  _Ops(this.initial);
+
+  final StrategyOpQueueState initial;
+
+  @override
+  StrategyOpQueueState build() => initial;
+
+  /// Everything this device queued has landed.
+  void land() => state = const StrategyOpQueueState(durableLoaded: true);
+}
+
+/// Saved work waiting to reach the server for [strategyId].
+StrategyOpQueueState _unsent({
+  int queued = 0,
+  int paused = 0,
+  String strategyId = 'source-strategy',
+}) =>
+    StrategyOpQueueState(
+      durableLoaded: true,
+      accountOutbox: AccountStrategyOutboxSummary(
+        strategies: {
+          strategyId: StrategyOutboxSummary(
+            strategyPublicId: strategyId,
+            queuedCount: queued,
+            inFlightCount: 0,
+            pausedCount: paused,
+            attentionCount: 0,
+            successorCount: 0,
+          ),
+        },
+      ),
+    );
 
 class _CurrentFolder extends FolderProvider {
   @override

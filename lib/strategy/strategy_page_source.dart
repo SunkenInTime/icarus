@@ -35,7 +35,11 @@ abstract class StrategyPageSource {
   RemoteEditorSnapshot? get loadedRemoteSnapshot;
   Future<List<String>> listPageIds();
   Future<StrategyEditorPageData> loadPage(String pageId);
-  Future<void> flushCurrentPage();
+
+  /// Hands the page on screen to its store: the library, or the op queue.
+  /// False when it could not, so what the canvas shows may be held nowhere
+  /// else.
+  Future<bool> flushCurrentPage();
 }
 
 class LocalStrategyPageSource implements StrategyPageSource {
@@ -102,17 +106,17 @@ class LocalStrategyPageSource implements StrategyPageSource {
   }
 
   @override
-  Future<void> flushCurrentPage() async {
+  Future<bool> flushCurrentPage() async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = box.get(strategyId);
     if (strategy == null || strategy.pages.isEmpty) {
-      return;
+      return false;
     }
 
     final pageId = activePageId() ?? strategy.pages.first.id;
     final index = strategy.pages.indexWhere((page) => page.id == pageId);
     if (index < 0) {
-      return;
+      return false;
     }
 
     final updatedPage = strategy.pages[index].copyWith(
@@ -139,6 +143,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       lastEdited: DateTime.now(),
     );
     await box.put(updated.id, updated);
+    return true;
   }
 }
 
@@ -319,21 +324,27 @@ class CloudStrategyPageSource implements StrategyPageSource {
     );
   }
 
+  /// The canvas can only be diffed against the server's version of the
+  /// page it was drawn from. Without that version (a read failed or is
+  /// reloading, the page is still loading, or a teammate deleted it) nothing
+  /// is queued and this is false: edits on screen may be held nowhere else.
   @override
-  Future<void> flushCurrentPage() async {
+  Future<bool> flushCurrentPage() async {
     // Whether this work is made live is judged as the canvas hands it over,
     // before it waits on anything (see StrategyOpQueueNotifier.liveStamp).
     final madeLive = ref.read(strategyOpQueueProvider.notifier).liveStamp;
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    if (snapshot == null ||
-        snapshot.header.publicId != strategyId ||
-        !StrategyCapabilities.fromCloudRole(snapshot.header.role)
-            .canEditPages) {
-      return;
+    if (snapshot == null || snapshot.header.publicId != strategyId) {
+      return false;
+    }
+    // A viewer can't edit, so there is nothing to queue.
+    if (!StrategyCapabilities.fromCloudRole(snapshot.header.role)
+        .canEditPages) {
+      return true;
     }
     final pageId = activePageId();
     if (pageId == null) {
-      return;
+      return false;
     }
 
     await _syncStrategyMetadata();
@@ -344,7 +355,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
               pageId: pageId,
             );
     if (desiredOpsByEntityKey == null) {
-      return;
+      return false;
     }
     await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
           pageId: pageId,
@@ -352,6 +363,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
           flushImmediately: false,
           madeLive: madeLive,
         );
+    return true;
   }
 
   Future<void> _syncStrategyMetadata() async {

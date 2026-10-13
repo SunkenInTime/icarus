@@ -11,6 +11,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/delete_folder_alert_dialog.dart';
@@ -206,6 +207,42 @@ void main() {
     expect(exportCalls, 1);
     expect(messages, ["Couldn't export this cloud strategy. Try again."]);
     expect(messages.single, isNot(contains(_secret)));
+  });
+
+  testWidgets('a cloud export with unsent changes says so, not "try again"',
+      (tester) async {
+    final messages = <String>[];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          cloudStrategyExporterProvider.overrideWithValue(
+            (_) async => throw const CloudWorkNotSent(unreadable: false),
+          ),
+          cloudLibraryActionReporterProvider.overrideWithValue(
+            CloudLibraryActionReporter(
+              showMessage: messages.add,
+              reportTechnicalFailure: ({
+                required source,
+                required error,
+                required stackTrace,
+              }) {},
+            ),
+          ),
+          authProvider.overrideWith(_ReadyAuthProvider.new),
+        ],
+        child: const ShadApp(
+          home: Scaffold(body: _CloudExportInvoker()),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Export cloud strategy'));
+    await tester.pumpAndSettle();
+
+    expect(messages, [
+      "Some changes to this strategy haven't synced yet, so nothing was "
+          'exported. Let them sync, or review them, then try again.',
+    ]);
   });
 
   testWidgets('cancelled cloud export stays silent', (tester) async {

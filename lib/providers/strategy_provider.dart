@@ -52,6 +52,7 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_library_action.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -2016,23 +2017,30 @@ class StrategyProvider extends Notifier<StrategyState> {
       // can create for bytes that are already uploaded.
       const sourceName = 'strategy:duplicate';
       final reporter = ref.read(cloudLibraryActionReporterProvider);
-      // An image this device has not uploaded yet has nothing to copy, so
-      // the copy would lack it for good. The server refuses the same case
-      // for uploads started on other devices.
-      final unsentImages = ref
-          .read(cloudMediaUploadQueueProvider)
-          .pendingCountForStrategy(strategyID);
-      if (unsentImages > 0) {
-        reporter.showMessage(
-          "This strategy has images that haven't finished uploading. "
-          "Duplicate it once it's synced.",
-        );
-        return;
-      }
       final repository = ref.read(convexStrategyRepositoryProvider);
       final result = await reporter.run(
         action: () async {
-          final shell = await repository.fetchShell(strategyID);
+          // The server copies what it has, so an edit or image this device
+          // has not sent would be missing from the copy for good. The
+          // server refuses the same case for uploads started on other
+          // devices. Read through the container: sendCloudWork reads this
+          // provider, which may not read itself.
+          final RemoteStrategyShell shell;
+          try {
+            final sameAccount = await sendCloudWork(
+              ref.container.read,
+              strategyId: strategyID,
+            );
+            shell = await repository.fetchShell(strategyID);
+            // The copy lands in whichever library is signed in when it is
+            // asked for, so that must still be the account waited on.
+            sameAccount();
+          } on CloudWorkNotSent catch (error) {
+            reporter.showMessage(
+              cloudStrategyCopyRefusal(error, "it wasn't duplicated"),
+            );
+            return false;
+          }
           try {
             await repository.duplicateStrategy(
               sourceStrategyPublicId: strategyID,
