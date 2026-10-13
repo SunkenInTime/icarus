@@ -74,7 +74,14 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     } finally {
       _showingAccessLost = false;
     }
-    if (mounted) await widget.onLeave();
+    if (!mounted) return;
+    // Whatever the reader had open over the editor (a lineup dialog, a
+    // menu) goes first, so leaving takes the editor itself off the stack.
+    final editorRoute = ModalRoute.of(context);
+    if (editorRoute != null) {
+      Navigator.of(context).popUntil((route) => route == editorRoute);
+    }
+    await widget.onLeave();
   }
 
   @override

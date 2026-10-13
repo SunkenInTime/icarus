@@ -839,6 +839,26 @@ void main() {
       expect(leaves, [1]);
     });
 
+    testWidgets('leaving takes down a dialog that was open over the editor',
+        (tester) async {
+      final (container, leaves) = await _pumpWatcher(tester);
+      unawaited(showShadDialog<void>(
+        context: tester.element(find.byType(Scaffold)),
+        builder: (_) => const ShadDialog(child: Text('Edit lineup')),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit lineup'), findsOneWidget);
+
+      _remote(container).loseAccess();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Back to library'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit lineup'), findsNothing,
+          reason: 'the editor route is what leaving pops');
+      expect(leaves, [1]);
+    });
+
     testWidgets('a read that fails for another reason shows nothing',
         (tester) async {
       final (container, leaves) = await _pumpWatcher(tester);

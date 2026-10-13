@@ -1057,7 +1057,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       log('Could not read page $targetPageId to copy onto it: $error');
       return PageCopyResult.unreachable;
     }
-    if (state.strategyId != strategyId) return PageCopyResult.unavailable;
+    // Access can drop while the page is read; a reader can still read it.
+    if (state.strategyId != strategyId || !_currentStrategyCanEditPages()) {
+      return PageCopyResult.unavailable;
+    }
 
     final onTarget = _cloudElementsOn(targetPage);
     final root = pageCopyRoot(widgetId);
@@ -1369,7 +1372,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       log('Could not read page $pageId to copy lineups onto it: $error');
       return PageCopyResult.unreachable;
     }
-    if (state.strategyId != strategyId) return PageCopyResult.unavailable;
+    // Access can drop while the page is read; a reader can still read it.
+    if (state.strategyId != strategyId || !_currentStrategyCanEditPages()) {
+      return PageCopyResult.unavailable;
+    }
 
     final onTarget = _cloudLineupGroupsOn(targetPage);
     final linksThere = [

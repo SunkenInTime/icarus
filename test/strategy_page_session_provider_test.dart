@@ -11815,6 +11815,36 @@ void main() {
           isFalse);
     });
 
+    test('a copy whose reader loses edit access during the read is not sent',
+        () async {
+      final (container, _, reader) = await open();
+      final read = reader.gate = Completer<void>();
+      final copied = container
+          .read(strategyProvider.notifier)
+          .copyPlacedWidgetToAdjacentPage(
+            widgetId: 'text-page-2',
+            direction: PageTransitionDirection.forward,
+          );
+      await _settle();
+
+      // The owner makes them a viewer while the next page is being read.
+      // ignore: invalid_use_of_protected_member
+      container.read(remoteEditorSnapshotProvider.notifier).state = AsyncData(
+        _editorSnapshot(
+          pages: pages,
+          activePage: _pageSnapshot(
+            pages[1],
+            elements: [_textElement('page-2', 'text-page-2', 'two')],
+          ),
+          role: 'viewer',
+        ),
+      );
+      read.complete();
+
+      expect(await copied, PageCopyResult.unavailable);
+      expect(adds(container), isEmpty);
+    });
+
     test('a page that cannot be read gets nothing', () async {
       final (container, _, reader) = await open();
       reader.fails = true;
