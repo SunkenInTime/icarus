@@ -250,3 +250,9 @@ export function sortByNumberField<T extends Record<string, unknown>>(
 export function clampPageIndex(index: number, maximum: number): number {
   return Math.max(0, Math.min(Math.trunc(index), maximum));
 }
+
+/// Whether library lists show [strategy]: not while a move from a device
+/// is still putting it together.
+export function isListed(strategy: Doc<"strategies">): boolean {
+  return strategy.unfinishedMove !== true;
+}

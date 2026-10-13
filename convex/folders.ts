@@ -7,8 +7,9 @@ import {
   getEffectiveFolderRoleForUser,
   requireCurrentUser,
 } from "./lib/auth";
-import { getFolderByPublicId } from "./lib/entities";
+import { getFolderByPublicId, isListed } from "./lib/entities";
 import { readStrategyAgentTypes } from "./lib/strategyAgentSummary";
+
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -340,10 +341,12 @@ async function summariseFolderTrees(
     counts.set(key, (counts.get(key) ?? 0) + 1);
 
   for (const folder of folders) {
-    const strategies = await ctx.db
-      .query("strategies")
-      .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
-      .collect();
+    const strategies = (
+      await ctx.db
+        .query("strategies")
+        .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
+        .collect()
+    ).filter(isListed);
     const agentTypesSeen = new Map<string, number>();
     for (const strategy of strategies) {
       bump(mapCounts.get(folder._id)!, strategy.mapData);

@@ -26,6 +26,7 @@ import {
   getFolderByPublicId,
   getStrategyByPublicId,
   livePagesQuery,
+  isListed,
 } from "./lib/entities";
 import {
   assertSupportedCloudProtocol,
@@ -59,6 +60,7 @@ type StrategyCreateInput = {
   folderPublicId?: string;
   themeProfileId?: string;
   themeOverridePalette?: Doc<"strategies">["themeOverridePalette"];
+  unfinishedMove?: boolean;
 };
 
 type InitialPageInput = {
@@ -257,6 +259,7 @@ async function listStrategiesInFolder(
   const dedup = new Map<Id<"strategies">, Doc<"strategies">>();
   for (const strategy of candidates) {
     if (
+      isListed(strategy) &&
       matchesScope(strategy.ownerId, userId, scope) &&
       (await getEffectiveStrategyRoleForUser(ctx, strategy, userId)) !== null
     ) {
@@ -377,6 +380,7 @@ async function createStrategyWithInitialPageRecord(
     revision: 0,
     themeProfileId: args.themeProfileId,
     themeOverridePalette: args.themeOverridePalette,
+    ...(args.unfinishedMove === true ? { unfinishedMove: true } : {}),
     createdAt: now,
     updatedAt: now,
   });
@@ -432,6 +436,7 @@ export const listSharedWithMe = query({
     const strategies = shared.filter(
       (strategy): strategy is Doc<"strategies"> =>
         strategy !== null &&
+        isListed(strategy) &&
         strategy.ownerId !== user._id &&
         strategy.folderId === undefined,
     );
@@ -499,6 +504,10 @@ export const createWithInitialPage = mutation({
     folderPublicId: v.optional(v.string()),
     themeProfileId: v.optional(v.string()),
     themeOverridePalette: v.optional(mapThemePaletteValidator),
+    // Sent by a device moving a strategy in from its local library: the
+    // strategy stays out of library lists until finishMove. Older clients
+    // never send it.
+    unfinishedMove: v.optional(v.boolean()),
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
@@ -735,6 +744,25 @@ export const move = mutation({
     });
 
     return { ok: true, revision } as const;
+  },
+});
+
+/// Shows a strategy a move made with unfinishedMove, once the moving device
+/// has confirmed every part of it landed. Calling it again changes nothing.
+export const finishMove = mutation({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicId: v.string(),
+  },
+  returns: okResultValidator,
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    await assertStrategyRole(ctx, strategy, "owner");
+    if (strategy.unfinishedMove === true) {
+      await ctx.db.patch(strategy._id, { unfinishedMove: undefined });
+    }
+    return { ok: true } as const;
   },
 });
 

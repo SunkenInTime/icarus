@@ -168871,6 +168871,12 @@
               "type": "string"
             },
             "optional": true
+          },
+          "unfinishedMove": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
           }
         }
       },
@@ -169031,6 +169037,42 @@
             }
           }
         ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "strategies.js:finishMove",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
       },
       "visibility": {
         "kind": "public"

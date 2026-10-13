@@ -6012,6 +6012,7 @@ ConvexObject encodeStrategiesCreateWithInitialPageArgs({
       themeOverridePalette =
       const ConvexOptional.absent(),
   ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+  ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
 }) => ConvexObject({
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
@@ -6037,6 +6038,8 @@ ConvexObject encodeStrategiesCreateWithInitialPageArgs({
     ),
   if (themeProfileId.isPresent)
     'themeProfileId': ConvexString(themeProfileId.value),
+  if (unfinishedMove.isPresent)
+    'unfinishedMove': ConvexBoolean(unfinishedMove.value),
 });
 
 ConvexValue decodeStrategiesCreateWithInitialPageResult(ConvexValue value) =>
@@ -6088,6 +6091,20 @@ ConvexValue decodeStrategiesDuplicateResult(ConvexValue value) => _decodeRaw(
   'strategies.js:duplicate.returns',
   _validateFoldersCreateResult,
 );
+
+ConvexObject encodeStrategiesFinishMoveArgs({
+  required double clientProtocolVersion,
+  required String strategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:finishMove.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+FoldersDeleteResult decodeStrategiesFinishMoveResult(ConvexValue value) =>
+    FoldersDeleteResult.decode(value, 'strategies.js:finishMove.returns');
 
 ConvexObject encodeStrategiesGetHeaderArgs({
   required String strategyPublicId,

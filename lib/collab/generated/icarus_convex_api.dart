@@ -1166,6 +1166,7 @@ abstract interface class StrategiesModule {
         themeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+    ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   });
   Future<FoldersDeleteResult> delete({
     required double clientProtocolVersion,
@@ -1178,6 +1179,10 @@ abstract interface class StrategiesModule {
     required String name,
     required String publicId,
     required String sourceStrategyPublicId,
+  });
+  Future<FoldersDeleteResult> finishMove({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
   });
   ConvexQuery<StrategiesGetHeaderResult> getHeader({
     required String strategyPublicId,
@@ -1264,6 +1269,7 @@ final class _StrategiesModule implements StrategiesModule {
         themeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+    ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesCreateWithInitialPageArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -1278,6 +1284,7 @@ final class _StrategiesModule implements StrategiesModule {
       publicId: publicId,
       themeOverridePalette: themeOverridePalette,
       themeProfileId: themeProfileId,
+      unfinishedMove: unfinishedMove,
     );
     return _invoke(
       () => _transport.mutation('strategies:createWithInitialPage', args),
@@ -1320,6 +1327,21 @@ final class _StrategiesModule implements StrategiesModule {
     return _invoke(
       () => _transport.mutation('strategies:duplicate', args),
       decodeStrategiesDuplicateResult,
+    );
+  }
+
+  @override
+  Future<FoldersDeleteResult> finishMove({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  }) {
+    final args = encodeStrategiesFinishMoveArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      strategyPublicId: strategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('strategies:finishMove', args),
+      decodeStrategiesFinishMoveResult,
     );
   }
 
