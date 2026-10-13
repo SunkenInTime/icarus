@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,34 +58,101 @@ class ReplayLibraryContent extends ConsumerWidget {
   }
 }
 
-class _ReplayGrid extends StatelessWidget {
+class _ReplayGrid extends ConsumerStatefulWidget {
   const _ReplayGrid({required this.listings});
 
   final List<ReplayListing> listings;
 
   @override
+  ConsumerState<_ReplayGrid> createState() => _ReplayGridState();
+}
+
+class _ReplayGridState extends ConsumerState<_ReplayGrid> {
+  static const _padding = 16 - strategyTileGutterOutset;
+
+  /// How long a just-added replay stays lit.
+  static const _highlightDuration = Duration(milliseconds: 1800);
+
+  final _scroll = ScrollController();
+  int _columns = 1;
+  Set<String> _highlighted = const {};
+  Timer? _unhighlight;
+
+  @override
+  void dispose() {
+    _unhighlight?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Scrolls the highest of [reveal]'s replays into view and lights them
+  /// all up for a moment. Waits for a listing that has them.
+  void _reveal(ReplayReveal reveal) {
+    final indices = [
+      for (final (index, listing) in widget.listings.indexed)
+        if (reveal.paths.contains(listing.file.path)) index,
+    ];
+    if (indices.isEmpty) return;
+    ref.read(replayRevealProvider.notifier).state = null;
+    if (_scroll.hasClients) {
+      final position = _scroll.position;
+      const extent = strategyTileGridMainAxisExtent;
+      final top = _padding + (indices.reduce(math.min) ~/ _columns) * extent;
+      final hidden = top < position.pixels ||
+          top + extent > position.pixels + position.viewportDimension;
+      if (hidden) {
+        // Centered, so the toast at the bottom doesn't cover it.
+        final target = top + extent / 2 - position.viewportDimension / 2;
+        _scroll.animateTo(
+          target.clamp(position.minScrollExtent, position.maxScrollExtent),
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    }
+    setState(() => _highlighted = reveal.paths.toSet());
+    _unhighlight?.cancel();
+    _unhighlight = Timer(_highlightDuration, () {
+      if (mounted) setState(() => _highlighted = const {});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final reveal = ref.watch(replayRevealProvider);
+    if (reveal != null) {
+      // After layout, so the grid knows its columns and scroll extent.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ref.read(replayRevealProvider) == reveal) {
+          _reveal(reveal);
+        }
+      });
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         // The strategy grid's columns, so the two tabs line up.
         const minTileWidth = 250.0;
         const padding = 32.0;
-        final columns =
-            ((constraints.maxWidth - padding + strategyTileGridSpacing) /
-                    (minTileWidth + strategyTileGridSpacing))
-                .floor()
-                .clamp(1, 1 << 20);
+        _columns = ((constraints.maxWidth - padding + strategyTileGridSpacing) /
+                (minTileWidth + strategyTileGridSpacing))
+            .floor()
+            .clamp(1, 1 << 20);
         return GridView.builder(
-          padding: const EdgeInsets.all(16 - strategyTileGutterOutset),
+          controller: _scroll,
+          padding: const EdgeInsets.all(_padding),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
+            crossAxisCount: _columns,
             mainAxisExtent: strategyTileGridMainAxisExtent,
           ),
-          itemCount: listings.length,
-          itemBuilder: (context, index) => ReplayTile(
-            key: ValueKey(listings[index].file.path),
-            listing: listings[index],
-          ),
+          itemCount: widget.listings.length,
+          itemBuilder: (context, index) {
+            final listing = widget.listings[index];
+            return ReplayTile(
+              key: ValueKey(listing.file.path),
+              listing: listing,
+              highlighted: _highlighted.contains(listing.file.path),
+            );
+          },
         );
       },
     );
@@ -92,9 +162,16 @@ class _ReplayGrid extends StatelessWidget {
 /// One replay on the grid. Built like a strategy tile: map art above, the
 /// match below.
 class ReplayTile extends ConsumerStatefulWidget {
-  const ReplayTile({super.key, required this.listing});
+  const ReplayTile({
+    super.key,
+    required this.listing,
+    this.highlighted = false,
+  });
 
   final ReplayListing listing;
+
+  /// Lit up because the user just added it.
+  final bool highlighted;
 
   @override
   ConsumerState<ReplayTile> createState() => _ReplayTileState();
@@ -103,6 +180,20 @@ class ReplayTile extends ConsumerStatefulWidget {
 class _ReplayTileState extends ConsumerState<ReplayTile> {
   static const _ringWidth = 2.0;
   bool _hovered = false;
+
+  /// The ring fades slower when it lights up for a reveal than on hover.
+  bool _revealing = false;
+
+  @override
+  void didUpdateWidget(ReplayTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.highlighted != widget.highlighted) _revealing = true;
+  }
+
+  void _setHovered(bool hovered) => setState(() {
+        _hovered = hovered;
+        _revealing = false;
+      });
 
   Future<void> _keep() async {
     try {
@@ -137,8 +228,8 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
       padding: const EdgeInsets.all(strategyTileGutterOutset),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
         child: ShadContextMenuRegion(
           items: [
             if (listing.file.source == ReplaySource.valorant)
@@ -151,11 +242,12 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
           child: GestureDetector(
             onTap: () => openReplayListing(context, widget.listing),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 100),
+              duration: Duration(milliseconds: _revealing ? 250 : 100),
               decoration: BoxDecoration(
                 color: theme.border,
-                gradient:
-                    _hovered && available ? Settings.raisedPrimaryFill : null,
+                gradient: (_hovered && available) || widget.highlighted
+                    ? Settings.raisedPrimaryFill
+                    : null,
                 borderRadius: BorderRadius.circular(strategyTileOuterRadius),
               ),
               padding: const EdgeInsets.all(_ringWidth),
@@ -257,7 +349,7 @@ class _ReplayDetails extends StatelessWidget {
             1,
             Maps.mapNames[map]![0].toUpperCase(),
           );
-    final date = probe?.recordedAt ?? listing.file.modified;
+    final date = listing.date;
     final status = probe == null || !listing.canOpen
         ? (probe == null
             ? 'Not a replay'
@@ -371,9 +463,68 @@ class _Message extends StatelessWidget {
   }
 }
 
-/// Shows what a drop on the Replays tab will do. The replays themselves are
-/// taken by `ReplayWindowDropTarget`, which catches them anywhere on the
-/// window; this only says when other files in a drop were left out.
+/// Adds replay files the user picked or dropped, says what happened, and
+/// shows them where the replays landed. Returns what the add did, or null
+/// when it failed outright.
+Future<ReplayAddResult?> addReplays(WidgetRef ref, List<String> paths) async {
+  if (paths.isEmpty) return null;
+  // Read before the add: the widget that asked may be gone when it finishes.
+  final library = ref.read(replayLibraryProvider.notifier);
+  final reveal = ref.read(replayRevealProvider.notifier);
+  final ReplayAddResult result;
+  try {
+    result = await library.add(paths);
+  } catch (error, stackTrace) {
+    AppErrorReporter.reportError(
+      "Couldn't add replays.",
+      error: error,
+      stackTrace: stackTrace,
+      source: 'addReplays',
+    );
+    return null;
+  }
+  final shown = [...result.added, ...result.alreadyListed];
+  Settings.showToast(
+    message: replayAddMessage(result),
+    backgroundColor: shown.isEmpty
+        ? Settings.tacticalVioletTheme.destructive
+        : Settings.tacticalVioletTheme.primary,
+  );
+  if (shown.isNotEmpty) {
+    // Joins any reveal still waiting for the tab to open.
+    reveal.state = ReplayReveal([...?reveal.state?.paths, ...shown]);
+  }
+  return result;
+}
+
+/// One toast's worth of what an add did, the way strategy imports report.
+String replayAddMessage(ReplayAddResult result) {
+  final added = result.added.length;
+  final already = result.alreadyListed.length;
+  final unreadable = result.unreadable.length;
+  final failed = result.failed.length;
+  return [
+    if (added > 0) 'Added ${added == 1 ? '1 replay' : '$added replays'}.',
+    if (already > 0 && added == 0)
+      already == 1
+          ? 'That match is already in Replays.'
+          : 'Those $already matches are already in Replays.',
+    if (already > 0 && added > 0)
+      already == 1
+          ? '1 was already in Replays.'
+          : '$already were already in Replays.',
+    if (unreadable == 1)
+      "${p.basename(result.unreadable.single)} isn't a replay Icarus can read.",
+    if (unreadable > 1)
+      "Skipped $unreadable files that aren't replays Icarus can read.",
+    if (failed == 1) "Couldn't copy ${p.basename(result.failed.single)}.",
+    if (failed > 1) "Couldn't copy $failed replays.",
+  ].join(' ');
+}
+
+/// Says what a drop on the Replays tab will do. The replays in it are taken
+/// by `ReplayWindowDropTarget`, which catches them anywhere on the window;
+/// this reports any other files as ones Icarus can't read.
 class ReplayDropTarget extends ConsumerStatefulWidget {
   const ReplayDropTarget({super.key, required this.child});
 
@@ -393,15 +544,12 @@ class _ReplayDropTargetState extends ConsumerState<ReplayDropTarget> {
       onDragExited: (_) => setState(() => _dragging = false),
       onDragDone: (details) {
         setState(() => _dragging = false);
-        if (!details.files.every(
-          (file) =>
-              p.extension(file.path).toLowerCase() == ReplayFiles.extension,
-        )) {
-          Settings.showToast(
-            message: 'Only Valorant replays (.vrf) can be dropped here.',
-            backgroundColor: Settings.tacticalVioletTheme.destructive,
-          );
-        }
+        final others = [
+          for (final file in details.files)
+            if (p.extension(file.path).toLowerCase() != ReplayFiles.extension)
+              file.path,
+        ];
+        if (others.isNotEmpty) addReplays(ref, others);
       },
       child: Stack(
         children: [

@@ -22,20 +22,39 @@ import 'package:path/path.dart' as p;
 bool isReplayPath(String path) =>
     p.extension(path).toLowerCase() == ReplayFiles.extension;
 
-/// The open that is still running. Each open waits for the one before it,
+/// Opens waiting their turn. Each runs after the one before it finishes,
 /// so two arriving together (a drop and an Explorer open, or two Explorer
-/// opens) never interleave their navigation.
-Future<void> _previousOpen = Future.value();
+/// opens) never interleave their navigation or stack two guard dialogs.
+final _waiting = <({WidgetRef ref, List<String> paths})>[];
+var _opening = false;
 
 /// Brings replays opened from outside the Replays tab (dropped anywhere on
 /// the window, or opened from Explorer) into Icarus the way Add Replay does,
 /// then shows them: one replay opens in the viewer, several land on the
-/// Replays tab. Leaving the editor goes through the unsaved-work guard;
-/// staying keeps the editor, with the replays already added.
-Future<void> openReplays(WidgetRef ref, List<String> paths) {
-  final open = _previousOpen.then((_) => _openReplays(ref, paths));
-  _previousOpen = open.catchError((Object _) {});
-  return open;
+/// Replays tab, and files that aren't readable replays only get the add's
+/// toast. Leaving the editor goes through the unsaved-work guard; staying
+/// keeps the editor, with the replays already added.
+Future<void> openReplays(WidgetRef ref, List<String> paths) async {
+  _waiting.add((ref: ref, paths: paths));
+  if (_opening) return;
+  _opening = true;
+  try {
+    while (_waiting.isNotEmpty) {
+      final next = _waiting.removeAt(0);
+      try {
+        await _openReplays(next.ref, next.paths);
+      } catch (error, stackTrace) {
+        AppErrorReporter.reportError(
+          "Couldn't open the replay.",
+          error: error,
+          stackTrace: stackTrace,
+          source: 'openReplays',
+        );
+      }
+    }
+  } finally {
+    _opening = false;
+  }
 }
 
 Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
@@ -44,19 +63,20 @@ Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
     return;
   }
 
-  final listings = <ReplayListing>[];
-  for (final path in paths) {
-    try {
-      listings.add(await ref.read(replayLibraryProvider.notifier).import(path));
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        "Couldn't add ${p.basename(path)}.",
-        error: error,
-        stackTrace: stackTrace,
-        source: 'openReplays',
-      );
-    }
-  }
+  // Adds them the way Add Replay does, with its toast and its reveal. When
+  // none could be added, that toast has said why and there is nothing to
+  // show.
+  final result = await addReplays(ref, paths);
+  final shown = [...?result?.added, ...?result?.alreadyListed];
+  if (shown.isEmpty) return;
+  // One replay opens in the viewer.
+  final listing = paths.length == 1 && shown.length == 1
+      ? ref
+          .read(replayLibraryProvider)
+          .valueOrNull
+          ?.where((listing) => listing.file.path == shown.single)
+          .firstOrNull
+      : null;
 
   // From here to the navigation nothing waits but the guard's own dialog,
   // so whatever is on screen now is what gets left.
@@ -86,9 +106,7 @@ Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
 
   navigator.popUntil((route) => route.isFirst);
   ref.read(libraryNavigationProvider).showReplays();
-  if (paths.length == 1 && listings.length == 1) {
-    openReplayListing(navigator.context, listings.single);
-  }
+  if (listing != null) openReplayListing(navigator.context, listing);
 }
 
 /// Catches .vrf files dropped anywhere on the window. Other files go on to
