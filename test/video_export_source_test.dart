@@ -99,7 +99,8 @@ class _Queue extends StrategyOpQueueNotifier {
 class _Canvas extends StrategyPageSessionNotifier {
   _Canvas({required this.queued});
 
-  final bool queued;
+  /// Set by the test: the page becomes readable again, say.
+  bool queued;
 
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
@@ -112,6 +113,17 @@ class _Canvas extends StrategyPageSessionNotifier {
   @override
   Future<bool> flushCurrentPage({bool flushImmediately = false}) async =>
       queued;
+}
+
+class _SignedOut extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.signedOut,
+        user: null,
+      );
 }
 
 /// Signed in as one account, then as [signInAs] says.
@@ -391,6 +403,37 @@ void main() {
       expect(repository.fetches, 0);
     });
 
+    testWidgets('a canvas queued on a later try exports once it lands',
+        (tester) async {
+      final repository = _Repository();
+      final canvas = _Canvas(queued: false);
+      final ref = await _pumpRef(
+        tester,
+        cloud(
+          _Queue(const StrategyOpQueueState(durableLoaded: true)),
+          repository,
+          more: [strategyPageSessionProvider.overrideWith(() => canvas)],
+        ),
+      );
+
+      final source = await tester.runAsync(
+        () => http.runWithClient(
+          () async {
+            final loading = loadVideoExportSource(ref, pageIds: {'a'});
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+            expect(repository.fetches, 0);
+            // The page reads again, and the canvas is queued.
+            canvas.queued = true;
+            return loading;
+          },
+          () => MockClient((_) async => http.Response.bytes(_png, 200)),
+        ),
+      );
+      addTearDown(source!.images.release);
+
+      expect(repository.fetches, 1);
+    });
+
     testWidgets('another account signing in mid-wait stops the export',
         (tester) async {
       final queue = _Queue(const StrategyOpQueueState(
@@ -542,6 +585,7 @@ void main() {
           _Queue(const StrategyOpQueueState(durableLoaded: true)),
           repository,
           more: [
+            authProvider.overrideWith(_SignedOut.new),
             shareLinkViewProvider.overrideWith(
               (ref) => (strategyPublicId: _strategyId, token: 'link-token'),
             ),

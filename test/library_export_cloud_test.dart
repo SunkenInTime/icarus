@@ -39,6 +39,7 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
@@ -290,6 +291,28 @@ void main() {
     final directory = await building;
     addTearDown(() => directory.delete(recursive: true));
     expect(repository.snapshotsRead, containsAll(['cloud-root', 'cloud-deep']));
+  });
+
+  test('another account signing in during the backup stops it', () async {
+    final auth = _Switchable();
+    final container = ProviderContainer(overrides: [
+      authProvider.overrideWith(() => auth),
+      libraryWorkspaceProvider.overrideWith(_CloudWorkspace.new),
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      convexConnectionSnapshotProvider.overrideWithValue(true),
+      strategyOpQueueProvider.overrideWith(() => queue),
+      cloudMediaUploadQueueProvider.overrideWith(() => uploads),
+      cloudMediaCacheProvider.overrideWith(() => mediaCache),
+    ]);
+    addTearDown(container.dispose);
+    // The cloud strategies are read while the backup is written.
+    repository.onSnapshotRead = () => auth.signInAs('account-b');
+
+    await expectLater(
+      StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest(),
+      throwsA(isA<LibraryExportIncomplete>()),
+    );
   });
 
   test('cloud changes held for review stop the backup', () async {
@@ -608,6 +631,28 @@ class _SignedIn extends AuthProvider {
       );
 }
 
+/// Signed in as one account, then as [signInAs] says.
+class _Switchable extends AuthProvider {
+  @override
+  AppAuthState build() => _signedInAs('account-a');
+
+  void signInAs(String accountId) => state = _signedInAs(accountId);
+}
+
+AppAuthState _signedInAs(String accountId) => AppAuthState(
+      isLoading: false,
+      isAuthenticated: true,
+      isConvexUserReady: true,
+      convexAuthStatus: ConvexAuthStatus.ready,
+      user: User(
+        id: accountId,
+        appMetadata: const <String, dynamic>{},
+        userMetadata: const <String, dynamic>{},
+        aud: 'authenticated',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      ),
+    );
+
 class _SignedOut extends AuthProvider {
   @override
   AppAuthState build() => const AppAuthState(
@@ -689,6 +734,9 @@ class _MediaCache extends CloudMediaCacheNotifier {
 class _CloudRepository extends Fake implements ConvexStrategyRepository {
   final scopes = <String>[];
   final snapshotsRead = <String>[];
+
+  /// Runs as each strategy is read.
+  void Function()? onSnapshotRead;
   final unreadable = <String>{};
   var listingFails = false;
 
@@ -804,6 +852,7 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
       );
     }
     snapshotsRead.add(strategyPublicId);
+    onSnapshotRead?.call();
     final name = _strategies
         .singleWhere((entry) => entry.strategy.id == strategyPublicId)
         .strategy

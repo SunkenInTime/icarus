@@ -34,6 +34,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -162,6 +163,11 @@ final strategyPageSessionProvider =
 );
 
 class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
+  /// The last flush of the cloud canvas could not queue it, so it may hold
+  /// work no queue has. Cleared by an editor's flush that queues it, or by
+  /// a page replacing the canvas.
+  bool _canvasHoldsUnqueuedWork = false;
+
   _RemotePageHydrationKey? _lastHydratedRemotePageKey;
   RemoteEditorSnapshot? _lastAppliedRemoteSnapshot;
   bool _pendingRemoteReapply = false;
@@ -575,7 +581,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (strategyState.source == StrategySource.cloud) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
     }
-    final handedOver = await source.flushCurrentPage();
+    var handedOver = await source.flushCurrentPage();
+    if (strategyState.source == StrategySource.cloud) {
+      if (!handedOver) {
+        _canvasHoldsUnqueuedWork = true;
+      } else if (ref.canEditPages) {
+        _canvasHoldsUnqueuedWork = false;
+      } else {
+        // A viewer's flush queues nothing, so it says nothing of work an
+        // editor's flush could not queue before they became a viewer.
+        handedOver = !_canvasHoldsUnqueuedWork;
+      }
+    }
     if (flushImmediately && strategyState.source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
@@ -1020,6 +1037,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   void reset() {
     _remoteChangeWaitsForEditor = false;
+    _canvasHoldsUnqueuedWork = false;
     _pageSessionGeneration++;
     state = const StrategyPageSessionState(
       activePageId: null,
@@ -1147,6 +1165,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       activePageId: pageData.pageId,
       availablePageIds: availablePageIds,
     );
+    // The canvas is replaced: what it held before is no longer on screen.
+    _canvasHoldsUnqueuedWork = false;
 
     final retainedTextDrafts = preserveTextDrafts
         ? Map<String, String>.from(ref.read(textDraftProvider))

@@ -134,6 +134,8 @@ Future<SameAccountCheck> sendCloudWork(
         !orphaned &&
         uploads.isEmpty &&
         !(queueCovered && (ops.pending.isNotEmpty || ops.isFlushing))) {
+      // The flush above was awaited: the account may have changed since.
+      sameAccount();
       return sameAccount;
     }
     // Work held for review, kept for a deleted strategy, or failed to

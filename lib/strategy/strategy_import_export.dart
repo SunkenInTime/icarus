@@ -2261,6 +2261,7 @@ class StrategyImportExportService {
     final stagingDirectory = await Directory.systemTemp.createTemp(prefix);
     try {
       await fill(stagingDirectory);
+      _confirmCloudAccount();
       return stagingDirectory;
     } catch (_) {
       try {
@@ -2462,15 +2463,28 @@ class StrategyImportExportService {
     }
   }
 
+  /// Set once the cloud work was waited on: whether the account it belongs
+  /// to is still the one signed in.
+  SameAccountCheck? _cloudAccountCheck;
+
   /// Waits until this account has nothing left to send to the cloud, for
   /// any strategy (see [sendCloudWork]).
   Future<void> _waitUntilCloudWorkSent() async {
     try {
-      await sendCloudWork(ref.read);
+      _cloudAccountCheck = await sendCloudWork(ref.read);
     } on CloudWorkNotSent catch (error) {
       throw error.unreadable
           ? const LibraryExportIncomplete.cloudWorkUnreadable()
           : const LibraryExportIncomplete.cloudNotSynced();
+    }
+  }
+
+  /// The cloud half was read as the account whose work was waited on.
+  void _confirmCloudAccount() {
+    try {
+      _cloudAccountCheck?.call();
+    } on CloudWorkNotSent {
+      throw const LibraryExportIncomplete.cloudChanged();
     }
   }
 

@@ -337,7 +337,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     if (snapshot == null || snapshot.header.publicId != strategyId) {
       return false;
     }
-    // A viewer's canvas holds nothing to save.
+    // A viewer can't edit, so there is nothing to queue.
     if (!StrategyCapabilities.fromCloudRole(snapshot.header.role)
         .canEditPages) {
       return true;

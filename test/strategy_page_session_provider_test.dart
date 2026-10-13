@@ -10194,6 +10194,61 @@ void main() {
     expect(await session.flushCurrentPage(), isFalse);
   });
 
+  test("an editor made a viewer doesn't pass off unqueued work as saved",
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'remote'),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    final loaded = container.read(remoteEditorSnapshotProvider).value!;
+
+    // An edit made while the page can't be read is queued nowhere.
+    remote.failRead();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
+    ]);
+    expect(await session.flushCurrentPage(), isFalse);
+
+    // The page reads again, but the user is now only a viewer.
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: loaded.activePage!,
+      role: 'viewer',
+    ));
+    expect(await session.flushCurrentPage(), isFalse);
+  });
+
+  test('a viewer with nothing changed on the canvas has nothing to queue',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'remote'),
+      role: 'viewer',
+    ));
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+
+    expect(await session.flushCurrentPage(), isTrue);
+  });
+
   test('persisted overlay wins over a late remote active-page base', () async {
     final page = _page('page-1', 0);
     final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
