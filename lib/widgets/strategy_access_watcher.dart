@@ -73,8 +73,12 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     if (_showingAccessLost) return;
     _showingAccessLost = true;
     final open = ref.read(strategyProvider);
-    final strategyId = open.strategyId;
-    final name = open.strategyName?.trim();
+    // A strategy refused as it opened never became the open one.
+    final lost = ref.read(remoteEditorSnapshotProvider).error;
+    final strategyId =
+        lost is StrategyAccessLost ? lost.strategyPublicId : open.strategyId;
+    final name =
+        open.strategyId == strategyId ? open.strategyName?.trim() : null;
     final strategy = name == null || name.isEmpty ? 'this strategy' : '"$name"';
     final unsent = _unsentChanges();
     bool? discard;

@@ -200,6 +200,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         error: error,
         stackTrace: stackTrace,
       );
+      // Refused: the access-lost dialog says so over the skeleton, and
+      // leads out (see StrategyAccessWatcher).
+      if (ref.read(strategyAccessLostProvider)) return;
       if (mounted) {
         Settings.showToast(
           message: 'Could not load strategy.',
@@ -279,11 +282,15 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 strategyState.strategyId != initialStrategyId));
 
     if (showSkeleton) {
-      return Scaffold(
-        body: StrategyViewSkeleton(
-          strategyName: widget.initialStrategyName,
-          mapValue: widget.initialMapValue,
-          isAttack: widget.initialIsAttack,
+      // Watched from the first frame: opening can be refused outright.
+      return StrategyAccessWatcher(
+        onLeave: _leaveToLibrary,
+        child: Scaffold(
+          body: StrategyViewSkeleton(
+            strategyName: widget.initialStrategyName,
+            mapValue: widget.initialMapValue,
+            isAttack: widget.initialIsAttack,
+          ),
         ),
       );
     }
