@@ -84,9 +84,11 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   /// the dialog keeps them and offers a retry for the people alone.
   bool _membersFailed = false;
 
-  /// Bumped on every read, so the role switches rebuild from what the
-  /// server holds: a ShadSelect keeps a pick the server refused otherwise.
-  int _loadGeneration = 0;
+  /// Bumped for a person each time their role is changed, so their switch
+  /// rebuilds from what the server then holds: a ShadSelect keeps a pick
+  /// the server refused otherwise. Only theirs: rebuilding another
+  /// person's switch would close its menu mid-use.
+  final Map<String, int> _roleRevisions = {};
   _LoadStatus _status = _LoadStatus.loading;
   bool _isCreating = false;
   String? _disablingToken;
@@ -128,7 +130,6 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         _links = loadedLinks;
         _members = loadedMembers ?? const [];
         _membersFailed = loadedMembers == null;
-        _loadGeneration += 1;
         _status = _LoadStatus.ready;
       });
     } catch (_) {
@@ -219,6 +220,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       );
     }
     // Reload either way, so the switch shows what the server holds.
+    _roleRevisions.update(member.memberId, (n) => n + 1, ifAbsent: () => 1);
     await _load(showLoading: false);
     if (mounted) {
       setState(() => _busyMemberIds.remove(member.memberId));
@@ -378,7 +380,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
             subtitle: _joinedSubtitle(member),
             trailing: _MemberControls(
               member: member,
-              generation: _loadGeneration,
+              revision: _roleRevisions[member.memberId] ?? 0,
               busy: _busyMemberIds.contains(member.memberId),
               onRoleChanged: (role) => _setRole(member, role),
               onRemove: () => _remove(member),
@@ -731,7 +733,7 @@ class _InheritedRoleLabel extends StatelessWidget {
 class _MemberControls extends StatelessWidget {
   const _MemberControls({
     required this.member,
-    required this.generation,
+    required this.revision,
     required this.busy,
     required this.onRoleChanged,
     required this.onRemove,
@@ -739,8 +741,8 @@ class _MemberControls extends StatelessWidget {
 
   final ShareMember member;
 
-  /// The dialog's read the switch shows (see _loadGeneration).
-  final int generation;
+  /// How many times this person's role was changed (see _roleRevisions).
+  final int revision;
   final bool busy;
   final ValueChanged<String> onRoleChanged;
   final VoidCallback onRemove;
@@ -753,10 +755,10 @@ class _MemberControls extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         ShadSelect<String>(
-          // Keyed by the role and the read, so every reload shows what the
+          // Keyed by the role and its revision, so a reload shows what the
           // server holds, even after a pick it refused.
           key: ValueKey(
-            'share-member-role-${member.memberId}-${member.role}-$generation',
+            'share-member-role-${member.memberId}-${member.role}-$revision',
           ),
           enabled: !busy,
           initialValue: member.role,
