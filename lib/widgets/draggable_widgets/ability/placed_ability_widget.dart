@@ -23,6 +23,7 @@ import 'dart:math' as math;
 
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 bool _shouldShowRotatableHandle(
   Ability ability,
@@ -201,14 +202,16 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           ),
           childWhenDragging: const SizedBox.shrink(),
           onDragEnd: (details) => widget.onDragEnd(details, widget.id),
-          child: widget.ability.data.abilityData!.createWidget(
-            id: widget.id,
-            isAlly: isAlly,
-            mapScale: mapScale,
-            armLengthsMeters: widget.ability.armLengthsMeters,
-            visualState: widget.ability.visualState,
-            watchMouse: true,
-            contextMenuItems: contextMenuItems,
+          child: EditorItemOutline(
+            child: widget.ability.data.abilityData!.createWidget(
+              id: widget.id,
+              isAlly: isAlly,
+              mapScale: mapScale,
+              armLengthsMeters: widget.ability.armLengthsMeters,
+              visualState: widget.ability.visualState,
+              watchMouse: true,
+              contextMenuItems: contextMenuItems,
+            ),
           ),
         );
       }
@@ -433,16 +436,18 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               widget.onDragEnd(details, dragId);
             },
             // dragAnchorStrategy: pointDragAnchorStrategy,
-            child: abilityData.createWidget(
-              id: widget.id,
-              isAlly: isAlly,
-              mapScale: mapScale,
-              rotation: displayRotation,
-              length: localLength!,
-              armLengthsMeters: abilityRef.armLengthsMeters,
-              visualState: abilityRef.visualState,
-              watchMouse: true,
-              contextMenuItems: contextMenuItems,
+            child: EditorItemOutline(
+              child: abilityData.createWidget(
+                id: widget.id,
+                isAlly: isAlly,
+                mapScale: mapScale,
+                rotation: displayRotation,
+                length: localLength!,
+                armLengthsMeters: abilityRef.armLengthsMeters,
+                visualState: abilityRef.visualState,
+                watchMouse: true,
+                contextMenuItems: contextMenuItems,
+              ),
             ),
           ),
         ),
@@ -503,15 +508,17 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           });
           widget.onDragEnd(details, dragId);
         },
-        child: widget.ability.data.abilityData!.createWidget(
-          id: widget.id,
-          isAlly: isAlly,
-          mapScale: mapScale,
-          rotation: glyphRotation,
-          armLengthsMeters: widget.ability.armLengthsMeters,
-          visualState: abilityRef.visualState,
-          watchMouse: true,
-          contextMenuItems: contextMenuItems,
+        child: EditorItemOutline(
+          child: widget.ability.data.abilityData!.createWidget(
+            id: widget.id,
+            isAlly: isAlly,
+            mapScale: mapScale,
+            rotation: glyphRotation,
+            armLengthsMeters: widget.ability.armLengthsMeters,
+            visualState: abilityRef.visualState,
+            watchMouse: true,
+            contextMenuItems: contextMenuItems,
+          ),
         ),
       ),
     );
@@ -670,15 +677,17 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             });
             widget.onDragEnd(details, dragId);
           },
-          child: AbilityVisionConeComposite(
-            ability: abilityRef,
-            spec: visionSpec,
-            rotation: displayRotation,
-            length: localLength ?? 0,
-            mapScale: mapScale,
-            abilitySize: abilitySize,
-            applyRotation: false,
-            child: buildAbilityChild(watchMouse: true),
+          child: EditorItemOutline(
+            child: AbilityVisionConeComposite(
+              ability: abilityRef,
+              spec: visionSpec,
+              rotation: displayRotation,
+              length: localLength ?? 0,
+              mapScale: mapScale,
+              abilitySize: abilitySize,
+              applyRotation: false,
+              child: buildAbilityChild(watchMouse: true),
+            ),
           ),
         ),
       ),

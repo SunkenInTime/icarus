@@ -7,8 +7,9 @@ import {
   getEffectiveFolderRoleForUser,
   requireCurrentUser,
 } from "./lib/auth";
-import { getFolderByPublicId } from "./lib/entities";
+import { getFolderByPublicId, isListed } from "./lib/entities";
 import { readStrategyAgentTypes } from "./lib/strategyAgentSummary";
+
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -340,10 +341,12 @@ async function summariseFolderTrees(
     counts.set(key, (counts.get(key) ?? 0) + 1);
 
   for (const folder of folders) {
-    const strategies = await ctx.db
-      .query("strategies")
-      .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
-      .collect();
+    const strategies = (
+      await ctx.db
+        .query("strategies")
+        .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
+        .collect()
+    ).filter(isListed);
     const agentTypesSeen = new Map<string, number>();
     for (const strategy of strategies) {
       bump(mapCounts.get(folder._id)!, strategy.mapData);
@@ -461,8 +464,14 @@ const deleteFolder = mutation({
       .query("strategies")
       .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
       .collect();
-    if (strategies.length > 0) {
+    if (strategies.some(isListed)) {
       throw invalidOpError("Folder has strategies");
+    }
+    // A strategy a move left unfinished is listed nowhere, so the folder
+    // looks empty. It stays hidden at the top level, where the moving device
+    // deletes or finishes it; its original is still on that device.
+    for (const strategy of strategies) {
+      await ctx.db.patch(strategy._id, { folderId: undefined });
     }
 
     const collaborators = await ctx.db

@@ -16,6 +16,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
   const PlacedCustomCircleWidget({
@@ -160,7 +161,7 @@ class _PlacedCustomCircleWidgetState
                 _isDragging = false;
               });
             },
-            child: circleChild,
+            child: EditorItemOutline(child: circleChild),
           ),
           if (!_isDragging && !isScreenshot)
             _buildCircleHandle(

@@ -16,6 +16,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class PlacedViewConeWidget extends ConsumerStatefulWidget {
   final PlacedUtility utility;
@@ -273,7 +274,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
             });
             widget.onDragEnd(details);
           },
-          child: utilityChild,
+          child: EditorItemOutline(child: utilityChild),
         ),
       ),
     );
