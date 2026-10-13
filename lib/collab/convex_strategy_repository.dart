@@ -917,6 +917,12 @@ class ConvexStrategyRepository {
 /// strategy whose move finished, kept; or nothing.
 enum AbandonedMove { deleted, finished, missing }
 
+/// Whether [error] is the server's answer from running a function that
+/// threw, so its transaction wrote nothing; not a lost answer (a timeout,
+/// the connection), after which the call may still land.
+bool isConvexFunctionError(Object error) =>
+    error is ConvexFunctionException || error is ConvexClientFunctionError;
+
 bool isTypedConvexUnauthenticatedError(Object error) {
   return (error is ConvexFunctionException &&
           error.code == ConvexErrorCode.unauthenticated) ||

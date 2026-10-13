@@ -1,11 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/collab/collab_models.dart';
-import 'package:icarus/collab/convex_client.dart'
-    show ConvexClientFunctionError;
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/collab/generated/convex_error_codes.dart'
-    show ConvexFunctionException;
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -369,7 +365,7 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
         themeProfileId: themeProfileId,
       );
     } catch (error) {
-      if (_refusedByServer(error)) rethrow;
+      if (isConvexFunctionError(error)) rethrow;
       // How many pages it has, if it exists, is unknown until it is read.
       throw CaptureFailed(_unconfirmed,
           strategy: made(pageCount: 0), cause: error);
@@ -524,7 +520,7 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
         accountSubject: accountId,
       );
     } catch (error) {
-      if (_refusedByServer(error)) rethrow;
+      if (isConvexFunctionError(error)) rethrow;
       throw CaptureFailed(_unconfirmed, strategy: ifUnanswered, cause: error);
     }
     if (acks.length != ops.length) {
@@ -544,11 +540,6 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
 
   static const _incomplete =
       'This moment reached the cloud without some of its players or utility.';
-
-  /// Whether [error] is the server's answer that it wrote nothing, rather
-  /// than a lost answer.
-  static bool _refusedByServer(Object error) =>
-      error is ConvexFunctionException || error is ConvexClientFunctionError;
 
   static StateError _refusal(List<OpAck> acks) => StateError(
         'The server did not accept every item: '
