@@ -107,8 +107,8 @@ class PresenceRoom {
     _send({'t': 'hide'});
   }
 
-  /// The lineup groups this user is editing now; null for none. Sent when it
-  /// changes, and again after a rejoin.
+  /// What this user is editing now; null for nothing. Sent when it changes,
+  /// and again after a rejoin.
   void setEditing(PresenceEditing? editing) {
     _currentEditing = editing;
     if (_editingTimer != null) return;
@@ -135,20 +135,37 @@ class PresenceRoom {
     final message = editing == null
         ? (sent == null
             ? null
-            : {'t': 'editing', 'page': sent.pageId, 'groups': const <String>[]})
-        : {
-            't': 'editing',
-            'page': editing.pageId,
-            // The room refuses more than eight; in practice it is one or
-            // two.
-            'groups': ([...editing.groupIds]..sort()).take(8).toList(),
-          };
+            : {
+                't': 'editing',
+                'page': sent.pageId,
+                'groups': const <String>[],
+                'items': const <String>[],
+              })
+        : _editingMessage(editing);
     if (message == null) {
       _sentEditing = editing;
     } else if (_send(message)) {
       _sentEditing = editing;
       _lastEditingSentAt = clock.now();
     }
+  }
+
+  /// The room refuses more than eight groups and 24 items, and a room from
+  /// before items were relayed drops a message over 2048 characters. Items
+  /// past either limit are left out; in practice it is one or two of each.
+  static Map<String, Object> _editingMessage(PresenceEditing editing) {
+    final groups = ([...editing.groupIds]..sort()).take(8).toList();
+    final items = ([...editing.itemIds]..sort()).take(24).toList();
+    Map<String, Object> message() => {
+          't': 'editing',
+          'page': editing.pageId,
+          'groups': groups,
+          'items': items
+        };
+    while (items.isNotEmpty && jsonEncode(message()).length > 2048) {
+      items.removeLast();
+    }
+    return message();
   }
 
   void dispose() {
@@ -415,17 +432,21 @@ PresencePeer? _peerFrom(Object? raw) {
   );
 }
 
-/// What a peer is editing; null when it is nothing, or unreadable.
+/// What a peer is editing; null when it is nothing, or unreadable. A room
+/// from before items were relayed sends no `items`.
 PresenceEditing? _editingFrom(Map<dynamic, dynamic> raw) {
   final page = raw['page'];
   final groups = raw['groups'];
-  if (page is! String || groups is! List) return null;
-  final groupIds = {
-    for (final group in groups)
-      if (group is String && group.isNotEmpty) group,
-  };
-  if (groupIds.isEmpty) return null;
-  return PresenceEditing(pageId: page, groupIds: groupIds);
+  final items = raw['items'] ?? const <Object?>[];
+  if (page is! String || groups is! List || items is! List) return null;
+  Set<String> idsIn(List<dynamic> ids) => {
+        for (final id in ids)
+          if (id is String && id.isNotEmpty) id,
+      };
+  final groupIds = idsIn(groups);
+  final itemIds = idsIn(items);
+  if (groupIds.isEmpty && itemIds.isEmpty) return null;
+  return PresenceEditing(pageId: page, groupIds: groupIds, itemIds: itemIds);
 }
 
 PresenceCursor? _cursorFrom(Map<dynamic, dynamic> raw) {

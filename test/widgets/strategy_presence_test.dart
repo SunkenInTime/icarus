@@ -8,7 +8,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
-import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
@@ -276,7 +276,7 @@ void main() {
         {'landing'},
       ]);
       expect(
-        container.read(myLineupEditingProvider),
+        container.read(myEditingProvider),
         const PresenceEditing(pageId: 'p1', groupIds: {'g1'}),
       );
 
@@ -284,7 +284,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(LineUpPanelDialog), findsNothing);
       expect(container.read(openLineUpItemsProvider), isEmpty);
-      expect(container.read(myLineupEditingProvider), isNull);
+      expect(container.read(myEditingProvider), isNull);
     });
   });
 }

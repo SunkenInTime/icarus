@@ -21,6 +21,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class PlacedDeadlockBarrierMeshWidget extends ConsumerStatefulWidget {
   const PlacedDeadlockBarrierMeshWidget({
@@ -235,13 +236,15 @@ class _PlacedDeadlockBarrierMeshWidgetState
                   _activeDragId = null;
                 });
               },
-              child: AbilityWidget(
-                landingId: abilityRef.lineUpID,
-                iconPath: abilityRef.data.iconPath,
-                id: widget.id,
-                isAlly: abilityRef.isAlly,
-                watchMouse: true,
-                contextMenuItems: widget.contextMenuItems,
+              child: EditorItemOutline(
+                child: AbilityWidget(
+                  landingId: abilityRef.lineUpID,
+                  iconPath: abilityRef.data.iconPath,
+                  id: widget.id,
+                  isAlly: abilityRef.isAlly,
+                  watchMouse: true,
+                  contextMenuItems: widget.contextMenuItems,
+                ),
               ),
             ),
           ),

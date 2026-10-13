@@ -31,6 +31,7 @@ import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 /// Grayscale color matrix for dead agents
 const List<double> _identityColorMatrix = <double>[
@@ -473,6 +474,8 @@ class AgentWidget extends ConsumerWidget {
       );
     }
 
+    // The icon a teammate holds is what their outline goes around.
+    agentCard = EditorItemOutline(child: agentCard);
     if (!canInteract) {
       return RepaintBoundary(child: agentCard);
     }

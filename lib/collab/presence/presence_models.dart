@@ -42,25 +42,41 @@ class PresenceCursor {
   int get hashCode => Object.hash(pageId, x, y);
 }
 
-/// The lineup groups one connection is editing, on one page: the groups of
-/// the lineups and spots it holds, places from, or has open. Edits to one
-/// group at the same time conflict, so teammates see it before they start.
+/// What one connection is editing, on one page.
 class PresenceEditing {
-  const PresenceEditing({required this.pageId, required this.groupIds});
+  const PresenceEditing({
+    required this.pageId,
+    this.groupIds = const {},
+    this.itemIds = const {},
+  });
 
   final String pageId;
+
+  /// The lineup groups of the lineups and spots it holds, places from, or
+  /// has open, so teammates see who is editing a group before they start.
   final Set<String> groupIds;
+
+  /// The canvas items it is in the middle of changing (held, or open as a
+  /// text draft or placement edit), which teammates see outlined.
+  final Set<String> itemIds;
 
   @override
   bool operator ==(Object other) =>
       other is PresenceEditing &&
       other.pageId == pageId &&
-      other.groupIds.length == groupIds.length &&
-      other.groupIds.containsAll(groupIds);
+      _sameIds(other.groupIds, groupIds) &&
+      _sameIds(other.itemIds, itemIds);
 
   @override
-  int get hashCode => Object.hash(pageId, Object.hashAllUnordered(groupIds));
+  int get hashCode => Object.hash(
+        pageId,
+        Object.hashAllUnordered(groupIds),
+        Object.hashAllUnordered(itemIds),
+      );
 }
+
+bool _sameIds(Set<String> a, Set<String> b) =>
+    a.length == b.length && a.containsAll(b);
 
 /// One connection to the room. The same person in two windows is two peers
 /// with one [uid].
@@ -90,7 +106,7 @@ class PresencePeer {
   /// their cursor first shows.
   final String? pageId;
 
-  /// The lineup groups they are editing, if any.
+  /// What they are editing, if anything.
   final PresenceEditing? editing;
 
   /// With [cursor] in place of the last one; hiding it keeps [pageId].
@@ -187,6 +203,18 @@ class PresenceRoomState {
             seen.add(peer.uid))
           peer,
     ];
+  }
+
+  /// The first other person changing each canvas item on [pageId], by item.
+  Map<String, PresencePeer> itemEditorsOn(String pageId) {
+    final editors = <String, PresencePeer>{};
+    for (final peer in peers.values) {
+      if (peer.uid == selfUid || peer.editing?.pageId != pageId) continue;
+      for (final item in peer.editing!.itemIds) {
+        editors.putIfAbsent(item, () => peer);
+      }
+    }
+    return editors;
   }
 
   /// Other people's cursors on [pageId].

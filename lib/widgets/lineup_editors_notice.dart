@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/presence/presence_models.dart';
-import 'package:icarus/providers/collab/lineup_editing_presence_provider.dart';
+import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 

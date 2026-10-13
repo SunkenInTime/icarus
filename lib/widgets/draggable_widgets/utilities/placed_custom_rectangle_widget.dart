@@ -18,6 +18,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_axis_resize
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 enum _RectangleResizeHandle { none, left, right, top, bottom }
 
@@ -212,17 +213,19 @@ class _PlacedCustomRectangleWidgetState
                             _isDragging = false;
                           });
                         },
-                        child: KeyedSubtree(
-                          key: _shapeKey,
-                          child: CustomRectangleUtilityWidget(
-                            id: widget.id,
-                            widthMeters: widthMeters,
-                            rectLengthMeters: lengthMeters,
-                            colorValue: utilityRef.customColorValue,
-                            opacityPercent: utilityRef.customOpacityPercent,
-                            mapScale: mapScale,
-                            showCenterMarker: !isScreenshot,
-                            centerMarkerVisible: showIndicators,
+                        child: EditorItemOutline(
+                          child: KeyedSubtree(
+                            key: _shapeKey,
+                            child: CustomRectangleUtilityWidget(
+                              id: widget.id,
+                              widthMeters: widthMeters,
+                              rectLengthMeters: lengthMeters,
+                              colorValue: utilityRef.customColorValue,
+                              opacityPercent: utilityRef.customOpacityPercent,
+                              mapScale: mapScale,
+                              showCenterMarker: !isScreenshot,
+                              centerMarkerVisible: showIndicators,
+                            ),
                           ),
                         ),
                       ),

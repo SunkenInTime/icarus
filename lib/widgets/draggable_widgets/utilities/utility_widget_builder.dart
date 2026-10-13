@@ -8,6 +8,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class UtilityWidgetBuilder extends ConsumerStatefulWidget {
   final PlacedUtility utility;
@@ -67,17 +68,19 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
       onDragEnd: (details) {
         widget.onDragEnd(details);
       },
-      child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
-        id: widget.id,
-        isAlly: widget.utility.isAlly,
-        mapScale: mapScale,
-        agentSize: agentSize,
-        abilitySize: abilitySize,
-        diameterMeters: widget.utility.customDiameter,
-        widthMeters: widget.utility.customWidth,
-        rectLengthMeters: widget.utility.customLength,
-        colorValue: widget.utility.customColorValue,
-        opacityPercent: widget.utility.customOpacityPercent,
+      child: EditorItemOutline(
+        child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+          id: widget.id,
+          isAlly: widget.utility.isAlly,
+          mapScale: mapScale,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
+          diameterMeters: widget.utility.customDiameter,
+          widthMeters: widget.utility.customWidth,
+          rectLengthMeters: widget.utility.customLength,
+          colorValue: widget.utility.customColorValue,
+          opacityPercent: widget.utility.customOpacityPercent,
+        ),
       ),
     );
   }
