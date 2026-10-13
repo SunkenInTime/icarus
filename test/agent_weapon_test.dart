@@ -24,12 +24,19 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/migrations/agent_weapon_migration.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
+
+/// Signed out: a library backup is the local library alone.
+class _SignedOut extends AuthProvider {
+  @override
+  AppAuthState build() => AppAuthState.fromSession(null);
+}
 
 class _TestStrategyProvider extends StrategyProvider {
   @override
@@ -382,7 +389,9 @@ void main() {
       () async {
     final directory = await Directory.systemTemp.createTemp('icarus-firearms-');
     Hive.init(directory.path);
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [authProvider.overrideWith(_SignedOut.new)],
+    );
     addTearDown(() async {
       container.dispose();
       await Hive.close();

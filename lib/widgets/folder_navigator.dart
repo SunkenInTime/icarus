@@ -143,6 +143,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) return;
     try {
       await StrategyImportExportService(ref).exportLibrary();
+    } on LibraryExportIncomplete catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        error.userMessage,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleExportLibrary',
+      );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Failed to export library.',

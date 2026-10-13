@@ -17,6 +17,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -54,7 +55,9 @@ void main() {
     await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
     await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
     await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
-    container = ProviderContainer();
+    container = ProviderContainer(
+      overrides: [authProvider.overrideWith(_SignedOut.new)],
+    );
     await MapThemeProfilesProvider.bootstrap();
   });
 
@@ -918,6 +921,12 @@ Future<File> _libraryBackupZip(
     sourceDirectory: await _libraryBackup(container, tempDir),
     zipPath: path.join(tempDir.path, 'library-backup.zip'),
   );
+}
+
+/// Signed out: a library backup is the local library alone.
+class _SignedOut extends AuthProvider {
+  @override
+  AppAuthState build() => AppAuthState.fromSession(null);
 }
 
 class _CloudWorkspaceNotifier extends LibraryWorkspaceNotifier {

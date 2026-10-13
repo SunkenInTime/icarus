@@ -99,6 +99,28 @@ class ConvexStrategyRepository {
         );
   }
 
+  /// The folders [scope] reaches, read once.
+  Future<List<CloudFolderEntry>> fetchFolders({String scope = 'owned'}) async {
+    final folders = await _api.folders
+        .listTree(scope: ConvexOptional.present(_folderScope(scope)))
+        .fetch();
+    return folders.map(_folderEntry).toList(growable: false);
+  }
+
+  /// The strategies in one folder (null is the top level), read once.
+  Future<List<CloudStrategyEntry>> fetchStrategiesForFolder(
+    String? folderPublicId, {
+    String scope = 'owned',
+  }) async {
+    final strategies = await _api.strategies
+        .listForFolder(
+          folderPublicId: _optional(folderPublicId),
+          scope: ConvexOptional.present(_folderScope(scope)),
+        )
+        .fetch();
+    return strategies.map(_strategyEntry).toList(growable: false);
+  }
+
   Stream<List<CloudStrategyEntry>> watchSharedStrategies() {
     return _api.strategies.listSharedWithMe().watch().map(
           (strategies) =>
