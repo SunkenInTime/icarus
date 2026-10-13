@@ -4184,12 +4184,155 @@ void main() {
       expect(repository.calls[1].single.merge?.base, {'isAlly': true});
     });
   });
+
+  group('a batch refused because edit access is gone', () {
+    const key = EntitySyncKey.element('page-1', 'element-1');
+
+    Future<(ProviderContainer, MemoryDurableStrategyOutboxStore)> refused(
+      _EditAccessRepository repository,
+    ) async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(_cloudElementOp());
+      await notifier.flushNow();
+      await _settle();
+      return (container, store);
+    }
+
+    for (final (reader, repository) in [
+      ('a viewer', () => _EditAccessRepository(role: 'viewer')),
+      ('someone removed', () => _EditAccessRepository(shellRefused: true)),
+    ]) {
+      test('from $reader is paused at once, with its reason', () async {
+        final server = repository();
+        final (container, store) = await refused(server);
+        final notifier = container.read(strategyOpQueueProvider.notifier);
+
+        var current = container.read(strategyOpQueueProvider);
+        expect(server.calls, 1);
+        expect(current.needsAttention, isTrue);
+        expect(current.pausedByEntityKey.keys, [key]);
+        expect(current.queuedByEntityKey, isEmpty);
+        expect(current.lastError, editAccessRemovedMessage);
+        expect(friendlyCloudSyncError(current.lastError!),
+            editAccessRemovedMessage);
+
+        // Kept on this device, and not sent again on its own.
+        final durable = store.load().records.single;
+        expect(durable.status, DurableOutboxStatus.paused);
+        expect(durable.lastError, editAccessRemovedMessage);
+        expect(durable.pending.op.toConvexJson(),
+            _cloudElementOp().toConvexJson());
+        await notifier.flushNow();
+        await _settle();
+        expect(server.calls, 1);
+
+        // Reopened, the strategy still says why.
+        notifier
+          ..setActiveStrategy(null, accountId: 'account-a')
+          ..setActiveStrategy('strategy-1', accountId: 'account-a');
+        current = container.read(strategyOpQueueProvider);
+        expect(current.pausedByEntityKey.keys, [key]);
+        expect(current.lastError, editAccessRemovedMessage);
+      });
+    }
+
+    test('lands on Retry once the owner gives edit access back', () async {
+      final server = _EditAccessRepository(role: 'viewer');
+      final (container, store) = await refused(server);
+      final notifier = container.read(strategyOpQueueProvider.notifier);
+
+      server
+        ..refusing = false
+        ..role = 'editor';
+      await notifier.retryPaused(flushImmediately: false);
+      await notifier.flushNow();
+      await _settle();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(server.calls, 2);
+      expect(current.needsAttention, isFalse);
+      expect(current.pending, isEmpty);
+      expect(current.lastError, isNull);
+      expect(store.load().records, isEmpty);
+    });
+
+    test('is retried as before when the reader can still edit', () async {
+      // FORBIDDEN also refuses a batch bound to another account.
+      final server = _EditAccessRepository(role: 'editor');
+      final (container, store) = await refused(server);
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.pausedByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey.keys, [key]);
+      expect(current.queuedByEntityKey[key]!.pending.attempts, 1);
+      expect(current.lastError, isNot(editAccessRemovedMessage));
+      expect(store.load().records.single.status, DurableOutboxStatus.queued);
+    });
+  });
 }
 
 /// Lets sends already started, and the writes after them, finish.
 Future<void> _settle() async {
   for (var i = 0; i < 20; i++) {
     await Future<void>.delayed(Duration.zero);
+  }
+}
+
+/// A server that refuses every batch with FORBIDDEN while [refusing], as it
+/// does for a reader who cannot edit, and reads the shell with [role], or
+/// refuses that read too when [shellRefused] (the reader was removed).
+class _EditAccessRepository extends ConvexStrategyRepository {
+  _EditAccessRepository({this.role = 'viewer', this.shellRefused = false})
+      : super(IcarusConvexApi(_UnusedTransport()));
+
+  String role;
+  bool shellRefused;
+  bool refusing = true;
+  int calls = 0;
+
+  static const _forbidden = ConvexFunctionException(
+    code: ConvexErrorCode.forbidden,
+    rawCode: 'FORBIDDEN',
+    message: 'Forbidden',
+  );
+
+  @override
+  Future<RemoteStrategyShell> fetchShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
+    if (shellRefused) throw _forbidden;
+    return RemoteStrategyShell(
+      header: RemoteStrategyHeader(
+        publicId: strategyPublicId,
+        name: 'Strategy',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+        role: role,
+      ),
+      pages: const [],
+    );
+  }
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+    String? accountSubject,
+  }) async {
+    calls += 1;
+    if (refusing) throw _forbidden;
+    return [for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2)];
   }
 }
 

@@ -1177,6 +1177,59 @@ void main() {
     expect(session.useCloudCount, 0);
   });
 
+  testWidgets('work refused for lost edit access says so and offers Retry',
+      (tester) async {
+    const key = EntitySyncKey.element('page-1', 'element-1');
+    final container = _createContainer(
+      opQueueState: StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'client-a',
+        durableLoaded: true,
+        pausedByEntityKey: {
+          key: const QueuedEntityIntent(
+            entityKey: key,
+            pending: PendingOp(
+              op: ElementPatchOp(
+                opId: 'refused',
+                elementPublicId: 'element-1',
+                pagePublicId: 'page-1',
+                payload: {'value': 'mine'},
+                expectedElementRevision: 1,
+              ),
+              clientId: 'client-a',
+            ),
+          ),
+        },
+        lastError: editAccessRemovedMessage,
+      ),
+    );
+    addTearDown(container.dispose);
+    // As the queue's error reaches the save state when the batch is paused.
+    container
+        .read(strategySaveStateProvider.notifier)
+        .setCloudSyncError(editAccessRemovedMessage);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+    await tester.tap(_syncButton('attention'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(editAccessRemovedMessage), findsOneWidget);
+    expect(find.textContaining('Another edit reached'), findsNothing);
+    expect(find.text('Retry sync'), findsOneWidget);
+    expect(find.text('Use cloud'), findsNothing);
+  });
+
   testWidgets('oversized saved work shows its durable attention reason',
       (tester) async {
     final queue = _AttentionOpQueue(1);

@@ -24,6 +24,14 @@ String redactSyncDiagnosticText(Object? error) {
 /// needs attention too, for whatever reason.
 const otherWorkNeedsAttentionNote = 'Other saved work needs attention too.';
 
+/// Why saved work stopped being sent: the server refused it because this
+/// account can no longer edit the strategy (its owner made them a viewer, or
+/// removed them). The work is kept, paused; Retry sends it again, which
+/// lands once edit access is back.
+const editAccessRemovedMessage =
+    'You no longer have edit access to this strategy. These changes stay on '
+    'this device and were not saved to the cloud.';
+
 /// Whether [error] is the specific reason saved work needs attention, one
 /// that [friendlyCloudSyncError] explains, rather than an edit that lost a
 /// race to another. The sync button shows it in place of the generic
@@ -31,6 +39,7 @@ const otherWorkNeedsAttentionNote = 'Other saved work needs attention too.';
 bool isSpecificAttentionReason(String error) {
   final lower = error.toLowerCase();
   return lower.contains('too large for cloud sync') ||
+      lower.contains(editAccessRemovedMessage.toLowerCase()) ||
       lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
       lower.contains(lineupOverlapMessage.toLowerCase()) ||
       lower.contains(retiredLineupOpMessage.toLowerCase()) ||
@@ -116,6 +125,9 @@ String friendlyCloudSyncError(String raw) {
   if (lower.contains('could not be verified in the durable outbox') ||
       lower.contains('could not be saved to the durable outbox')) {
     return unverifiedCloudWorkMessage;
+  }
+  if (lower.contains(editAccessRemovedMessage.toLowerCase())) {
+    return editAccessRemovedMessage;
   }
   if (lower.contains('forbidden')) {
     return 'This account does not have permission to save these changes. '

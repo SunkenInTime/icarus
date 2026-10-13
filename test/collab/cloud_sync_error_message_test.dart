@@ -17,6 +17,22 @@ void main() {
     expect(message, isNot(contains('ConvexFunctionException')));
   });
 
+  test('says plainly when edit access is gone, and that the work is kept', () {
+    expect(
+      friendlyCloudSyncError(editAccessRemovedMessage),
+      'You no longer have edit access to this strategy. These changes stay '
+      'on this device and were not saved to the cloud.',
+    );
+    // With other saved work waiting beside it, the reason still leads.
+    expect(
+      friendlyCloudSyncError(
+        '$editAccessRemovedMessage $otherWorkNeedsAttentionNote',
+      ),
+      editAccessRemovedMessage,
+    );
+    expect(isSpecificAttentionReason(editAccessRemovedMessage), isTrue);
+  });
+
   test('explains a lineup that clashes with one on another page', () {
     final message = friendlyCloudSyncError(
       'ConvexFunctionException(LINEUP_PAGE_MISMATCH, This lineup belongs to '

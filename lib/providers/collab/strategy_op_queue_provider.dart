@@ -10,6 +10,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
@@ -1589,10 +1590,27 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // gone. Retrying could never succeed.
       final strategyDeleted = isTypedConvexNotFoundError(error) &&
           await _strategyIsConfirmedDeleted(strategyPublicId);
+      // FORBIDDEN refuses the whole batch. Sending it again can only work
+      // once edit access is back, so it waits for the user's Retry.
+      final editAccessGone = !strategyDeleted &&
+          isTypedConvexForbiddenError(error) &&
+          await _editAccessIsConfirmedGone(strategyPublicId);
       if (strategyDeleted) {
         await _resolveDeletedStrategy(
           accountId: accountId,
           strategyPublicId: strategyPublicId,
+        );
+      } else if (editAccessGone) {
+        AppErrorReporter.reportWarning(
+          'Cloud sync paused ${batch.length} change(s) for strategy '
+          '$strategyPublicId: this account can no longer edit it',
+          source: 'cloud_sync.op_queue',
+        );
+        await _restoreRecordsAfterFailure(
+          batch,
+          lastError: editAccessRemovedMessage,
+          countsAsFailure: false,
+          pause: true,
         );
       } else {
         final upgradeRequired =
@@ -1810,6 +1828,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
   }
 
+  /// Whether this account can no longer edit [strategyPublicId]: a fresh
+  /// read of its shell names a role that cannot edit, or is itself refused.
+  /// applyBatch also answers FORBIDDEN to a batch bound to another account,
+  /// which is not this; a read that fails otherwise could not tell.
+  Future<bool> _editAccessIsConfirmedGone(String strategyPublicId) async {
+    try {
+      final shell = await _repo.fetchShell(strategyPublicId);
+      return !StrategyCapabilities.fromCloudRole(shell.header.role)
+          .canEditPages;
+    } catch (error) {
+      return isTypedConvexForbiddenError(error);
+    }
+  }
+
   /// Settles every outbox record of a strategy the server no longer has.
   /// If none of its changes carries anything the user authored (only
   /// removals and reorders of a strategy that is gone), they are dropped
@@ -2014,17 +2046,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
   /// Puts [batch] back in the queue after a send failed. Unless
   /// [countsAsFailure] is false, each record counts a failure, and one that
-  /// has failed too often is paused until the user retries it.
+  /// has failed too often is paused until the user retries it. With [pause]
+  /// every record is paused at once.
   Future<void> _restoreRecordsAfterFailure(
     List<DurableOutboxRecord> batch, {
     required String lastError,
     bool countsAsFailure = true,
+    bool pause = false,
   }) {
     return _serializeWrite(
       () => _restoreRecordsAfterFailureLocked(
         batch,
         lastError: lastError,
         countsAsFailure: countsAsFailure,
+        pause: pause,
       ),
     );
   }
@@ -2033,6 +2068,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     List<DurableOutboxRecord> batch, {
     required String lastError,
     required bool countsAsFailure,
+    required bool pause,
   }) async {
     // A send that failed is retried later, by when a teammate may have
     // changed the same fields: it goes checked.
@@ -2050,7 +2086,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final pending = countsAsFailure
             ? current.pending.incrementAttempt()
             : current.pending;
-        final isPaused = pending.attempts >= _maxAttempts;
+        final isPaused = pause || pending.attempts >= _maxAttempts;
         await _putRecord(current.copyWith(
           pending: pending,
           status: isPaused
@@ -3125,6 +3161,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     if (_hasUncertainDurableRecordForActiveStrategy) {
       return 'Cloud work could not be verified in the durable outbox.';
+    }
+    // Nothing else here can land while edit access is gone, so that reason
+    // speaks for all of it.
+    final refusedForAccess = paused.keys.where(
+      (key) => recordFor(key)?.lastError == editAccessRemovedMessage,
+    );
+    if (refusedForAccess.isNotEmpty) {
+      return refusedForAccess.length < paused.length + attention.length
+          ? '$editAccessRemovedMessage $otherWorkNeedsAttentionNote'
+          : editAccessRemovedMessage;
     }
     if (attention.isNotEmpty) {
       final hasOversizedWork = attention.entries.any((entry) {
