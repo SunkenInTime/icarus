@@ -1,6 +1,10 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/widgets/strategy_presence.dart';
 
 /// Includes sidebar drags and controls in overlays as well as the canvas.
 class EditorOperationScope extends ConsumerStatefulWidget {
@@ -95,7 +99,8 @@ class EditorCanvasRegion extends ConsumerWidget {
 
 /// One canvas item, as a child of the canvas's item [Stack]. While a press on
 /// it (a drag, a rotate or resize handle) lasts, remote changes to this item
-/// wait; the rest of the page updates.
+/// wait; the rest of the page updates. While a teammate is changing it, its
+/// [EditorItemOutline] is drawn in their color.
 ///
 /// The item sits in its own full-size layer so its positioned widget lays out
 /// exactly as before, and the listener only fires when the item itself is hit.
@@ -116,8 +121,153 @@ class EditorEntityLayer extends ConsumerWidget {
         behavior: HitTestBehavior.deferToChild,
         onPointerDown: hold,
         onPointerPanZoomStart: hold,
-        child: Stack(clipBehavior: Clip.none, children: [child]),
+        child: ItemOutlineScope(
+          id: id,
+          child: Stack(clipBehavior: Clip.none, children: [child]),
+        ),
       ),
+    );
+  }
+}
+
+/// Draws the [EditorItemOutline]s under it in the color of the teammate
+/// changing item [id], if anyone is.
+class ItemOutlineScope extends ConsumerWidget {
+  const ItemOutlineScope({required this.id, required this.child, super.key});
+
+  final String id;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final editor = ref.watch(itemEditorsProvider.select((items) => items[id]));
+    return _ItemOutlineStyle(
+      color: editor == null ? null : presenceColorFor(editor.uid),
+      // The outline keeps its width on screen at any zoom; only an outlined
+      // item rebuilds as the zoom changes.
+      zoom: editor == null ? 1 : ref.watch(screenZoomProvider),
+      child: child,
+    );
+  }
+}
+
+/// How the [EditorItemOutline]s of one item draw: in [color], or not at all
+/// when it is null.
+class _ItemOutlineStyle extends InheritedWidget {
+  const _ItemOutlineStyle({
+    required this.color,
+    required this.zoom,
+    required super.child,
+  });
+
+  final Color? color;
+  final double zoom;
+
+  @override
+  bool updateShouldNotify(_ItemOutlineStyle oldWidget) =>
+      color != oldWidget.color || zoom != oldWidget.zoom;
+}
+
+/// The shape a canvas item draws, which is outlined while a teammate is
+/// changing the item. It sits inside the item's rotation, so the outline
+/// turns with it. Outside an [ItemOutlineScope] (a drag's feedback, an
+/// export) it draws nothing.
+///
+/// Every item marks what it draws. An item that lays out in a box larger
+/// than it draws (room for a cone or circle at its largest) also marks its
+/// drawn part inside, and the innermost mark is the one outlined.
+class EditorItemOutline extends SingleChildRenderObjectWidget {
+  const EditorItemOutline({required super.child, super.key});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    final style =
+        context.dependOnInheritedWidgetOfExactType<_ItemOutlineStyle>();
+    return RenderEditorItemOutline(
+      color: style?.color,
+      zoom: style?.zoom ?? 1,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant RenderEditorItemOutline renderObject,
+  ) {
+    final style =
+        context.dependOnInheritedWidgetOfExactType<_ItemOutlineStyle>();
+    renderObject
+      ..color = style?.color
+      ..zoom = style?.zoom ?? 1;
+  }
+}
+
+class RenderEditorItemOutline extends RenderProxyBox {
+  RenderEditorItemOutline({required Color? color, required double zoom})
+      : _color = color,
+        _zoom = zoom;
+
+  /// On screen, in logical pixels.
+  static const double _width = 2;
+  static const double _gap = 3;
+  static const double _radius = 6;
+
+  Color? _color;
+  set color(Color? value) {
+    if (value == _color) return;
+    _color = value;
+    markNeedsPaint();
+  }
+
+  double _zoom;
+  set zoom(double value) {
+    if (value == _zoom) return;
+    _zoom = value;
+    markNeedsPaint();
+  }
+
+  /// The mark this one is inside, and how many marks are inside this one.
+  RenderEditorItemOutline? _outer;
+  int _inner = 0;
+
+  void _changeInner(int by) {
+    _inner += by;
+    markNeedsPaint();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    var node = parent;
+    while (node != null && node is! RenderEditorItemOutline) {
+      node = node.parent;
+    }
+    _outer = node as RenderEditorItemOutline?;
+    _outer?._changeInner(1);
+  }
+
+  @override
+  void detach() {
+    _outer?._changeInner(-1);
+    _outer = null;
+    super.detach();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    final color = _color;
+    if (color == null || _inner > 0) return;
+    final scale = 1 / _zoom;
+    context.canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        (offset & size).inflate((_gap + _width / 2) * scale),
+        Radius.circular(_radius * scale),
+      ),
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _width * scale,
     );
   }
 }

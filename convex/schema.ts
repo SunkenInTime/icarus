@@ -44,6 +44,11 @@ export default defineSchema({
     revision: v.number(),
     themeProfileId: v.optional(v.string()),
     themeOverridePalette: v.optional(mapThemePaletteValidator),
+    // Set while a device is still moving this strategy in from its local
+    // library: the strategy holds only part of the work, so no library list
+    // or folder summary shows it until the device calls finishMove. Absent
+    // on every other strategy.
+    unfinishedMove: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

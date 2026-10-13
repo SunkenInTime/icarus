@@ -738,6 +738,47 @@ void main() {
     expect(convexApi.setAuthCalls, 1);
   });
 
+  test('a sign-up whose confirmation email cannot be sent says so', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    // What Supabase answered on the live beta once its email limit was spent.
+    supabaseApi.signUpError = const AuthApiException(
+      'email rate limit exceeded',
+      statusCode: '429',
+      code: 'over_email_send_rate_limit',
+    );
+    const unsent = "We couldn't send your confirmation email right now. Try "
+        'again later, or continue with Discord.';
+    expect(
+      await auth.signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
+      unsent,
+    );
+
+    // The mail server failing comes back as a 500 carrying the body.
+    supabaseApi.signUpError = AuthRetryableFetchException(
+      message: '{"code":"unexpected_failure",'
+          '"message":"Error sending confirmation email"}',
+      statusCode: '500',
+    );
+    expect(
+      await auth.signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
+      unsent,
+    );
+
+    // Throttled requests are still "too many attempts".
+    supabaseApi.signUpError = const AuthApiException(
+      'Request rate limit reached',
+      statusCode: '429',
+      code: 'over_request_rate_limit',
+    );
+    expect(
+      await auth.signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
+      'Too many attempts. Wait a moment and try again.',
+    );
+  });
+
   test('a setup the server refuses says Icarus was updated', () async {
     supabaseApi.currentSession = fakeSession();
     convexApi.mutationError = _upgradeRequired;
@@ -911,6 +952,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   bool emitSignedInEventOnPasswordSignIn = false;
   Session? sessionFromUrlSession;
   Object? sessionFromUrlError;
+  Object? signUpError;
   int getSessionFromUrlCalls = 0;
   final List<MultiStreamController<AuthState>> _controllers =
       <MultiStreamController<AuthState>>[];
@@ -986,6 +1028,9 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
     required String email,
     required String password,
   }) async {
+    if (signUpError case final Object error?) {
+      throw error;
+    }
     return AuthResponse(session: currentSession);
   }
 

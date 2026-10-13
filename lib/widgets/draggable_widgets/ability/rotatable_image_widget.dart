@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class RotatableImageWidget extends ConsumerWidget {
   const RotatableImageWidget({
@@ -36,10 +37,14 @@ class RotatableImageWidget extends ConsumerWidget {
           SizedBox(
             height: coordinateSystem.scale(30),
           ),
-          SizedBox(
-            width: coordinateSystem.scale(width),
-            height: coordinateSystem.scale(height),
-            child: Image.asset(imagePath),
+          // The image, not the space above it, is what a teammate's outline
+          // goes around.
+          EditorItemOutline(
+            child: SizedBox(
+              width: coordinateSystem.scale(width),
+              height: coordinateSystem.scale(height),
+              child: Image.asset(imagePath),
+            ),
           ),
         ],
       ),
