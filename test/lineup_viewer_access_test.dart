@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/traversal_speed.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -17,9 +20,11 @@ import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 class _TestActionProvider extends ActionProvider {
   @override
@@ -117,14 +122,15 @@ Future<ProviderContainer> _pumpMap(WidgetTester tester, String role) async {
   container
       .read(lineUpProvider.notifier)
       .fromHive(LineUpGraph.fromLegacyGroups([_breachGroup()]));
-  container.read(agentProvider.notifier).addAgent(
-        PlacedAgent(
-          id: 'jett-agent',
-          type: AgentType.jett,
-          position: const Offset(900, 300),
-          isAlly: true,
-        ),
-      );
+  // Loaded, as the page is: a viewer's own edits are refused.
+  container.read(agentProvider.notifier).fromHive([
+    PlacedAgent(
+      id: 'jett-agent',
+      type: AgentType.jett,
+      position: const Offset(900, 300),
+      isAlly: true,
+    ),
+  ]);
 
   await tester.pumpWidget(
     UncontrolledProviderScope(
@@ -154,6 +160,89 @@ Future<void> _hover(WidgetTester tester, Finder finder) async {
   await mouse.moveTo(tester.getCenter(finder));
   await tester.pump();
 }
+
+/// The capabilities of the open strategy, changeable mid-test.
+final _capabilities = StateProvider<StrategyCapabilities>(
+  (ref) => StrategyCapabilities.fullAccess(),
+);
+
+/// Who makes each edit in [_lineUpEdits]. A local strategy can always be
+/// edited.
+final _readers = <String, StrategyCapabilities>{
+  'viewer': StrategyCapabilities.fromCloudRole('viewer'),
+  'editor': StrategyCapabilities.fromCloudRole('editor'),
+  'owner': StrategyCapabilities.fromCloudRole('owner'),
+  'local strategy': StrategyCapabilities.fullAccess(),
+};
+
+/// One lineup, loaded the way the server's copy is.
+ProviderContainer _loadedLineUps(StrategyCapabilities capabilities) {
+  final container = ProviderContainer(overrides: [
+    actionProvider.overrideWith(_TestActionProvider.new),
+    currentStrategyCapabilitiesProvider
+        .overrideWith((ref) => ref.watch(_capabilities)),
+  ]);
+  container.read(_capabilities.notifier).state = capabilities;
+  container
+      .read(lineUpProvider.notifier)
+      .fromHive(LineUpGraph.fromLegacyGroups([_breachGroup()]));
+  return container;
+}
+
+String _lineUpContent(ProviderContainer container) =>
+    jsonEncode(container.read(lineUpProvider).graph.toJson());
+
+/// Each mutator that commits a lineup edit, with an edit that changes the
+/// lineup [_loadedLineUps] loads.
+final _lineUpEdits = <String, void Function(LineUpProvider lineUps)>{
+  'place a lineup': (lineUps) {
+    lineUps
+      ..startFresh()
+      ..setDraftAgent(PlacedAgent(
+        id: 'draft-agent',
+        type: AgentType.breach,
+        position: const Offset(300, 300),
+      ))
+      ..setDraftAbility(PlacedAbility(
+        id: 'draft-ability',
+        data: AgentData.agents[AgentType.breach]!.abilities.first,
+        position: const Offset(600, 300),
+      ))
+      ..commitPlacement(name: 'Retake');
+  },
+  'move a lineup in Edit placement': (lineUps) {
+    lineUps
+      ..startEdit('breach-item')
+      ..moveEditedOrigin('breach-group', const Offset(520, 260))
+      ..saveEdit();
+  },
+  "arm a lineup's agent": (lineUps) =>
+      lineUps.setOriginWeapon('breach-group', WeaponType.classic),
+  'rename a lineup': (lineUps) => lineUps.updateLink(
+        lineUps.linkById('breach-item')!.copyWith(name: 'Retake'),
+      ),
+  "move a lineup's origin": (lineUps) => lineUps.updateOriginAgentPosition(
+        'breach-group',
+        const Offset(520, 260),
+      ),
+  "move a lineup's landing": (lineUps) => lineUps.updateLandingPosition(
+        'breach-item',
+        const Offset(720, 420),
+      ),
+  "hide a landing's range": (lineUps) =>
+      lineUps.updateLandingAbilityVisualState(
+        landingId: 'breach-item',
+        visualState: const AbilityVisualState(showRangeFill: false),
+      ),
+  'delete a lineup': (lineUps) => lineUps.deleteLink('breach-item'),
+  'delete an origin': (lineUps) => lineUps.deleteOrigin('breach-group'),
+  'delete a landing': (lineUps) => lineUps.deleteLanding('breach-item'),
+};
+
+Finder _toast(String text) => find.byWidgetPredicate(
+      (widget) => widget is Text && widget.data == text,
+      skipOffstage: false,
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -235,5 +324,94 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LineUpMediaCarousel), findsOneWidget);
     expect(find.text('Edit'), findsOneWidget);
+  });
+
+  group('lineup edits', () {
+    for (final MapEntry(key: edit, value: run) in _lineUpEdits.entries) {
+      for (final MapEntry(key: reader, value: capabilities)
+          in _readers.entries) {
+        final refused = !capabilities.canEditPages;
+        test(
+            '${refused ? 'a' : 'an'} $reader '
+            '${refused ? 'cannot' : 'can'} $edit', () {
+          final container = _loadedLineUps(capabilities);
+          addTearDown(container.dispose);
+          final before = _lineUpContent(container);
+
+          run(container.read(lineUpProvider.notifier));
+
+          final after = _lineUpContent(container);
+          if (refused) {
+            expect(after, before);
+            expect(container.read(lineUpProvider).edit, isNull,
+                reason: 'Edit placement ends with nothing written');
+          } else {
+            expect(after, isNot(before));
+          }
+        });
+      }
+    }
+
+    test("the server's lineups still reach a viewer", () {
+      final container =
+          _loadedLineUps(StrategyCapabilities.fromCloudRole('viewer'));
+      addTearDown(container.dispose);
+
+      container.read(lineUpProvider.notifier).mergeRemote(LineUpGraph.empty);
+      expect(container.read(lineUpProvider).links, isEmpty);
+
+      container
+          .read(lineUpProvider.notifier)
+          .addRecovered(LineUpGraph.fromLegacyGroups([_breachGroup()]));
+      expect(container.read(lineUpProvider).links, hasLength(1));
+    });
+  });
+
+  testWidgets(
+      'Edit media saved after the reader became a viewer closes without '
+      'saving', (tester) async {
+    final container =
+        _loadedLineUps(StrategyCapabilities.fromCloudRole('editor'));
+    addTearDown(container.dispose);
+    final before = _lineUpContent(container);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: ToastificationWrapper(
+        child: ShadApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ShadButton(
+                onPressed: () => showShadDialog<void>(
+                  context: context,
+                  builder: (_) =>
+                      const CreateLineupDialog(linkId: 'breach-item'),
+                ),
+                child: const Text('Edit lineup'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Edit lineup'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText).first, 'Retake');
+
+    container.read(_capabilities.notifier).state =
+        StrategyCapabilities.fromCloudRole('viewer');
+    await tester.tap(find.text('Done'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      _toast('You can no longer edit this strategy, so this lineup was not '
+          'saved.'),
+      findsOneWidget,
+    );
+    toastification.dismissAll(delayForAnimation: false);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.byType(CreateLineupDialog), findsNothing);
+    expect(_lineUpContent(container), before);
   });
 }

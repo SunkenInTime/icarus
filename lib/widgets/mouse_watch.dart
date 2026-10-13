@@ -246,7 +246,10 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   Future<void> _handleStackAwareSecondaryTap(TapUpDetails details) async {
     final candidate =
         await _selectLineUpAbilityCandidate(details.globalPosition);
-    if (candidate == null || !mounted) {
+    // The menu edits: access may have changed while the picker was open.
+    if (candidate == null ||
+        !mounted ||
+        !ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
       return;
     }
 

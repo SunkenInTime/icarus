@@ -8,6 +8,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -219,9 +220,41 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     super.dispose();
   }
 
+  /// Closes the dialog, saving nothing, when the reader can no longer edit
+  /// the strategy: their access changed while it was open.
+  bool _closedForLostEditAccess() {
+    // Closed from outside while saving (leaving an editor whose access is
+    // gone takes its dialogs down): there is nothing left to save into.
+    if (!mounted) return true;
+    if (ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+      return false;
+    }
+    Settings.showToast(
+      message: 'You can no longer edit this strategy, so this lineup was not '
+          'saved.',
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+    // A lineup being placed is let go with the dialog.
+    ref
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.navigation);
+    _close();
+    return true;
+  }
+
+  /// Pops this dialog, unless something else already took it down: then
+  /// the route on top is another one, which is not this dialog's to close.
+  void _close() {
+    if (!mounted) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    Navigator.of(context).pop();
+  }
+
   /// Saves the lineup and closes. With [thenEditPlacement] the editor then
   /// opens placement editing for it.
   Future<void> _save({bool thenEditPlacement = false}) async {
+    if (_closedForLostEditAccess()) return;
     final notifier = ref.read(lineUpProvider.notifier);
     final name = _nameController.text.trim();
     final existing = _isEditing ? notifier.linkById(widget.linkId!) : null;
@@ -251,6 +284,9 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       );
       return;
     }
+    // The images it queued wait unreferenced, and go once nothing claims
+    // them.
+    if (_closedForLostEditAccess()) return;
 
     if (existing != null) {
       notifier.updateLink(
@@ -296,14 +332,13 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       );
     }
 
+    if (!mounted) return;
     ref
         .read(interactionStateProvider.notifier)
         .update(InteractionState.navigation);
     // Read now: closing the dialog takes its ref with it.
     final interaction = ref.read(interactionStateProvider.notifier);
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
+    _close();
     if (thenEditPlacement && existing != null) {
       interaction.editLineUpPlacement(existing.id);
     }

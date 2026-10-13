@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
@@ -1155,11 +1156,13 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   /// Writes every end the user dragged, as one undo step. Ends a teammate
-  /// removed meanwhile stay removed.
+  /// removed meanwhile stay removed. A reader who can no longer edit leaves
+  /// the mode with nothing written: every end stays where it was.
   void saveEdit() {
     final edit = state.edit;
     if (edit == null) return;
     state = state.copyWith(edit: null);
+    if (!ref.canEditPages) return;
     ref.read(actionProvider.notifier).performTransaction(
       groups: const [ActionGroup.lineUp],
       mutation: () {
@@ -1191,6 +1194,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   }) {
     final placement = state.placement;
     if (placement == null || !placement.isComplete) return null;
+    if (!ref.canEditPages) return null;
 
     final linkId = _uuid.v4();
     final originId = placement.pinnedOriginId ?? _uuid.v4();
@@ -1242,6 +1246,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void setOriginWeapon(String originId, WeaponType weapon) {
+    if (!ref.canEditPages) return;
     final index = state.origins.indexWhere((origin) => origin.id == originId);
     if (index < 0 || state.origins[index].agent.weapon == weapon) return;
     final previous = state.origins[index].agent.weapon;
@@ -1270,6 +1275,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   /// Records a change to the link's details: name, video link, notes and
   /// images. Which origin and landing it joins is never edited here.
   void updateLink(LineUpLink link) {
+    if (!ref.canEditPages) return;
     final current = state.linkById(link.id);
     if (current == null) return;
     final change = LineUpLinkChange.between(current, link);
@@ -1283,6 +1289,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void updateOriginAgentPosition(String originId, Offset position) {
+    if (!ref.canEditPages) return;
     final current = state.originById(originId);
     if (current == null) return;
     _recordEdit(
@@ -1294,6 +1301,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void updateLandingPosition(String landingId, Offset position) {
+    if (!ref.canEditPages) return;
     final current = state.landingById(landingId);
     if (current == null) return;
     _recordEdit(
@@ -1308,6 +1316,7 @@ class LineUpProvider extends Notifier<LineUpState> {
     required String landingId,
     required AbilityVisualState visualState,
   }) {
+    if (!ref.canEditPages) return;
     final current = state.landingById(landingId);
     if (current == null) return;
     final change = AbilityVisibilityChange.between(
@@ -1382,11 +1391,13 @@ class LineUpProvider extends Notifier<LineUpState> {
   // --- Deletions -----------------------------------------------------------
 
   void deleteLink(String linkId) {
+    if (!ref.canEditPages) return;
     if (state.linkById(linkId) == null) return;
     _recordDeletion(linkId, {linkId});
   }
 
   void deleteOrigin(String originId) {
+    if (!ref.canEditPages) return;
     if (state.originById(originId) == null) return;
     _recordDeletion(
       originId,
@@ -1395,6 +1406,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void deleteLanding(String landingId) {
+    if (!ref.canEditPages) return;
     if (state.landingById(landingId) == null) return;
     _recordDeletion(
       landingId,

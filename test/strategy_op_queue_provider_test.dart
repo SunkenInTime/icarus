@@ -4184,12 +4184,254 @@ void main() {
       expect(repository.calls[1].single.merge?.base, {'isAlly': true});
     });
   });
+
+  group('a batch refused because edit access is gone', () {
+    const key = EntitySyncKey.element('page-1', 'element-1');
+
+    Future<(ProviderContainer, MemoryDurableStrategyOutboxStore)> refused(
+      _EditAccessRepository repository,
+    ) async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(_cloudElementOp());
+      await notifier.flushNow();
+      await _settle();
+      return (container, store);
+    }
+
+    for (final (reader, repository) in [
+      ('a viewer', () => _EditAccessRepository(role: 'viewer')),
+      ('someone removed', () => _EditAccessRepository(shellRefused: true)),
+    ]) {
+      test('from $reader is paused at once, with its reason', () async {
+        final server = repository();
+        final (container, store) = await refused(server);
+        final notifier = container.read(strategyOpQueueProvider.notifier);
+
+        var current = container.read(strategyOpQueueProvider);
+        expect(server.calls, 1);
+        expect(current.needsAttention, isTrue);
+        expect(current.pausedByEntityKey.keys, [key]);
+        expect(current.queuedByEntityKey, isEmpty);
+        expect(current.lastError, editAccessRemovedMessage);
+        expect(friendlyCloudSyncError(current.lastError!),
+            editAccessRemovedMessage);
+
+        // Kept on this device, and not sent again on its own.
+        final durable = store.load().records.single;
+        expect(durable.status, DurableOutboxStatus.paused);
+        expect(durable.lastError, editAccessRemovedMessage);
+        expect(durable.pending.op.toConvexJson(),
+            _cloudElementOp().toConvexJson());
+        await notifier.flushNow();
+        await _settle();
+        expect(server.calls, 1);
+
+        // Reopened, the strategy still says why.
+        notifier
+          ..setActiveStrategy(null, accountId: 'account-a')
+          ..setActiveStrategy('strategy-1', accountId: 'account-a');
+        current = container.read(strategyOpQueueProvider);
+        expect(current.pausedByEntityKey.keys, [key]);
+        expect(current.lastError, editAccessRemovedMessage);
+      });
+    }
+
+    test('lands on Retry once the owner gives edit access back', () async {
+      final server = _EditAccessRepository(role: 'viewer');
+      final (container, store) = await refused(server);
+      final notifier = container.read(strategyOpQueueProvider.notifier);
+
+      server
+        ..refusing = false
+        ..role = 'editor';
+      await notifier.retryPaused(flushImmediately: false);
+      await notifier.flushNow();
+      await _settle();
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(server.calls, 2);
+      expect(current.needsAttention, isFalse);
+      expect(current.pending, isEmpty);
+      expect(current.lastError, isNull);
+      expect(store.load().records, isEmpty);
+    });
+
+    test('is retried as before when the reader can still edit', () async {
+      // FORBIDDEN also refuses a batch bound to another account.
+      final server = _EditAccessRepository(role: 'editor');
+      final (container, store) = await refused(server);
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.pausedByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey.keys, [key]);
+      expect(current.queuedByEntityKey[key]!.pending.attempts, 1);
+      expect(current.lastError, isNot(editAccessRemovedMessage));
+      expect(store.load().records.single.status, DurableOutboxStatus.queued);
+    });
+
+    /// Account A's change, queued, on a device whose account the test
+    /// switches.
+    Future<
+        (
+          StrategyOpQueueNotifier,
+          MemoryDurableStrategyOutboxStore,
+          _SwitchableAuthProvider,
+        )> queuedAsA(_EditAccessRepository server) async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final auth = _SwitchableAuthProvider();
+      final container = ProviderContainer(overrides: [
+        durableStrategyOutboxStoreProvider.overrideWithValue(store),
+        convexStrategyRepositoryProvider.overrideWithValue(server),
+        authProvider.overrideWith(() => auth),
+        convexConnectionSnapshotProvider.overrideWithValue(true),
+      ]);
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(_cloudElementOp());
+      return (notifier, store, auth);
+    }
+
+    test(
+        "is not concluded from another account's session: A's batch refused "
+        'after switching to B waits for A', () async {
+      // B cannot read A's strategy, and the server refuses A's batch for
+      // arriving while B is signed in.
+      final hold = Completer<void>();
+      final server = _EditAccessRepository(shellRefused: true)
+        ..applyHold = hold;
+      final (notifier, store, auth) = await queuedAsA(server);
+      final flushing = notifier.flushNow();
+      await server.applyStarted.future;
+
+      auth.signInAs('account-b');
+      hold.complete();
+      await flushing;
+      await _settle();
+
+      final record = store.load().records.single;
+      expect(record.accountId, 'account-a');
+      expect(record.status, DurableOutboxStatus.queued);
+      expect(record.lastError, isNot(editAccessRemovedMessage));
+
+      // Back as A, who can still edit: the work lands.
+      server
+        ..refusing = false
+        ..shellRefused = false
+        ..role = 'editor';
+      auth.signInAs('account-a');
+      notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+      await _settle();
+      expect(store.load().records, isEmpty);
+    });
+
+    test('is not concluded when the session changes during the check',
+        () async {
+      final hold = Completer<void>();
+      final server = _EditAccessRepository(shellRefused: true)
+        ..shellHold = hold;
+      final (notifier, store, auth) = await queuedAsA(server);
+      final flushing = notifier.flushNow();
+      await server.shellStarted.future;
+
+      // The confirming read answers after B signed in and A signed back
+      // in: it may have run as B.
+      auth
+        ..signInAs('account-b')
+        ..signInAs('account-a');
+      hold.complete();
+      await flushing;
+      await _settle();
+
+      final record = store.load().records.single;
+      expect(record.status, DurableOutboxStatus.queued);
+      expect(record.lastError, isNot(editAccessRemovedMessage));
+      expect(record.pending.attempts, 1);
+    });
+  });
 }
 
 /// Lets sends already started, and the writes after them, finish.
 Future<void> _settle() async {
   for (var i = 0; i < 20; i++) {
     await Future<void>.delayed(Duration.zero);
+  }
+}
+
+/// A server that refuses every batch with FORBIDDEN while [refusing], as it
+/// does for a reader who cannot edit, and reads the shell with [role], or
+/// refuses that read too when [shellRefused] (the reader was removed).
+class _EditAccessRepository extends ConvexStrategyRepository {
+  _EditAccessRepository({this.role = 'viewer', this.shellRefused = false})
+      : super(IcarusConvexApi(_UnusedTransport()));
+
+  String role;
+  bool shellRefused;
+  bool refusing = true;
+  int calls = 0;
+
+  /// While set, the first send waits for it, after [applyStarted].
+  Completer<void>? applyHold;
+  final applyStarted = Completer<void>();
+
+  /// While set, the first shell read waits for it, after [shellStarted].
+  Completer<void>? shellHold;
+  final shellStarted = Completer<void>();
+
+  static const _forbidden = ConvexFunctionException(
+    code: ConvexErrorCode.forbidden,
+    rawCode: 'FORBIDDEN',
+    message: 'Forbidden',
+  );
+
+  @override
+  Future<RemoteStrategyShell> fetchShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) async {
+    if (!shellStarted.isCompleted) shellStarted.complete();
+    if (shellHold case final hold?) {
+      shellHold = null;
+      await hold.future;
+    }
+    if (shellRefused) throw _forbidden;
+    return RemoteStrategyShell(
+      header: RemoteStrategyHeader(
+        publicId: strategyPublicId,
+        name: 'Strategy',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+        role: role,
+      ),
+      pages: const [],
+    );
+  }
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+    String? accountSubject,
+  }) async {
+    calls += 1;
+    if (!applyStarted.isCompleted) applyStarted.complete();
+    if (applyHold case final hold?) {
+      applyHold = null;
+      await hold.future;
+    }
+    if (refusing) throw _forbidden;
+    return [for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2)];
   }
 }
 
@@ -4378,6 +4620,28 @@ class _CloudReadyAuthProvider extends AuthProvider {
           id: 'account-a',
           appMetadata: <String, dynamic>{},
           userMetadata: <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
+}
+
+/// Signed in, cloud ready, as whichever account the test last chose.
+class _SwitchableAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => _signedInAs('account-a');
+
+  void signInAs(String accountId) => state = _signedInAs(accountId);
+
+  static AppAuthState _signedInAs(String accountId) => AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: accountId,
+          appMetadata: const <String, dynamic>{},
+          userMetadata: const <String, dynamic>{},
           aud: 'authenticated',
           createdAt: '2026-01-01T00:00:00.000Z',
         ),

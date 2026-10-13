@@ -294,6 +294,7 @@ Future<bool> _guardCloudStrategyExit({
         canLeaveWithDurableWork: canLeaveWithDurableWork,
         hasUnreadableSavedWork: hasUnreadableSavedWork,
         hasRefusedWork: queueState.attentionByEntityKey.isNotEmpty,
+        hasPausedWork: queueState.pausedByEntityKey.isNotEmpty,
       ),
       allowLeaveAnyway: canLeaveWithDurableWork,
       showRetryAuth: authState.hasActiveAuthIncident,
@@ -344,6 +345,7 @@ String _cloudSyncBlockedMessage({
   required bool canLeaveWithDurableWork,
   required bool hasUnreadableSavedWork,
   required bool hasRefusedWork,
+  required bool hasPausedWork,
 }) {
   final base = !isConnected
       ? 'Icarus is offline, so these changes have not reached the cloud.'
@@ -361,6 +363,11 @@ String _cloudSyncBlockedMessage({
     if (hasRefusedWork) {
       return '$base You can leave; when you come back, choose what to keep '
           'from the sync button.';
+    }
+    // Paused work is sent again only when the user retries it.
+    if (hasPausedWork) {
+      return '$base You can leave; nothing is sent until you retry from the '
+          'sync button.';
     }
     return '$base The pending work is saved on this device. You can leave '
         'and Icarus will retry it later.';

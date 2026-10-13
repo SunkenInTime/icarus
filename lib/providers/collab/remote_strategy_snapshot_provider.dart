@@ -17,6 +17,21 @@ final remoteEditorSnapshotProvider =
   RemoteEditorSnapshotNotifier.new,
 );
 
+/// The error [remoteEditorSnapshotProvider] holds once the signed-in reader
+/// has lost their access to the open strategy: the server refused a fresh
+/// read of its shell (FORBIDDEN) after the reader had it open. The owner
+/// removed them, or stopped sharing it. Nothing in the editor may change it
+/// from then on (see currentStrategyCapabilitiesProvider), and only a read
+/// that works again, or opening another strategy, clears it.
+class StrategyAccessLost implements Exception {
+  const StrategyAccessLost(this.strategyPublicId);
+
+  final String strategyPublicId;
+
+  @override
+  String toString() => 'StrategyAccessLost($strategyPublicId)';
+}
+
 /// Owns the editor's bounded live read set: one shell and one active page.
 class RemoteEditorSnapshotNotifier
     extends AsyncNotifier<RemoteEditorSnapshot?> {
@@ -167,12 +182,14 @@ class RemoteEditorSnapshotNotifier
     }
 
     final epoch = ++_readEpoch;
+    var shellRead = false;
     try {
       final repository = ref.read(convexStrategyRepositoryProvider);
       final shell = await repository.fetchShell(
         strategyPublicId,
         shareToken: _shareToken,
       );
+      shellRead = true;
       if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       var pageId = _activePagePublicId;
       if (pageId == null ||
@@ -195,12 +212,30 @@ class RemoteEditorSnapshotNotifier
       if (page != null) _reconcilePageMedia(page);
     } catch (error, stackTrace) {
       if (epoch != _readEpoch) return;
+      if (!shellRead && _refusesOpenStrategy(error, strategyPublicId)) {
+        log('Access to strategy $strategyPublicId was removed',
+            name: 'remote_editor', error: error, stackTrace: stackTrace);
+        _disposeSubscriptions();
+        state = AsyncError(StrategyAccessLost(strategyPublicId), stackTrace);
+        return;
+      }
       _handleReadError(
         source: 'remote_editor:refresh',
         error: error,
         stackTrace: stackTrace,
       );
     }
+  }
+
+  /// Whether [error], from a fresh read of the shell, means the signed-in
+  /// reader no longer has [strategyPublicId], which they had open. A share
+  /// link's refusals are the link's (see [_readsAsSignedIn]), and a strategy
+  /// never opened was never lost.
+  bool _refusesOpenStrategy(Object error, String strategyPublicId) {
+    return isTypedConvexForbiddenError(error) &&
+        _shareToken == null &&
+        ref.read(authProvider).isAuthenticated &&
+        state.valueOrNull?.header.publicId == strategyPublicId;
   }
 
   /// Whether the shell held is newer than [shell]: a page just restored, say.
@@ -340,6 +375,9 @@ class RemoteEditorSnapshotNotifier
     ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
     log('Remote editor read failed: $error',
         name: 'remote_editor', error: error, stackTrace: stackTrace);
+    // A read that failed for another reason (offline, say) says nothing
+    // about access already confirmed gone.
+    if (state.error is StrategyAccessLost) return;
     state = AsyncError(error, stackTrace);
   }
 

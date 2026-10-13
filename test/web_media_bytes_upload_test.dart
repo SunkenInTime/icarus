@@ -20,12 +20,14 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -221,6 +223,24 @@ class _GatedOutboxStore extends MemoryDurableCloudMediaOutboxStore {
   }
 }
 
+/// Holds each single write until [gate] completes, saying when one starts.
+class _HeldPutOutboxStore extends MemoryDurableCloudMediaOutboxStore {
+  final putStarted = Completer<void>();
+  final gate = Completer<void>();
+
+  @override
+  Future<void> put(CloudMediaUploadJob job) async {
+    if (!putStarted.isCompleted) putStarted.complete();
+    await gate.future;
+    await super.put(job);
+  }
+}
+
+/// The reader's edit access, changeable mid-test; the owner's by default.
+final _capabilities = StateProvider<StrategyCapabilities>(
+  (ref) => StrategyCapabilities.fromCloudRole('owner'),
+);
+
 class _OnePngPicker extends FilePicker {
   _OnePngPicker(this.bytes);
   final Uint8List bytes;
@@ -271,6 +291,9 @@ ProviderContainer _webSession({
       convexConnectionSnapshotProvider.overrideWithValue(online),
       convexConnectionProvider.overrideWith((ref) => Stream.value(online)),
       strategyProvider.overrideWith(_CloudStrategy.new),
+      // Saving a lineup or placing an image asks for edit access.
+      currentStrategyCapabilitiesProvider
+          .overrideWith((ref) => ref.watch(_capabilities)),
       strategyOpQueueProvider.overrideWith(_OpQueue.new),
       cloudMediaReferenceLoaderProvider.overrideWithValue(
         (_, __) async => throw StateError('no server reads in this test'),
@@ -350,6 +373,36 @@ Future<void> _pumpToasts(WidgetTester tester) => tester.pumpWidget(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+      'an image whose upload was staged as the reader lost edit access is '
+      'not placed, and its upload goes', () async {
+    final mediaStore = _HeldPutOutboxStore();
+    final bytesStore = MemoryPendingMediaBytesStore();
+    final container =
+        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+    addTearDown(container.dispose);
+
+    final adding = container.read(placedImageProvider.notifier).addImage(
+          imageBytes: _imageBytes,
+          strategyId: 'strategy-a',
+          strategySource: StrategySource.cloud,
+          fileExtension: '.png',
+          aspectRatio: 1,
+        );
+    // The upload is being staged when the owner makes the reader a viewer.
+    await mediaStore.putStarted.future;
+    expect(bytesStore.values, hasLength(1));
+    container.read(_capabilities.notifier).state =
+        StrategyCapabilities.fromCloudRole('viewer');
+    mediaStore.gate.complete();
+    await adding;
+
+    expect(container.read(placedImageProvider).images, isEmpty);
+    expect(container.read(actionProvider), isEmpty);
+    expect(mediaStore.load().jobs, isEmpty);
+    expect(bytesStore.values, isEmpty);
+  });
 
   testWidgets(
       'picked bytes are saved before the job, survive a refresh, and upload',
@@ -880,6 +933,79 @@ void main() {
     expect(find.byType(CreateLineupDialog), findsNothing);
     // Let any toast from the save time out, then stop the queue's retry
     // timer before the test ends.
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpWidget(const SizedBox());
+    container.dispose();
+  });
+
+  testWidgets(
+      'a lineup taken down while saving, as access goes, leaves the next '
+      'dialog alone and saves nothing', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final mediaStore = _GatedOutboxStore()..batchGate = Completer<void>();
+    final bytesStore = MemoryPendingMediaBytesStore();
+    final container =
+        _webSession(mediaStore: mediaStore, bytesStore: bytesStore);
+    container
+        .read(lineUpProvider.notifier)
+        .fromHive(LineUpGraph.fromLegacyGroups([_breachGroup()]));
+    final linkId = container.read(lineUpProvider).links.single.id;
+    final before = container.read(lineUpProvider).linkById(linkId)!;
+    final png = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    );
+    FilePicker.platform = _OnePngPicker(png);
+    late BuildContext home;
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: ToastificationWrapper(
+        child: ShadApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                home = context;
+                return ShadButton(
+                  onPressed: () => showShadDialog<void>(
+                    context: context,
+                    builder: (_) => CreateLineupDialog(linkId: linkId),
+                  ),
+                  child: const Text('Edit lineup'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('Edit lineup'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Click here to add images'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+
+    // Access goes while the images are queued, and leaving the editor
+    // takes the dialog down and puts its own warning up.
+    container.read(_capabilities.notifier).state =
+        StrategyCapabilities.fromCloudRole('viewer');
+    Navigator.of(home).popUntil((route) => route.isFirst);
+    unawaited(showShadDialog<void>(
+      context: home,
+      builder: (_) => const ShadDialog(child: Text('Leave anyway?')),
+    ));
+    await tester.pump();
+    mediaStore.batchGate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Leave anyway?'), findsOneWidget,
+        reason: "the lineup dialog's save closes only its own route");
+    expect(
+        container.read(lineUpProvider).linkById(linkId)!.images, before.images);
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpWidget(const SizedBox());
     container.dispose();

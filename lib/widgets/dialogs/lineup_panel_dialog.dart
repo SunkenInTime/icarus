@@ -162,7 +162,16 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
       ),
     );
     controller.dispose();
-    if (name == null || name == link.name) return;
+    if (name == null || name == link.name || !mounted) return;
+    // The reader's access changed while the dialog was open.
+    if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+      Settings.showToast(
+        message: 'You can no longer edit this strategy, so the name was not '
+            'saved.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
     ref.read(lineUpProvider.notifier).updateLink(link.copyWith(name: name));
   }
 

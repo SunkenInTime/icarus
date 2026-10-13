@@ -14,6 +14,7 @@ import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -132,6 +133,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
       Offset? position,
       double? aspectRatio,
       int? tagColorValue}) async {
+    if (!ref.canEditPages) return;
     final imageID = const Uuid().v4();
     AppErrorReporter.reportInfo(
       'Image add requested: image=$imageID strategy=$strategyId '
@@ -171,6 +173,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
       sizeVersion: worldSizedMediaVersion,
       tagColorValue: tagColorValue,
     );
+    // Access can drop while the image is read: nothing is uploaded then.
+    if (!ref.canEditPages) {
+      await discardDraftImage(imageId: imageID, strategyId: strategyId);
+      return;
+    }
 
     if (strategySource == StrategySource.cloud && strategyId != null) {
       AppErrorReporter.reportInfo(
@@ -187,6 +194,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
             width: null,
             height: null,
           );
+      // Access can drop while the upload is staged too: then the upload
+      // goes and the image is not placed.
+      if (!ref.canEditPages) {
+        await ref
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .discardStagedUpload(placedImage.id);
+        return;
+      }
     }
 
     final action = UserAction(
@@ -218,6 +233,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   void removeImageAsAction(String id) {
+    if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state.images);
     if (index < 0) return;
 
@@ -235,6 +251,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   void removeImage(String id) {
+    if (!ref.canEditPages) return;
     final newImages = [...state.images];
     final index = PlacedWidget.getIndexByID(id, newImages);
 
@@ -247,6 +264,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   void updatePosition(Offset position, String id) {
+    if (!ref.canEditPages) return;
     final newImages = [...state.images];
     final index = PlacedWidget.getIndexByID(id, newImages);
 
@@ -271,6 +289,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   void updateTagColor(String id, int? colorValue) {
+    if (!ref.canEditPages) return;
     final newImages = [...state.images];
     final index = PlacedWidget.getIndexByID(id, newImages);
     if (index < 0) return;
@@ -474,6 +493,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
   /// Sets an image's scale and position together: on defense a resize moves
   /// the stored position so the image's on-screen top-left stays put.
   void resize(String id, {required double scale, required Offset position}) {
+    if (!ref.canEditPages) return;
     final newState = state.copyWith();
     final index = PlacedWidget.getIndexByID(id, newState.images);
     if (index < 0) return;

@@ -9,6 +9,7 @@ import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -264,6 +265,152 @@ void main() {
     await remote.openStrategy('another-strategy');
     expect(repository.readTokens, everyElement(isNull));
   });
+
+  group('a refused read of the open strategy', () {
+    const forbidden = ConvexFunctionException(
+      code: ConvexErrorCode.forbidden,
+      rawCode: 'FORBIDDEN',
+      message: 'Forbidden',
+    );
+
+    Future<(ProviderContainer, RemoteEditorSnapshotNotifier, _Repository)>
+        openStrategy({AuthProvider Function()? auth}) async {
+      final repository = _Repository();
+      final container = ProviderContainer(overrides: [
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        authProvider.overrideWith(auth ?? _ReadyAuthProvider.new),
+        strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+        cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+        cloudMediaAccountIdProvider.overrideWithValue(null),
+      ]);
+      addTearDown(container.dispose);
+      final remote = container.read(remoteEditorSnapshotProvider.notifier);
+      await container.read(remoteEditorSnapshotProvider.future);
+      await remote.openStrategy('strategy', activePagePublicId: 'a');
+      return (container, remote, repository);
+    }
+
+    test('means access is gone once a fresh read confirms it', () async {
+      final (container, _, repository) = await openStrategy();
+
+      // The live read is refused; the editor reads the shell again.
+      repository.shellError = forbidden;
+      repository.shells.addError(forbidden);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      final state = container.read(remoteEditorSnapshotProvider);
+      expect(state.error, isA<StrategyAccessLost>());
+      expect(container.read(strategyAccessLostProvider), isTrue);
+      // Nothing is watched any more: the next push changes nothing.
+      repository.shellError = null;
+      repository.shells.add(_shell(['a', 'b'], revision: 5));
+      await _settle();
+      expect(container.read(strategyAccessLostProvider), isTrue);
+    });
+
+    test('is not lost access when the fresh read works', () async {
+      final (container, _, repository) = await openStrategy();
+
+      repository.shells.addError(forbidden);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      final state = container.read(remoteEditorSnapshotProvider);
+      expect(state.hasError, isFalse);
+      expect(state.valueOrNull?.header.role, 'owner');
+      expect(container.read(strategyAccessLostProvider), isFalse);
+    });
+
+    test('is not lost access when the network fails', () async {
+      final (container, remote, repository) = await openStrategy();
+
+      repository.shellError = StateError('offline');
+      await remote.refresh();
+
+      expect(container.read(remoteEditorSnapshotProvider).hasError, isTrue);
+      expect(container.read(strategyAccessLostProvider), isFalse);
+    });
+
+    test('opens no lost-access state when the session broke', () async {
+      final auth = _ReportingAuthProvider();
+      final (container, remote, repository) =
+          await openStrategy(auth: () => auth);
+
+      repository.shellError = const ConvexFunctionException(
+        code: ConvexErrorCode.unauthenticated,
+        rawCode: 'UNAUTHENTICATED',
+        message: 'Unauthenticated',
+      );
+      await remote.refresh();
+
+      expect(auth.unauthenticatedReports, 1);
+      expect(container.read(strategyAccessLostProvider), isFalse);
+    });
+
+    test('is the share link\'s for a reader on one, not lost access', () async {
+      final auth = _SignedOutAuthProvider();
+      final repository = _Repository();
+      final container = ProviderContainer(overrides: [
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        authProvider.overrideWith(() => auth),
+        strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+        cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+        cloudMediaAccountIdProvider.overrideWithValue(null),
+      ]);
+      addTearDown(container.dispose);
+      container.read(shareLinkViewProvider.notifier).state =
+          (strategyPublicId: 'strategy', token: 'ICR-LINK');
+      final remote = container.read(remoteEditorSnapshotProvider.notifier);
+      await container.read(remoteEditorSnapshotProvider.future);
+      await remote.openStrategy('strategy');
+
+      repository.shellError = forbidden;
+      await remote.refresh();
+
+      expect(container.read(remoteEditorSnapshotProvider).hasError, isTrue);
+      expect(container.read(strategyAccessLostProvider), isFalse);
+    });
+
+    test('on a strategy that never opened is not lost access', () async {
+      final repository = _Repository()..shellError = forbidden;
+      final container = ProviderContainer(overrides: [
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        authProvider.overrideWith(_ReadyAuthProvider.new),
+        strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+        cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+        cloudMediaAccountIdProvider.overrideWithValue(null),
+      ]);
+      addTearDown(container.dispose);
+      await container.read(remoteEditorSnapshotProvider.future);
+
+      await container
+          .read(remoteEditorSnapshotProvider.notifier)
+          .openStrategy('strategy');
+
+      expect(container.read(remoteEditorSnapshotProvider).hasError, isTrue);
+      expect(container.read(strategyAccessLostProvider), isFalse);
+    });
+
+    test('stays lost through an offline read, and ends when a read works',
+        () async {
+      final (container, remote, repository) = await openStrategy();
+      repository.shellError = forbidden;
+      await remote.refresh();
+      expect(container.read(strategyAccessLostProvider), isTrue);
+
+      repository.shellError = StateError('offline');
+      await remote.refresh();
+      expect(container.read(strategyAccessLostProvider), isTrue);
+
+      // The owner added them back.
+      repository.shellError = null;
+      await remote.refresh();
+      expect(container.read(strategyAccessLostProvider), isFalse);
+      expect(
+        container.read(remoteEditorSnapshotProvider).valueOrNull?.header.role,
+        'owner',
+      );
+    });
+  });
 }
 
 Future<void> _settle() async {
@@ -406,6 +553,19 @@ class _ReadyAuthProvider extends AuthProvider {
           createdAt: '2026-01-01T00:00:00.000Z',
         ),
       );
+}
+
+class _ReportingAuthProvider extends _ReadyAuthProvider {
+  int unauthenticatedReports = 0;
+
+  @override
+  Future<void> reportConvexUnauthenticated({
+    required String source,
+    Object? error,
+    StackTrace? stackTrace,
+  }) async {
+    unauthenticatedReports += 1;
+  }
 }
 
 class _SignedOutAuthProvider extends AuthProvider {
