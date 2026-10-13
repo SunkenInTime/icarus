@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -2387,9 +2386,8 @@ void main() {
     expect(remote.selectedPageIds, isNot(contains('page-2')));
   });
 
-  test('a copy refuses the strokes on a deleted page before the notice shows',
-      () async {
-    final (:container, :one, queue: _, remote: _, two: _, strokeId: _) =
+  test('strokes on a deleted page are not reported handed over', () async {
+    final (:container, queue: _, remote: _, one: _, two: _, strokeId: _) =
         await strokeOnDeletedPage();
     // As if the stroke finished while the replacement page was still
     // loading, before anything asked: nothing is queued for it.
@@ -2398,13 +2396,13 @@ void main() {
             .read(strategyPageSessionProvider)
             .copyWith(clearDeletedPage: true));
 
-    await expectLater(
-      sendCloudWork(container.read, strategyId: 'cloud-strategy'),
-      throwsA(isA<CloudWorkNotSent>()),
+    // A copy of the strategy must not take the empty queue as proof.
+    expect(
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .flushCurrentPage(),
+      isFalse,
     );
-    // And the user is told why.
-    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
-        one.publicId);
   });
 
   test('an unrelated op landing does not let the page go unseen', () async {
@@ -10168,6 +10166,32 @@ void main() {
           pending.op.payload.toString().contains('unsent draft')),
       isTrue,
     );
+  });
+
+  test('an edit is not reported handed over while the page cannot be read',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'remote'),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    expect(await session.flushCurrentPage(), isTrue);
+
+    // A read of the strategy is refused while an edit is made.
+    remote.failRead();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
+    ]);
+
+    expect(await session.flushCurrentPage(), isFalse);
   });
 
   test('persisted overlay wins over a late remote active-page base', () async {

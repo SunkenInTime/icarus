@@ -13,6 +13,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -20,6 +21,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 void main() {
   group('cloud duplicate', () {
@@ -140,6 +142,30 @@ void main() {
       ]);
     });
 
+    test('another account signing in mid-wait makes no copy', () async {
+      final transport = _RecordingTransport();
+      final messages = <String>[];
+      final ops = _Ops(_unsent(queued: 1));
+      final auth = _Auth();
+      final container = _container(transport, messages, ops: ops, auth: auth);
+      addTearDown(container.dispose);
+
+      final duplicating =
+          container.read(strategyProvider.notifier).duplicateStrategy(
+                'source-strategy',
+                source: StrategySource.cloud,
+              );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      // The first account's edit is still unsent; the second one's queue,
+      // now on show, is empty.
+      auth.signInAs('account-b');
+      ops.land();
+      await duplicating;
+
+      expect(transport.mutations, isEmpty);
+      expect(messages, hasLength(1));
+    });
+
     test("another strategy's unsent edit does not hold this copy", () async {
       final transport = _RecordingTransport();
       final container = _container(
@@ -245,8 +271,10 @@ ProviderContainer _container(
   List<String> messages, {
   List<CloudMediaUploadJob> unsentImages = const [],
   _Ops? ops,
+  _Auth? auth,
 }) {
   return ProviderContainer(overrides: [
+    authProvider.overrideWith(() => auth ?? _Auth()),
     cloudMediaUploadQueueProvider.overrideWith(() => _Queue(unsentImages)),
     strategyOpQueueProvider.overrideWith(
       () => ops ?? _Ops(const StrategyOpQueueState(durableLoaded: true)),
@@ -291,6 +319,28 @@ class _Queue extends CloudMediaUploadQueueNotifier {
   CloudMediaUploadQueueState build() =>
       CloudMediaUploadQueueState(jobs: jobs, isProcessing: false);
 }
+
+/// Signed in as one account, then as [signInAs] says.
+class _Auth extends AuthProvider {
+  @override
+  AppAuthState build() => _signedInAs('account-a');
+
+  void signInAs(String accountId) => state = _signedInAs(accountId);
+}
+
+AppAuthState _signedInAs(String accountId) => AppAuthState(
+      isLoading: false,
+      isAuthenticated: true,
+      isConvexUserReady: true,
+      convexAuthStatus: ConvexAuthStatus.ready,
+      user: User(
+        id: accountId,
+        appMetadata: const <String, dynamic>{},
+        userMetadata: const <String, dynamic>{},
+        aud: 'authenticated',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      ),
+    );
 
 /// This device's op queue, set by the test.
 class _Ops extends StrategyOpQueueNotifier {

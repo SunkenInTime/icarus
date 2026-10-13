@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
 
 /// `ref.read` of a widget, a provider or a container.
 typedef ProviderReader = T Function<T>(ProviderListenable<T> provider);
@@ -35,38 +37,54 @@ String cloudStrategyCopyRefusal(CloudWorkNotSent error, String outcome) =>
         : "Some changes to this strategy haven't synced yet, so $outcome. "
             'Let them sync, or review them, then try again.';
 
+/// Checks, right before a copy is read or made, that the account whose work
+/// [sendCloudWork] waited on is still the one signed in. Throws
+/// [CloudWorkNotSent] when it is not.
+typedef SameAccountCheck = void Function();
+
 /// Sends the open page's edits, then waits until this device has nothing
 /// left to send to the cloud for [strategyId], or for any strategy of the
-/// signed-in account when it is null: no edit queued, in flight, held for
-/// review or kept for a strategy deleted elsewhere, and no image to upload.
-/// Only then does the server hold everything the user did, so every copy
-/// read from the server (an .ica, a backup, a video, a duplicate) waits on
-/// this first.
+/// signed-in account when it is null. Only then does the server hold
+/// everything the user did, so every copy read from the server (an .ica, a
+/// backup, a video, a duplicate) waits on this first.
+///
+/// Both halves must be shown, not assumed:
+/// - the canvas of the open strategy was handed to the op queue (see
+///   [StrategyPageSource.flushCurrentPage]); while it can't be, it is tried
+///   again on every check;
+/// - nothing is left in the queues: no edit queued, in flight, held for
+///   review or kept for a strategy deleted elsewhere, and no image to
+///   upload.
+///
+/// The queues show the signed-in account's work only, so the wait belongs
+/// to the account that started it: once another one signs in, its empty
+/// queues would prove nothing. Call the returned check again right before
+/// the copy is read or made.
 ///
 /// Throws [CloudWorkNotSent] at once when the work cannot land by waiting
-/// (held for review, failed, or unreadable), and when it has not landed
-/// within [cloudWorkSendTimeout]. [checkpoint] runs before every check, so
-/// a caller can stop the wait by throwing from it.
-Future<void> sendCloudWork(
+/// (held for review, failed, unreadable, or the account changed), and when
+/// it has not landed within [cloudWorkSendTimeout]. [checkpoint] runs before
+/// every check, so a caller can stop the wait by throwing from it.
+Future<SameAccountCheck> sendCloudWork(
   ProviderReader read, {
   String? strategyId,
   void Function()? checkpoint,
 }) async {
   bool covers(String id) => strategyId == null || id == strategyId;
 
+  final accountId = read(authProvider).user?.id;
+  void sameAccount() {
+    if (read(authProvider).user?.id != accountId) {
+      throw const CloudWorkNotSent(unreadable: false);
+    }
+  }
+
   final open = read(strategyProvider);
   final editorCovered = open.source == StrategySource.cloud &&
       open.strategyId != null &&
       covers(open.strategyId!);
-  if (editorCovered) {
-    // Queues the open page's edits, text still being typed included. Not
-    // forceSaveNow: when there is nothing to send, it leaves the save chip
-    // saying syncing.
-    await read(strategyPageSessionProvider.notifier).flushCurrentPage();
-    // Sends them without waiting on the send here: a stalled request must
-    // not hold the copy past the deadline below.
-    unawaited(read(strategyOpQueueProvider.notifier).flushNow());
-  }
+  var canvasQueued = !editorCovered;
+  var sent = false;
 
   const step = Duration(milliseconds: 100);
   var waited = Duration.zero;
@@ -74,17 +92,26 @@ Future<void> sendCloudWork(
   // changes no queue state, so nothing listening would hear it finish.
   while (true) {
     checkpoint?.call();
+    sameAccount();
+    if (!canvasQueued) {
+      // Queues the open page's edits, text still being typed included. Not
+      // forceSaveNow: when there is nothing to send, it leaves the save
+      // chip saying syncing.
+      canvasQueued =
+          await read(strategyPageSessionProvider.notifier).flushCurrentPage();
+      // Sends what is queued: once at the start, and again once the canvas
+      // is in. Each send skips the retry backoff, so not on every check.
+      // Not awaited: a stalled request must not hold the copy past the
+      // deadline.
+      if (!sent || canvasQueued) {
+        sent = true;
+        unawaited(read(strategyOpQueueProvider.notifier).flushNow());
+      }
+    }
     final ops = read(strategyOpQueueProvider);
     final media = read(cloudMediaUploadQueueProvider);
     if (!ops.outboxIsReliable || !media.outboxIsReliable) {
       throw const CloudWorkNotSent(unreadable: true);
-    }
-    // Edits on a page a teammate deleted are on screen but in no queue:
-    // the page is gone, so they can never be sent. Asked of the canvas each
-    // time, not read from the notice, which may not have been raised yet.
-    if (editorCovered &&
-        read(strategyPageSessionProvider.notifier).holdsWorkOnDeletedPage()) {
-      throw const CloudWorkNotSent(unreadable: false);
     }
     final unsent = [
       for (final strategy in ops.accountOutbox.strategies.values)
@@ -102,11 +129,12 @@ Future<void> sendCloudWork(
       for (final job in media.jobs)
         if (covers(job.strategyPublicId)) job,
     ];
-    if (unsent.isEmpty &&
+    if (canvasQueued &&
+        unsent.isEmpty &&
         !orphaned &&
         uploads.isEmpty &&
         !(queueCovered && (ops.pending.isNotEmpty || ops.isFlushing))) {
-      return;
+      return sameAccount;
     }
     // Work held for review, kept for a deleted strategy, or failed to
     // upload never lands by waiting.

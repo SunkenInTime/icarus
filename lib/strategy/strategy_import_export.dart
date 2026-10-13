@@ -2746,10 +2746,12 @@ class StrategyImportExportService {
   /// has sent it everything the user did. Throws [CloudWorkNotSent] when
   /// that work has not landed (see [sendCloudWork]).
   Future<bool> exportCloudStrategy(String strategyId) async {
-    await sendCloudWork(ref.read, strategyId: strategyId);
+    final sameAccount = await sendCloudWork(ref.read, strategyId: strategyId);
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
         .fetchFullSnapshot(strategyId);
+    // Read as the account whose work was waited on, or not written.
+    sameAccount();
     await _ensureRemoteAssetsCached(snapshot);
     final strategy = strategyDataFromRemoteSnapshot(snapshot);
     final outputFile = await FilePicker.platform.saveFile(

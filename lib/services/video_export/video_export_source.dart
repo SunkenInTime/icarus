@@ -107,19 +107,21 @@ Future<VideoExportSource> loadVideoExportSource(
   final Map<String, RemoteImageAsset> assets;
   switch (state.source) {
     case StrategySource.cloud:
+      final RemoteFullStrategySnapshot snapshot;
       try {
-        await sendCloudWork(
+        final sameAccount = await sendCloudWork(
           ref.read,
           strategyId: strategyId,
           checkpoint: checkCancelled,
         );
+        checkCancelled();
+        snapshot = await ref
+            .read(convexStrategyRepositoryProvider)
+            .fetchFullSnapshot(strategyId, shareToken: shareToken);
+        sameAccount();
       } on CloudWorkNotSent {
         throw const VideoExportNotSynced();
       }
-      checkCancelled();
-      final snapshot = await ref
-          .read(convexStrategyRepositoryProvider)
-          .fetchFullSnapshot(strategyId, shareToken: shareToken);
       checkCancelled();
       strategy =
           StrategyImportExportService.strategyDataFromRemoteSnapshot(snapshot);

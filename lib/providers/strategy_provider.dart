@@ -2025,15 +2025,22 @@ class StrategyProvider extends Notifier<StrategyState> {
           // server refuses the same case for uploads started on other
           // devices. Read through the container: sendCloudWork reads this
           // provider, which may not read itself.
+          final RemoteStrategyShell shell;
           try {
-            await sendCloudWork(ref.container.read, strategyId: strategyID);
+            final sameAccount = await sendCloudWork(
+              ref.container.read,
+              strategyId: strategyID,
+            );
+            shell = await repository.fetchShell(strategyID);
+            // The copy lands in whichever library is signed in when it is
+            // asked for, so that must still be the account waited on.
+            sameAccount();
           } on CloudWorkNotSent catch (error) {
             reporter.showMessage(
               cloudStrategyCopyRefusal(error, "it wasn't duplicated"),
             );
             return false;
           }
-          final shell = await repository.fetchShell(strategyID);
           try {
             await repository.duplicateStrategy(
               sourceStrategyPublicId: strategyID,

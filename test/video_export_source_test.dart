@@ -15,6 +15,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
@@ -31,6 +32,7 @@ import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 const _strategyId = 'strategy-1';
 const _imageUrl = 'https://media.example.com/image-1.png';
@@ -92,21 +94,47 @@ class _Queue extends StrategyOpQueueNotifier {
   void settle() => state = const StrategyOpQueueState(durableLoaded: true);
 }
 
-/// The canvas is on a page a teammate deleted, holding edits the server
-/// never got.
-class _OnDeletedPage extends StrategyPageSessionNotifier {
+/// The editor's canvas: handed to the op queue when [queued], else like
+/// one whose page can't be read from the server.
+class _Canvas extends StrategyPageSessionNotifier {
+  _Canvas({required this.queued});
+
+  final bool queued;
+
   @override
   StrategyPageSessionState build() => const StrategyPageSessionState(
         activePageId: 'a',
         availablePageIds: ['a'],
         transitionState: PageTransitionState.idle,
         isApplyingPage: false,
-        deletedPage: (pageId: 'a', name: 'Page a'),
       );
 
   @override
-  Future<void> flushCurrentPage({bool flushImmediately = false}) async {}
+  Future<bool> flushCurrentPage({bool flushImmediately = false}) async =>
+      queued;
 }
+
+/// Signed in as one account, then as [signInAs] says.
+class _Auth extends AuthProvider {
+  @override
+  AppAuthState build() => _signedInAs('account-a');
+
+  void signInAs(String accountId) => state = _signedInAs(accountId);
+}
+
+AppAuthState _signedInAs(String accountId) => AppAuthState(
+      isLoading: false,
+      isAuthenticated: true,
+      isConvexUserReady: true,
+      convexAuthStatus: ConvexAuthStatus.ready,
+      user: User(
+        id: accountId,
+        appMetadata: const <String, dynamic>{},
+        userMetadata: const <String, dynamic>{},
+        aud: 'authenticated',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      ),
+    );
 
 class _NoUploads extends CloudMediaUploadQueueNotifier {
   @override
@@ -212,6 +240,8 @@ void main() {
           strategyOpQueueProvider.overrideWith(() => queue),
           cloudMediaUploadQueueProvider.overrideWith(_NoUploads.new),
           convexStrategyRepositoryProvider.overrideWithValue(repository),
+          authProvider.overrideWith(_Auth.new),
+          strategyPageSessionProvider.overrideWith(() => _Canvas(queued: true)),
           ...more,
         ];
 
@@ -331,7 +361,7 @@ void main() {
       expect(repository.fetches, 0);
     });
 
-    testWidgets('stops at once on a page a teammate deleted under the edits',
+    testWidgets('a canvas that could not be queued stops at the deadline',
         (tester) async {
       final repository = _Repository();
       final ref = await _pumpRef(
@@ -339,7 +369,10 @@ void main() {
         cloud(
           _Queue(const StrategyOpQueueState(durableLoaded: true)),
           repository,
-          more: [strategyPageSessionProvider.overrideWith(_OnDeletedPage.new)],
+          more: [
+            strategyPageSessionProvider
+                .overrideWith(() => _Canvas(queued: false)),
+          ],
         ),
       );
 
@@ -348,7 +381,40 @@ void main() {
         (_) {},
         onError: (Object caught) => error = caught,
       );
-      await tester.pump(const Duration(milliseconds: 1));
+      // The queues are empty, but the edits on screen were never queued.
+      await tester.pump(const Duration(seconds: 1));
+      expect(error, isNull);
+      expect(repository.fetches, 0);
+      await tester.pump(cloudWorkSendTimeout);
+
+      expect(error, isA<VideoExportNotSynced>());
+      expect(repository.fetches, 0);
+    });
+
+    testWidgets('another account signing in mid-wait stops the export',
+        (tester) async {
+      final queue = _Queue(const StrategyOpQueueState(
+        durableLoaded: true,
+        isFlushing: true,
+      ));
+      final repository = _Repository();
+      final auth = _Auth();
+      final ref = await _pumpRef(
+        tester,
+        cloud(queue, repository, more: [authProvider.overrideWith(() => auth)]),
+      );
+
+      Object? error;
+      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+        (_) {},
+        onError: (Object caught) => error = caught,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      // The first account's work is still unsent; the second one's queue,
+      // now on show, is empty.
+      auth.signInAs('account-b');
+      queue.settle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(error, isA<VideoExportNotSynced>());
       expect(repository.fetches, 0);

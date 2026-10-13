@@ -558,10 +558,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
   }
 
-  Future<void> flushCurrentPage({bool flushImmediately = false}) async {
+  /// Hands the page on screen to its store (see
+  /// [StrategyPageSource.flushCurrentPage]); with [flushImmediately], a
+  /// cloud page's ops are sent too. False when the canvas could not be
+  /// handed over. With no strategy open there is nothing to hand over.
+  Future<bool> flushCurrentPage({bool flushImmediately = false}) async {
     final strategyState = ref.read(strategyProvider);
     if (!strategyState.isOpen || strategyState.strategyId == null) {
-      return;
+      return true;
     }
 
     final source = _resolvePageSource(
@@ -571,10 +575,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (strategyState.source == StrategySource.cloud) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
     }
-    await source.flushCurrentPage();
+    final handedOver = await source.flushCurrentPage();
     if (flushImmediately && strategyState.source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
+    return handedOver;
   }
 
   /// Keeps both versions of every conflicting lineup group: the cloud's
@@ -1281,12 +1286,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
     _deletedPageHoldsWork();
   }
-
-  /// Whether the canvas holds work on a page the server no longer has,
-  /// which no queue will ever send. Asked before copying the strategy from
-  /// the server; tells the user like leaving the page would (see
-  /// [_deletedPageHoldsWork]).
-  bool holdsWorkOnDeletedPage() => _deletedPageHoldsWork();
 
   /// Whether the canvas is on a page a teammate deleted, holding work the
   /// server never got. That work can never be sent, so waiting for it would
