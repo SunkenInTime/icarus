@@ -1,12 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/collab/collab_models.dart';
-import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
-import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -42,59 +42,66 @@ class ReplayCapture {
 
   ReplayCaptureStore? _store;
   CapturedStrategy? _strategy;
+  final List<String> _pageIds = [];
+  Future<void> _tail = Future.value();
 
   /// The strategy captures go to, as the last capture or [reload] left it.
   CapturedStrategy? get strategy => _strategy;
+
+  /// The pages captured into [strategy], in order.
+  List<String> get pageIds => List.unmodifiable(_pageIds);
 
   /// Saves [frame] as a page named [pageName] and returns the strategy.
   /// Refuses, without writing, a frame holding a non-finite number. If the
   /// user deleted the strategy or moved it to another map, this starts a
   /// new one rather than writing this map's positions into it.
+  ///
+  /// Captures are written one after another, in the order asked for.
   Future<CapturedStrategy> capture(
     ReplayFrame frame, {
     required String pageName,
-  }) async {
-    _checkFinite(frame);
+  }) {
+    try {
+      _checkFinite(frame);
+    } catch (error, stackTrace) {
+      return Future.error(error, stackTrace);
+    }
     final page = (name: pageName, frame: frame);
+    final written = _tail.then((_) => _write(page));
+    _tail = written.then((_) {}, onError: (_) {});
+    return written;
+  }
+
+  Future<CapturedStrategy> _write(CapturedPage page) async {
     final store = _store;
     final current = _strategy;
     if (store != null && current != null) {
-      final appended = await _write(store, () => store.append(current, page));
-      if (appended != null) return appended;
+      final appended = await store.append(current, page);
+      if (appended != null) {
+        _pageIds.add(appended.lastPageId);
+        return _strategy = appended;
+      }
     }
     final fresh = newStore();
-    return (await _write(fresh, () => fresh.create(map, name, page)))!;
-  }
-
-  /// Runs [write] on [store] and remembers the strategy it wrote to, or,
-  /// when it failed, the strategy it may have written to.
-  Future<CapturedStrategy?> _write(
-    ReplayCaptureStore store,
-    Future<CapturedStrategy?> Function() write,
-  ) async {
-    try {
-      final written = await write();
-      if (written != null) {
-        _store = store;
-        _strategy = written;
-      }
-      return written;
-    } on CaptureFailed catch (failure) {
-      if (failure.strategy case final strategy?) {
-        _store = store;
-        _strategy = strategy;
-      }
-      rethrow;
-    }
+    final created = await fresh.create(map, name, page);
+    _store = fresh;
+    _pageIds
+      ..clear()
+      ..add(created.lastPageId);
+    return _strategy = created;
   }
 
   /// Reads the strategy again, after the editor may have changed it.
   Future<void> reload() async {
+    await _tail;
     final store = _store;
     final current = _strategy;
     if (store == null || current == null) return;
     final found = await store.find(current);
-    if (found == null) _store = null;
+    if (found == null) {
+      _store = null;
+      _pageIds.clear();
+    }
     _strategy = found;
   }
 
@@ -139,23 +146,6 @@ typedef CapturedStrategy = ({
   bool lastPageIsAttack,
 });
 
-/// A capture that failed in a way the user is told about in words.
-class CaptureFailed implements Exception {
-  const CaptureFailed(this.message, {this.strategy, this.cause});
-
-  final String message;
-
-  /// What went wrong underneath, for the log.
-  final Object? cause;
-
-  /// The strategy later captures go to, when this one wrote to it or may
-  /// have: they add to it rather than start another.
-  final CapturedStrategy? strategy;
-
-  @override
-  String toString() => message;
-}
-
 /// The library one strategy of captures lives in. Each store makes one
 /// strategy and then appends to it.
 abstract interface class ReplayCaptureStore {
@@ -167,13 +157,14 @@ abstract interface class ReplayCaptureStore {
   );
 
   /// Adds [page] after the last page of [strategy]. Returns null, writing
-  /// nothing, when [strategy] is gone or now on another map.
+  /// nothing, when [strategy] is known to be gone or now on another map.
   Future<CapturedStrategy?> append(
     CapturedStrategy strategy,
     CapturedPage page,
   );
 
-  /// [strategy] as it is now; null when it is gone or now on another map.
+  /// [strategy] as it is now; null when it is known to be gone or now on
+  /// another map.
   Future<CapturedStrategy?> find(CapturedStrategy strategy);
 }
 
@@ -192,10 +183,9 @@ final replayCaptureStoreProvider =
       );
     }
     return CloudReplayCaptureStore(
-      repository: ref.read(convexStrategyRepositoryProvider),
+      queue: ref.read(replayCaptureQueueProvider.notifier),
+      queueState: () => ref.read(replayCaptureQueueProvider),
       accountId: accountId,
-      currentAccountId: () => ref.read(cloudMediaAccountIdProvider),
-      isOnline: () => ref.read(convexConnectionSnapshotProvider),
       folderId: ref
           .read(folderProvider.notifier)
           .currentFolderIdForWorkspace(LibraryWorkspace.cloud),
@@ -300,10 +290,10 @@ class LocalReplayCaptureStore implements ReplayCaptureStore {
   }
 }
 
-/// Captures into the signed-in user's cloud library, straight to the
-/// server: a capture lands whole (the page and everything on it) or throws.
-/// Nothing is queued, so offline it refuses: a cloud strategy can't be made
-/// offline, and the replay is still there to capture from once online.
+/// Captures into the signed-in user's cloud library. A capture is stored on
+/// this device with every id it will have in the cloud, and the
+/// [ReplayCaptureQueue] sends it, so capturing never waits on the network
+/// and captures made offline go once the connection is back.
 ///
 /// Every item gets a fresh id, since the server keeps one row per item id
 /// across all strategies and a replay's ids repeat in every strategy
@@ -311,74 +301,39 @@ class LocalReplayCaptureStore implements ReplayCaptureStore {
 /// [MovedItemIds]), so page transitions still pair them.
 class CloudReplayCaptureStore implements ReplayCaptureStore {
   CloudReplayCaptureStore({
-    required this.repository,
+    required this.queue,
+    required this.queueState,
     required this.accountId,
-    required this.currentAccountId,
-    required this.isOnline,
     required this.folderId,
     required this.settings,
     required this.themeProfileId,
   });
 
-  final ConvexStrategyRepository repository;
+  final ReplayCaptureQueue queue;
+  final ReplayCaptureQueueState Function() queueState;
 
   /// The account the strategy is made in.
   final String accountId;
-  final String? Function() currentAccountId;
-  final bool Function() isOnline;
   final String? folderId;
   final StrategySettings settings;
   final String? themeProfileId;
 
   final _ids = MovedItemIds();
   final _clientId = const Uuid().v4();
+  var _captured = 0;
 
   @override
   Future<CapturedStrategy> create(
     MapValue map,
     String name,
     CapturedPage page,
-  ) async {
-    _requireReachable();
-    final id = const Uuid().v4();
-    final pageId = const Uuid().v4();
-    CapturedStrategy made({required int pageCount}) => (
-          id: id,
-          name: name,
-          map: map,
-          source: StrategySource.cloud,
-          pageCount: pageCount,
-          lastPageId: pageId,
-          lastPageIsAttack: page.frame.isAttack,
-        );
-    try {
-      await repository.createStrategyWithInitialPage(
-        publicId: id,
-        name: name,
-        mapData: Maps.mapNames[map]!,
-        initialPagePublicId: pageId,
-        initialPageName: page.name,
-        initialPageIsAutoNamed: false,
-        initialPageIsAttack: page.frame.isAttack,
-        initialPageSettings: settings.toJson(),
-        folderPublicId: folderId,
-        themeProfileId: themeProfileId,
-      );
-    } catch (error) {
-      if (isConvexFunctionError(error)) rethrow;
-      // How many pages it has, if it exists, is unknown until it is read.
-      throw CaptureFailed(_unconfirmed,
-          strategy: made(pageCount: 0), cause: error);
-    }
-    // From here the strategy exists, so a failure leaves it as it is and
-    // says so; the next capture adds to it.
-    final strategy = made(pageCount: 1);
-    final acks = await _send(id, _itemOps(page, pageId), strategy);
-    if (acks.any((ack) => !ack.isAck)) {
-      throw CaptureFailed(_incomplete,
-          strategy: strategy, cause: _refusal(acks));
-    }
-    return strategy;
+  ) {
+    return _store(
+      strategyId: const Uuid().v4(),
+      name: name,
+      map: map,
+      page: page,
+    );
   }
 
   @override
@@ -386,100 +341,36 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
     CapturedStrategy strategy,
     CapturedPage page,
   ) async {
-    // Made under another account, it is out of reach under this one.
-    if (currentAccountId() != accountId) return null;
-    _requireReachable();
-    final shell = await _shell(strategy);
-    if (shell == null) return null;
-    final pageId = const Uuid().v4();
-    final pageOp = PageAddOp(
-      opId: const Uuid().v4(),
-      pagePublicId: pageId,
-      payload: {
-        'name': page.name,
-        'isAutoNamed': false,
-        'isAttack': page.frame.isAttack,
-        'settings': settings.toJson(),
-      },
-      sortIndex: shell.pages.length,
-      expectedStrategyRevision: shell.header.revision,
-    );
-    final appended = (
-      id: strategy.id,
-      name: shell.header.name,
+    if (_lost(strategy.id)) return null;
+    return _store(
+      strategyId: strategy.id,
+      name: strategy.name,
       map: strategy.map,
-      source: StrategySource.cloud,
-      pageCount: shell.pages.length + 1,
-      lastPageId: pageId,
-      lastPageIsAttack: page.frame.isAttack,
+      page: page,
     );
-    // One batch is one transaction: the page and its items land together,
-    // unless the server refuses some of them.
-    final acks = await _send(
-      strategy.id,
-      [pageOp, ..._itemOps(page, pageId)],
-      null,
-    );
-    if (acks.every((ack) => ack.isAck)) return appended;
-    // A refused page holds nothing: its items were refused with it.
-    if (!acks.first.isAck) throw _refusal(acks);
-    throw CaptureFailed(_incomplete, strategy: appended, cause: _refusal(acks));
   }
 
   @override
-  Future<CapturedStrategy?> find(CapturedStrategy strategy) async {
-    if (currentAccountId() != accountId) return null;
-    final shell = await _shell(strategy);
-    if (shell == null) return null;
-    final pages = [...shell.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-    if (pages.isEmpty) return null;
-    final last = pages.firstWhere(
-      (page) => page.publicId == strategy.lastPageId,
-      orElse: () => pages.last,
-    );
-    return (
-      id: strategy.id,
-      name: shell.header.name,
-      map: strategy.map,
-      source: StrategySource.cloud,
-      pageCount: pages.length,
-      lastPageId: last.publicId,
-      lastPageIsAttack: last.isAttack,
-    );
-  }
+  Future<CapturedStrategy?> find(CapturedStrategy strategy) async =>
+      _lost(strategy.id) ? null : strategy;
 
-  void _requireReachable() {
-    if (currentAccountId() != accountId) {
-      throw const CaptureFailed(
-        "You signed in to another account, so this moment wasn't captured.",
-      );
-    }
-    if (!isOnline()) {
-      throw const CaptureFailed(
-        "Can't reach the cloud, so this moment wasn't captured. "
-        'Try again when you are online.',
-      );
-    }
-  }
+  /// Whether delivering found the strategy deleted or on another map. The
+  /// next capture then starts a new one.
+  bool _lost(String strategyId) =>
+      queueState().lostStrategyIds.contains(strategyId);
 
-  /// [strategy]'s shell; null when the server no longer has it or it is
-  /// now on another map.
-  Future<RemoteStrategyShell?> _shell(CapturedStrategy strategy) async {
-    try {
-      final shell = await repository.fetchShell(strategy.id);
-      return shell.header.mapData == Maps.mapNames[strategy.map] ? shell : null;
-    } catch (error) {
-      if (isTypedConvexNotFoundError(error)) return null;
-      rethrow;
-    }
-  }
-
-  List<StrategyOp> _itemOps(CapturedPage page, String pageId) {
+  Future<CapturedStrategy> _store({
+    required String strategyId,
+    required String name,
+    required MapValue map,
+    required CapturedPage page,
+  }) async {
+    const uuid = Uuid();
+    final pageId = uuid.v4();
     final frame = page.frame;
-    final ops = <StrategyOp>[];
+    final items = <StrategyOp>[];
     appendMovedPageOps(
-      ops,
+      items,
       StrategyPage(
         id: pageId,
         name: page.name,
@@ -497,52 +388,34 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
       cloudPageId: pageId,
       ids: _ids,
     );
-    return ops;
+    await queue.add(ReplayCaptureRecord(
+      id: uuid.v4(),
+      accountId: accountId,
+      strategyId: strategyId,
+      clientId: _clientId,
+      strategyName: name,
+      mapData: Maps.mapNames[map]!,
+      folderId: folderId,
+      themeProfileId: themeProfileId,
+      index: _captured,
+      createsStrategy: _captured == 0,
+      createdAt: DateTime.now(),
+      pageId: pageId,
+      pageName: page.name,
+      isAttack: frame.isAttack,
+      settings: settings.toJson(),
+      pageOpId: uuid.v4(),
+      items: items,
+    ));
+    _captured++;
+    return (
+      id: strategyId,
+      name: name,
+      map: map,
+      source: StrategySource.cloud,
+      pageCount: _captured,
+      lastPageId: pageId,
+      lastPageIsAttack: frame.isAttack,
+    );
   }
-
-  /// Sends [ops] and returns the server's answer to each. A batch the
-  /// server refused whole wrote nothing and rethrows. One whose answer was
-  /// lost (a timeout, the connection) may still land, so the user is told
-  /// that, and later captures go to [ifUnanswered] when it is given.
-  Future<List<OpAck>> _send(
-    String strategyId,
-    List<StrategyOp> ops,
-    CapturedStrategy? ifUnanswered,
-  ) async {
-    final List<OpAck> acks;
-    try {
-      // Bound to the account it was asked under: the server refuses it
-      // under another sign-in.
-      acks = await repository.applyBatch(
-        strategyPublicId: strategyId,
-        clientId: _clientId,
-        ops: ops,
-        accountSubject: accountId,
-      );
-    } catch (error) {
-      if (isConvexFunctionError(error)) rethrow;
-      throw CaptureFailed(_unconfirmed, strategy: ifUnanswered, cause: error);
-    }
-    if (acks.length != ops.length) {
-      throw CaptureFailed(
-        _unconfirmed,
-        strategy: ifUnanswered,
-        cause:
-            StateError('The server answered ${acks.length} of ${ops.length}.'),
-      );
-    }
-    return acks;
-  }
-
-  static const _unconfirmed =
-      "Couldn't confirm this moment reached the cloud. It may still appear "
-      'in the strategy, so check there before capturing it again.';
-
-  static const _incomplete =
-      'This moment reached the cloud without some of its players or utility.';
-
-  static StateError _refusal(List<OpAck> acks) => StateError(
-        'The server did not accept every item: '
-        '${acks.where((ack) => !ack.isAck).map((ack) => ack.reason ?? ack.status).toSet().join(', ')}',
-      );
 }

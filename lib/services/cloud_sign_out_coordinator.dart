@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
@@ -82,6 +83,8 @@ Future<bool> _requestCloudSafeSignOut(
   final saveState = ref.read(strategySaveStateProvider);
   final opQueue = ref.read(strategyOpQueueProvider);
   final mediaQueue = ref.read(cloudMediaUploadQueueProvider);
+  final captureQueue = ref.read(replayCaptureQueueProvider);
+  final captures = captureQueue.forAccount(accountId);
   final currentStrategyId =
       strategy.source == StrategySource.cloud ? strategy.strategyId : null;
   final stagedMedia = mediaQueue.jobs
@@ -98,6 +101,7 @@ Future<bool> _requestCloudSafeSignOut(
           mediaQueue.jobsForStrategy(currentStrategyId).isEmpty);
   if (!opQueue.outboxIsReliable ||
       !mediaQueue.outboxIsReliable ||
+      !captureQueue.isReliable ||
       hasUnstagedActiveWork) {
     if (context.mounted) await _showPersistenceBlocked(context);
     return false;
@@ -107,9 +111,11 @@ Future<bool> _requestCloudSafeSignOut(
     ...opQueue.accountOutbox.strategies.keys,
     for (final job in mediaQueue.jobs)
       if (job.accountId == accountId) job.strategyPublicId,
+    for (final capture in captures) capture.strategyId,
   };
   final workCount = opQueue.accountOutbox.workCount +
-      mediaQueue.jobs.where((job) => job.accountId == accountId).length;
+      mediaQueue.jobs.where((job) => job.accountId == accountId).length +
+      captures.length;
   if (!context.mounted) return false;
   final confirmed = await _showSignOutConfirmation(
     context,
@@ -117,7 +123,11 @@ Future<bool> _requestCloudSafeSignOut(
     strategyIds: strategyIds,
     currentStrategyId: currentStrategyId,
     currentStrategyName: strategy.strategyName,
-    strategyNames: ref.read(cloudStrategyNamesProvider),
+    strategyNames: {
+      // A replay capture's strategy may not be in the cloud yet.
+      for (final capture in captures) capture.strategyId: capture.strategyName,
+      ...ref.read(cloudStrategyNamesProvider),
+    },
   );
   if (!confirmed) return false;
 

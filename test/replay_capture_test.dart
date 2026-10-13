@@ -4,19 +4,17 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:icarus/collab/collab_models.dart';
-import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -178,143 +176,16 @@ void main() {
     });
   });
 
-  group('signed in', () {
-    late _FakeCloud cloud;
-    var online = true;
-    String? account = 'account-1';
-
-    setUp(() {
-      cloud = _FakeCloud();
-      online = true;
-      account = 'account-1';
-    });
-
-    ReplayCapture capture() => ReplayCapture(
-          newStore: () => CloudReplayCaptureStore(
-            repository: cloud,
-            accountId: 'account-1',
-            currentAccountId: () => account,
-            isOnline: () => online,
-            folderId: null,
-            settings: StrategySettings(),
-            themeProfileId: null,
-          ),
-          map: MapValue.sunset,
-          name: 'Sunset replay',
-        );
-
-    test('captures fill one cloud strategy whose players pair across pages',
-        () async {
-      final session = capture();
-      for (final (i, name) in ['0:10', '0:20', '0:30'].indexed) {
-        await session.capture(
-          frame(position: Offset(500, 500 + 10.0 * i)),
-          pageName: name,
-        );
-      }
-
-      expect(box.isEmpty, isTrue);
-      final strategy = cloud.strategies.values.single;
-      expect(strategy.name, 'Sunset replay');
-      expect(strategy.mapData, Maps.mapNames[MapValue.sunset]);
-      final pages = strategy.orderedPages;
-      expect(pages.map((page) => page.name), ['0:10', '0:20', '0:30']);
-      expect(pages.map((page) => page.isAttack), everyElement(isFalse));
-      expect(session.strategy!.pageCount, 3);
-      expect(session.strategy!.lastPageId, pages.last.id);
-      expect(session.strategy!.source, StrategySource.cloud);
-
-      // One player on every page: the server keeps one row per id, so each
-      // page has its own, all of one root the transition pairs them by.
-      final ids = [
-        for (final page in pages) strategy.elements[page.id]!.single,
-      ];
-      expect(ids.toSet(), hasLength(3));
-      expect(ids, everyElement(isNot('replay-player-a')));
-      expect(ids.map(pageCopyRoot).toSet(), {ids.first});
-    });
-
-    test('a second strategy from the same replay lands too', () async {
-      await capture().capture(frame(), pageName: 'one');
-      await capture().capture(frame(), pageName: 'one');
-      expect(cloud.strategies, hasLength(2));
-      for (final strategy in cloud.strategies.values) {
-        expect(strategy.elements.values.single, hasLength(1));
-      }
-    });
-
-    test('offline, a capture is refused and nothing is written', () async {
-      online = false;
-      await expectLater(
-        capture().capture(frame(), pageName: 'one'),
-        throwsA(isA<CaptureFailed>()),
-      );
-      expect(cloud.strategies, isEmpty);
-      expect(box.isEmpty, isTrue);
-    });
-
-    test('a strategy deleted on the server is never written to again',
-        () async {
-      final session = capture();
-      final first = await session.capture(frame(), pageName: 'one');
-      cloud.strategies.remove(first.id);
-
-      final second = await session.capture(frame(), pageName: 'two');
-      expect(second.id, isNot(first.id));
-      expect(cloud.strategies[second.id]!.orderedPages.single.name, 'two');
-    });
-
-    test('a page the server took without some items stays, and says so',
-        () async {
-      final session = capture();
-      final first = await session.capture(frame(), pageName: 'one');
-      cloud.refuseItems = true;
-
-      await expectLater(
-        session.capture(frame(), pageName: 'two'),
-        throwsA(isA<CaptureFailed>()),
-      );
-      expect(
-        cloud.strategies[first.id]!.orderedPages.map((page) => page.name),
-        ['one', 'two'],
-      );
-      expect(session.strategy!.pageCount, 2);
-    });
-
-    test('after a lost answer, the next capture adds to the same strategy',
-        () async {
-      final session = capture();
-      cloud.loseAnswers = true;
-      await expectLater(
-        session.capture(frame(), pageName: 'one'),
-        throwsA(isA<CaptureFailed>()),
-      );
-      await expectLater(
-        session.capture(frame(), pageName: 'two'),
-        throwsA(isA<CaptureFailed>()),
-      );
-      cloud.loseAnswers = false;
-      await session.capture(frame(), pageName: 'three');
-
-      final strategy = cloud.strategies.values.single;
-      expect(
-        strategy.orderedPages.map((page) => page.name),
-        ['one', 'two', 'three'],
-      );
-      expect(session.strategy!.pageCount, 3);
-    });
-  });
-
   group('destination', () {
-    late _FakeCloud cloud;
-
     ProviderContainer container({required bool signedIn}) {
       final container = ProviderContainer(overrides: [
         isCloudWorkspaceAvailableProvider.overrideWithValue(signedIn),
+        authProvider.overrideWith(_SignedOutAuth.new),
         cloudMediaAccountIdProvider
             .overrideWithValue(signedIn ? 'account-1' : null),
-        convexStrategyRepositoryProvider.overrideWithValue(cloud),
-        convexConnectionSnapshotProvider.overrideWithValue(true),
+        // Offline: nothing is sent, so no server is needed.
+        convexConnectionSnapshotProvider.overrideWithValue(false),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(false)),
         strategyProvider.overrideWith(_ClosedStrategy.new),
       ]);
       addTearDown(container.dispose);
@@ -322,17 +193,24 @@ void main() {
     }
 
     setUp(() async {
-      cloud = _FakeCloud();
+      await Hive.openBox<String>(HiveBoxNames.replayCapturesBox);
       // New strategies take the user's default theme and page settings.
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
     });
 
-    test('signed in, a capture goes to the cloud library', () async {
-      final store = container(signedIn: true).read(replayCaptureStoreProvider);
-      await ReplayCapture(newStore: store, map: MapValue.sunset, name: 'r')
-          .capture(frame(), pageName: 'one');
-      expect(cloud.strategies, hasLength(1));
+    test('signed in, a capture is on its way to the cloud library', () async {
+      final signedIn = container(signedIn: true);
+      final captured = await ReplayCapture(
+        newStore: signedIn.read(replayCaptureStoreProvider),
+        map: MapValue.sunset,
+        name: 'r',
+      ).capture(frame(), pageName: 'one');
+      expect(captured.source, StrategySource.cloud);
+      expect(
+        signedIn.read(replayCaptureQueueProvider).captures.single.strategyId,
+        captured.id,
+      );
       expect(box.isEmpty, isTrue);
     });
 
@@ -353,156 +231,15 @@ class _ClosedStrategy extends StrategyProvider {
       );
 }
 
-class _CloudPage {
-  _CloudPage(this.id, this.name, this.sortIndex, this.isAttack);
-
-  final String id;
-  final String name;
-  int sortIndex;
-  final bool isAttack;
-}
-
-class _CloudStrategy {
-  _CloudStrategy(this.name, this.mapData);
-
-  final String name;
-  final String mapData;
-  int revision = 1;
-  final List<_CloudPage> pages = [];
-
-  /// Element ids by page id.
-  final Map<String, List<String>> elements = {};
-
-  List<_CloudPage> get orderedPages =>
-      [...pages]..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-}
-
-/// The server as far as captures use it: one row per element id across
-/// every strategy, and page adds checked against the strategy's revision.
-class _FakeCloud extends Fake implements ConvexStrategyRepository {
-  final Map<String, _CloudStrategy> strategies = {};
-  final Set<String> elementIds = {};
-  bool refuseItems = false;
-
-  /// Writes, then loses the answer, as a timeout does.
-  bool loseAnswers = false;
-
+/// Auth that never asks Supabase; the queue only reads whether the cloud
+/// user is ready.
+class _SignedOutAuth extends AuthProvider {
   @override
-  Future<void> createStrategyWithInitialPage({
-    required String publicId,
-    required String name,
-    required String mapData,
-    required String initialPagePublicId,
-    required String initialPageName,
-    bool? initialPageIsAutoNamed,
-    required bool initialPageIsAttack,
-    String? folderPublicId,
-    String? themeProfileId,
-    Map<String, dynamic>? themeOverridePalette,
-    Map<String, dynamic>? initialPageSettings,
-    bool unfinishedMove = false,
-  }) async {
-    strategies[publicId] = _CloudStrategy(name, mapData)
-      ..pages.add(
-        _CloudPage(
-            initialPagePublicId, initialPageName, 0, initialPageIsAttack),
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.signedOut,
+        user: null,
       );
-  }
-
-  @override
-  Future<RemoteStrategyShell> fetchShell(
-    String strategyPublicId, {
-    String? shareToken,
-  }) async {
-    final strategy = strategies[strategyPublicId];
-    if (strategy == null) {
-      throw const ConvexFunctionException(
-        code: ConvexErrorCode.notFound,
-        rawCode: 'NOT_FOUND',
-        message: 'Strategy not found.',
-      );
-    }
-    final now = DateTime.now();
-    return RemoteStrategyShell(
-      header: RemoteStrategyHeader(
-        publicId: strategyPublicId,
-        name: strategy.name,
-        mapData: strategy.mapData,
-        revision: strategy.revision,
-        createdAt: now,
-        updatedAt: now,
-      ),
-      pages: [
-        for (final page in strategy.pages)
-          RemotePage(
-            publicId: page.id,
-            strategyPublicId: strategyPublicId,
-            name: page.name,
-            sortIndex: page.sortIndex,
-            isAttack: page.isAttack,
-            revision: 1,
-            createdAt: now,
-            updatedAt: now,
-          ),
-      ],
-    );
-  }
-
-  @override
-  Future<void> deleteStrategy({
-    required String strategyPublicId,
-    required int expectedRevision,
-  }) async {
-    strategies.remove(strategyPublicId);
-  }
-
-  @override
-  Future<List<OpAck>> applyBatch({
-    required String strategyPublicId,
-    required String clientId,
-    required List<StrategyOp> ops,
-    String? accountSubject,
-  }) async {
-    final strategy = strategies[strategyPublicId]!;
-    OpAck reject(StrategyOp op, OpRejectionReason reason) =>
-        RejectedOpAck(opId: op.opId, rejectionReason: reason);
-    OpAck apply(StrategyOp op) {
-      strategy.revision++;
-      return AppliedOpAck(opId: op.opId, revision: strategy.revision);
-    }
-
-    final acks = [
-      for (final op in ops)
-        switch (op) {
-          PageAddOp() when op.expectedStrategyRevision != strategy.revision =>
-            reject(op, OpRejectionReason.revisionMismatch),
-          PageAddOp() => () {
-              strategy.pages.add(_CloudPage(
-                op.pagePublicId,
-                op.payload['name'] as String,
-                op.sortIndex,
-                op.payload['isAttack'] as bool,
-              ));
-              return apply(op);
-            }(),
-          PageDeleteOp() => () {
-              strategy.pages.removeWhere((p) => p.id == op.pagePublicId);
-              strategy.elements.remove(op.pagePublicId);
-              return apply(op);
-            }(),
-          ElementAddOp()
-              when refuseItems || elementIds.contains(op.elementPublicId) =>
-            reject(op, OpRejectionReason.alreadyExists),
-          ElementAddOp() => () {
-              elementIds.add(op.elementPublicId);
-              (strategy.elements[op.pagePublicId] ??= [])
-                  .add(op.elementPublicId);
-              return apply(op);
-            }(),
-          _ => throw UnimplementedError('${op.type}'),
-        },
-    ];
-    if (loseAnswers) throw TimeoutException('lost');
-    return acks;
-  }
 }

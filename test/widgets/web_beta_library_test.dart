@@ -397,7 +397,7 @@ void main() {
       expect(find.text('Move to cloud'), findsNothing);
     });
 
-    testWidgets('signed in, a replay capture still starts a local strategy',
+    testWidgets('a local strategy asked for stays local while signed in',
         (tester) async {
       final library = await _pumpLibrary(
         tester,
@@ -409,8 +409,9 @@ void main() {
         tester.element(find.byType(FolderNavigator)),
       );
 
-      // Capture writes its pages into the local library, so the strategy
-      // it starts must be there too, not a blank one on the server.
+      // A signed-out replay capture writes its pages into the local
+      // library, so the strategy it starts must be there whichever store
+      // the library has selected.
       final strategy = (await tester.runAsync(() => container
           .read(strategyProvider.notifier)
           .createNewStrategy(

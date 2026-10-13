@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
@@ -182,6 +184,60 @@ void main() {
     expect(rawSignOuts, 1);
   });
 
+  testWidgets('a replay capture not yet in the cloud keeps the warning',
+      (tester) async {
+    var rawSignOuts = 0;
+    final container = _container(
+      captures: ReplayCaptureQueueState(captures: [
+        ReplayCaptureRecord(
+          id: 'capture',
+          accountId: 'account-a',
+          strategyId: 'replay-strategy',
+          clientId: 'client',
+          strategyName: 'Lotus replay',
+          mapData: 'lotus',
+          folderId: null,
+          themeProfileId: null,
+          index: 0,
+          createsStrategy: true,
+          createdAt: DateTime(2026, 10, 13),
+          pageId: 'page',
+          pageName: 'Round 1 · 0:10',
+          isAttack: true,
+          settings: const {},
+          pageOpId: 'op',
+          items: const [],
+        ),
+      ]),
+      rawSignOut: () async {
+        rawSignOuts += 1;
+        return true;
+      },
+    );
+    addTearDown(container.dispose);
+    await _pumpHarness(tester, container);
+
+    await tester.tap(find.text('Request sign out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cloud work is still waiting'), findsOneWidget);
+    expect(find.textContaining('Lotus replay'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(rawSignOuts, 0);
+  });
+
+  testWidgets('unreadable replay captures block sign out', (tester) async {
+    final container = _container(
+      captures: const ReplayCaptureQueueState(unreadable: 1),
+    );
+    addTearDown(container.dispose);
+    await _pumpHarness(tester, container);
+
+    await tester.tap(find.text('Request sign out'));
+    await tester.pumpAndSettle();
+    expect(find.text("Can't sign out yet"), findsOneWidget);
+  });
+
   testWidgets('another account media is not shown or relabeled',
       (tester) async {
     final otherAccountMedia = CloudMediaUploadQueueState(
@@ -295,8 +351,10 @@ ProviderContainer _container({
   CloudSignOutPreparation? preparation,
   RawSignOut? rawSignOut,
   CloudEditorClose? closeEditor,
+  ReplayCaptureQueueState captures = const ReplayCaptureQueueState(),
 }) {
   return ProviderContainer(overrides: [
+    replayCaptureQueueProvider.overrideWith(() => _FixedCaptures(captures)),
     authProvider.overrideWith(_SignedInAuth.new),
     strategyProvider.overrideWith(_ActiveCloudStrategy.new),
     strategySaveStateProvider.overrideWith(_CleanSaveState.new),
@@ -327,6 +385,15 @@ Future<void> _pumpHarness(
       child: const ShadApp(home: _SignOutHarness()),
     ),
   );
+}
+
+class _FixedCaptures extends ReplayCaptureQueue {
+  _FixedCaptures(this.fixed);
+
+  final ReplayCaptureQueueState fixed;
+
+  @override
+  ReplayCaptureQueueState build() => fixed;
 }
 
 class _SignOutHarness extends ConsumerWidget {

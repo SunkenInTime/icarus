@@ -44,6 +44,7 @@ import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
@@ -438,6 +439,8 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(cloudMediaCacheProvider);
     // Cleans up after a move to the cloud the app quit in the middle of.
     ref.read(moveToCloudProvider);
+    // Sends replay captures the app quit before saving.
+    ref.read(replayCaptureQueueProvider);
 
     _discordPresence = DiscordPresenceWorker();
     _discordStrategySub = ref.listenManual(

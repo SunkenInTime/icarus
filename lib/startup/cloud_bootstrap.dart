@@ -63,6 +63,8 @@ Future<void> openCloudOutboxes() async {
   await prepareDurableCloudMediaOutbox();
   // Moves to the cloud that have not finished (see MoveToCloudNotifier).
   await Hive.openBox<dynamic>(HiveBoxNames.cloudMovesBox);
+  // Replay captures not yet saved to the cloud (see ReplayCaptureQueue).
+  await Hive.openBox<String>(HiveBoxNames.replayCapturesBox);
   if (!deviceHasImageFiles) {
     await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
   }
