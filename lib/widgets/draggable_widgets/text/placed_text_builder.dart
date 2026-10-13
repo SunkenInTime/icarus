@@ -14,6 +14,7 @@ import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class PlacedTextBuilder extends ConsumerStatefulWidget {
   const PlacedTextBuilder({
@@ -218,21 +219,23 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
               isDragging = false;
             });
           },
-          child: ShadContextMenuRegion(
-            items: _buildTagColorItems(),
-            child: MouseWatch(
-              cursor: SystemMouseCursors.click,
-              deleteTarget: HoveredDeleteTarget.text(
-                id: widget.placedText.id,
-                ownerToken: Object(),
-              ),
-              child: TextWidget(
-                id: widget.placedText.id,
-                text: widget.placedText.text,
-                size: localSize!,
-                fontSize: widget.placedText.fontSize,
-                tagColorValue: widget.placedText.tagColorValue,
-                isFeedback: false,
+          child: EditorItemOutline(
+            child: ShadContextMenuRegion(
+              items: _buildTagColorItems(),
+              child: MouseWatch(
+                cursor: SystemMouseCursors.click,
+                deleteTarget: HoveredDeleteTarget.text(
+                  id: widget.placedText.id,
+                  ownerToken: Object(),
+                ),
+                child: TextWidget(
+                  id: widget.placedText.id,
+                  text: widget.placedText.text,
+                  size: localSize!,
+                  fontSize: widget.placedText.fontSize,
+                  tagColorValue: widget.placedText.tagColorValue,
+                  isFeedback: false,
+                ),
               ),
             ),
           ),

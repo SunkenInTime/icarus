@@ -5,6 +5,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class AbilityWidget extends ConsumerWidget {
   const AbilityWidget({
@@ -40,14 +41,19 @@ class AbilityWidget extends ConsumerWidget {
             ? HoveredDeleteTarget.ability(id: id!, ownerToken: Object())
             : null;
 
-    final shell = FramedAbilityIconShell(
-      size: abilitySize,
-      isAlly: isAlly,
-      landingId: landingId,
-      child: _turned(
-        Image.asset(
-          iconPath,
-          fit: BoxFit.contain,
+    // An ability's icon is what a teammate's outline goes around: it is
+    // always shown, unlike a range that can be hidden or drawn smaller than
+    // the box it is placed in.
+    final shell = EditorItemOutline(
+      child: FramedAbilityIconShell(
+        size: abilitySize,
+        isAlly: isAlly,
+        landingId: landingId,
+        child: _turned(
+          Image.asset(
+            iconPath,
+            fit: BoxFit.contain,
+          ),
         ),
       ),
     );

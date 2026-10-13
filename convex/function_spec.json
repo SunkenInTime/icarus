@@ -169145,6 +169145,62 @@
             },
             "optional": false
           },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "strategies.js:abandonMove",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          },
+          "outcome": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "deleted"
+                },
+                {
+                  "type": "literal",
+                  "value": "finished"
+                },
+                {
+                  "type": "literal",
+                  "value": "missing"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "folderPublicId": {
             "fieldType": {
               "type": "string"
@@ -169360,6 +169416,12 @@
               "type": "string"
             },
             "optional": true
+          },
+          "unfinishedMove": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
           }
         }
       },
@@ -169520,6 +169582,48 @@
             }
           }
         ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "folderPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "strategies.js:finishMove",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
       },
       "visibility": {
         "kind": "public"
@@ -169833,6 +169937,84 @@
               },
               "optional": false
             }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "strategies.js:listInventory",
+      "returns": {
+        "type": "object",
+        "value": {
+          "folders": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "parentFolderPublicId": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          },
+          "strategies": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "folderPublicId": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
           }
         }
       },

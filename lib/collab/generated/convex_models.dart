@@ -329,6 +329,28 @@ enum SharesCreateArgsTargetType {
   }
 }
 
+enum StrategiesAbandonMoveResultOutcome {
+  deleted('deleted'),
+  finished('finished'),
+  missing('missing');
+
+  const StrategiesAbandonMoveResultOutcome(this.wireName);
+  final String wireName;
+
+  static StrategiesAbandonMoveResultOutcome fromWireName(
+    String wireName,
+    String path,
+  ) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown StrategiesAbandonMoveResultOutcome $wireName',
+    );
+  }
+}
+
 enum StrategiesListForFolderResultItemAttackLabel {
   attack('Attack'),
   defend('Defend'),
@@ -4237,6 +4259,38 @@ final class SharesResolveResultStrategy extends SharesResolveResult {
   }
 }
 
+final class StrategiesAbandonMoveResult {
+  const StrategiesAbandonMoveResult({required this.ok, required this.outcome});
+  final bool ok;
+  final StrategiesAbandonMoveResultOutcome outcome;
+
+  factory StrategiesAbandonMoveResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'ok', 'outcome'});
+    return StrategiesAbandonMoveResult(
+      ok: _expectLiteral(
+        _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
+        true,
+        '$path.ok',
+      ),
+      outcome: StrategiesAbandonMoveResultOutcome.fromWireName(
+        _decodeString(
+          object.value['outcome'] ?? _missing(path, 'outcome'),
+          '$path.outcome',
+        ),
+        '$path.outcome',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'ok': ConvexBoolean(_expectLiteral(ok, true, '$path.ok')),
+      'outcome': ConvexString(outcome.wireName),
+    });
+  }
+}
+
 final class StrategiesGetHeaderResult {
   const StrategiesGetHeaderResult({
     required this.createdAt,
@@ -4480,6 +4534,152 @@ final class StrategiesListForFolderResultItem {
           ? const ConvexNull()
           : ConvexString(themeProfileId!),
       'updatedAt': _encodeNumber(updatedAt, '$path.updatedAt'),
+    });
+  }
+}
+
+final class StrategiesListInventoryResult {
+  const StrategiesListInventoryResult({
+    required this.folders,
+    required this.strategies,
+  });
+  final List<StrategiesListInventoryResultFoldersItem> folders;
+  final List<StrategiesListInventoryResultStrategiesItem> strategies;
+
+  factory StrategiesListInventoryResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'folders', 'strategies'});
+    return StrategiesListInventoryResult(
+      folders:
+          _decodeArray(
+                object.value['folders'] ?? _missing(path, 'folders'),
+                '$path.folders',
+              ).value.indexed
+              .map(
+                (entry) => StrategiesListInventoryResultFoldersItem.decode(
+                  entry.$2,
+                  _indexPath('$path.folders', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      strategies:
+          _decodeArray(
+                object.value['strategies'] ?? _missing(path, 'strategies'),
+                '$path.strategies',
+              ).value.indexed
+              .map(
+                (entry) => StrategiesListInventoryResultStrategiesItem.decode(
+                  entry.$2,
+                  _indexPath('$path.strategies', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'folders': ConvexArray(
+        folders.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.folders', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'strategies': ConvexArray(
+        strategies.indexed
+            .map(
+              (entry) =>
+                  entry.$2.encode(_indexPath('$path.strategies', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+    });
+  }
+}
+
+final class StrategiesListInventoryResultFoldersItem {
+  const StrategiesListInventoryResultFoldersItem({
+    required this.parentFolderPublicId,
+    required this.publicId,
+  });
+  final String? parentFolderPublicId;
+  final String publicId;
+
+  factory StrategiesListInventoryResultFoldersItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'parentFolderPublicId',
+      'publicId',
+    });
+    return StrategiesListInventoryResultFoldersItem(
+      parentFolderPublicId:
+          (object.value['parentFolderPublicId'] ??
+                  _missing(path, 'parentFolderPublicId'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['parentFolderPublicId'] ??
+                  _missing(path, 'parentFolderPublicId'),
+              '$path.parentFolderPublicId',
+            ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'parentFolderPublicId': parentFolderPublicId == null
+          ? const ConvexNull()
+          : ConvexString(parentFolderPublicId!),
+      'publicId': ConvexString(publicId),
+    });
+  }
+}
+
+final class StrategiesListInventoryResultStrategiesItem {
+  const StrategiesListInventoryResultStrategiesItem({
+    required this.folderPublicId,
+    required this.publicId,
+  });
+  final String? folderPublicId;
+  final String publicId;
+
+  factory StrategiesListInventoryResultStrategiesItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'folderPublicId', 'publicId'});
+    return StrategiesListInventoryResultStrategiesItem(
+      folderPublicId:
+          (object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['folderPublicId'] ??
+                  _missing(path, 'folderPublicId'),
+              '$path.folderPublicId',
+            ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'folderPublicId': folderPublicId == null
+          ? const ConvexNull()
+          : ConvexString(folderPublicId!),
+      'publicId': ConvexString(publicId),
     });
   }
 }
@@ -6325,6 +6525,24 @@ ConvexObject encodeSharesSetMemberRoleArgs({
 FoldersDeleteResult decodeSharesSetMemberRoleResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'shares.js:setMemberRole.returns');
 
+ConvexObject encodeStrategiesAbandonMoveArgs({
+  required double clientProtocolVersion,
+  required String strategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:abandonMove.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+StrategiesAbandonMoveResult decodeStrategiesAbandonMoveResult(
+  ConvexValue value,
+) => StrategiesAbandonMoveResult.decode(
+  value,
+  'strategies.js:abandonMove.returns',
+);
+
 ConvexObject encodeStrategiesCreateArgs({
   required double clientProtocolVersion,
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
@@ -6380,6 +6598,7 @@ ConvexObject encodeStrategiesCreateWithInitialPageArgs({
       themeOverridePalette =
       const ConvexOptional.absent(),
   ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+  ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
 }) => ConvexObject({
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
@@ -6405,6 +6624,8 @@ ConvexObject encodeStrategiesCreateWithInitialPageArgs({
     ),
   if (themeProfileId.isPresent)
     'themeProfileId': ConvexString(themeProfileId.value),
+  if (unfinishedMove.isPresent)
+    'unfinishedMove': ConvexBoolean(unfinishedMove.value),
 });
 
 ConvexValue decodeStrategiesCreateWithInitialPageResult(ConvexValue value) =>
@@ -6457,6 +6678,23 @@ ConvexValue decodeStrategiesDuplicateResult(ConvexValue value) => _decodeRaw(
   _validateFoldersCreateResult,
 );
 
+ConvexObject encodeStrategiesFinishMoveArgs({
+  required double clientProtocolVersion,
+  ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+  required String strategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:finishMove.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+FoldersDeleteResult decodeStrategiesFinishMoveResult(ConvexValue value) =>
+    FoldersDeleteResult.decode(value, 'strategies.js:finishMove.returns');
+
 ConvexObject encodeStrategiesGetHeaderArgs({
   required String strategyPublicId,
 }) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
@@ -6484,6 +6722,15 @@ List<StrategiesListForFolderResultItem> decodeStrategiesListForFolderResult(
       ),
     )
     .toList(growable: false);
+
+ConvexObject encodeStrategiesListInventoryArgs() => ConvexObject({});
+
+StrategiesListInventoryResult decodeStrategiesListInventoryResult(
+  ConvexValue value,
+) => StrategiesListInventoryResult.decode(
+  value,
+  'strategies.js:listInventory.returns',
+);
 
 ConvexObject encodeStrategiesListSharedWithMeArgs() => ConvexObject({});
 

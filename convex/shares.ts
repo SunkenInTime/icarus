@@ -11,7 +11,11 @@ import {
   requireCurrentUser,
   type CollaboratorRole,
 } from "./lib/auth";
-import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
+import {
+  assertMoveFinished,
+  getFolderByPublicId,
+  getStrategyByPublicId,
+} from "./lib/entities";
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -109,6 +113,7 @@ export const create = mutation({
     } else if (resolved.folder !== null) {
       await assertFolderRole(ctx, resolved.folder, "owner");
     }
+    if (resolved.strategy !== null) assertMoveFinished(resolved.strategy);
 
     const existingLink = await ctx.db
       .query("shareLinks")
