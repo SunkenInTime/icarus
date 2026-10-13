@@ -53,6 +53,9 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   final Map<String, int> _stillRemoving = {};
   bool failMembers = false;
   bool failRoleChange = false;
+
+  /// Disabling happens on the server, but its answer never arrives.
+  bool loseRevokeAnswer = false;
   final List<String> roleChanges = [];
   final List<String> removed = [];
   final List<(String, bool)> revoked = [];
@@ -180,6 +183,7 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   }) async {
     revoked.add((token, removeMembers));
     if (removeMembers) _removeJoined(token);
+    if (loseRevokeAnswer) throw TimeoutException('revoke');
   }
 }
 
@@ -445,6 +449,24 @@ void main() {
         .tap(find.byKey(const ValueKey('share-link-disable-$_editToken')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('share-link-disable-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Vex'), findsNothing);
+    expect(find.text('Kyra'), findsNothing);
+    expect(find.text('Renyxx'), findsOneWidget);
+  });
+
+  testWidgets('a disable whose answer is lost still shows what happened',
+      (tester) async {
+    await _pumpDialog(tester, setUp: (r) => r.loseRevokeAnswer = true);
+
+    await tester
+        .tap(find.byKey(const ValueKey('share-link-disable-$_editToken')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('share-link-disable-confirm')));
+    await tester.pumpAndSettle();
+    toastification.dismissAll(delayForAnimation: false);
+    await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
 
     expect(find.text('Vex'), findsNothing);

@@ -281,6 +281,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       return;
     }
     setState(() => _disablingToken = token);
+    var disabled = false;
     try {
       await _repository.revokeShareLink(
         targetType: widget.targetType,
@@ -288,18 +289,20 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         token: token,
         removeMembers: removeMembers,
       );
-      await _load(showLoading: false);
-      if (removeMembers) unawaited(_followRemoval(token));
+      disabled = true;
     } catch (_) {
       Settings.showToast(
         message: ShareLinkCopy.disableFailure,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
-    } finally {
-      if (mounted) {
-        setState(() => _disablingToken = null);
-      }
     }
+    if (!mounted) return;
+    // Reload either way: a disable whose answer was lost may still have
+    // happened, and the dialog shows what the server holds.
+    await _load(showLoading: false);
+    if (!mounted) return;
+    setState(() => _disablingToken = null);
+    if (disabled && removeMembers) unawaited(_followRemoval(token));
   }
 
   Future<void> _setRole(ShareMember member, String role) async {
