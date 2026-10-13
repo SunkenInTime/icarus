@@ -24,6 +24,7 @@ import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/delete_capture.dart';
+import 'package:icarus/widgets/strategy_access_watcher.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
@@ -287,7 +288,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       );
     }
 
-    return Scaffold(
+    final editor = Scaffold(
       body: Column(
         children: [
           // The same 40px strip as the library, so the traffic lights never
@@ -388,6 +389,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         ],
       ),
     );
+    return StrategyAccessWatcher(onLeave: _leaveToLibrary, child: editor);
   }
 
   @override

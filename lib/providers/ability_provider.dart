@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui' show Offset;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
@@ -36,6 +37,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void addAbility(PlacedAbility placedAbility) {
+    if (!ref.canEditPages) return;
     final action = UserAction(
         type: ActionType.addition,
         id: placedAbility.id,
@@ -49,6 +51,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void removeAbilityAsAction(String id) {
+    if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
 
@@ -66,6 +69,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void updatePosition(Offset position, String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -114,6 +118,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     required String sourceId,
     required Offset position,
   }) {
+    if (!ref.canEditPages) return null;
     final sourceIndex = PlacedWidget.getIndexByID(sourceId, state);
     if (sourceIndex < 0) return null;
 
@@ -152,6 +157,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     double? length,
     List<double>? armLengthsMeters,
   }) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final before = _pendingEditBefore.remove(newState[index].id) ??
         ActionObjectState.ability(newState[index]);
@@ -178,6 +184,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void updateVisualState(int index, AbilityVisualState visualState) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     if (index < 0 || index >= newState.length) {
       return;
@@ -319,6 +326,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void removeAbility(String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);

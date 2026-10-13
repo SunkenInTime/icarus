@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:json_annotation/json_annotation.dart';
@@ -74,14 +75,17 @@ class StrategySettingsProvider extends Notifier<StrategySettings> {
   }
 
   void updateAgentSize(double size) {
+    if (!ref.canEditPages) return;
     state = state.copyWith(agentSize: size);
   }
 
   void updateAbilitySize(double size) {
+    if (!ref.canEditPages) return;
     state = state.copyWith(abilitySize: size);
   }
 
   void updateNeutralTeamColors(bool value) {
+    if (!ref.canEditPages) return;
     state = state.copyWith(useNeutralTeamColors: value);
   }
 }

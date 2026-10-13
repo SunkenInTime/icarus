@@ -7,6 +7,7 @@ import 'package:icarus/const/weapons.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -172,6 +173,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
   /// the way, so one keypress always does something visible while anything
   /// is left to redo. Each pass takes a step off the stack, so this ends.
   void redoAction() {
+    if (!ref.canEditPages) return;
     while (poppedItems.isNotEmpty) {
       final action = poppedItems.removeLast();
       final undo = _redo(action);
@@ -187,6 +189,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
   /// Undoes the most recent step that still changes something, dropping the
   /// steps on the way that no longer can, as [redoAction] does.
   void undoAction() {
+    if (!ref.canEditPages) return;
     while (state.isNotEmpty) {
       final action = state.last;
       state = state.sublist(0, state.length - 1);
@@ -501,11 +504,12 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void clearAllAsAction() {
+    if (!ref.canEditPages) return;
     _performBulkClear(_clearableGroups);
   }
 
   void clearGroupAsAction(ActionGroup group) {
-    if (!_clearableGroups.contains(group)) return;
+    if (!ref.canEditPages || !_clearableGroups.contains(group)) return;
     _performBulkClear([group]);
   }
 
@@ -516,6 +520,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
     required List<ActionGroup> groups,
     required void Function() mutation,
   }) {
+    if (!ref.canEditPages) return;
     final settingsBefore = groups.contains(ActionGroup.strategySettings)
         ? ref.read(strategySettingsProvider)
         : null;

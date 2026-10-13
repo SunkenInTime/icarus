@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/agents.dart';
@@ -29,6 +30,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void addAgent(PlacedAgentNode placedAgent) {
+    if (!ref.canEditPages) return;
     state = [...state, placedAgent];
 
     final action = UserAction(
@@ -44,6 +46,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void removeAgent(String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -57,6 +60,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void removeAgentAsAction(String id) {
+    if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
 
@@ -74,6 +78,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void toggleAgentState(String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -97,6 +102,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void setWeapon(String id, WeaponType weapon) {
+    if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0 || state[index].weapon == weapon) return;
     final previous = state[index].weapon;
@@ -117,6 +123,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void updatePosition(Offset position, String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -152,6 +159,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required String sourceId,
     required Offset position,
   }) {
+    if (!ref.canEditPages) return null;
     final centerPosition = position + storedAgentAnchor;
     final coordinateSystem = CoordinateSystem.instance;
     if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
@@ -183,6 +191,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required double rotation,
     required double length,
   }) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -209,6 +218,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required String id,
     required double? elevation,
   }) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -240,6 +250,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required int colorValue,
     required int opacityPercent,
   }) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -276,6 +287,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required double length,
     double? visionElevation,
   }) {
+    if (!ref.canEditPages) return false;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return false;
@@ -312,6 +324,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   bool convertViewConeAgentToPlain({required String id}) {
+    if (!ref.canEditPages) return false;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return false;
@@ -349,6 +362,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required int colorValue,
     required int opacityPercent,
   }) {
+    if (!ref.canEditPages) return false;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return false;

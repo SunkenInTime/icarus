@@ -8,6 +8,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -219,9 +220,29 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     super.dispose();
   }
 
+  /// Closes the dialog, saving nothing, when the reader can no longer edit
+  /// the strategy: their access changed while it was open.
+  bool _closedForLostEditAccess() {
+    if (ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+      return false;
+    }
+    Settings.showToast(
+      message: 'You can no longer edit this strategy, so this lineup was not '
+          'saved.',
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+    // A lineup being placed is let go with the dialog.
+    ref
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.navigation);
+    if (mounted) Navigator.of(context).pop();
+    return true;
+  }
+
   /// Saves the lineup and closes. With [thenEditPlacement] the editor then
   /// opens placement editing for it.
   Future<void> _save({bool thenEditPlacement = false}) async {
+    if (_closedForLostEditAccess()) return;
     final notifier = ref.read(lineUpProvider.notifier);
     final name = _nameController.text.trim();
     final existing = _isEditing ? notifier.linkById(widget.linkId!) : null;
@@ -251,6 +272,9 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       );
       return;
     }
+    // The images it queued wait unreferenced, and go once nothing claims
+    // them.
+    if (_closedForLostEditAccess()) return;
 
     if (existing != null) {
       notifier.updateLink(

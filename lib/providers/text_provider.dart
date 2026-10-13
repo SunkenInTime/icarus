@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -35,6 +36,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void addText(PlacedText text) {
+    if (!ref.canEditPages) return;
     final action = UserAction(
       type: ActionType.addition,
       id: text.id,
@@ -50,6 +52,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void removeTextAsAction(String id) {
+    if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
 
@@ -67,6 +70,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void updatePosition(Offset position, String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -94,6 +98,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void commitText(String id, String nextText) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -117,6 +122,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void updateTagColor(String id, int? colorValue) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -211,6 +217,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   /// Sets a text's width and position together: on defense a resize moves
   /// the stored position so the box's on-screen top-left stays put.
   void resize(String id, {required double size, required Offset position}) {
+    if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
 
@@ -222,6 +229,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void removeText(String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
 

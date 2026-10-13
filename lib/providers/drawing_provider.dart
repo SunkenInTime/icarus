@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -375,7 +376,15 @@ class DrawingProvider extends Notifier<DrawingState> {
     state = state.copyWith(updateCounter: (state.updateCounter + 1));
   }
 
+  /// Ends the drawing in progress without putting it on the page: the
+  /// reader can no longer edit the strategy (see PageEditAccess).
+  void _dropCurrentElement() {
+    state = state.copyWithButEvil();
+    _triggerRepaint();
+  }
+
   void deleteDrawing(int index) {
+    if (!ref.canEditPages) return;
     if (index < 0) return;
     final newElements = [...state.elements];
 
@@ -398,6 +407,7 @@ class DrawingProvider extends Notifier<DrawingState> {
   }
 
   void onErase(Offset mousePos) {
+    if (!ref.canEditPages) return;
     final Set<int> indicesToDelete = {};
 
     for (final (index, drawing) in state.elements.indexed) {
@@ -627,6 +637,7 @@ class DrawingProvider extends Notifier<DrawingState> {
 
   void finishFreeDrawing(Offset? offset, CoordinateSystem coordinateSystem) {
     if (state.currentElement == null) return;
+    if (!ref.canEditPages) return _dropCurrentElement();
 
     final currentDrawing = state.currentElement as FreeDrawing;
     FreeDrawing finalDrawing = currentDrawing.copyWith(
@@ -717,6 +728,7 @@ class DrawingProvider extends Notifier<DrawingState> {
         state.currentElement is! RectangleDrawing) {
       return;
     }
+    if (!ref.canEditPages) return _dropCurrentElement();
 
     final rectangle = state.currentElement as RectangleDrawing;
 
@@ -799,6 +811,7 @@ class DrawingProvider extends Notifier<DrawingState> {
         state.currentElement is! EllipseDrawing) {
       return;
     }
+    if (!ref.canEditPages) return _dropCurrentElement();
 
     final ellipse = state.currentElement as EllipseDrawing;
 
@@ -884,6 +897,7 @@ class DrawingProvider extends Notifier<DrawingState> {
 
   void finishCurrentLine(Offset? endpoint, CoordinateSystem coordinateSystem) {
     if (state.currentElement == null || state.currentElement is! Line) return;
+    if (!ref.canEditPages) return _dropCurrentElement();
 
     final line = state.currentElement as Line;
     if (endpoint != null) {

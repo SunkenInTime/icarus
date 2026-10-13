@@ -26,6 +26,7 @@ import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -271,6 +272,10 @@ ProviderContainer _webSession({
       convexConnectionSnapshotProvider.overrideWithValue(online),
       convexConnectionProvider.overrideWith((ref) => Stream.value(online)),
       strategyProvider.overrideWith(_CloudStrategy.new),
+      // Saving a lineup asks for edit access; the owner has it.
+      currentStrategyCapabilitiesProvider.overrideWithValue(
+        StrategyCapabilities.fromCloudRole('owner'),
+      ),
       strategyOpQueueProvider.overrideWith(_OpQueue.new),
       cloudMediaReferenceLoaderProvider.overrideWithValue(
         (_, __) async => throw StateError('no server reads in this test'),

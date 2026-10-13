@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
@@ -31,6 +32,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   }
 
   void addUtility(PlacedUtility utility) {
+    if (!ref.canEditPages) return;
     final action = UserAction(
       type: ActionType.addition,
       id: utility.id,
@@ -45,6 +47,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   }
 
   void removeUtilityAsAction(String id) {
+    if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
 
@@ -62,6 +65,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   }
 
   void updatePosition(Offset position, String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -84,6 +88,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   }
 
   void updateRotation(int index, double rotation, double length) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final before = _pendingEditBefore.remove(newState[index].id) ??
         ActionObjectState.utility(newState[index]);
@@ -102,6 +107,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   }
 
   void updateViewConeElevation(String id, double? elevation) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -153,6 +159,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     double? widthMeters,
     double? lengthMeters,
   }) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -191,6 +198,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   }
 
   void updateCustomShapeColor({required String id, required int colorValue}) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
@@ -308,6 +316,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   }
 
   void removeUtility(String id) {
+    if (!ref.canEditPages) return;
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);

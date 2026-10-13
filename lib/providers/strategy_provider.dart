@@ -40,12 +40,12 @@ import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
-import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
@@ -268,16 +268,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     return state.source == StrategySource.cloud;
   }
 
-  bool _currentStrategyCanEditPages() {
-    if (!_currentStrategyIsCloud()) {
-      return true;
-    }
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    final role = snapshot?.header.publicId == state.strategyId
-        ? snapshot?.header.role
-        : null;
-    return StrategyCapabilities.fromCloudRole(role).canEditPages;
-  }
+  bool _currentStrategyCanEditPages() => ref.canEditPages;
 
   /// Fails loudly instead of reading or writing the on-device library where
   /// the platform policy keeps it hidden. Its records stay untouched until
