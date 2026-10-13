@@ -523,6 +523,28 @@ sealed class OpsApplyBatchResultResultsItemRejectedCurrent {
   ConvexObject encode(String path);
 }
 
+sealed class SharesPreviewResult {
+  const SharesPreviewResult();
+
+  factory SharesPreviewResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    final discriminator = _decodeString(
+      object.value['targetType'] ?? _missing(path, 'targetType'),
+      '$path.targetType',
+    );
+    return switch (discriminator) {
+      'strategy' => SharesPreviewResultStrategy.decode(value, path),
+      'folder' => SharesPreviewResultFolder.decode(value, path),
+      _ => throw ConvexDecodingException(
+        path,
+        'unknown discriminator $discriminator',
+      ),
+    };
+  }
+
+  ConvexObject encode(String path);
+}
+
 sealed class SharesRedeemResult {
   const SharesRedeemResult();
 
@@ -3708,6 +3730,244 @@ final class PresenceIssueRoomPassResult {
   }
 }
 
+final class SharesListFolderAccessResultItem {
+  const SharesListFolderAccessResultItem({
+    required this.name,
+    required this.publicId,
+  });
+  final String name;
+  final String publicId;
+
+  factory SharesListFolderAccessResultItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'name', 'publicId'});
+    return SharesListFolderAccessResultItem(
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'name': ConvexString(name),
+      'publicId': ConvexString(publicId),
+    });
+  }
+}
+
+final class SharesListLinkJoinsResultItem {
+  const SharesListLinkJoinsResultItem({
+    required this.joined,
+    required this.more,
+    required this.names,
+    required this.token,
+  });
+  final double joined;
+  final bool more;
+  final List<String> names;
+  final String token;
+
+  factory SharesListLinkJoinsResultItem.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'joined',
+      'more',
+      'names',
+      'token',
+    });
+    return SharesListLinkJoinsResultItem(
+      joined: _decodeNumber(
+        object.value['joined'] ?? _missing(path, 'joined'),
+        '$path.joined',
+      ),
+      more: _decodeBoolean(
+        object.value['more'] ?? _missing(path, 'more'),
+        '$path.more',
+      ),
+      names:
+          _decodeArray(
+                object.value['names'] ?? _missing(path, 'names'),
+                '$path.names',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.names', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      token: _decodeString(
+        object.value['token'] ?? _missing(path, 'token'),
+        '$path.token',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'joined': _encodeNumber(joined, '$path.joined'),
+      'more': ConvexBoolean(more),
+      'names': ConvexArray(
+        names.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
+      'token': ConvexString(token),
+    });
+  }
+}
+
+final class SharesListMembersResult {
+  const SharesListMembersResult({
+    required this.members,
+    required this.nextCursor,
+  });
+  final List<SharesListMembersResultMembersItem> members;
+  final String? nextCursor;
+
+  factory SharesListMembersResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'members', 'nextCursor'});
+    return SharesListMembersResult(
+      members:
+          _decodeArray(
+                object.value['members'] ?? _missing(path, 'members'),
+                '$path.members',
+              ).value.indexed
+              .map(
+                (entry) => SharesListMembersResultMembersItem.decode(
+                  entry.$2,
+                  _indexPath('$path.members', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      nextCursor:
+          (object.value['nextCursor'] ?? _missing(path, 'nextCursor'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['nextCursor'] ?? _missing(path, 'nextCursor'),
+              '$path.nextCursor',
+            ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'members': ConvexArray(
+        members.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.members', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'nextCursor': nextCursor == null
+          ? const ConvexNull()
+          : ConvexString(nextCursor!),
+    });
+  }
+}
+
+final class SharesListMembersResultMembersItem {
+  const SharesListMembersResultMembersItem({
+    required this.avatarUrl,
+    required this.displayName,
+    required this.joinedAt,
+    required this.memberId,
+    required this.role,
+    required this.shareLinkToken,
+  });
+  final String? avatarUrl;
+  final String? displayName;
+  final double joinedAt;
+  final String memberId;
+  final InvitesCreateArgsRole role;
+  final String? shareLinkToken;
+
+  factory SharesListMembersResultMembersItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'avatarUrl',
+      'displayName',
+      'joinedAt',
+      'memberId',
+      'role',
+      'shareLinkToken',
+    });
+    return SharesListMembersResultMembersItem(
+      avatarUrl:
+          (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'),
+              '$path.avatarUrl',
+            ),
+      displayName:
+          (object.value['displayName'] ?? _missing(path, 'displayName'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['displayName'] ?? _missing(path, 'displayName'),
+              '$path.displayName',
+            ),
+      joinedAt: _decodeNumber(
+        object.value['joinedAt'] ?? _missing(path, 'joinedAt'),
+        '$path.joinedAt',
+      ),
+      memberId: _decodeString(
+        object.value['memberId'] ?? _missing(path, 'memberId'),
+        '$path.memberId',
+      ),
+      role: InvitesCreateArgsRole.fromWireName(
+        _decodeString(
+          object.value['role'] ?? _missing(path, 'role'),
+          '$path.role',
+        ),
+        '$path.role',
+      ),
+      shareLinkToken:
+          (object.value['shareLinkToken'] ?? _missing(path, 'shareLinkToken'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['shareLinkToken'] ??
+                  _missing(path, 'shareLinkToken'),
+              '$path.shareLinkToken',
+            ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'avatarUrl': avatarUrl == null
+          ? const ConvexNull()
+          : ConvexString(avatarUrl!),
+      'displayName': displayName == null
+          ? const ConvexNull()
+          : ConvexString(displayName!),
+      'joinedAt': _encodeNumber(joinedAt, '$path.joinedAt'),
+      'memberId': ConvexString(memberId),
+      'role': ConvexString(role.wireName),
+      'shareLinkToken': shareLinkToken == null
+          ? const ConvexNull()
+          : ConvexString(shareLinkToken!),
+    });
+  }
+}
+
 final class SharesListResultItem {
   const SharesListResultItem({
     required this.createdAt,
@@ -3763,6 +4023,132 @@ final class SharesListResultItem {
           : _encodeNumber(revokedAt!, '$path.revokedAt'),
       'role': ConvexString(role.wireName),
       'token': ConvexString(token),
+    });
+  }
+}
+
+final class SharesPreviewResultFolder extends SharesPreviewResult {
+  const SharesPreviewResultFolder({
+    required this.linkRole,
+    required this.myRole,
+    required this.name,
+    required this.publicId,
+  });
+  final InvitesCreateArgsRole linkRole;
+  final FoldersListTreeResultItemRole? myRole;
+  final String name;
+  final String publicId;
+
+  factory SharesPreviewResultFolder.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'targetType',
+      'linkRole',
+      'myRole',
+      'name',
+      'publicId',
+    });
+    return SharesPreviewResultFolder(
+      linkRole: InvitesCreateArgsRole.fromWireName(
+        _decodeString(
+          object.value['linkRole'] ?? _missing(path, 'linkRole'),
+          '$path.linkRole',
+        ),
+        '$path.linkRole',
+      ),
+      myRole: (object.value['myRole'] ?? _missing(path, 'myRole')) is ConvexNull
+          ? null
+          : FoldersListTreeResultItemRole.fromWireName(
+              _decodeString(
+                object.value['myRole'] ?? _missing(path, 'myRole'),
+                '$path.myRole',
+              ),
+              '$path.myRole',
+            ),
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  @override
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'targetType': ConvexString('folder'),
+      'linkRole': ConvexString(linkRole.wireName),
+      'myRole': myRole == null
+          ? const ConvexNull()
+          : ConvexString(myRole!.wireName),
+      'name': ConvexString(name),
+      'publicId': ConvexString(publicId),
+    });
+  }
+}
+
+final class SharesPreviewResultStrategy extends SharesPreviewResult {
+  const SharesPreviewResultStrategy({
+    required this.linkRole,
+    required this.myRole,
+    required this.name,
+    required this.publicId,
+  });
+  final InvitesCreateArgsRole linkRole;
+  final FoldersListTreeResultItemRole? myRole;
+  final String name;
+  final String publicId;
+
+  factory SharesPreviewResultStrategy.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'targetType',
+      'linkRole',
+      'myRole',
+      'name',
+      'publicId',
+    });
+    return SharesPreviewResultStrategy(
+      linkRole: InvitesCreateArgsRole.fromWireName(
+        _decodeString(
+          object.value['linkRole'] ?? _missing(path, 'linkRole'),
+          '$path.linkRole',
+        ),
+        '$path.linkRole',
+      ),
+      myRole: (object.value['myRole'] ?? _missing(path, 'myRole')) is ConvexNull
+          ? null
+          : FoldersListTreeResultItemRole.fromWireName(
+              _decodeString(
+                object.value['myRole'] ?? _missing(path, 'myRole'),
+                '$path.myRole',
+              ),
+              '$path.myRole',
+            ),
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  @override
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'targetType': ConvexString('strategy'),
+      'linkRole': ConvexString(linkRole.wireName),
+      'myRole': myRole == null
+          ? const ConvexNull()
+          : ConvexString(myRole!.wireName),
+      'name': ConvexString(name),
+      'publicId': ConvexString(publicId),
     });
   }
 }
@@ -6101,6 +6487,22 @@ ConvexObject encodeSharesCreateArgs({
 FoldersDeleteResult decodeSharesCreateResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'shares.js:create.returns');
 
+ConvexObject encodeSharesLeaveArgs({
+  required double clientProtocolVersion,
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:leave.args.clientProtocolVersion',
+  ),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+FoldersDeleteResult decodeSharesLeaveResult(ConvexValue value) =>
+    FoldersDeleteResult.decode(value, 'shares.js:leave.returns');
+
 ConvexObject encodeSharesListArgs({
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
@@ -6119,6 +6521,63 @@ List<SharesListResultItem> decodeSharesListResult(ConvexValue value) =>
         )
         .toList(growable: false);
 
+ConvexObject encodeSharesListFolderAccessArgs({
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+List<SharesListFolderAccessResultItem> decodeSharesListFolderAccessResult(
+  ConvexValue value,
+) => _decodeArray(value, 'shares.js:listFolderAccess.returns').value.indexed
+    .map(
+      (entry) => SharesListFolderAccessResultItem.decode(
+        entry.$2,
+        _indexPath('shares.js:listFolderAccess.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeSharesListLinkJoinsArgs({
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+List<SharesListLinkJoinsResultItem> decodeSharesListLinkJoinsResult(
+  ConvexValue value,
+) => _decodeArray(value, 'shares.js:listLinkJoins.returns').value.indexed
+    .map(
+      (entry) => SharesListLinkJoinsResultItem.decode(
+        entry.$2,
+        _indexPath('shares.js:listLinkJoins.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeSharesListMembersArgs({
+  ConvexOptional<String> cursor = const ConvexOptional.absent(),
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+SharesListMembersResult decodeSharesListMembersResult(ConvexValue value) =>
+    SharesListMembersResult.decode(value, 'shares.js:listMembers.returns');
+
+ConvexObject encodeSharesPreviewArgs({required String token}) =>
+    ConvexObject({'token': ConvexString(token)});
+
+SharesPreviewResult decodeSharesPreviewResult(ConvexValue value) =>
+    SharesPreviewResult.decode(value, 'shares.js:preview.returns');
+
 ConvexObject encodeSharesRedeemArgs({
   required double clientProtocolVersion,
   required String token,
@@ -6133,6 +6592,24 @@ ConvexObject encodeSharesRedeemArgs({
 SharesRedeemResult decodeSharesRedeemResult(ConvexValue value) =>
     SharesRedeemResult.decode(value, 'shares.js:redeem.returns');
 
+ConvexObject encodeSharesRemoveMemberArgs({
+  required double clientProtocolVersion,
+  required String memberId,
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:removeMember.args.clientProtocolVersion',
+  ),
+  'memberId': ConvexString(memberId),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+FoldersDeleteResult decodeSharesRemoveMemberResult(ConvexValue value) =>
+    FoldersDeleteResult.decode(value, 'shares.js:removeMember.returns');
+
 ConvexObject encodeSharesResolveArgs({required String token}) =>
     ConvexObject({'token': ConvexString(token)});
 
@@ -6141,6 +6618,7 @@ SharesResolveResult decodeSharesResolveResult(ConvexValue value) =>
 
 ConvexObject encodeSharesRevokeArgs({
   required double clientProtocolVersion,
+  ConvexOptional<bool> removeMembers = const ConvexOptional.absent(),
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
   required String token,
@@ -6149,6 +6627,8 @@ ConvexObject encodeSharesRevokeArgs({
     clientProtocolVersion,
     'shares.js:revoke.args.clientProtocolVersion',
   ),
+  if (removeMembers.isPresent)
+    'removeMembers': ConvexBoolean(removeMembers.value),
   'targetPublicId': ConvexString(targetPublicId),
   'targetType': ConvexString(targetType.wireName),
   'token': ConvexString(token),
@@ -6156,6 +6636,26 @@ ConvexObject encodeSharesRevokeArgs({
 
 FoldersDeleteResult decodeSharesRevokeResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'shares.js:revoke.returns');
+
+ConvexObject encodeSharesSetMemberRoleArgs({
+  required double clientProtocolVersion,
+  required String memberId,
+  required InvitesCreateArgsRole role,
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:setMemberRole.args.clientProtocolVersion',
+  ),
+  'memberId': ConvexString(memberId),
+  'role': ConvexString(role.wireName),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+FoldersDeleteResult decodeSharesSetMemberRoleResult(ConvexValue value) =>
+    FoldersDeleteResult.decode(value, 'shares.js:setMemberRole.returns');
 
 ConvexObject encodeStrategiesAbandonMoveArgs({
   required double clientProtocolVersion,

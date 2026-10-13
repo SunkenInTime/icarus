@@ -1029,20 +1029,53 @@ abstract interface class SharesModule {
     required SharesCreateArgsTargetType targetType,
     required String token,
   });
+  Future<FoldersDeleteResult> leave({
+    required double clientProtocolVersion,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
   ConvexQuery<List<SharesListResultItem>> list({
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   });
+  ConvexQuery<List<SharesListFolderAccessResultItem>> listFolderAccess({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexQuery<List<SharesListLinkJoinsResultItem>> listLinkJoins({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexQuery<SharesListMembersResult> listMembers({
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexQuery<SharesPreviewResult> preview({required String token});
   Future<SharesRedeemResult> redeem({
     required double clientProtocolVersion,
     required String token,
   });
+  Future<FoldersDeleteResult> removeMember({
+    required double clientProtocolVersion,
+    required String memberId,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
   ConvexQuery<SharesResolveResult> resolve({required String token});
   Future<FoldersDeleteResult> revoke({
     required double clientProtocolVersion,
+    ConvexOptional<bool> removeMembers = const ConvexOptional.absent(),
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
+  });
+  Future<FoldersDeleteResult> setMemberRole({
+    required double clientProtocolVersion,
+    required String memberId,
+    required InvitesCreateArgsRole role,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
   });
 }
 
@@ -1071,6 +1104,23 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
+  Future<FoldersDeleteResult> leave({
+    required double clientProtocolVersion,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesLeaveArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return _invoke(
+      () => _transport.mutation('shares:leave', args),
+      decodeSharesLeaveResult,
+    );
+  }
+
+  @override
   ConvexQuery<List<SharesListResultItem>> list({
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
@@ -1084,6 +1134,70 @@ final class _SharesModule implements SharesModule {
       name: 'shares:list',
       args: args,
       decode: decodeSharesListResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<SharesListFolderAccessResultItem>> listFolderAccess({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesListFolderAccessArgs(
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'shares:listFolderAccess',
+      args: args,
+      decode: decodeSharesListFolderAccessResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<SharesListLinkJoinsResultItem>> listLinkJoins({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesListLinkJoinsArgs(
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'shares:listLinkJoins',
+      args: args,
+      decode: decodeSharesListLinkJoinsResult,
+    );
+  }
+
+  @override
+  ConvexQuery<SharesListMembersResult> listMembers({
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesListMembersArgs(
+      cursor: cursor,
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'shares:listMembers',
+      args: args,
+      decode: decodeSharesListMembersResult,
+    );
+  }
+
+  @override
+  ConvexQuery<SharesPreviewResult> preview({required String token}) {
+    final args = encodeSharesPreviewArgs(token: token);
+    return ConvexQuery(
+      transport: _transport,
+      name: 'shares:preview',
+      args: args,
+      decode: decodeSharesPreviewResult,
     );
   }
 
@@ -1103,6 +1217,25 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
+  Future<FoldersDeleteResult> removeMember({
+    required double clientProtocolVersion,
+    required String memberId,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesRemoveMemberArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      memberId: memberId,
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return _invoke(
+      () => _transport.mutation('shares:removeMember', args),
+      decodeSharesRemoveMemberResult,
+    );
+  }
+
+  @override
   ConvexQuery<SharesResolveResult> resolve({required String token}) {
     final args = encodeSharesResolveArgs(token: token);
     return ConvexQuery(
@@ -1116,12 +1249,14 @@ final class _SharesModule implements SharesModule {
   @override
   Future<FoldersDeleteResult> revoke({
     required double clientProtocolVersion,
+    ConvexOptional<bool> removeMembers = const ConvexOptional.absent(),
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
   }) {
     final args = encodeSharesRevokeArgs(
       clientProtocolVersion: clientProtocolVersion,
+      removeMembers: removeMembers,
       targetPublicId: targetPublicId,
       targetType: targetType,
       token: token,
@@ -1129,6 +1264,27 @@ final class _SharesModule implements SharesModule {
     return _invoke(
       () => _transport.mutation('shares:revoke', args),
       decodeSharesRevokeResult,
+    );
+  }
+
+  @override
+  Future<FoldersDeleteResult> setMemberRole({
+    required double clientProtocolVersion,
+    required String memberId,
+    required InvitesCreateArgsRole role,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesSetMemberRoleArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      memberId: memberId,
+      role: role,
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return _invoke(
+      () => _transport.mutation('shares:setMemberRole', args),
+      decodeSharesSetMemberRoleResult,
     );
   }
 }

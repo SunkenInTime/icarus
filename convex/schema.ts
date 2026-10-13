@@ -200,23 +200,30 @@ export default defineSchema({
     userId: v.id("users"),
     role: v.union(v.literal("editor"), v.literal("viewer")),
     invitedByUserId: v.optional(v.id("users")),
+    // The share link that gave this person their role, so disabling the
+    // link can remove them. Unset for people who joined before it was kept.
+    shareLinkId: v.optional(v.id("shareLinks")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_strategyId", ["strategyId"])
     .index("by_userId", ["userId"])
-    .index("by_strategyId_userId", ["strategyId", "userId"]),
+    .index("by_strategyId_userId", ["strategyId", "userId"])
+    .index("by_shareLinkId", ["shareLinkId"]),
   folderCollaborators: defineTable({
     folderId: v.id("folders"),
     userId: v.id("users"),
     role: v.union(v.literal("editor"), v.literal("viewer")),
     invitedByUserId: v.optional(v.id("users")),
+    // See strategyCollaborators.shareLinkId.
+    shareLinkId: v.optional(v.id("shareLinks")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_folderId", ["folderId"])
     .index("by_userId", ["userId"])
-    .index("by_folderId_userId", ["folderId", "userId"]),
+    .index("by_folderId_userId", ["folderId", "userId"])
+    .index("by_shareLinkId", ["shareLinkId"]),
   shareLinks: defineTable({
     token: v.string(),
     targetType: v.union(v.literal("strategy"), v.literal("folder")),
