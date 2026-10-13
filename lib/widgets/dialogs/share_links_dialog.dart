@@ -210,12 +210,13 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
     }
   }
 
-  /// A link with many joiners keeps losing them after disabling returns,
-  /// a batch at a time. Watches the link's count until it reaches zero, then
-  /// reads the people again, so the list never shows anyone who is already
-  /// gone.
+  /// The server removes a link's joiners a batch at a time, some of them
+  /// after disabling returns. Waits until the link's count reaches zero, or
+  /// two minutes pass, showing "Removing people…" meanwhile; then reads the
+  /// people again.
   Future<void> _followRemoval(String token) async {
-    for (var i = 0; i < 60; i++) {
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    while (DateTime.now().isBefore(deadline)) {
       try {
         final joins = await _repository.listShareLinkJoins(
           targetType: widget.targetType,
@@ -226,13 +227,11 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         // Not known this time; ask again.
       }
       if (!mounted) return;
-      if (!_removingFrom.contains(token)) {
-        setState(() => _removingFrom.add(token));
-      }
+      setState(() => _removingFrom.add(token));
       await Future<void>.delayed(const Duration(seconds: 1));
       if (!mounted) return;
     }
-    if (!mounted || !_removingFrom.contains(token)) return;
+    if (!mounted) return;
     setState(() => _removingFrom.remove(token));
     await _load(showLoading: false);
   }

@@ -39,8 +39,10 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   /// When set, pages after the first wait for it.
   Completer<void>? holdLaterPages;
 
-  /// How many of the next reads of a later page fail.
-  int failLaterPages = 0;
+  /// Cursors from before the latest call to [refuseCursors] are refused,
+  /// as the server refuses one from before a deploy.
+  int _cursorEpoch = 0;
+  void refuseCursors() => _cursorEpoch++;
 
   /// How many of the next join counts fail.
   int failJoins = 0;
@@ -80,18 +82,17 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
     String? cursor,
   }) async {
     if (failMembers) throw Exception('shares:listMembers is not deployed');
-    final start = cursor == null ? 0 : int.parse(cursor);
-    if (start > 0) {
+    var start = 0;
+    if (cursor != null) {
+      final [epoch, at] = cursor.split(':');
+      if (int.parse(epoch) != _cursorEpoch) throw Exception('InvalidCursor');
+      start = int.parse(at);
       await holdLaterPages?.future;
-      if (failLaterPages > 0) {
-        failLaterPages--;
-        throw Exception('InvalidCursor');
-      }
     }
     final end = (start + pageSize).clamp(0, members.length);
     return ShareMemberPage(
       members: members.sublist(start, end),
-      nextCursor: end < members.length ? '$end' : null,
+      nextCursor: end < members.length ? '$_cursorEpoch:$end' : null,
     );
   }
 
@@ -390,7 +391,7 @@ void main() {
   testWidgets('a page the server refuses starts the list over', (tester) async {
     final repository = await _pumpDialog(tester, setUp: (r) => r.pageSize = 2);
 
-    repository.failLaterPages = 1;
+    repository.refuseCursors();
     await tester.tap(find.byKey(const ValueKey('share-people-more')));
     await tester.pumpAndSettle();
     toastification.dismissAll(delayForAnimation: false);
@@ -432,5 +433,22 @@ void main() {
     expect(find.text('Sova'), findsNothing);
     expect(find.text('Renyxx'), findsOneWidget);
     expect(find.textContaining('Removing people'), findsNothing);
+  });
+
+  testWidgets('a removal that finishes before the first check still refreshes',
+      (tester) async {
+    await _pumpDialog(tester, setUp: (r) => r.removalBatch = 1);
+
+    // Vex goes with the disable; Kyra, in the next batch, right after the
+    // list is read.
+    await tester
+        .tap(find.byKey(const ValueKey('share-link-disable-$_editToken')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('share-link-disable-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Vex'), findsNothing);
+    expect(find.text('Kyra'), findsNothing);
+    expect(find.text('Renyxx'), findsOneWidget);
   });
 }
