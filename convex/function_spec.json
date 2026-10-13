@@ -168439,110 +168439,233 @@
         }
       },
       "functionType": "Query",
-      "identifier": "shares.js:listMembers",
+      "identifier": "shares.js:listFolderAccess",
       "returns": {
         "type": "array",
         "value": {
           "type": "object",
           "value": {
-            "avatarUrl": {
-              "fieldType": {
-                "type": "union",
-                "value": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "optional": false
-            },
-            "displayName": {
-              "fieldType": {
-                "type": "union",
-                "value": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "optional": false
-            },
-            "inheritedFromFolder": {
-              "fieldType": {
-                "type": "union",
-                "value": [
-                  {
-                    "type": "object",
-                    "value": {
-                      "name": {
-                        "fieldType": {
-                          "type": "string"
-                        },
-                        "optional": false
-                      },
-                      "publicId": {
-                        "fieldType": {
-                          "type": "string"
-                        },
-                        "optional": false
-                      }
-                    }
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "optional": false
-            },
-            "joinedAt": {
-              "fieldType": {
-                "type": "number"
-              },
-              "optional": false
-            },
-            "memberId": {
+            "name": {
               "fieldType": {
                 "type": "string"
               },
               "optional": false
             },
-            "role": {
+            "publicId": {
               "fieldType": {
-                "type": "union",
-                "value": [
-                  {
-                    "type": "literal",
-                    "value": "viewer"
-                  },
-                  {
-                    "type": "literal",
-                    "value": "editor"
-                  }
-                ]
-              },
-              "optional": false
-            },
-            "shareLinkToken": {
-              "fieldType": {
-                "type": "union",
-                "value": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "type": "string"
               },
               "optional": false
             }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "targetPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "targetType": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "strategy"
+                },
+                {
+                  "type": "literal",
+                  "value": "folder"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "shares.js:listLinkJoins",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "joined": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "more": {
+              "fieldType": {
+                "type": "boolean"
+              },
+              "optional": false
+            },
+            "names": {
+              "fieldType": {
+                "type": "array",
+                "value": {
+                  "type": "string"
+                }
+              },
+              "optional": false
+            },
+            "token": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "after": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "targetPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "targetType": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "strategy"
+                },
+                {
+                  "type": "literal",
+                  "value": "folder"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "shares.js:listMembers",
+      "returns": {
+        "type": "object",
+        "value": {
+          "members": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "avatarUrl": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "displayName": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "joinedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "memberId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "role": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "viewer"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "editor"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "shareLinkToken": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          },
+          "nextAfter": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
           }
         }
       },
@@ -168852,6 +168975,28 @@
       },
       "visibility": {
         "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "linkId": {
+            "fieldType": {
+              "tableName": "shareLinks",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "shares.js:removeLinkMembersBatch",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "internal"
       }
     },
     {

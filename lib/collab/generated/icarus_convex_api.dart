@@ -1038,7 +1038,16 @@ abstract interface class SharesModule {
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   });
-  ConvexQuery<List<SharesListMembersResultItem>> listMembers({
+  ConvexQuery<List<SharesListFolderAccessResultItem>> listFolderAccess({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexQuery<List<SharesListLinkJoinsResultItem>> listLinkJoins({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexQuery<SharesListMembersResult> listMembers({
+    ConvexOptional<double> after = const ConvexOptional.absent(),
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   });
@@ -1129,11 +1138,47 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
-  ConvexQuery<List<SharesListMembersResultItem>> listMembers({
+  ConvexQuery<List<SharesListFolderAccessResultItem>> listFolderAccess({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesListFolderAccessArgs(
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'shares:listFolderAccess',
+      args: args,
+      decode: decodeSharesListFolderAccessResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<SharesListLinkJoinsResultItem>> listLinkJoins({
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) {
+    final args = encodeSharesListLinkJoinsArgs(
+      targetPublicId: targetPublicId,
+      targetType: targetType,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'shares:listLinkJoins',
+      args: args,
+      decode: decodeSharesListLinkJoinsResult,
+    );
+  }
+
+  @override
+  ConvexQuery<SharesListMembersResult> listMembers({
+    ConvexOptional<double> after = const ConvexOptional.absent(),
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   }) {
     final args = encodeSharesListMembersArgs(
+      after: after,
       targetPublicId: targetPublicId,
       targetType: targetType,
     );

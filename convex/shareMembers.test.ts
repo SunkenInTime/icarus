@@ -4,9 +4,15 @@ import {
   type TestConvexForDataModelAndIdentity,
 } from "convex-test";
 import { makeFunctionReference } from "convex/server";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import type { Id } from "./_generated/dataModel";
+import {
+  LINK_JOIN_COUNT_CAP,
+  LINK_MEMBER_REMOVAL_BATCH,
+  MEMBER_PAGE_SIZE,
+} from "./shares";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -32,6 +38,8 @@ const setMemberRole = makeFunctionReference<"mutation">("shares:setMemberRole");
 const removeMember = makeFunctionReference<"mutation">("shares:removeMember");
 const leave = makeFunctionReference<"mutation">("shares:leave");
 const preview = makeFunctionReference<"query">("shares:preview");
+const listFolderAccess = makeFunctionReference<"query">("shares:listFolderAccess");
+const listLinkJoins = makeFunctionReference<"query">("shares:listLinkJoins");
 const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 
 type Harness = TestConvexForDataModel<DataModel>;
@@ -123,12 +131,14 @@ async function rename(
   });
 }
 
-function members(
+/** The first page of people, which in these tests is everyone. */
+async function members(
   who: Harness,
   targetPublicId: string,
   targetType: "strategy" | "folder" = "strategy",
 ) {
-  return who.query(listMembers, { targetType, targetPublicId });
+  const page = await who.query(listMembers, { targetType, targetPublicId });
+  return page.members;
 }
 
 async function memberIdOf(
@@ -163,13 +173,11 @@ describe("share members", () => {
         displayName: "User B",
         role: "viewer",
         shareLinkToken: "view-link",
-        inheritedFromFolder: null,
       },
       {
         displayName: "User C",
         role: "editor",
         shareLinkToken: "edit-link",
-        inheritedFromFolder: null,
       },
     ]);
     await expect(members(c, "s1")).rejects.toThrow("Forbidden");
@@ -380,13 +388,11 @@ describe("share members", () => {
     await redeem(c, "strategy-link");
 
     await expect(members(a, "inside")).resolves.toMatchObject([
-      { displayName: "User C", role: "viewer", inheritedFromFolder: null },
-      {
-        displayName: "User B",
-        role: "editor",
-        inheritedFromFolder: { publicId: "team", name: "Team plans" },
-      },
+      { displayName: "User C", role: "viewer" },
     ]);
+    await expect(
+      a.query(listFolderAccess, { targetType: "strategy", targetPublicId: "inside" }),
+    ).resolves.toEqual([{ publicId: "team", name: "Team plans" }]);
 
     const folderMemberId = await memberIdOf(a, "team", "User B", "folder");
     await expect(
@@ -426,18 +432,12 @@ describe("share members", () => {
     await redeem(c, "deep-link");
 
     await expect(members(a, "deep")).resolves.toMatchObject([
-      { displayName: "User C", role: "viewer", inheritedFromFolder: null },
-      {
-        displayName: "User B",
-        role: "editor",
-        inheritedFromFolder: { publicId: "outer", name: "Outer" },
-      },
-      {
-        displayName: "User C",
-        role: "editor",
-        inheritedFromFolder: { publicId: "outer", name: "Outer" },
-      },
+      { displayName: "User C", role: "viewer" },
     ]);
+    // "Inner" is shared with no one; "Outer" is.
+    await expect(
+      a.query(listFolderAccess, { targetType: "strategy", targetPublicId: "deep" }),
+    ).resolves.toEqual([{ publicId: "outer", name: "Outer" }]);
 
     // Demoting at the folder reaches the strategy two levels down.
     await a.mutation(setMemberRole, {
@@ -532,5 +532,147 @@ describe("share members", () => {
     await expect(b.query(preview, { token: "view-link" })).rejects.toThrow(
       "Share link revoked",
     );
+  });
+
+  describe("at a link's scale", () => {
+    /** Lets [count] people into strategy [publicId] through link [token]. */
+    async function letIn(
+      t: TestConvexForDataModelAndIdentity<DataModel>,
+      publicId: string,
+      token: string,
+      count: number,
+    ) {
+      await t.run(async (ctx) => {
+        const strategy = await ctx.db
+          .query("strategies")
+          .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+          .first();
+        const link = await ctx.db
+          .query("shareLinks")
+          .withIndex("by_token", (q) => q.eq("token", token))
+          .first();
+        for (let i = 0; i < count; i++) {
+          const userId: Id<"users"> = await ctx.db.insert("users", {
+            externalId: `crowd-${token}-${i}`,
+            displayName: `Crowd ${i}`,
+            createdAt: i,
+            updatedAt: i,
+          });
+          await ctx.db.insert("strategyCollaborators", {
+            strategyId: strategy!._id,
+            userId,
+            role: "viewer",
+            shareLinkId: link!._id,
+            createdAt: i,
+            updatedAt: i,
+          });
+        }
+      });
+    }
+
+    async function joinedThrough(
+      t: TestConvexForDataModelAndIdentity<DataModel>,
+      token: string,
+    ) {
+      return await t.run(async (ctx) => {
+        const link = await ctx.db
+          .query("shareLinks")
+          .withIndex("by_token", (q) => q.eq("token", token))
+          .first();
+        return (
+          await ctx.db
+            .query("strategyCollaborators")
+            .withIndex("by_shareLinkId", (q) => q.eq("shareLinkId", link!._id))
+            .collect()
+        ).length;
+      });
+    }
+
+    test("people come a page at a time, each once", async () => {
+      const { t, users } = await createHarness();
+      const { a } = users;
+      await seedStrategy(a, "s1");
+      await share(a, "s1", "crowd-link", "viewer");
+      const total = MEMBER_PAGE_SIZE * 2 + 7;
+      await letIn(t, "s1", "crowd-link", total);
+
+      const seen = new Set<string>();
+      let after: number | undefined;
+      let pages = 0;
+      for (;;) {
+        const page = await a.query(listMembers, {
+          targetType: "strategy",
+          targetPublicId: "s1",
+          after,
+        });
+        pages += 1;
+        for (const member of page.members) seen.add(member.memberId);
+        if (page.nextAfter === null) break;
+        expect(page.members).toHaveLength(MEMBER_PAGE_SIZE);
+        after = page.nextAfter;
+      }
+      expect(pages).toBe(3);
+      expect(seen.size).toBe(total);
+    });
+
+    test("a link's joiners are counted up to a cap, with a few names", async () => {
+      const { t, users } = await createHarness();
+      const { a } = users;
+      await seedStrategy(a, "s1");
+      await share(a, "s1", "crowd-link", "viewer");
+      await share(a, "s1", "quiet-link", "viewer");
+      await letIn(t, "s1", "crowd-link", LINK_JOIN_COUNT_CAP + 3);
+
+      const joins = (await a.query(listLinkJoins, {
+        targetType: "strategy",
+        targetPublicId: "s1",
+      })) as { token: string; joined: number; more: boolean; names: string[] }[];
+      const byToken = Object.fromEntries(joins.map((j) => [j.token, j]));
+      expect(byToken["crowd-link"]).toMatchObject({
+        joined: LINK_JOIN_COUNT_CAP,
+        more: true,
+      });
+      expect(byToken["crowd-link"]!.names).toHaveLength(5);
+      expect(byToken["quiet-link"]).toEqual({
+        token: "quiet-link",
+        joined: 0,
+        more: false,
+        names: [],
+      });
+    });
+
+    test("disabling a widely joined link removes everyone, a batch at a time", async () => {
+      vi.useFakeTimers();
+      try {
+        const { t, users } = await createHarness();
+        const { a, b } = users;
+        await seedStrategy(a, "s1");
+        await share(a, "s1", "crowd-link", "viewer");
+        await share(a, "s1", "other-link", "viewer");
+        await letIn(t, "s1", "crowd-link", LINK_MEMBER_REMOVAL_BATCH * 2 + 13);
+        await redeem(b, "other-link");
+
+        await a.mutation(revokeShare, {
+          ...protocol,
+          targetType: "strategy",
+          targetPublicId: "s1",
+          token: "crowd-link",
+          removeMembers: true,
+        });
+        // The link stops at once; the first batch went with it.
+        expect(await joinedThrough(t, "crowd-link")).toBe(
+          LINK_MEMBER_REMOVAL_BATCH + 13,
+        );
+
+        await t.finishAllScheduledFunctions(vi.runAllTimers);
+        expect(await joinedThrough(t, "crowd-link")).toBe(0);
+        // Someone who came through another link stays.
+        await expect(shell(b, "s1")).resolves.toMatchObject({
+          header: { role: "viewer" },
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

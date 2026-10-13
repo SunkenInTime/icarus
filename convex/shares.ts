@@ -1,5 +1,6 @@
 import type { QueryCtx, MutationCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -183,22 +184,59 @@ export const revoke = mutation({
     }
 
     if (args.removeMembers === true) {
-      const joined =
-        link.targetType === "strategy"
-          ? await ctx.db
-              .query("strategyCollaborators")
-              .withIndex("by_shareLinkId", (q) => q.eq("shareLinkId", link._id))
-              .collect()
-          : await ctx.db
-              .query("folderCollaborators")
-              .withIndex("by_shareLinkId", (q) => q.eq("shareLinkId", link._id))
-              .collect();
-      for (const membership of joined) {
-        await ctx.db.delete(membership._id);
-      }
+      await removeLinkMembers(ctx, link);
     }
 
     return { ok: true } as const;
+  },
+});
+
+/**
+ * How many memberships one transaction removes. A link shared widely can
+ * have more joiners than one transaction may write (Convex allows 16,000),
+ * so the rest go in batches that reschedule themselves.
+ */
+export const LINK_MEMBER_REMOVAL_BATCH = 500;
+
+const removeLinkMembersBatchRef = makeFunctionReference<"mutation">(
+  "shares:removeLinkMembersBatch",
+);
+
+/**
+ * Removes up to one batch of the people [link] let in, and schedules the
+ * next batch when there may be more. Each person loses access when their
+ * membership goes, within seconds of the link being disabled.
+ */
+async function removeLinkMembers(ctx: MutationCtx, link: Doc<"shareLinks">) {
+  const batch =
+    link.targetType === "strategy"
+      ? await ctx.db
+          .query("strategyCollaborators")
+          .withIndex("by_shareLinkId", (q) => q.eq("shareLinkId", link._id))
+          .take(LINK_MEMBER_REMOVAL_BATCH)
+      : await ctx.db
+          .query("folderCollaborators")
+          .withIndex("by_shareLinkId", (q) => q.eq("shareLinkId", link._id))
+          .take(LINK_MEMBER_REMOVAL_BATCH);
+  for (const membership of batch) {
+    await ctx.db.delete(membership._id);
+  }
+  if (batch.length === LINK_MEMBER_REMOVAL_BATCH) {
+    await ctx.scheduler.runAfter(0, removeLinkMembersBatchRef, {
+      linkId: link._id,
+    });
+  }
+}
+
+export const removeLinkMembersBatch = internalMutation({
+  args: { linkId: v.id("shareLinks") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const link = await ctx.db.get(args.linkId);
+    if (link !== null) {
+      await removeLinkMembers(ctx, link);
+    }
+    return null;
   },
 });
 
@@ -450,13 +488,10 @@ const memberValidator = v.object({
   joinedAt: v.number(),
   // The link they joined through, when it is known.
   shareLinkToken: v.union(v.string(), v.null()),
-  // Set when the access comes from a folder the target sits in. Such a
-  // member is managed from that folder, not from here.
-  inheritedFromFolder: v.union(
-    v.object({ publicId: v.string(), name: v.string() }),
-    v.null(),
-  ),
 });
+
+/** How many people [listMembers] returns at a time. */
+export const MEMBER_PAGE_SIZE = 50;
 
 async function describeMember(
   ctx: AnyCtx,
@@ -467,83 +502,173 @@ async function describeMember(
     createdAt: number;
     shareLinkId?: Id<"shareLinks">;
   },
-  inheritedFromFolder: Doc<"folders"> | null,
 ) {
   const user = await ctx.db.get(row.userId);
   const link =
     row.shareLinkId === undefined ? null : await ctx.db.get(row.shareLinkId);
   return {
     memberId: row._id,
-    displayName:
-      user === null || user.displayName === UNKNOWN_DISPLAY_NAME
-        ? null
-        : user.displayName,
+    displayName: memberName(user),
     avatarUrl: user?.avatarUrl ?? null,
     role: row.role,
     joinedAt: row.createdAt,
     shareLinkToken: link?.token ?? null,
-    inheritedFromFolder:
-      inheritedFromFolder === null
-        ? null
-        : {
-            publicId: inheritedFromFolder.publicId,
-            name: inheritedFromFolder.name,
-          },
   };
 }
 
+function memberName(user: Doc<"users"> | null): string | null {
+  return user === null || user.displayName === UNKNOWN_DISPLAY_NAME
+    ? null
+    : user.displayName;
+}
+
 /**
- * Everyone besides the owner who can open a strategy or folder: the people
- * it was shared with directly, then the people who reach it through a
- * folder it sits in. Only the owner can read the list.
+ * The people a strategy or folder was shared with directly, oldest first,
+ * [MEMBER_PAGE_SIZE] at a time: pass the previous page's [nextAfter] as
+ * [after] for the next. Only the owner can read them. People who reach it
+ * through a folder it sits in are listed with that folder (see
+ * [listFolderAccess]).
  */
 export const listMembers = query({
   args: {
     targetType: targetTypeValidator,
     targetPublicId: v.string(),
+    after: v.optional(v.number()),
   },
-  returns: v.array(memberValidator),
+  returns: v.object({
+    members: v.array(memberValidator),
+    nextAfter: v.union(v.number(), v.null()),
+  }),
   handler: async (ctx, args) => {
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
     await assertOwnsTarget(ctx, resolved);
+    const after = args.after ?? -1;
 
-    const direct =
+    const rows =
       resolved.strategy !== null
         ? await ctx.db
             .query("strategyCollaborators")
             .withIndex("by_strategyId", (q) =>
-              q.eq("strategyId", resolved.strategy!._id),
+              q.eq("strategyId", resolved.strategy!._id).gt("_creationTime", after),
             )
-            .collect()
+            .take(MEMBER_PAGE_SIZE + 1)
         : await ctx.db
             .query("folderCollaborators")
-            .withIndex("by_folderId", (q) => q.eq("folderId", resolved.folder!._id))
-            .collect();
+            .withIndex("by_folderId", (q) =>
+              q.eq("folderId", resolved.folder!._id).gt("_creationTime", after),
+            )
+            .take(MEMBER_PAGE_SIZE + 1);
+    const page = rows.slice(0, MEMBER_PAGE_SIZE);
     const members = [];
-    for (const row of direct.sort((a, b) => a.createdAt - b.createdAt)) {
-      members.push(await describeMember(ctx, row, null));
+    for (const row of page) {
+      members.push(await describeMember(ctx, row));
     }
+    return {
+      members,
+      nextAfter:
+        rows.length > MEMBER_PAGE_SIZE
+          ? page[MEMBER_PAGE_SIZE - 1]!._creationTime
+          : null,
+    };
+  },
+});
 
+/**
+ * The folders a strategy or folder sits in that are shared with someone,
+ * nearest first: their people can open it too, and are managed there.
+ * Only the owner can read them.
+ */
+export const listFolderAccess = query({
+  args: {
+    targetType: targetTypeValidator,
+    targetPublicId: v.string(),
+  },
+  returns: v.array(v.object({ publicId: v.string(), name: v.string() })),
+  handler: async (ctx, args) => {
+    const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
+    await assertOwnsTarget(ctx, resolved);
+    const shared = [];
     let parentFolderId =
       resolved.strategy !== null
         ? resolved.strategy.folderId
         : resolved.folder!.parentFolderId;
     while (parentFolderId !== undefined) {
       const folder: Doc<"folders"> | null = await ctx.db.get(parentFolderId);
-      if (folder === null) {
-        break;
-      }
-      const inherited = await ctx.db
+      if (folder === null) break;
+      const anyone = await ctx.db
         .query("folderCollaborators")
         .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
-        .collect();
-      for (const row of inherited.sort((a, b) => a.createdAt - b.createdAt)) {
-        members.push(await describeMember(ctx, row, folder));
+        .first();
+      if (anyone !== null) {
+        shared.push({ publicId: folder.publicId, name: folder.name });
       }
       parentFolderId = folder.parentFolderId;
     }
+    return shared;
+  },
+});
 
-    return members;
+/** Past this many, a link's joiners are counted as "more". */
+export const LINK_JOIN_COUNT_CAP = 100;
+
+/** How many joiners' names a link's count carries. */
+const LINK_JOIN_NAMES = 5;
+
+/**
+ * For each link of a strategy or folder, how many people it let in (up to
+ * [LINK_JOIN_COUNT_CAP], with [more] past it) and the first few names, so
+ * disabling it can say who would be removed. Only the owner can read them.
+ */
+export const listLinkJoins = query({
+  args: {
+    targetType: targetTypeValidator,
+    targetPublicId: v.string(),
+  },
+  returns: v.array(
+    v.object({
+      token: v.string(),
+      joined: v.number(),
+      more: v.boolean(),
+      names: v.array(v.string()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
+    await assertOwnsTarget(ctx, resolved);
+    const links =
+      resolved.strategy !== null
+        ? await ctx.db
+            .query("shareLinks")
+            .withIndex("by_strategyId", (q) => q.eq("strategyId", resolved.strategy!._id))
+            .collect()
+        : await ctx.db
+            .query("shareLinks")
+            .withIndex("by_folderId", (q) => q.eq("folderId", resolved.folder!._id))
+            .collect();
+    const joins = [];
+    for (const link of links) {
+      const rows =
+        link.targetType === "strategy"
+          ? await ctx.db
+              .query("strategyCollaborators")
+              .withIndex("by_shareLinkId", (q) => q.eq("shareLinkId", link._id))
+              .take(LINK_JOIN_COUNT_CAP + 1)
+          : await ctx.db
+              .query("folderCollaborators")
+              .withIndex("by_shareLinkId", (q) => q.eq("shareLinkId", link._id))
+              .take(LINK_JOIN_COUNT_CAP + 1);
+      const names = [];
+      for (const row of rows.slice(0, LINK_JOIN_NAMES)) {
+        names.push(memberName(await ctx.db.get(row.userId)) ?? "Teammate");
+      }
+      joins.push({
+        token: link.token,
+        joined: Math.min(rows.length, LINK_JOIN_COUNT_CAP),
+        more: rows.length > LINK_JOIN_COUNT_CAP,
+        names,
+      });
+    }
+    return joins;
   },
 });
 
