@@ -596,7 +596,7 @@ describe("share members", () => {
       const total = MEMBER_PAGE_SIZE * 2 + 7;
       await letIn(t, "s1", "crowd-link", total);
 
-      const seen = new Set<string>();
+      const seen: string[] = [];
       let cursor: string | undefined;
       let pages = 0;
       for (;;) {
@@ -606,7 +606,7 @@ describe("share members", () => {
           cursor,
         });
         pages += 1;
-        for (const member of page.members) seen.add(member.memberId);
+        for (const member of page.members) seen.push(member.memberId);
         if (pages === 1) {
           // Someone already listed leaves between pages; no one shifts past
           // the cursor.
@@ -618,7 +618,8 @@ describe("share members", () => {
         cursor = page.nextCursor;
       }
       expect(pages).toBe(3);
-      expect(seen.size).toBe(total);
+      expect(seen).toHaveLength(total);
+      expect(new Set(seen).size).toBe(total);
     });
 
     test("a link's joiners are counted up to a cap, with a few names", async () => {
