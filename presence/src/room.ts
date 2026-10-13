@@ -57,8 +57,7 @@ const MIN_CURSOR_INTERVAL_MS = 25;
 const MIN_EDITING_INTERVAL_MS = 100;
 /** Clients renew once a minute; anything faster is ignored unverified. */
 const MIN_RENEW_INTERVAL_MS = 10_000;
-/** Room for a full editing message: every id in it at its longest. */
-const MAX_MESSAGE_CHARS = 8192;
+const MAX_MESSAGE_CHARS = 2048;
 const MAX_PAGE_ID_CHARS = 128;
 const MAX_ID_CHARS = 128;
 const MAX_EDITING_GROUPS = 8;
@@ -164,12 +163,12 @@ export class PresenceRoom extends DurableObject<Env> {
       case "editing": {
         const editing = parseEditing(m);
         const now = Date.now();
-        // A clear always goes through: dropped, it would leave the notice
-        // on everyone's screen. It only broadcasts after an accepted change,
-        // so it cannot flood the room.
+        // Taking things away always goes through: dropped, it would leave a
+        // notice or outline on everyone's screen. It only follows an accepted
+        // change, so it cannot flood the room.
         if (
           editing === undefined ||
-          (editing !== null &&
+          (!onlyRemoves(self.editing, editing) &&
             now - self.lastEditingAt < MIN_EDITING_INTERVAL_MS) ||
           sameEditing(editing, self.editing)
         ) {
@@ -398,6 +397,17 @@ function sameEditing(a: Editing | null, b: Editing | null): boolean {
     a.page === b.page &&
     sameIds(a.groups, b.groups) &&
     sameIds(a.items, b.items)
+  );
+}
+
+/** Whether [next] only drops groups or items [prev] named, on its page. */
+function onlyRemoves(prev: Editing | null, next: Editing | null): boolean {
+  if (next === null) return true;
+  return (
+    prev !== null &&
+    prev.page === next.page &&
+    next.groups.every((group) => prev.groups.includes(group)) &&
+    next.items.every((item) => prev.items.includes(item))
   );
 }
 

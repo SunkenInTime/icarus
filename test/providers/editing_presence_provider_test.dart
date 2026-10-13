@@ -154,6 +154,21 @@ void main() {
     expect(editing(), isNull);
   });
 
+  test('a press off the canvas keeps what is open being edited', () {
+    container.read(lineUpProvider.notifier).startFromOrigin('origin-b');
+    container.read(textDraftProvider.notifier).setDraft('text-1', 'gg');
+    // Dragging an ability in from the sidebar.
+    container.read(editorPointersProvider.notifier).down(1);
+    expect(
+      editing(),
+      const PresenceEditing(
+        pageId: 'p1',
+        groupIds: {'group-b'},
+        itemIds: {'origin-b', 'text-1'},
+      ),
+    );
+  });
+
   test('an open dialog is editing the groups of the items it shows', () {
     final open = container.read(openLineUpItemsProvider.notifier);
     final panel = Object();

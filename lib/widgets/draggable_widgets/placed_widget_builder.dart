@@ -649,12 +649,14 @@ class _AgentListState extends ConsumerState<_AgentList> {
                           .read(agentProvider.notifier)
                           .updatePosition(virtualOffset, agent.id);
                     },
-                    child: AgentWidget(
-                      state: agent.state,
-                      isAlly: agent.isAlly,
-                      id: agent.id,
-                      agent: AgentData.agents[agent.type]!,
-                      weapon: agent.weapon,
+                    child: EditorItemOutline(
+                      child: AgentWidget(
+                        state: agent.state,
+                        isAlly: agent.isAlly,
+                        id: agent.id,
+                        agent: AgentData.agents[agent.type]!,
+                        weapon: agent.weapon,
+                      ),
                     ),
                   ),
                 ),

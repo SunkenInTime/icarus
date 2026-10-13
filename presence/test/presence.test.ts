@@ -389,6 +389,20 @@ describe("editing", () => {
     expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
   });
 
+  it("never holds back editing that only takes things away", async () => {
+    const { ana, ben } = await anaAndBen();
+    ben.ws.send(editing("p1", ["g1"], ["i1", "i2"]));
+    ben.ws.send(editing("p1", ["g1"], ["i2"]));
+    ben.ws.send(editing("p1", ["g1"], []));
+    expect(await ana.next("editing")).toMatchObject({ items: ["i1", "i2"] });
+    expect(await ana.next("editing")).toMatchObject({ items: ["i2"] });
+    expect(await ana.next("editing")).toMatchObject({ groups: ["g1"], items: [] });
+    // Adding is still held back.
+    ben.ws.send(editing("p1", ["g1"], ["i3"]));
+    await sleep(PAST_INTERVAL_MS);
+    expect(ana.messages.filter((m) => m.t === "editing")).toEqual([]);
+  });
+
   it("ignores editing faster than one per 100 ms", async () => {
     const { ana, ben } = await anaAndBen();
     ben.ws.send(editing("p1", ["g1"]));

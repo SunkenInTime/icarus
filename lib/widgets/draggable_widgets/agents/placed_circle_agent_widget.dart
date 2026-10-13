@@ -20,6 +20,7 @@ import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 double circleAgentCompositeDiameterVirtual(double mapScale) {
   return CustomCircleUtility.maxDiameterInVirtual(mapScale);
@@ -268,9 +269,11 @@ class _PlacedCircleAgentWidgetState
                 });
                 widget.onDragEnd(details, dragId);
               },
-              child: CircleAgentComposite(
-                agent: current.copyWith(diameterMeters: diameterMeters),
-                forcedAgentSize: agentSize,
+              child: EditorItemOutline(
+                child: CircleAgentComposite(
+                  agent: current.copyWith(diameterMeters: diameterMeters),
+                  forcedAgentSize: agentSize,
+                ),
               ),
             ),
             if (!_isDragging && !isScreenshot)

@@ -686,6 +686,27 @@ void main() {
       });
     });
 
+    test('leaves items out rather than send more than an old room reads', () {
+      fakeAsync((async) {
+        final presence = room()..start();
+        async.flushMicrotasks();
+        welcome(async, sockets.single);
+
+        final groups = {for (var i = 0; i < 8; i++) 'g$i' * 20};
+        presence.setEditing(PresenceEditing(
+          pageId: 'p1',
+          groupIds: groups,
+          itemIds: {for (var i = 10; i < 34; i++) 'i$i' * 40},
+        ));
+        final sent = sockets.single.sentEditing.last;
+        // A room from before items were relayed drops anything longer.
+        expect(jsonEncode(sent).length, lessThanOrEqualTo(2048));
+        expect(sent['groups'], [...groups]..sort());
+        expect(sent['items'], isNotEmpty);
+        presence.dispose();
+      });
+    });
+
     test('sends at most one editing per interval, and always the last', () {
       fakeAsync((async) {
         final presence = room()..start();

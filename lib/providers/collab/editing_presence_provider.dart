@@ -54,8 +54,9 @@ final myEditingProvider = Provider<PresenceEditing?>((ref) {
   final pageId =
       ref.watch(strategyPageSessionProvider.select((s) => s.activePageId));
   if (pageId == null) return null;
-  final held = ref.watch(editorHeldEntitiesProvider) ?? const <String>{};
-  final placement = ref.watch(lineUpProvider.select((s) => s.placement));
+  // Not editorHeldEntitiesProvider: a press off the canvas (a sidebar drag)
+  // does not stop the user changing the items they have open.
+  final items = ref.watch(editorHeldCanvasItemsProvider);
   final edit = ref.watch(lineUpProvider.select((s) => s.edit?.linkIds));
   final open = ref.watch(openLineUpItemsProvider);
   final openNotifier = ref.read(openLineUpItemsProvider.notifier);
@@ -63,17 +64,15 @@ final myEditingProvider = Provider<PresenceEditing?>((ref) {
   final liveSync = ref.read(activePageLiveSyncProvider.notifier);
   final groupIds = {
     for (final id in {
-      ...held,
-      if (placement?.pinnedOriginId case final id?) id,
-      if (placement?.pinnedLandingId case final id?) id,
+      ...items,
       ...?edit,
       for (final MapEntry(key: owner, value: ids) in open.entries)
         if (openNotifier.pageOf(owner) == pageId) ...ids,
     })
       if (liveSync.lineupGroupOf(pageId, id) case final group?) group,
   };
-  if (groupIds.isEmpty && held.isEmpty) return null;
-  return PresenceEditing(pageId: pageId, groupIds: groupIds, itemIds: held);
+  if (groupIds.isEmpty && items.isEmpty) return null;
+  return PresenceEditing(pageId: pageId, groupIds: groupIds, itemIds: items);
 });
 
 /// The first teammate changing each canvas item on the page on screen, by

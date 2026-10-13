@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
-import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 
@@ -16,99 +16,119 @@ final _teammate = PresencePeer(
   cursor: null,
 );
 
-Future<RenderObject> _pumpItem(
+/// An item whose drawn shape, 40 x 20, sits inside a larger box.
+const _item = Positioned(
+  left: 100,
+  top: 50,
+  child: Padding(
+    padding: EdgeInsets.all(8),
+    child: EditorItemOutline(child: SizedBox(width: 40, height: 20)),
+  ),
+);
+
+Future<void> _pump(
   WidgetTester tester, {
-  required Widget item,
+  required Widget canvas,
   Map<String, PresencePeer> editors = const {},
+  double zoom = 1,
 }) async {
+  final container = ProviderContainer(
+    overrides: [itemEditorsProvider.overrideWith((ref) => editors)],
+  );
+  addTearDown(container.dispose);
+  container.read(screenZoomProvider.notifier).updateZoom(zoom);
   await tester.pumpWidget(
-    ProviderScope(
-      overrides: [itemEditorsProvider.overrideWith((ref) => editors)],
+    UncontrolledProviderScope(
+      container: container,
       child: Directionality(
         textDirection: TextDirection.ltr,
         child: Align(
           alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: 800,
-            height: 600,
-            child: Stack(
-              children: [EditorEntityLayer(id: 'item', child: item)],
-            ),
-          ),
+          child: SizedBox(width: 800, height: 600, child: canvas),
         ),
       ),
     ),
   );
-  return tester.renderObject(
-    find.descendant(
-      of: find.byType(Listener),
-      matching: find.byWidgetPredicate((widget) => widget is Stack),
-    ),
-  );
 }
 
-RRect _outlineAround(Rect box) =>
-    RRect.fromRectAndRadius(box.inflate(4), const Radius.circular(6));
+RenderObject _outline(WidgetTester tester) =>
+    tester.renderObject(find.byType(EditorItemOutline));
 
 void main() {
   testWidgets('an item no teammate is changing has no outline', (
     tester,
   ) async {
-    final stack = await _pumpItem(
+    await _pump(
       tester,
-      item: const Positioned(
-        left: 100,
-        top: 50,
-        child: SizedBox(width: 40, height: 40),
+      canvas: const Stack(
+        children: [EditorEntityLayer(id: 'item', child: _item)],
       ),
+      editors: {'other': _teammate},
     );
 
-    expect(stack, isNot(paints..rrect()));
+    expect(_outline(tester), isNot(paints..rrect()));
   });
 
   testWidgets('an item a teammate is changing is outlined in their color', (
     tester,
   ) async {
-    final stack = await _pumpItem(
+    await _pump(
       tester,
-      editors: {'item': _teammate},
-      item: const Positioned(
-        left: 100,
-        top: 50,
-        child: SizedBox(width: 40, height: 40),
+      canvas: const Stack(
+        children: [EditorEntityLayer(id: 'item', child: _item)],
       ),
+      editors: {'item': _teammate},
     );
 
+    // Around the marked shape, wherever it sits in the item.
     expect(
-      stack,
+      _outline(tester),
       paints
         ..rrect(
-          rrect: _outlineAround(const Rect.fromLTWH(100, 50, 40, 40)),
+          rrect: RRect.fromRectAndRadius(
+            const Rect.fromLTWH(0, 0, 40, 20).inflate(4),
+            const Radius.circular(6),
+          ),
           color: presenceColorFor('sam'),
+          strokeWidth: 2,
         ),
     );
   });
 
-  testWidgets('a text or image is outlined around its box, not the canvas', (
+  testWidgets('the outline keeps its width on screen when zoomed', (
     tester,
   ) async {
-    final stack = await _pumpItem(
+    await _pump(
       tester,
-      editors: {'item': _teammate},
-      item: const CanonicalPositionedBox(
-        attackScreenPosition: Offset(100, 50),
-        isAttack: true,
-        child: SizedBox(width: 80, height: 30),
+      canvas: const Stack(
+        children: [EditorEntityLayer(id: 'item', child: _item)],
       ),
+      editors: {'item': _teammate},
+      zoom: 2,
     );
 
     expect(
-      stack,
+      _outline(tester),
       paints
         ..rrect(
-          rrect: _outlineAround(const Rect.fromLTWH(100, 50, 80, 30)),
-          color: presenceColorFor('sam'),
+          rrect: RRect.fromRectAndRadius(
+            const Rect.fromLTWH(0, 0, 40, 20).inflate(2),
+            const Radius.circular(3),
+          ),
+          strokeWidth: 1,
         ),
     );
+  });
+
+  testWidgets('a shape outside an item layer (a drag, an export) is bare', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      canvas: const Stack(children: [_item]),
+      editors: {'item': _teammate},
+    );
+
+    expect(_outline(tester), isNot(paints..rrect()));
   });
 }

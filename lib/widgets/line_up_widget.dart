@@ -12,6 +12,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 const double _pinnedRingGap = 3;
 const double _pinnedRingStroke = 2;
@@ -58,13 +59,15 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
 
     Widget marker = _PinnedEnd(
       isPinned: isPinned,
-      child: AgentWidget(
-        lineUpId: origin.id,
-        agent: AgentData.agents[origin.agent.type]!,
-        isAlly: origin.agent.isAlly,
-        weapon: origin.agent.weapon,
-        id: origin.agent.id,
-        isInteractive: interactive,
+      child: EditorItemOutline(
+        child: AgentWidget(
+          lineUpId: origin.id,
+          agent: AgentData.agents[origin.agent.type]!,
+          isAlly: origin.agent.isAlly,
+          weapon: origin.agent.weapon,
+          id: origin.agent.id,
+          isInteractive: interactive,
+        ),
       ),
     );
     final canEdit = ref.watch(
@@ -153,7 +156,7 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
       ),
     );
     Widget buildAbility({required bool isFeedback}) {
-      final child = ability.data.abilityData!.createWidget(
+      final art = ability.data.abilityData!.createWidget(
         id: null,
         isAlly: ability.isAlly,
         mapScale: mapScale,
@@ -167,14 +170,15 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
         watchMouse: interactive && !isFeedback,
         contextMenuItems: isFeedback ? null : contextMenuItems,
       );
-      if (!shouldRotate) return child;
+      final outlined = EditorItemOutline(child: art);
+      if (!shouldRotate) return outlined;
       return Transform.rotate(
         angle: displayRotation,
         alignment: Alignment.topLeft,
         origin: ability.data.abilityData!
             .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
             .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor),
-        child: child,
+        child: outlined,
       );
     }
 

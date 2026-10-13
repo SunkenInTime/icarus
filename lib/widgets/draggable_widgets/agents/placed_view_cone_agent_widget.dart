@@ -19,6 +19,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 Offset viewConeAgentCompositeAgentOffsetVirtual(double agentSize) {
   return Offset(
@@ -359,12 +360,14 @@ class _PlacedViewConeAgentWidgetState
             });
             widget.onDragEnd(details, dragId);
           },
-          child: ViewConeAgentComposite(
-            agent: current,
-            rotation: displayRotation,
-            length: localLength,
-            forcedAgentSize: agentSize,
-            applyRotation: false,
+          child: EditorItemOutline(
+            child: ViewConeAgentComposite(
+              agent: current,
+              rotation: displayRotation,
+              length: localLength,
+              forcedAgentSize: agentSize,
+              applyRotation: false,
+            ),
           ),
         ),
       ),

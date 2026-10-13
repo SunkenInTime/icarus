@@ -99,8 +99,8 @@ class EditorCanvasRegion extends ConsumerWidget {
 
 /// One canvas item, as a child of the canvas's item [Stack]. While a press on
 /// it (a drag, a rotate or resize handle) lasts, remote changes to this item
-/// wait; the rest of the page updates. While a teammate is changing it, it is
-/// outlined in their color.
+/// wait; the rest of the page updates. While a teammate is changing it, its
+/// [EditorItemOutline] is drawn in their color.
 ///
 /// The item sits in its own full-size layer so its positioned widget lays out
 /// exactly as before, and the listener only fires when the item itself is hit.
@@ -122,58 +122,68 @@ class EditorEntityLayer extends ConsumerWidget {
         behavior: HitTestBehavior.deferToChild,
         onPointerDown: hold,
         onPointerPanZoomStart: hold,
-        child: _OutlinedItemStack(
-          outline: editor == null ? null : presenceColorFor(editor.uid),
+        child: _ItemOutlineStyle(
+          color: editor == null ? null : presenceColorFor(editor.uid),
           // The outline keeps its width on screen at any zoom; only an
           // outlined item rebuilds as the zoom changes.
           zoom: editor == null ? 1 : ref.watch(screenZoomProvider),
-          child: child,
+          child: Stack(clipBehavior: Clip.none, children: [child]),
         ),
       ),
     );
   }
 }
 
-/// A [Stack] of one positioned item that draws [outline], when set, around
-/// the box the item lays out in: the box it is placed and hit-tested by.
-class _OutlinedItemStack extends Stack {
-  _OutlinedItemStack({
-    required this.outline,
+/// How the [EditorItemOutline]s of one item draw: in [color], or not at all
+/// when it is null.
+class _ItemOutlineStyle extends InheritedWidget {
+  const _ItemOutlineStyle({
+    required this.color,
     required this.zoom,
-    required Widget child,
-  }) : super(clipBehavior: Clip.none, children: [child]);
+    required super.child,
+  });
 
-  final Color? outline;
+  final Color? color;
   final double zoom;
 
   @override
-  RenderStack createRenderObject(BuildContext context) =>
-      _RenderOutlinedItemStack(
-        outline: outline,
-        zoom: zoom,
-        textDirection: Directionality.maybeOf(context),
-        clipBehavior: clipBehavior,
-      );
+  bool updateShouldNotify(_ItemOutlineStyle oldWidget) =>
+      color != oldWidget.color || zoom != oldWidget.zoom;
+}
+
+/// The shape a canvas item draws, which is outlined while a teammate is
+/// changing the item. It sits inside the item's rotation, so the outline
+/// turns with it. Outside an [EditorEntityLayer] (a drag's feedback, an
+/// export) it draws nothing.
+class EditorItemOutline extends SingleChildRenderObjectWidget {
+  const EditorItemOutline({required super.child, super.key});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    final style =
+        context.dependOnInheritedWidgetOfExactType<_ItemOutlineStyle>();
+    return RenderEditorItemOutline(
+      color: style?.color,
+      zoom: style?.zoom ?? 1,
+    );
+  }
 
   @override
   void updateRenderObject(
     BuildContext context,
-    covariant _RenderOutlinedItemStack renderObject,
+    covariant RenderEditorItemOutline renderObject,
   ) {
-    super.updateRenderObject(context, renderObject);
+    final style =
+        context.dependOnInheritedWidgetOfExactType<_ItemOutlineStyle>();
     renderObject
-      ..outline = outline
-      ..zoom = zoom;
+      ..color = style?.color
+      ..zoom = style?.zoom ?? 1;
   }
 }
 
-class _RenderOutlinedItemStack extends RenderStack {
-  _RenderOutlinedItemStack({
-    required Color? outline,
-    required double zoom,
-    super.textDirection,
-    super.clipBehavior,
-  })  : _outline = outline,
+class RenderEditorItemOutline extends RenderProxyBox {
+  RenderEditorItemOutline({required Color? color, required double zoom})
+      : _color = color,
         _zoom = zoom;
 
   /// On screen, in logical pixels.
@@ -181,10 +191,10 @@ class _RenderOutlinedItemStack extends RenderStack {
   static const double _gap = 3;
   static const double _radius = 6;
 
-  Color? _outline;
-  set outline(Color? value) {
-    if (value == _outline) return;
-    _outline = value;
+  Color? _color;
+  set color(Color? value) {
+    if (value == _color) return;
+    _color = value;
     markNeedsPaint();
   }
 
@@ -198,26 +208,16 @@ class _RenderOutlinedItemStack extends RenderStack {
   @override
   void paint(PaintingContext context, Offset offset) {
     super.paint(context, offset);
-    final outline = _outline;
-    final item = firstChild;
-    if (outline == null || item == null) return;
-    var box = (item.parentData! as StackParentData).offset & item.size;
-    // Text and images fill the canvas and place their box inside it
-    // (CanonicalPositionedBox), so outline the box they place.
-    if (item is RenderCustomSingleChildLayoutBox) {
-      final placed = item.child;
-      if (placed == null) return;
-      box = box.topLeft + (placed.parentData! as BoxParentData).offset &
-          placed.size;
-    }
+    final color = _color;
+    if (color == null) return;
     final scale = 1 / _zoom;
     context.canvas.drawRRect(
       RRect.fromRectAndRadius(
-        box.shift(offset).inflate((_gap + _width / 2) * scale),
+        (offset & size).inflate((_gap + _width / 2) * scale),
         Radius.circular(_radius * scale),
       ),
       Paint()
-        ..color = outline
+        ..color = color
         ..style = PaintingStyle.stroke
         ..strokeWidth = _width * scale,
     );

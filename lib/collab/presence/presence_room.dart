@@ -141,20 +141,31 @@ class PresenceRoom {
                 'groups': const <String>[],
                 'items': const <String>[],
               })
-        : {
-            't': 'editing',
-            'page': editing.pageId,
-            // The room refuses more than eight groups and 24 items; in
-            // practice it is one or two of each.
-            'groups': ([...editing.groupIds]..sort()).take(8).toList(),
-            'items': ([...editing.itemIds]..sort()).take(24).toList(),
-          };
+        : _editingMessage(editing);
     if (message == null) {
       _sentEditing = editing;
     } else if (_send(message)) {
       _sentEditing = editing;
       _lastEditingSentAt = clock.now();
     }
+  }
+
+  /// The room refuses more than eight groups and 24 items, and a room from
+  /// before items were relayed drops a message over 2048 characters. Items
+  /// past either limit are left out; in practice it is one or two of each.
+  static Map<String, Object> _editingMessage(PresenceEditing editing) {
+    final groups = ([...editing.groupIds]..sort()).take(8).toList();
+    final items = ([...editing.itemIds]..sort()).take(24).toList();
+    Map<String, Object> message() => {
+          't': 'editing',
+          'page': editing.pageId,
+          'groups': groups,
+          'items': items
+        };
+    while (items.isNotEmpty && jsonEncode(message()).length > 2048) {
+      items.removeLast();
+    }
+    return message();
   }
 
   void dispose() {
