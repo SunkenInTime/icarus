@@ -1936,7 +1936,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       } finally {
         _pruneCanvasOpIds();
       }
-      _refreshActiveQueueView();
+      // The refusal described work that is gone now; keeping its error
+      // would hold the editor's exit for nothing.
+      _refreshActiveQueueView(clearError: removedAll);
     });
     return removedAll;
   }

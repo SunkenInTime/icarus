@@ -621,14 +621,22 @@ class CloudMediaUploadQueueNotifier
     await _deleteJob(job, onlyIfUnreferenced: true);
   }
 
-  /// Drops the signed-in account's uploads for [strategyPublicId] that no
-  /// change on this device still places, with their bytes: the user just
-  /// discarded the changes of a strategy they lost. An upload a remaining
-  /// change refers to (one still being sent, say) stays. Returns whether
+  /// Drops [accountId]'s uploads for [strategyPublicId] that no change on
+  /// this device still places, with their bytes: the user just discarded
+  /// the changes of a strategy that account lost. An upload a remaining
+  /// change refers to stays, and so does one being sent right now, whose
+  /// answer would write it back: a later discard takes it. Nothing goes
+  /// unless [accountId] is still the one signed in. Returns whether
   /// nothing failed.
-  Future<bool> discardUnreferencedJobs(String strategyPublicId) async {
-    final jobs = _readJobs()
-        .where((job) => job.strategyPublicId == strategyPublicId)
+  Future<bool> discardUnreferencedJobs(
+    String strategyPublicId, {
+    required String accountId,
+  }) async {
+    final jobs = _jobsByStorageKey.values
+        .where((job) =>
+            job.accountId == accountId &&
+            job.strategyPublicId == strategyPublicId &&
+            durableCloudMediaOutboxStorageKey(job) != _processingJobKey)
         .toList(growable: false);
     try {
       for (final job in jobs) {
@@ -641,6 +649,9 @@ class CloudMediaUploadQueueNotifier
       _refreshState();
     }
   }
+
+  /// The storage key of the upload being worked on, while one is.
+  String? _processingJobKey;
 
   Future<void> clearJobsForStrategy(String strategyPublicId) async {
     final jobs = _readJobs()
@@ -668,10 +679,12 @@ class CloudMediaUploadQueueNotifier
 
     state = state.copyWith(isProcessing: true);
     _logMedia('process.start ${_describeJob(nextJob)}');
+    _processingJobKey = durableCloudMediaOutboxStorageKey(nextJob);
     late final bool madeProgress;
     try {
       madeProgress = await _processJob(nextJob);
     } finally {
+      _processingJobKey = null;
       _refreshState(isProcessing: false);
       _logMedia('process.finish jobs=${state.jobs.length}');
     }

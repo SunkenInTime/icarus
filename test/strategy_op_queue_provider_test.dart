@@ -4243,6 +4243,31 @@ void main() {
       });
     }
 
+    test('discarding it clears the error, so leaving is not held', () async {
+      final server = _EditAccessRepository(shellRefused: true);
+      final (container, store) = await refused(server);
+      expect(container.read(strategyOpQueueProvider).lastError, isNotNull);
+
+      final ok = await container
+          .read(strategyOpQueueProvider.notifier)
+          .discardUnsendableWork('strategy-1', accountId: 'account-a');
+
+      expect(ok, isTrue);
+      expect(store.load().records, isEmpty);
+      expect(container.read(strategyOpQueueProvider).lastError, isNull);
+    });
+
+    test('a discard for another account leaves this one alone', () async {
+      final server = _EditAccessRepository(shellRefused: true);
+      final (container, store) = await refused(server);
+
+      await container
+          .read(strategyOpQueueProvider.notifier)
+          .discardUnsendableWork('strategy-1', accountId: 'account-b');
+
+      expect(store.load().records, hasLength(1));
+    });
+
     test('lands on Retry once the owner gives edit access back', () async {
       final server = _EditAccessRepository(role: 'viewer');
       final (container, store) = await refused(server);

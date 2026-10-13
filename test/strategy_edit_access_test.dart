@@ -181,8 +181,11 @@ class _ClearingMediaQueue extends CloudMediaUploadQueueNotifier {
       const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
 
   @override
-  Future<bool> discardUnreferencedJobs(String strategyPublicId) async {
-    cleared.add(strategyPublicId);
+  Future<bool> discardUnreferencedJobs(
+    String strategyPublicId, {
+    required String accountId,
+  }) async {
+    cleared.add('$accountId/$strategyPublicId');
     return true;
   }
 }
@@ -981,7 +984,7 @@ void main() {
       await tester.tap(find.text('Discard'));
       await tester.pumpAndSettle();
       expect(queue.discarded, ['account-a/cloud-strategy']);
-      expect(media.cleared, ['cloud-strategy']);
+      expect(media.cleared, ['account-a/cloud-strategy']);
       expect(leaves, [1]);
       await _clearToasts(tester);
     });

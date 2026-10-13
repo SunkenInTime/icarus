@@ -111,7 +111,7 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
     final uploadsGone = removed &&
         await ref
             .read(cloudMediaUploadQueueProvider.notifier)
-            .discardUnreferencedJobs(strategyId);
+            .discardUnreferencedJobs(strategyId, accountId: accountId);
     if (!uploadsGone) {
       tell("Couldn't discard everything. Try again from the library.");
     }
