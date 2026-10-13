@@ -305,32 +305,41 @@ class ViewConeWidget extends ConsumerWidget {
       width: totalWidth,
       height: totalHeight,
       child: Stack(
+        // The center marker's outline reaches past the box the cone is
+        // clipped to.
+        clipBehavior: Clip.none,
         children: [
-          const Positioned.fill(child: IgnorePointer(child: SizedBox())),
-          Positioned(
-            top: scaledAnchor.dy - containerHeight,
-            left: scaledAnchor.dx - (containerWidth / 2),
-            child: IgnorePointer(
-              child: SizedBox(
-                width: containerWidth,
-                height: containerHeight,
-                child: heightCone ??
-                    _faded(
-                        opacity,
-                        CustomPaint(
-                          size: Size(containerWidth, containerHeight),
-                          painter: ViewConePainter(
-                            angle: angle,
-                            length: scaledLength,
-                            visibilityPolygon: visibilityPolygon,
-                            debugMatchedSegments: debugMatchedSegments,
-                            debugRiotSegments: debugRiotSegments,
-                            debugRejectedSegments: debugRejectedSegments,
-                            debugBoundarySegments: debugBoundarySegments,
-                            debugLabel: debugLabel,
-                          ),
-                        )),
-              ),
+          Positioned.fill(
+            child: Stack(
+              children: [
+                const Positioned.fill(child: IgnorePointer(child: SizedBox())),
+                Positioned(
+                  top: scaledAnchor.dy - containerHeight,
+                  left: scaledAnchor.dx - (containerWidth / 2),
+                  child: IgnorePointer(
+                    child: SizedBox(
+                      width: containerWidth,
+                      height: containerHeight,
+                      child: heightCone ??
+                          _faded(
+                              opacity,
+                              CustomPaint(
+                                size: Size(containerWidth, containerHeight),
+                                painter: ViewConePainter(
+                                  angle: angle,
+                                  length: scaledLength,
+                                  visibilityPolygon: visibilityPolygon,
+                                  debugMatchedSegments: debugMatchedSegments,
+                                  debugRiotSegments: debugRiotSegments,
+                                  debugRejectedSegments: debugRejectedSegments,
+                                  debugBoundarySegments: debugBoundarySegments,
+                                  debugLabel: debugLabel,
+                                ),
+                              )),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           if (showCenterMarker)
