@@ -27,6 +27,7 @@ import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -260,12 +261,12 @@ class StrategyImportExportService {
 
     return _importZipArchive(
       zipFile: File(filePath),
-      parentFolderId: null,
+      parentFolderId: _localFolderOnScreen(),
     );
   }
 
   Future<ImportBatchResult> loadFromFileDrop(List<XFile> files) async {
-    final targetFolderId = ref.read(folderProvider);
+    final targetFolderId = _localFolderOnScreen();
     var result = const ImportBatchResult.empty();
 
     for (final file in files) {
@@ -279,6 +280,13 @@ class StrategyImportExportService {
 
     return result;
   }
+
+  /// Where an import lands: the local folder on screen, or the top level when
+  /// the screen shows the top level or a cloud folder.
+  String? _localFolderOnScreen() =>
+      ref.read(libraryWorkspaceProvider) == LibraryWorkspace.local
+          ? ref.read(folderProvider)
+          : null;
 
   Future<Directory> getTempDirectory(String strategyID) async {
     String tempDirectoryPath;
@@ -477,18 +485,29 @@ class StrategyImportExportService {
     }
   }
 
+  /// Imports write to the local library, folders like strategies, and under
+  /// exactly [parentFolderId] (null is the top level). The store and folder
+  /// on screen don't choose: signed in, My Library opens on the cloud store,
+  /// and a backup's top-level folders belong beside its top-level strategies.
   Future<Folder> _createImportedFolder({
     required String name,
     required String? parentFolderId,
-  }) {
-    return ref.read(folderProvider.notifier).createFolder(
-          name: name,
-          iconId: FolderIconRegistry.idForLegacyIconData(
-            Icons.drive_folder_upload,
-          ),
-          color: FolderColor.generic,
-          parentID: parentFolderId,
-        );
+    int? iconId,
+    FolderColor color = FolderColor.generic,
+    Color? customColor,
+  }) async {
+    final folder = Folder(
+      iconId: iconId ??
+          FolderIconRegistry.idForLegacyIconData(Icons.drive_folder_upload),
+      name: name,
+      id: const Uuid().v4(),
+      dateCreated: DateTime.now(),
+      parentID: parentFolderId,
+      customColor: customColor,
+      color: color,
+    );
+    await Hive.box<Folder>(HiveBoxNames.foldersBox).put(folder.id, folder);
+    return folder;
   }
 
   List<FileSystemEntity> _sortedImportEntities(
@@ -889,16 +908,15 @@ class StrategyImportExportService {
         );
       }
 
-      final createdFolder =
-          await ref.read(folderProvider.notifier).createFolder(
-                name: folderEntry.name,
-                iconId: folderEntry.iconId,
-                color: folderEntry.color,
-                customColor: folderEntry.customColorValue == null
-                    ? null
-                    : Color(folderEntry.customColorValue!),
-                parentID: resolvedParentFolderId,
-              );
+      final createdFolder = await _createImportedFolder(
+        name: folderEntry.name,
+        parentFolderId: resolvedParentFolderId,
+        iconId: folderEntry.iconId,
+        color: folderEntry.color,
+        customColor: folderEntry.customColorValue == null
+            ? null
+            : Color(folderEntry.customColorValue!),
+      );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
       result = result.merge(
         const ImportBatchResult(
@@ -1413,16 +1431,15 @@ class StrategyImportExportService {
         );
       }
 
-      final createdFolder =
-          await ref.read(folderProvider.notifier).createFolder(
-                name: folderEntry.name,
-                iconId: folderEntry.iconId,
-                color: folderEntry.color,
-                customColor: folderEntry.customColorValue == null
-                    ? null
-                    : Color(folderEntry.customColorValue!),
-                parentID: resolvedParentFolderId,
-              );
+      final createdFolder = await _createImportedFolder(
+        name: folderEntry.name,
+        parentFolderId: resolvedParentFolderId,
+        iconId: folderEntry.iconId,
+        color: folderEntry.color,
+        customColor: folderEntry.customColorValue == null
+            ? null
+            : Color(folderEntry.customColorValue!),
+      );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
       result = result.merge(
         const ImportBatchResult(
