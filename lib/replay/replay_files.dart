@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:icarus/replay/recycle_bin.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -75,11 +76,16 @@ class ReplayFiles {
   ReplayFiles({
     Future<Directory> Function()? supportDirectory,
     String? valorantDemosPath,
+    Future<void> Function(String path)? recycle,
   })  : _supportDirectory = supportDirectory ?? getApplicationSupportDirectory,
-        _valorantDemosPath = valorantDemosPath ?? defaultValorantDemosPath();
+        _valorantDemosPath = valorantDemosPath ?? defaultValorantDemosPath(),
+        _recycle = recycle ?? moveToRecycleBin;
 
   final Future<Directory> Function() _supportDirectory;
   final String? _valorantDemosPath;
+
+  /// Moves a file to the Recycle Bin, or throws [RecycleBinUnavailable].
+  final Future<void> Function(String path) _recycle;
 
   static const extension = '.vrf';
 
@@ -230,11 +236,14 @@ class ReplayFiles {
     );
   }
 
-  /// Deletes a replay kept in Icarus's folder and its decoded cache, and
-  /// nothing else: Valorant's folder is Valorant's to clear.
+  /// Moves a replay kept in Icarus's folder to the Recycle Bin and deletes
+  /// its decoded cache, and nothing else: Valorant's folder is Valorant's to
+  /// clear. The replay is never deleted outright; when it can't go to the
+  /// Recycle Bin this throws [RecycleBinUnavailable] and leaves it, and its
+  /// cache, where they are.
   ///
   /// [file] is the replay as the user saw it when they chose Remove. Throws
-  /// [ReplayRemoveRefused], deleting nothing, when the file there now isn't
+  /// [ReplayRemoveRefused], touching nothing, when the file there now isn't
   /// that one, or when Valorant's folder no longer matches
   /// [ReplayFile.valorantHasCopy], which told them what would be left.
   Future<void> remove(ReplayFile file) async {
@@ -262,7 +271,7 @@ class ReplayFiles {
         current: current,
       );
     }
-    await replay.delete();
+    await _recycle(file.path);
     // A copy Keep made is the same file as Valorant's, down to its time, so
     // the two share one cache. Valorant's still needs it.
     if (valorantCopy?.cacheKey == file.cacheKey) return;
@@ -297,8 +306,11 @@ class ReplayFiles {
     final demos = _valorantDemosPath;
     if (demos == null) return null;
     final original = File(p.join(demos, p.basename(file.path)));
+    // Judged as the listing judges it: a link there, even one back to the
+    // file being removed, isn't a copy.
+    final type = await FileSystemEntity.type(original.path, followLinks: false);
+    if (type != FileSystemEntityType.file) return null;
     final stat = await original.stat();
-    if (stat.type != FileSystemEntityType.file) return null;
     return ReplayFile(
       path: original.path,
       source: ReplaySource.valorant,

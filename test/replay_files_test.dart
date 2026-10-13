@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/replay/recycle_bin.dart';
 import 'package:icarus/replay/replay_files.dart';
 import 'package:path/path.dart' as p;
 
@@ -11,14 +12,24 @@ void main() {
   late Directory demos;
   late ReplayFiles files;
 
+  /// Where removed replays go, standing in for the Recycle Bin.
+  late Directory bin;
+  late Future<void> Function(String path) recycle;
+  Future<void> moveToBin(String path) async {
+    await File(path).rename(p.join(bin.path, p.basename(path)));
+  }
+
   setUp(() async {
     root = await Directory.systemTemp.createTemp('icarus-replay-files');
     support = await Directory(p.join(root.path, 'support')).create();
     demos = await Directory(p.join(root.path, 'VALORANT', 'Saved', 'Demos'))
         .create(recursive: true);
+    bin = await Directory(p.join(root.path, 'bin')).create();
+    recycle = moveToBin;
     files = ReplayFiles(
       supportDirectory: () async => support,
       valorantDemosPath: demos.path,
+      recycle: (path) => recycle(path),
     );
   });
 
@@ -121,6 +132,7 @@ void main() {
 
     await files.remove(listed);
     expect(await File(kept.path).exists(), isFalse);
+    expect(await File(p.join(bin.path, 'f.vrf')).exists(), isTrue);
     expect(await original.exists(), isTrue);
     final after = (await files.list()).single;
     expect(after.source, ReplaySource.valorant);
@@ -221,5 +233,36 @@ void main() {
     await files.remove(a);
     expect(await files.readCache(a, 'v1'), isNull);
     expect(await files.readCache(longer, 'v1'), [2]);
+  });
+
+  test(
+      'a replay that can\'t go to the Recycle Bin stays, and so does its cache',
+      () async {
+    final kept = await files.import((await writeReplay(root, 'r')).path);
+    await files.writeCache(kept, 'v1', Uint8List.fromList([1]));
+    recycle = (path) async => throw RecycleBinUnavailable(path);
+
+    await expectLater(
+        files.remove(kept), throwsA(isA<RecycleBinUnavailable>()));
+    expect(await File(kept.path).exists(), isTrue);
+    expect(await files.readCache(kept, 'v1'), [1]);
+  });
+
+  test('a link in Valorant\'s folder back to the kept file is not a copy',
+      () async {
+    final kept = await files.import((await writeReplay(root, 'l')).path);
+    final link = Link(p.join(demos.path, 'l.vrf'));
+    try {
+      await link.create(kept.path);
+    } on FileSystemException {
+      markTestSkipped('This machine may not create file links.');
+      return;
+    }
+    final listed = (await files.list()).single;
+    expect(listed.path, kept.path);
+    expect(listed.valorantHasCopy, isFalse);
+
+    await files.remove(listed);
+    expect(await File(p.join(bin.path, 'l.vrf')).exists(), isTrue);
   });
 }

@@ -58,6 +58,7 @@ void main() {
       replayFilesProvider.overrideWithValue(ReplayFiles(
         supportDirectory: () async => support,
         valorantDemosPath: demos.path,
+        recycle: (path) => File(path).delete(),
       )),
       replayProbeProvider.overrideWithValue(probe),
     ]);

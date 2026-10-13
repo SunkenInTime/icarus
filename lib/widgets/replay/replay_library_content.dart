@@ -8,6 +8,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
+import 'package:icarus/replay/recycle_bin.dart';
 import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_files.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
@@ -240,16 +241,24 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
         context: context,
         title: 'Remove this replay?',
         content: file.valorantHasCopy
-            ? "This deletes Icarus's copy. Valorant still has its own, so "
-                'the replay stays in the list until Valorant deletes it.'
-            : 'This deletes the replay file from Icarus. Pages you captured '
-                'from it stay in your strategies.',
+            ? "This moves Icarus's copy to the Recycle Bin. Valorant still "
+                'has its own, so the replay stays in the list until Valorant '
+                'deletes it.'
+            : 'This moves the replay file to the Recycle Bin. Pages you '
+                'captured from it stay in your strategies.',
         confirmText: 'Remove',
         isDestructive: true,
       );
       if (!confirmed) return;
       try {
         await library.remove(file);
+        return;
+      } on RecycleBinUnavailable {
+        Settings.showToast(
+          message: "Windows couldn't move this replay to the Recycle Bin, so "
+              'Icarus left it where it is.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
         return;
       } on ReplayRemoveRefused catch (refused) {
         if (refused.current case final current?
