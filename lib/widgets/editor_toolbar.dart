@@ -64,7 +64,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     // Signed out, the button signs in; signed in, it adds the strategy.
     final viewingThroughLink = isCloud &&
         ref.watch(shareLinkViewProvider)?.strategyPublicId == strategyId;
-    final signedIn =
+    // Asked only for a link view: the editor has no other use for it.
+    final signedIn = viewingThroughLink &&
         ref.watch(authProvider.select((auth) => auth.isAuthenticated));
     // Local saving exists only where the local library does; the web beta
     // never offers it, even if an editor somehow opens with no cloud strategy.
