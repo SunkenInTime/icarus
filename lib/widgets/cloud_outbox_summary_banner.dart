@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
+import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -36,11 +38,27 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
     final auth = ref.watch(authProvider);
     final strategyNames = ref.watch(cloudStrategyNamesProvider);
     final connected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
+    // Replay captures still on their way, or refused.
+    final captureQueue = ref.watch(replayCaptureQueueProvider);
+    final captures =
+        captureQueue.forAccount(ref.watch(cloudMediaAccountIdProvider));
+    final failedCaptures = [
+      for (final capture in captures)
+        if (captureQueue.needsUser(capture)) capture,
+    ];
+    final retryableCaptures = [
+      for (final capture in failedCaptures)
+        if (captureQueue.stuck.containsKey(capture.id) ||
+            capture.failure == CaptureFailureKind.refused)
+          capture.id,
+    ];
     final strategyIds = <String>{
       ...opQueue.accountOutbox.strategies.keys,
       for (final job in mediaJobs) job.strategyPublicId,
+      for (final capture in captures) capture.strategyId,
     };
-    final workCount = opQueue.accountOutbox.workCount + mediaJobs.length;
+    final workCount =
+        opQueue.accountOutbox.workCount + mediaJobs.length + captures.length;
     final failedMediaByStrategy = <String, int>{};
     for (final job in mediaJobs.where((job) => job.isFailed)) {
       failedMediaByStrategy.update(
@@ -61,6 +79,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         deletedStrategies.values.fold<int>(0, (total, count) => total + count);
     final hasDurabilityProblem = !opQueue.outboxIsReliable ||
         !mediaQueueState.outboxIsReliable ||
+        captureQueue.unreadable > 0 ||
         opQueue.loadIssues.isNotEmpty ||
         mediaQueueState.loadIssues.isNotEmpty;
     final authBlocked = workCount > 0 &&
@@ -92,6 +111,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
     final needsAttention = hasDurabilityProblem ||
         authBlocked ||
         attentionIds.isNotEmpty ||
+        failedCaptures.isNotEmpty ||
         deletedStrategies.isNotEmpty;
     final title = needsAttention
         ? 'Cloud work needs attention'
@@ -138,6 +158,37 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                   opQueue.accountOutbox.strategies[strategyId]?.reason,
                   failedMediaByStrategy[strategyId] ?? 0,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        if (retryableCaptures.isNotEmpty)
+          ShadButton.secondary(
+            size: ShadButtonSize.sm,
+            onPressed: () =>
+                ref.read(replayCaptureQueueProvider.notifier).retry(
+                      retryableCaptures,
+                    ),
+            child: Flexible(
+              child: Text(
+                failedCaptures.length == 1
+                    ? 'Retry replay capture'
+                    : 'Retry replay captures',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        if (failedCaptures.isNotEmpty)
+          ShadButton.outline(
+            size: ShadButtonSize.sm,
+            onPressed: () => _discardCaptures(ref, failedCaptures),
+            child: Flexible(
+              child: Text(
+                failedCaptures.length == 1
+                    ? 'Discard replay capture'
+                    : 'Discard ${failedCaptures.length} replay captures',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -232,6 +283,21 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _discardCaptures(
+    WidgetRef ref,
+    List<ReplayCaptureRecord> captures,
+  ) async {
+    final mayHaveLanded = await ref
+        .read(replayCaptureQueueProvider.notifier)
+        .discard([for (final capture in captures) capture.id]);
+    if (mayHaveLanded) {
+      Settings.showToast(
+        message: 'Discarded. It may still appear in your library.',
+        backgroundColor: Settings.tacticalVioletTheme.primary,
+      );
+    }
   }
 
   Future<void> _discardDeleted(WidgetRef ref, String strategyId) async {

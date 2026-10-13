@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -177,6 +179,50 @@ void main() {
     );
   });
 
+  testWidgets('a refused replay capture asks for Retry or Discard',
+      (tester) async {
+    final container = _container(
+      queue: const StrategyOpQueueState(
+        accountId: 'account-a',
+        durableLoaded: true,
+      ),
+      captures: [
+        _capture('account-a', failure: CaptureFailureKind.refused),
+        _capture('account-b'),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await _pump(tester, container, const CloudOutboxSummaryBanner());
+
+    expect(find.text('Cloud work needs attention'), findsOneWidget);
+    expect(find.textContaining('1 saved change needs review'), findsOneWidget);
+    expect(find.text('Discard replay capture'), findsOneWidget);
+    await tester.tap(find.text('Retry replay capture'));
+    expect(
+      (container.read(replayCaptureQueueProvider.notifier) as _Captures)
+          .retried,
+      ['capture-account-a'],
+    );
+  });
+
+  testWidgets('a replay capture on its way counts as syncing work',
+      (tester) async {
+    final container = _container(
+      queue: const StrategyOpQueueState(
+        accountId: 'account-a',
+        durableLoaded: true,
+      ),
+      captures: [_capture('account-a')],
+    );
+    addTearDown(container.dispose);
+
+    await _pump(tester, container, const CloudOutboxSummaryBanner());
+
+    expect(find.text('Syncing cloud work'), findsOneWidget);
+    expect(find.textContaining('1 saved change is being sent'), findsOneWidget);
+  });
+
   testWidgets('outbox banner stays absent from the local workspace',
       (tester) async {
     final container = _container(
@@ -299,8 +345,10 @@ ProviderContainer _container({
   CloudLibrarySection section = CloudLibrarySection.home,
   bool connected = true,
   bool authReady = true,
+  List<ReplayCaptureRecord> captures = const [],
 }) {
   return ProviderContainer(overrides: [
+    replayCaptureQueueProvider.overrideWith(() => _Captures(captures)),
     authProvider.overrideWith(() => _ReadyAuth(authReady)),
     libraryWorkspaceProvider.overrideWith(() => _Workspace(workspace)),
     cloudLibrarySectionProvider.overrideWith(() => _CloudSection(section)),
@@ -332,6 +380,45 @@ Future<void> _pump(
       child: ShadApp(home: Scaffold(body: banner)),
     ),
   );
+}
+
+ReplayCaptureRecord _capture(
+  String accountId, {
+  CaptureFailureKind? failure,
+}) =>
+    ReplayCaptureRecord(
+      id: 'capture-$accountId',
+      accountId: accountId,
+      strategyId: 'replay-$accountId',
+      clientId: 'client',
+      strategyName: 'Lotus replay',
+      mapData: 'lotus',
+      folderId: null,
+      themeProfileId: null,
+      index: 0,
+      createsStrategy: true,
+      createdAt: DateTime(2026, 10, 13),
+      pageId: 'page',
+      pageName: 'Round 1 · 0:10',
+      isAttack: true,
+      settings: const {},
+      pageOpId: 'op',
+      items: const [],
+      failure: failure,
+    );
+
+class _Captures extends ReplayCaptureQueue {
+  _Captures(this.captures);
+
+  final List<ReplayCaptureRecord> captures;
+  final List<String> retried = [];
+
+  @override
+  ReplayCaptureQueueState build() =>
+      ReplayCaptureQueueState(captures: captures);
+
+  @override
+  Future<void> retry(Iterable<String> ids) async => retried.addAll(ids);
 }
 
 class _Workspace extends LibraryWorkspaceNotifier {

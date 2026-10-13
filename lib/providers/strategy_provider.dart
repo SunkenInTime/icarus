@@ -318,7 +318,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     await openCloudStrategy(strategyID);
   }
 
-  Future<void> openCloudStrategy(String strategyID) async {
+  /// Opens the cloud strategy [strategyID] in the editor, on [pageId] when
+  /// it has that page.
+  Future<void> openCloudStrategy(String strategyID, {String? pageId}) async {
     // A cloud copy still being built by a move from this device is the
     // mover's: an edit made in it would be lost if the move fails.
     if (ref.read(movingToCloudProvider).contains(strategyID)) {
@@ -357,6 +359,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           strategyId: snapshot.header.publicId,
           source: StrategySource.cloud,
           selectFirstPageIfNeeded: true,
+          preferredPageId: pageId,
         );
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
@@ -1817,12 +1820,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
 
+  /// The page settings a new strategy starts with: the user's defaults.
+  StrategySettings newStrategySettings() {
+    final appPreferences = ref.read(appPreferencesProvider);
+    return StrategySettings(
+      agentSize: appPreferences.defaultAgentSizeForNewStrategies,
+      abilitySize: appPreferences.defaultAbilitySizeForNewStrategies,
+      useNeutralTeamColors:
+          appPreferences.defaultNeutralTeamColorsForNewStrategies,
+    );
+  }
+
   /// Creates an empty strategy on [map] and returns it. Without [name] it
   /// is auto-named after the map ("Haven", then "Haven 2", ...). In the cloud
   /// workspace the strategy is created on the server and opened; nothing is
   /// written to the local library. With [local] it goes to the local library
   /// (its open folder) whichever workspace is selected: a replay's Capture
-  /// writes its pages there, from files on this computer.
+  /// writes its pages there while the user is signed out.
   Future<StrategyData> createNewStrategy({
     required MapValue map,
     String? name,
@@ -1840,13 +1854,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
         ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
-    final appPreferences = ref.read(appPreferencesProvider);
-    final defaultSettings = StrategySettings(
-      agentSize: appPreferences.defaultAgentSizeForNewStrategies,
-      abilitySize: appPreferences.defaultAbilitySizeForNewStrategies,
-      useNeutralTeamColors:
-          appPreferences.defaultNeutralTeamColorsForNewStrategies,
-    );
+    final defaultSettings = newStrategySettings();
     final newStrategy = StrategyData(
       mapData: map,
       versionNumber: Settings.versionNumber,
