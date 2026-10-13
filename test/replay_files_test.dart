@@ -98,7 +98,9 @@ void main() {
     final original = await writeReplay(demos, 'f');
     final kept = await files.import(original.path);
     // Windows copies keep the file's time, so the copy shares its cache key.
-    await File(kept.path).setLastModified(await original.lastModified());
+    final time = DateTime(2026, 7, 10, 3, 35, 52);
+    await original.setLastModified(time);
+    await File(kept.path).setLastModified(time);
     final listed = (await files.list()).single;
     expect(listed.path, kept.path);
     expect(listed.valorantHasCopy, isTrue);
