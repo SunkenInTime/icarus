@@ -3730,11 +3730,157 @@ final class PresenceIssueRoomPassResult {
   }
 }
 
-final class SharesListMembersResultItem {
-  const SharesListMembersResultItem({
+final class SharesListFolderAccessResultItem {
+  const SharesListFolderAccessResultItem({
+    required this.name,
+    required this.publicId,
+  });
+  final String name;
+  final String publicId;
+
+  factory SharesListFolderAccessResultItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'name', 'publicId'});
+    return SharesListFolderAccessResultItem(
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'name': ConvexString(name),
+      'publicId': ConvexString(publicId),
+    });
+  }
+}
+
+final class SharesListLinkJoinsResultItem {
+  const SharesListLinkJoinsResultItem({
+    required this.joined,
+    required this.more,
+    required this.names,
+    required this.token,
+  });
+  final double joined;
+  final bool more;
+  final List<String> names;
+  final String token;
+
+  factory SharesListLinkJoinsResultItem.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'joined',
+      'more',
+      'names',
+      'token',
+    });
+    return SharesListLinkJoinsResultItem(
+      joined: _decodeNumber(
+        object.value['joined'] ?? _missing(path, 'joined'),
+        '$path.joined',
+      ),
+      more: _decodeBoolean(
+        object.value['more'] ?? _missing(path, 'more'),
+        '$path.more',
+      ),
+      names:
+          _decodeArray(
+                object.value['names'] ?? _missing(path, 'names'),
+                '$path.names',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.names', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      token: _decodeString(
+        object.value['token'] ?? _missing(path, 'token'),
+        '$path.token',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'joined': _encodeNumber(joined, '$path.joined'),
+      'more': ConvexBoolean(more),
+      'names': ConvexArray(
+        names.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
+      'token': ConvexString(token),
+    });
+  }
+}
+
+final class SharesListMembersResult {
+  const SharesListMembersResult({
+    required this.members,
+    required this.nextAfter,
+  });
+  final List<SharesListMembersResultMembersItem> members;
+  final double? nextAfter;
+
+  factory SharesListMembersResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'members', 'nextAfter'});
+    return SharesListMembersResult(
+      members:
+          _decodeArray(
+                object.value['members'] ?? _missing(path, 'members'),
+                '$path.members',
+              ).value.indexed
+              .map(
+                (entry) => SharesListMembersResultMembersItem.decode(
+                  entry.$2,
+                  _indexPath('$path.members', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      nextAfter:
+          (object.value['nextAfter'] ?? _missing(path, 'nextAfter'))
+              is ConvexNull
+          ? null
+          : _decodeNumber(
+              object.value['nextAfter'] ?? _missing(path, 'nextAfter'),
+              '$path.nextAfter',
+            ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'members': ConvexArray(
+        members.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.members', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'nextAfter': nextAfter == null
+          ? const ConvexNull()
+          : _encodeNumber(nextAfter!, '$path.nextAfter'),
+    });
+  }
+}
+
+final class SharesListMembersResultMembersItem {
+  const SharesListMembersResultMembersItem({
     required this.avatarUrl,
     required this.displayName,
-    required this.inheritedFromFolder,
     required this.joinedAt,
     required this.memberId,
     required this.role,
@@ -3742,24 +3888,25 @@ final class SharesListMembersResultItem {
   });
   final String? avatarUrl;
   final String? displayName;
-  final SharesListMembersResultItemInheritedFromFolder? inheritedFromFolder;
   final double joinedAt;
   final String memberId;
   final InvitesCreateArgsRole role;
   final String? shareLinkToken;
 
-  factory SharesListMembersResultItem.decode(ConvexValue value, String path) {
+  factory SharesListMembersResultMembersItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
       'avatarUrl',
       'displayName',
-      'inheritedFromFolder',
       'joinedAt',
       'memberId',
       'role',
       'shareLinkToken',
     });
-    return SharesListMembersResultItem(
+    return SharesListMembersResultMembersItem(
       avatarUrl:
           (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
               is ConvexNull
@@ -3775,16 +3922,6 @@ final class SharesListMembersResultItem {
           : _decodeString(
               object.value['displayName'] ?? _missing(path, 'displayName'),
               '$path.displayName',
-            ),
-      inheritedFromFolder:
-          (object.value['inheritedFromFolder'] ??
-                  _missing(path, 'inheritedFromFolder'))
-              is ConvexNull
-          ? null
-          : SharesListMembersResultItemInheritedFromFolder.decode(
-              object.value['inheritedFromFolder'] ??
-                  _missing(path, 'inheritedFromFolder'),
-              '$path.inheritedFromFolder',
             ),
       joinedAt: _decodeNumber(
         object.value['joinedAt'] ?? _missing(path, 'joinedAt'),
@@ -3821,49 +3958,12 @@ final class SharesListMembersResultItem {
       'displayName': displayName == null
           ? const ConvexNull()
           : ConvexString(displayName!),
-      'inheritedFromFolder': inheritedFromFolder == null
-          ? const ConvexNull()
-          : inheritedFromFolder!.encode('$path.inheritedFromFolder'),
       'joinedAt': _encodeNumber(joinedAt, '$path.joinedAt'),
       'memberId': ConvexString(memberId),
       'role': ConvexString(role.wireName),
       'shareLinkToken': shareLinkToken == null
           ? const ConvexNull()
           : ConvexString(shareLinkToken!),
-    });
-  }
-}
-
-final class SharesListMembersResultItemInheritedFromFolder {
-  const SharesListMembersResultItemInheritedFromFolder({
-    required this.name,
-    required this.publicId,
-  });
-  final String name;
-  final String publicId;
-
-  factory SharesListMembersResultItemInheritedFromFolder.decode(
-    ConvexValue value,
-    String path,
-  ) {
-    final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'name', 'publicId'});
-    return SharesListMembersResultItemInheritedFromFolder(
-      name: _decodeString(
-        object.value['name'] ?? _missing(path, 'name'),
-        '$path.name',
-      ),
-      publicId: _decodeString(
-        object.value['publicId'] ?? _missing(path, 'publicId'),
-        '$path.publicId',
-      ),
-    );
-  }
-
-  ConvexObject encode(String path) {
-    return ConvexObject({
-      'name': ConvexString(name),
-      'publicId': ConvexString(publicId),
     });
   }
 }
@@ -6421,7 +6521,7 @@ List<SharesListResultItem> decodeSharesListResult(ConvexValue value) =>
         )
         .toList(growable: false);
 
-ConvexObject encodeSharesListMembersArgs({
+ConvexObject encodeSharesListFolderAccessArgs({
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
 }) => ConvexObject({
@@ -6429,16 +6529,49 @@ ConvexObject encodeSharesListMembersArgs({
   'targetType': ConvexString(targetType.wireName),
 });
 
-List<SharesListMembersResultItem> decodeSharesListMembersResult(
+List<SharesListFolderAccessResultItem> decodeSharesListFolderAccessResult(
   ConvexValue value,
-) => _decodeArray(value, 'shares.js:listMembers.returns').value.indexed
+) => _decodeArray(value, 'shares.js:listFolderAccess.returns').value.indexed
     .map(
-      (entry) => SharesListMembersResultItem.decode(
+      (entry) => SharesListFolderAccessResultItem.decode(
         entry.$2,
-        _indexPath('shares.js:listMembers.returns', entry.$1),
+        _indexPath('shares.js:listFolderAccess.returns', entry.$1),
       ),
     )
     .toList(growable: false);
+
+ConvexObject encodeSharesListLinkJoinsArgs({
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+List<SharesListLinkJoinsResultItem> decodeSharesListLinkJoinsResult(
+  ConvexValue value,
+) => _decodeArray(value, 'shares.js:listLinkJoins.returns').value.indexed
+    .map(
+      (entry) => SharesListLinkJoinsResultItem.decode(
+        entry.$2,
+        _indexPath('shares.js:listLinkJoins.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeSharesListMembersArgs({
+  ConvexOptional<double> after = const ConvexOptional.absent(),
+  required String targetPublicId,
+  required SharesCreateArgsTargetType targetType,
+}) => ConvexObject({
+  if (after.isPresent)
+    'after': _encodeNumber(after.value, 'shares.js:listMembers.args.after'),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
+
+SharesListMembersResult decodeSharesListMembersResult(ConvexValue value) =>
+    SharesListMembersResult.decode(value, 'shares.js:listMembers.returns');
 
 ConvexObject encodeSharesPreviewArgs({required String token}) =>
     ConvexObject({'token': ConvexString(token)});
