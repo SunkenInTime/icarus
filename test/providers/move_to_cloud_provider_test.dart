@@ -82,14 +82,14 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  ProviderContainer open() {
+  ProviderContainer open({StrategyProvider Function()? editor}) {
     return container = ProviderContainer(overrides: [
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
       cloudMediaAccountIdProvider.overrideWith((ref) => ref.watch(_account)),
       convexConnectionSnapshotProvider.overrideWithValue(true),
       cloudMediaUploadQueueProvider.overrideWith(() => uploads),
-      strategyProvider.overrideWith(_ClosedStrategy.new),
+      strategyProvider.overrideWith(editor ?? _ClosedStrategy.new),
       cloudStrategiesProvider.overrideWith((ref) => const Stream.empty()),
       cloudFolderTreeProvider.overrideWith((ref) => const Stream.empty()),
       moveToCloudMessageProvider.overrideWithValue(
@@ -360,6 +360,51 @@ void main() {
     uploads.uploadAll();
     await move;
     expect(strategies().containsKey('s1'), isFalse);
+  });
+
+  test('the editor holding it lets go, saved, before the move reads it',
+      () async {
+    await putStrategy('s1');
+    final editor = _HeldStrategy('s1');
+    open(editor: () => editor);
+
+    await mover().moveStrategy('s1');
+
+    expect(editor.saved, isTrue);
+    expect(container.read(strategyProvider).strategyId, isNull);
+    expect(strategies().containsKey('s1'), isFalse);
+    expect(messages.single.$2, isFalse);
+  });
+
+  test('an editor that holds it again keeps the original here', () async {
+    await putStrategy('s1');
+    // A load that began before the move finishes after it started.
+    final editor = _HeldStrategy('s1', letsGo: false);
+    open(editor: () => editor);
+
+    await mover().moveStrategy('s1');
+
+    expect(cloud.strategies.values.single.unfinished, isFalse);
+    expect(strategies().containsKey('s1'), isTrue);
+    expect(messages.single.$1, contains('keeps the latest version too'));
+  });
+
+  test("deleting a moving strategy is refused", () async {
+    await putStrategy('s1');
+    uploads.autoUpload = false;
+    open();
+
+    final move = mover().moveStrategy('s1');
+    await untilUploading();
+    final result = await container
+        .read(strategyProvider.notifier)
+        .deleteStrategy('s1', source: StrategySource.local);
+    expect(result.didSucceed, isFalse);
+    expect(strategies().containsKey('s1'), isTrue);
+    uploads.uploadAll();
+    await move;
+    expect(strategies().containsKey('s1'), isFalse);
+    expect(cloud.strategies.values.single.unfinished, isFalse);
   });
 
   test('the original stays until its pictures have landed', () async {
@@ -681,6 +726,37 @@ class _ClosedStrategy extends StrategyProvider {
         source: StrategySource.local,
         isOpen: false,
       );
+}
+
+/// An editor that has a local strategy loaded, as after an export.
+class _HeldStrategy extends StrategyProvider {
+  _HeldStrategy(this.id, {this.letsGo = true});
+
+  final String id;
+  final bool letsGo;
+  bool saved = false;
+
+  @override
+  StrategyState build() => StrategyState(
+        strategyId: id,
+        strategyName: 'Strategy $id',
+        source: StrategySource.local,
+        isOpen: true,
+      );
+
+  @override
+  Future<void> forceSaveNow(String id) async => saved = true;
+
+  @override
+  Future<void> clearCurrentStrategy() async {
+    if (!letsGo) return;
+    state = const StrategyState(
+      strategyId: null,
+      strategyName: null,
+      source: null,
+      isOpen: false,
+    );
+  }
 }
 
 /// Holds queued pictures until the test lets them upload, or uploads them

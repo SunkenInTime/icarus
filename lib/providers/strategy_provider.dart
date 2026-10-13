@@ -2138,6 +2138,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       return result;
     }
 
+    // Its move to the cloud deletes it once its cloud copy is complete.
+    if (ref.read(movingToCloudProvider).contains(strategyID)) {
+      return CloudLibraryActionResult.failed(
+        'This strategy is moving to the cloud. Delete it once the move ends.',
+      );
+    }
     await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
 

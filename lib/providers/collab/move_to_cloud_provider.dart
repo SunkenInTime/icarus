@@ -408,10 +408,14 @@ class MoveToCloudNotifier extends Notifier<void> {
     final String cloudId;
     final StrategyData stored;
     try {
+      // The editor lets go of it first, saved: nothing it holds in memory
+      // may change the original once the move has read it.
       final editor = ref.read(strategyProvider);
       if (editor.strategyId == localId &&
           editor.source == StrategySource.local) {
-        await ref.read(strategyProvider.notifier).forceSaveNow(localId);
+        final strategies = ref.read(strategyProvider.notifier);
+        await strategies.forceSaveNow(localId);
+        await strategies.clearCurrentStrategy();
       }
       final found =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(localId);
@@ -484,9 +488,12 @@ class MoveToCloudNotifier extends Notifier<void> {
     try {
       await _forgetUnfinishedMove(cloudId);
       _unmarkMoving({cloudId});
-      // The original goes only as it was read, whatever wrote to it since:
-      // the check and the removal run with nothing in between.
-      if (!unchanged()) return _Outcome.movedChangedHere;
+      // The original goes only as it was read, whatever wrote to it since,
+      // and not while the editor holds it again (a load that began before
+      // the move): the check and the removal run with nothing in between.
+      if (!unchanged() || ref.read(strategyProvider).strategyId == localId) {
+        return _Outcome.movedChangedHere;
+      }
       final removal =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(localId);
       await removal;

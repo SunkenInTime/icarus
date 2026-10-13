@@ -215,6 +215,16 @@ class FolderProvider extends Notifier<String?> {
             source: StrategySource.local,
           );
     }
+    // A strategy that started moving to the cloud meanwhile stays, and so
+    // does its folder.
+    if (Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .values
+        .any((s) => s.folderID == folderID)) {
+      return CloudLibraryActionResult.failed(
+        'Something in this folder is moving to the cloud. Delete it once '
+        'the move ends.',
+      );
+    }
 
     await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folderID);
     return CloudLibraryActionResult.succeeded;
