@@ -80,6 +80,16 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   List<ShareLinkSummary> _links = const [];
   List<ShareMember> _members = const [];
 
+  /// Where the next page of people starts; null once all are here.
+  double? _nextAfter;
+  bool _loadingMore = false;
+
+  /// Shared folders the target sits in: their people can open it too.
+  List<String> _sharedFolders = const [];
+
+  /// Who each link let in, by token.
+  Map<String, ShareLinkJoins> _joins = const {};
+
   /// Whether the people could not be read. The links still work then, so
   /// the dialog keeps them and offers a retry for the people alone.
   bool _membersFailed = false;
@@ -100,41 +110,88 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   ConvexStrategyRepository get _repository =>
       ref.read(convexStrategyRepositoryProvider);
 
-  /// The people a link let in directly; folder members came another way.
-  List<ShareMember> _joinedThrough(String token) => _members
-      .where((member) => !member.isInherited && member.shareLinkToken == token)
-      .toList(growable: false);
-
   Future<void> _load({bool showLoading = true}) async {
     if (showLoading) {
       setState(() => _status = _LoadStatus.loading);
     }
+    final target = (
+      targetType: widget.targetType,
+      targetPublicId: widget.targetPublicId,
+    );
     final links = _repository.listShareLinks(
-      targetType: widget.targetType,
-      targetPublicId: widget.targetPublicId,
+      targetType: target.targetType,
+      targetPublicId: target.targetPublicId,
     );
-    final members = _repository.listShareMembers(
-      targetType: widget.targetType,
-      targetPublicId: widget.targetPublicId,
-    );
-    List<ShareMember>? loadedMembers;
+    // The people, folders and counts need the newer server; without them
+    // the links still work.
+    ({
+      ShareMemberPage page,
+      List<String> folders,
+      Map<String, ShareLinkJoins> joins,
+    })? people;
     try {
-      loadedMembers = await members;
+      final results = await Future.wait([
+        _repository.listShareMembers(
+          targetType: target.targetType,
+          targetPublicId: target.targetPublicId,
+        ),
+        _repository.listShareFolderAccess(
+          targetType: target.targetType,
+          targetPublicId: target.targetPublicId,
+        ),
+        _repository.listShareLinkJoins(
+          targetType: target.targetType,
+          targetPublicId: target.targetPublicId,
+        ),
+      ]);
+      people = (
+        page: results[0] as ShareMemberPage,
+        folders: results[1] as List<String>,
+        joins: results[2] as Map<String, ShareLinkJoins>,
+      );
     } catch (_) {
-      loadedMembers = null;
+      people = null;
     }
     try {
       final loadedLinks = await links;
       if (!mounted) return;
       setState(() {
         _links = loadedLinks;
-        _members = loadedMembers ?? const [];
-        _membersFailed = loadedMembers == null;
+        _members = people?.page.members ?? const [];
+        _nextAfter = people?.page.nextAfter;
+        _sharedFolders = people?.folders ?? const [];
+        _joins = people?.joins ?? const {};
+        _membersFailed = people == null;
         _status = _LoadStatus.ready;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _status = _LoadStatus.error);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final after = _nextAfter;
+    if (after == null || _loadingMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await _repository.listShareMembers(
+        targetType: widget.targetType,
+        targetPublicId: widget.targetPublicId,
+        after: after,
+      );
+      if (!mounted) return;
+      setState(() {
+        _members = [..._members, ...page.members];
+        _nextAfter = page.nextAfter;
+      });
+    } catch (_) {
+      Settings.showToast(
+        message: "Couldn't load more people. Try again.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -174,10 +231,10 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   }
 
   Future<void> _disableLink(String token) async {
-    final joined = _joinedThrough(token);
+    final joins = _joins[token] ?? ShareLinkJoins.none;
     final removeMembers = await showShadDialog<bool>(
       context: context,
-      builder: (_) => _DisableLinkDialog(joined: joined),
+      builder: (_) => _DisableLinkDialog(joins: joins),
     );
     if (removeMembers == null || !mounted) {
       return;
@@ -341,8 +398,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
 
   Widget _buildPeople() {
     final auth = ref.watch(authProvider);
-    final direct = _members.where((member) => !member.isInherited);
-    final inherited = _members.where((member) => member.isInherited);
+    final theme = ShadTheme.of(context);
     return Column(
       key: const ValueKey('share-people'),
       mainAxisSize: MainAxisSize.min,
@@ -350,7 +406,9 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       children: [
         _SectionLabel(
           label: 'People with access',
-          count: _membersFailed ? null : _members.length + 1,
+          // Counted only once everyone is here.
+          count:
+              _membersFailed || _nextAfter != null ? null : _members.length + 1,
         ),
         const SizedBox(height: 6),
         _PersonRow(
@@ -372,7 +430,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
               child: const Text('Retry'),
             ),
           ),
-        for (final member in direct)
+        for (final member in _members)
           _PersonRow(
             key: ValueKey('share-member-${member.memberId}'),
             name: _memberName(member),
@@ -386,13 +444,42 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
               onRemove: () => _remove(member),
             ),
           ),
-        for (final member in inherited)
-          _PersonRow(
-            key: ValueKey('share-member-${member.memberId}'),
-            name: _memberName(member),
-            avatarUrl: member.avatarUrl,
-            subtitle: 'Through the folder "${member.inheritedFromFolderName}"',
-            trailing: _InheritedRoleLabel(role: member.role),
+        if (_nextAfter != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ShadButton.ghost(
+              key: const ValueKey('share-people-more'),
+              size: ShadButtonSize.sm,
+              onPressed: _loadingMore ? null : _loadMore,
+              child: Text(_loadingMore ? 'Loading…' : 'Show more'),
+            ),
+          ),
+        // A folder's people are managed from the folder; here they are one
+        // line, however many there are.
+        for (final folder in _sharedFolders)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.folder,
+                  size: 14,
+                  color: theme.colorScheme.mutedForeground,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'People with access to the folder "$folder" can open '
+                    'this too.',
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.mutedForeground,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
       ],
     );
@@ -533,7 +620,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
             if (index > 0) const SizedBox(height: 8),
             _ShareLinkTile(
               link: link,
-              joinedCount: _joinedThrough(link.token).length,
+              joins: _joins[link.token] ?? ShareLinkJoins.none,
               isDisabling: _disablingToken == link.token,
               onDisable: () => _disableLink(link.token),
             ),
@@ -709,27 +796,6 @@ class _OwnerLabel extends StatelessWidget {
   }
 }
 
-class _InheritedRoleLabel extends StatelessWidget {
-  const _InheritedRoleLabel({required this.role});
-
-  final String role;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(right: 40),
-      child: Text(
-        role == 'editor' ? 'Can edit' : 'Can view',
-        style: theme.textTheme.small.copyWith(
-          color: theme.colorScheme.mutedForeground,
-          fontWeight: FontWeight.w400,
-        ),
-      ),
-    );
-  }
-}
-
 class _MemberControls extends StatelessWidget {
   const _MemberControls({
     required this.member,
@@ -825,9 +891,9 @@ class _MemberControls extends StatelessWidget {
 /// Confirms disabling a link. Pops null on cancel, otherwise whether to
 /// also remove the people who joined through it.
 class _DisableLinkDialog extends StatefulWidget {
-  const _DisableLinkDialog({required this.joined});
+  const _DisableLinkDialog({required this.joins});
 
-  final List<ShareMember> joined;
+  final ShareLinkJoins joins;
 
   @override
   State<_DisableLinkDialog> createState() => _DisableLinkDialogState();
@@ -839,7 +905,9 @@ class _DisableLinkDialogState extends State<_DisableLinkDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final joined = widget.joined;
+    final joins = widget.joins;
+    final anyone = joins.joined > 0;
+    final others = joins.more || joins.joined > joins.names.length;
     return ShadDialog.alert(
       title: const Text(ShareLinkCopy.disableTitle),
       description: Padding(
@@ -849,20 +917,23 @@ class _DisableLinkDialogState extends State<_DisableLinkDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(ShareLinkCopy.disableDescription),
-            if (joined.isNotEmpty) ...[
+            if (anyone) ...[
               const SizedBox(height: 14),
               ShadCheckbox(
                 key: const ValueKey('share-link-disable-remove-joined'),
                 value: _removeJoined,
                 onChanged: (value) => setState(() => _removeJoined = value),
                 label: Text(
-                  ShareLinkCopy.removeJoinedLabel(joined.length),
+                  ShareLinkCopy.removeJoinedLabel(
+                    joins.joined,
+                    more: joins.more,
+                  ),
                   style: theme.textTheme.small.copyWith(
                     color: theme.colorScheme.foreground,
                   ),
                 ),
                 sublabel: Text(
-                  joined.map(_memberName).join(', '),
+                  '${joins.names.join(', ')}${others ? ' and others' : ''}',
                   style: theme.textTheme.small.copyWith(
                     color: theme.colorScheme.mutedForeground,
                     fontSize: 12,
@@ -882,8 +953,7 @@ class _DisableLinkDialogState extends State<_DisableLinkDialog> {
         ),
         ShadButton.destructive(
           key: const ValueKey('share-link-disable-confirm'),
-          onPressed: () =>
-              Navigator.of(context).pop(joined.isNotEmpty && _removeJoined),
+          onPressed: () => Navigator.of(context).pop(anyone && _removeJoined),
           child: const Text(ShareLinkCopy.disableAction),
         ),
       ],
@@ -946,13 +1016,13 @@ class _LinkKindBadge extends StatelessWidget {
 class _ShareLinkTile extends StatefulWidget {
   const _ShareLinkTile({
     required this.link,
-    required this.joinedCount,
+    required this.joins,
     required this.isDisabling,
     required this.onDisable,
   });
 
   final ShareLinkSummary link;
-  final int joinedCount;
+  final ShareLinkJoins joins;
   final bool isDisabling;
   final VoidCallback onDisable;
 
@@ -968,8 +1038,10 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
     final theme = ShadTheme.of(context);
     final link = widget.link;
     final url = buildIcarusShareLink(link.token, origin: currentShareOrigin());
-    final joined =
-        widget.joinedCount > 0 ? ' · ${widget.joinedCount} joined' : '';
+    final joins = widget.joins;
+    final joined = joins.joined == 0
+        ? ''
+        : ' · ${joins.joined}${joins.more ? '+' : ''} joined';
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),

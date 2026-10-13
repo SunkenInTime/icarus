@@ -1665,7 +1665,6 @@ class ShareMember {
     required this.role,
     required this.joinedAt,
     required this.shareLinkToken,
-    required this.inheritedFromFolderName,
   });
 
   final String memberId;
@@ -1678,12 +1677,36 @@ class ShareMember {
 
   /// The link they joined through, when the server knows it.
   final String? shareLinkToken;
+}
 
-  /// Set when their access comes from a folder the target sits in; they are
-  /// managed from that folder's share dialog.
-  final String? inheritedFromFolderName;
+/// One page of the people a target was shared with directly.
+class ShareMemberPage {
+  const ShareMemberPage({required this.members, required this.nextAfter});
 
-  bool get isInherited => inheritedFromFolderName != null;
+  final List<ShareMember> members;
+
+  /// Pass to the next read for the page after this one; null on the last.
+  final double? nextAfter;
+}
+
+/// Who a share link let in, as far as the server counts.
+class ShareLinkJoins {
+  const ShareLinkJoins({
+    required this.joined,
+    required this.more,
+    required this.names,
+  });
+
+  /// How many joined, up to the server's cap.
+  final int joined;
+
+  /// Whether more than [joined] did.
+  final bool more;
+
+  /// The first few of their names.
+  final List<String> names;
+
+  static const none = ShareLinkJoins(joined: 0, more: false, names: []);
 }
 
 /// What a share link opens, as a signed-in person sees it before adding it.

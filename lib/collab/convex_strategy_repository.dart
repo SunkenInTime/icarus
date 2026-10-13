@@ -649,29 +649,73 @@ class ConvexStrategyRepository {
   }
 
   /// Everyone besides the owner who can open the target. Owner only.
-  Future<List<ShareMember>> listShareMembers({
+  /// The people the target was shared with directly, a page at a time:
+  /// pass the previous page's [ShareMemberPage.nextAfter] as [after].
+  Future<ShareMemberPage> listShareMembers({
     required String targetType,
     required String targetPublicId,
+    double? after,
   }) async {
     final result = await _api.shares
         .listMembers(
           targetType: _shareTargetType(targetType),
           targetPublicId: targetPublicId,
+          after: after == null
+              ? const ConvexOptional.absent()
+              : ConvexOptional.present(after),
         )
         .fetch();
-    return result
-        .map(
-          (member) => ShareMember(
-            memberId: member.memberId,
-            displayName: member.displayName,
-            avatarUrl: member.avatarUrl,
-            role: member.role.wireName,
-            joinedAt: _dateTime(member.joinedAt),
-            shareLinkToken: member.shareLinkToken,
-            inheritedFromFolderName: member.inheritedFromFolder?.name,
-          ),
+    return ShareMemberPage(
+      members: result.members
+          .map(
+            (member) => ShareMember(
+              memberId: member.memberId,
+              displayName: member.displayName,
+              avatarUrl: member.avatarUrl,
+              role: member.role.wireName,
+              joinedAt: _dateTime(member.joinedAt),
+              shareLinkToken: member.shareLinkToken,
+            ),
+          )
+          .toList(growable: false),
+      nextAfter: result.nextAfter,
+    );
+  }
+
+  /// The names of the shared folders the target sits in, nearest first:
+  /// their people can open it too.
+  Future<List<String>> listShareFolderAccess({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    final result = await _api.shares
+        .listFolderAccess(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
         )
-        .toList(growable: false);
+        .fetch();
+    return result.map((folder) => folder.name).toList(growable: false);
+  }
+
+  /// Who each of the target's links let in, by token.
+  Future<Map<String, ShareLinkJoins>> listShareLinkJoins({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    final result = await _api.shares
+        .listLinkJoins(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
+        )
+        .fetch();
+    return {
+      for (final link in result)
+        link.token: ShareLinkJoins(
+          joined: link.joined.round(),
+          more: link.more,
+          names: link.names,
+        ),
+    };
   }
 
   Future<void> setShareMemberRole({

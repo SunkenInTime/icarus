@@ -16,7 +16,6 @@ ShareMember _member(
   String name, {
   String role = 'viewer',
   String? token,
-  String? folder,
 }) =>
     ShareMember(
       memberId: id,
@@ -25,13 +24,15 @@ ShareMember _member(
       role: role,
       joinedAt: DateTime.now().subtract(const Duration(days: 2)),
       shareLinkToken: token,
-      inheritedFromFolderName: folder,
     );
 
 class _ShareRepository extends Fake implements ConvexStrategyRepository {
   _ShareRepository(this.members);
 
   List<ShareMember> members;
+
+  /// People per page; the rest come with Show more.
+  int pageSize = 50;
   bool failMembers = false;
   bool failRoleChange = false;
   final List<String> roleChanges = [];
@@ -57,12 +58,41 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
       ];
 
   @override
-  Future<List<ShareMember>> listShareMembers({
+  Future<ShareMemberPage> listShareMembers({
+    required String targetType,
+    required String targetPublicId,
+    double? after,
+  }) async {
+    if (failMembers) throw Exception('shares:listMembers is not deployed');
+    final start = after?.round() ?? 0;
+    final end = (start + pageSize).clamp(0, members.length);
+    return ShareMemberPage(
+      members: members.sublist(start, end),
+      nextAfter: end < members.length ? end.toDouble() : null,
+    );
+  }
+
+  @override
+  Future<List<String>> listShareFolderAccess({
+    required String targetType,
+    required String targetPublicId,
+  }) async =>
+      ['Team plans'];
+
+  @override
+  Future<Map<String, ShareLinkJoins>> listShareLinkJoins({
     required String targetType,
     required String targetPublicId,
   }) async {
-    if (failMembers) throw Exception('shares:listMembers is not deployed');
-    return members;
+    ShareLinkJoins joinsFor(String token) {
+      final names = [
+        for (final m in members)
+          if (m.shareLinkToken == token) m.displayName!,
+      ];
+      return ShareLinkJoins(joined: names.length, more: false, names: names);
+    }
+
+    return {_editToken: joinsFor(_editToken), _viewToken: joinsFor(_viewToken)};
   }
 
   @override
@@ -126,7 +156,6 @@ Future<_ShareRepository> _pumpDialog(
     _member('m-vex', 'Vex', role: 'editor', token: _editToken),
     _member('m-kyra', 'Kyra', role: 'editor', token: _editToken),
     _member('m-ren', 'Renyxx', token: _viewToken),
-    _member('m-folder', 'Mav', role: 'editor', folder: 'Team plans'),
   ]);
   setUp?.call(repository);
   await tester.pumpWidget(
@@ -165,11 +194,14 @@ void main() {
 
     expect(find.text('Joined through an edit link · 2d ago'), findsNWidgets(2));
     expect(find.text('Joined through a view link · 2d ago'), findsOneWidget);
-    expect(find.text('Through the folder "Team plans"'), findsOneWidget);
+    expect(
+      find.text(
+        'People with access to the folder "Team plans" can open this too.',
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('share-member-remove-m-vex')),
         findsOneWidget);
-    expect(find.byKey(const ValueKey('share-member-remove-m-folder')),
-        findsNothing);
     expect(find.text('Created 4d ago · 2 joined'), findsOneWidget);
     expect(find.text('Created 3h ago · 1 joined'), findsOneWidget);
   });
@@ -259,5 +291,17 @@ void main() {
         findsOneWidget);
     expect(find.byKey(const ValueKey('share-link-create-and-copy')),
         findsOneWidget);
+  });
+
+  testWidgets('people beyond the first page come with Show more',
+      (tester) async {
+    await _pumpDialog(tester, setUp: (r) => r.pageSize = 2);
+
+    expect(find.text('Renyxx'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('share-people-more')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Renyxx'), findsOneWidget);
+    expect(find.byKey(const ValueKey('share-people-more')), findsNothing);
   });
 }
