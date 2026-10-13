@@ -934,8 +934,9 @@ class _CloudErrorBanner extends StatelessWidget {
 }
 
 /// The one slot above the My Library root that speaks for the cloud half.
-/// Its height doesn't depend on [action], so a load that fails swaps the
-/// loading banner for the error one without moving the grid.
+/// Its height doesn't depend on [action], so while the message fits on one
+/// line, a load that fails swaps the loading banner for the error one
+/// without moving the grid.
 class _CloudBanner extends StatelessWidget {
   const _CloudBanner({
     super.key,

@@ -9,6 +9,7 @@ import 'package:icarus/strategy/strategy_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/hive/hive_registration.dart';
@@ -99,6 +100,53 @@ void main() {
     expect(find.byKey(const ValueKey('cloud-loading-banner')), findsNothing);
   });
 
+  testWidgets('cloud folders wait for cloud strategies before showing',
+      (tester) async {
+    final local = _strategy('local-plan', 'Local Plan');
+    await tester.runAsync(() async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(local.id, local);
+    });
+    final cloudFolders = StreamController<List<CloudFolderEntry>>();
+    final cloudStrategies = StreamController<List<CloudStrategyEntry>>();
+    addTearDown(cloudFolders.close);
+    addTearDown(cloudStrategies.close);
+    await tester.pumpWidget(
+      _cloudApp(
+        FolderContent(onCreateStrategy: () {}),
+        folders: cloudFolders.stream,
+        strategies: cloudStrategies.stream,
+      ),
+    );
+    cloudFolders.add([
+      (
+        folder: Folder(
+          name: 'Cloud Folder',
+          id: 'cloud-folder',
+          dateCreated: DateTime(2026, 9, 1),
+          color: FolderColor.blue,
+        ),
+        role: 'owner',
+        strategyCount: 0,
+        mapPeeks: const <MapValue>[],
+        agentTypes: const <AgentType>[],
+      ),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Local Plan'), findsOneWidget);
+    expect(find.text('Cloud Folder'), findsNothing);
+    expect(find.byKey(const ValueKey('cloud-loading-banner')), findsOneWidget);
+
+    cloudStrategies.add(const []);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Cloud Folder'), findsOneWidget);
+    expect(find.byKey(const ValueKey('cloud-loading-banner')), findsNothing);
+  });
+
   testWidgets('a session still connecting to the cloud counts as loading',
       (tester) async {
     final local = _strategy('local-plan', 'Local Plan');
@@ -173,6 +221,7 @@ void main() {
 Widget _cloudApp(
   Widget child, {
   CloudLibrarySection section = CloudLibrarySection.home,
+  Stream<List<CloudFolderEntry>>? folders,
   Stream<List<CloudStrategyEntry>>? strategies,
   AppAuthState auth = _cloudReady,
 }) {
@@ -184,7 +233,7 @@ Widget _cloudApp(
         () => _CloudSectionNotifier(section),
       ),
       cloudFolderTreeProvider.overrideWith(
-        (_) => Stream.value(const <CloudFolderEntry>[]),
+        (_) => folders ?? Stream.value(const <CloudFolderEntry>[]),
       ),
       cloudStrategiesProvider.overrideWith(
         (_) => strategies ?? Stream.value(const <CloudStrategyEntry>[]),
