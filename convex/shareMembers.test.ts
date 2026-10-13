@@ -597,19 +597,25 @@ describe("share members", () => {
       await letIn(t, "s1", "crowd-link", total);
 
       const seen = new Set<string>();
-      let after: number | undefined;
+      let cursor: string | undefined;
       let pages = 0;
       for (;;) {
         const page = await a.query(listMembers, {
           targetType: "strategy",
           targetPublicId: "s1",
-          after,
+          cursor,
         });
         pages += 1;
         for (const member of page.members) seen.add(member.memberId);
-        if (page.nextAfter === null) break;
+        if (pages === 1) {
+          // Someone already listed leaves between pages; no one shifts past
+          // the cursor.
+          const first = page.members[0]!.memberId as Id<"strategyCollaborators">;
+          await t.run(async (ctx) => ctx.db.delete(first));
+        }
+        if (page.nextCursor === null) break;
         expect(page.members).toHaveLength(MEMBER_PAGE_SIZE);
-        after = page.nextAfter;
+        cursor = page.nextCursor;
       }
       expect(pages).toBe(3);
       expect(seen.size).toBe(total);

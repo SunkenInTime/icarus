@@ -168537,9 +168537,9 @@
       "args": {
         "type": "object",
         "value": {
-          "after": {
+          "cursor": {
             "fieldType": {
-              "type": "number"
+              "type": "string"
             },
             "optional": true
           },
@@ -168653,12 +168653,12 @@
             },
             "optional": false
           },
-          "nextAfter": {
+          "nextCursor": {
             "fieldType": {
               "type": "union",
               "value": [
                 {
-                  "type": "number"
+                  "type": "string"
                 },
                 {
                   "type": "null"
