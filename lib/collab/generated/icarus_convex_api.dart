@@ -1197,6 +1197,7 @@ abstract interface class StrategiesModule {
     ConvexOptional<FoldersListTreeArgsScope> scope =
         const ConvexOptional.absent(),
   });
+  ConvexQuery<StrategiesListInventoryResult> listInventory();
   ConvexQuery<List<StrategiesListForFolderResultItem>> listSharedWithMe();
   Future<ConvexValue> move({
     required double clientProtocolVersion,
@@ -1397,6 +1398,17 @@ final class _StrategiesModule implements StrategiesModule {
       name: 'strategies:listForFolder',
       args: args,
       decode: decodeStrategiesListForFolderResult,
+    );
+  }
+
+  @override
+  ConvexQuery<StrategiesListInventoryResult> listInventory() {
+    final args = encodeStrategiesListInventoryArgs();
+    return ConvexQuery(
+      transport: _transport,
+      name: 'strategies:listInventory',
+      args: args,
+      decode: decodeStrategiesListInventoryResult,
     );
   }
 

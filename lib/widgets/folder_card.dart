@@ -13,6 +13,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/delete_folder_alert_dialog.dart';
 import 'package:icarus/widgets/drag_tilt_feedback.dart';
@@ -831,7 +832,21 @@ class _FolderCardState extends ConsumerState<FolderCard>
           if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) {
             return;
           }
-          await StrategyImportExportService(ref).exportFolder(_folder.id);
+          try {
+            await StrategyImportExportService(ref).exportFolder(
+              _folder.id,
+              store: widget.store,
+            );
+          } catch (error, stackTrace) {
+            AppErrorReporter.reportError(
+              error is LibraryExportIncomplete
+                  ? error.userMessage
+                  : 'Failed to export folder.',
+              error: error,
+              stackTrace: stackTrace,
+              source: 'FolderCard.export',
+            );
+          }
         },
       ),
       ShadContextMenuItem(

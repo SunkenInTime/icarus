@@ -431,6 +431,59 @@ export const listForFolder = query({
   },
 });
 
+/// Where every folder and strategy of the caller's own library sits, read
+/// in one transaction: a backup checks against it that it holds all of
+/// them, which listing folder by folder can't prove while another device
+/// moves things. Strategies a move hasn't finished are left out, as in
+/// every library list.
+export const listInventory = query({
+  args: {},
+  returns: v.object({
+    folders: v.array(
+      v.object({
+        publicId: v.string(),
+        parentFolderPublicId: v.union(v.string(), v.null()),
+      }),
+    ),
+    strategies: v.array(
+      v.object({
+        publicId: v.string(),
+        folderPublicId: v.union(v.string(), v.null()),
+      }),
+    ),
+  }),
+  handler: async (ctx) => {
+    const user = await requireCurrentUser(ctx);
+    const folders = await ctx.db
+      .query("folders")
+      .withIndex("by_ownerId", (q) => q.eq("ownerId", user._id))
+      .collect();
+    const folderPublicIds = new Map(
+      folders.map((folder) => [folder._id, folder.publicId]),
+    );
+    const strategies = await ctx.db
+      .query("strategies")
+      .withIndex("by_ownerId", (q) => q.eq("ownerId", user._id))
+      .collect();
+    return {
+      folders: folders.map((folder) => ({
+        publicId: folder.publicId,
+        parentFolderPublicId:
+          folder.parentFolderId === undefined
+            ? null
+            : (folderPublicIds.get(folder.parentFolderId) ?? null),
+      })),
+      strategies: strategies.filter(isListed).map((strategy) => ({
+        publicId: strategy.publicId,
+        folderPublicId:
+          strategy.folderId === undefined
+            ? null
+            : (folderPublicIds.get(strategy.folderId) ?? null),
+      })),
+    };
+  },
+});
+
 export const listSharedWithMe = query({
   args: {},
   returns: v.array(strategySummaryValidator),
