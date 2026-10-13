@@ -169052,6 +169052,20 @@
             },
             "optional": false
           },
+          "folderPublicId": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"

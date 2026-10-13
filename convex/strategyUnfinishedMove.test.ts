@@ -112,11 +112,12 @@ describe("a strategy moving in from a device", () => {
 
     await owner.mutation(finishMove, {
       ...protocol,
-      strategyPublicId: "moving-root",
+      strategyPublicId: "moving-root", folderPublicId: null
     });
     await owner.mutation(finishMove, {
       ...protocol,
       strategyPublicId: "moving-in-folder",
+      folderPublicId: "plays",
     });
     expect(await listedIds(owner)).toEqual(["made-here", "moving-root"]);
     expect(await listedIds(owner, "plays")).toEqual(["moving-in-folder"]);
@@ -125,7 +126,7 @@ describe("a strategy moving in from a device", () => {
     // Finishing twice changes nothing.
     await owner.mutation(finishMove, {
       ...protocol,
-      strategyPublicId: "moving-root",
+      strategyPublicId: "moving-root", folderPublicId: null
     });
     expect(await listedIds(owner)).toEqual(["made-here", "moving-root"]);
   });
@@ -135,7 +136,7 @@ describe("a strategy moving in from a device", () => {
     await create(owner, "moving", { unfinishedMove: true });
 
     await expect(
-      other.mutation(finishMove, { ...protocol, strategyPublicId: "moving" }),
+      other.mutation(finishMove, { ...protocol, strategyPublicId: "moving", folderPublicId: null }),
     ).rejects.toThrow();
     expect(await listedIds(owner)).toEqual([]);
   });
@@ -193,7 +194,7 @@ describe("a strategy moving in from a device", () => {
     expect(await listedIds(owner)).toEqual([]);
 
     // Once finished, it shares like any other.
-    await owner.mutation(finishMove, { ...protocol, strategyPublicId: "moving" });
+    await owner.mutation(finishMove, { ...protocol, strategyPublicId: "moving", folderPublicId: null });
     await owner.mutation(createShareLink, {
       ...protocol,
       targetType: "strategy",
@@ -217,9 +218,16 @@ describe("a strategy moving in from a device", () => {
 
     await owner.mutation(deleteFolder, { ...protocol, folderPublicId: "plays" });
 
-    // The strategy stays, hidden, for the moving device to finish or delete.
+    // The strategy stays hidden for the moving device to delete: the move
+    // can't finish into a folder that is gone.
     expect(await listedIds(owner)).toEqual([]);
-    await owner.mutation(finishMove, { ...protocol, strategyPublicId: "moving" });
-    expect(await listedIds(owner)).toEqual(["moving"]);
+    await expect(
+      owner.mutation(finishMove, {
+        ...protocol,
+        strategyPublicId: "moving",
+        folderPublicId: "plays",
+      }),
+    ).rejects.toThrow();
+    expect(await listedIds(owner)).toEqual([]);
   });
 });

@@ -6094,12 +6094,16 @@ ConvexValue decodeStrategiesDuplicateResult(ConvexValue value) => _decodeRaw(
 
 ConvexObject encodeStrategiesFinishMoveArgs({
   required double clientProtocolVersion,
+  required String? folderPublicId,
   required String strategyPublicId,
 }) => ConvexObject({
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'strategies.js:finishMove.args.clientProtocolVersion',
   ),
+  'folderPublicId': folderPublicId == null
+      ? const ConvexNull()
+      : ConvexString(folderPublicId!),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 

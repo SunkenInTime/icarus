@@ -760,16 +760,38 @@ export const move = mutation({
 
 /// Shows a strategy a move made with unfinishedMove, once the moving device
 /// has confirmed every part of it landed. Calling it again changes nothing.
+/// Refused (CONFLICT) when the strategy is no longer in [folderPublicId],
+/// the folder the move put it in (null for the top level): someone deleted
+/// that folder meanwhile, and the device keeps its original rather than
+/// publish the strategy somewhere it did not ask for.
 export const finishMove = mutation({
   args: {
     ...cloudProtocolArgs,
     strategyPublicId: v.string(),
+    folderPublicId: v.union(v.string(), v.null()),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "owner");
+    const folder =
+      args.folderPublicId === null
+        ? null
+        : await ctx.db
+            .query("folders")
+            .withIndex("by_publicId", (q) =>
+              q.eq("publicId", args.folderPublicId!),
+            )
+            .first();
+    const expectedFolderId =
+      args.folderPublicId === null ? undefined : folder?._id;
+    if (
+      (args.folderPublicId !== null && folder === null) ||
+      strategy.folderId !== expectedFolderId
+    ) {
+      throw conflictError("The strategy is no longer where the move put it");
+    }
     if (strategy.unfinishedMove === true) {
       await ctx.db.patch(strategy._id, { unfinishedMove: undefined });
     }
