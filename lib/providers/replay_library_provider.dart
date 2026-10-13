@@ -146,6 +146,9 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   }
 
   Future<ReplayAddResult> _add(List<String> paths) async {
+    // The first listing publishes when it finishes, so let it finish first
+    // rather than replace this add's listing.
+    await future.then((_) {}, onError: (_) {});
     final files = ref.read(replayFilesProvider);
     // Only a replay whose header was read counts as having its match; an
     // unreadable file of the same name is what a good copy should replace.
@@ -176,7 +179,8 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
         continue;
       }
       try {
-        final copy = await files.import(path, matchId: matchId);
+        // Whatever has this match's name there isn't a readable copy of it.
+        final copy = await files.import(path, matchId: matchId, replace: true);
         _probes[copy.cacheKey] = header!;
         listedByMatch[matchId] = copy.path;
         added.add(copy.path);

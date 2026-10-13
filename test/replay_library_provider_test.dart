@@ -161,11 +161,12 @@ void main() {
 
   test('a readable replay replaces an unreadable file of its match', () async {
     final replays = await Directory(p.join(support.path, 'replays')).create();
-    await File(p.join(replays.path, 'match-a.vrf')).writeAsString('partial');
     final outside = await Directory(p.join(root.path, 'downloads')).create();
     final good = await writeReplay(outside, 'match-a.vrf',
         matchId: 'match-a', playedAt: '2026-07-01T00:00:00Z');
-    await container.read(replayLibraryProvider.future);
+    // Damaged, and the same size, so size alone can't tell them apart.
+    await File(p.join(replays.path, 'match-a.vrf'))
+        .writeAsString('x' * await good.length());
 
     final result =
         await container.read(replayLibraryProvider.notifier).add([good.path]);

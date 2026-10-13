@@ -154,7 +154,13 @@ class ReplayFiles {
   /// the caller read it; otherwise the file's own name stands for it, as it
   /// does in Valorant's folder. The same file already there is returned as
   /// is; a different one of the same name (a partial download) is replaced.
-  Future<ReplayFile> import(String sourcePath, {String? matchId}) async {
+  /// A same-size file counts as the same unless [replace] says the caller
+  /// knows the one there isn't this replay.
+  Future<ReplayFile> import(
+    String sourcePath, {
+    String? matchId,
+    bool replace = false,
+  }) async {
     final directory = await icarusReplaysDirectory();
     // A header is file content, so only a plain id becomes a file name.
     final named =
@@ -162,7 +168,8 @@ class ReplayFiles {
     final name = named ? '$matchId$extension' : p.basename(sourcePath);
     final destination = File(p.join(directory.path, name));
     final source = File(sourcePath);
-    final alreadyKept = await destination.exists() &&
+    final alreadyKept = !replace &&
+        await destination.exists() &&
         await destination.length() == await source.length();
     if (!p.equals(destination.path, sourcePath) && !alreadyKept) {
       // Copy to a temporary name first so a half-copied file is never
