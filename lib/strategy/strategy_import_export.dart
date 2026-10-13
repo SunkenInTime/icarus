@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -25,7 +26,11 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -59,6 +64,40 @@ typedef CloudStrategyExporter = Future<bool> Function(String strategyId);
 final cloudStrategyExporterProvider = Provider<CloudStrategyExporter>(
   (ref) => StrategyImportExportService(ref).exportCloudStrategy,
 );
+
+/// An export that holds cloud work stopped before writing anything: a
+/// backup missing part of the library must never look complete.
+class LibraryExportIncomplete implements Exception {
+  const LibraryExportIncomplete.cloudUnreadable({this.cause})
+      : userMessage = "Couldn't read your cloud library, so nothing was "
+            'exported. Check your connection and try again.';
+
+  const LibraryExportIncomplete.cloudNotSynced()
+      : userMessage = "Some of your cloud changes haven't synced yet, so "
+            'nothing was exported. Let them sync, or review them in your '
+            'library, then try again.',
+        cause = null;
+
+  /// Saved cloud work on this device could not be read, so no strategy can
+  /// be shown to have none waiting.
+  const LibraryExportIncomplete.cloudWorkUnreadable()
+      : userMessage = "Icarus can't read some cloud changes saved on this "
+            'device, so nothing was exported. Review them, then try again.',
+        cause = null;
+
+  const LibraryExportIncomplete.cloudChanged({this.cause})
+      : userMessage = 'Your cloud library changed while exporting, so '
+            'nothing was exported. Try again.';
+
+  final String userMessage;
+  final Object? cause;
+
+  @override
+  String toString() => 'LibraryExportIncomplete($userMessage, cause: $cause)';
+}
+
+/// How long an export waits for this device's cloud changes to land.
+const cloudExportSyncTimeout = Duration(seconds: 20);
 
 class NewerVersionImportException implements Exception {
   const NewerVersionImportException({
@@ -158,6 +197,48 @@ class _ArchiveExportState {
   final Directory rootDirectory;
   final List<ArchiveFolderEntry> folders = [];
   final List<ArchiveStrategyEntry> strategies = [];
+}
+
+/// A strategy where an export places it. [name] is empty where the store
+/// names it only once the strategy itself is read.
+typedef _ExportStrategy = ({String id, String name, String? folderId});
+
+/// One store's folders and strategies as an export walks them, sorted by
+/// name, and how that store writes a strategy out as an .ica file.
+class _ExportLibrary {
+  _ExportLibrary({
+    required Iterable<Folder> folders,
+    required Iterable<_ExportStrategy> strategies,
+    required this.writeStrategy,
+  })  : _folders = folders.toList()
+          ..sort((a, b) => _byNameThenId(a.name, a.id, b.name, b.id)),
+        _strategies = strategies.toList()
+          ..sort((a, b) => _byNameThenId(a.name, a.id, b.name, b.id));
+
+  final List<Folder> _folders;
+  final List<_ExportStrategy> _strategies;
+
+  /// Writes the strategy into the directory as an .ica file and returns the
+  /// file's path and the strategy's name.
+  final Future<({String path, String name})> Function(
+    _ExportStrategy strategy,
+    Directory directory,
+  ) writeStrategy;
+
+  Folder? folder(String id) => _folders.where((f) => f.id == id).firstOrNull;
+
+  /// The folders directly in [parentId]; null is the top level.
+  List<Folder> foldersIn(String? parentId) =>
+      _folders.where((f) => f.parentID == parentId).toList(growable: false);
+
+  /// The strategies directly in [folderId]; null is the top level.
+  List<_ExportStrategy> strategiesIn(String? folderId) =>
+      _strategies.where((s) => s.folderId == folderId).toList(growable: false);
+
+  static int _byNameThenId(String aName, String aId, String bName, String bId) {
+    final nameCompare = aName.compareTo(bName);
+    return nameCompare != 0 ? nameCompare : aId.compareTo(bId);
+  }
 }
 
 class _ManifestImportData {
@@ -2011,21 +2092,25 @@ class StrategyImportExportService {
     await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
   }
 
-  Future<void> exportFolder(String folderID) async {
-    final folder = Hive.box<Folder>(HiveBoxNames.foldersBox).get(folderID);
-    if (folder == null) {
-      log("Couldn't find folder to export");
-      return;
-    }
-
+  /// Exports one folder of [store], with everything under it, as a .zip
+  /// that Import Backup restores.
+  Future<void> exportFolder(
+    String folderID, {
+    LibraryWorkspace store = LibraryWorkspace.local,
+  }) async {
     await _flushCurrentStrategyIfNeeded();
-    final stagingDirectory = await buildFolderExportDirectoryForTest(folderID);
+    final stagingDirectory = await buildFolderExportDirectoryForTest(
+      folderID,
+      store: store,
+    );
 
     try {
+      // The staging directory holds one directory, named for the folder.
+      final folderDirectory = stagingDirectory.listSync().single;
       final outputFile = await FilePicker.platform.saveFile(
         type: FileType.custom,
         dialogTitle: 'Please select an output file:',
-        fileName: '${sanitizeStrategyFileName(folder.name)}.zip',
+        fileName: '${path.basename(folderDirectory.path)}.zip',
         allowedExtensions: ['zip'],
       );
 
@@ -2042,6 +2127,8 @@ class StrategyImportExportService {
     }
   }
 
+  /// Backs up the whole library as a .zip that Import Backup restores: the
+  /// local library and, signed in, the user's own cloud library beside it.
   Future<void> exportLibrary() async {
     await _flushCurrentStrategyIfNeeded();
     final stagingDirectory = await buildLibraryExportDirectoryForTest();
@@ -2068,90 +2155,353 @@ class StrategyImportExportService {
   }
 
   @visibleForTesting
-  Future<Directory> buildFolderExportDirectoryForTest(String folderID) async {
-    final folder = Hive.box<Folder>(HiveBoxNames.foldersBox).get(folderID);
+  Future<Directory> buildFolderExportDirectoryForTest(
+    String folderID, {
+    LibraryWorkspace store = LibraryWorkspace.local,
+  }) async {
+    final library = store == LibraryWorkspace.cloud
+        ? await _cloudFolderForExport(folderID)
+        : _localLibraryForExport();
+    final folder = library.folder(folderID);
     if (folder == null) {
       throw StateError("Couldn't find folder to export");
     }
 
-    final stagingDirectory =
-        await Directory.systemTemp.createTemp('icarus-folder-export');
-    final rootDirectory = await _createUniqueChildDirectory(
-      parentDirectory: stagingDirectory,
-      desiredName: folder.name,
-    );
-    final exportState = _ArchiveExportState(rootDirectory: rootDirectory);
-    await _writeFolderArchive(
-      folderID: folderID,
-      exportDirectory: rootDirectory,
-      exportState: exportState,
-      parentManifestId: null,
-      currentArchivePath: '',
-    );
-    await _writeArchiveManifest(
-      exportState: exportState,
-      archiveType: ArchiveType.folderTree,
-    );
-    return stagingDirectory;
+    return _stagingDirectory('icarus-folder-export', (stagingDirectory) async {
+      final rootDirectory = await _createUniqueChildDirectory(
+        parentDirectory: stagingDirectory,
+        desiredName: folder.name,
+      );
+      final exportState = _ArchiveExportState(rootDirectory: rootDirectory);
+      await _writeFolderArchive(
+        library: library,
+        folder: folder,
+        exportDirectory: rootDirectory,
+        exportState: exportState,
+        parentManifestId: null,
+        currentArchivePath: '',
+      );
+      await _writeArchiveManifest(
+        exportState: exportState,
+        archiveType: ArchiveType.folderTree,
+      );
+    });
   }
 
   @visibleForTesting
   Future<Directory> buildLibraryExportDirectoryForTest() async {
-    final stagingDirectory =
-        await Directory.systemTemp.createTemp('icarus-library-export');
-    final rootDirectory = Directory(
-      path.join(stagingDirectory.path, libraryBackupRootDirectoryName),
-    );
-    await rootDirectory.create(recursive: true);
-    final rootStrategiesDirectory =
-        Directory(path.join(rootDirectory.path, 'root_strategies'))
-          ..createSync(recursive: true);
-    final foldersDirectory = Directory(path.join(rootDirectory.path, 'folders'))
-      ..createSync(recursive: true);
+    final libraries = [
+      _localLibraryForExport(),
+      if (await _cloudLibraryForExport() case final cloud?) cloud,
+    ];
 
-    final exportState = _ArchiveExportState(rootDirectory: rootDirectory);
-
-    for (final strategy in _sortedStrategiesForFolder(null)) {
-      final strategyArchivePath = await zipStrategy(
-        id: strategy.id,
-        saveDir: rootStrategiesDirectory,
+    return _stagingDirectory('icarus-library-export', (stagingDirectory) async {
+      final rootDirectory = Directory(
+        path.join(stagingDirectory.path, libraryBackupRootDirectoryName),
       );
-      exportState.strategies.add(
-        ArchiveStrategyEntry(
+      await rootDirectory.create(recursive: true);
+      final rootStrategiesDirectory =
+          Directory(path.join(rootDirectory.path, 'root_strategies'))
+            ..createSync(recursive: true);
+      final foldersDirectory =
+          Directory(path.join(rootDirectory.path, 'folders'))
+            ..createSync(recursive: true);
+
+      final exportState = _ArchiveExportState(rootDirectory: rootDirectory);
+
+      // Both stores share the top level, as My Library shows them.
+      for (final library in libraries) {
+        for (final strategy in library.strategiesIn(null)) {
+          final written = await library.writeStrategy(
+            strategy,
+            rootStrategiesDirectory,
+          );
+          exportState.strategies.add(
+            ArchiveStrategyEntry(
+              name: written.name,
+              archivePath: normalizeArchivePath(path.posix.join(
+                'root_strategies',
+                path.basename(written.path),
+              )),
+              folderManifestId: null,
+            ),
+          );
+        }
+
+        for (final rootFolder in library.foldersIn(null)) {
+          final rootFolderDirectory = await _createUniqueChildDirectory(
+            parentDirectory: foldersDirectory,
+            desiredName: rootFolder.name,
+          );
+          final rootArchivePath = normalizeArchivePath(path.posix.join(
+            'folders',
+            path.basename(rootFolderDirectory.path),
+          ));
+          await _writeFolderArchive(
+            library: library,
+            folder: rootFolder,
+            exportDirectory: rootFolderDirectory,
+            exportState: exportState,
+            parentManifestId: null,
+            currentArchivePath: rootArchivePath,
+          );
+        }
+      }
+
+      await _writeArchiveManifest(
+        exportState: exportState,
+        archiveType: ArchiveType.libraryBackup,
+        globals: _buildLibraryGlobals(),
+      );
+    });
+  }
+
+  /// A new temp directory filled by [fill]. When filling fails, the partial
+  /// copy is removed and the error passes on.
+  Future<Directory> _stagingDirectory(
+    String prefix,
+    Future<void> Function(Directory stagingDirectory) fill,
+  ) async {
+    final stagingDirectory = await Directory.systemTemp.createTemp(prefix);
+    try {
+      await fill(stagingDirectory);
+      return stagingDirectory;
+    } catch (_) {
+      try {
+        await stagingDirectory.delete(recursive: true);
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  /// The local library as it is on disk, whichever store the screen shows.
+  _ExportLibrary _localLibraryForExport() => _ExportLibrary(
+        folders: Hive.box<Folder>(HiveBoxNames.foldersBox).values,
+        strategies: [
+          for (final strategy
+              in Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values)
+            (
+              id: strategy.id,
+              name: strategy.name,
+              folderId: strategy.folderID,
+            ),
+        ],
+        writeStrategy: (strategy, directory) async => (
+          path: await zipStrategy(id: strategy.id, saveDir: directory),
           name: strategy.name,
-          archivePath: normalizeArchivePath(path.posix.join(
-            'root_strategies',
-            path.basename(strategyArchivePath),
-          )),
-          folderManifestId: null,
         ),
       );
-    }
 
-    for (final rootFolder in _sortedFoldersForParent(null)) {
-      final rootFolderDirectory = await _createUniqueChildDirectory(
-        parentDirectory: foldersDirectory,
-        desiredName: rootFolder.name,
-      );
-      final rootArchivePath = normalizeArchivePath(path.posix.join(
-        'folders',
-        path.basename(rootFolderDirectory.path),
-      ));
-      await _writeFolderArchive(
-        folderID: rootFolder.id,
-        exportDirectory: rootFolderDirectory,
-        exportState: exportState,
-        parentManifestId: null,
-        currentArchivePath: rootArchivePath,
-      );
-    }
-
-    await _writeArchiveManifest(
-      exportState: exportState,
-      archiveType: ArchiveType.libraryBackup,
-      globals: _buildLibraryGlobals(),
+  /// The signed-in user's own cloud library, My Library's cloud half: their
+  /// folders and strategies, not what others shared with them. Null when
+  /// signed out, where the library is the local one alone.
+  Future<_ExportLibrary?> _cloudLibraryForExport() async {
+    if (!ref.read(authProvider).isAuthenticated) return null;
+    final repository = await _cloudRepositoryForExport();
+    final inventory = await _readCloudOrStop(repository.fetchInventory);
+    return _ownedCloudLibrary(
+      repository,
+      inventory,
+      folderIds: inventory.folders.keys.toSet(),
+      withTopLevel: true,
     );
-    return stagingDirectory;
+  }
+
+  /// The cloud folder [folderId] with every folder under it and their
+  /// strategies. The user's own folder is read from their inventory, like
+  /// the whole library. A folder shared with them is not in it, so it is
+  /// listed folder by folder: as complete as the listings, no more.
+  Future<_ExportLibrary> _cloudFolderForExport(String folderId) async {
+    final repository = await _cloudRepositoryForExport();
+    final inventory = await _readCloudOrStop(repository.fetchInventory);
+    if (inventory.folders.containsKey(folderId)) {
+      return _ownedCloudLibrary(
+        repository,
+        inventory,
+        folderIds: _subtree(folderId, parentOf: inventory.folders),
+        withTopLevel: false,
+      );
+    }
+
+    final tree = await _readCloudOrStop(
+      () => repository.fetchFolders(scope: 'all'),
+    );
+    final folderIds = _subtree(
+      folderId,
+      parentOf: {
+        for (final entry in tree) entry.folder.id: entry.folder.parentID
+      },
+    );
+    final strategies = <_ExportStrategy>[];
+    for (final id in folderIds) {
+      final listed = await _readCloudOrStop(
+        () => repository.fetchStrategiesForFolder(id, scope: 'all'),
+      );
+      strategies.addAll([
+        for (final entry in listed)
+          (id: entry.strategy.id, name: entry.strategy.name, folderId: id),
+      ]);
+    }
+    return _cloudExportLibrary(
+      repository,
+      folders: [
+        for (final entry in tree)
+          if (folderIds.contains(entry.folder.id)) entry.folder,
+      ],
+      strategies: strategies,
+    );
+  }
+
+  /// [folderIds] of the user's own cloud library, and [withTopLevel] the
+  /// top level, with exactly the strategies [inventory] places in them.
+  /// Names, icons and colors come from the folder tree; a folder the tree
+  /// does not hold where the inventory puts it moved or went in between.
+  Future<_ExportLibrary> _ownedCloudLibrary(
+    ConvexStrategyRepository repository,
+    CloudLibraryInventory inventory, {
+    required Set<String> folderIds,
+    required bool withTopLevel,
+  }) async {
+    final tree = {
+      for (final entry in await _readCloudOrStop(
+        () => repository.fetchFolders(scope: 'owned'),
+      ))
+        entry.folder.id: entry.folder,
+    };
+    final folders = <Folder>[];
+    for (final id in folderIds) {
+      final folder = tree[id];
+      if (folder == null || folder.parentID != inventory.folders[id]) {
+        throw const LibraryExportIncomplete.cloudChanged();
+      }
+      folders.add(folder);
+    }
+    return _cloudExportLibrary(
+      repository,
+      folders: folders,
+      strategies: [
+        for (final MapEntry(key: id, value: folderId)
+            in inventory.strategies.entries)
+          if (folderId == null ? withTopLevel : folderIds.contains(folderId))
+            // Its name comes with the strategy itself.
+            (id: id, name: '', folderId: folderId),
+      ],
+    );
+  }
+
+  /// Cloud [folders] and [strategies], each strategy written from the
+  /// server's full copy with its images.
+  _ExportLibrary _cloudExportLibrary(
+    ConvexStrategyRepository repository, {
+    required List<Folder> folders,
+    required List<_ExportStrategy> strategies,
+  }) {
+    return _ExportLibrary(
+      folders: folders,
+      strategies: strategies,
+      writeStrategy: (strategy, directory) async {
+        final snapshot = await _readCloudOrStop(
+          () => repository.fetchFullSnapshot(strategy.id),
+        );
+        try {
+          await _ensureRemoteAssetsCached(snapshot);
+          final data = strategyDataFromRemoteSnapshot(snapshot);
+          return (
+            path: await zipStrategyData(strategy: data, saveDir: directory),
+            name: data.name,
+          );
+        } catch (error, stackTrace) {
+          Error.throwWithStackTrace(
+            LibraryExportIncomplete.cloudUnreadable(cause: error),
+            stackTrace,
+          );
+        }
+      },
+    );
+  }
+
+  /// [folderId] and every folder whose chain of parents in [parentOf] leads
+  /// to it.
+  static Set<String> _subtree(
+    String folderId, {
+    required Map<String, String?> parentOf,
+  }) {
+    final ids = {folderId};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final MapEntry(key: id, value: parentId) in parentOf.entries) {
+        if (ids.contains(parentId) && ids.add(id)) grew = true;
+      }
+    }
+    return ids;
+  }
+
+  /// The repository, once the cloud is reachable and this account has
+  /// nothing left to send to it.
+  Future<ConvexStrategyRepository> _cloudRepositoryForExport() async {
+    final AppAuthState auth = ref.read(authProvider);
+    if (!auth.isConvexUserReady ||
+        auth.hasActiveAuthIncident ||
+        !ref.read(convexConnectionSnapshotProvider)) {
+      throw const LibraryExportIncomplete.cloudUnreadable();
+    }
+    await _waitUntilCloudWorkSent();
+    return ref.read(convexStrategyRepositoryProvider);
+  }
+
+  /// [read]'s answer. A strategy or folder the server no longer has was
+  /// listed a moment ago, so the library changed mid-export; any other
+  /// failure means the cloud could not be read.
+  Future<T> _readCloudOrStop<T>(Future<T> Function() read) async {
+    try {
+      return await read();
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        isTypedConvexNotFoundError(error)
+            ? LibraryExportIncomplete.cloudChanged(cause: error)
+            : LibraryExportIncomplete.cloudUnreadable(cause: error),
+        stackTrace,
+      );
+    }
+  }
+
+  /// Waits until this account has nothing left to send to the cloud, for
+  /// any strategy: no edit queued, in flight, held for review or kept for a
+  /// strategy deleted elsewhere, and no image to upload. Only then does the
+  /// server hold everything the user did.
+  Future<void> _waitUntilCloudWorkSent() async {
+    final String? accountId = ref.read(authProvider).user?.id;
+    const step = Duration(milliseconds: 100);
+    var waited = Duration.zero;
+    while (true) {
+      final StrategyOpQueueState opQueue = ref.read(strategyOpQueueProvider);
+      final CloudMediaUploadQueueState uploadQueue =
+          ref.read(cloudMediaUploadQueueProvider);
+      // A saved record that could not be read can't be shown to have landed.
+      if (!opQueue.outboxIsReliable || !uploadQueue.outboxIsReliable) {
+        throw const LibraryExportIncomplete.cloudWorkUnreadable();
+      }
+      final outbox = opQueue.accountOutbox;
+      final uploads =
+          uploadQueue.jobs.where((job) => job.accountId == accountId);
+      if (!outbox.hasWork &&
+          outbox.deletedStrategies.isEmpty &&
+          opQueue.pending.isEmpty &&
+          uploads.isEmpty) {
+        return;
+      }
+      // Work held for review, kept for a deleted strategy, or failed to
+      // upload never lands by waiting.
+      final stuck = outbox.needsAttention ||
+          outbox.deletedStrategies.isNotEmpty ||
+          uploads.any((job) => job.isFailed);
+      if (stuck || waited >= cloudExportSyncTimeout) {
+        throw const LibraryExportIncomplete.cloudNotSynced();
+      }
+      await Future<void>.delayed(step);
+      waited += step;
+    }
   }
 
   Future<Directory> _createUniqueChildDirectory({
@@ -2172,50 +2522,45 @@ class StrategyImportExportService {
   }
 
   Future<void> _writeFolderArchive({
-    required String folderID,
+    required _ExportLibrary library,
+    required Folder folder,
     required Directory exportDirectory,
     required _ArchiveExportState exportState,
     required String? parentManifestId,
     required String currentArchivePath,
   }) async {
-    final currentFolder =
-        ref.read(folderProvider.notifier).findFolderByID(folderID);
-    if (currentFolder == null) {
-      return;
-    }
-
     final manifestId = const Uuid().v4();
     exportState.folders.add(
       ArchiveFolderEntry(
         manifestId: manifestId,
-        name: currentFolder.name,
+        name: folder.name,
         parentManifestId: parentManifestId,
         archivePath: normalizeArchivePath(currentArchivePath),
-        iconId: currentFolder.iconId,
-        icon: ArchiveIconDescriptor.fromIconData(currentFolder.icon),
-        color: currentFolder.color,
-        customColorValue: currentFolder.customColor?.toARGB32(),
+        iconId: folder.iconId,
+        icon: ArchiveIconDescriptor.fromIconData(folder.icon),
+        color: folder.color,
+        customColorValue: folder.customColor?.toARGB32(),
       ),
     );
 
-    for (final strategy in _sortedStrategiesForFolder(folderID)) {
-      final strategyArchivePath = await zipStrategy(
-        id: strategy.id,
-        saveDir: exportDirectory,
+    for (final strategy in library.strategiesIn(folder.id)) {
+      final written = await library.writeStrategy(
+        strategy,
+        exportDirectory,
       );
       exportState.strategies.add(
         ArchiveStrategyEntry(
-          name: strategy.name,
+          name: written.name,
           archivePath: normalizeArchivePath(path.posix.join(
             currentArchivePath,
-            path.basename(strategyArchivePath),
+            path.basename(written.path),
           )),
           folderManifestId: manifestId,
         ),
       );
     }
 
-    for (final subFolder in _sortedFoldersForParent(folderID)) {
+    for (final subFolder in library.foldersIn(folder.id)) {
       final childDirectory = await _createUniqueChildDirectory(
         parentDirectory: exportDirectory,
         desiredName: subFolder.name,
@@ -2225,43 +2570,14 @@ class StrategyImportExportService {
         path.basename(childDirectory.path),
       ));
       await _writeFolderArchive(
-        folderID: subFolder.id,
+        library: library,
+        folder: subFolder,
         exportDirectory: childDirectory,
         exportState: exportState,
         parentManifestId: manifestId,
         currentArchivePath: childArchivePath,
       );
     }
-  }
-
-  List<StrategyData> _sortedStrategiesForFolder(String? folderID) {
-    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
-        .where((strategy) => strategy.folderID == folderID)
-        .toList();
-    strategies.sort((a, b) {
-      final nameCompare = a.name.compareTo(b.name);
-      if (nameCompare != 0) {
-        return nameCompare;
-      }
-      return a.id.compareTo(b.id);
-    });
-    return strategies;
-  }
-
-  List<Folder> _sortedFoldersForParent(String? parentID) {
-    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox)
-        .values
-        .where((folder) => folder.parentID == parentID)
-        .toList();
-    folders.sort((a, b) {
-      final nameCompare = a.name.compareTo(b.name);
-      if (nameCompare != 0) {
-        return nameCompare;
-      }
-      return a.id.compareTo(b.id);
-    });
-    return folders;
   }
 
   ArchiveGlobals _buildLibraryGlobals() {

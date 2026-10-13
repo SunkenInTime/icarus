@@ -29,6 +29,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -435,6 +436,8 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(strategyOpQueueProvider);
     ref.read(cloudMediaUploadQueueProvider);
     ref.read(cloudMediaCacheProvider);
+    // Cleans up after a move to the cloud the app quit in the middle of.
+    ref.read(moveToCloudProvider);
 
     _discordPresence = DiscordPresenceWorker();
     _discordStrategySub = ref.listenManual(

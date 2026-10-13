@@ -61,6 +61,8 @@ Future<void> openCloudOutboxes() async {
   await prepareDurableStrategyOutbox();
   await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
   await prepareDurableCloudMediaOutbox();
+  // Moves to the cloud that have not finished (see MoveToCloudNotifier).
+  await Hive.openBox<dynamic>(HiveBoxNames.cloudMovesBox);
   if (!deviceHasImageFiles) {
     await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
   }

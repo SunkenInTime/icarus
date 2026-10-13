@@ -8,6 +8,7 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -184,10 +185,22 @@ class FolderProvider extends Notifier<String?> {
       return result;
     }
 
-    await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
-
     final strategyList =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();
+    // Deleting it would delete a strategy that is moving to the cloud.
+    final moving = ref.read(movingToCloudProvider);
+    if (moving.contains(folderID) ||
+        strategyList.any(
+          (s) => s.folderID == folderID && moving.contains(s.id),
+        )) {
+      return CloudLibraryActionResult.failed(
+        'Something in this folder is moving to the cloud. Delete it once '
+        'the move ends.',
+      );
+    }
+
+    await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
+
     List<String> idsToDelete = [];
 
     for (final strategy in strategyList) {
@@ -201,6 +214,16 @@ class FolderProvider extends Notifier<String?> {
             id,
             source: StrategySource.local,
           );
+    }
+    // A strategy that started moving to the cloud meanwhile stays, and so
+    // does its folder.
+    if (Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .values
+        .any((s) => s.folderID == folderID)) {
+      return CloudLibraryActionResult.failed(
+        'Something in this folder is moving to the cloud. Delete it once '
+        'the move ends.',
+      );
     }
 
     await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folderID);
