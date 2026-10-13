@@ -78,9 +78,6 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   final _probes =
       <String, ({ReplayProbe? probe, ReplayDecodeException? error})>{};
 
-  /// Counts loads, so one that finishes after a newer one is dropped.
-  var _loads = 0;
-
   /// The add in progress. Adds run one at a time so two of the same match
   /// can't both decide it is new.
   Future<void> _adding = Future.value();
@@ -123,10 +120,12 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
     }
   }
 
-  Future<void> refresh() async {
-    final load = ++_loads;
-    final listings = await AsyncValue.guard(_load);
-    if (load == _loads) state = listings;
+  /// Lists the files again. Goes through [build], so a listing that
+  /// finishes after a newer one is dropped rather than published, and the
+  /// tab keeps showing the old one meanwhile.
+  Future<void> refresh() {
+    ref.invalidateSelf();
+    return future.then((_) {}, onError: (_) {});
   }
 
   /// Copies [path] into Icarus's replays folder and lists it.
@@ -146,9 +145,6 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   }
 
   Future<ReplayAddResult> _add(List<String> paths) async {
-    // The first listing publishes when it finishes, so let it finish first
-    // rather than replace this add's listing.
-    await future.then((_) {}, onError: (_) {});
     final files = ref.read(replayFilesProvider);
     // Only a replay whose header was read counts as having its match; an
     // unreadable file of the same name is what a good copy should replace.

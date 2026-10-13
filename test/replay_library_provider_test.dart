@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -14,8 +15,15 @@ void main() {
   late Directory demos;
   late ProviderContainer container;
 
+  /// Holds the first read of a file named `slow.vrf` until completed.
+  late Completer<void> slowGate;
+  var slowReads = 0;
+
   /// Reads the header these tests write: `{"id": ..., "at": ...}`.
   Future<ReplayProbe> probe(String path) async {
+    if (p.basename(path) == 'slow.vrf' && slowReads++ == 0) {
+      await slowGate.future;
+    }
     try {
       final json = jsonDecode(await File(path).readAsString()) as Map;
       return ReplayProbe(
@@ -34,6 +42,8 @@ void main() {
   }
 
   setUp(() async {
+    slowGate = Completer()..complete();
+    slowReads = 0;
     root = await Directory.systemTemp.createTemp('icarus-replay-library');
     support = await Directory(p.join(root.path, 'support')).create();
     demos = await Directory(p.join(root.path, 'VALORANT', 'Saved', 'Demos'))
@@ -174,5 +184,26 @@ void main() {
     expect(result.added, [p.join(replays.path, 'match-a.vrf')]);
     expect(await File(result.added.single).readAsString(),
         await good.readAsString());
+  });
+
+  test('a slow first listing never hides a replay added meanwhile', () async {
+    slowGate = Completer();
+    await writeReplay(demos, 'slow.vrf',
+        matchId: 'slow', playedAt: '2026-07-01T00:00:00Z');
+    final outside = await Directory(p.join(root.path, 'downloads')).create();
+    final fresh = await writeReplay(outside, 'fresh.vrf',
+        matchId: 'fresh', playedAt: '2026-07-02T00:00:00Z');
+
+    // The tab opens and its first listing stalls on a header read.
+    container.listen(replayLibraryProvider, (_, __) {});
+    final result =
+        await container.read(replayLibraryProvider.notifier).add([fresh.path]);
+    slowGate.complete();
+    await container.read(replayLibraryProvider.future);
+    await pumpEventQueue();
+
+    final listings = container.read(replayLibraryProvider).requireValue;
+    expect(listings.map((listing) => listing.file.path),
+        contains(result.added.single));
   });
 }
