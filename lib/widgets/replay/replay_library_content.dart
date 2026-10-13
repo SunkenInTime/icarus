@@ -98,12 +98,11 @@ class _ReplayGridState extends ConsumerState<_ReplayGrid> {
       final position = _scroll.position;
       const extent = strategyTileGridMainAxisExtent;
       final top = _padding + (indices.reduce(math.min) ~/ _columns) * extent;
-      final double? target = top < position.pixels
-          ? top - _padding
-          : top + extent > position.pixels + position.viewportDimension
-              ? top + extent + _padding - position.viewportDimension
-              : null;
-      if (target != null) {
+      final hidden = top < position.pixels ||
+          top + extent > position.pixels + position.viewportDimension;
+      if (hidden) {
+        // Centered, so the toast at the bottom doesn't cover it.
+        final target = top + extent / 2 - position.viewportDimension / 2;
         _scroll.animateTo(
           target.clamp(position.minScrollExtent, position.maxScrollExtent),
           duration: const Duration(milliseconds: 250),
