@@ -79,6 +79,14 @@ enum _LoadStatus { loading, error, ready }
 class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   List<ShareLinkSummary> _links = const [];
   List<ShareMember> _members = const [];
+
+  /// Whether the people could not be read. The links still work then, so
+  /// the dialog keeps them and offers a retry for the people alone.
+  bool _membersFailed = false;
+
+  /// Bumped on every read, so the role switches rebuild from what the
+  /// server holds: a ShadSelect keeps a pick the server refused otherwise.
+  int _loadGeneration = 0;
   _LoadStatus _status = _LoadStatus.loading;
   bool _isCreating = false;
   String? _disablingToken;
@@ -99,21 +107,28 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
     if (showLoading) {
       setState(() => _status = _LoadStatus.loading);
     }
+    final links = _repository.listShareLinks(
+      targetType: widget.targetType,
+      targetPublicId: widget.targetPublicId,
+    );
+    final members = _repository.listShareMembers(
+      targetType: widget.targetType,
+      targetPublicId: widget.targetPublicId,
+    );
+    List<ShareMember>? loadedMembers;
     try {
-      final results = await Future.wait([
-        _repository.listShareLinks(
-          targetType: widget.targetType,
-          targetPublicId: widget.targetPublicId,
-        ),
-        _repository.listShareMembers(
-          targetType: widget.targetType,
-          targetPublicId: widget.targetPublicId,
-        ),
-      ]);
+      loadedMembers = await members;
+    } catch (_) {
+      loadedMembers = null;
+    }
+    try {
+      final loadedLinks = await links;
       if (!mounted) return;
       setState(() {
-        _links = results[0] as List<ShareLinkSummary>;
-        _members = results[1] as List<ShareMember>;
+        _links = loadedLinks;
+        _members = loadedMembers ?? const [];
+        _membersFailed = loadedMembers == null;
+        _loadGeneration += 1;
         _status = _LoadStatus.ready;
       });
     } catch (_) {
@@ -296,7 +311,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         return _LinkListMessage(
           key: const ValueKey('error'),
           icon: LucideIcons.circleAlert,
-          message: "Couldn't load who has access.",
+          message: "Couldn't load the share links.",
           action: ShadButton.ghost(
             size: ShadButtonSize.sm,
             onPressed: _load,
@@ -333,7 +348,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       children: [
         _SectionLabel(
           label: 'People with access',
-          count: _members.length + 1,
+          count: _membersFailed ? null : _members.length + 1,
         ),
         const SizedBox(height: 6),
         _PersonRow(
@@ -343,6 +358,18 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
           subtitle: null,
           trailing: const _OwnerLabel(),
         ),
+        if (_membersFailed)
+          _LinkListMessage(
+            key: const ValueKey('share-people-error'),
+            icon: LucideIcons.circleAlert,
+            message: "Couldn't load who else has access.",
+            action: ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              onPressed: () => _load(showLoading: false),
+              leading: const Icon(LucideIcons.refreshCw, size: 14),
+              child: const Text('Retry'),
+            ),
+          ),
         for (final member in direct)
           _PersonRow(
             key: ValueKey('share-member-${member.memberId}'),
@@ -351,6 +378,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
             subtitle: _joinedSubtitle(member),
             trailing: _MemberControls(
               member: member,
+              generation: _loadGeneration,
               busy: _busyMemberIds.contains(member.memberId),
               onRoleChanged: (role) => _setRole(member, role),
               onRemove: () => _remove(member),
@@ -703,12 +731,16 @@ class _InheritedRoleLabel extends StatelessWidget {
 class _MemberControls extends StatelessWidget {
   const _MemberControls({
     required this.member,
+    required this.generation,
     required this.busy,
     required this.onRoleChanged,
     required this.onRemove,
   });
 
   final ShareMember member;
+
+  /// The dialog's read the switch shows (see _loadGeneration).
+  final int generation;
   final bool busy;
   final ValueChanged<String> onRoleChanged;
   final VoidCallback onRemove;
@@ -721,8 +753,11 @@ class _MemberControls extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         ShadSelect<String>(
-          // Keyed by the role so a reload shows what the server holds.
-          key: ValueKey('share-member-role-${member.memberId}-${member.role}'),
+          // Keyed by the role and the read, so every reload shows what the
+          // server holds, even after a pick it refused.
+          key: ValueKey(
+            'share-member-role-${member.memberId}-${member.role}-$generation',
+          ),
           enabled: !busy,
           initialValue: member.role,
           minWidth: 112,

@@ -326,6 +326,31 @@ void main() {
       await clearToasts(tester);
     });
 
+    testWidgets('signed in, a link that cannot be looked at joins nothing',
+        (tester) async {
+      final store = MemoryPendingShareCodeStore();
+      final repository = _LinkRepository(
+        resolvesTo: 'strategy-1',
+        previewError: Exception('offline'),
+      );
+      final container = await pumpApp(
+        tester,
+        auth: _auth(session: true, cloudReady: true),
+        store: store,
+        repository: repository,
+      );
+
+      await container
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(link, source: 'test');
+      await settleToasts(tester);
+
+      expect(repository.redeemed, isEmpty);
+      expect(container.read(shareLinkViewProvider), isNull);
+      expect(store.read(), _code, reason: 'kept for the next try');
+      await clearToasts(tester);
+    });
+
     testWidgets('signed in, a link to a strategy they can open just opens it',
         (tester) async {
       final repository =
@@ -526,6 +551,17 @@ class _SettableAuthProvider extends AuthProvider {
 }
 
 class _RedeemingRepository extends Fake implements ConvexStrategyRepository {
+  /// An edit link: these tests are about redeeming, which an edit link does
+  /// on open.
+  @override
+  Future<SharePreview> previewShareLink(String token) async =>
+      const SharePreview(
+        targetType: 'strategy',
+        publicId: 'strategy-1',
+        name: 'Shared item',
+        linkRole: 'editor',
+        myRole: null,
+      );
   _RedeemingRepository(this.response);
 
   final ShareRedemption response;
@@ -543,9 +579,13 @@ class _LinkRepository extends Fake implements ConvexStrategyRepository {
   _LinkRepository({
     this.resolvesTo,
     this.resolveError,
+    this.previewError,
     this.linkRole = 'viewer',
     this.myRole,
   });
+
+  /// Thrown by [previewShareLink] when set.
+  final Object? previewError;
 
   final String? resolvesTo;
   final Object? resolveError;
@@ -557,6 +597,7 @@ class _LinkRepository extends Fake implements ConvexStrategyRepository {
 
   @override
   Future<SharePreview> previewShareLink(String token) async {
+    if (previewError case final error?) throw error;
     if (resolveError case final error?) throw error;
     return SharePreview(
       targetType: resolvesTo == null ? 'folder' : 'strategy',
@@ -606,6 +647,17 @@ class _FixedAuthProvider extends AuthProvider {
 
 /// Holds each redemption open until the test fails it.
 class _ControlledRepository extends Fake implements ConvexStrategyRepository {
+  /// An edit link: these tests are about redeeming, which an edit link does
+  /// on open.
+  @override
+  Future<SharePreview> previewShareLink(String token) async =>
+      const SharePreview(
+        targetType: 'strategy',
+        publicId: 'strategy-1',
+        name: 'Shared item',
+        linkRole: 'editor',
+        myRole: null,
+      );
   final _pending = <String, Completer<ShareRedemption>>{};
 
   void fail(String token) =>
@@ -617,6 +669,17 @@ class _ControlledRepository extends Fake implements ConvexStrategyRepository {
 }
 
 class _FailingRepository extends Fake implements ConvexStrategyRepository {
+  /// An edit link: these tests are about redeeming, which an edit link does
+  /// on open.
+  @override
+  Future<SharePreview> previewShareLink(String token) async =>
+      const SharePreview(
+        targetType: 'strategy',
+        publicId: 'strategy-1',
+        name: 'Shared item',
+        linkRole: 'editor',
+        myRole: null,
+      );
   @override
   Future<ShareRedemption> redeemShareLink(String token) async {
     throw Exception('Share link revoked');

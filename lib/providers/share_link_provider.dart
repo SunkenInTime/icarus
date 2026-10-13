@@ -162,7 +162,8 @@ class ShareLinkController extends Notifier<String?> {
 
   /// Opens a strategy link for a reader with no account, read-only. The code
   /// stays held, and the page keeps its /share/<code> URL, so a reload opens
-  /// it again and signing in redeems it into the reader's library.
+  /// it again. Signing in joins an edit link; a view link stays read-only
+  /// until the reader adds it (see [_viewSignedInIfNew]).
   Future<bool> _viewWithoutAccount(String token, int generation) async {
     if (ref.read(shareLinkViewProvider)?.token == token) {
       return true; // Already open; an auth update asked again.
@@ -221,9 +222,37 @@ class ShareLinkController extends Notifier<String?> {
           await ref.read(convexStrategyRepositoryProvider).previewShareLink(
                 token,
               );
-    } catch (_) {
-      // Redeeming reports the failure the way it always has.
-      return null;
+    } catch (error, stackTrace) {
+      // A failed look is never a reason to join: the person asked to open
+      // a link, not to add it.
+      if (_superseded(token, generation)) return false;
+      if (isConvexUnauthenticatedError(error)) {
+        await ref.read(authProvider.notifier).reportConvexUnauthenticated(
+              source: 'share_link:preview',
+              error: error,
+              stackTrace: stackTrace,
+            );
+        return false;
+      }
+      final revoked = isShareLinkRevokedError(error);
+      if (revoked || isTypedConvexNotFoundError(error)) {
+        _release(generation);
+        Settings.showToast(
+          message: revoked
+              ? 'This share link was disabled by its owner.'
+              : 'This share link does not exist.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return false;
+      }
+      // Most likely offline. The code stays held, so a reload or the next
+      // sign-in update tries again.
+      Settings.showToast(
+        message: 'Could not open the shared link. Check your connection and '
+            'try again.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return false;
     }
     if (_superseded(token, generation)) return false;
     if (preview.targetType != 'strategy' ||

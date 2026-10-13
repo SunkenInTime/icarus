@@ -6,6 +6,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 const _editToken = 'ICR-EDIT-0000-0000-0000';
 const _viewToken = 'ICR-VIEW-0000-0000-0000';
@@ -31,6 +32,9 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   _ShareRepository(this.members);
 
   List<ShareMember> members;
+  bool failMembers = false;
+  bool failRoleChange = false;
+  final List<String> roleChanges = [];
   final List<String> removed = [];
   final List<(String, bool)> revoked = [];
 
@@ -56,8 +60,28 @@ class _ShareRepository extends Fake implements ConvexStrategyRepository {
   Future<List<ShareMember>> listShareMembers({
     required String targetType,
     required String targetPublicId,
-  }) async =>
-      members;
+  }) async {
+    if (failMembers) throw Exception('shares:listMembers is not deployed');
+    return members;
+  }
+
+  @override
+  Future<void> setShareMemberRole({
+    required String targetType,
+    required String targetPublicId,
+    required String memberId,
+    required String role,
+  }) async {
+    roleChanges.add('$memberId:$role');
+    if (failRoleChange) throw Exception('Forbidden');
+    members = [
+      for (final m in members)
+        m.memberId == memberId
+            ? _member(m.memberId, m.displayName!,
+                role: role, token: m.shareLinkToken)
+            : m,
+    ];
+  }
 
   @override
   Future<void> removeShareMember({
@@ -91,7 +115,10 @@ class _SignedInAuth extends AuthProvider {
       );
 }
 
-Future<_ShareRepository> _pumpDialog(WidgetTester tester) async {
+Future<_ShareRepository> _pumpDialog(
+  WidgetTester tester, {
+  void Function(_ShareRepository)? setUp,
+}) async {
   tester.view.physicalSize = const Size(1200, 1400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -101,19 +128,22 @@ Future<_ShareRepository> _pumpDialog(WidgetTester tester) async {
     _member('m-ren', 'Renyxx', token: _viewToken),
     _member('m-folder', 'Mav', role: 'editor', folder: 'Team plans'),
   ]);
+  setUp?.call(repository);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         convexStrategyRepositoryProvider.overrideWithValue(repository),
         authProvider.overrideWith(_SignedInAuth.new),
       ],
-      child: const ShadApp(
-        home: Scaffold(
-          body: Center(
-            child: ShareLinksDialog(
-              targetType: 'strategy',
-              targetPublicId: 'strategy-1',
-              title: 'Ascent B retake',
+      child: const ToastificationWrapper(
+        child: ShadApp(
+          home: Scaffold(
+            body: Center(
+              child: ShareLinksDialog(
+                targetType: 'strategy',
+                targetPublicId: 'strategy-1',
+                title: 'Ascent B retake',
+              ),
             ),
           ),
         ),
@@ -198,5 +228,36 @@ void main() {
 
     expect(
         find.byKey(const ValueKey('share-link-edit-warning')), findsOneWidget);
+  });
+
+  testWidgets('a role change the server refuses shows the role it kept',
+      (tester) async {
+    final repository =
+        await _pumpDialog(tester, setUp: (r) => r.failRoleChange = true);
+    final row = find.byKey(const ValueKey('share-member-m-vex'));
+
+    await tester.tap(find.descendant(of: row, matching: find.text('Can edit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Opens every page, changes nothing').last);
+    await tester.pumpAndSettle();
+    toastification.dismissAll(delayForAnimation: false);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+
+    expect(repository.roleChanges, ['m-vex:viewer']);
+    expect(find.descendant(of: row, matching: find.text('Can edit')),
+        findsOneWidget);
+    expect(find.descendant(of: row, matching: find.text('Can view')),
+        findsNothing);
+  });
+
+  testWidgets('without the people list, the links still work', (tester) async {
+    await _pumpDialog(tester, setUp: (r) => r.failMembers = true);
+
+    expect(find.text("Couldn't load who else has access."), findsOneWidget);
+    expect(find.byKey(const ValueKey('share-link-disable-$_editToken')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('share-link-create-and-copy')),
+        findsOneWidget);
   });
 }

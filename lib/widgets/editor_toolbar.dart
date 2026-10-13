@@ -61,7 +61,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     final strategyId =
         ref.watch(strategyProvider.select((value) => value.strategyId));
     // Read through a share link the reader hasn't added: nothing here saves.
-    // Signed out, signing in adds it; signed in, the Add button does.
+    // Signed out, the button signs in; signed in, it adds the strategy.
     final viewingThroughLink = isCloud &&
         ref.watch(shareLinkViewProvider)?.strategyPublicId == strategyId;
     final signedIn =
