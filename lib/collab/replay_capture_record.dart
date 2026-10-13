@@ -14,6 +14,10 @@ enum CaptureFailureKind {
   /// Its strategy is on another map now, so the replay's positions would be
   /// wrong there.
   mapChanged,
+
+  /// Its page reached the strategy and was deleted there before all of its
+  /// items did.
+  pageDeleted,
 }
 
 /// One replay moment captured into a cloud strategy and not yet saved

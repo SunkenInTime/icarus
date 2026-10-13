@@ -6,6 +6,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -186,15 +187,28 @@ final replayCaptureStoreProvider =
       queue: ref.read(replayCaptureQueueProvider.notifier),
       queueState: () => ref.read(replayCaptureQueueProvider),
       accountId: accountId,
-      folderId: ref
-          .read(folderProvider.notifier)
-          .currentFolderIdForWorkspace(LibraryWorkspace.cloud),
+      folderId: _ownedCloudFolder(ref),
       settings: strategies.newStrategySettings(),
       themeProfileId:
           ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies,
     );
   };
 });
+
+/// The cloud folder open in My Library, when it is this account's own. A
+/// folder someone shared, or one not known to be owned yet, is no place to
+/// make a strategy: the capture goes to the top level.
+String? _ownedCloudFolder(Ref ref) {
+  final folderId = ref
+      .read(folderProvider.notifier)
+      .currentFolderIdForWorkspace(LibraryWorkspace.cloud);
+  if (folderId == null) return null;
+  final folders = ref.read(cloudFolderTreeProvider).valueOrNull ?? const [];
+  final owned = folders.any(
+    (entry) => entry.folder.id == folderId && entry.role == 'owner',
+  );
+  return owned ? folderId : null;
+}
 
 /// Captures into the local library on this device.
 class LocalReplayCaptureStore implements ReplayCaptureStore {

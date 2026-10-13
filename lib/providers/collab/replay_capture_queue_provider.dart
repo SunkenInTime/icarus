@@ -23,6 +23,7 @@ class ReplayCaptureQueueState {
     this.unreadable = 0,
     this.discardedPageIds = const {},
     this.lostStrategyIds = const {},
+    this.stuck = const {},
   });
 
   /// Every account's, oldest first.
@@ -39,7 +40,16 @@ class ReplayCaptureQueueState {
   /// Nothing more is captured into them.
   final Set<String> lostStrategyIds;
 
-  bool get isReliable => unreadable == 0;
+  /// Captures an error on this device stopped (their progress couldn't be
+  /// stored), by id, with what to tell the user. They wait for Retry.
+  final Map<String, String> stuck;
+
+  /// Whether every capture is readable and its progress stored.
+  bool get isReliable => unreadable == 0 && stuck.isEmpty;
+
+  /// Whether [capture] waits for the user: refused, or stopped here.
+  bool needsUser(ReplayCaptureRecord capture) =>
+      capture.isFailed || stuck.containsKey(capture.id);
 
   List<ReplayCaptureRecord> forAccount(String? accountId) => [
         for (final capture in captures)
@@ -51,6 +61,14 @@ class ReplayCaptureQueueState {
           if (capture.strategyId == strategyId) capture,
       ];
 }
+
+/// The box replay captures are kept in; null where it isn't open (no cloud
+/// in this build).
+final replayCapturesBoxProvider = Provider<Box<String>?>(
+  (ref) => Hive.isBoxOpen(HiveBoxNames.replayCapturesBox)
+      ? Hive.box<String>(HiveBoxNames.replayCapturesBox)
+      : null,
+);
 
 final replayCaptureQueueProvider =
     NotifierProvider<ReplayCaptureQueue, ReplayCaptureQueueState>(
@@ -85,6 +103,10 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   /// The capture being sent now: discarded, it may still land.
   String? _sendingId;
 
+  final Set<String> _discardedPageIds = {};
+  final Set<String> _lostStrategyIds = {};
+  final Map<String, String> _stuck = {};
+
   @override
   ReplayCaptureQueueState build() {
     ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
@@ -106,14 +128,9 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     return _read();
   }
 
-  Box<String>? get _box => Hive.isBoxOpen(HiveBoxNames.replayCapturesBox)
-      ? Hive.box<String>(HiveBoxNames.replayCapturesBox)
-      : null;
+  Box<String>? get _box => ref.read(replayCapturesBoxProvider);
 
-  ReplayCaptureQueueState _read({
-    Set<String> discardedPageIds = const {},
-    Set<String> lostStrategyIds = const {},
-  }) {
+  ReplayCaptureQueueState _read() {
     final box = _box;
     final captures = <ReplayCaptureRecord>[];
     var unreadable = 0;
@@ -131,15 +148,13 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     return ReplayCaptureQueueState(
       captures: captures,
       unreadable: unreadable,
-      discardedPageIds: discardedPageIds,
-      lostStrategyIds: lostStrategyIds,
+      discardedPageIds: {..._discardedPageIds},
+      lostStrategyIds: {..._lostStrategyIds},
+      stuck: {..._stuck},
     );
   }
 
-  void _refresh() => state = _read(
-        discardedPageIds: state.discardedPageIds,
-        lostStrategyIds: state.lostStrategyIds,
-      );
+  void _refresh() => state = _read();
 
   /// Stores [capture] on this device and starts sending it. Completes once
   /// it is stored; throws, storing nothing, where it can't be.
@@ -153,16 +168,21 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     _kick();
   }
 
-  /// Sends the refused captures [ids] again, under new op ids.
+  /// Sends the captures [ids] again: refused ones under new op ids, ones
+  /// stopped here as they stand.
   Future<void> retry(Iterable<String> ids) async {
     final box = _box;
     if (box == null) return;
-    for (final capture in state.captures) {
-      if (!ids.contains(capture.id) || !capture.isFailed) continue;
-      await box.put(capture.id, capture.forRetry().encode());
+    _stuck.removeWhere((id, _) => ids.contains(id));
+    try {
+      for (final capture in state.captures) {
+        if (!ids.contains(capture.id) || !capture.isFailed) continue;
+        await box.put(capture.id, capture.forRetry().encode());
+      }
+    } finally {
+      _refresh();
+      _kick();
     }
-    _refresh();
-    _kick();
   }
 
   /// Removes the captures [ids] from this device. A capture already sent
@@ -187,15 +207,10 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         }
       }
       await box.delete(capture.id);
+      _stuck.remove(capture.id);
+      _discardedPageIds.add(capture.pageId);
     }
-    state = _read(
-      discardedPageIds: {
-        ...state.discardedPageIds,
-        for (final capture in state.captures)
-          if (gone.contains(capture.id)) capture.pageId,
-      },
-      lostStrategyIds: state.lostStrategyIds,
-    );
+    _refresh();
     _kick();
     return mayHaveLanded;
   }
@@ -244,12 +259,21 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         for (final captures in byStrategy.values) {
           captures.sort((a, b) => a.index.compareTo(b.index));
           for (final capture in captures) {
-            if (capture.isFailed || !_canSend()) break;
+            if (state.needsUser(capture) || !_canSend()) break;
             _sendingId = capture.id;
-            final delivered = await _deliver(capture);
-            _sendingId = null;
+            bool delivered;
+            try {
+              delivered = await _deliver(capture);
+            } catch (error, stackTrace) {
+              // Stops this strategy's captures, never the others'.
+              _stick(capture, error, stackTrace);
+              delivered = false;
+            } finally {
+              _sendingId = null;
+            }
             if (!delivered) {
-              waiting = waiting || _stored(capture.id)?.isFailed == false;
+              final stored = _stored(capture.id);
+              waiting = waiting || (stored != null && !state.needsUser(stored));
               break;
             }
           }
@@ -270,10 +294,17 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     final repository = ref.read(convexStrategyRepositoryProvider);
     var c = capture;
     try {
+      if (c.createsStrategy && !c.pageLanded) c = await _create(repository, c);
+      // Read before anything more is sent, every time: the strategy may
+      // have been deleted or moved to another map since the last send.
+      var shell = await _shell(repository, c);
+      if (shell == null) return false;
+      if (c.pageLanded &&
+          !shell.pages.any((page) => page.publicId == c.pageId)) {
+        await _save(c.copyWith(failure: CaptureFailureKind.pageDeleted));
+        return false;
+      }
       if (!c.pageLanded) {
-        if (c.createsStrategy) c = await _create(repository, c);
-        var shell = await _shell(repository, c);
-        if (shell == null) return false;
         var conflicts = 0;
         while (!shell!.pages.any((page) => page.publicId == c.pageId)) {
           final ack = (await _send(repository, c, [
@@ -337,12 +368,19 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         ));
         if (refused.isNotEmpty) return false;
       }
-      if (!(_box?.containsKey(c.id) ?? false)) return false;
-      await _box!.delete(c.id);
+      final box = _box;
+      if (box == null || !box.containsKey(c.id)) return false;
+      try {
+        await box.delete(c.id);
+      } catch (error, stackTrace) {
+        throw _StorageFailed(error, stackTrace);
+      }
       _refresh();
       return true;
     } on _Discarded {
       return false;
+    } on _StorageFailed {
+      rethrow;
     } catch (error, stackTrace) {
       return _handleError(c, error, stackTrace);
     }
@@ -371,8 +409,13 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
       await create(c.folderId);
       return c;
     } catch (error) {
-      // Its folder was deleted while it waited: it goes to the top level.
-      if (c.folderId == null || !isTypedConvexNotFoundError(error)) rethrow;
+      // Its folder was deleted while it waited, or isn't this account's:
+      // it goes to the top level.
+      if (c.folderId == null ||
+          !(isTypedConvexNotFoundError(error) ||
+              isTypedConvexForbiddenError(error))) {
+        rethrow;
+      }
       final moved = await _save(c.copyWith(clearFolder: true));
       await create(null);
       return moved;
@@ -430,8 +473,16 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
             );
         return false;
       }
-      // Held until Icarus is updated; the library says so.
-      if (isClientUpgradeRequiredError(error)) return false;
+      // Held until Icarus is updated; noted, so the app and the replay say
+      // so.
+      if (ref.read(clientUpgradeRequiredProvider.notifier).noteError(error)) {
+        return false;
+      }
+      // The strategy is gone (a whole batch refused as not found).
+      if (isTypedConvexNotFoundError(error)) {
+        await _failStrategy(c, CaptureFailureKind.deleted);
+        return false;
+      }
       if (isConvexFunctionError(error)) {
         // The server ran it and refused: nothing of this call was written.
         AppErrorReporter.reportError(
@@ -460,10 +511,8 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     ReplayCaptureRecord c,
     CaptureFailureKind kind,
   ) async {
-    state = _read(
-      discardedPageIds: state.discardedPageIds,
-      lostStrategyIds: {...state.lostStrategyIds, c.strategyId},
-    );
+    _lostStrategyIds.add(c.strategyId);
+    _refresh();
     for (final capture in state.forStrategy(c.strategyId)) {
       if (capture.index < c.index || capture.isFailed) continue;
       try {
@@ -481,12 +530,56 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   Future<ReplayCaptureRecord> _save(ReplayCaptureRecord c) async {
     final box = _box;
     if (box == null || !box.containsKey(c.id)) throw const _Discarded();
-    await box.put(c.id, c.encode());
+    try {
+      await box.put(c.id, c.encode());
+    } catch (error, stackTrace) {
+      throw _StorageFailed(error, stackTrace);
+    }
     _refresh();
     return c;
+  }
+
+  /// Keeps [capture] here, unsent, until the user retries: something on
+  /// this device (its storage, most likely) stopped it.
+  void _stick(
+    ReplayCaptureRecord capture,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    final cause = error is _StorageFailed ? error.error : error;
+    AppErrorReporter.reportError(
+      'A replay capture could not be kept up to date on this device.',
+      error: cause,
+      stackTrace: error is _StorageFailed ? error.stackTrace : stackTrace,
+      source: 'replay_capture_queue',
+      promptUser: false,
+    );
+    _stuck[capture.id] = error is _StorageFailed
+        ? "Icarus couldn't store its progress on this device."
+        : 'Something on this device stopped it.';
+    try {
+      _refresh();
+    } catch (_) {
+      // The box can't be read either: show what is known.
+      state = ReplayCaptureQueueState(
+        captures: state.captures,
+        unreadable: state.unreadable,
+        discardedPageIds: {..._discardedPageIds},
+        lostStrategyIds: {..._lostStrategyIds},
+        stuck: {..._stuck},
+      );
+    }
   }
 }
 
 class _Discarded implements Exception {
   const _Discarded();
+}
+
+/// Writing a capture's progress to its box failed.
+class _StorageFailed implements Exception {
+  const _StorageFailed(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
 }

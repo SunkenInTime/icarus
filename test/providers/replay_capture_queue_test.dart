@@ -6,6 +6,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/convex_error_codes.dart';
@@ -17,6 +18,7 @@ import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
@@ -26,19 +28,20 @@ import 'package:icarus/replay/replay_frame.dart';
 
 final _online = StateProvider<bool>((ref) => true);
 
-ReplayFrame _frame(double x) => ReplayFrame(
+ReplayFrame _frame(double x, {int players = 1}) => ReplayFrame(
       timeMs: 1000,
       round: null,
       isAttack: false,
       agents: [
-        PlacedViewConeAgent(
-          id: 'replay-player-a',
-          type: AgentType.jett,
-          position: Offset(x, 500),
-          presetType: UtilityType.viewCone180,
-          rotation: 1,
-          length: 100,
-        ),
+        for (var i = 0; i < players; i++)
+          PlacedViewConeAgent(
+            id: i == 0 ? 'replay-player-a' : 'replay-player-$i',
+            type: AgentType.jett,
+            position: Offset(x, 500.0 + 20 * i),
+            presetType: UtilityType.viewCone180,
+            rotation: 1,
+            length: 100,
+          ),
       ],
       abilities: const [],
       utilities: const [],
@@ -48,9 +51,12 @@ void main() {
   late Directory dir;
   late _FakeCloud cloud;
   late ProviderContainer container;
+  late _FlakyBox box;
 
   ProviderContainer open() {
+    box = _FlakyBox(Hive.box<String>(HiveBoxNames.replayCapturesBox));
     return container = ProviderContainer(overrides: [
+      replayCapturesBoxProvider.overrideWithValue(box),
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
       cloudMediaAccountIdProvider.overrideWithValue('account-1'),
@@ -83,12 +89,12 @@ void main() {
   void setOnline(bool online) =>
       container.read(_online.notifier).state = online;
 
-  ReplayCapture session() => ReplayCapture(
+  ReplayCapture session({String? folderId}) => ReplayCapture(
         newStore: () => CloudReplayCaptureStore(
           queue: queue(),
           queueState: queued,
           accountId: 'account-1',
-          folderId: null,
+          folderId: folderId,
           settings: StrategySettings(),
           themeProfileId: null,
         ),
@@ -149,6 +155,155 @@ void main() {
     final strategy = cloud.strategies.values.single;
     expect(strategy.orderedPages, hasLength(3));
     expect(cloud.elements, hasLength(3));
+  });
+
+  test('a lost answer to a page add is resent without a second page', () async {
+    final replay = session();
+    await replay.capture(_frame(500), pageName: 'one');
+    await queue().sendNow();
+    cloud.losePageAdds = true;
+    await replay.capture(_frame(510), pageName: 'two');
+    await queue().sendNow();
+    cloud.losePageAdds = false;
+    await queue().sendNow();
+    expect(cloud.lost, greaterThan(0), reason: 'the page add was answered');
+
+    expect(queued().captures, isEmpty);
+    expect(cloud.strategies.values.single.orderedPages.map((p) => p.name),
+        ['one', 'two']);
+    expect(cloud.elements, hasLength(2));
+  });
+
+  test('a lost answer to a batch of items is resent without duplicates',
+      () async {
+    final replay = session();
+    cloud.loseItemBatches = true;
+    await replay.capture(_frame(500, players: 3), pageName: 'one');
+    await queue().sendNow();
+    await queue().sendNow();
+    final waiting = queued().captures.single;
+    expect(waiting.pageLanded, isTrue);
+    expect(waiting.uncertain, isTrue);
+    expect(cloud.elements, hasLength(3), reason: 'written, answer lost');
+
+    cloud.loseItemBatches = false;
+    await queue().sendNow();
+
+    expect(queued().captures, isEmpty);
+    expect(cloud.elements, hasLength(3));
+  });
+
+  test('items accepted beside a refused one stay; Retry sends only the rest',
+      () async {
+    final replay = session();
+    cloud.refuseItems = 1;
+    await replay.capture(_frame(500, players: 3), pageName: 'one');
+    await queue().sendNow();
+
+    final refused = queued().captures.single;
+    expect(refused.failure, CaptureFailureKind.refused);
+    expect(refused.landedItemOpIds, hasLength(2));
+    expect(cloud.elements, hasLength(2));
+    final unlanded = refused.unlandedItems.single;
+
+    await queue().retry([refused.id]);
+    await queue().sendNow();
+
+    expect(queued().captures, isEmpty);
+    expect(cloud.elements, hasLength(3));
+    expect(
+        cloud.elements.keys,
+        contains(
+          (unlanded as ElementAddOp).elementPublicId,
+        ));
+  });
+
+  test('a retry checks the strategy again before sending the rest', () async {
+    final replay = session();
+    cloud.refuseItems = 1;
+    final first =
+        await replay.capture(_frame(500, players: 2), pageName: 'one');
+    await queue().sendNow();
+    final refused = queued().captures.single;
+    expect(refused.pageLanded, isTrue);
+
+    cloud.strategies[first.id]!.mapData = Maps.mapNames[MapValue.ascent]!;
+    await queue().retry([refused.id]);
+    await queue().sendNow();
+
+    expect(queued().captures.single.failure, CaptureFailureKind.mapChanged);
+    expect(cloud.elements, hasLength(1), reason: 'nothing more was sent');
+
+    cloud.strategies.remove(first.id);
+    await queue().discard([queued().captures.single.id]);
+    final next = await replay.capture(_frame(510), pageName: 'two');
+    expect(next.id, isNot(first.id));
+  });
+
+  test('a strategy deleted while its items were refused is known lost',
+      () async {
+    final replay = session();
+    cloud.refuseItems = 1;
+    final first =
+        await replay.capture(_frame(500, players: 2), pageName: 'one');
+    await queue().sendNow();
+    cloud.strategies.remove(first.id);
+
+    await queue().retry([queued().captures.single.id]);
+    await queue().sendNow();
+
+    expect(queued().captures.single.failure, CaptureFailureKind.deleted);
+    expect(queued().lostStrategyIds, {first.id});
+  });
+
+  test('when storage fails, the capture waits for Retry and others go on',
+      () async {
+    setOnline(false);
+    final stopped = session();
+    await stopped.capture(_frame(500), pageName: 'stopped');
+    box.failWrites = true;
+    setOnline(true);
+    await queue().sendNow();
+
+    final waiting = queued().captures.single;
+    expect(queued().needsUser(waiting), isTrue);
+    expect(queued().stuck[waiting.id], contains('this device'));
+    expect(queued().isReliable, isFalse);
+
+    // Another strategy's capture still goes.
+    box.failWrites = false;
+    await session().capture(_frame(510), pageName: 'other');
+    await queue().sendNow();
+    expect(queued().captures.single.id, waiting.id);
+
+    await queue().retry([waiting.id]);
+    await queue().sendNow();
+    expect(queued().captures, isEmpty);
+    expect(queued().isReliable, isTrue);
+    expect(cloud.strategies, hasLength(2));
+  });
+
+  test("a folder this account can't use leaves the strategy at the top",
+      () async {
+    cloud.foreignFolders.add('shared-folder');
+    final captured = await session(folderId: 'shared-folder')
+        .capture(_frame(500), pageName: 'one');
+    await queue().sendNow();
+
+    expect(queued().captures, isEmpty);
+    expect(cloud.folderOf[captured.id], isNull);
+  });
+
+  test('a server that needs a newer Icarus holds captures and says so',
+      () async {
+    cloud.upgradeRequired = true;
+    await session().capture(_frame(500), pageName: 'one');
+    await queue().sendNow();
+
+    final held = queued().captures.single;
+    expect(held.isFailed, isFalse);
+    expect(queued().needsUser(held), isFalse);
+    expect(container.read(clientUpgradeRequiredProvider), isTrue);
   });
 
   test('captures left when the app quit are sent when it starts', () async {
@@ -282,6 +437,36 @@ void main() {
   });
 }
 
+/// The capture box, whose writes can be made to fail.
+class _FlakyBox extends Fake implements Box<String> {
+  _FlakyBox(this.inner);
+
+  final Box<String> inner;
+  bool failWrites = false;
+
+  @override
+  Iterable<String> get values => inner.values;
+
+  @override
+  bool containsKey(dynamic key) => inner.containsKey(key);
+
+  @override
+  String? get(dynamic key, {String? defaultValue}) =>
+      inner.get(key, defaultValue: defaultValue);
+
+  @override
+  Future<void> put(dynamic key, String value) {
+    if (failWrites) throw const FileSystemException('disk full');
+    return inner.put(key, value);
+  }
+
+  @override
+  Future<void> delete(dynamic key) {
+    if (failWrites) throw const FileSystemException('disk full');
+    return inner.delete(key);
+  }
+}
+
 class _CloudReadyAuth extends AuthProvider {
   @override
   AppAuthState build() => const AppAuthState(
@@ -332,8 +517,20 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   final Map<String, OpAck> _answered = {};
   var calls = 0;
 
-  /// Writes, then loses the answer, as a timeout does.
+  /// Writes, then loses the answer, as a timeout does: every answer, or
+  /// only those to a page add or to a batch of items.
   bool loseAnswers = false;
+  bool losePageAdds = false;
+  bool loseItemBatches = false;
+
+  /// Refuses every call as from a build the server no longer accepts.
+  bool upgradeRequired = false;
+
+  /// Folders this account may not put strategies in.
+  final Set<String> foreignFolders = {};
+
+  /// Folders new strategies were made in, by strategy id.
+  final Map<String, String?> folderOf = {};
 
   /// Item adds to refuse before accepting again.
   int refuseItems = 0;
@@ -352,9 +549,25 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     message: 'Not found.',
   );
 
-  void _answer() {
+  /// Answers lost so far.
+  var lost = 0;
+
+  void _answer({bool lost = false}) {
     calls++;
-    if (loseAnswers) throw TimeoutException('lost');
+    if (loseAnswers || lost) {
+      this.lost++;
+      throw TimeoutException('lost');
+    }
+  }
+
+  void _checkBuild() {
+    if (upgradeRequired) {
+      throw const ConvexFunctionException(
+        code: ConvexErrorCode.clientUpgradeRequired,
+        rawCode: clientUpgradeRequiredCode,
+        message: 'Client upgrade required',
+      );
+    }
   }
 
   @override
@@ -372,6 +585,15 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     Map<String, dynamic>? initialPageSettings,
     bool unfinishedMove = false,
   }) async {
+    _checkBuild();
+    if (foreignFolders.contains(folderPublicId)) {
+      throw const ConvexFunctionException(
+        code: ConvexErrorCode.forbidden,
+        rawCode: 'FORBIDDEN',
+        message: 'Forbidden',
+      );
+    }
+    folderOf.putIfAbsent(publicId, () => folderPublicId);
     final strategy =
         strategies.putIfAbsent(publicId, () => _Strategy(name, mapData));
     if (strategy.pages.isEmpty) {
@@ -426,6 +648,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     required List<StrategyOp> ops,
     String? accountSubject,
   }) async {
+    _checkBuild();
     final strategy = strategies[strategyPublicId];
     if (strategy == null) throw _notFound;
     final acks = <OpAck>[];
@@ -442,7 +665,9 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
       _answered[key] = ack;
       acks.add(ack);
     }
-    _answer();
+    _answer(
+      lost: ops.any((op) => op is PageAddOp) ? losePageAdds : loseItemBatches,
+    );
     return acks;
   }
 

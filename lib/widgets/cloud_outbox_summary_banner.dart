@@ -44,7 +44,13 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         captureQueue.forAccount(ref.watch(cloudMediaAccountIdProvider));
     final failedCaptures = [
       for (final capture in captures)
-        if (capture.isFailed) capture,
+        if (captureQueue.needsUser(capture)) capture,
+    ];
+    final retryableCaptures = [
+      for (final capture in failedCaptures)
+        if (captureQueue.stuck.containsKey(capture.id) ||
+            capture.failure == CaptureFailureKind.refused)
+          capture.id,
     ];
     final strategyIds = <String>{
       ...opQueue.accountOutbox.strategies.keys,
@@ -73,7 +79,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         deletedStrategies.values.fold<int>(0, (total, count) => total + count);
     final hasDurabilityProblem = !opQueue.outboxIsReliable ||
         !mediaQueueState.outboxIsReliable ||
-        !captureQueue.isReliable ||
+        captureQueue.unreadable > 0 ||
         opQueue.loadIssues.isNotEmpty ||
         mediaQueueState.loadIssues.isNotEmpty;
     final authBlocked = workCount > 0 &&
@@ -157,15 +163,13 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
               ),
             ),
           ),
-        if (failedCaptures
-            .any((capture) => capture.failure == CaptureFailureKind.refused))
+        if (retryableCaptures.isNotEmpty)
           ShadButton.secondary(
             size: ShadButtonSize.sm,
             onPressed: () =>
-                ref.read(replayCaptureQueueProvider.notifier).retry([
-              for (final capture in failedCaptures)
-                if (capture.failure == CaptureFailureKind.refused) capture.id,
-            ]),
+                ref.read(replayCaptureQueueProvider.notifier).retry(
+                      retryableCaptures,
+                    ),
             child: Flexible(
               child: Text(
                 failedCaptures.length == 1

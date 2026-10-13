@@ -14,7 +14,10 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
+import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -177,8 +180,12 @@ void main() {
   });
 
   group('destination', () {
-    ProviderContainer container({required bool signedIn}) {
+    ProviderContainer container({
+      required bool signedIn,
+      List<CloudFolderEntry> folders = const [],
+    }) {
       final container = ProviderContainer(overrides: [
+        cloudFolderTreeProvider.overrideWith((ref) => Stream.value(folders)),
         isCloudWorkspaceAvailableProvider.overrideWithValue(signedIn),
         authProvider.overrideWith(_SignedOutAuth.new),
         cloudMediaAccountIdProvider
@@ -193,7 +200,8 @@ void main() {
     }
 
     setUp(() async {
-      await Hive.openBox<String>(HiveBoxNames.replayCapturesBox);
+      await (await Hive.openBox<String>(HiveBoxNames.replayCapturesBox))
+          .clear();
       // New strategies take the user's default theme and page settings.
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
@@ -212,6 +220,41 @@ void main() {
         captured.id,
       );
       expect(box.isEmpty, isTrue);
+    });
+
+    CloudFolderEntry folder(String id, String role) => (
+          folder: Folder(name: id, id: id, dateCreated: DateTime(2026)),
+          role: role,
+          strategyCount: 0,
+          mapPeeks: const [],
+          agentTypes: const [],
+        );
+
+    Future<String?> folderOfCapture(String openFolder, String role) async {
+      final signedIn = container(
+        signedIn: true,
+        folders: [folder(openFolder, role)],
+      );
+      final tree = signedIn.listen(cloudFolderTreeProvider, (_, __) {});
+      addTearDown(tree.close);
+      await signedIn.read(cloudFolderTreeProvider.future);
+      signedIn
+          .read(folderProvider.notifier)
+          .updateWorkspaceFolderId(LibraryWorkspace.cloud, openFolder);
+      await ReplayCapture(
+        newStore: signedIn.read(replayCaptureStoreProvider),
+        map: MapValue.sunset,
+        name: 'r',
+      ).capture(frame(), pageName: 'one');
+      return signedIn.read(replayCaptureQueueProvider).captures.single.folderId;
+    }
+
+    test('it goes into the cloud folder open in My Library', () async {
+      expect(await folderOfCapture('mine', 'owner'), 'mine');
+    });
+
+    test('never into a folder someone shared', () async {
+      expect(await folderOfCapture('theirs', 'editor'), isNull);
     });
 
     test('signed out, it stays on this device', () {

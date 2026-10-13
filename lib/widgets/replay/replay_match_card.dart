@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
@@ -103,8 +104,8 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     final target = _keptPageIds(queue).lastOrNull;
     if (target == null) return;
     final waiting = queue.forStrategy(strategy.id);
-    if (waiting.any((capture) => capture.isFailed)) {
-      _cantOpen(waiting);
+    if (waiting.any(queue.needsUser)) {
+      _cantOpen(queue, waiting);
       return;
     }
     if (waiting.any((capture) => capture.pageId == target)) {
@@ -114,8 +115,11 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     await _openEditor(strategy, target);
   }
 
-  void _cantOpen(List<ReplayCaptureRecord> waiting) {
-    final failure = waiting.firstWhere((capture) => capture.isFailed).failure;
+  void _cantOpen(
+    ReplayCaptureQueueState queue,
+    List<ReplayCaptureRecord> waiting,
+  ) {
+    final failure = waiting.firstWhere(queue.needsUser).failure;
     Settings.showToast(
       message: switch (failure) {
         CaptureFailureKind.deleted =>
@@ -138,9 +142,9 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     final waiting = queue.forStrategy(strategy.id);
     if (queue.discardedPageIds.contains(target)) {
       setState(() => _awaitingPageId = null);
-    } else if (waiting.any((capture) => capture.isFailed)) {
+    } else if (waiting.any(queue.needsUser)) {
       setState(() => _awaitingPageId = null);
-      _cantOpen(waiting);
+      _cantOpen(queue, waiting);
     } else if (!waiting.any((capture) => capture.pageId == target)) {
       setState(() => _awaitingPageId = null);
       unawaited(_openEditor(strategy, target));
@@ -178,14 +182,36 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _retry(List<ReplayCaptureRecord> failed) => ref
-      .read(replayCaptureQueueProvider.notifier)
-      .retry([for (final capture in failed) capture.id]);
+  Future<void> _retry(List<ReplayCaptureRecord> failed) async {
+    try {
+      await ref
+          .read(replayCaptureQueueProvider.notifier)
+          .retry([for (final capture in failed) capture.id]);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        "Couldn't retry the capture.",
+        error: error,
+        stackTrace: stackTrace,
+        source: 'ReplayMatchCard.retry',
+      );
+    }
+  }
 
   Future<void> _discard(List<ReplayCaptureRecord> failed) async {
-    final mayHaveLanded = await ref
-        .read(replayCaptureQueueProvider.notifier)
-        .discard([for (final capture in failed) capture.id]);
+    final bool mayHaveLanded;
+    try {
+      mayHaveLanded = await ref
+          .read(replayCaptureQueueProvider.notifier)
+          .discard([for (final capture in failed) capture.id]);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        "Couldn't discard the capture.",
+        error: error,
+        stackTrace: stackTrace,
+        source: 'ReplayMatchCard.discard',
+      );
+      return;
+    }
     if (mayHaveLanded) {
       Settings.showToast(
         message: 'Discarded. It may still appear in your library.',
@@ -214,6 +240,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     ];
     final online =
         inCloud && (ref.watch(convexConnectionProvider).valueOrNull ?? false);
+    final upgradeRequired = inCloud && ref.watch(clientUpgradeRequiredProvider);
     return Container(
       width: 260,
       padding: const EdgeInsets.all(12),
@@ -308,8 +335,10 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
               ],
               if (inCloud && (captured > 0 || unsaved.isNotEmpty))
                 _CloudStatus(
+                  queue: queue,
                   unsaved: unsaved,
                   online: online,
+                  upgradeRequired: upgradeRequired,
                   onRetry: _retry,
                   onDiscard: _discard,
                 ),
@@ -342,14 +371,20 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
 /// refused, with what can be done about it.
 class _CloudStatus extends StatelessWidget {
   const _CloudStatus({
+    required this.queue,
     required this.unsaved,
     required this.online,
+    required this.upgradeRequired,
     required this.onRetry,
     required this.onDiscard,
   });
 
+  final ReplayCaptureQueueState queue;
   final List<ReplayCaptureRecord> unsaved;
   final bool online;
+
+  /// The server refuses this build until it is updated.
+  final bool upgradeRequired;
   final void Function(List<ReplayCaptureRecord>) onRetry;
   final void Function(List<ReplayCaptureRecord>) onDiscard;
 
@@ -358,25 +393,35 @@ class _CloudStatus extends StatelessWidget {
     final theme = ShadTheme.of(context);
     final failed = [
       for (final capture in unsaved)
-        if (capture.isFailed) capture,
+        if (queue.needsUser(capture)) capture,
     ];
     final sending = unsaved.length - failed.length;
     if (failed.isEmpty) {
+      // A send whose answer was lost may have landed; it isn't saved until
+      // the server says so.
+      final unconfirmed = unsaved.any((capture) => capture.uncertain);
       return Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Text(
           sending == 0
               ? 'Saved to your cloud library'
-              : online
-                  ? '$sending sending'
-                  : '$sending waiting for the connection',
+              : upgradeRequired
+                  ? 'Update Icarus to finish saving $sending'
+                  : !online
+                      ? '$sending waiting for the connection'
+                      : unconfirmed
+                          ? "$sending sending. Couldn't confirm the last "
+                              'send, trying again.'
+                          : '$sending sending',
           style: theme.textTheme.muted.copyWith(fontSize: 12),
         ),
       );
     }
     final retryable = [
       for (final capture in failed)
-        if (capture.failure == CaptureFailureKind.refused) capture,
+        if (queue.stuck.containsKey(capture.id) ||
+            capture.failure == CaptureFailureKind.refused)
+          capture,
     ];
     return Padding(
       padding: const EdgeInsets.only(top: 4),
@@ -393,7 +438,7 @@ class _CloudStatus extends StatelessWidget {
             ),
           ),
           Text(
-            _reason(failed.first),
+            queue.stuck[failed.first.id] ?? _reason(failed.first),
             style: theme.textTheme.muted.copyWith(fontSize: 12),
           ),
           Row(
@@ -424,6 +469,7 @@ class _CloudStatus extends StatelessWidget {
       switch (capture.failure) {
         CaptureFailureKind.deleted => 'Its strategy was deleted.',
         CaptureFailureKind.mapChanged => 'Its strategy is on another map now.',
+        CaptureFailureKind.pageDeleted => 'Its page was deleted.',
         _ => 'The cloud refused it.',
       };
 }
