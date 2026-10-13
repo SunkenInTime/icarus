@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -2384,6 +2385,26 @@ void main() {
     expect(
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
     expect(remote.selectedPageIds, isNot(contains('page-2')));
+  });
+
+  test('a copy refuses the strokes on a deleted page before the notice shows',
+      () async {
+    final (:container, :one, queue: _, remote: _, two: _, strokeId: _) =
+        await strokeOnDeletedPage();
+    // As if the stroke finished while the replacement page was still
+    // loading, before anything asked: nothing is queued for it.
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+        container
+            .read(strategyPageSessionProvider)
+            .copyWith(clearDeletedPage: true));
+
+    await expectLater(
+      sendCloudWork(container.read, strategyId: 'cloud-strategy'),
+      throwsA(isA<CloudWorkNotSent>()),
+    );
+    // And the user is told why.
+    expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+        one.publicId);
   });
 
   test('an unrelated op landing does not let the page go unseen', () async {

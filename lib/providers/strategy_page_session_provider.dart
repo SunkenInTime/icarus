@@ -1282,6 +1282,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _deletedPageHoldsWork();
   }
 
+  /// Whether the canvas holds work on a page the server no longer has,
+  /// which no queue will ever send. Asked before copying the strategy from
+  /// the server; tells the user like leaving the page would (see
+  /// [_deletedPageHoldsWork]).
+  bool holdsWorkOnDeletedPage() => _deletedPageHoldsWork();
+
   /// Whether the canvas is on a page a teammate deleted, holding work the
   /// server never got. That work can never be sent, so waiting for it would
   /// wait forever and replacing the page would drop it unseen: the user is

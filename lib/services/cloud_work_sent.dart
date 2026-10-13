@@ -80,9 +80,10 @@ Future<void> sendCloudWork(
       throw const CloudWorkNotSent(unreadable: true);
     }
     // Edits on a page a teammate deleted are on screen but in no queue:
-    // the page is gone, so they can never be sent.
+    // the page is gone, so they can never be sent. Asked of the canvas each
+    // time, not read from the notice, which may not have been raised yet.
     if (editorCovered &&
-        read(strategyPageSessionProvider).deletedPage != null) {
+        read(strategyPageSessionProvider.notifier).holdsWorkOnDeletedPage()) {
       throw const CloudWorkNotSent(unreadable: false);
     }
     final unsent = [
