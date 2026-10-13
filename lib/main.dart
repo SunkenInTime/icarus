@@ -56,6 +56,7 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
+import 'package:icarus/widgets/replay/open_replays.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -395,6 +396,20 @@ class _MyAppState extends ConsumerState<MyApp> {
     await _loadFromFilePathWithWarning(argument);
   }
 
+  /// Replays in one launch open together, so several land on the Replays
+  /// tab instead of each opening the viewer in turn.
+  void _handleIncomingArguments(
+    List<String> arguments, {
+    required String source,
+  }) {
+    final replays = arguments.where(isReplayPath).toList();
+    if (replays.isNotEmpty) unawaited(openReplays(ref, replays));
+    for (final argument in arguments) {
+      if (isReplayPath(argument)) continue;
+      unawaited(_handleIncomingArgument(argument, source: source));
+    }
+  }
+
   void _handleIncomingUri(Uri uri, {required String source}) {
     final uriText = uri.toString();
     if (!_processedDeepLinks.add(uriText)) {
@@ -483,8 +498,8 @@ class _MyAppState extends ConsumerState<MyApp> {
           'Startup argument: ${redactLaunchArgument(argument)}',
           source: 'main.startupArgs',
         );
-        unawaited(_handleIncomingArgument(argument, source: 'startup_args'));
       }
+      _handleIncomingArguments(widget.data, source: 'startup_args');
     });
 
     _secondInstanceSub = secondInstanceArgsController.stream.listen((args) {
@@ -495,8 +510,8 @@ class _MyAppState extends ConsumerState<MyApp> {
           'Second-instance argument: ${redactLaunchArgument(argument)}',
           source: 'main.secondInstanceArgs',
         );
-        unawaited(_handleIncomingArgument(argument, source: 'second_instance'));
       }
+      _handleIncomingArguments(args, source: 'second_instance');
     });
 
     _deepLinkSub = _deepLinkUriController.stream.listen(
@@ -653,7 +668,11 @@ class _MyAppState extends ConsumerState<MyApp> {
         builder: (context, child) {
           return GlobalShortcuts(
             child: EditorOperationScope(
-              child: MouseNavigation(child: child ?? const SizedBox.shrink()),
+              child: MouseNavigation(
+                child: ReplayWindowDropTarget(
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
             ),
           );
         },

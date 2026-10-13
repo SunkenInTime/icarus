@@ -53,6 +53,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 Name: "registerica"; Description: "Associate .ica strategy files with {#MyAppName}"; Flags: checkedonce
+Name: "registervrf"; Description: "Open Valorant replays (.vrf) with {#MyAppName}"; Flags: checkedonce
 
 [Files]
 Source: "{#MySourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -67,7 +68,25 @@ Root: HKCU; Subkey: "Software\\Classes\\.ica"; ValueType: string; ValueName: "";
 Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy"; ValueType: string; ValueName: ""; ValueData: "Icarus Strategy File"; Flags: uninsdeletekey; Tasks: registerica
 Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy\\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: registerica
 Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy\\shell\\open\\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: registerica
+; Valorant registers nothing for its replays, but .vrf is also Ventrilo's
+; recording format. Icarus always joins the Open with list, and becomes the
+; default only when no other program is.
+Root: HKCU; Subkey: "Software\\Classes\\.vrf\\OpenWithProgids"; ValueType: string; ValueName: "Icarus.Replay"; ValueData: ""; Flags: uninsdeletevalue; Tasks: registervrf
+Root: HKCU; Subkey: "Software\\Classes\\.vrf"; ValueType: string; ValueName: ""; ValueData: "Icarus.Replay"; Flags: uninsdeletevalue; Tasks: registervrf; Check: VrfHasNoOtherDefault
+Root: HKCU; Subkey: "Software\\Classes\\Icarus.Replay"; ValueType: string; ValueName: ""; ValueData: "Valorant Replay"; Flags: uninsdeletekey; Tasks: registervrf
+Root: HKCU; Subkey: "Software\\Classes\\Icarus.Replay\\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: registervrf
+Root: HKCU; Subkey: "Software\\Classes\\Icarus.Replay\\shell\\open\\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: registervrf
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifsilent
+
+[Code]
+// True when .vrf has no default program, or Icarus already is it.
+function VrfHasNoOtherDefault: Boolean;
+var
+  Handler: String;
+begin
+  Result := (not RegQueryStringValue(HKCR, '.vrf', '', Handler)) or
+    (Handler = '') or (Handler = 'Icarus.Replay');
+end;
 

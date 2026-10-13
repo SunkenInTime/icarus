@@ -90,7 +90,7 @@ msix_config:
   publisher: CN=39055448-F6AA-42E9-91F6-9CF8828C444C
   logo_path: windows\runner\resources\app_icon.ico
   msix_version: 4.6.3.0 #verion number #last 0 needs to be there for msix to work
-  file_extension: .ica
+  file_extension: .ica, .vrf
   store: true
 
 flutter:
