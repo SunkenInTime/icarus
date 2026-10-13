@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -16,6 +19,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -784,6 +788,155 @@ void main() {
     expect(Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values, isEmpty);
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, isEmpty);
   });
+
+  test('a library backup restored inside a folder keeps its top level',
+      () async {
+    final zipFile = await _libraryBackupZip(container, tempDir);
+    await _createCurrentFolder(container, name: 'Current');
+
+    final result =
+        await StrategyImportExportService(container).loadFromFileDrop(
+      [XFile(zipFile.path)],
+    );
+
+    expect(result.strategiesImported, 2);
+    expect(result.foldersCreated, 1);
+    final restoredFolder = _folderByName('Plays');
+    expect(restoredFolder.parentID, isNull);
+    expect(_strategyByName('Root Backup').folderID, isNull);
+    expect(_strategyByName('Folder Backup').folderID, restoredFolder.id);
+  });
+
+  // Imports write to the local library. Signed in, My Library opens on the
+  // cloud store, and that must not pull an import's folders into the cloud.
+  group('signed in, with the cloud store active', () {
+    late _FolderRecordingRepository repository;
+    late ProviderContainer cloudContainer;
+
+    setUp(() {
+      repository = _FolderRecordingRepository();
+      cloudContainer = ProviderContainer(
+        overrides: [
+          libraryWorkspaceProvider.overrideWith(_CloudWorkspaceNotifier.new),
+          convexStrategyRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+    });
+
+    tearDown(() => cloudContainer.dispose());
+
+    test('a dropped folder lands whole in the local library', () async {
+      final sourceRoot =
+          await Directory(path.join(tempDir.path, 'source', 'Team Strats'))
+              .create(recursive: true);
+      await _writeStrategyFile(File(path.join(sourceRoot.path, 'default.ica')));
+      await _writeStrategyFile(
+        File(path.join(sourceRoot.path, 'Retakes', 'a-site.ica')),
+      );
+
+      final result =
+          await StrategyImportExportService(cloudContainer).loadFromFileDrop(
+        [XFile(sourceRoot.path)],
+      );
+
+      expect(result.strategiesImported, 2);
+      expect(result.foldersCreated, 2);
+      expect(repository.createdFolders, isEmpty);
+      final importedRoot = _folderByName('Team Strats');
+      final importedChild = _folderByName('Retakes');
+      expect(importedRoot.parentID, isNull);
+      expect(importedChild.parentID, importedRoot.id);
+      expect(_strategyByName('default').folderID, importedRoot.id);
+      expect(_strategyByName('a-site').folderID, importedChild.id);
+    });
+
+    test('a library backup lands whole in the local library', () async {
+      final zipFile = await _libraryBackupZip(container, tempDir);
+
+      final result =
+          await StrategyImportExportService(cloudContainer).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      expect(result.strategiesImported, 2);
+      expect(result.foldersCreated, 1);
+      expect(repository.createdFolders, isEmpty);
+      final restoredFolder = _folderByName('Plays');
+      expect(restoredFolder.parentID, isNull);
+      expect(_strategyByName('Folder Backup').folderID, restoredFolder.id);
+    });
+  });
+}
+
+/// Backs up a library holding the folder "Plays" with "Folder Backup" in it
+/// and "Root Backup" beside it, then empties the library.
+Future<File> _libraryBackupZip(
+  ProviderContainer container,
+  Directory tempDir,
+) async {
+  final folder = await _createFolder(container, name: 'Plays', parentID: null);
+  await _storeStrategy(name: 'Root Backup', folderID: null);
+  await _storeStrategy(name: 'Folder Backup', folderID: folder.id);
+
+  final exportDirectory = await StrategyImportExportService(container)
+      .buildLibraryExportDirectoryForTest();
+  try {
+    final zipFile = await _zipDirectory(
+      sourceDirectory: Directory(
+        path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+      ),
+      zipPath: path.join(tempDir.path, 'library-backup.zip'),
+    );
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+    await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
+    return zipFile;
+  } finally {
+    await exportDirectory.delete(recursive: true);
+  }
+}
+
+class _CloudWorkspaceNotifier extends LibraryWorkspaceNotifier {
+  @override
+  LibraryWorkspace build() => LibraryWorkspace.cloud;
+}
+
+class _FolderRecordingRepository extends ConvexStrategyRepository {
+  _FolderRecordingRepository() : super(IcarusConvexApi(_UnusedTransport()));
+
+  final createdFolders = <String>[];
+
+  @override
+  Future<void> createFolder({
+    required String publicId,
+    required String name,
+    String? parentFolderPublicId,
+    int? iconId,
+    int? iconCodePoint,
+    String? iconFontFamily,
+    String? iconFontPackage,
+    String? color,
+    int? customColorValue,
+  }) async {
+    createdFolders.add(name);
+  }
+}
+
+class _UnusedTransport implements ConvexTransport {
+  @override
+  Future<ConvexValue> action(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ConvexValue> mutation(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ConvexValue> query(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Stream<ConvexValue> subscribe(String name, ConvexObject args) =>
+      throw UnimplementedError();
 }
 
 Future<void> _writeStrategyFile(
