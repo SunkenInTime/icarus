@@ -23,6 +23,10 @@ const listStrategies = makeFunctionReference<"query">(
   "strategies:listForFolder",
 );
 const getShell = makeFunctionReference<"query">("strategy:getShell");
+const deleteFolder = makeFunctionReference<"mutation">("folders:delete");
+const duplicate = makeFunctionReference<"mutation">("strategies:duplicate");
+const createShareLink = makeFunctionReference<"mutation">("shares:create");
+const createInvite = makeFunctionReference<"mutation">("invites:create");
 
 type Harness = TestConvexForDataModel<DataModel>;
 
@@ -138,8 +142,84 @@ describe("a strategy moving in from a device", () => {
 
   test("a create without the flag is listed at once, as before", async () => {
     const { owner } = await createHarness();
-    await create(owner, "plain", { unfinishedMove: false });
+    await create(owner, "plain");
 
     expect(await listedIds(owner)).toEqual(["plain"]);
+  });
+
+  test("a retry keeps the move state it was made with", async () => {
+    const { owner } = await createHarness();
+    await create(owner, "listed");
+    await create(owner, "moving", { unfinishedMove: true });
+
+    // The same call again is a retry and succeeds.
+    await create(owner, "moving", { unfinishedMove: true });
+    await expect(
+      create(owner, "listed", { unfinishedMove: true }),
+    ).rejects.toThrow();
+    await expect(create(owner, "moving")).rejects.toThrow();
+    expect(await listedIds(owner)).toEqual(["listed"]);
+  });
+
+  test("it can't be shared or copied before it is finished", async () => {
+    const { owner } = await createHarness();
+    await create(owner, "moving", { unfinishedMove: true });
+
+    await expect(
+      owner.mutation(createShareLink, {
+        ...protocol,
+        targetType: "strategy",
+        targetPublicId: "moving",
+        token: "link-token",
+        role: "viewer",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      owner.mutation(createInvite, {
+        ...protocol,
+        strategyPublicId: "moving",
+        token: "invite-token",
+        role: "editor",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      owner.mutation(duplicate, {
+        ...protocol,
+        sourceStrategyPublicId: "moving",
+        publicId: "moving-copy",
+        name: "Copy",
+      }),
+    ).rejects.toThrow();
+    expect(await listedIds(owner)).toEqual([]);
+
+    // Once finished, it shares like any other.
+    await owner.mutation(finishMove, { ...protocol, strategyPublicId: "moving" });
+    await owner.mutation(createShareLink, {
+      ...protocol,
+      targetType: "strategy",
+      targetPublicId: "moving",
+      token: "link-token",
+      role: "viewer",
+    });
+  });
+
+  test("a folder holding only an unfinished move can be deleted", async () => {
+    const { owner } = await createHarness();
+    await owner.mutation(createFolder, {
+      ...protocol,
+      publicId: "plays",
+      name: "Plays",
+    });
+    await create(owner, "moving", {
+      folderPublicId: "plays",
+      unfinishedMove: true,
+    });
+
+    await owner.mutation(deleteFolder, { ...protocol, folderPublicId: "plays" });
+
+    // The strategy stays, hidden, for the moving device to finish or delete.
+    expect(await listedIds(owner)).toEqual([]);
+    await owner.mutation(finishMove, { ...protocol, strategyPublicId: "moving" });
+    expect(await listedIds(owner)).toEqual(["moving"]);
   });
 });

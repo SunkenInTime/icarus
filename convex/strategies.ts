@@ -23,6 +23,7 @@ import {
 } from "./lib/auth";
 import type { StrategyRole } from "./lib/auth";
 import {
+  assertMoveFinished,
   getFolderByPublicId,
   getStrategyByPublicId,
   livePagesQuery,
@@ -347,6 +348,15 @@ async function createStrategyWithInitialPageRecord(
     .collect();
   const existingOwned = existing.find((item) => item.ownerId === userId);
   if (existingOwned !== undefined) {
+    // A retry carries the same move state. Reusing a listed strategy for a
+    // move, or a moving one for an ordinary create, would show a partial
+    // strategy or hide a finished one.
+    if (
+      (existingOwned.unfinishedMove === true) !==
+      (args.unfinishedMove === true)
+    ) {
+      throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
+    }
     const pages = await ctx.db
       .query("pages")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", existingOwned._id))
@@ -543,6 +553,7 @@ export const duplicate = mutation({
       args.sourceStrategyPublicId,
     );
     const { user } = await assertStrategyRole(ctx, source, "editor");
+    assertMoveFinished(source);
 
     const existing = await ctx.db
       .query("strategies")

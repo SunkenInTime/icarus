@@ -464,8 +464,14 @@ const deleteFolder = mutation({
       .query("strategies")
       .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
       .collect();
-    if (strategies.length > 0) {
+    if (strategies.some(isListed)) {
       throw invalidOpError("Folder has strategies");
+    }
+    // A strategy a move left unfinished is listed nowhere, so the folder
+    // looks empty. It stays hidden at the top level, where the moving device
+    // deletes or finishes it; its original is still on that device.
+    for (const strategy of strategies) {
+      await ctx.db.patch(strategy._id, { folderId: undefined });
     }
 
     const collaborators = await ctx.db

@@ -7,7 +7,7 @@ import {
   requireCurrentUser,
   type CollaboratorRole,
 } from "./lib/auth";
-import { getStrategyByPublicId } from "./lib/entities";
+import { assertMoveFinished, getStrategyByPublicId } from "./lib/entities";
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -123,6 +123,7 @@ export const create = mutation({
     if (role !== "owner") {
       throw forbiddenError();
     }
+    assertMoveFinished(strategy);
 
     const now = Date.now();
     await ctx.db.insert("inviteTokens", {

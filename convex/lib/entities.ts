@@ -1,6 +1,6 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { notFoundError } from "./errors";
+import { invalidOpError, notFoundError } from "./errors";
 
 type AnyCtx = QueryCtx | MutationCtx;
 
@@ -255,4 +255,12 @@ export function clampPageIndex(index: number, maximum: number): number {
 /// is still putting it together.
 export function isListed(strategy: Doc<"strategies">): boolean {
   return strategy.unfinishedMove !== true;
+}
+
+/// Refuses to share or copy [strategy] while a move from a device is still
+/// putting it together: what would be shared or copied is only part of it.
+export function assertMoveFinished(strategy: Doc<"strategies">): void {
+  if (strategy.unfinishedMove === true) {
+    throw invalidOpError("Strategy is still being moved in");
+  }
 }
