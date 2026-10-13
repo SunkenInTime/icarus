@@ -700,17 +700,167 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// Disables a link. With [removeMembers], also removes everyone whose
+  /// access came from it.
   Future<void> revokeShareLink({
     required String targetType,
     required String targetPublicId,
     required String token,
+    bool removeMembers = false,
   }) async {
     await _api.shares.revoke(
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       targetType: _shareTargetType(targetType),
       targetPublicId: targetPublicId,
       token: token,
+      removeMembers: removeMembers
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
     );
+  }
+
+  /// Everyone besides the owner who can open the target. Owner only.
+  /// The people the target was shared with directly, a page at a time:
+  /// pass the previous page's [ShareMemberPage.nextCursor] as [cursor].
+  Future<ShareMemberPage> listShareMembers({
+    required String targetType,
+    required String targetPublicId,
+    String? cursor,
+  }) async {
+    final result = await _api.shares
+        .listMembers(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
+          cursor: cursor == null
+              ? const ConvexOptional.absent()
+              : ConvexOptional.present(cursor),
+        )
+        .fetch();
+    return ShareMemberPage(
+      members: result.members
+          .map(
+            (member) => ShareMember(
+              memberId: member.memberId,
+              displayName: member.displayName,
+              avatarUrl: member.avatarUrl,
+              role: member.role.wireName,
+              joinedAt: _dateTime(member.joinedAt),
+              shareLinkToken: member.shareLinkToken,
+            ),
+          )
+          .toList(growable: false),
+      nextCursor: result.nextCursor,
+    );
+  }
+
+  /// The names of the shared folders the target sits in, nearest first:
+  /// their people can open it too.
+  Future<List<String>> listShareFolderAccess({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    final result = await _api.shares
+        .listFolderAccess(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
+        )
+        .fetch();
+    return result.map((folder) => folder.name).toList(growable: false);
+  }
+
+  /// Who each of the target's links let in, by token.
+  Future<Map<String, ShareLinkJoins>> listShareLinkJoins({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    final result = await _api.shares
+        .listLinkJoins(
+          targetType: _shareTargetType(targetType),
+          targetPublicId: targetPublicId,
+        )
+        .fetch();
+    return {
+      for (final link in result)
+        link.token: ShareLinkJoins(
+          joined: link.joined.round(),
+          more: link.more,
+          names: link.names,
+        ),
+    };
+  }
+
+  Future<void> setShareMemberRole({
+    required String targetType,
+    required String targetPublicId,
+    required String memberId,
+    required String role,
+  }) async {
+    await _api.shares.setMemberRole(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      targetType: _shareTargetType(targetType),
+      targetPublicId: targetPublicId,
+      memberId: memberId,
+      role: _shareRole(role),
+    );
+  }
+
+  Future<void> removeShareMember({
+    required String targetType,
+    required String targetPublicId,
+    required String memberId,
+  }) async {
+    await _api.shares.removeMember(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      targetType: _shareTargetType(targetType),
+      targetPublicId: targetPublicId,
+      memberId: memberId,
+    );
+  }
+
+  /// Ends the signed-in user's own access to something shared with them.
+  Future<void> leaveShared({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    await _api.shares.leave(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      targetType: _shareTargetType(targetType),
+      targetPublicId: targetPublicId,
+    );
+  }
+
+  /// What [token] opens and the access the signed-in user already has.
+  /// Joins nothing. Throws NOT_FOUND or SHARE_LINK_REVOKED like
+  /// [resolveSharedStrategy].
+  Future<SharePreview> previewShareLink(String token) async {
+    return switch (await _api.shares.preview(token: token).fetch()) {
+      SharesPreviewResultStrategy(
+        :final publicId,
+        :final name,
+        :final linkRole,
+        :final myRole,
+      ) =>
+        SharePreview(
+          targetType: 'strategy',
+          publicId: publicId,
+          name: name,
+          linkRole: linkRole.wireName,
+          myRole: myRole?.wireName,
+        ),
+      SharesPreviewResultFolder(
+        :final publicId,
+        :final name,
+        :final linkRole,
+        :final myRole,
+      ) =>
+        SharePreview(
+          targetType: 'folder',
+          publicId: publicId,
+          name: name,
+          linkRole: linkRole.wireName,
+          myRole: myRole?.wireName,
+        ),
+    };
   }
 
   /// The strategy [token] shares, or null when it shares a folder. Needs no

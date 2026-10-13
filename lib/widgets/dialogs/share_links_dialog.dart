@@ -7,10 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_copy.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -35,6 +39,18 @@ String _relativeTime(DateTime time) {
       '-${time.day.toString().padLeft(2, '0')}';
 }
 
+String _memberName(ShareMember member) => member.displayName ?? 'Teammate';
+
+/// The owner's own name as teammates see it: an email sign-in shows the
+/// part before the @, as the server stores it.
+String _ownerName(String displayName) {
+  final at = displayName.indexOf('@');
+  return at > 0 ? displayName.substring(0, at) : displayName;
+}
+
+/// The owner's view of who can open a strategy or folder and the links that
+/// let people in. People come first: what the owner usually checks is who
+/// is in, and the links are how more people get there.
 class ShareLinksDialog extends ConsumerStatefulWidget {
   const ShareLinksDialog({
     super.key,
@@ -58,59 +74,191 @@ Future<void> showAddSharedItemDialog(BuildContext context) {
   );
 }
 
-enum _LinksStatus { loading, error, ready }
+enum _LoadStatus { loading, error, ready }
 
 class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   List<ShareLinkSummary> _links = const [];
-  _LinksStatus _status = _LinksStatus.loading;
+  List<ShareMember> _members = const [];
+
+  /// Where the next page of people starts; null once all are here.
+  String? _nextCursor;
+  bool _loadingMore = false;
+
+  /// Moves on whenever the people are read again from the first page, so a
+  /// page asked for before then is dropped instead of appended.
+  int _peopleGeneration = 0;
+
+  /// Links whose joiners the server is still removing, a batch at a time.
+  final Set<String> _removingFrom = {};
+
+  /// Shared folders the target sits in: their people can open it too.
+  List<String> _sharedFolders = const [];
+
+  /// Who each link let in, by token.
+  Map<String, ShareLinkJoins> _joins = const {};
+
+  /// Whether the people could not be read. The links still work then, so
+  /// the dialog keeps them and offers a retry for the people alone.
+  bool _membersFailed = false;
+
+  /// Bumped for a person each time their role is changed, so their switch
+  /// rebuilds from what the server then holds: a ShadSelect keeps a pick
+  /// the server refused otherwise. Only theirs: rebuilding another
+  /// person's switch would close its menu mid-use.
+  final Map<String, int> _roleRevisions = {};
+  _LoadStatus _status = _LoadStatus.loading;
   bool _isCreating = false;
   String? _disablingToken;
+  final Set<String> _busyMemberIds = {};
   String _selectedRole = 'viewer';
 
   int get _activeLinkCount => _links.where((link) => !link.isRevoked).length;
 
-  Future<void> _loadLinks() async {
-    setState(() => _status = _LinksStatus.loading);
+  ConvexStrategyRepository get _repository =>
+      ref.read(convexStrategyRepositoryProvider);
+
+  Future<void> _load({bool showLoading = true}) async {
+    final generation = ++_peopleGeneration;
+    if (showLoading) {
+      setState(() => _status = _LoadStatus.loading);
+    }
+    final target = (
+      targetType: widget.targetType,
+      targetPublicId: widget.targetPublicId,
+    );
+    final links = _repository.listShareLinks(
+      targetType: target.targetType,
+      targetPublicId: target.targetPublicId,
+    );
+    // The people, folders and counts need the newer server; without them
+    // the links still work.
+    ({
+      ShareMemberPage page,
+      List<String> folders,
+      Map<String, ShareLinkJoins> joins,
+    })? people;
     try {
-      final links =
-          await ref.read(convexStrategyRepositoryProvider).listShareLinks(
-                targetType: widget.targetType,
-                targetPublicId: widget.targetPublicId,
-              );
-      if (!mounted) return;
+      final results = await Future.wait([
+        _repository.listShareMembers(
+          targetType: target.targetType,
+          targetPublicId: target.targetPublicId,
+        ),
+        _repository.listShareFolderAccess(
+          targetType: target.targetType,
+          targetPublicId: target.targetPublicId,
+        ),
+        _repository.listShareLinkJoins(
+          targetType: target.targetType,
+          targetPublicId: target.targetPublicId,
+        ),
+      ]);
+      people = (
+        page: results[0] as ShareMemberPage,
+        folders: results[1] as List<String>,
+        joins: results[2] as Map<String, ShareLinkJoins>,
+      );
+    } catch (_) {
+      people = null;
+    }
+    try {
+      final loadedLinks = await links;
+      // A later read has started; it brings fresher people and links.
+      if (!mounted || generation != _peopleGeneration) return;
       setState(() {
-        _links = links;
-        _status = _LinksStatus.ready;
+        // Drops any Show more asked for while this read was out.
+        _peopleGeneration++;
+        _loadingMore = false;
+        _links = loadedLinks;
+        _members = people?.page.members ?? const [];
+        _nextCursor = people?.page.nextCursor;
+        _sharedFolders = people?.folders ?? const [];
+        _joins = people?.joins ?? const {};
+        _membersFailed = people == null;
+        _status = _LoadStatus.ready;
       });
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _status = _LinksStatus.error);
+      if (!mounted || generation != _peopleGeneration) return;
+      setState(() => _status = _LoadStatus.error);
     }
+  }
+
+  Future<void> _loadMore() async {
+    final cursor = _nextCursor;
+    if (cursor == null || _loadingMore) return;
+    final generation = _peopleGeneration;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await _repository.listShareMembers(
+        targetType: widget.targetType,
+        targetPublicId: widget.targetPublicId,
+        cursor: cursor,
+      );
+      if (!mounted || generation != _peopleGeneration) return;
+      setState(() {
+        _members = [..._members, ...page.members];
+        _nextCursor = page.nextCursor;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _peopleGeneration) return;
+      Settings.showToast(
+        message: "Couldn't load more people.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      // The cursor itself may be what the server refused; start over.
+      await _load(showLoading: false);
+    }
+  }
+
+  /// The server removes a link's joiners a batch at a time, some of them
+  /// after disabling returns. Waits until the link's count reaches zero, or
+  /// two minutes pass, showing "Removing people…" meanwhile; then reads the
+  /// people again.
+  Future<void> _followRemoval(String token) async {
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final joins = await _repository.listShareLinkJoins(
+          targetType: widget.targetType,
+          targetPublicId: widget.targetPublicId,
+        );
+        if ((joins[token]?.joined ?? 0) == 0) break;
+      } catch (_) {
+        // Not known this time; ask again.
+      }
+      if (!mounted) return;
+      setState(() => _removingFrom.add(token));
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+    }
+    if (!mounted) return;
+    setState(() => _removingFrom.remove(token));
+    await _load(showLoading: false);
   }
 
   @override
   void initState() {
     super.initState();
-    _loadLinks();
+    _load();
   }
 
   Future<void> _createLink() async {
     setState(() => _isCreating = true);
     final token = generateIcarusShareCode();
     try {
-      await ref.read(convexStrategyRepositoryProvider).createShareLink(
-            targetType: widget.targetType,
-            targetPublicId: widget.targetPublicId,
-            token: token,
-            role: _selectedRole,
-          );
+      await _repository.createShareLink(
+        targetType: widget.targetType,
+        targetPublicId: widget.targetPublicId,
+        token: token,
+        role: _selectedRole,
+      );
       await Clipboard.setData(ClipboardData(
           text: buildIcarusShareLink(token, origin: currentShareOrigin())));
       Settings.showToast(
         message: 'Share link copied to clipboard.',
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
-      await _loadLinks();
+      await _load(showLoading: false);
     } catch (_) {
       Settings.showToast(
         message: 'Failed to create share link.',
@@ -124,32 +272,90 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   }
 
   Future<void> _disableLink(String token) async {
-    final confirmed = await ConfirmAlertDialog.show(
+    final joins = _joins[token] ?? ShareLinkJoins.none;
+    final removeMembers = await showShadDialog<bool>(
       context: context,
-      title: ShareLinkCopy.disableTitle,
-      content: ShareLinkCopy.disableDescription,
-      confirmText: ShareLinkCopy.disableAction,
-      isDestructive: true,
+      builder: (_) => _DisableLinkDialog(joins: joins),
     );
-    if (!confirmed || !mounted) {
+    if (removeMembers == null || !mounted) {
       return;
     }
     setState(() => _disablingToken = token);
+    var disabled = false;
     try {
-      await ref.read(convexStrategyRepositoryProvider).revokeShareLink(
-            targetType: widget.targetType,
-            targetPublicId: widget.targetPublicId,
-            token: token,
-          );
-      await _loadLinks();
+      await _repository.revokeShareLink(
+        targetType: widget.targetType,
+        targetPublicId: widget.targetPublicId,
+        token: token,
+        removeMembers: removeMembers,
+      );
+      disabled = true;
     } catch (_) {
       Settings.showToast(
         message: ShareLinkCopy.disableFailure,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
+    }
+    if (!mounted) return;
+    // Reload either way: a disable whose answer was lost may still have
+    // happened, and the dialog shows what the server holds.
+    await _load(showLoading: false);
+    if (!mounted) return;
+    setState(() => _disablingToken = null);
+    if (disabled && removeMembers) unawaited(_followRemoval(token));
+  }
+
+  Future<void> _setRole(ShareMember member, String role) async {
+    if (role == member.role) return;
+    setState(() => _busyMemberIds.add(member.memberId));
+    try {
+      await _repository.setShareMemberRole(
+        targetType: widget.targetType,
+        targetPublicId: widget.targetPublicId,
+        memberId: member.memberId,
+        role: role,
+      );
+    } catch (_) {
+      Settings.showToast(
+        message: ShareLinkCopy.roleChangeFailure,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    }
+    // Reload either way, so the switch shows what the server holds.
+    _roleRevisions.update(member.memberId, (n) => n + 1, ifAbsent: () => 1);
+    await _load(showLoading: false);
+    if (mounted) {
+      setState(() => _busyMemberIds.remove(member.memberId));
+    }
+  }
+
+  Future<void> _remove(ShareMember member) async {
+    final confirmed = await ConfirmAlertDialog.show(
+      context: context,
+      title: ShareLinkCopy.removeMemberTitle(_memberName(member)),
+      content: ShareLinkCopy.removeMemberDescription,
+      confirmText: ShareLinkCopy.removeMemberAction,
+      isDestructive: true,
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
+    setState(() => _busyMemberIds.add(member.memberId));
+    try {
+      await _repository.removeShareMember(
+        targetType: widget.targetType,
+        targetPublicId: widget.targetPublicId,
+        memberId: member.memberId,
+      );
+      await _load(showLoading: false);
+    } catch (_) {
+      Settings.showToast(
+        message: ShareLinkCopy.removeMemberFailure,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
     } finally {
       if (mounted) {
-        setState(() => _disablingToken = null);
+        setState(() => _busyMemberIds.remove(member.memberId));
       }
     }
   }
@@ -157,6 +363,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final maxBodyHeight = MediaQuery.sizeOf(context).height - 280;
 
     return ShadDialog(
       title: Text(
@@ -178,77 +385,12 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       ],
       child: SizedBox(
         width: double.infinity,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _SectionLabel(label: 'New link'),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: ShadSelect<String>(
-                    key: const ValueKey('share-link-role-select'),
-                    initialValue: _selectedRole,
-                    selectedOptionBuilder: (context, value) => Text(
-                      value == 'editor' ? 'Can edit' : 'View only',
-                    ),
-                    options: const [
-                      ShadOption(
-                        value: 'viewer',
-                        child: _RoleOptionLabel(
-                          label: 'View only',
-                          description: 'Can open and view every page',
-                        ),
-                      ),
-                      ShadOption(
-                        value: 'editor',
-                        child: _RoleOptionLabel(
-                          label: 'Can edit',
-                          description: 'Can change pages, drawings, and media',
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _selectedRole = value);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ShadButton(
-                  key: const ValueKey('share-link-create-and-copy'),
-                  onPressed: _isCreating ? null : _createLink,
-                  leading: _isCreating
-                      ? SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.colorScheme.primaryForeground,
-                          ),
-                        )
-                      : const Icon(LucideIcons.link, size: 16),
-                  child: Text(_isCreating ? 'Creating…' : 'Create & copy'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                const _SectionLabel(label: 'Active links'),
-                if (_status == _LinksStatus.ready && _activeLinkCount > 0) ...[
-                  const SizedBox(width: 8),
-                  ShadBadge.secondary(
-                    child: Text('$_activeLinkCount'),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 10),
-            AnimatedSize(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: maxBodyHeight < 240 ? 240 : maxBodyHeight,
+          ),
+          child: SingleChildScrollView(
+            child: AnimatedSize(
               duration: _stateSwitchDuration,
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
@@ -256,75 +398,309 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                 duration: _stateSwitchDuration,
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeOutCubic,
-                child: _buildLinksBody(theme),
+                child: _buildBody(theme),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildLinksBody(ShadThemeData theme) {
+  Widget _buildBody(ShadThemeData theme) {
     switch (_status) {
-      case _LinksStatus.loading:
+      case _LoadStatus.loading:
         return const _LinkListPlaceholder(key: ValueKey('loading'));
-      case _LinksStatus.error:
+      case _LoadStatus.error:
         return _LinkListMessage(
           key: const ValueKey('error'),
           icon: LucideIcons.circleAlert,
-          message: "Couldn't load share links.",
+          message: "Couldn't load the share links.",
           action: ShadButton.ghost(
             size: ShadButtonSize.sm,
-            onPressed: _loadLinks,
+            onPressed: _load,
             leading: const Icon(LucideIcons.refreshCw, size: 14),
             child: const Text('Retry'),
           ),
         );
-      case _LinksStatus.ready:
-        if (_links.isEmpty) {
-          return const _LinkListMessage(
-            key: ValueKey('empty'),
-            icon: LucideIcons.link2,
-            message: 'No links yet. Create one above to invite collaborators.',
-          );
-        }
-        return ConstrainedBox(
-          key: const ValueKey('links'),
-          constraints: const BoxConstraints(maxHeight: 280),
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: _links.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final link = _links[index];
-              return _ShareLinkTile(
-                link: link,
-                isDisabling: _disablingToken == link.token,
-                onDisable: () => _disableLink(link.token),
-              );
-            },
-          ),
+      case _LoadStatus.ready:
+        return Column(
+          key: const ValueKey('ready'),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildPeople(),
+            const SizedBox(height: 16),
+            Container(height: 1, color: theme.colorScheme.border),
+            const SizedBox(height: 16),
+            _buildNewLink(theme),
+            const SizedBox(height: 20),
+            _buildLinks(),
+          ],
         );
     }
+  }
+
+  Widget _buildPeople() {
+    final auth = ref.watch(authProvider);
+    final theme = ShadTheme.of(context);
+    return Column(
+      key: const ValueKey('share-people'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionLabel(
+          label: 'People with access',
+          // Counted only once everyone is here.
+          count: _membersFailed || _nextCursor != null
+              ? null
+              : _members.length + 1,
+        ),
+        const SizedBox(height: 6),
+        _PersonRow(
+          name: _ownerName(auth.displayName),
+          isYou: true,
+          avatarUrl: auth.avatarUrl,
+          subtitle: null,
+          trailing: const _OwnerLabel(),
+        ),
+        if (_membersFailed)
+          _LinkListMessage(
+            key: const ValueKey('share-people-error'),
+            icon: LucideIcons.circleAlert,
+            message: "Couldn't load who else has access.",
+            action: ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              onPressed: () => _load(showLoading: false),
+              leading: const Icon(LucideIcons.refreshCw, size: 14),
+              child: const Text('Retry'),
+            ),
+          ),
+        for (final member in _members)
+          _PersonRow(
+            key: ValueKey('share-member-${member.memberId}'),
+            name: _memberName(member),
+            avatarUrl: member.avatarUrl,
+            subtitle: _joinedSubtitle(member),
+            trailing: _MemberControls(
+              member: member,
+              revision: _roleRevisions[member.memberId] ?? 0,
+              busy: _busyMemberIds.contains(member.memberId),
+              onRoleChanged: (role) => _setRole(member, role),
+              onRemove: () => _remove(member),
+            ),
+          ),
+        if (_nextCursor != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ShadButton.ghost(
+              key: const ValueKey('share-people-more'),
+              size: ShadButtonSize.sm,
+              onPressed: _loadingMore ? null : _loadMore,
+              child: Text(_loadingMore ? 'Loading…' : 'Show more'),
+            ),
+          ),
+        // A folder's people are managed from the folder; here they are one
+        // line, however many there are.
+        for (final folder in _sharedFolders)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.folder,
+                  size: 14,
+                  color: theme.colorScheme.mutedForeground,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'People with access to the folder "$folder" can open '
+                    'this too.',
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.mutedForeground,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _joinedSubtitle(ShareMember member) {
+    final when = _relativeTime(member.joinedAt);
+    final token = member.shareLinkToken;
+    if (token == null) {
+      return 'Joined $when';
+    }
+    final link = _links.where((link) => link.token == token).firstOrNull;
+    final through = switch (link?.role) {
+      'editor' => 'an edit link',
+      'viewer' => 'a view link',
+      _ => 'a link',
+    };
+    return 'Joined through $through · $when';
+  }
+
+  Widget _buildNewLink(ShadThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionLabel(label: 'New link'),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ShadSelect<String>(
+                key: const ValueKey('share-link-role-select'),
+                initialValue: _selectedRole,
+                selectedOptionBuilder: (context, value) => Text(
+                  value == 'editor' ? 'Can edit' : 'View only',
+                ),
+                options: const [
+                  ShadOption(
+                    value: 'viewer',
+                    child: _RoleOptionLabel(
+                      label: 'View only',
+                      description: 'Anyone with the link can open every page',
+                    ),
+                  ),
+                  ShadOption(
+                    value: 'editor',
+                    child: _RoleOptionLabel(
+                      label: 'Can edit',
+                      description:
+                          'Anyone with the link can change pages, drawings, '
+                          'and media',
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedRole = value);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            ShadButton(
+              key: const ValueKey('share-link-create-and-copy'),
+              onPressed: _isCreating ? null : _createLink,
+              leading: _isCreating
+                  ? SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.primaryForeground,
+                      ),
+                    )
+                  : const Icon(LucideIcons.link, size: 16),
+              child: Text(_isCreating ? 'Creating…' : 'Create & copy'),
+            ),
+          ],
+        ),
+        AnimatedSize(
+          duration: _stateSwitchDuration,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topLeft,
+          child: _selectedRole == 'editor'
+              ? Padding(
+                  key: const ValueKey('share-link-edit-warning'),
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Icon(
+                          LucideIcons.circleAlert,
+                          size: 14,
+                          color: theme.colorScheme.mutedForeground,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          ShareLinkCopy.editLinkWarning,
+                          style: theme.textTheme.small.copyWith(
+                            color: theme.colorScheme.mutedForeground,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLinks() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionLabel(
+          label: 'Active links',
+          count: _activeLinkCount > 0 ? _activeLinkCount : null,
+        ),
+        const SizedBox(height: 10),
+        if (_links.isEmpty)
+          const _LinkListMessage(
+            key: ValueKey('empty'),
+            icon: LucideIcons.link2,
+            message: 'No links yet. Create one above to share it.',
+          )
+        else
+          for (final (index, link) in _links.indexed) ...[
+            if (index > 0) const SizedBox(height: 8),
+            _ShareLinkTile(
+              link: link,
+              joins: _joins[link.token] ?? ShareLinkJoins.none,
+              removing: _removingFrom.contains(link.token),
+              isDisabling: _disablingToken == link.token,
+              onDisable: () => _disableLink(link.token),
+            ),
+          ],
+      ],
+    );
   }
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.label});
+  const _SectionLabel({required this.label, this.count});
 
   final String label;
+  final int? count;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    return Text(
-      label,
-      style: theme.textTheme.small.copyWith(
-        color: theme.colorScheme.mutedForeground,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.2,
-      ),
+    return Row(
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.small.copyWith(
+            color: theme.colorScheme.mutedForeground,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
+          ),
+        ),
+        if (count != null) ...[
+          const SizedBox(width: 8),
+          ShadBadge.secondary(child: Text('$count')),
+        ],
+      ],
     );
   }
 }
@@ -360,8 +736,280 @@ class _RoleOptionLabel extends StatelessWidget {
   }
 }
 
-class _RoleBadge extends StatelessWidget {
-  const _RoleBadge({required this.role, required this.isRevoked});
+class _PersonRow extends StatelessWidget {
+  const _PersonRow({
+    super.key,
+    required this.name,
+    required this.avatarUrl,
+    required this.subtitle,
+    required this.trailing,
+    this.isYou = false,
+  });
+
+  final String name;
+  final String? avatarUrl;
+  final String? subtitle;
+  final Widget trailing;
+  final bool isYou;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          AccountAvatar(
+            radius: 15,
+            backgroundColor: theme.colorScheme.muted,
+            avatarUrl: avatarUrl,
+            fallback: Text(
+              initial,
+              style: theme.textTheme.small.copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.foreground,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    text: name,
+                    children: [
+                      if (isYou)
+                        TextSpan(
+                          text: ' (you)',
+                          style: TextStyle(
+                            color: theme.colorScheme.mutedForeground,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                    ],
+                  ),
+                  style: theme.textTheme.small.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.mutedForeground,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _OwnerLabel extends StatelessWidget {
+  const _OwnerLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Padding(
+      // Lines up with the role switches, which sit left of a 32px X.
+      padding: const EdgeInsets.only(right: 40),
+      child: Text(
+        'Owner',
+        style: theme.textTheme.small.copyWith(
+          color: theme.colorScheme.mutedForeground,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberControls extends StatelessWidget {
+  const _MemberControls({
+    required this.member,
+    required this.revision,
+    required this.busy,
+    required this.onRoleChanged,
+    required this.onRemove,
+  });
+
+  final ShareMember member;
+
+  /// How many times this person's role was changed (see _roleRevisions).
+  final int revision;
+  final bool busy;
+  final ValueChanged<String> onRoleChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final name = _memberName(member);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ShadSelect<String>(
+          // Keyed by the role and its revision, so a reload shows what the
+          // server holds, even after a pick it refused.
+          key: ValueKey(
+            'share-member-role-${member.memberId}-${member.role}-$revision',
+          ),
+          enabled: !busy,
+          initialValue: member.role,
+          minWidth: 112,
+          selectedOptionBuilder: (context, value) => Text(
+            value == 'editor' ? 'Can edit' : 'Can view',
+          ),
+          options: const [
+            ShadOption(
+              value: 'viewer',
+              child: _RoleOptionLabel(
+                label: 'Can view',
+                description: 'Opens every page, changes nothing',
+              ),
+            ),
+            ShadOption(
+              value: 'editor',
+              child: _RoleOptionLabel(
+                label: 'Can edit',
+                description: 'Changes pages, drawings, and media',
+              ),
+            ),
+          ],
+          onChanged: (value) {
+            if (value != null) onRoleChanged(value);
+          },
+        ),
+        Semantics(
+          label: 'Remove $name',
+          button: true,
+          enabled: !busy,
+          onTap: busy ? null : onRemove,
+          excludeSemantics: true,
+          child: Tooltip(
+            message: 'Remove $name',
+            child: ShadButton.ghost(
+              key: ValueKey('share-member-remove-${member.memberId}'),
+              size: ShadButtonSize.sm,
+              width: 32,
+              padding: EdgeInsets.zero,
+              onPressed: busy ? null : onRemove,
+              child: busy
+                  ? SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.mutedForeground,
+                      ),
+                    )
+                  : Icon(
+                      LucideIcons.x,
+                      size: 16,
+                      color: theme.colorScheme.mutedForeground,
+                    ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Confirms disabling a link. Pops null on cancel, otherwise whether to
+/// also remove the people who joined through it.
+class _DisableLinkDialog extends StatefulWidget {
+  const _DisableLinkDialog({required this.joins});
+
+  final ShareLinkJoins joins;
+
+  @override
+  State<_DisableLinkDialog> createState() => _DisableLinkDialogState();
+}
+
+class _DisableLinkDialogState extends State<_DisableLinkDialog> {
+  bool _removeJoined = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final joins = widget.joins;
+    final anyone = joins.joined > 0;
+    final others = joins.more || joins.joined > joins.names.length;
+    return ShadDialog.alert(
+      title: const Text(ShareLinkCopy.disableTitle),
+      description: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(ShareLinkCopy.disableDescription),
+            if (anyone) ...[
+              const SizedBox(height: 14),
+              ShadCheckbox(
+                key: const ValueKey('share-link-disable-remove-joined'),
+                value: _removeJoined,
+                onChanged: (value) => setState(() => _removeJoined = value),
+                label: Text(
+                  ShareLinkCopy.removeJoinedLabel(
+                    joins.joined,
+                    more: joins.more,
+                  ),
+                  style: theme.textTheme.small.copyWith(
+                    color: theme.colorScheme.foreground,
+                  ),
+                ),
+                sublabel: Text(
+                  '${joins.names.join(', ')}${others ? ' and others' : ''}',
+                  style: theme.textTheme.small.copyWith(
+                    color: theme.colorScheme.mutedForeground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        ShadButton.secondary(
+          key: const ValueKey('share-link-disable-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ShadButton.destructive(
+          key: const ValueKey('share-link-disable-confirm'),
+          onPressed: () => Navigator.of(context).pop(anyone && _removeJoined),
+          child: const Text(ShareLinkCopy.disableAction),
+        ),
+      ],
+    );
+  }
+}
+
+class _LinkKindBadge extends StatelessWidget {
+  const _LinkKindBadge({required this.role, required this.isRevoked});
 
   final String role;
   final bool isRevoked;
@@ -371,19 +1019,19 @@ class _RoleBadge extends StatelessWidget {
     final theme = ShadTheme.of(context);
     final Color background;
     final Color foreground;
+    final IconData? icon;
     final String label;
     if (isRevoked) {
       background = theme.colorScheme.destructive.withValues(alpha: 0.14);
       foreground = theme.colorScheme.destructive;
+      icon = null;
       label = ShareLinkCopy.disabledStatus;
-    } else if (role == 'editor') {
-      background = theme.colorScheme.primary.withValues(alpha: 0.16);
-      foreground = theme.colorScheme.primary;
-      label = 'EDIT';
     } else {
+      // Neutral for both kinds: violet marks actions, and a badge is not one.
       background = theme.colorScheme.muted;
       foreground = theme.colorScheme.mutedForeground;
-      label = 'VIEW';
+      icon = role == 'editor' ? LucideIcons.pencil : LucideIcons.eye;
+      label = role == 'editor' ? 'Edit' : 'View';
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -391,14 +1039,22 @@ class _RoleBadge extends StatelessWidget {
         color: background,
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: foreground,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: foreground),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -407,11 +1063,17 @@ class _RoleBadge extends StatelessWidget {
 class _ShareLinkTile extends StatefulWidget {
   const _ShareLinkTile({
     required this.link,
+    required this.joins,
+    required this.removing,
     required this.isDisabling,
     required this.onDisable,
   });
 
   final ShareLinkSummary link;
+  final ShareLinkJoins joins;
+
+  /// Whether its joiners are still being removed.
+  final bool removing;
   final bool isDisabling;
   final VoidCallback onDisable;
 
@@ -427,6 +1089,12 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
     final theme = ShadTheme.of(context);
     final link = widget.link;
     final url = buildIcarusShareLink(link.token, origin: currentShareOrigin());
+    final joins = widget.joins;
+    final joined = widget.removing
+        ? ' · Removing people…'
+        : joins.joined == 0
+            ? ''
+            : ' · ${joins.joined}${joins.more ? '+' : ''} joined';
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -447,7 +1115,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
           opacity: link.isRevoked ? 0.6 : 1,
           child: Row(
             children: [
-              _RoleBadge(role: link.role, isRevoked: link.isRevoked),
+              _LinkKindBadge(role: link.role, isRevoked: link.isRevoked),
               const SizedBox(width: 10),
               Expanded(
                 child: Tooltip(
@@ -474,7 +1142,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Created ${_relativeTime(link.createdAt)}',
+                        'Created ${_relativeTime(link.createdAt)}$joined',
                         style: theme.textTheme.small.copyWith(
                           color: theme.colorScheme.mutedForeground,
                           fontSize: 11,
@@ -881,6 +1549,46 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Whether the library is showing the top of Shared, where everything was
+/// shared with the user directly and so can be left. Items inside a shared
+/// folder come with the folder; leaving the folder is what ends them.
+bool isAtSharedRoot(WidgetRef ref) =>
+    ref.watch(libraryWorkspaceProvider) == LibraryWorkspace.cloud &&
+    ref.watch(cloudLibrarySectionProvider) ==
+        CloudLibrarySection.sharedWithMe &&
+    ref.watch(folderProvider) == null;
+
+/// Asks, then ends the user's own access to a strategy or folder shared
+/// with them. The item leaves Shared on its own: the list is live.
+Future<void> leaveSharedItem({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String targetType,
+  required String targetPublicId,
+  required String name,
+}) async {
+  final confirmed = await ConfirmAlertDialog.show(
+    context: context,
+    title: 'Leave "${name.replaceAll('"', "'")}"?',
+    content: 'You lose access, and it leaves your Shared tab. You can only '
+        'get it back through a link from its owner.',
+    confirmText: 'Leave',
+    isDestructive: true,
+  );
+  if (!confirmed) return;
+  try {
+    await ref.read(convexStrategyRepositoryProvider).leaveShared(
+          targetType: targetType,
+          targetPublicId: targetPublicId,
+        );
+  } catch (_) {
+    Settings.showToast(
+      message: "Couldn't leave it. Check your connection and try again.",
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   }
 }

@@ -480,6 +480,22 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             _showShareDialog();
           },
         ),
+      if (_isCloud && !_canShare && isAtSharedRoot(ref))
+        ShadContextMenuItem(
+          key: const ValueKey('strategy-tile-leave'),
+          leading: const Icon(LucideIcons.logOut),
+          child: const Text('Leave'),
+          onPressed: () {
+            _closeMenus();
+            leaveSharedItem(
+              context: context,
+              ref: ref,
+              targetType: 'strategy',
+              targetPublicId: _strategyId,
+              name: _strategyName,
+            );
+          },
+        ),
       ShadContextMenuItem(
         leading: Icon(LucideIcons.trash2,
             color: Settings.tacticalVioletTheme.destructive),

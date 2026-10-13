@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
@@ -59,10 +60,13 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     final isCloud = source == StrategySource.cloud;
     final strategyId =
         ref.watch(strategyProvider.select((value) => value.strategyId));
-    // Read through a share link, with no account: nothing here saves, and
-    // signing in is what adds the strategy to the reader's library.
+    // Read through a share link the reader hasn't added: nothing here saves.
+    // Signed out, the button signs in; signed in, it adds the strategy.
     final viewingThroughLink = isCloud &&
         ref.watch(shareLinkViewProvider)?.strategyPublicId == strategyId;
+    // Asked only for a link view: the editor has no other use for it.
+    final signedIn = viewingThroughLink &&
+        ref.watch(authProvider.select((auth) => auth.isAuthenticated));
     // Local saving exists only where the local library does; the web beta
     // never offers it, even if an editor somehow opens with no cloud strategy.
     final allowsLocalSave =
@@ -82,7 +86,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (viewingThroughLink)
+              if (viewingThroughLink && !signedIn)
                 EditorToolbarButton(
                   style: style,
                   tooltip: 'View only · Sign in to add it to your library',
@@ -91,6 +95,16 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                     builder: (_) => const AuthDialog(),
                   ),
                   icon: const Icon(LucideIcons.logIn200),
+                )
+              else if (viewingThroughLink)
+                EditorToolbarButton(
+                  key: const ValueKey('editor-add-to-library'),
+                  style: style,
+                  tooltip: 'View only · Add to my library',
+                  onPressed: () => ref
+                      .read(shareLinkControllerProvider.notifier)
+                      .addViewedLinkToLibrary(),
+                  icon: const Icon(LucideIcons.bookmarkPlus200),
                 )
               else if (isCloud)
                 const CloudSyncButton(style: style)

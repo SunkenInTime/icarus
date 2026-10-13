@@ -4,12 +4,10 @@ import 'package:icarus/share/share_link_copy.dart';
 void main() {
   test('disable copy states the boundary without overpromising', () {
     expect(ShareLinkCopy.disableAction, 'Disable link');
-    expect(ShareLinkCopy.disableDescription, contains('prevents new people'));
-    expect(ShareLinkCopy.disableDescription, contains('keep their access'));
+    expect(ShareLinkCopy.disableDescription, contains('No one new can join'));
     expect(
-      ShareLinkCopy.disableDescription,
-      contains('viewing through it without an account'),
-    );
+        ShareLinkCopy.disableDescription, contains('unless you remove them'));
+    expect(ShareLinkCopy.disableDescription, contains('or view through it'));
     for (final targetType in ['strategy', 'folder']) {
       for (final opensInBrowser in [true, false]) {
         expect(
