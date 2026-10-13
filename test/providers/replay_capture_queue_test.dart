@@ -52,11 +52,13 @@ void main() {
   late _FakeCloud cloud;
   late ProviderContainer container;
   late _FlakyBox box;
+  late List<String> messages;
 
   ProviderContainer open() {
     box = _FlakyBox(Hive.box<String>(HiveBoxNames.replayCapturesBox));
     return container = ProviderContainer(overrides: [
       replayCapturesBoxProvider.overrideWithValue(box),
+      replayCaptureMessageProvider.overrideWithValue(messages.add),
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
       cloudMediaAccountIdProvider.overrideWithValue('account-1'),
@@ -72,6 +74,7 @@ void main() {
     Hive.init(dir.path);
     await Hive.openBox<String>(HiveBoxNames.replayCapturesBox);
     cloud = _FakeCloud();
+    messages = [];
     ReplayCaptureQueue.retryDelay = const Duration(hours: 1);
     open();
   });
@@ -205,17 +208,18 @@ void main() {
     expect(refused.landedItemOpIds, hasLength(2));
     expect(cloud.elements, hasLength(2));
     final unlanded = refused.unlandedItems.single;
+    cloud.itemBatches.clear();
 
     await queue().retry([refused.id]);
     await queue().sendNow();
 
+    // Only the refused item went again, not the two that landed.
+    expect(cloud.itemBatches, [
+      [(unlanded as ElementAddOp).elementPublicId],
+    ]);
     expect(queued().captures, isEmpty);
     expect(cloud.elements, hasLength(3));
-    expect(
-        cloud.elements.keys,
-        contains(
-          (unlanded as ElementAddOp).elementPublicId,
-        ));
+    expect(cloud.elements.keys, contains(unlanded.elementPublicId));
   });
 
   test('a retry checks the strategy again before sending the rest', () async {
@@ -238,6 +242,21 @@ void main() {
     await queue().discard([queued().captures.single.id]);
     final next = await replay.capture(_frame(510), pageName: 'two');
     expect(next.id, isNot(first.id));
+  });
+
+  test('a map change between the page and its items stops the items', () async {
+    final replay = session();
+    final first = await replay.capture(_frame(500), pageName: 'one');
+    await queue().sendNow();
+    cloud.afterPageAdd =
+        (strategy) => strategy.mapData = Maps.mapNames[MapValue.ascent]!;
+
+    await replay.capture(_frame(510, players: 2), pageName: 'two');
+    await queue().sendNow();
+
+    expect(queued().captures.single.failure, CaptureFailureKind.mapChanged);
+    expect(cloud.elementsOn(queued().captures.single.pageId), isEmpty);
+    expect(queued().lostStrategyIds, {first.id});
   });
 
   test('a strategy deleted while its items were refused is known lost',
@@ -292,6 +311,7 @@ void main() {
 
     expect(queued().captures, isEmpty);
     expect(cloud.folderOf[captured.id], isNull);
+    expect(messages.single, contains('top level of My Library'));
   });
 
   test('a server that needs a newer Icarus holds captures and says so',
@@ -304,6 +324,12 @@ void main() {
     expect(held.isFailed, isFalse);
     expect(queued().needsUser(held), isFalse);
     expect(container.read(clientUpgradeRequiredProvider), isTrue);
+
+    // Nothing more is sent until the server takes this build again.
+    final calls = cloud.calls;
+    await session().capture(_frame(510), pageName: 'two');
+    await queue().sendNow();
+    expect(cloud.calls, calls);
   });
 
   test('captures left when the app quit are sent when it starts', () async {
@@ -532,6 +558,12 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   /// Folders new strategies were made in, by strategy id.
   final Map<String, String?> folderOf = {};
 
+  /// Runs right after a page add is written, before it is answered.
+  void Function(_Strategy strategy)? afterPageAdd;
+
+  /// The element ids of each batch of items sent, in order.
+  final List<List<String>> itemBatches = [];
+
   /// Item adds to refuse before accepting again.
   int refuseItems = 0;
 
@@ -562,6 +594,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
 
   void _checkBuild() {
     if (upgradeRequired) {
+      calls++;
       throw const ConvexFunctionException(
         code: ConvexErrorCode.clientUpgradeRequired,
         rawCode: clientUpgradeRequiredCode,
@@ -652,6 +685,10 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     final strategy = strategies[strategyPublicId];
     if (strategy == null) throw _notFound;
     final acks = <OpAck>[];
+    if (ops.every((op) => op is ElementAddOp)) {
+      itemBatches
+          .add([for (final op in ops.cast<ElementAddOp>()) op.elementPublicId]);
+    }
     for (final op in ops) {
       final key = '$strategyPublicId|$clientId|${op.opId}';
       final answered = _answered[key];
@@ -698,7 +735,9 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
           op.sortIndex,
           op.payload['isAttack'] as bool,
         ));
-        return applied();
+        final ack = applied();
+        afterPageAdd?.call(strategy);
+        return ack;
       case ElementAddOp():
         if (refuseItems > 0) {
           refuseItems--;

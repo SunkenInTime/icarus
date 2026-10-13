@@ -8,6 +8,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -68,6 +69,16 @@ final replayCapturesBoxProvider = Provider<Box<String>?>(
   (ref) => Hive.isBoxOpen(HiveBoxNames.replayCapturesBox)
       ? Hive.box<String>(HiveBoxNames.replayCapturesBox)
       : null,
+);
+
+/// Tells the user something about their captures that happened away from
+/// the replay.
+final replayCaptureMessageProvider = Provider<void Function(String message)>(
+  (ref) => (message) => Settings.showToast(
+        message: message,
+        backgroundColor: Settings.tacticalVioletTheme.primary,
+        autoCloseDuration: const Duration(seconds: 6),
+      ),
 );
 
 final replayCaptureQueueProvider =
@@ -225,6 +236,8 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   }
 
   bool _canSend() {
+    // The server refuses this build: nothing goes until that clears.
+    if (ref.read(clientUpgradeRequiredProvider)) return false;
     try {
       return ref.read(cloudMediaAccountIdProvider) != null &&
           ref.read(authProvider).isConvexUserReady &&
@@ -344,6 +357,15 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
       }
       final unlanded = c.unlandedItems;
       for (var i = 0; i < unlanded.length; i += _maxOpsPerBatch) {
+        // Item adds aren't checked against the strategy's map or revision:
+        // read it again before each batch, so items never land on a
+        // strategy that moved to another map, or a page deleted, meanwhile.
+        final current = await _shell(repository, c);
+        if (current == null) return false;
+        if (!current.pages.any((page) => page.publicId == c.pageId)) {
+          await _save(c.copyWith(failure: CaptureFailureKind.pageDeleted));
+          return false;
+        }
         final batch = unlanded.sublist(
           i,
           i + _maxOpsPerBatch > unlanded.length
@@ -418,6 +440,10 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
       }
       final moved = await _save(c.copyWith(clearFolder: true));
       await create(null);
+      ref.read(replayCaptureMessageProvider)(
+        '"${c.strategyName}" is at the top level of My Library: the folder '
+        'it was captured into is gone or not yours.',
+      );
       return moved;
     }
   }
