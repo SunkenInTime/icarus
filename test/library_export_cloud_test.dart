@@ -12,6 +12,8 @@ import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/durable_cloud_media_outbox.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -280,6 +282,88 @@ void main() {
     expect(repository.snapshotsRead, isEmpty);
   });
 
+  test('unreadable saved cloud work stops the backup', () async {
+    // After a restart, a saved change that cannot be decoded is only a
+    // load issue: it names no strategy, so none can be shown to be synced.
+    queue.loadIssues = const [
+      DurableOutboxLoadIssue(storageKey: 'unreadable', error: 'bad record'),
+    ];
+    final container = signedIn();
+
+    await expectLater(
+      StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest(),
+      throwsA(
+        isA<LibraryExportIncomplete>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          contains("can't read some cloud changes"),
+        ),
+      ),
+    );
+    expect(repository.snapshotsRead, isEmpty);
+  });
+
+  test('an unreadable saved image upload stops the backup', () async {
+    uploads.loadIssues = const [
+      DurableCloudMediaOutboxLoadIssue(
+        storageKey: 'unreadable',
+        error: 'bad record',
+      ),
+    ];
+    final container = signedIn();
+
+    await expectLater(
+      StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest(),
+      throwsA(isA<LibraryExportIncomplete>()),
+    );
+    expect(repository.snapshotsRead, isEmpty);
+  });
+
+  test('a strategy moved between folders mid-backup stops the backup',
+      () async {
+    // Once "Cloud Plays" is listed, another device moves "Cloud Deep" out of
+    // "Retakes", not yet listed, into it: neither listing holds it.
+    repository.afterListing = (folderId) {
+      if (folderId == 'cloud-folder') {
+        repository.afterListing = null;
+        repository.move('cloud-deep', 'cloud-folder');
+      }
+    };
+    final container = signedIn();
+
+    await expectLater(
+      StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest(),
+      throwsA(
+        isA<LibraryExportIncomplete>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          contains('changed while exporting'),
+        ),
+      ),
+    );
+  });
+
+  test('a strategy moved mid-export stops a cloud folder export', () async {
+    repository.afterListing = (folderId) {
+      if (folderId == 'cloud-folder') {
+        repository.afterListing = null;
+        repository.move('cloud-deep', 'cloud-folder');
+      }
+    };
+    final container = signedIn();
+
+    await expectLater(
+      StrategyImportExportService(container).buildFolderExportDirectoryForTest(
+        'cloud-folder',
+        store: LibraryWorkspace.cloud,
+      ),
+      throwsA(isA<LibraryExportIncomplete>()),
+    );
+  });
+
   test('signed out, the backup is the local library and asks no cloud',
       () async {
     await _storeLocalLibrary();
@@ -427,6 +511,7 @@ class _CloudWorkspace extends LibraryWorkspaceNotifier {
 /// is first read.
 class _Queue extends StrategyOpQueueNotifier {
   Map<String, StrategyOutboxSummary> unsent = const {};
+  List<DurableOutboxLoadIssue> loadIssues = const [];
 
   static StrategyOpQueueState _holding(
     Map<String, StrategyOutboxSummary> unsent,
@@ -437,16 +522,25 @@ class _Queue extends StrategyOpQueueNotifier {
       );
 
   @override
-  StrategyOpQueueState build() => _holding(unsent);
+  StrategyOpQueueState build() => StrategyOpQueueState(
+        durableLoaded: true,
+        loadIssues: loadIssues,
+        accountOutbox: AccountStrategyOutboxSummary(strategies: unsent),
+      );
 
   /// Everything still to send lands.
   void land() => state = _holding(const {});
 }
 
 class _Uploads extends CloudMediaUploadQueueNotifier {
+  List<DurableCloudMediaOutboxLoadIssue> loadIssues = const [];
+
   @override
-  CloudMediaUploadQueueState build() =>
-      const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
+  CloudMediaUploadQueueState build() => CloudMediaUploadQueueState(
+        jobs: const [],
+        isProcessing: false,
+        loadIssues: loadIssues,
+      );
 }
 
 /// Serves the pictures in [bytesById] as downloads; any other fails.
@@ -483,6 +577,10 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
   final unreadable = <String>{};
   var listingFails = false;
 
+  /// Runs after each folder's strategies are listed, as another device
+  /// might change the library between two listings.
+  void Function(String? folderPublicId)? afterListing;
+
   static final _created = DateTime.utc(2026, 9, 1);
 
   static final _folders = <CloudFolderEntry>[
@@ -500,7 +598,7 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
     )),
   ];
 
-  static final _strategies = <CloudStrategyEntry>[
+  final _strategies = <CloudStrategyEntry>[
     _strategyEntry('cloud-root', 'Cloud Root', null),
     _strategyEntry('cloud-deep', 'Cloud Deep', 'cloud-subfolder'),
   ];
@@ -545,10 +643,24 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
     String scope = 'owned',
   }) async {
     scopes.add(scope);
-    return [
+    final listed = [
       for (final entry in _strategies)
         if (entry.strategy.folderID == folderPublicId) entry,
     ];
+    afterListing?.call(folderPublicId);
+    return listed;
+  }
+
+  /// Another device moves [strategyId] into [folderId].
+  void move(String strategyId, String? folderId) {
+    final index =
+        _strategies.indexWhere((entry) => entry.strategy.id == strategyId);
+    final entry = _strategies[index];
+    _strategies[index] = _strategyEntry(
+      strategyId,
+      entry.strategy.name,
+      folderId,
+    );
   }
 
   @override

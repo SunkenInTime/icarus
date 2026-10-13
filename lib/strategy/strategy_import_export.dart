@@ -5,7 +5,8 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, setEquals, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -74,6 +75,18 @@ class LibraryExportIncomplete implements Exception {
   const LibraryExportIncomplete.cloudNotSynced()
       : userMessage = "Some of your cloud changes haven't synced yet, so "
             'nothing was exported. Try again once they sync.',
+        cause = null;
+
+  /// Saved cloud work on this device could not be read, so no strategy can
+  /// be shown to have none waiting.
+  const LibraryExportIncomplete.cloudWorkUnreadable()
+      : userMessage = "Icarus can't read some cloud changes saved on this "
+            'device, so nothing was exported. Review them, then try again.',
+        cause = null;
+
+  const LibraryExportIncomplete.cloudChanged()
+      : userMessage = 'Your cloud library changed while exporting, so '
+            'nothing was exported. Try again.',
         cause = null;
 
   final String userMessage;
@@ -193,6 +206,7 @@ class _ExportLibrary {
     required Iterable<Folder> folders,
     required Iterable<StrategyData> strategies,
     required this.writeStrategy,
+    this.checkUnchanged,
   })  : _folders = folders.toList()
           ..sort((a, b) => _byNameThenId(a.name, a.id, b.name, b.id)),
         _strategies = strategies.toList()
@@ -205,6 +219,11 @@ class _ExportLibrary {
   /// file's path.
   final Future<String> Function(StrategyData strategy, Directory directory)
       writeStrategy;
+
+  /// Throws when the store no longer holds the folders and strategies the
+  /// export listed, so a strategy moved mid-export cannot slip through.
+  /// Null for a store nothing else changes while it is exported.
+  final Future<void> Function()? checkUnchanged;
 
   Set<String> get strategyIds => {for (final s in _strategies) s.id};
 
@@ -2164,6 +2183,7 @@ class StrategyImportExportService {
         parentManifestId: null,
         currentArchivePath: '',
       );
+      await library.checkUnchanged?.call();
       await _writeArchiveManifest(
         exportState: exportState,
         archiveType: ArchiveType.folderTree,
@@ -2229,6 +2249,7 @@ class StrategyImportExportService {
             currentArchivePath: rootArchivePath,
           );
         }
+        await library.checkUnchanged?.call();
       }
 
       await _writeArchiveManifest(
@@ -2318,8 +2339,10 @@ class StrategyImportExportService {
 
   /// Lists cloud folders and strategies with [list] and waits for this
   /// device's unsent changes to them to land. Each strategy is then written
-  /// from the server's full copy, with its images. Anything that cannot be
-  /// read stops the export with [LibraryExportIncomplete].
+  /// from the server's full copy, with its images, and once all are written
+  /// [list] runs again to confirm nothing moved in the meantime. Anything
+  /// that cannot be read, or changed, stops the export with
+  /// [LibraryExportIncomplete].
   Future<_ExportLibrary> _readCloudForExport(
     Future<({List<Folder> folders, List<StrategyData> strategies})> Function(
       ConvexStrategyRepository repository,
@@ -2334,16 +2357,30 @@ class StrategyImportExportService {
 
     final ConvexStrategyRepository repository =
         ref.read(convexStrategyRepositoryProvider);
-    final ({List<Folder> folders, List<StrategyData> strategies}) listed;
-    try {
-      listed = await list(repository);
-    } catch (error, stackTrace) {
-      Error.throwWithStackTrace(
-        LibraryExportIncomplete.cloudUnreadable(cause: error),
-        stackTrace,
-      );
+    Future<({List<Folder> folders, List<StrategyData> strategies})>
+        listOrStop() async {
+      try {
+        return await list(repository);
+      } catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          LibraryExportIncomplete.cloudUnreadable(cause: error),
+          stackTrace,
+        );
+      }
     }
 
+    /// Where every listed folder and strategy sits.
+    Set<String> placesOf(
+      ({List<Folder> folders, List<StrategyData> strategies}) listed,
+    ) =>
+        {
+          for (final folder in listed.folders)
+            'folder ${folder.id} in ${folder.parentID}',
+          for (final strategy in listed.strategies)
+            'strategy ${strategy.id} in ${strategy.folderID}',
+        };
+
+    final listed = await listOrStop();
     final library = _ExportLibrary(
       folders: listed.folders,
       strategies: listed.strategies,
@@ -2362,6 +2399,13 @@ class StrategyImportExportService {
           );
         }
       },
+      // The listing is one query per folder, so a strategy moved between
+      // two of them by another device can be missed by both.
+      checkUnchanged: () async {
+        if (!setEquals(placesOf(await listOrStop()), placesOf(listed))) {
+          throw const LibraryExportIncomplete.cloudChanged();
+        }
+      },
     );
     await _waitUntilCloudWorkSent(library.strategyIds);
     return library;
@@ -2373,8 +2417,15 @@ class StrategyImportExportService {
     const step = Duration(milliseconds: 100);
     var waited = Duration.zero;
     while (true) {
-      final ops = ref.read(strategyOpQueueProvider).accountOutbox.strategies;
-      final uploads = ref.read(cloudMediaUploadQueueProvider).jobs;
+      final opQueue = ref.read(strategyOpQueueProvider);
+      final uploadQueue = ref.read(cloudMediaUploadQueueProvider);
+      // A saved record that could not be read names no strategy, so no
+      // strategy can be shown to be clear of it.
+      if (!opQueue.outboxIsReliable || !uploadQueue.outboxIsReliable) {
+        throw const LibraryExportIncomplete.cloudWorkUnreadable();
+      }
+      final ops = opQueue.accountOutbox.strategies;
+      final uploads = uploadQueue.jobs;
       final unsent = {
         ...ops.keys,
         for (final job in uploads) job.strategyPublicId,
