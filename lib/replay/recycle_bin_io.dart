@@ -8,10 +8,11 @@ import 'package:win32/win32.dart';
 
 /// Moves [path] to the Windows Recycle Bin, where the user can restore it.
 ///
-/// Never deletes it outright: when Windows would delete the file
-/// permanently instead (a drive with no Recycle Bin, a file too big for it,
-/// a network share), this throws [RecycleBinUnavailable] and leaves the file
-/// where it is.
+/// Asks Windows never to delete it outright: when the shell says it would
+/// delete the file permanently instead (a drive with no Recycle Bin, a file
+/// too big for it), the delete is stopped. Throws [RecycleBinUnavailable]
+/// whenever the file isn't confirmed in the Recycle Bin; the caller checks
+/// whether it is still there.
 Future<void> moveToRecycleBin(String path) {
   if (!Platform.isWindows) {
     return Future.error(RecycleBinUnavailable(path));

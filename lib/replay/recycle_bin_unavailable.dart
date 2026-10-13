@@ -1,8 +1,12 @@
-/// The file couldn't go to the Recycle Bin, so it was left where it was.
+/// The file didn't make it into the Recycle Bin.
 class RecycleBinUnavailable implements Exception {
-  const RecycleBinUnavailable(this.path, {this.hresult});
+  const RecycleBinUnavailable(this.path, {this.hresult, this.deleted = false});
 
   final String path;
+
+  /// The file is gone anyway: Windows deleted it instead of recycling it.
+  /// Otherwise it is still where it was.
+  final bool deleted;
 
   /// The shell's error, when it gave one.
   final int? hresult;

@@ -243,8 +243,28 @@ void main() {
     recycle = (path) async => throw RecycleBinUnavailable(path);
 
     await expectLater(
-        files.remove(kept), throwsA(isA<RecycleBinUnavailable>()));
+      files.remove(kept),
+      throwsA(isA<RecycleBinUnavailable>()
+          .having((e) => e.deleted, 'deleted', isFalse)),
+    );
     expect(await File(kept.path).exists(), isTrue);
+    expect(await files.readCache(kept, 'v1'), [1]);
+  });
+
+  test('a replay Windows deleted instead of recycling is reported as deleted',
+      () async {
+    final kept = await files.import((await writeReplay(root, 's')).path);
+    await files.writeCache(kept, 'v1', Uint8List.fromList([1]));
+    recycle = (path) async {
+      await File(path).delete();
+      throw RecycleBinUnavailable(path);
+    };
+
+    await expectLater(
+      files.remove(kept),
+      throwsA(isA<RecycleBinUnavailable>()
+          .having((e) => e.deleted, 'deleted', isTrue)),
+    );
     expect(await files.readCache(kept, 'v1'), [1]);
   });
 

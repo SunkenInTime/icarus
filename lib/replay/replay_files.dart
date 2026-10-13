@@ -271,7 +271,19 @@ class ReplayFiles {
         current: current,
       );
     }
-    await _recycle(file.path);
+    try {
+      await _recycle(file.path);
+    } on RecycleBinUnavailable catch (error) {
+      // Say what happened, not what was meant to: the file is either still
+      // there or Windows deleted it anyway. The cache stays either way.
+      final gone = await FileSystemEntity.type(file.path, followLinks: false) ==
+          FileSystemEntityType.notFound;
+      throw RecycleBinUnavailable(
+        file.path,
+        hresult: error.hresult,
+        deleted: gone,
+      );
+    }
     // A copy Keep made is the same file as Valorant's, down to its time, so
     // the two share one cache. Valorant's still needs it.
     if (valorantCopy?.cacheKey == file.cacheKey) return;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -253,10 +254,13 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
       try {
         await library.remove(file);
         return;
-      } on RecycleBinUnavailable {
+      } on RecycleBinUnavailable catch (error) {
         Settings.showToast(
-          message: "Windows couldn't move this replay to the Recycle Bin, so "
-              'Icarus left it where it is.',
+          message: error.deleted
+              ? 'Windows deleted this replay instead of moving it to the '
+                  'Recycle Bin.'
+              : "Windows couldn't move this replay to the Recycle Bin, so "
+                  'Icarus left it where it is.',
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return;
@@ -311,7 +315,9 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
                 onPressed: _keep,
                 child: const Text('Keep in Icarus'),
               )
-            else
+            // Removing sends the file to the Recycle Bin, which only
+            // Windows has.
+            else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
               ShadContextMenuItem(
                 leading: Icon(LucideIcons.trash2, color: theme.destructive),
                 onPressed: _remove,
