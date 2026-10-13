@@ -71,8 +71,12 @@ Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy\\shell\\open\\command"; 
 ; Valorant registers nothing for its replays, but .vrf is also Ventrilo's
 ; recording format. Icarus always joins the Open with list, and becomes the
 ; default only when no other program is. Uninstall clears the default only
-; while it is still Icarus's (CurUninstallStepChanged).
-Root: HKCU; Subkey: "Software\\Classes\\.vrf\\OpenWithProgids"; ValueType: string; ValueName: "Icarus.Replay"; ValueData: ""; Flags: uninsdeletevalue; Tasks: registervrf
+; while it is still Icarus's (CurUninstallStepChanged, before the entries
+; below are undone), then removes .vrf's keys only if nothing else is left
+; in them. Uninstall undoes entries last to first, so OpenWithProgids goes
+; before .vrf.
+Root: HKCU; Subkey: "Software\\Classes\\.vrf"; Flags: uninsdeletekeyifempty; Tasks: registervrf
+Root: HKCU; Subkey: "Software\\Classes\\.vrf\\OpenWithProgids"; ValueType: string; ValueName: "Icarus.Replay"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: registervrf
 Root: HKCU; Subkey: "Software\\Classes\\.vrf"; ValueType: string; ValueName: ""; ValueData: "Icarus.Replay"; Tasks: registervrf; Check: VrfHasNoOtherDefault
 Root: HKCU; Subkey: "Software\\Classes\\Icarus.Replay"; ValueType: string; ValueName: ""; ValueData: "Valorant Replay"; Flags: uninsdeletekey; Tasks: registervrf
 Root: HKCU; Subkey: "Software\\Classes\\Icarus.Replay\\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: registervrf
@@ -95,7 +99,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Handler: String;
 begin
-  if (CurUninstallStep = usPostUninstall) and
+  if (CurUninstallStep = usUninstall) and
     RegQueryStringValue(HKCU, 'Software\Classes\.vrf', '', Handler) and
     (Handler = 'Icarus.Replay') then
     RegDeleteValue(HKCU, 'Software\Classes\.vrf', '');
