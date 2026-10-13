@@ -88,8 +88,9 @@ class TransitionPlanner {
   /// Items of [next] paired with an item of [prev] by the id they were
   /// copied from (see page_copy_id.dart), next id to prev id. Items with
   /// the same id pair first. Then a root pairs two items only when it is on
-  /// each page exactly once and both are the same kind of item; anything
-  /// else would be a guess, so those items appear and disappear instead.
+  /// each page exactly once and both are the same kind of item (see
+  /// [_kind]); anything else would be a guess, so those items appear and
+  /// disappear instead.
   static Map<String, String> _pairedCopies(
     Map<String, PlacedWidget> prev,
     Map<String, PlacedWidget> next,
@@ -114,11 +115,17 @@ class TransitionPlanner {
       final prevId = prevIds.single;
       if (nextId == prevId) return;
       if (next.containsKey(prevId) || prev.containsKey(nextId)) return;
-      if (next[nextId]!.runtimeType != prev[prevId]!.runtimeType) return;
+      if (_kind(next[nextId]!) != _kind(prev[prevId]!)) return;
       pairs[nextId] = prevId;
     });
     return pairs;
   }
+
+  /// What an item is, for pairing copies. An agent is one kind with or
+  /// without its view cone: a player alive on one page and dead on the
+  /// next (a replay capture) is the same player.
+  static Object _kind(PlacedWidget widget) =>
+      widget is PlacedAgentNode ? PlacedAgentNode : widget.runtimeType;
 
   /// Whether the drawing layer changes between two pages, and therefore
   /// whether it should fade in early during the transition. Compares the

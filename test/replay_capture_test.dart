@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -246,7 +247,7 @@ void main() {
       online = false;
       await expectLater(
         capture().capture(frame(), pageName: 'one'),
-        throwsA(isA<CaptureRefused>()),
+        throwsA(isA<CaptureFailed>()),
       );
       expect(cloud.strategies, isEmpty);
       expect(box.isEmpty, isTrue);
@@ -263,20 +264,44 @@ void main() {
       expect(cloud.strategies[second.id]!.orderedPages.single.name, 'two');
     });
 
-    test('a page the server took without its items is taken back', () async {
+    test('a page the server took without some items stays, and says so',
+        () async {
       final session = capture();
       final first = await session.capture(frame(), pageName: 'one');
       cloud.refuseItems = true;
 
       await expectLater(
         session.capture(frame(), pageName: 'two'),
-        throwsStateError,
+        throwsA(isA<CaptureFailed>()),
       );
       expect(
         cloud.strategies[first.id]!.orderedPages.map((page) => page.name),
-        ['one'],
+        ['one', 'two'],
       );
-      expect(session.strategy!.pageCount, 1);
+      expect(session.strategy!.pageCount, 2);
+    });
+
+    test('after a lost answer, the next capture adds to the same strategy',
+        () async {
+      final session = capture();
+      cloud.loseAnswers = true;
+      await expectLater(
+        session.capture(frame(), pageName: 'one'),
+        throwsA(isA<CaptureFailed>()),
+      );
+      await expectLater(
+        session.capture(frame(), pageName: 'two'),
+        throwsA(isA<CaptureFailed>()),
+      );
+      cloud.loseAnswers = false;
+      await session.capture(frame(), pageName: 'three');
+
+      final strategy = cloud.strategies.values.single;
+      expect(
+        strategy.orderedPages.map((page) => page.name),
+        ['one', 'two', 'three'],
+      );
+      expect(session.strategy!.pageCount, 3);
     });
   });
 
@@ -358,6 +383,9 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   final Map<String, _CloudStrategy> strategies = {};
   final Set<String> elementIds = {};
   bool refuseItems = false;
+
+  /// Writes, then loses the answer, as a timeout does.
+  bool loseAnswers = false;
 
   @override
   Future<void> createStrategyWithInitialPage({
@@ -443,7 +471,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
       return AppliedOpAck(opId: op.opId, revision: strategy.revision);
     }
 
-    return [
+    final acks = [
       for (final op in ops)
         switch (op) {
           PageAddOp() when op.expectedStrategyRevision != strategy.revision =>
@@ -474,5 +502,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
           _ => throw UnimplementedError('${op.type}'),
         },
     ];
+    if (loseAnswers) throw TimeoutException('lost');
+    return acks;
   }
 }

@@ -4,6 +4,7 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 
 const _occurrence = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -120,6 +121,27 @@ void main() {
         entries.map((e) => e.kind),
         unorderedEquals([TransitionKind.appear, TransitionKind.disappear]),
       );
+    });
+
+    test('a player glides to its copy whether alive or dead', () {
+      final alive = PlacedViewConeAgent(
+        id: 'player',
+        type: AgentType.jett,
+        position: const Offset(10, 10),
+        presetType: UtilityType.viewCone180,
+        rotation: 0,
+        length: 100,
+      );
+      final dead = PlacedAgent(
+        id: 'player~cp1~$_occurrence',
+        type: AgentType.jett,
+        position: const Offset(90, 90),
+        state: AgentState.dead,
+      );
+
+      final entries = TransitionPlanner.diff(_page([alive]), _page([dead]));
+
+      expect(entries.single.kind, TransitionKind.move);
     });
 
     test('two copies of one item glide between themselves', () {

@@ -1,7 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_client.dart'
+    show ConvexClientFunctionError;
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart'
+    show ConvexFunctionException;
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -59,13 +63,33 @@ class ReplayCapture {
     final store = _store;
     final current = _strategy;
     if (store != null && current != null) {
-      final appended = await store.append(current, page);
-      if (appended != null) return _strategy = appended;
+      final appended = await _write(store, () => store.append(current, page));
+      if (appended != null) return appended;
     }
     final fresh = newStore();
-    final created = await fresh.create(map, name, page);
-    _store = fresh;
-    return _strategy = created;
+    return (await _write(fresh, () => fresh.create(map, name, page)))!;
+  }
+
+  /// Runs [write] on [store] and remembers the strategy it wrote to, or,
+  /// when it failed, the strategy it may have written to.
+  Future<CapturedStrategy?> _write(
+    ReplayCaptureStore store,
+    Future<CapturedStrategy?> Function() write,
+  ) async {
+    try {
+      final written = await write();
+      if (written != null) {
+        _store = store;
+        _strategy = written;
+      }
+      return written;
+    } on CaptureFailed catch (failure) {
+      if (failure.strategy case final strategy?) {
+        _store = store;
+        _strategy = strategy;
+      }
+      rethrow;
+    }
   }
 
   /// Reads the strategy again, after the editor may have changed it.
@@ -119,11 +143,18 @@ typedef CapturedStrategy = ({
   bool lastPageIsAttack,
 });
 
-/// A capture the user is told about in words: nothing was saved.
-class CaptureRefused implements Exception {
-  const CaptureRefused(this.message);
+/// A capture that failed in a way the user is told about in words.
+class CaptureFailed implements Exception {
+  const CaptureFailed(this.message, {this.strategy, this.cause});
 
   final String message;
+
+  /// What went wrong underneath, for the log.
+  final Object? cause;
+
+  /// The strategy later captures go to, when this one wrote to it or may
+  /// have: they add to it rather than start another.
+  final CapturedStrategy? strategy;
 
   @override
   String toString() => message;
@@ -315,46 +346,43 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
     _requireReachable();
     final id = const Uuid().v4();
     final pageId = const Uuid().v4();
-    await repository.createStrategyWithInitialPage(
-      publicId: id,
-      name: name,
-      mapData: Maps.mapNames[map]!,
-      initialPagePublicId: pageId,
-      initialPageName: page.name,
-      initialPageIsAutoNamed: false,
-      initialPageIsAttack: page.frame.isAttack,
-      initialPageSettings: settings.toJson(),
-      folderPublicId: folderId,
-      themeProfileId: themeProfileId,
-    );
+    CapturedStrategy made({required int pageCount}) => (
+          id: id,
+          name: name,
+          map: map,
+          source: StrategySource.cloud,
+          pageCount: pageCount,
+          lastPageId: pageId,
+          lastPageIsAttack: page.frame.isAttack,
+        );
     try {
-      _requireAllLanded(await _send(id, _itemOps(page, pageId)));
-    } catch (_) {
-      // A strategy holding part of a moment, or none of it, is not what
-      // the user captured.
-      try {
-        final shell = await repository.fetchShell(id);
-        await repository.deleteStrategy(
-          strategyPublicId: id,
-          expectedRevision: shell.header.revision,
-        );
-      } catch (_) {
-        throw const CaptureRefused(
-          "Couldn't capture this moment. Part of it may be in your library "
-          'as a new strategy.',
-        );
-      }
-      rethrow;
+      await repository.createStrategyWithInitialPage(
+        publicId: id,
+        name: name,
+        mapData: Maps.mapNames[map]!,
+        initialPagePublicId: pageId,
+        initialPageName: page.name,
+        initialPageIsAutoNamed: false,
+        initialPageIsAttack: page.frame.isAttack,
+        initialPageSettings: settings.toJson(),
+        folderPublicId: folderId,
+        themeProfileId: themeProfileId,
+      );
+    } catch (error) {
+      if (_refusedByServer(error)) rethrow;
+      // How many pages it has, if it exists, is unknown until it is read.
+      throw CaptureFailed(_unconfirmed,
+          strategy: made(pageCount: 0), cause: error);
     }
-    return (
-      id: id,
-      name: name,
-      map: map,
-      source: StrategySource.cloud,
-      pageCount: 1,
-      lastPageId: pageId,
-      lastPageIsAttack: page.frame.isAttack,
-    );
+    // From here the strategy exists, so a failure leaves it as it is and
+    // says so; the next capture adds to it.
+    final strategy = made(pageCount: 1);
+    final acks = await _send(id, _itemOps(page, pageId), strategy);
+    if (acks.any((ack) => !ack.isAck)) {
+      throw CaptureFailed(_incomplete,
+          strategy: strategy, cause: _refusal(acks));
+    }
+    return strategy;
   }
 
   @override
@@ -380,15 +408,7 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
       sortIndex: shell.pages.length,
       expectedStrategyRevision: shell.header.revision,
     );
-    // One batch is one transaction: the page and its items land together,
-    // unless the server refuses some of them.
-    final acks = await _send(strategy.id, [pageOp, ..._itemOps(page, pageId)]);
-    if (acks.whereType<AppliedOpAck>().any((ack) => ack.opId == pageOp.opId) &&
-        acks.any((ack) => !ack.isAck)) {
-      await _removePage(strategy.id, pageId);
-    }
-    _requireAllLanded(acks);
-    return (
+    final appended = (
       id: strategy.id,
       name: shell.header.name,
       map: strategy.map,
@@ -397,6 +417,17 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
       lastPageId: pageId,
       lastPageIsAttack: page.frame.isAttack,
     );
+    // One batch is one transaction: the page and its items land together,
+    // unless the server refuses some of them.
+    final acks = await _send(
+      strategy.id,
+      [pageOp, ..._itemOps(page, pageId)],
+      null,
+    );
+    if (acks.every((ack) => ack.isAck)) return appended;
+    // A refused page holds nothing: its items were refused with it.
+    if (!acks.first.isAck) throw _refusal(acks);
+    throw CaptureFailed(_incomplete, strategy: appended, cause: _refusal(acks));
   }
 
   @override
@@ -424,12 +455,12 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
 
   void _requireReachable() {
     if (currentAccountId() != accountId) {
-      throw const CaptureRefused(
+      throw const CaptureFailed(
         "You signed in to another account, so this moment wasn't captured.",
       );
     }
     if (!isOnline()) {
-      throw const CaptureRefused(
+      throw const CaptureFailed(
         "Can't reach the cloud, so this moment wasn't captured. "
         'Try again when you are online.',
       );
@@ -473,47 +504,54 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
     return ops;
   }
 
-  Future<List<OpAck>> _send(String strategyId, List<StrategyOp> ops) async {
-    // Bound to the account it was asked under: the server refuses it under
-    // another sign-in.
-    final acks = await repository.applyBatch(
-      strategyPublicId: strategyId,
-      clientId: _clientId,
-      ops: ops,
-      accountSubject: accountId,
-    );
+  /// Sends [ops] and returns the server's answer to each. A batch the
+  /// server refused whole wrote nothing and rethrows. One whose answer was
+  /// lost (a timeout, the connection) may still land, so the user is told
+  /// that, and later captures go to [ifUnanswered] when it is given.
+  Future<List<OpAck>> _send(
+    String strategyId,
+    List<StrategyOp> ops,
+    CapturedStrategy? ifUnanswered,
+  ) async {
+    final List<OpAck> acks;
+    try {
+      // Bound to the account it was asked under: the server refuses it
+      // under another sign-in.
+      acks = await repository.applyBatch(
+        strategyPublicId: strategyId,
+        clientId: _clientId,
+        ops: ops,
+        accountSubject: accountId,
+      );
+    } catch (error) {
+      if (_refusedByServer(error)) rethrow;
+      throw CaptureFailed(_unconfirmed, strategy: ifUnanswered, cause: error);
+    }
     if (acks.length != ops.length) {
-      throw StateError('The server answered ${acks.length} of ${ops.length}.');
+      throw CaptureFailed(
+        _unconfirmed,
+        strategy: ifUnanswered,
+        cause:
+            StateError('The server answered ${acks.length} of ${ops.length}.'),
+      );
     }
     return acks;
   }
 
-  static void _requireAllLanded(List<OpAck> acks) {
-    final refused = acks.where((ack) => !ack.isAck).toList();
-    if (refused.isEmpty) return;
-    throw StateError(
-      'The server did not accept every item: '
-      '${refused.map((ack) => ack.reason ?? ack.status).toSet().join(', ')}',
-    );
-  }
+  static const _unconfirmed =
+      "Couldn't confirm this moment reached the cloud. It may still appear "
+      'in the strategy, so check there before capturing it again.';
 
-  /// Takes back a page the server added without all of its items.
-  Future<void> _removePage(String strategyId, String pageId) async {
-    try {
-      final shell = await repository.fetchShell(strategyId);
-      final acks = await _send(strategyId, [
-        PageDeleteOp(
-          opId: const Uuid().v4(),
-          pagePublicId: pageId,
-          expectedStrategyRevision: shell.header.revision,
-        ),
-      ]);
-      _requireAllLanded(acks);
-    } catch (_) {
-      throw const CaptureRefused(
-        "Couldn't capture all of this moment. Its page may be missing "
-        'players or utility.',
+  static const _incomplete =
+      'This moment reached the cloud without some of its players or utility.';
+
+  /// Whether [error] is the server's answer that it wrote nothing, rather
+  /// than a lost answer.
+  static bool _refusedByServer(Object error) =>
+      error is ConvexFunctionException || error is ConvexClientFunctionError;
+
+  static StateError _refusal(List<OpAck> acks) => StateError(
+        'The server did not accept every item: '
+        '${acks.where((ack) => !ack.isAck).map((ack) => ack.reason ?? ack.status).toSet().join(', ')}',
       );
-    }
-  }
 }

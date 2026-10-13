@@ -58,9 +58,15 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         perspective: playback.perspective,
       );
       await _capture.capture(frame, pageName: replayMomentLabel(playback));
-    } on CaptureRefused catch (refused) {
+    } on CaptureFailed catch (failure) {
+      AppErrorReporter.reportError(
+        failure.message,
+        error: failure.cause,
+        source: 'ReplayMatchCard.capture',
+        promptUser: false,
+      );
       Settings.showToast(
-        message: refused.message,
+        message: failure.message,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } catch (error, stackTrace) {
