@@ -1134,6 +1134,10 @@ final class _SharesModule implements SharesModule {
 }
 
 abstract interface class StrategiesModule {
+  Future<StrategiesAbandonMoveResult> abandonMove({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  });
   Future<ConvexValue> create({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
@@ -1166,6 +1170,7 @@ abstract interface class StrategiesModule {
         themeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+    ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   });
   Future<FoldersDeleteResult> delete({
     required double clientProtocolVersion,
@@ -1178,6 +1183,11 @@ abstract interface class StrategiesModule {
     required String name,
     required String publicId,
     required String sourceStrategyPublicId,
+  });
+  Future<FoldersDeleteResult> finishMove({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String strategyPublicId,
   });
   ConvexQuery<StrategiesGetHeaderResult> getHeader({
     required String strategyPublicId,
@@ -1215,6 +1225,21 @@ abstract interface class StrategiesModule {
 final class _StrategiesModule implements StrategiesModule {
   const _StrategiesModule(this._transport);
   final ConvexTransport _transport;
+  @override
+  Future<StrategiesAbandonMoveResult> abandonMove({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  }) {
+    final args = encodeStrategiesAbandonMoveArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      strategyPublicId: strategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('strategies:abandonMove', args),
+      decodeStrategiesAbandonMoveResult,
+    );
+  }
+
   @override
   Future<ConvexValue> create({
     required double clientProtocolVersion,
@@ -1264,6 +1289,7 @@ final class _StrategiesModule implements StrategiesModule {
         themeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+    ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesCreateWithInitialPageArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -1278,6 +1304,7 @@ final class _StrategiesModule implements StrategiesModule {
       publicId: publicId,
       themeOverridePalette: themeOverridePalette,
       themeProfileId: themeProfileId,
+      unfinishedMove: unfinishedMove,
     );
     return _invoke(
       () => _transport.mutation('strategies:createWithInitialPage', args),
@@ -1320,6 +1347,23 @@ final class _StrategiesModule implements StrategiesModule {
     return _invoke(
       () => _transport.mutation('strategies:duplicate', args),
       decodeStrategiesDuplicateResult,
+    );
+  }
+
+  @override
+  Future<FoldersDeleteResult> finishMove({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  }) {
+    final args = encodeStrategiesFinishMoveArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      folderPublicId: folderPublicId,
+      strategyPublicId: strategyPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('strategies:finishMove', args),
+      decodeStrategiesFinishMoveResult,
     );
   }
 

@@ -23,9 +23,11 @@ import {
 } from "./lib/auth";
 import type { StrategyRole } from "./lib/auth";
 import {
+  assertMoveFinished,
   getFolderByPublicId,
   getStrategyByPublicId,
   livePagesQuery,
+  isListed,
 } from "./lib/entities";
 import {
   assertSupportedCloudProtocol,
@@ -59,6 +61,7 @@ type StrategyCreateInput = {
   folderPublicId?: string;
   themeProfileId?: string;
   themeOverridePalette?: Doc<"strategies">["themeOverridePalette"];
+  unfinishedMove?: boolean;
 };
 
 type InitialPageInput = {
@@ -257,6 +260,7 @@ async function listStrategiesInFolder(
   const dedup = new Map<Id<"strategies">, Doc<"strategies">>();
   for (const strategy of candidates) {
     if (
+      isListed(strategy) &&
       matchesScope(strategy.ownerId, userId, scope) &&
       (await getEffectiveStrategyRoleForUser(ctx, strategy, userId)) !== null
     ) {
@@ -344,6 +348,15 @@ async function createStrategyWithInitialPageRecord(
     .collect();
   const existingOwned = existing.find((item) => item.ownerId === userId);
   if (existingOwned !== undefined) {
+    // A retry carries the same move state. Reusing a listed strategy for a
+    // move, or a moving one for an ordinary create, would show a partial
+    // strategy or hide a finished one.
+    if (
+      (existingOwned.unfinishedMove === true) !==
+      (args.unfinishedMove === true)
+    ) {
+      throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
+    }
     const pages = await ctx.db
       .query("pages")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", existingOwned._id))
@@ -377,6 +390,7 @@ async function createStrategyWithInitialPageRecord(
     revision: 0,
     themeProfileId: args.themeProfileId,
     themeOverridePalette: args.themeOverridePalette,
+    ...(args.unfinishedMove === true ? { unfinishedMove: true } : {}),
     createdAt: now,
     updatedAt: now,
   });
@@ -432,6 +446,7 @@ export const listSharedWithMe = query({
     const strategies = shared.filter(
       (strategy): strategy is Doc<"strategies"> =>
         strategy !== null &&
+        isListed(strategy) &&
         strategy.ownerId !== user._id &&
         strategy.folderId === undefined,
     );
@@ -499,6 +514,10 @@ export const createWithInitialPage = mutation({
     folderPublicId: v.optional(v.string()),
     themeProfileId: v.optional(v.string()),
     themeOverridePalette: v.optional(mapThemePaletteValidator),
+    // Sent by a device moving a strategy in from its local library: the
+    // strategy stays out of library lists until finishMove. Older clients
+    // never send it.
+    unfinishedMove: v.optional(v.boolean()),
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
@@ -534,6 +553,7 @@ export const duplicate = mutation({
       args.sourceStrategyPublicId,
     );
     const { user } = await assertStrategyRole(ctx, source, "editor");
+    assertMoveFinished(source);
 
     const existing = await ctx.db
       .query("strategies")
@@ -738,6 +758,46 @@ export const move = mutation({
   },
 });
 
+/// Shows a strategy a move made with unfinishedMove, once the moving device
+/// has confirmed every part of it landed. Calling it again changes nothing.
+/// Refused (CONFLICT) when the strategy is no longer in [folderPublicId],
+/// the folder the move put it in (absent for the top level): someone deleted
+/// that folder meanwhile, and the device keeps its original rather than
+/// publish the strategy somewhere it did not ask for.
+export const finishMove = mutation({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicId: v.string(),
+    folderPublicId: v.optional(v.string()),
+  },
+  returns: okResultValidator,
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    await assertStrategyRole(ctx, strategy, "owner");
+    const folderPublicId = args.folderPublicId;
+    const folder =
+      folderPublicId === undefined
+        ? null
+        : await ctx.db
+            .query("folders")
+            .withIndex("by_publicId", (q) => q.eq("publicId", folderPublicId))
+            .first();
+    const expectedFolderId =
+      folderPublicId === undefined ? undefined : folder?._id;
+    if (
+      (folderPublicId !== undefined && folder === null) ||
+      strategy.folderId !== expectedFolderId
+    ) {
+      throw conflictError("The strategy is no longer where the move put it");
+    }
+    if (strategy.unfinishedMove === true) {
+      await ctx.db.patch(strategy._id, { unfinishedMove: undefined });
+    }
+    return { ok: true } as const;
+  },
+});
+
 const deleteStrategy = mutation({
   args: {
     ...cloudProtocolArgs,
@@ -752,59 +812,100 @@ const deleteStrategy = mutation({
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");
     }
-
-    // Pages in the trash are left to their purge (purgeTrashedPages), which
-    // needs no strategy: one purge scheduled per page must stay within
-    // Convex's scheduling limit however many pages the trash holds. Nothing
-    // can reach or restore them once the strategy is gone.
-    const pages = await livePagesQuery(ctx, strategy._id).collect();
-
-    for (const page of pages) {
-      const pageContents = await ctx.db
-        .query("pageContents")
-        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-        .collect();
-      for (const pageContent of pageContents) {
-        await ctx.db.delete(pageContent._id);
-      }
-      await ctx.db.delete(page._id);
-      await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
-        pageId: page._id,
-        strategyId: strategy._id,
-      });
-    }
-
-    const collaborators = await ctx.db
-      .query("strategyCollaborators")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-    for (const collaborator of collaborators) {
-      await ctx.db.delete(collaborator._id);
-    }
-
-    const invites = await ctx.db
-      .query("inviteTokens")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-    for (const invite of invites) {
-      await ctx.db.delete(invite._id);
-    }
-
-    const shareLinks = await ctx.db
-      .query("shareLinks")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-    for (const shareLink of shareLinks) {
-      await ctx.db.delete(shareLink._id);
-    }
-
-    await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
-      strategyId: strategy._id,
-    });
-    await deleteStrategyAgentSummary(ctx, strategy._id);
-    await ctx.db.delete(strategy._id);
+    await deleteStrategyRecord(ctx, strategy);
     return { ok: true } as const;
   },
 });
 
 export { deleteStrategy as delete };
+
+/// Deletes a strategy a move left unfinished, and only such a strategy:
+/// one whose move failed, or that the moving app quit in the middle of. A
+/// strategy whose move finished belongs in the library and stays. Says
+/// which it found, so a device that lost finishMove's answer can tell its
+/// move did finish.
+export const abandonMove = mutation({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicId: v.string(),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    outcome: v.union(
+      v.literal("deleted"),
+      v.literal("finished"),
+      v.literal("missing"),
+    ),
+  }),
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    const strategy = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.strategyPublicId))
+      .first();
+    if (strategy === null) return { ok: true, outcome: "missing" } as const;
+    await assertStrategyRole(ctx, strategy, "owner");
+    if (strategy.unfinishedMove !== true) {
+      return { ok: true, outcome: "finished" } as const;
+    }
+    await deleteStrategyRecord(ctx, strategy);
+    return { ok: true, outcome: "deleted" } as const;
+  },
+});
+
+/// Deletes [strategy] with everything that belongs to it.
+async function deleteStrategyRecord(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+) {
+  // Pages in the trash are left to their purge (purgeTrashedPages), which
+  // needs no strategy: one purge scheduled per page must stay within
+  // Convex's scheduling limit however many pages the trash holds. Nothing
+  // can reach or restore them once the strategy is gone.
+  const pages = await livePagesQuery(ctx, strategy._id).collect();
+
+  for (const page of pages) {
+    const pageContents = await ctx.db
+      .query("pageContents")
+      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+      .collect();
+    for (const pageContent of pageContents) {
+      await ctx.db.delete(pageContent._id);
+    }
+    await ctx.db.delete(page._id);
+    await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
+      pageId: page._id,
+      strategyId: strategy._id,
+    });
+  }
+
+  const collaborators = await ctx.db
+    .query("strategyCollaborators")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+    .collect();
+  for (const collaborator of collaborators) {
+    await ctx.db.delete(collaborator._id);
+  }
+
+  const invites = await ctx.db
+    .query("inviteTokens")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+    .collect();
+  for (const invite of invites) {
+    await ctx.db.delete(invite._id);
+  }
+
+  const shareLinks = await ctx.db
+    .query("shareLinks")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+    .collect();
+  for (const shareLink of shareLinks) {
+    await ctx.db.delete(shareLink._id);
+  }
+
+  await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
+    strategyId: strategy._id,
+  });
+  await deleteStrategyAgentSummary(ctx, strategy._id);
+  await ctx.db.delete(strategy._id);
+}
