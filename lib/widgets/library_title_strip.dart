@@ -6,14 +6,13 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
-import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
-import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
+import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:icarus/widgets/web_beta_tag.dart';
 import 'package:icarus/widgets/window_chrome.dart';
@@ -205,21 +204,11 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           allowedExtensions: const ['vrf'],
           allowMultiple: true,
         );
-        if (result == null) return;
-        for (final file in result.files) {
-          final path = file.path;
-          if (path == null) continue;
-          try {
-            await ref.read(replayLibraryProvider.notifier).import(path);
-          } catch (error, stackTrace) {
-            AppErrorReporter.reportError(
-              "Couldn't add ${file.name}.",
-              error: error,
-              stackTrace: stackTrace,
-              source: 'LibraryTitleStrip.addReplay',
-            );
-          }
-        }
+        if (result == null || !mounted) return;
+        await addReplays(ref, [
+          for (final file in result.files)
+            if (file.path != null) file.path!,
+        ]);
       },
       child: const Text('Add Replay'),
     );
