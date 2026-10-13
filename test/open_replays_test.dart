@@ -5,7 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/routes.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
@@ -19,6 +22,7 @@ import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/replay/open_replays.dart';
 import 'package:path/path.dart' as p;
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 class _OpenStrategy extends StrategyProvider {
   _OpenStrategy(this.initial);
@@ -31,6 +35,12 @@ class _OpenStrategy extends StrategyProvider {
   /// Autosave is off, so leaving has to ask.
   @override
   Future<bool> flushPendingAutosaveBeforeExit() async => false;
+
+  @override
+  void cancelPendingSave() {}
+
+  @override
+  Future<void> clearCurrentStrategy() async => state = _noStrategy;
 }
 
 const _noStrategy = StrategyState(
@@ -49,7 +59,7 @@ const _dirtyStrategy = StrategyState(
   isOpen: true,
 );
 
-/// Sends what desktop_drop's Windows plugin sends for a drop at [at].
+/// Sends what desktop_drop's plugin sends for a drop at [at].
 Future<void> _drop(WidgetTester tester, List<String> paths, Offset at) async {
   final messenger = tester.binding.defaultBinaryMessenger;
   Future<void> send(String method, Object arguments) =>
@@ -59,8 +69,9 @@ Future<void> _drop(WidgetTester tester, List<String> paths, Offset at) async {
             .encodeMethodCall(MethodCall(method, arguments)),
         (_) {},
       );
-  final dpr = tester.view.devicePixelRatio;
-  final position = <double>[at.dx * dpr, at.dy * dpr];
+  // The plugin reports physical pixels on Windows and logical ones elsewhere.
+  final scale = Platform.isWindows ? tester.view.devicePixelRatio : 1.0;
+  final position = <double>[at.dx * scale, at.dy * scale];
   await send('entered', position);
   await send('updated', position);
   await send('performOperation', paths);
@@ -79,9 +90,13 @@ void main() {
     appProviderContainer.read(inAppDebugProvider.notifier).clearLogs();
     temp = await Directory.systemTemp.createTemp('open-replays-test-');
     support = await Directory(p.join(temp.path, 'support')).create();
+    // Leaving the editor resets the agent filter, which reads favorites.
+    Hive.init(p.join(temp.path, 'hive'));
+    await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
   });
 
   tearDown(() async {
+    await Hive.close();
     if (await temp.exists()) await temp.delete(recursive: true);
   });
 
@@ -93,7 +108,7 @@ void main() {
 
   Future<ProviderContainer> pumpApp(
     WidgetTester tester, {
-    required StrategyState strategy,
+    StrategyState strategy = _noStrategy,
   }) async {
     final container = ProviderContainer(
       overrides: [
@@ -110,17 +125,52 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: ShadApp(
-          navigatorKey: appNavigatorKey,
-          navigatorObservers: [mouseNavigationRouteObserver],
-          builder: (context, child) => ReplayWindowDropTarget(child: child!),
-          // My Library's drop target, which takes .ica files.
-          home: const Scaffold(body: IcaDropTarget(child: SizedBox.expand())),
+        child: ToastificationWrapper(
+          child: ShadApp(
+            navigatorKey: appNavigatorKey,
+            navigatorObservers: [mouseNavigationRouteObserver],
+            builder: (context, child) => ReplayWindowDropTarget(child: child!),
+            // My Library's drop target, which takes .ica files.
+            home: const Scaffold(
+              body: IcaDropTarget(child: SizedBox.expand()),
+            ),
+          ),
         ),
       ),
     );
-    await tester.pump();
+    if (strategy.strategyName != null) {
+      appNavigatorKey.currentState!.push(
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: Routes.strategyView),
+          builder: (_) => const Scaffold(body: Text('editor')),
+        ),
+      );
+    }
+    await tester.pumpAndSettle();
     return container;
+  }
+
+  /// Drops [names] (files that aren't real replays) and lets the copies,
+  /// which are real file IO, run on the real clock.
+  Future<void> dropFiles(WidgetTester tester, List<String> names) async {
+    await tester.runAsync(() async {
+      final paths = [for (final name in names) await replayFile(name)];
+      await _drop(tester, paths, const Offset(400, 300));
+      await Future<void>.delayed(const Duration(seconds: 1));
+    });
+    await tester.pumpAndSettle();
+  }
+
+  /// The drop's work started on the real clock, so what it awaits resumes
+  /// there: let the dialog close, then let the open finish.
+  Future<void> settle(WidgetTester tester) async {
+    for (var round = 0; round < 2; round++) {
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+    }
+    await tester.pumpAndSettle();
   }
 
   Future<List<String>> keptReplays() async {
@@ -132,51 +182,79 @@ void main() {
     ]..sort();
   }
 
-  testWidgets('replays dropped on My Library land on the Replays tab',
-      (tester) async {
-    final container = await pumpApp(tester, strategy: _noStrategy);
-    final paths = [
-      await tester.runAsync(() => replayFile('a.vrf')),
-      await tester.runAsync(() => replayFile('b.vrf')),
-    ].cast<String>();
+  /// The reason a tile gives for a replay it can't open.
+  String reasonFor(ProviderContainer container, String name) {
+    final listing = container
+        .read(replayLibraryProvider)
+        .requireValue
+        .firstWhere((listing) => p.basename(listing.file.path) == name);
+    return listing.error!.message;
+  }
 
-    // The copy is real file IO, so it runs on the real clock.
-    await tester.runAsync(() async {
-      await _drop(tester, paths, const Offset(400, 300));
-      await Future<void>.delayed(const Duration(seconds: 1));
-    });
-    await tester.pumpAndSettle();
+  /// Lets the toasts close so no timer outlives the test.
+  Future<void> closeToasts(WidgetTester tester) =>
+      tester.pump(const Duration(seconds: 5));
+
+  testWidgets('one unreadable replay lands on the tab with its reason',
+      (tester) async {
+    final container = await pumpApp(tester);
+
+    await dropFiles(tester, ['a.vrf']);
+
+    expect(await tester.runAsync(keptReplays), ['a.vrf']);
+    expect(container.read(replaysTabOpenProvider), isTrue);
+    expect(find.byType(ReplayView), findsNothing);
+    expect(find.text(reasonFor(container, 'a.vrf')), findsOneWidget);
+    await closeToasts(tester);
+  });
+
+  testWidgets('several replays dropped on My Library land on the tab',
+      (tester) async {
+    final container = await pumpApp(tester);
+
+    await dropFiles(tester, ['a.vrf', 'b.vrf']);
 
     expect(await tester.runAsync(keptReplays), ['a.vrf', 'b.vrf']);
     expect(container.read(replaysTabOpenProvider), isTrue);
-    // Several replays open no viewer.
-    expect(find.byType(ReplayView), findsNothing);
+    // Several replays open nothing, so nothing explains why one can't open.
+    expect(find.text(reasonFor(container, 'a.vrf')), findsNothing);
     // My Library's .ica import left them alone instead of calling them
     // unsupported files.
     expect(appProviderContainer.read(inAppDebugProvider), isEmpty);
+    await closeToasts(tester);
   });
 
-  testWidgets('staying in the editor with unsaved work adds nothing',
+  testWidgets('staying in the editor keeps it open', (tester) async {
+    final container = await pumpApp(tester, strategy: _dirtyStrategy);
+    container.read(strategySaveStateProvider.notifier).markDirty();
+
+    await dropFiles(tester, ['a.vrf']);
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await settle(tester);
+    expect(find.text('Save changes?'), findsNothing);
+
+    expect(find.text('editor'), findsOneWidget);
+    expect(container.read(strategyProvider).strategyName, 'Strategy A');
+    expect(container.read(replaysTabOpenProvider), isFalse);
+    // The replay is added either way, as Add Replay would.
+    expect(await tester.runAsync(keptReplays), ['a.vrf']);
+    await closeToasts(tester);
+  });
+
+  testWidgets('leaving the editor without saving opens the Replays tab',
       (tester) async {
     final container = await pumpApp(tester, strategy: _dirtyStrategy);
     container.read(strategySaveStateProvider.notifier).markDirty();
-    final path = (await tester.runAsync(() => replayFile('a.vrf')))!;
 
-    await tester.runAsync(() async {
-      await _drop(tester, [path], const Offset(400, 300));
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    });
-    await tester.pumpAndSettle();
-    expect(find.text('Save changes?'), findsOneWidget);
+    await dropFiles(tester, ['a.vrf']);
+    await tester.tap(find.text("Don't save"));
+    await settle(tester);
+    expect(find.text('Save changes?'), findsNothing);
 
-    await tester.tap(find.text('Cancel'));
-    await tester.runAsync(() => Future<void>.delayed(
-          const Duration(milliseconds: 300),
-        ));
-    await tester.pumpAndSettle();
-
-    expect(await tester.runAsync(keptReplays), isEmpty);
-    expect(container.read(replaysTabOpenProvider), isFalse);
-    expect(container.read(strategyProvider).strategyName, 'Strategy A');
+    expect(container.read(strategyProvider).strategyName, isNull);
+    expect(container.read(replaysTabOpenProvider), isTrue);
+    expect(find.text('editor'), findsNothing);
+    await closeToasts(tester);
   });
 }

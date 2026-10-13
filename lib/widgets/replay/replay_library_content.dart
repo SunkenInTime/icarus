@@ -373,7 +373,7 @@ class _Message extends StatelessWidget {
 
 /// Shows what a drop on the Replays tab will do. The replays themselves are
 /// taken by `ReplayWindowDropTarget`, which catches them anywhere on the
-/// window; this only turns away a drop with none in it.
+/// window; this only says when other files in a drop were left out.
 class ReplayDropTarget extends ConsumerStatefulWidget {
   const ReplayDropTarget({super.key, required this.child});
 
@@ -393,7 +393,7 @@ class _ReplayDropTargetState extends ConsumerState<ReplayDropTarget> {
       onDragExited: (_) => setState(() => _dragging = false),
       onDragDone: (details) {
         setState(() => _dragging = false);
-        if (!details.files.any(
+        if (!details.files.every(
           (file) =>
               p.extension(file.path).toLowerCase() == ReplayFiles.extension,
         )) {

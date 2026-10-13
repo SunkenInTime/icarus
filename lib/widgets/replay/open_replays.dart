@@ -23,15 +23,15 @@ bool isReplayPath(String path) =>
     p.extension(path).toLowerCase() == ReplayFiles.extension;
 
 /// The open that is still running. Each open waits for the one before it,
-/// so replays arriving together (Explorer starts one launch per selected
-/// file) never interleave their navigation.
+/// so two arriving together (a drop and an Explorer open, or two Explorer
+/// opens) never interleave their navigation.
 Future<void> _previousOpen = Future.value();
 
 /// Brings replays opened from outside the Replays tab (dropped anywhere on
 /// the window, or opened from Explorer) into Icarus the way Add Replay does,
 /// then shows them: one replay opens in the viewer, several land on the
 /// Replays tab. Leaving the editor goes through the unsaved-work guard;
-/// staying there cancels the open, and nothing is added.
+/// staying keeps the editor, with the replays already added.
 Future<void> openReplays(WidgetRef ref, List<String> paths) {
   final open = _previousOpen.then((_) => _openReplays(ref, paths));
   _previousOpen = open.catchError((Object _) {});
@@ -43,9 +43,25 @@ Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
   if (!ref.read(platformPolicyProvider).supports(PlatformFeature.replays)) {
     return;
   }
-  final navigator = appNavigatorKey.currentState;
-  if (navigator == null) return;
 
+  final listings = <ReplayListing>[];
+  for (final path in paths) {
+    try {
+      listings.add(await ref.read(replayLibraryProvider.notifier).import(path));
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        "Couldn't add ${p.basename(path)}.",
+        error: error,
+        stackTrace: stackTrace,
+        source: 'openReplays',
+      );
+    }
+  }
+
+  // From here to the navigation nothing waits but the guard's own dialog,
+  // so whatever is on screen now is what gets left.
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null || !navigator.mounted) return;
   final inEditor = ref.read(strategyProvider).stratName != null ||
       mouseNavigationRouteObserver.topRoute?.settings.name ==
           Routes.strategyView;
@@ -63,26 +79,10 @@ Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
         await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-        if (navigator.mounted) navigator.popUntil((route) => route.isFirst);
       },
     );
     if (!left || !navigator.mounted) return;
   }
-
-  final listings = <ReplayListing>[];
-  for (final path in paths) {
-    try {
-      listings.add(await ref.read(replayLibraryProvider.notifier).import(path));
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        "Couldn't add ${p.basename(path)}.",
-        error: error,
-        stackTrace: stackTrace,
-        source: 'openReplays',
-      );
-    }
-  }
-  if (!navigator.mounted) return;
 
   navigator.popUntil((route) => route.isFirst);
   ref.read(libraryNavigationProvider).showReplays();

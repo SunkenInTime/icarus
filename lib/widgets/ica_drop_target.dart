@@ -102,9 +102,12 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
             if (!isReplayPath(file.path)) file,
         ];
         if (files.isEmpty) return;
+        // A replay in the same drop switches to the Replays tab, which
+        // disposes this widget mid-import; the app's container outlives it.
+        final container = ProviderScope.containerOf(context, listen: false);
         try {
-          final result =
-              await StrategyImportExportService(ref).loadFromFileDrop(files);
+          final result = await StrategyImportExportService(container)
+              .loadFromFileDrop(files);
 
           if (result.hasImports || result.issues.isNotEmpty) {
             final message = buildImportSummaryMessage(result);
