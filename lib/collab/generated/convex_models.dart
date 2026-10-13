@@ -4252,6 +4252,152 @@ final class StrategiesListForFolderResultItem {
   }
 }
 
+final class StrategiesListInventoryResult {
+  const StrategiesListInventoryResult({
+    required this.folders,
+    required this.strategies,
+  });
+  final List<StrategiesListInventoryResultFoldersItem> folders;
+  final List<StrategiesListInventoryResultStrategiesItem> strategies;
+
+  factory StrategiesListInventoryResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'folders', 'strategies'});
+    return StrategiesListInventoryResult(
+      folders:
+          _decodeArray(
+                object.value['folders'] ?? _missing(path, 'folders'),
+                '$path.folders',
+              ).value.indexed
+              .map(
+                (entry) => StrategiesListInventoryResultFoldersItem.decode(
+                  entry.$2,
+                  _indexPath('$path.folders', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      strategies:
+          _decodeArray(
+                object.value['strategies'] ?? _missing(path, 'strategies'),
+                '$path.strategies',
+              ).value.indexed
+              .map(
+                (entry) => StrategiesListInventoryResultStrategiesItem.decode(
+                  entry.$2,
+                  _indexPath('$path.strategies', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'folders': ConvexArray(
+        folders.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.folders', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'strategies': ConvexArray(
+        strategies.indexed
+            .map(
+              (entry) =>
+                  entry.$2.encode(_indexPath('$path.strategies', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+    });
+  }
+}
+
+final class StrategiesListInventoryResultFoldersItem {
+  const StrategiesListInventoryResultFoldersItem({
+    required this.parentFolderPublicId,
+    required this.publicId,
+  });
+  final String? parentFolderPublicId;
+  final String publicId;
+
+  factory StrategiesListInventoryResultFoldersItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'parentFolderPublicId',
+      'publicId',
+    });
+    return StrategiesListInventoryResultFoldersItem(
+      parentFolderPublicId:
+          (object.value['parentFolderPublicId'] ??
+                  _missing(path, 'parentFolderPublicId'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['parentFolderPublicId'] ??
+                  _missing(path, 'parentFolderPublicId'),
+              '$path.parentFolderPublicId',
+            ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'parentFolderPublicId': parentFolderPublicId == null
+          ? const ConvexNull()
+          : ConvexString(parentFolderPublicId!),
+      'publicId': ConvexString(publicId),
+    });
+  }
+}
+
+final class StrategiesListInventoryResultStrategiesItem {
+  const StrategiesListInventoryResultStrategiesItem({
+    required this.folderPublicId,
+    required this.publicId,
+  });
+  final String? folderPublicId;
+  final String publicId;
+
+  factory StrategiesListInventoryResultStrategiesItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'folderPublicId', 'publicId'});
+    return StrategiesListInventoryResultStrategiesItem(
+      folderPublicId:
+          (object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['folderPublicId'] ??
+                  _missing(path, 'folderPublicId'),
+              '$path.folderPublicId',
+            ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'folderPublicId': folderPublicId == null
+          ? const ConvexNull()
+          : ConvexString(folderPublicId!),
+      'publicId': ConvexString(publicId),
+    });
+  }
+}
+
 final class StrategyGetFullSnapshotResult {
   const StrategyGetFullSnapshotResult({
     required this.assets,
@@ -6208,6 +6354,15 @@ List<StrategiesListForFolderResultItem> decodeStrategiesListForFolderResult(
       ),
     )
     .toList(growable: false);
+
+ConvexObject encodeStrategiesListInventoryArgs() => ConvexObject({});
+
+StrategiesListInventoryResult decodeStrategiesListInventoryResult(
+  ConvexValue value,
+) => StrategiesListInventoryResult.decode(
+  value,
+  'strategies.js:listInventory.returns',
+);
 
 ConvexObject encodeStrategiesListSharedWithMeArgs() => ConvexObject({});
 
