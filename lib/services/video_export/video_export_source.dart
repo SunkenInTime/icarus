@@ -7,14 +7,12 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
-import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
-import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/services/local_image_file.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -74,9 +72,6 @@ class VideoExportPagesChanged implements Exception {
 /// decoded. Release [images] once the export is done.
 typedef VideoExportSource = ({StrategyData strategy, CaptureImages images});
 
-/// How long a cloud export waits for this device's changes to land.
-const videoExportSyncTimeout = Duration(seconds: 20);
-
 /// Saves the open strategy and reads it back whole for [pageIds].
 ///
 /// A local strategy is saved and read back from the library. A cloud
@@ -85,7 +80,7 @@ const videoExportSyncTimeout = Duration(seconds: 20);
 /// for the strategy to land, then reads the whole strategy from the server.
 ///
 /// Throws [VideoExportNotSynced] when this device's work does not land
-/// within [videoExportSyncTimeout], [VideoExportPagesChanged] when a page in
+/// (see [sendCloudWork]), [VideoExportPagesChanged] when a page in
 /// [pageIds] no longer exists, [CaptureImagesUnavailable] when an image on
 /// the exported pages cannot be loaded, and [VideoExportCancelled] once
 /// [isCancelled] turns true.
@@ -112,12 +107,16 @@ Future<VideoExportSource> loadVideoExportSource(
   final Map<String, RemoteImageAsset> assets;
   switch (state.source) {
     case StrategySource.cloud:
-      // Queues the open page's edits and sends them.
-      await ref
-          .read(strategyPageSessionProvider.notifier)
-          .flushCurrentPage(flushImmediately: true);
+      try {
+        await sendCloudWork(
+          ref.read,
+          strategyId: strategyId,
+          checkpoint: checkCancelled,
+        );
+      } on CloudWorkNotSent {
+        throw const VideoExportNotSynced();
+      }
       checkCancelled();
-      await _waitUntilSent(ref, strategyId, isCancelled: isCancelled);
       final snapshot = await ref
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId, shareToken: shareToken);
@@ -181,37 +180,3 @@ Future<VideoExportSource> loadVideoExportSource(
 }
 
 bool _never() => false;
-
-/// Waits until this device has nothing left to send for [strategyId]: no
-/// op queued, in flight, or held for review, and no image uploading. Read
-/// from the queues at each check: a save with nothing to send changes no
-/// queue state, so nothing listening would hear it finish.
-Future<void> _waitUntilSent(
-  WidgetRef ref,
-  String strategyId, {
-  required bool Function() isCancelled,
-}) async {
-  bool sent() {
-    final ops = ref.read(strategyOpQueueProvider);
-    final media = ref.read(cloudMediaUploadQueueProvider);
-    // An outbox with records it could not read cannot say they landed.
-    return ops.outboxIsReliable &&
-        media.outboxIsReliable &&
-        ops.pending.isEmpty &&
-        !ops.isFlushing &&
-        media.jobsForStrategy(strategyId).isEmpty;
-  }
-
-  const step = Duration(milliseconds: 100);
-  var waited = Duration.zero;
-  while (!sent()) {
-    if (isCancelled()) throw VideoExportCancelled();
-    // Work held for the user's review never lands by waiting.
-    if (ref.read(strategyOpQueueProvider).needsAttention) {
-      throw const VideoExportNotSynced();
-    }
-    if (waited >= videoExportSyncTimeout) throw const VideoExportNotSynced();
-    await Future<void>.delayed(step);
-    waited += step;
-  }
-}

@@ -22,6 +22,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
@@ -278,7 +279,7 @@ void main() {
         (_) {},
         onError: (Object caught) => error = caught,
       );
-      await tester.pump(videoExportSyncTimeout + const Duration(seconds: 1));
+      await tester.pump(cloudWorkSendTimeout + const Duration(seconds: 1));
 
       expect(error, isA<VideoExportNotSynced>());
       expect(repository.fetches, 0);

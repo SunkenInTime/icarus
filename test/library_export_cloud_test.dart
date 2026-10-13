@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +34,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:image/image.dart' as img;
@@ -436,6 +438,34 @@ void main() {
     expect(repository.snapshotsRead, isEmpty);
   });
 
+  test('a cloud strategy .ica waits for its unsent changes to land', () async {
+    queue.unsent = {'cloud-root': _unsent('cloud-root')};
+    FilePicker.platform = _NoSaveDialog();
+    final container = signedIn();
+
+    final exporting = StrategyImportExportService(container)
+        .exportCloudStrategy('cloud-root');
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(repository.snapshotsRead, isEmpty);
+    queue.land();
+
+    // The save dialog is dismissed, after the strategy was read.
+    expect(await exporting, isFalse);
+    expect(repository.snapshotsRead, ['cloud-root']);
+  });
+
+  test('a cloud strategy .ica refuses changes held for review', () async {
+    queue.unsent = {'cloud-root': _unsent('cloud-root', paused: 1)};
+    FilePicker.platform = _NoSaveDialog();
+    final container = signedIn();
+
+    await expectLater(
+      StrategyImportExportService(container).exportCloudStrategy('cloud-root'),
+      throwsA(isA<CloudWorkNotSent>()),
+    );
+    expect(repository.snapshotsRead, isEmpty);
+  });
+
   test('signed out, the backup is the local library and asks no cloud',
       () async {
     await _storeLocalLibrary();
@@ -551,6 +581,21 @@ StrategyOutboxSummary _unsent(String strategyId, {int paused = 0}) =>
       attentionCount: 0,
       successorCount: 0,
     );
+
+/// The save dialog, dismissed.
+class _NoSaveDialog extends FilePicker {
+  @override
+  Future<String?> saveFile({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    bool lockParentWindow = false,
+  }) async =>
+      null;
+}
 
 class _SignedIn extends AuthProvider {
   @override
