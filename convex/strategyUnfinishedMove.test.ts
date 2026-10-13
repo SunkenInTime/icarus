@@ -115,7 +115,7 @@ describe("a strategy moving in from a device", () => {
 
     await owner.mutation(finishMove, {
       ...protocol,
-      strategyPublicId: "moving-root", folderPublicId: null
+      strategyPublicId: "moving-root",
     });
     await owner.mutation(finishMove, {
       ...protocol,
@@ -129,7 +129,7 @@ describe("a strategy moving in from a device", () => {
     // Finishing twice changes nothing.
     await owner.mutation(finishMove, {
       ...protocol,
-      strategyPublicId: "moving-root", folderPublicId: null
+      strategyPublicId: "moving-root",
     });
     expect(await listedIds(owner)).toEqual(["made-here", "moving-root"]);
   });
@@ -139,7 +139,7 @@ describe("a strategy moving in from a device", () => {
     await create(owner, "moving", { unfinishedMove: true });
 
     await expect(
-      other.mutation(finishMove, { ...protocol, strategyPublicId: "moving", folderPublicId: null }),
+      other.mutation(finishMove, { ...protocol, strategyPublicId: "moving" }),
     ).rejects.toThrow();
     expect(await listedIds(owner)).toEqual([]);
   });
@@ -197,7 +197,7 @@ describe("a strategy moving in from a device", () => {
     expect(await listedIds(owner)).toEqual([]);
 
     // Once finished, it shares like any other.
-    await owner.mutation(finishMove, { ...protocol, strategyPublicId: "moving", folderPublicId: null });
+    await owner.mutation(finishMove, { ...protocol, strategyPublicId: "moving" });
     await owner.mutation(createShareLink, {
       ...protocol,
       targetType: "strategy",
@@ -242,7 +242,6 @@ describe("a strategy moving in from a device", () => {
       await owner.mutation(finishMove, {
         ...protocol,
         strategyPublicId: "done",
-        folderPublicId: null,
       });
 
       await expect(

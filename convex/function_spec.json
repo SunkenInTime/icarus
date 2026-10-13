@@ -169110,17 +169110,9 @@
           },
           "folderPublicId": {
             "fieldType": {
-              "type": "union",
-              "value": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "type": "string"
             },
-            "optional": false
+            "optional": true
           },
           "strategyPublicId": {
             "fieldType": {

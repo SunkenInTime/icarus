@@ -1186,7 +1186,7 @@ abstract interface class StrategiesModule {
   });
   Future<FoldersDeleteResult> finishMove({
     required double clientProtocolVersion,
-    required String? folderPublicId,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
   ConvexQuery<StrategiesGetHeaderResult> getHeader({
@@ -1353,7 +1353,7 @@ final class _StrategiesModule implements StrategiesModule {
   @override
   Future<FoldersDeleteResult> finishMove({
     required double clientProtocolVersion,
-    required String? folderPublicId,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategiesFinishMoveArgs(
