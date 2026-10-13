@@ -185,6 +185,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           }
           await ref.read(strategyProvider.notifier).openCloudStrategy(
                 strategyId,
+                pageId: widget.initialPageId,
               );
       }
       final loadedStrategy = ref.read(strategyProvider);

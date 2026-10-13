@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -35,9 +35,7 @@ class ReplayMatchCard extends ConsumerStatefulWidget {
 
 class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
   late final ReplayCapture _capture = ReplayCapture(
-    createStrategy: (map, name) => ref
-        .read(strategyProvider.notifier)
-        .createNewStrategy(map: map, name: name, local: true),
+    newStore: ref.read(replayCaptureStoreProvider),
     map: widget.map,
     name: '${replayMapName(widget.map)} replay · '
         '${_dateLabel(widget.playback.document.match.recordedAt)}',
@@ -60,7 +58,20 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         perspective: playback.perspective,
       );
       await _capture.capture(frame, pageName: replayMomentLabel(playback));
+    } on CaptureRefused catch (refused) {
+      Settings.showToast(
+        message: refused.message,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
     } catch (error, stackTrace) {
+      if (isConvexUnauthenticatedError(error)) {
+        await ref.read(authProvider.notifier).reportConvexUnauthenticated(
+              source: 'ReplayMatchCard.capture',
+              error: error,
+              stackTrace: stackTrace,
+            );
+        return;
+      }
       AppErrorReporter.reportError(
         "Couldn't capture this moment.",
         error: error,
@@ -77,24 +88,33 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     final strategy = _capture.strategy;
     if (strategy == null) return;
     widget.playback.pause();
-    final page = strategy.pages.firstWhere(
-      (page) => page.id == _capture.lastPageId,
-      orElse: () => strategy.pages.last,
-    );
     await Navigator.push(
       context,
       StrategyView.route(
         initialStrategyId: strategy.id,
         initialStrategyName: strategy.name,
-        initialMapValue: strategy.mapData,
-        initialIsAttack: page.isAttack,
-        initialPageId: page.id,
+        initialStrategySource: strategy.source,
+        initialMapValue: strategy.map,
+        initialIsAttack: strategy.lastPageIsAttack,
+        initialPageId: strategy.lastPageId,
         backTooltip: 'Back to replay',
       ),
     );
     if (!mounted) return;
     widget.onReturnFromEditor();
-    setState(() {});
+    // The editor may have removed pages, or the whole strategy.
+    try {
+      await _capture.reload();
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        "Couldn't check the captured strategy.",
+        error: error,
+        stackTrace: stackTrace,
+        source: 'ReplayMatchCard.reload',
+        promptUser: false,
+      );
+    }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -120,7 +140,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         builder: (context, shown) {
           final playback = widget.playback;
           final (round, score, isAttack) = shown;
-          final captured = _capture.strategy?.pages.length ?? 0;
+          final captured = _capture.strategy?.pageCount ?? 0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,

@@ -233,7 +233,7 @@ class _RecordingStrategies extends StrategyProvider {
   }
 
   @override
-  Future<void> openCloudStrategy(String id) async {
+  Future<void> openCloudStrategy(String id, {String? pageId}) async {
     opened.add('cloud:$id');
     show(id, StrategySource.cloud);
   }
