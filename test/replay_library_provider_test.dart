@@ -19,11 +19,16 @@ void main() {
   late Completer<void> slowGate;
   var slowReads = 0;
 
+  /// Holds every read of [heldPath] until completed.
+  String? heldPath;
+  late Completer<void> held;
+
   /// Reads the header these tests write: `{"id": ..., "at": ...}`.
   Future<ReplayProbe> probe(String path) async {
     if (p.basename(path) == 'slow.vrf' && slowReads++ == 0) {
       await slowGate.future;
     }
+    if (path == heldPath) await held.future;
     try {
       final json = jsonDecode(await File(path).readAsString()) as Map;
       return ReplayProbe(
@@ -44,6 +49,7 @@ void main() {
   setUp(() async {
     slowGate = Completer()..complete();
     slowReads = 0;
+    heldPath = null;
     root = await Directory.systemTemp.createTemp('icarus-replay-library');
     support = await Directory(p.join(root.path, 'support')).create();
     demos = await Directory(p.join(root.path, 'VALORANT', 'Saved', 'Demos'))
@@ -52,6 +58,7 @@ void main() {
       replayFilesProvider.overrideWithValue(ReplayFiles(
         supportDirectory: () async => support,
         valorantDemosPath: demos.path,
+        recycle: (path) => File(path).delete(),
       )),
       replayProbeProvider.overrideWithValue(probe),
     ]);
@@ -196,6 +203,9 @@ void main() {
 
     // The tab opens and its first listing stalls on a header read.
     container.listen(replayLibraryProvider, (_, __) {});
+    while (slowReads == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
     final result =
         await container.read(replayLibraryProvider.notifier).add([fresh.path]);
     slowGate.complete();
@@ -205,5 +215,42 @@ void main() {
     final listings = container.read(replayLibraryProvider).requireValue;
     expect(listings.map((listing) => listing.file.path),
         contains(result.added.single));
+  });
+
+  test('remove waits for an add in progress and spares the file it wrote',
+      () async {
+    final replays = await Directory(p.join(support.path, 'replays')).create();
+    final damaged = File(p.join(replays.path, 'match-a.vrf'));
+    await damaged.writeAsString('partial');
+    final shown = (await container.read(replayLibraryProvider.future)).single;
+    expect(shown.probe, isNull);
+
+    // A good copy is being added while the Remove dialog for the damaged
+    // one is open.
+    final outside = await Directory(p.join(root.path, 'downloads')).create();
+    final good = await writeReplay(outside, 'good.vrf',
+        matchId: 'match-a', playedAt: '2026-07-01T00:00:00Z');
+    heldPath = good.path;
+    held = Completer();
+    final library = container.read(replayLibraryProvider.notifier);
+    final adding = library.add([good.path]);
+    await pumpEventQueue();
+    var removed = false;
+    final removing = library.remove(shown.file).whenComplete(() {
+      removed = true;
+    });
+    removing.ignore();
+    await pumpEventQueue();
+    expect(removed, isFalse);
+    expect(await damaged.readAsString(), 'partial');
+
+    held.complete();
+    expect((await adding).added, [damaged.path]);
+    await expectLater(
+      removing,
+      throwsA(isA<ReplayRemoveRefused>()
+          .having((e) => e.reason, 'reason', ReplayRemoveRefusal.fileChanged)),
+    );
+    expect(await damaged.readAsString(), await good.readAsString());
   });
 }

@@ -2,17 +2,20 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
+import 'package:icarus/replay/recycle_bin.dart';
 import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_files.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
@@ -227,6 +230,67 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
     }
   }
 
+  /// Asks, then removes. The dialog says what will be left; if that stops
+  /// being true before the file is deleted, nothing is deleted and it asks
+  /// again with the new answer.
+  Future<void> _remove() async {
+    final library = ref.read(replayLibraryProvider.notifier);
+    var file = widget.listing.file;
+    while (true) {
+      if (!mounted) return;
+      final confirmed = await ConfirmAlertDialog.show(
+        context: context,
+        title: 'Remove this replay?',
+        content: file.valorantHasCopy
+            ? "This moves Icarus's copy to the Recycle Bin. Valorant still "
+                'has its own, so the replay stays in the list until Valorant '
+                'deletes it.'
+            : 'This moves the replay file to the Recycle Bin. Pages you '
+                'captured from it stay in your strategies.',
+        confirmText: 'Remove',
+        isDestructive: true,
+      );
+      if (!confirmed) return;
+      try {
+        await library.remove(file);
+        return;
+      } on RecycleBinUnavailable catch (error) {
+        Settings.showToast(
+          message: error.deleted
+              ? 'Windows deleted this replay instead of moving it to the '
+                  'Recycle Bin.'
+              : "Windows couldn't move this replay to the Recycle Bin, so "
+                  'Icarus left it where it is.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
+      } on ReplayRemoveRefused catch (refused) {
+        if (refused.current case final current?
+            when refused.reason == ReplayRemoveRefusal.valorantCopyChanged) {
+          file = current;
+          continue;
+        }
+        Settings.showToast(
+          message: refused.reason == ReplayRemoveRefusal.fileChanged
+              ? 'This replay changed after you chose Remove. Nothing was '
+                  'deleted.'
+              : "Icarus only removes replays from its own folder. Nothing "
+                  'was deleted.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return;
+      } catch (error, stackTrace) {
+        AppErrorReporter.reportError(
+          "Couldn't remove this replay.",
+          error: error,
+          stackTrace: stackTrace,
+          source: 'ReplayTile.remove',
+        );
+        return;
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final listing = widget.listing;
@@ -250,6 +314,17 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
                 leading: const Icon(LucideIcons.archive),
                 onPressed: _keep,
                 child: const Text('Keep in Icarus'),
+              )
+            // Removing sends the file to the Recycle Bin, which only
+            // Windows has.
+            else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+              ShadContextMenuItem(
+                leading: Icon(LucideIcons.trash2, color: theme.destructive),
+                onPressed: _remove,
+                child: Text(
+                  'Remove from Icarus',
+                  style: TextStyle(color: theme.destructive),
+                ),
               ),
           ],
           child: GestureDetector(
@@ -295,7 +370,14 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
                       ),
                       const SizedBox(height: 10),
                       Expanded(
-                          child: _ReplayDetails(listing: listing, map: map)),
+                        child: _ReplayDetails(
+                          listing: listing,
+                          map: map,
+                          onKeep: listing.file.source == ReplaySource.valorant
+                              ? _keep
+                              : null,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -333,10 +415,17 @@ String replayDurationLabel(int durationMs) {
 }
 
 class _ReplayDetails extends StatelessWidget {
-  const _ReplayDetails({required this.listing, required this.map});
+  const _ReplayDetails({
+    required this.listing,
+    required this.map,
+    required this.onKeep,
+  });
 
   final ReplayListing listing;
   final MapValue? map;
+
+  /// Set when the replay lives only in Valorant's folder.
+  final VoidCallback? onKeep;
 
   @override
   Widget build(BuildContext context) {
@@ -380,13 +469,52 @@ class _ReplayDetails extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 5),
-          Text(
-            MaterialLocalizations.of(context).formatMediumDate(date),
-            style: theme.textTheme.muted,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  MaterialLocalizations.of(context).formatMediumDate(date),
+                  style: theme.textTheme.muted,
+                ),
+              ),
+              if (onKeep case final onKeep?) _KeepButton(onPressed: onKeep),
+            ],
           ),
           const Spacer(),
           if (probe != null) _AgentStrip(agentIds: probe.agentIds),
         ],
+      ),
+    );
+  }
+}
+
+/// Marks a replay that lives only in Valorant's folder and keeps a copy in
+/// Icarus. Valorant's replays stop playing in Valorant after a patch, and
+/// Valorant may clear the folder, so the copy is what lasts.
+class _KeepButton extends StatelessWidget {
+  const _KeepButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return ShadTooltip(
+      builder: (context) => const Text(
+        "Only in Valorant's replay folder, which Valorant may clear.\n"
+        'Keep a copy in Icarus.',
+      ),
+      child: ShadButton.ghost(
+        height: 22,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        foregroundColor: theme.colorScheme.mutedForeground,
+        hoverForegroundColor: theme.colorScheme.foreground,
+        leading: const Icon(LucideIcons.hourglass, size: 14),
+        onPressed: onPressed,
+        child: const Text(
+          'Keep',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

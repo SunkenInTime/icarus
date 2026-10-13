@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:icarus/replay/recycle_bin.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -13,6 +14,32 @@ enum ReplaySource {
   icarus,
 }
 
+/// Why [ReplayFiles.remove] deleted nothing.
+enum ReplayRemoveRefusal {
+  /// The file isn't in Icarus's own replays folder, or that folder leads
+  /// into Valorant's folder or the cache.
+  outsideIcarus,
+
+  /// The file on disk isn't the one the user chose to remove.
+  fileChanged,
+
+  /// Valorant's folder gained or lost this match since the user was told
+  /// what removing would leave behind.
+  valorantCopyChanged,
+}
+
+class ReplayRemoveRefused implements Exception {
+  const ReplayRemoveRefused(this.reason, {this.current});
+
+  final ReplayRemoveRefusal reason;
+
+  /// The file as it is now, for [ReplayRemoveRefusal.valorantCopyChanged].
+  final ReplayFile? current;
+
+  @override
+  String toString() => 'ReplayRemoveRefused(${reason.name})';
+}
+
 /// One `.vrf` on disk.
 class ReplayFile {
   const ReplayFile({
@@ -20,12 +47,16 @@ class ReplayFile {
     required this.source,
     required this.sizeBytes,
     required this.modified,
+    this.valorantHasCopy = false,
   });
 
   final String path;
   final ReplaySource source;
   final int sizeBytes;
   final DateTime modified;
+
+  /// For a replay kept in Icarus: Valorant's folder has the match too.
+  final bool valorantHasCopy;
 
   /// Valorant names replays after their match id. Lower-cased: Windows
   /// paths don't care about case, so neither does the match id.
@@ -45,11 +76,16 @@ class ReplayFiles {
   ReplayFiles({
     Future<Directory> Function()? supportDirectory,
     String? valorantDemosPath,
+    Future<void> Function(String path)? recycle,
   })  : _supportDirectory = supportDirectory ?? getApplicationSupportDirectory,
-        _valorantDemosPath = valorantDemosPath ?? defaultValorantDemosPath();
+        _valorantDemosPath = valorantDemosPath ?? defaultValorantDemosPath(),
+        _recycle = recycle ?? moveToRecycleBin;
 
   final Future<Directory> Function() _supportDirectory;
   final String? _valorantDemosPath;
+
+  /// Moves a file to the Recycle Bin, or throws [RecycleBinUnavailable].
+  final Future<void> Function(String path) _recycle;
 
   static const extension = '.vrf';
 
@@ -114,7 +150,15 @@ class ReplayFiles {
       return _newestFirst(byMatch.values);
     }
     for (final file in await _scan(kept)) {
-      byMatch[file.matchId] = file;
+      byMatch[file.matchId] = byMatch.containsKey(file.matchId)
+          ? ReplayFile(
+              path: file.path,
+              source: ReplaySource.icarus,
+              sizeBytes: file.sizeBytes,
+              modified: file.modified,
+              valorantHasCopy: true,
+            )
+          : file;
     }
     return _newestFirst(byMatch.values);
   }
@@ -190,6 +234,110 @@ class ReplayFiles {
       sizeBytes: stat.size,
       modified: stat.modified,
     );
+  }
+
+  /// Moves a replay kept in Icarus's folder to the Recycle Bin and deletes
+  /// its decoded cache, and nothing else: Valorant's folder is Valorant's to
+  /// clear. The replay is never deleted outright; when it can't go to the
+  /// Recycle Bin this throws [RecycleBinUnavailable] and leaves it, and its
+  /// cache, where they are.
+  ///
+  /// [file] is the replay as the user saw it when they chose Remove. Throws
+  /// [ReplayRemoveRefused], touching nothing, when the file there now isn't
+  /// that one, or when Valorant's folder no longer matches
+  /// [ReplayFile.valorantHasCopy], which told them what would be left.
+  Future<void> remove(ReplayFile file) async {
+    if (file.source != ReplaySource.icarus ||
+        !await _isDirectlyInKeptFolder(file.path)) {
+      throw const ReplayRemoveRefused(ReplayRemoveRefusal.outsideIcarus);
+    }
+    final replay = File(file.path);
+    final FileStat stat = await replay.stat();
+    final valorantCopy = await _valorantCopy(file);
+    final current = ReplayFile(
+      path: file.path,
+      source: ReplaySource.icarus,
+      sizeBytes: stat.size,
+      modified: stat.modified,
+      valorantHasCopy: valorantCopy != null,
+    );
+    if (stat.type == FileSystemEntityType.notFound ||
+        current.cacheKey != file.cacheKey) {
+      throw const ReplayRemoveRefused(ReplayRemoveRefusal.fileChanged);
+    }
+    if (current.valorantHasCopy != file.valorantHasCopy) {
+      throw ReplayRemoveRefused(
+        ReplayRemoveRefusal.valorantCopyChanged,
+        current: current,
+      );
+    }
+    try {
+      await _recycle(file.path);
+    } on RecycleBinUnavailable catch (error) {
+      // Say what happened, not what was meant to: the file is either still
+      // there or Windows deleted it anyway. The cache stays either way.
+      final gone = await FileSystemEntity.type(file.path, followLinks: false) ==
+          FileSystemEntityType.notFound;
+      throw RecycleBinUnavailable(
+        file.path,
+        hresult: error.hresult,
+        deleted: gone,
+      );
+    }
+    // A copy Keep made is the same file as Valorant's, down to its time, so
+    // the two share one cache. Valorant's still needs it.
+    if (valorantCopy?.cacheKey == file.cacheKey) return;
+    final cache = await _cacheDirectory();
+    await for (final entity in cache.list(followLinks: false)) {
+      if (entity is File && _isCacheOf(file, p.basename(entity.path))) {
+        await entity.delete();
+      }
+    }
+  }
+
+  /// Whether [path] sits right inside Icarus's replays folder, judged where
+  /// the folders really are: a folder that is a link or junction into
+  /// Valorant's folder or the cache doesn't count as Icarus's.
+  Future<bool> _isDirectlyInKeptFolder(String path) async {
+    final kept = await (await icarusReplaysDirectory()).resolveSymbolicLinks();
+    final cache = await (await _cacheDirectory()).resolveSymbolicLinks();
+    final parent = await Directory(p.dirname(path)).resolveSymbolicLinks();
+    bool overlap(String a, String b) =>
+        p.equals(a, b) || p.isWithin(a, b) || p.isWithin(b, a);
+    if (!p.equals(parent, kept) || overlap(kept, cache)) return false;
+    final demos = _valorantDemosPath;
+    if (demos != null && await Directory(demos).exists()) {
+      final valorant = await Directory(demos).resolveSymbolicLinks();
+      if (overlap(kept, valorant) || overlap(cache, valorant)) return false;
+    }
+    return true;
+  }
+
+  /// Valorant's file of the same match as [file], if its folder has one.
+  Future<ReplayFile?> _valorantCopy(ReplayFile file) async {
+    final demos = _valorantDemosPath;
+    if (demos == null) return null;
+    final original = File(p.join(demos, p.basename(file.path)));
+    // Judged as the listing judges it: a link there, even one back to the
+    // file being removed, isn't a copy.
+    final type = await FileSystemEntity.type(original.path, followLinks: false);
+    if (type != FileSystemEntityType.file) return null;
+    final stat = await original.stat();
+    return ReplayFile(
+      path: original.path,
+      source: ReplaySource.valorant,
+      sizeBytes: stat.size,
+      modified: stat.modified,
+    );
+  }
+
+  /// Whether [name] is a decoded cache of [file] under any decoder version.
+  /// Cache names are `<match id>-<size>-<time>-<decoder version>.icrp`; the
+  /// key is matched whole, so `a.vrf`'s cache never claims the cache of a
+  /// replay whose name only starts with `a`'s key.
+  static bool _isCacheOf(ReplayFile file, String name) {
+    final match = RegExp(r'^(.+)-([^-]+)\.icrp$').firstMatch(name);
+    return match != null && match.group(1) == file.cacheKey;
   }
 
   /// A temporary name beside [target], unique to this write, so two writes
