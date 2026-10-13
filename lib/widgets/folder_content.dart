@@ -296,17 +296,20 @@ class FolderContent extends ConsumerWidget {
         cloudAvailable ? ref.watch(cloudFoldersProvider) : null;
     final strategiesAsync =
         cloudAvailable ? ref.watch(cloudStrategiesProvider) : null;
-    // Only the very first fetch shows the skeleton; dependency changes keep
-    // the previous value.
-    final isInitialLoading = foldersAsync != null &&
-        strategiesAsync != null &&
-        ((foldersAsync.isLoading && !foldersAsync.hasValue) ||
-            (strategiesAsync.isLoading && !strategiesAsync.hasValue));
-    if (isInitialLoading) {
-      return const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
-    }
     final cloudFailed = (foldersAsync?.hasError ?? false) ||
         (strategiesAsync?.hasError ?? false);
+    final bool cloudLoading;
+    if (foldersAsync == null || strategiesAsync == null) {
+      // Signed in, and the session is still connecting to the cloud.
+      cloudLoading = ref.watch(authProvider).isAuthenticated &&
+          ref.watch(cloudWorkspaceOutcomeProvider) == null;
+    } else {
+      // Only the very first fetch counts; dependency changes keep the
+      // previous value.
+      cloudLoading = !cloudFailed &&
+          ((foldersAsync.isLoading && !foldersAsync.hasValue) ||
+              (strategiesAsync.isLoading && !strategiesAsync.hasValue));
+    }
     // With no local half to fall back on, a failed cloud is the whole page.
     if (cloudFailed && !ref.watch(platformPolicyProvider).allowsLocalLibrary) {
       return KeyedSubtree(
@@ -314,15 +317,18 @@ class FolderContent extends ConsumerWidget {
         child: _buildCloudErrorState(context, ref, offerLibrary: false),
       );
     }
+    // The cloud half lands all at once, so the grid shifts once.
     final cloudFolders = [
-      for (final entry
-          in foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[])
-        _cloudFolderRow(ref, entry),
+      if (!cloudLoading)
+        for (final entry
+            in foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[])
+          _cloudFolderRow(ref, entry),
     ];
     final cloudStrategies = [
-      for (final entry
-          in strategiesAsync?.valueOrNull ?? const <CloudStrategyEntry>[])
-        LibraryStrategyRow.cloud(entry),
+      if (!cloudLoading)
+        for (final entry
+            in strategiesAsync?.valueOrNull ?? const <CloudStrategyEntry>[])
+          LibraryStrategyRow.cloud(entry),
     ];
 
     return KeyedSubtree(
@@ -330,39 +336,58 @@ class FolderContent extends ConsumerWidget {
       child: _withLocalStore(
         context,
         ref,
-        builder: (localFolders, localStrategies) => _buildScaffold(
-          context,
-          ref,
-          folders: _filterFolders(
+        builder: (localFolders, localStrategies) {
+          final folders = _filterFolders(
             ref,
             mergeLibraryFolders(local: localFolders, cloud: cloudFolders),
-          ),
-          strategies: _filterStrategies(
+          );
+          final strategies = _filterStrategies(
             ref,
             mergeLibraryStrategies(
               local: localStrategies,
               cloud: cloudStrategies,
             ),
-          ),
-          acceptsIcaDrops: _acceptsIcaDrops(ref),
-          banner: cloudFailed
-              ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
-              : null,
-          emptyStateKey: const ValueKey('library-empty-state'),
-          emptyStateIcon: LucideIcons.folder,
-          emptyStateTitle: 'Your library is empty',
-          emptyStateSubtitle: cloudAvailable
-              ? 'Create your first strategy to keep it available across your '
-                  'Icarus clients.'
-              : 'Create a new strategy or drop strategies, folders, or .zip '
-                  'archives here.',
-          emptyStateAction: ShadButton(
-            key: const ValueKey('library-empty-create-strategy'),
-            onPressed: onCreateStrategy,
-            leading: const Icon(LucideIcons.plus),
-            child: const Text('Create Strategy'),
-          ),
-        ),
+          );
+          // What's on this computer shows while the cloud loads. With
+          // nothing to show yet, the page waits for the cloud rather than
+          // call the library empty.
+          if (cloudLoading && folders.isEmpty && strategies.isEmpty) {
+            return _crossFade(
+              const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading')),
+            );
+          }
+          return _crossFade(
+            KeyedSubtree(
+              key: const ValueKey('library-root-content'),
+              child: _buildScaffold(
+                context,
+                ref,
+                folders: folders,
+                strategies: strategies,
+                acceptsIcaDrops: _acceptsIcaDrops(ref),
+                banner: cloudFailed
+                    ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
+                    : cloudLoading
+                        ? const _CloudLoadingBanner()
+                        : null,
+                emptyStateKey: const ValueKey('library-empty-state'),
+                emptyStateIcon: LucideIcons.folder,
+                emptyStateTitle: 'Your library is empty',
+                emptyStateSubtitle: cloudAvailable
+                    ? 'Create your first strategy to keep it available '
+                        'across your Icarus clients.'
+                    : 'Create a new strategy or drop strategies, folders, '
+                        'or .zip archives here.',
+                emptyStateAction: ShadButton(
+                  key: const ValueKey('library-empty-create-strategy'),
+                  onPressed: onCreateStrategy,
+                  leading: const Icon(LucideIcons.plus),
+                  child: const Text('Create Strategy'),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -775,8 +800,8 @@ class FolderContent extends ConsumerWidget {
   /// cloud gets a retry, never a second login over the one it has.
   Widget _buildSignInState(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authProvider);
-    final restoring = auth.isLoading ||
-        auth.convexAuthStatus == ConvexAuthStatus.configuring;
+    final restoring =
+        auth.isLoading || auth.convexAuthStatus == ConvexAuthStatus.configuring;
     if (restoring) {
       return const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
     }
@@ -858,6 +883,28 @@ class FolderContent extends ConsumerWidget {
   }
 }
 
+/// Shown above the My Library root while the cloud half's first fetch is out.
+/// The local half is usable underneath.
+class _CloudLoadingBanner extends StatelessWidget {
+  const _CloudLoadingBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return _CloudBanner(
+      key: const ValueKey('cloud-loading-banner'),
+      leading: Padding(
+        padding: const EdgeInsets.all(1.5),
+        child: CircularProgressIndicator(
+          strokeWidth: 1.8,
+          color: Settings.tacticalVioletTheme.mutedForeground,
+        ),
+      ),
+      message: "Loading your cloud library. Showing what's on this computer "
+          'for now.',
+    );
+  }
+}
+
 /// Shown above the My Library root when the cloud half failed to load. The
 /// local half stays usable underneath.
 class _CloudErrorBanner extends StatelessWidget {
@@ -867,37 +914,61 @@ class _CloudErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _CloudBanner(
+      key: const ValueKey('cloud-error-banner'),
+      leading: Icon(
+        LucideIcons.cloudOff,
+        size: 16,
+        color: Settings.tacticalVioletTheme.destructive,
+      ),
+      message: "Couldn't load your cloud library. Showing what's on this "
+          'computer.',
+      action: ShadButton.ghost(
+        height: 28,
+        leading: const Icon(LucideIcons.refreshCw, size: 14),
+        onPressed: onRetry,
+        child: const Text('Retry'),
+      ),
+    );
+  }
+}
+
+/// The one slot above the My Library root that speaks for the cloud half.
+/// Its height doesn't depend on [action], so a load that fails swaps the
+/// loading banner for the error one without moving the grid.
+class _CloudBanner extends StatelessWidget {
+  const _CloudBanner({
+    super.key,
+    required this.leading,
+    required this.message,
+    this.action,
+  });
+
+  final Widget leading;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Container(
-        key: const ValueKey('cloud-error-banner'),
         padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
         decoration: BoxDecoration(
           color: Settings.tacticalVioletTheme.card,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Settings.tacticalVioletTheme.border),
         ),
-        child: Row(
-          children: [
-            Icon(
-              LucideIcons.cloudOff,
-              size: 16,
-              color: Settings.tacticalVioletTheme.destructive,
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                "Couldn't load your cloud library. Showing what's on this "
-                'computer.',
-              ),
-            ),
-            ShadButton.ghost(
-              height: 28,
-              leading: const Icon(LucideIcons.refreshCw, size: 14),
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 28),
+          child: Row(
+            children: [
+              SizedBox.square(dimension: 16, child: leading),
+              const SizedBox(width: 10),
+              Expanded(child: Text(message)),
+              if (action case final action?) action,
+            ],
+          ),
         ),
       ),
     );
