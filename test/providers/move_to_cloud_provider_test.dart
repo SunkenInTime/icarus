@@ -389,6 +389,23 @@ void main() {
     expect(messages.single.$1, contains('keeps the latest version too'));
   });
 
+  test('an original that vanishes meanwhile leaves its cloud copy', () async {
+    await putStrategy('s1');
+    uploads.autoUpload = false;
+    open();
+
+    final move = mover().moveStrategy('s1');
+    await untilUploading();
+    // However it went, the cloud copy is now the only one.
+    await strategies().delete('s1');
+    uploads.uploadAll();
+    await move;
+
+    expect(cloud.strategies.values.single.unfinished, isFalse);
+    expect(cloud.deletedStrategies, isEmpty);
+    expect(moves().isEmpty, isTrue);
+  });
+
   test("deleting a moving strategy is refused", () async {
     await putStrategy('s1');
     uploads.autoUpload = false;

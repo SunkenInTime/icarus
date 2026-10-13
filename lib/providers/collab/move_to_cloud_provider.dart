@@ -435,6 +435,8 @@ class MoveToCloudNotifier extends Notifier<void> {
     }
     final name = stored.name;
     final folderId = stored.folderID;
+    bool originalGone() => !Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .containsKey(localId);
     bool unchanged() {
       final current =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(localId);
@@ -465,7 +467,9 @@ class MoveToCloudNotifier extends Notifier<void> {
           .enqueueMovedImages(strategyPublicId: cloudId, images: uploads);
       await _waitForImages(cloudId, accountId: accountId);
       await _verify(cloudId, plan, uploads);
-      if (!unchanged()) {
+      // A changed original stays as the newer version. One that is gone
+      // leaves the cloud copy as the only one, which finishes.
+      if (!unchanged() && !originalGone()) {
         await _abandon(cloudId);
         return _Outcome.changedMeanwhile;
       }
@@ -491,6 +495,7 @@ class MoveToCloudNotifier extends Notifier<void> {
       // The original goes only as it was read, whatever wrote to it since,
       // and not while the editor holds it again (a load that began before
       // the move): the check and the removal run with nothing in between.
+      if (originalGone()) return _Outcome.moved;
       if (!unchanged() || ref.read(strategyProvider).strategyId == localId) {
         return _Outcome.movedChangedHere;
       }

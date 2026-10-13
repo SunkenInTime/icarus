@@ -2138,14 +2138,16 @@ class StrategyProvider extends Notifier<StrategyState> {
       return result;
     }
 
-    // Its move to the cloud deletes it once its cloud copy is complete.
+    // Its move to the cloud deletes it once its cloud copy is complete. The
+    // check and the removal run with nothing in between, so a move that
+    // starts while this delete waits is never undercut.
     if (ref.read(movingToCloudProvider).contains(strategyID)) {
       return CloudLibraryActionResult.failed(
         'This strategy is moving to the cloud. Delete it once the move ends.',
       );
     }
-    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
 
     final directory = await getApplicationSupportDirectory();
 
