@@ -135,6 +135,13 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
     return _listing(file);
   }
 
+  /// Deletes a replay kept in Icarus's folder, and its decoded cache.
+  Future<void> remove(ReplayListing listing) async {
+    await ref.read(replayFilesProvider).remove(listing.file);
+    _probes.remove(listing.file.cacheKey);
+    await refresh();
+  }
+
   /// Brings replay files the user picked or dropped into Icarus's replays
   /// folder. A file whose match is already listed is not copied again, and
   /// one that isn't a replay Icarus can read is not copied at all.

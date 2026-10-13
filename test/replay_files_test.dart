@@ -92,4 +92,42 @@ void main() {
       '5b6bd243-d9a3-549d-b84e-2b7d0428c290',
     });
   });
+
+  test('remove deletes the kept copy and its cache, never the Valorant file',
+      () async {
+    final original = await writeReplay(demos, 'f');
+    final kept = await files.import(original.path);
+    // Windows copies keep the file's time, so the copy shares its cache key.
+    await File(kept.path).setLastModified(await original.lastModified());
+    final listed = (await files.list()).single;
+    expect(listed.path, kept.path);
+    expect(listed.valorantHasCopy, isTrue);
+    await files.writeCache(listed, 'v1', Uint8List.fromList([1]));
+
+    final valorantOnly = (await ReplayFiles(
+      supportDirectory: () async =>
+          Directory(p.join(root.path, 'elsewhere')).create(),
+      valorantDemosPath: demos.path,
+    ).list())
+        .single;
+    await expectLater(files.remove(valorantOnly), throwsArgumentError);
+    expect(await original.exists(), isTrue);
+
+    await files.remove(listed);
+    expect(await File(kept.path).exists(), isFalse);
+    expect(await original.exists(), isTrue);
+    final after = (await files.list()).single;
+    expect(after.source, ReplaySource.valorant);
+    expect(after.valorantHasCopy, isFalse);
+    // Same file, same cache: Valorant's copy still uses it.
+    expect(after.cacheKey, listed.cacheKey);
+    expect(await files.readCache(after, 'v1'), [1]);
+
+    final elsewhere = await writeReplay(root, 'g');
+    final onlyKept = await files.import(elsewhere.path);
+    await files.writeCache(onlyKept, 'v1', Uint8List.fromList([2]));
+    await files.remove(onlyKept);
+    expect(await File(onlyKept.path).exists(), isFalse);
+    expect(await files.readCache(onlyKept, 'v1'), isNull);
+  });
 }

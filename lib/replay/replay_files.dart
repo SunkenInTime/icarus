@@ -20,12 +20,16 @@ class ReplayFile {
     required this.source,
     required this.sizeBytes,
     required this.modified,
+    this.valorantHasCopy = false,
   });
 
   final String path;
   final ReplaySource source;
   final int sizeBytes;
   final DateTime modified;
+
+  /// For a replay kept in Icarus: Valorant's folder has the match too.
+  final bool valorantHasCopy;
 
   /// Valorant names replays after their match id. Lower-cased: Windows
   /// paths don't care about case, so neither does the match id.
@@ -114,7 +118,15 @@ class ReplayFiles {
       return _newestFirst(byMatch.values);
     }
     for (final file in await _scan(kept)) {
-      byMatch[file.matchId] = file;
+      byMatch[file.matchId] = byMatch.containsKey(file.matchId)
+          ? ReplayFile(
+              path: file.path,
+              source: ReplaySource.icarus,
+              sizeBytes: file.sizeBytes,
+              modified: file.modified,
+              valorantHasCopy: true,
+            )
+          : file;
     }
     return _newestFirst(byMatch.values);
   }
@@ -190,6 +202,48 @@ class ReplayFiles {
       sizeBytes: stat.size,
       modified: stat.modified,
     );
+  }
+
+  /// Deletes a replay kept in Icarus's folder and its decoded cache. Never
+  /// deletes anything outside Icarus's own folders: Valorant's folder is
+  /// Valorant's to clear.
+  Future<void> remove(ReplayFile file) async {
+    final kept = await icarusReplaysDirectory();
+    if (file.source != ReplaySource.icarus ||
+        !p.isWithin(kept.path, file.path)) {
+      throw ArgumentError.value(
+        file.path,
+        'file',
+        "isn't in Icarus's replays folder",
+      );
+    }
+    final replay = File(file.path);
+    if (await replay.exists()) await replay.delete();
+    // A copy Keep made is the same file as Valorant's, down to its time, so
+    // the two share one cache. Valorant's still needs it.
+    final demos = _valorantDemosPath;
+    if (demos != null) {
+      final original = File(p.join(demos, p.basename(file.path)));
+      if (await original.exists()) {
+        final stat = await original.stat();
+        final valorantCopy = ReplayFile(
+          path: original.path,
+          source: ReplaySource.valorant,
+          sizeBytes: stat.size,
+          modified: stat.modified,
+        );
+        if (valorantCopy.cacheKey == file.cacheKey) return;
+      }
+    }
+    final cache = await _cacheDirectory();
+    await for (final entity in cache.list()) {
+      final name = p.basename(entity.path);
+      if (entity is File &&
+          name.startsWith('${file.cacheKey}-') &&
+          name.endsWith('.icrp')) {
+        await entity.delete();
+      }
+    }
   }
 
   /// A temporary name beside [target], unique to this write, so two writes
