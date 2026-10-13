@@ -64,11 +64,9 @@ Future<void> showWelcomeTourAtLaunch(BuildContext context) async {
   await WidgetsBinding.instance.endOfFrame;
   if (!context.mounted) return;
   if (ModalRoute.of(context)?.isCurrent != true) return;
+  // The user may have opened it from What's new while the check answered.
+  if (container.read(appPreferencesProvider).welcomeTourSeen) return;
 
-  // Seen once it is on screen, however it is closed.
-  unawaited(
-    container.read(appPreferencesProvider.notifier).markWelcomeTourSeen(),
-  );
   await WelcomeTourDialog.show(context);
 }
 
@@ -107,7 +105,14 @@ class WelcomeTourDialog extends ConsumerStatefulWidget {
   /// with nothing in it skips that step.
   final bool showLibraryStep;
 
+  /// Opens the tour, at launch or from What's new, and marks it seen: once
+  /// it is on screen it counts, however it is closed.
   static Future<void> show(BuildContext context) {
+    unawaited(
+      ProviderScope.containerOf(context, listen: false)
+          .read(appPreferencesProvider.notifier)
+          .markWelcomeTourSeen(),
+    );
     final hasLocalWork =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).isNotEmpty ||
             Hive.box<Folder>(HiveBoxNames.foldersBox).isNotEmpty;

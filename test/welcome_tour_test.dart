@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -76,7 +77,9 @@ class _MemoryPreferences extends AppPreferencesNotifier {
 /// Stands in for the library screen: asks for the tour after its first
 /// frame, as FolderNavigator does.
 class _Library extends StatefulWidget {
-  const _Library();
+  const _Library({this.child = const SizedBox.expand()});
+
+  final Widget child;
 
   @override
   State<_Library> createState() => _LibraryState();
@@ -92,7 +95,7 @@ class _LibraryState extends State<_Library> {
   }
 
   @override
-  Widget build(BuildContext context) => const SizedBox.expand();
+  Widget build(BuildContext context) => widget.child;
 }
 
 void main() {
@@ -153,15 +156,20 @@ void main() {
     bool signedIn = false,
     bool updateAvailable = false,
     bool launchOpensFile = false,
+    Future<UpdateCheckResult>? updateCheck,
   }) {
     final container = ProviderContainer(overrides: [
       authProvider.overrideWith(signedIn ? _SignedIn.new : _SignedOut.new),
       appUpdateStatusProvider.overrideWith(
-        (ref) async => UpdateCheckResult(
-          isSupported: true,
-          isUpdateAvailable: updateAvailable,
-          source: 'test',
-        ),
+        (ref) =>
+            updateCheck ??
+            Future.value(
+              UpdateCheckResult(
+                isSupported: true,
+                isUpdateAvailable: updateAvailable,
+                source: 'test',
+              ),
+            ),
       ),
       desktopUpdateControllerProvider.overrideWithValue(null),
       appPreferencesProvider.overrideWith(_MemoryPreferences.new),
@@ -252,6 +260,62 @@ void main() {
     seen.read(appPreferencesProvider.notifier).markWelcomeTourSeen();
     await pumpApp(tester, seen, const _Library());
     expect(find.byKey(const ValueKey('welcome-tour')), findsNothing);
+  });
+
+  const noUpdate = UpdateCheckResult(
+    isSupported: true,
+    isUpdateAvailable: false,
+    source: 'test',
+  );
+
+  testWidgets('an update check that never answers puts it off', (tester) async {
+    final check = Completer<UpdateCheckResult>();
+    final container = containerFor(updateCheck: check.future);
+    addTearDown(container.dispose);
+    await pumpApp(tester, container, const _Library());
+
+    await tester.pump(const Duration(seconds: 11));
+    check.complete(noUpdate);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('welcome-tour')), findsNothing);
+    expect(container.read(appPreferencesProvider).welcomeTourSeen, isFalse);
+  });
+
+  testWidgets(
+      "opened from What's new it counts as seen, even while the launch waits",
+      (tester) async {
+    final check = Completer<UpdateCheckResult>();
+    final container = containerFor(updateCheck: check.future);
+    addTearDown(container.dispose);
+    await pumpApp(
+      tester,
+      container,
+      _Library(
+        child: Builder(
+          builder: (context) => Center(
+            child: ShadButton(
+              onPressed: () => ReleaseNotesDialog.show(context),
+              child: const Text('open notes'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open notes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show the welcome tour'));
+    await tester.pumpAndSettle();
+    final tour = find.byKey(const ValueKey('welcome-tour'));
+    expect(tour, findsOneWidget);
+    expect(container.read(appPreferencesProvider).welcomeTourSeen, isTrue);
+
+    Navigator.of(tester.element(tour)).pop();
+    await tester.pumpAndSettle();
+    // The launch's update check answers now; the tour was already seen.
+    check.complete(noUpdate);
+    await tester.pumpAndSettle();
+    expect(tour, findsNothing);
   });
 
   testWidgets(

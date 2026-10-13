@@ -12,7 +12,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 const double _stageHeight = 196;
 const double _tileWidth = 128;
 
-/// Step 1: three strategies, each marked as saved on this computer.
+/// Step 1: three strategies, each with the library's local badge.
 class WelcomeLibraryPicture extends StatelessWidget {
   const WelcomeLibraryPicture({super.key});
 
@@ -27,21 +27,21 @@ class WelcomeLibraryPicture extends StatelessWidget {
               name: 'A site execute',
               map: MapValue.ascent,
               icon: LucideIcons.monitor,
-              meta: 'On this computer',
+              meta: 'On this device',
             ),
             SizedBox(width: 10),
             _MiniTile(
               name: 'B retake vs Viper',
               map: MapValue.lotus,
               icon: LucideIcons.monitor,
-              meta: 'On this computer',
+              meta: 'On this device',
             ),
             SizedBox(width: 10),
             _MiniTile(
               name: 'Pistol defaults',
               map: MapValue.haven,
               icon: LucideIcons.monitor,
-              meta: 'On this computer',
+              meta: 'On this device',
             ),
           ],
         ),
@@ -435,17 +435,18 @@ class _AgentIcon extends StatelessWidget {
   }
 }
 
-/// A drawing of the replay viewer's Capture command.
+/// A drawing of the replay viewer's Capture command. Raised but neutral:
+/// it can't be pressed here, and violet is kept for things that can.
 class _CaptureButton extends StatelessWidget {
   const _CaptureButton();
 
   @override
   Widget build(BuildContext context) {
-    final ink = Settings.tacticalVioletTheme.primaryForeground;
+    final ink = Settings.tacticalVioletTheme.foreground;
     return Container(
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: Settings.raisedPrimary(8),
+      decoration: Settings.raisedSurface(8),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
