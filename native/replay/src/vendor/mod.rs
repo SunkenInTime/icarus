@@ -4,7 +4,8 @@
 //!
 //! - `sink/*.rs`: `crates/vrfkit/src/sink/`, verbatim except `crate::sink::`
 //!   paths spelled `crate::vendor::sink::` and the CLI's `export` feature gates
-//!   removed (we always want `ChannelState::players`).
+//!   removed (we always want `ChannelState::players`), and 13.08 pinned in
+//!   `sink/measured_routes.rs`.
 //! - `pass.rs`: `crates/vrfkit/src/pass.rs`, cut to the per-packet walk; the
 //!   chunk loop, checkpoint scope and helper thread are ours (`crate::decode`).
 //! - `frame.rs`: `crates/vrf-frame/src/lib.rs` and `sections.rs`'s

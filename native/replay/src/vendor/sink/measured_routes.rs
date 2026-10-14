@@ -123,7 +123,11 @@ impl MeasuredArrayRoutes {
                 RequestedIgnoreActors,
                 ProjectilePath,
             ]),
-            "++Ares-Core+release-12.06" | "++Ares-Core+release-12.07" => Self::of(&[
+            // 13.08 (Icarus): one 30-minute replay, every array counter zero on
+            // the main stream and checkpoints; it held no blinds and no path.
+            "++Ares-Core+release-12.06"
+            | "++Ares-Core+release-12.07"
+            | "++Ares-Core+release-13.08" => Self::of(&[
                 PlayerInfo,
                 TrackedRewards,
                 SelectedV2,
@@ -199,7 +203,7 @@ mod tests {
         RequestedIgnoreActors,
         ProjectilePath,
     ];
-    /// 12.06-12.07: no projectile path in any sample.
+    /// 12.06-12.07 and 13.08: no projectile path in any sample.
     const B1206: &[Route] = &[
         PlayerInfo,
         TrackedRewards,
@@ -239,6 +243,7 @@ mod tests {
         ("++Ares-Core+release-13.04", ALL),
         ("++Ares-Core+release-13.05", ALL),
         ("++Ares-Core+release-13.06", ALL),
+        ("++Ares-Core+release-13.08", B1206),
     ];
 
     #[test]
