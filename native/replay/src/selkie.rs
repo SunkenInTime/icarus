@@ -1215,21 +1215,13 @@ mod tests {
 
     #[test]
     fn below_0xbfffff_a_large_far_value_takes_no_fourth_byte() {
-        // Region 0xbc0000: an entry reading 0xc00000 would reach before the
-        // archive, and it has no fourth byte to change that.
+        // The last region below the guard and the first at or beyond it.
+        assert!(!far_entry_is_wide(0xbf_0000, FOUR_BYTE_FAR));
+        assert!(!far_entry_is_wide(0xbf_0000, 0xff_ffff));
+        assert!(far_entry_is_wide(0xc0_0000, FOUR_BYTE_FAR));
+        assert!(!far_entry_is_wide(0xc0_0000, FOUR_BYTE_FAR - 1));
+        // Entries below the guard keep working there.
         let region = 0xbc_0000;
-        let last = LzChunk {
-            commands: vec![0x02],
-            far: [vec![FOUR_BYTE_FAR], vec![]],
-            lengths: vec![11],
-            wide: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            code(&far_reaching(region, &last, region + 40), region + 40),
-            CORRUPT
-        );
-        // Its three-byte neighbours keep working there.
         let (archive, size) = one_far_match(region, 300_000, 40);
         let out = decode(&archive, size).unwrap();
         assert_eq!(out[region..], out[300_000..300_040]);
@@ -1262,6 +1254,17 @@ mod tests {
             ..lz.clone()
         };
         assert_eq!(decode(&extended.archive(), size).unwrap(), plain);
+        // Both replacements come before the first list: with a first-region
+        // entry, reading the second count after it would misread the list.
+        let (mut lz, size) = compact_reuse();
+        lz.commands.insert(2, 0x09); // 14 bytes from output 0
+        lz.far[0].push(0);
+        let plain = decode(&lz.archive(), size + 14).unwrap();
+        let extended = LzChunk {
+            extended_counts: true,
+            ..lz
+        };
+        assert_eq!(decode(&extended.archive(), size + 14).unwrap(), plain);
         // A one-region chunk may spell its second count 0 that way, but not
         // more.
         let (lz, size) = compact_reuse();
