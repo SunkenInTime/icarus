@@ -74,7 +74,9 @@ fn a_build_without_a_decoder_reports_unsupported_compression() {
 
 #[test]
 fn every_replay_decodes_to_the_contract() {
+    let (mut replays, mut flashes) = (0, 0);
     for path in corpus() {
+        replays += 1;
         let started = std::time::Instant::now();
         let buffer = icarus_replay::decode_file(&path, Control::default()).expect("decode");
         let parts = container::read(&buffer).expect("container");
@@ -103,7 +105,7 @@ fn every_replay_decodes_to_the_contract() {
         check_vitals(&id, &doc, rounds, kills, &team);
         check_movement(&id, &doc, parts.blob, &team);
         check_utility(&id, doc["utility"].as_array().unwrap());
-        check_blinds(&id, &doc, &team);
+        flashes += check_blinds(&id, &doc, &team);
         for c in doc["casts"].as_array().unwrap() {
             assert!(
                 [3, 4, 5, 9].contains(&c["slot"].as_i64().unwrap()),
@@ -111,13 +113,16 @@ fn every_replay_decodes_to_the_contract() {
             );
         }
     }
+    // Flashes are common: a corpus with none means they stopped decoding.
+    assert!(replays == 0 || flashes > 0, "no flash in the whole corpus");
 }
 
 /// Flashes belong to players, and each one wears off: a row of seconds is
 /// followed by a 0 no later than its seconds (plus the few milliseconds the
 /// clear takes to arrive), or sooner when the player dies or the round ends.
-fn check_blinds(id: &str, doc: &Value, team: &HashMap<&str, &str>) {
+fn check_blinds(id: &str, doc: &Value, team: &HashMap<&str, &str>) -> usize {
     let blinds = doc["blinds"].as_object().unwrap();
+    let mut flashes = 0;
     for (subject, rows) in blinds {
         assert!(
             team.contains_key(subject.as_str()),
@@ -129,6 +134,7 @@ fn check_blinds(id: &str, doc: &Value, team: &HashMap<&str, &str>) {
             if seconds == 0.0 {
                 continue;
             }
+            flashes += 1;
             let clear = rows
                 .get(i + 1)
                 .unwrap_or_else(|| panic!("{id}: {subject}'s flash at {time} never ends"));
@@ -141,6 +147,7 @@ fn check_blinds(id: &str, doc: &Value, team: &HashMap<&str, &str>) {
             );
         }
     }
+    flashes
 }
 
 /// One round per `roundStarted`, one kill per `characterDeath`, and every

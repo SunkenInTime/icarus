@@ -152,8 +152,10 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                   // Cones cut on the worker are drawn in one layer.
                   final cuts = widget.playback.coneCuts;
                   final flights = frame.effects.whereType<ReplayFlight>();
-                  final flashed =
-                      frame.effects.whereType<ReplayFlashed>().toList();
+                  final flashed = {
+                    for (final flash in frame.effects.whereType<ReplayFlashed>())
+                      flash.agentId: flash,
+                  };
                   return Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -239,25 +241,28 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                           ),
                         ),
                       for (final placed in widgets)
-                        if (placed is PlacedAgentNode)
+                        if (placed is PlacedAgentNode) ...[
                           cuts == null
                               ? view(placed)
                               : ViewConesDrawnElsewhere(
                                   key: ValueKey(placed.id),
                                   child: view(placed),
                                 ),
-                      if (flashed.isNotEmpty)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: CustomPaint(
-                              painter: ReplayFlashPainter(
-                                flashed: flashed,
-                                isAttack: isAttack,
-                                agentSize: agentSize,
+                          // Washed with its agent, under any stacked above.
+                          if (flashed[placed.id] case final flash?)
+                            Positioned.fill(
+                              key: ValueKey('flash-${placed.id}'),
+                              child: IgnorePointer(
+                                child: CustomPaint(
+                                  painter: ReplayFlashPainter(
+                                    flash: flash,
+                                    isAttack: isAttack,
+                                    agentSize: agentSize,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
+                        ],
                     ],
                   );
                 },

@@ -124,10 +124,14 @@ class ReplayExit extends ReplayEffect {
 /// A flashed player: their icon washed white by how blind they are.
 class ReplayFlashed extends ReplayEffect {
   const ReplayFlashed({
+    required this.agentId,
     required this.centre,
     required this.blindness,
     required super.isAlly,
   });
+
+  /// The flashed agent's placed id, so the wash is drawn with that agent.
+  final String agentId;
 
   /// The icon's centre, where the player stands.
   final Offset centre;
@@ -348,6 +352,7 @@ class ReplayFrameBuilder {
       final sees = state.alive && sightLength >= ViewConeUtility.minLength;
       if (blindness > 0) {
         flashed.add(ReplayFlashed(
+          agentId: id,
           centre: standing,
           blindness: blindness,
           isAlly: isAlly,

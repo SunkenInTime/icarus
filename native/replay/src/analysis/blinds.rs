@@ -34,19 +34,41 @@ pub(super) fn blinds(cx: &Context<'_>) -> BTreeMap<String, Vec<BlindRow>> {
             .push((row.time, row.packet, seconds));
     }
     rows.into_iter()
-        .map(|(subject, mut changes)| {
-            changes.sort_by_key(|&(time, packet, _)| (time, packet));
-            let mut out: Vec<BlindRow> = Vec::with_capacity(changes.len());
-            for (time, _, seconds) in changes {
-                let seconds = (seconds * 1000.0).round() / 1000.0;
-                // A repeat of the value in force (0 before the first flash)
-                // changes nothing.
-                if out.last().map_or(0.0, |&(_, last)| last) == seconds {
-                    continue;
-                }
-                out.push((i64::from(time), seconds));
-            }
-            (subject, out)
-        })
+        .map(|(subject, changes)| (subject, track(changes)))
         .collect()
+}
+
+/// One player's `(time, packet, seconds)` writes as rows: in wire order,
+/// seconds to three decimals, and only those that change the value in force
+/// (0 before the first flash).
+fn track(mut changes: Vec<(u32, u32, f64)>) -> Vec<BlindRow> {
+    changes.sort_by_key(|&(time, packet, _)| (time, packet));
+    let mut out: Vec<BlindRow> = Vec::with_capacity(changes.len());
+    for (time, _, seconds) in changes {
+        let seconds = (seconds * 1000.0).round() / 1000.0;
+        if out.last().map_or(0.0, |&(_, last)| last) == seconds {
+            continue;
+        }
+        out.push((i64::from(time), seconds));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::track;
+
+    #[test]
+    fn rows_are_changes_in_wire_order() {
+        // As 1fb53a2c's first flash, with a repeat, a stray leading 0 and
+        // two writes arriving out of order.
+        let rows = track(vec![
+            (57102, 14364, 0.0),
+            (55297, 13761, 1.799_260_735_511_779_8),
+            (55000, 13700, 0.0),
+            (55297, 13762, 1.799_260_7),
+            (60000, 15000, 0.0),
+        ]);
+        assert_eq!(rows, [(55297, 1.799), (57102, 0.0)]);
+    }
 }

@@ -104,15 +104,16 @@ class ReplayEffectsPainter extends CustomPainter {
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
 }
 
-/// Flashed players' icons washed white, over the agents.
+/// A flashed player's icon washed white, drawn just above that agent so
+/// agents stacked over it stay clear.
 class ReplayFlashPainter extends CustomPainter {
   ReplayFlashPainter({
-    required this.flashed,
+    required this.flash,
     required this.isAttack,
     required this.agentSize,
   });
 
-  final List<ReplayFlashed> flashed;
+  final ReplayFlashed flash;
   final bool isAttack;
 
   /// The agent icon's size, as placed widgets are given it.
@@ -121,25 +122,26 @@ class ReplayFlashPainter extends CustomPainter {
   /// The agent icon's own corner radius.
   static const _radius = Radius.circular(3);
 
+  /// The wash at full blindness: the agent stays recognisable through it.
+  static const _fullWash = 0.7;
+
   @override
   void paint(Canvas canvas, Size size) {
     final side = CoordinateSystem.instance.scale(agentSize);
-    for (final flash in flashed) {
-      final at = replayScreenPoint(flash.centre, isAttack: isAttack);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: at, width: side, height: side),
-          _radius,
-        ),
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.85 * flash.blindness),
-      );
-    }
+    final at = replayScreenPoint(flash.centre, isAttack: isAttack);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: at, width: side, height: side),
+        _radius,
+      ),
+      Paint()
+        ..color = Colors.white.withValues(alpha: _fullWash * flash.blindness),
+    );
   }
 
   @override
   bool shouldRepaint(ReplayFlashPainter oldDelegate) =>
-      oldDelegate.flashed != flashed ||
+      oldDelegate.flash != flash ||
       oldDelegate.isAttack != isAttack ||
       oldDelegate.agentSize != agentSize;
 }
