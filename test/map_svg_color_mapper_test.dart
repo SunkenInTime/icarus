@@ -1,3 +1,4 @@
+import 'package:flutter/painting.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -13,7 +14,7 @@ void main() {
   // A map widget rebuilt with a mapper made again from the same palette must
   // keep its loaded picture: flutter_svg reloads whenever the loader changes,
   // and the loader compares mappers.
-  test('a mapper made again from the same palette loads the same picture', () {
+  test('a mapper made again from the same palette gives an equal loader', () {
     SvgAssetLoader loader(MapSvgColorMapper mapper) =>
         SvgAssetLoader('assets/maps/ascent_map.svg', colorMapper: mapper);
 
@@ -26,6 +27,14 @@ void main() {
       expect(again.hashCode, make(palette).hashCode);
       expect(loader(again), loader(make(palette)));
     }
+  });
+
+  test('the order colours were listed in does not matter', () {
+    const red = Color(0xFFFF0000), blue = Color(0xFF0000FF);
+    const one = MapSvgColorMapper({1: red, 2: blue});
+    const other = MapSvgColorMapper({2: blue, 1: red});
+    expect(other, one);
+    expect(other.hashCode, one.hashCode);
   });
 
   test('mappers for different colours differ', () {
