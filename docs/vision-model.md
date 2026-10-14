@@ -969,12 +969,19 @@ that everything outside them stays as it was:
   that lie wholly outside the changed places (so their outlines are cut at
   the same points as before) plus the new art's ink. Heights come from
   Riot's 13.08 vision lines inside the changed places, padded by 3 SVG
-  units, and from the 13.06 lines the shipped models used everywhere else.
-  On a 3-unit grid, every spot whose cone stays clear of the changed places
-  casts the same cone as before: 3,166 of 3,166 on attack (largest
-  difference 0.0001 units) and 3,155 of 3,163 on defense. The other 8 stand
+  units, and from the 13.06 lines the shipped models used everywhere else,
+  with one exception: west of the attacker spawn (attack SVG x 115–131,
+  y 362–374) 13.06 put the corner of the outer wall at y 372.4, 8.5 units
+  south of the drawn corner, so a line blocked cones across open floor;
+  13.08 puts it at y 363.9, on the art, and its lines are used there.
+  Wall ids and order change, and the simplifier redraws walls that run into
+  a changed place. What stays the same is what the app draws: on a 3-unit
+  grid, every spot whose cone stays clear of the changed places and that
+  corner casts the same cone as before, 3,001 of 3,001 on attack (largest
+  difference 0.003 units) and 2,990 of 2,998 on defense. The other 8 stand
   within a few hundredths of a corner of a wall that continues into a
-  changed place; `simplify_walls.py` redrew that wall within its 0.01 bound.
+  changed place, which the simplifier redrew within its 0.01 bound. All
+  automatic supports outside the changed places are unchanged.
 - **Mid half wall.** Riot has no vision line along it in 13.06 or 13.08, so
   it does not block cones, as before. Its new metal does not change that in
   Riot's data.
@@ -991,9 +998,13 @@ that everything outside them stays as it was:
   keep their 6 m tops at their new circles.
 - **Navigation.** Rebaked from the 13.08 Recast export with
   `bake_navigation.py`, which reproduces the shipped 13.06 file from the
-  archived export. The 518 of 653 polygons identical to 13.06 keep their
-  refined heights and detailed floors; the rest use nav height minus 10 cm.
-
-The 13.08 navmesh is still walkable in a 6.5-unit strip east of the
-defender spawn (attack SVG x 237.5–244, y 44–78), where the 13.08 minimap,
-Riot's vision lines and the art all put the wall at x 237.5.
+  archived export. The export is still walkable in a 6.5-unit strip east of
+  the defender spawn (attack SVG x 237.5–244, y 44–78), where the 13.08
+  minimap, Riot's vision lines and the art all put the wall at x 237.54; a
+  page transition inside one nav polygon walked an agent through that wall.
+  The bundled file cuts the strip out, grown by the 42 cm agent radius:
+  the four polygons it touched become triangles of what remains, with
+  their portals cut the same way. Polygons identical to 13.06 (514 of 657)
+  keep their detailed floors; the rest use their nav triangles, with each
+  vertex's refined 13.06 height where the vertex is unchanged and its nav
+  height minus 10 cm where it is new.
