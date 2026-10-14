@@ -29,7 +29,7 @@
       "type": "feat"
     },
     {
-      "message": "Replays show who's flashed: their view cone shrinks away and their icon washes white until they can see again.",
+      "message": "Replays show who's flashed: their view cone shrinks away, their icon washes white with a crossed-out eye, and its outline fills as the flash wears off.",
       "type": "feat"
     },
     {
@@ -58,6 +58,10 @@
     },
     {
       "message": "A short welcome tour explains what's new. Open it again any time from What's new.",
+      "type": "feat"
+    },
+    {
+      "message": "View cones light up the floor the way VALORANT's minimap does: overlapping cones no longer stack into haze, they read on every map theme, and they no longer dim the smokes and abilities under them.",
       "type": "feat"
     },
     {
