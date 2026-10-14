@@ -255,6 +255,37 @@ void main() {
     expect(await at(40, 30), await at(20, 30), reason: 'overlap = 0.8 cone');
   });
 
+  testWidgets('coincident cone edges do not stack, in either order',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    // Edge pixels of one triangle cone.
+    await tester.pumpWidget(
+        _page(coverage, const [Offset(10, 10)], painters: [_ShapedCone()]));
+    final one = _pixels(tester);
+    final single = [for (var x = 12; x < 48; x++) await one(x, 59 - x)];
+    // Ten of the same cone, edges on top of each other.
+    await tester.pumpWidget(_page(
+        coverage, [for (var i = 0; i < 10; i++) const Offset(10, 10)],
+        painters: [for (var i = 0; i < 10; i++) _ShapedCone()]));
+    final ten = _pixels(tester);
+    expect([for (var x = 12; x < 48; x++) await ten(x, 59 - x)], single);
+    // A strong cone whose edge half covers a pixel, and a weak cone fully
+    // covering it: the same either way round.
+    Future<Color> edge(List<double> fades, List<ConeAreaPainter> painters,
+        List<Offset> at) async {
+      await tester
+          .pumpWidget(_page(coverage, at, fades: fades, painters: painters));
+      return _pixels(tester)(30, 29);
+    }
+
+    final strongFirst = await edge(const [0.8, 0.2],
+        [_ShapedCone(), _BoxCone()], const [Offset(10, 10), Offset(10, 10)]);
+    final weakFirst = await edge(const [0.2, 0.8], [_BoxCone(), _ShapedCone()],
+        const [Offset(10, 10), Offset(10, 10)]);
+    expect(weakFirst, strongFirst);
+  });
+
   test('the revealed map changes only the floor', () {
     final palette = MapThemePalette(
       baseColorValue: 0xFF767676,
