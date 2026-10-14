@@ -28,6 +28,7 @@ import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placement_editor.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -112,6 +113,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
     });
   }
 
+  /// The page's view cones, painted together on the map art.
+  final _cones = ConeCoverage();
+
   @override
   void initState() {
     super.initState();
@@ -122,6 +126,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   void dispose() {
     controller.removeListener(_scheduleZoomSync);
     controller.dispose();
+    _cones.dispose();
     super.dispose();
   }
 
@@ -297,6 +302,43 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       ),
                                     ),
                                   ),
+                                  // View cones: the map as they reveal it,
+                                  // shown wherever one reaches.
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: ConeCoverageLayer(
+                                        coverage: _cones,
+                                        opacity: ref
+                                                .watch(interactionStateProvider)
+                                                .isLineUpMode
+                                            ? 0.2
+                                            : 1.0,
+                                        child: Stack(
+                                          children: [
+                                            Positioned(
+                                              left: mapLeft,
+                                              top: 0,
+                                              width: mapWidth,
+                                              height: height,
+                                              child: CanonicalMapArtwork(
+                                                map: ref
+                                                    .watch(mapProvider)
+                                                    .currentMap,
+                                                isAttack: isAttack,
+                                                child: SvgPicture.asset(
+                                                  assetName,
+                                                  colorMapper: MapSvgColorMapper
+                                                      .revealed(
+                                                          effectivePalette),
+                                                  fit: BoxFit.contain,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                   if (ref.watch(mapProvider).showSpawnBarrier)
                                     Positioned(
                                       left: mapLeft,
@@ -355,7 +397,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                                       .isLineUpMode
                                                   ? 0.2
                                                   : 1.0,
-                                              child: PlacedWidgetBuilder(),
+                                              child: ConeCoverageScope(
+                                                  coverage: _cones,
+                                                  child: PlacedWidgetBuilder()),
                                             ),
                                     ),
                                   ),
@@ -369,7 +413,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                   Positioned.fill(
                                     child: transitionPresentation.active
                                         ? RepaintBoundary(
-                                            child: PageTransitionOverlay(),
+                                            child: ConeCoverageScope(
+                                                coverage: _cones,
+                                                child: PageTransitionOverlay()),
                                           )
                                         : SizedBox.shrink(),
                                   ),
@@ -377,7 +423,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     child: transitionPresentation.hideView &&
                                             transitionPresentation.phase ==
                                                 PageTransitionPhase.preparing
-                                        ? TemporaryWidgetBuilder()
+                                        ? ConeCoverageScope(
+                                            coverage: _cones,
+                                            child: TemporaryWidgetBuilder())
                                         : SizedBox.shrink(),
                                   ),
                                   // Painting

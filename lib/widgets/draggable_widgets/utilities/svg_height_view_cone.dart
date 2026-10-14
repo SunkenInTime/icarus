@@ -6,6 +6,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 class SvgHeightMapTransform {
@@ -170,7 +171,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       widget.opacity,
     );
     if (_paintInputs == paintInputs) {
-      return RepaintBoundary(child: CustomPaint(size: size, painter: _painter));
+      return ConeArea(size: size, painter: _painter!, fallback: _painter!);
     }
     final apex = Offset(size.width / 2, size.height);
     final inverse = -widget.rotation;
@@ -220,7 +221,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
           ? null
           : (result.cone, transform, widget.range / mapTransform.scale),
     );
-    return RepaintBoundary(child: CustomPaint(size: size, painter: _painter));
+    return ConeArea(size: size, painter: _painter!, fallback: _painter!);
   }
 
   static Path _combinedReceiver(SvgHeightVisibility model) {
@@ -236,7 +237,8 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
   }
 }
 
-class SvgHeightViewConePainter extends CustomPainter {
+class SvgHeightViewConePainter extends CustomPainter
+    implements ConeAreaPainter {
   const SvgHeightViewConePainter({
     required this.visibilityPolygon,
     required this.receiverRings,
@@ -270,6 +272,7 @@ class SvgHeightViewConePainter extends CustomPainter {
   final bool receiverEvenOdd;
   final Offset apex;
   final double radius;
+  @override
   final double opacity;
 
   /// Translation applied to [_receiver] at paint time; see the widget.
@@ -280,8 +283,16 @@ class SvgHeightViewConePainter extends CustomPainter {
   /// coordinates by [paintSvgConeArea] instead of clipped to [_visibility].
   final (SvgVisibilityCone, Float64List, double)? floors;
 
+  /// Painting by itself: a grey fading toward the cone's reach.
   @override
-  void paint(Canvas canvas, Size size) {
+  void paint(Canvas canvas, Size size) => _paintArea(canvas, _fill);
+
+  /// Painting into a [ConeCoverageLayer]: flat [fill].
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill) =>
+      _paintArea(canvas, (_, __) => fill);
+
+  void _paintArea(Canvas canvas, Paint Function(Offset, double) fill) {
     if ((_visibility == null && visibilityPolygon.length < 3) ||
         (_receiver == null && receiverRings.isEmpty)) return;
     final visibility =
@@ -297,13 +308,13 @@ class SvgHeightViewConePainter extends CustomPainter {
     final floors = this.floors;
     if (floors == null) {
       canvas.clipPath(visibility);
-      canvas.drawCircle(apex, radius, _fill(apex, radius));
+      canvas.drawCircle(apex, radius, fill(apex, radius));
     } else {
       final (cone, sourceToCanvas, range) = floors;
       final origin = cone.sector!.first;
       canvas.transform(sourceToCanvas);
       paintSvgConeArea(canvas, cone, cone.outlinePath(_identity),
-          _fill(origin, range), Rect.fromCircle(center: origin, radius: range));
+          fill(origin, range), Rect.fromCircle(center: origin, radius: range));
     }
     canvas.restore();
   }

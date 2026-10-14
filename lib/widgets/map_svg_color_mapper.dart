@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 
 /// The three placeholder colors the map SVGs are authored with. Rendering
 /// swaps them for a strategy's palette via [MapSvgColorMapper].
@@ -16,6 +17,15 @@ class MapSvgColorMapper extends ColorMapper {
   MapSvgColorMapper.forPalette(MapThemePalette palette)
       : replacements = {
           MapSvgSourceColors.base.toARGB32(): palette.baseColor,
+          MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
+          MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
+        };
+
+  /// The map in [palette] as cones reveal it: the same art with its floor
+  /// in [revealedFloorColor] (see `lib/view_cone/cone_coverage.dart`).
+  MapSvgColorMapper.revealed(MapThemePalette palette)
+      : replacements = {
+          MapSvgSourceColors.base.toARGB32(): revealedFloorColor(palette),
           MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
         };

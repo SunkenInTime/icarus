@@ -10,10 +10,12 @@ import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
 /// Every view cone of a replay moment in one layer, drawn as the editor
-/// draws a placed cone (the same cut, gradient and clip to the painted
-/// floor) but clipped to the floor once for all of them, from cuts made off
-/// the UI thread. A cut lagging its agent is carried along and turned with
-/// it. Smokes and smoke walls are erased from each cone they hide part of.
+/// draws placed cones (the same cut, clipped to the painted floor, opaque
+/// where each reaches, as the mask a [RevealedFloor] shows the revealed map
+/// through; see `lib/view_cone/cone_coverage.dart`) but clipped to the floor
+/// once for all of them, from cuts made off the UI thread. A cut lagging its agent is
+/// carried along and turned with it. Smokes and smoke walls are erased from
+/// each cone they hide part of.
 class ReplayConesPainter extends CustomPainter {
   ReplayConesPainter({
     required this.cones,
@@ -36,10 +38,10 @@ class ReplayConesPainter extends CustomPainter {
   final double apertureDegrees;
 
   static final _conePaths = Expando<Path>();
-  static final _floors = Expando<(Size, Float64List, Path)>();
 
-  /// The editor's cone fill, see [SvgHeightViewConePainter].
-  static const _coneGrey = Color.fromARGB(255, 147, 147, 147);
+  /// Where a cone reaches, for [RevealedFloor] to show the revealed map.
+  static final _reach = Paint()..color = const Color(0xFFFFFFFF);
+  static final _floors = Expando<(Size, Float64List, Path)>();
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -93,17 +95,13 @@ class ReplayConesPainter extends CustomPainter {
       canvas.clipPath(_wedge(apex, facing, reach * scale));
       canvas.translate(apex.dx - from.dx, apex.dy - from.dy);
       canvas.transform(sourceToScreen);
-      // The cut lies within reach, so filling it with the editor's gradient
-      // is the editor's clipped circle, without a clip mask per cone.
+      // The wedge clip already stops the cut at reach.
       final reachRect = Rect.fromCircle(center: origin, radius: reach);
       paintSvgConeArea(
         canvas,
         cone,
         _conePaths[cone] ??= Path()..addPolygon(cone.polygon, true),
-        Paint()
-          ..shader = RadialGradient(
-            colors: [_coneGrey.withValues(alpha: .5), Colors.transparent],
-          ).createShader(reachRect),
+        _reach,
         reachRect,
       );
       canvas.restore();
