@@ -699,9 +699,11 @@ class ReplayBlindTrack {
     return ReplayBlindTrack._(times, seconds);
   }
 
-  /// How blind the player is at [timeMs]: 1 through most of a flash, falling
-  /// to 0 over its last [fadeShare], and 0 with no flash in force.
-  double blindnessAt(int timeMs) {
+  /// The flash in force at [timeMs], or null with none: how blind the
+  /// player is (1 through most of it, falling to 0 over its last
+  /// [fadeShare]) and how much of it has passed (0 as it lands, 1 as it
+  /// wears off).
+  ({double blindness, double progress})? flashAt(int timeMs) {
     var low = 0;
     var high = _times.length - 1;
     var found = -1;
@@ -714,10 +716,13 @@ class ReplayBlindTrack {
         high = mid - 1;
       }
     }
-    if (found < 0 || _seconds[found] <= 0) return 0;
+    if (found < 0 || _seconds[found] <= 0) return null;
     final lastsMs = _seconds[found] * 1000;
     final leftMs = lastsMs - (timeMs - _times[found]);
-    if (leftMs <= 0) return 0;
-    return math.min(1.0, leftMs / (lastsMs * fadeShare));
+    if (leftMs <= 0) return null;
+    return (
+      blindness: math.min(1.0, leftMs / (lastsMs * fadeShare)),
+      progress: 1 - leftMs / lastsMs,
+    );
   }
 }
