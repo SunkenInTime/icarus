@@ -956,3 +956,44 @@ stand 0.01 farther out), two of them by about 2 units where the steps take
 another way round #256's walls.
 A nudge costs 7 to 10 µs at p50 and 65 to 68 µs at p99 in the test VM; the
 steps alone were 6 to 8 and 49 to 70.
+
+## Corrode 13.08 (2026-10-13)
+
+VALORANT 13.08 reworked seven places on Corrode: the defender paths into the
+back of A and B, the top of B Main, the Mid half wall and the room east of
+it, the notch west of Mid, the Lower Mid boxes and wall, and the A plant
+corner. The art redraws only those places (#298). The models were rebuilt so
+that everything outside them stays as it was:
+
+- **Walls.** `build_art.py` ran on a source made of the 0497bec wall pieces
+  that lie wholly outside the changed places (so their outlines are cut at
+  the same points as before) plus the new art's ink. Heights come from
+  Riot's 13.08 vision lines inside the changed places, padded by 3 SVG
+  units, and from the 13.06 lines the shipped models used everywhere else.
+  On a 3-unit grid, every spot whose cone stays clear of the changed places
+  casts the same cone as before: 3,166 of 3,166 on attack (largest
+  difference 0.0001 units) and 3,155 of 3,163 on defense. The other 8 stand
+  within a few hundredths of a corner of a wall that continues into a
+  changed place; `simplify_walls.py` redrew that wall within its 0.01 bound.
+- **Mid half wall.** Riot has no vision line along it in 13.06 or 13.08, so
+  it does not block cones, as before. Its new metal does not change that in
+  Riot's data.
+- **Lower Mid wall.** Riot raised its lines from layers 0–3 to 0–4: it now
+  blocks a viewer whose floor is below 9.02 m.
+- **Standing.** The 13.08 navmesh, 0.10 m above the floor as on 13.06, is
+  the floor height. Where it disagrees with the old standing level by more
+  than 5 cm, and 13.06 did not disagree the same way, a ground patch (a
+  0.5-unit grid of standing triangles, merged where flat) goes first in the
+  ground list, and automatic supports at heights the navmesh no longer has
+  are cut. Removed rooms and boxes lose their supports. The new boxes
+  (Lower Mid 7 m, top of B Main 10 m, back of B 10 m) get supports from
+  their nav tops grown back by the 42 cm agent radius. The Lower Mid barrels
+  keep their 6 m tops at their new circles.
+- **Navigation.** Rebaked from the 13.08 Recast export with
+  `bake_navigation.py`, which reproduces the shipped 13.06 file from the
+  archived export. The 518 of 653 polygons identical to 13.06 keep their
+  refined heights and detailed floors; the rest use nav height minus 10 cm.
+
+The 13.08 navmesh is still walkable in a 6.5-unit strip east of the
+defender spawn (attack SVG x 237.5–244, y 44–78), where the 13.08 minimap,
+Riot's vision lines and the art all put the wall at x 237.5.

@@ -30,9 +30,9 @@ const _modelChecksums = <String, String>{
   'breeze_svg_height_defense.json.gz':
       'ee04a377e1082c5080659789ff02596b2eb2796d5acf98be2d3cd6ea788c3628',
   'corrode_svg_height_attack.json.gz':
-      'dfad83fc2e4e8b1679436bf78e54e613297b35c60d70611a26428e679c9b8d5c',
+      'aba02b13afad7c5d4574b457c28bf92ba3019e2dc3240160cab9ef8d98cbb29c',
   'corrode_svg_height_defense.json.gz':
-      '65a2d1767046089ca1f9ed56b0161019baa2c02ac0fc8bc88b581b75f2b4f6a7',
+      '7ee95dba6d5426be20c8cdd18ae1e7ce6fca9849f3ab346b6174291b7987c46f',
   'fracture_svg_height_attack.json.gz':
       '07927995f777251855c13592d45ff310e72d18d43d540a1f5d123e450aa5009a',
   'fracture_svg_height_defense.json.gz':

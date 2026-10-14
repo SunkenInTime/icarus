@@ -82,8 +82,8 @@
     },
     "corrode": {
       "navigation": "corrode_navigation.json.gz",
-      "navigationSha256": "0e444492619effb5cd4f1d6a868f6b16f1bfc6501939327a8f54bd0a9c30fb31",
-      "navigationBytes": 1271763,
+      "navigationSha256": "e5495b356f0d87242df3968e5e092fc0f1d31dd00b2e89f946de61300181fb3f",
+      "navigationBytes": 982686,
       "observerHeightCm": 175,
       "defaultFloorElevationCm": 600,
       "menuElevationsCm": [
