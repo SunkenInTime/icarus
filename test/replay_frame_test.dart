@@ -280,19 +280,18 @@ void main() {
       final blind = at(10500);
       final agent = blind.agents.single as PlacedAgent;
       expect(agent.state, AgentState.none);
-      expect(
-        blind.effects.whereType<ReplayFlashed>().single.blindness,
-        1.0,
-      );
+      final landed = blind.effects.whereType<ReplayFlashed>().single;
+      expect(landed.blindness, 1.0);
+      // 500 ms of the 2 s flash have passed: a quarter of the outline.
+      expect(landed.progress, closeTo(0.25, 1e-6));
 
       // 400 ms left of the 800 ms fade: half the sight is back.
       final fading = at(11600);
       final cone = fading.agents.single as PlacedViewConeAgent;
       expect(cone.length, closeTo(ReplayFrameBuilder.coneLength / 2, 1e-6));
-      expect(
-        fading.effects.whereType<ReplayFlashed>().single.blindness,
-        closeTo(0.5, 1e-6),
-      );
+      final half = fading.effects.whereType<ReplayFlashed>().single;
+      expect(half.blindness, closeTo(0.5, 1e-6));
+      expect(half.progress, closeTo(0.8, 1e-6));
 
       final clear = at(12100);
       expect(

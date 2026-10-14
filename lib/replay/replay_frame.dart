@@ -121,12 +121,14 @@ class ReplayExit extends ReplayEffect {
   final bool dimmed;
 }
 
-/// A flashed player: their icon washed white by how blind they are.
+/// A flashed player: their icon washed white by how blind they are, marked
+/// with a crossed-out eye, and outlined by how much of the flash has passed.
 class ReplayFlashed extends ReplayEffect {
   const ReplayFlashed({
     required this.agentId,
     required this.centre,
     required this.blindness,
+    required this.progress,
     required super.isAlly,
   });
 
@@ -138,6 +140,9 @@ class ReplayFlashed extends ReplayEffect {
 
   /// 1 fully blind, falling to 0 as sight comes back.
   final double blindness;
+
+  /// How much of the flash has passed: 0 as it lands, 1 as it wears off.
+  final double progress;
 }
 
 /// A thrown utility in flight: its ability's icon where it is now, and the
@@ -345,16 +350,17 @@ class ReplayFrameBuilder {
       final rotation = projection.rotationForYaw(pose.yaw);
       // A flash shortens the cone; one shorter than the editor allows is
       // none, so a capture keeps exactly what is drawn.
-      final blindness = state.alive
-          ? document.blinds[player.subject]?.blindnessAt(timeMs) ?? 0.0
-          : 0.0;
+      final flash =
+          state.alive ? document.blinds[player.subject]?.flashAt(timeMs) : null;
+      final blindness = flash?.blindness ?? 0.0;
       final sightLength = coneLength * (1 - blindness);
       final sees = state.alive && sightLength >= ViewConeUtility.minLength;
-      if (blindness > 0) {
+      if (flash != null) {
         flashed.add(ReplayFlashed(
           agentId: id,
           centre: standing,
           blindness: blindness,
+          progress: flash.progress,
           isAlly: isAlly,
         ));
       }

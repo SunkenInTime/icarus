@@ -5,6 +5,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -258,6 +259,9 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                                     flash: flash,
                                     isAttack: isAttack,
                                     agentSize: agentSize,
+                                    neutralTeamColors: ref
+                                        .watch(strategySettingsProvider)
+                                        .useNeutralTeamColors,
                                   ),
                                 ),
                               ),

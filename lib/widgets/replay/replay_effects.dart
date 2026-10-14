@@ -5,6 +5,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Where a canonical world point is drawn on the canvas, on [isAttack]'s side.
 Offset replayScreenPoint(Offset canonical, {required bool isAttack}) {
@@ -104,17 +105,22 @@ class ReplayEffectsPainter extends CustomPainter {
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
 }
 
-/// A flashed player's icon washed white, drawn just above that agent so
-/// agents stacked over it stay clear.
+/// A flashed player's icon washed white and marked with a crossed-out eye,
+/// its outline filling in a lighter shade as the flash passes. Drawn just
+/// above that agent so agents stacked over it stay clear.
 class ReplayFlashPainter extends CustomPainter {
   ReplayFlashPainter({
     required this.flash,
     required this.isAttack,
     required this.agentSize,
+    required this.neutralTeamColors,
   });
 
   final ReplayFlashed flash;
   final bool isAttack;
+
+  /// Whether agents wear neutral outlines, as [AgentWidget] draws them.
+  final bool neutralTeamColors;
 
   /// The agent icon's size, as placed widgets are given it.
   final double agentSize;
@@ -125,25 +131,77 @@ class ReplayFlashPainter extends CustomPainter {
   /// The wash at full blindness: the agent stays recognisable through it.
   static const _fullWash = 0.7;
 
+  /// The eye's size against the icon.
+  static const _eyeShare = 0.55;
+
   @override
   void paint(Canvas canvas, Size size) {
     final side = CoordinateSystem.instance.scale(agentSize);
     final at = replayScreenPoint(flash.centre, isAttack: isAttack);
+    final box = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: at, width: side, height: side),
+      _radius,
+    );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: at, width: side, height: side),
-        _radius,
-      ),
+      box,
       Paint()
         ..color = Colors.white.withValues(alpha: _fullWash * flash.blindness),
     );
+
+    final eye = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(LucideIcons.eyeOff.codePoint),
+        style: TextStyle(
+          fontFamily: LucideIcons.eyeOff.fontFamily,
+          package: LucideIcons.eyeOff.fontPackage,
+          fontSize: side * _eyeShare,
+          color: Settings.flashedEyeInk,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    eye.paint(canvas, at - Offset(eye.width / 2, eye.height / 2));
+    eye.dispose();
+
+    // Over the agent's own 1 px border, which lies just inside its box:
+    // from top centre, clockwise, as far as the flash has gone.
+    final metric =
+        _outlineFromTop(box.deflate(0.5)).computeMetrics().first;
+    final trace = metric.extractPath(0, metric.length * flash.progress);
+    var team =
+        flash.isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
+    if (neutralTeamColors) team = Settings.neutralTeamShade(team);
+    canvas.drawPath(
+      trace,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = Color.lerp(team.withValues(alpha: 1), Colors.white, 0.35)!,
+    );
+  }
+
+  /// [box]'s outline as one path from its top centre, clockwise.
+  static Path _outlineFromTop(RRect box) {
+    final r = Radius.circular(box.tlRadiusX);
+    return Path()
+      ..moveTo(box.center.dx, box.top)
+      ..lineTo(box.right - r.x, box.top)
+      ..arcToPoint(Offset(box.right, box.top + r.y), radius: r)
+      ..lineTo(box.right, box.bottom - r.y)
+      ..arcToPoint(Offset(box.right - r.x, box.bottom), radius: r)
+      ..lineTo(box.left + r.x, box.bottom)
+      ..arcToPoint(Offset(box.left, box.bottom - r.y), radius: r)
+      ..lineTo(box.left, box.top + r.y)
+      ..arcToPoint(Offset(box.left + r.x, box.top), radius: r)
+      ..close();
   }
 
   @override
   bool shouldRepaint(ReplayFlashPainter oldDelegate) =>
       oldDelegate.flash != flash ||
       oldDelegate.isAttack != isAttack ||
-      oldDelegate.agentSize != agentSize;
+      oldDelegate.agentSize != agentSize ||
+      oldDelegate.neutralTeamColors != neutralTeamColors;
 }
 
 /// A thrown utility's icon where it is now, a little smaller than the
