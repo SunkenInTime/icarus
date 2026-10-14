@@ -29,6 +29,10 @@
       "type": "feat"
     },
     {
+      "message": "Replays show who's flashed: their view cone shrinks away and their icon washes white until they can see again.",
+      "type": "feat"
+    },
+    {
       "message": "Keep replays Valorant might clear with the Keep button, and remove ones you don't need. Removed replays go to the Recycle Bin.",
       "type": "feat"
     },
