@@ -26,6 +26,42 @@ class _BoxCone extends CustomPainter implements ConeAreaPainter {
   bool shouldRepaint(_BoxCone oldDelegate) => false;
 }
 
+/// A cone that is a triangle (its long edge diagonal, so antialiased), or
+/// one that composes its area in a layer of its own, as cones that overlook
+/// measured floors do.
+class _ShapedCone extends CustomPainter implements ConeAreaPainter {
+  _ShapedCone({this.layered = false});
+
+  final bool layered;
+
+  @override
+  double get opacity => 1;
+
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill) {
+    if (layered) {
+      canvas.saveLayer(Offset.zero & size, Paint());
+      canvas.drawRect(Offset.zero & size, fill);
+      canvas.restore();
+      return;
+    }
+    canvas.drawPath(
+        Path()
+          ..moveTo(0, 0)
+          ..lineTo(size.width, 0)
+          ..lineTo(0, size.height)
+          ..close(),
+        fill);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      paintArea(canvas, size, Paint()..color = const Color(0x80FF0000));
+
+  @override
+  bool shouldRepaint(_ShapedCone oldDelegate) => false;
+}
+
 const _floor = Color(0xFF202020);
 const _revealed = Color(0xFF808080);
 
@@ -36,6 +72,7 @@ Widget _page(
   List<Offset> cones, {
   double fade = 1,
   List<double>? fades,
+  List<ConeAreaPainter>? painters,
 }) {
   final placed = Stack(children: [
     for (final (i, at) in cones.indexed)
@@ -46,7 +83,7 @@ Widget _page(
           opacity: fades?[i] ?? fade,
           child: ConeArea(
             size: const Size(40, 40),
-            painter: _BoxCone(),
+            painter: painters?[i] ?? _BoxCone(),
             fallback: _BoxCone(),
           ),
         ),
@@ -186,6 +223,36 @@ void main() {
     // The weaker cone is drawn last; the overlap is still the stronger one.
     expect(await at(40, 30), await at(20, 30), reason: 'overlap = 0.51 cone');
     expect(await at(40, 30), isNot(await at(60, 30)));
+  });
+
+  testWidgets('cone edges stay antialiased', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(
+        _page(coverage, const [Offset(10, 10)], painters: [_ShapedCone()]));
+    final at = _pixels(tester);
+    // Pixels on the triangle's diagonal edge lie between floor and
+    // revealed floor.
+    var between = false;
+    for (var x = 12; x < 48; x++) {
+      for (var y = 57 - x; y <= 61 - x; y++) {
+        final r = ((await at(x, y)).r * 255).round();
+        if (r > 0x20 + 8 && r < 0x80 - 8) between = true;
+      }
+    }
+    expect(between, isTrue);
+  });
+
+  testWidgets('a cone composed in its own layer still lets the stronger win',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(_page(
+        coverage, const [Offset(10, 10), Offset(30, 10)],
+        fades: const [0.8, 0.2],
+        painters: [_ShapedCone(layered: true), _ShapedCone(layered: true)]));
+    final at = _pixels(tester);
+    expect(await at(40, 30), await at(20, 30), reason: 'overlap = 0.8 cone');
   });
 
   test('the revealed map changes only the floor', () {

@@ -347,22 +347,25 @@ class RenderConeCoverageLayer extends RenderProxyBox {
     ];
     if (areas.isEmpty) return;
     _paintRevealed(context, offset, size, child, (canvas) {
-      // Each cone's strength as a grey, lightened together: where cones
-      // overlap the strongest one counts, however they fade. The grey then
-      // becomes the mask's opacity.
+      // Each cone's strength as a grey on black, lightened together: where
+      // cones overlap the strongest one counts, however they fade, and an
+      // edge pixel a cone half covers is half as grey. The grey then becomes
+      // the mask's opacity.
       canvas.saveLayer(null, Paint()..colorFilter = _greyToOpacity);
+      canvas.drawColor(const Color(0xFF000000), BlendMode.src);
       for (final area in areas) {
         final strength = area.painter.opacity * area.fade * _opacity;
         if (strength <= 0) continue;
-        canvas.save();
+        // Its own layer, so however the painter composes its pieces the
+        // finished cone is what gets lightened in.
+        canvas.saveLayer(null, Paint()..blendMode = BlendMode.lighten);
         canvas.transform(area.getTransformTo(this).storage);
         area.painter.paintArea(
           canvas,
           area.size,
           Paint()
             ..color = Color.from(
-                alpha: 1, red: strength, green: strength, blue: strength)
-            ..blendMode = BlendMode.lighten,
+                alpha: 1, red: strength, green: strength, blue: strength),
         );
         canvas.restore();
       }
