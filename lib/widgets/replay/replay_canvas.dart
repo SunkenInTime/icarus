@@ -7,6 +7,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
@@ -78,18 +79,19 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
 
   /// The theme a captured strategy starts with, so the map looks the same
   /// here and in the editor afterwards.
-  MapSvgColorMapper _colorMapper() {
+  MapThemePalette _palette() {
     final profiles = ref.watch(mapThemeProfilesProvider);
     final profile = profiles.profiles.firstWhere(
       (profile) => profile.id == profiles.defaultProfileIdForNewStrategies,
       orElse: () => MapThemeProfilesProvider.immutableDefaultProfile,
     );
-    return MapSvgColorMapper.forPalette(profile.palette);
+    return profile.palette;
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorMapper = _colorMapper();
+    final palette = _palette();
+    final colorMapper = MapSvgColorMapper.forPalette(palette);
     // Marker sizes a captured strategy starts with, for the same reason.
     final preferences = ref.watch(appPreferencesProvider);
     return LayoutBuilder(
@@ -184,6 +186,48 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                           ),
                         ),
                       ),
+                      // View cones as one revealed floor on the map art,
+                      // then the map's ink again so walls and sites read
+                      // through them, under everything placed (as in the
+                      // editor).
+                      if (cuts != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: ReplayConesPainter(
+                                cones: frame.cones.values,
+                                occluders: frame.occluders,
+                                model: isAttack
+                                    ? cuts.attackModel
+                                    : cuts.defenseModel,
+                                map: widget.map,
+                                isAttack: isAttack,
+                                apertureDegrees: cuts.apertureDegrees,
+                                color: revealedFloorColor(palette),
+                              ),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        left: mapLeft,
+                        top: 0,
+                        width: mapWidth,
+                        height: height,
+                        child: IgnorePointer(
+                          child: RepaintBoundary(
+                            child: CanonicalMapArtwork(
+                              map: widget.map,
+                              isAttack: isAttack,
+                              child: SvgPicture.asset(
+                                'assets/maps/${mapName}_map'
+                                '${isAttack ? '' : '_defense'}.svg',
+                                colorMapper: MapSvgColorMapper.ink(palette),
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       // Utility moves far less than players do: its own
                       // layer, rebuilt only when it changes, so its
                       // picture (faded ranges and all) is drawn from cache.
@@ -223,23 +267,6 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                           flight: flight,
                           isAttack: isAttack,
                           abilitySize: abilitySize,
-                        ),
-                      if (cuts != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: CustomPaint(
-                              painter: ReplayConesPainter(
-                                cones: frame.cones.values,
-                                occluders: frame.occluders,
-                                model: isAttack
-                                    ? cuts.attackModel
-                                    : cuts.defenseModel,
-                                map: widget.map,
-                                isAttack: isAttack,
-                                apertureDegrees: cuts.apertureDegrees,
-                              ),
-                            ),
-                          ),
                         ),
                       for (final placed in widgets)
                         if (placed is PlacedAgentNode) ...[

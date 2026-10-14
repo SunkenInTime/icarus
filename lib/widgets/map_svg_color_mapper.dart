@@ -20,6 +20,16 @@ class MapSvgColorMapper extends ColorMapper {
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
         };
 
+  /// The map's ink alone: walls, sites and markings in [palette], with the
+  /// floor left clear. Drawn over the revealed floor of view cones so the
+  /// ink reads through it (see `lib/view_cone/cone_coverage.dart`).
+  MapSvgColorMapper.ink(MapThemePalette palette)
+      : replacements = {
+          MapSvgSourceColors.base.toARGB32(): const Color(0x00000000),
+          MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
+          MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
+        };
+
   final Map<int, Color> replacements;
 
   @override
@@ -34,6 +44,8 @@ class MapSvgColorMapper extends ColorMapper {
     if (replacement == null) {
       return color;
     }
+    // A colour removed outright stays removed.
+    if (replacement.a == 0) return replacement;
     // Keep per-element opacity from the original SVG.
     final alpha = (color.a * 255.0).round().clamp(0, 255);
     return replacement.withAlpha(alpha);
