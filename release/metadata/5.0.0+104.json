@@ -61,6 +61,10 @@
       "type": "fix"
     },
     {
+      "message": "Corrode matches its new VALORANT 13.08 layout, including view cones and the paths agents take between pages.",
+      "type": "fix"
+    },
+    {
       "message": "Omen's Paranoia and Vyse's Steel Garden now match their in-game sizes.",
       "type": "fix"
     },
