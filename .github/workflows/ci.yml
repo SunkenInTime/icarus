@@ -72,6 +72,8 @@ jobs:
         run: |
           cargo test --locked
           cargo test --locked --features dev-vectors
+          # Our patched vrf-transform (patches/), against its build vectors.
+          cargo test --locked -p vrf-transform
 
   # Decides which lanes a run needs.
   #
