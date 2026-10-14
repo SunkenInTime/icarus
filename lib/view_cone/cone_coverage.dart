@@ -264,9 +264,6 @@ void _paintRevealed(
   canvas.restore();
 }
 
-/// The opaque paint a cone's reach is masked with.
-final _maskFill = Paint()..color = const Color(0xFFFFFFFF);
-
 /// Shows [child], the revealed copy of the map, wherever a cone registered
 /// with [coverage] reaches.
 class ConeCoverageLayer extends SingleChildRenderObjectWidget {
@@ -344,32 +341,42 @@ class RenderConeCoverageLayer extends RenderProxyBox {
   void paint(PaintingContext context, Offset offset) {
     final child = this.child;
     if (child == null || _opacity <= 0) return;
-    // Cones by how strongly they show: cones fading together (a page
-    // transition) are one group, lifted once where they overlap.
-    final groups = <double, List<RenderConeArea>>{};
-    for (final area in _coverage.areas) {
-      if (!area.attached || !area.hasSize) continue;
-      final strength = area.painter.opacity * area.fade * _opacity;
-      if (strength <= 0) continue;
-      groups.putIfAbsent(strength, () => []).add(area);
-    }
-    if (groups.isEmpty) return;
+    final areas = [
+      for (final area in _coverage.areas)
+        if (area.attached && area.hasSize) area,
+    ];
+    if (areas.isEmpty) return;
     _paintRevealed(context, offset, size, child, (canvas) {
-      for (final MapEntry(key: strength, value: areas) in groups.entries) {
-        if (strength < 1) {
-          canvas.saveLayer(
-              null, Paint()..color = Color.fromRGBO(0, 0, 0, strength));
-        }
-        for (final area in areas) {
-          canvas.save();
-          canvas.transform(area.getTransformTo(this).storage);
-          area.painter.paintArea(canvas, area.size, _maskFill);
-          canvas.restore();
-        }
-        if (strength < 1) canvas.restore();
+      // Each cone's strength as a grey, lightened together: where cones
+      // overlap the strongest one counts, however they fade. The grey then
+      // becomes the mask's opacity.
+      canvas.saveLayer(null, Paint()..colorFilter = _greyToOpacity);
+      for (final area in areas) {
+        final strength = area.painter.opacity * area.fade * _opacity;
+        if (strength <= 0) continue;
+        canvas.save();
+        canvas.transform(area.getTransformTo(this).storage);
+        area.painter.paintArea(
+          canvas,
+          area.size,
+          Paint()
+            ..color = Color.from(
+                alpha: 1, red: strength, green: strength, blue: strength)
+            ..blendMode = BlendMode.lighten,
+        );
+        canvas.restore();
       }
+      canvas.restore();
     });
   }
+
+  /// Opaque white wherever the grey was, as opaque as the grey was light.
+  static const _greyToOpacity = ColorFilter.matrix([
+    0, 0, 0, 0, 255, //
+    0, 0, 0, 0, 255, //
+    0, 0, 0, 0, 255, //
+    1, 0, 0, 0, 0, //
+  ]);
 }
 
 /// Shows [child], the revealed copy of the map, wherever [cones] (a painter

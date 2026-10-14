@@ -71,9 +71,14 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
   final _controller = TransformationController();
   Size? _lastViewport;
 
+  /// The agents' own cones, while no worker cuts them (it is starting, or
+  /// it failed), painted together as in the editor.
+  final _cones = ConeCoverage();
+
   @override
   void dispose() {
     _controller.dispose();
+    _cones.dispose();
     super.dispose();
   }
 
@@ -158,6 +163,27 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                     for (final flash in frame.effects.whereType<ReplayFlashed>())
                       flash.agentId: flash,
                   };
+                  // The map as cones reveal it.
+                  final revealedMap = Stack(
+                    children: [
+                      Positioned(
+                        left: mapLeft,
+                        top: 0,
+                        width: mapWidth,
+                        height: height,
+                        child: CanonicalMapArtwork(
+                          map: widget.map,
+                          isAttack: isAttack,
+                          child: SvgPicture.asset(
+                            'assets/maps/${mapName}_map'
+                            '${isAttack ? '' : '_defense'}.svg',
+                            colorMapper: MapSvgColorMapper.revealed(palette),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
                   return Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -187,45 +213,31 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                       ),
                       // View cones: the map as they reveal it, shown
                       // wherever one reaches, under everything placed (as in
-                      // the editor).
-                      if (cuts != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: RevealedFloor(
-                              cones: ReplayConesPainter(
-                                cones: frame.cones.values,
-                                occluders: frame.occluders,
-                                model: isAttack
-                                    ? cuts.attackModel
-                                    : cuts.defenseModel,
-                                map: widget.map,
-                                isAttack: isAttack,
-                                apertureDegrees: cuts.apertureDegrees,
+                      // the editor). Without a worker, the agents' own cones
+                      // join a coverage layer instead.
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: switch (cuts) {
+                            final cuts? => RevealedFloor(
+                                cones: ReplayConesPainter(
+                                  cones: frame.cones.values,
+                                  occluders: frame.occluders,
+                                  model: isAttack
+                                      ? cuts.attackModel
+                                      : cuts.defenseModel,
+                                  map: widget.map,
+                                  isAttack: isAttack,
+                                  apertureDegrees: cuts.apertureDegrees,
+                                ),
+                                child: revealedMap,
                               ),
-                              child: Stack(
-                                children: [
-                                  Positioned(
-                                    left: mapLeft,
-                                    top: 0,
-                                    width: mapWidth,
-                                    height: height,
-                                    child: CanonicalMapArtwork(
-                                      map: widget.map,
-                                      isAttack: isAttack,
-                                      child: SvgPicture.asset(
-                                        'assets/maps/${mapName}_map'
-                                        '${isAttack ? '' : '_defense'}.svg',
-                                        colorMapper:
-                                            MapSvgColorMapper.revealed(palette),
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            null => ConeCoverageLayer(
+                                coverage: _cones,
+                                child: revealedMap,
                               ),
-                            ),
-                          ),
+                          },
                         ),
+                      ),
                       // Utility moves far less than players do: its own
                       // layer, rebuilt only when it changes, so its
                       // picture (faded ranges and all) is drawn from cache.
@@ -269,7 +281,11 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                       for (final placed in widgets)
                         if (placed is PlacedAgentNode) ...[
                           cuts == null
-                              ? view(placed)
+                              ? ConeCoverageScope(
+                                  key: ValueKey(placed.id),
+                                  coverage: _cones,
+                                  child: view(placed),
+                                )
                               : ViewConesDrawnElsewhere(
                                   key: ValueKey(placed.id),
                                   child: view(placed),

@@ -31,21 +31,27 @@ const _revealed = Color(0xFF808080);
 
 /// A floor, the coverage layer on it, and cones at [cones] (top-left, 40 px
 /// square) placed above, the way the editor stacks them.
-Widget _page(ConeCoverage? coverage, List<Offset> cones, {double fade = 1}) {
-  final placed = ConeFade(
-      opacity: fade,
-      child: Stack(children: [
-        for (final at in cones)
-          Positioned(
-            left: at.dx,
-            top: at.dy,
-            child: ConeArea(
-              size: const Size(40, 40),
-              painter: _BoxCone(),
-              fallback: _BoxCone(),
-            ),
+Widget _page(
+  ConeCoverage? coverage,
+  List<Offset> cones, {
+  double fade = 1,
+  List<double>? fades,
+}) {
+  final placed = Stack(children: [
+    for (final (i, at) in cones.indexed)
+      Positioned(
+        left: at.dx,
+        top: at.dy,
+        child: ConeFade(
+          opacity: fades?[i] ?? fade,
+          child: ConeArea(
+            size: const Size(40, 40),
+            painter: _BoxCone(),
+            fallback: _BoxCone(),
           ),
-      ]));
+        ),
+      ),
+  ]);
   return Directionality(
     textDirection: TextDirection.ltr,
     child: Center(
@@ -167,6 +173,19 @@ void main() {
         _page(coverage, const [Offset(10, 10), Offset(30, 10)], fade: 0.5));
     final at = _pixels(tester);
     expect(await at(40, 30), await at(20, 30), reason: 'overlap, as one cone');
+  });
+
+  testWidgets('a cone fading in over one fading out lifts to the stronger',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(_page(
+        coverage, const [Offset(10, 10), Offset(30, 10)],
+        fades: const [0.51, 0.49]));
+    final at = _pixels(tester);
+    // The weaker cone is drawn last; the overlap is still the stronger one.
+    expect(await at(40, 30), await at(20, 30), reason: 'overlap = 0.51 cone');
+    expect(await at(40, 30), isNot(await at(60, 30)));
   });
 
   test('the revealed map changes only the floor', () {
