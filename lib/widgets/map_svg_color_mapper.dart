@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -12,24 +13,26 @@ class MapSvgSourceColors {
 }
 
 class MapSvgColorMapper extends ColorMapper {
-  const MapSvgColorMapper(this.replacements);
+  MapSvgColorMapper(Map<int, Color> replacements)
+      : replacements = Map.unmodifiable(replacements);
 
   MapSvgColorMapper.forPalette(MapThemePalette palette)
-      : replacements = {
+      : replacements = Map.unmodifiable({
           MapSvgSourceColors.base.toARGB32(): palette.baseColor,
           MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
-        };
+        });
 
   /// The map in [palette] as cones reveal it: the same art with its floor
   /// in [revealedFloorColor] (see `lib/view_cone/cone_coverage.dart`).
   MapSvgColorMapper.revealed(MapThemePalette palette)
-      : replacements = {
+      : replacements = Map.unmodifiable({
           MapSvgSourceColors.base.toARGB32(): revealedFloorColor(palette),
           MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
-        };
+        });
 
+  /// Unmodifiable: mappers are compared by these, so they never change.
   final Map<int, Color> replacements;
 
   @override
@@ -48,4 +51,18 @@ class MapSvgColorMapper extends ColorMapper {
     final alpha = (color.a * 255.0).round().clamp(0, 255);
     return replacement.withAlpha(alpha);
   }
+
+  // The SVG loader and its picture cache compare mappers, so a mapper made
+  // again with the same colours, as views do on every build (a replay builds
+  // every frame), must equal the last one. If it didn't, the map would be
+  // loaded and drawn again from scratch.
+  @override
+  bool operator ==(Object other) =>
+      other is MapSvgColorMapper && mapEquals(other.replacements, replacements);
+
+  @override
+  int get hashCode => Object.hashAllUnordered([
+        for (final MapEntry(:key, :value) in replacements.entries)
+          Object.hash(key, value),
+      ]);
 }
