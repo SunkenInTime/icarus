@@ -223,9 +223,8 @@ Crosshair 07-15-2023 14:55:05").
 `Ability1`, `Ability2` and `Ultimate` of the caster's agent. Every cast of 26
 agents across our 7 replays agrees with the item `classPath` where one is
 known. `classPath` is the ability item, absent where no charge spend ties a
-cast to it (always for ultimates). The game also reports Astra placing a star
-as a cast of her passive (slot 0); those are left out, and the stars appear
-in `utility`.
+cast to it (always for ultimates). Astra also reports slot 0, her passive;
+those records are left out. Her stars appear in `utility`.
 
 ## Quality
 

@@ -15,9 +15,11 @@
 //! do not agree, or never fire (an ultimate spends no charge), `classPath`
 //! stays absent.
 //!
-//! Only those four slots are casts. Astra's star placements arrive as slot 0,
-//! her passive, on 13.08 (77 on c903d8e9); the stars themselves are utility
-//! (`GameObject_Rift_X_Markers`), so they are left out here.
+//! Only those four slots are casts. On 13.08 Astra also reports slot 0, her
+//! passive (77 records on c903d8e9; many land with a star's spawn, not all),
+//! and those are left out. Her stars stay in utility
+//! (`GameObject_Rift_X_Markers`); what every slot-0 record means is not
+//! established.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
