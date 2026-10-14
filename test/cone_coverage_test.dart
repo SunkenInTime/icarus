@@ -73,6 +73,7 @@ Widget _page(
   double fade = 1,
   List<double>? fades,
   List<ConeAreaPainter>? painters,
+  double turn = 0,
 }) {
   final placed = Stack(children: [
     for (final (i, at) in cones.indexed)
@@ -81,10 +82,13 @@ Widget _page(
         top: at.dy,
         child: ConeFade(
           opacity: fades?[i] ?? fade,
-          child: ConeArea(
-            size: const Size(40, 40),
-            painter: painters?[i] ?? _BoxCone(),
-            fallback: _BoxCone(),
+          child: Transform.rotate(
+            angle: turn,
+            child: ConeArea(
+              size: const Size(40, 40),
+              painter: painters?[i] ?? _BoxCone(),
+              fallback: _BoxCone(),
+            ),
           ),
         ),
       ),
@@ -284,6 +288,27 @@ void main() {
     final weakFirst = await edge(const [0.2, 0.8], [_BoxCone(), _ShapedCone()],
         const [Offset(10, 10), Offset(10, 10)]);
     expect(weakFirst, strongFirst);
+  });
+
+  testWidgets('cones off the pixel grid do not stack at their edges',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    for (final turn in [0.0, 0.37]) {
+      Future<List<Color>> region(int count) async {
+        await tester.pumpWidget(_page(coverage,
+            [for (var i = 0; i < count; i++) const Offset(20.37, 20.61)],
+            painters: [for (var i = 0; i < count; i++) _ShapedCone()],
+            turn: turn));
+        final at = _pixels(tester);
+        return [
+          for (var y = 10; y < 80; y += 1)
+            for (var x = 10; x < 80; x += 3) await at(x, y),
+        ];
+      }
+
+      expect(await region(10), await region(1), reason: 'turn $turn');
+    }
   });
 
   test('the revealed map changes only the floor', () {

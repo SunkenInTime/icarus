@@ -360,9 +360,12 @@ class RenderConeCoverageLayer extends RenderProxyBox {
         canvas.transform(area.getTransformTo(this).storage);
         // Its own layer, only as large as the cone's box, so however the
         // painter composes its pieces the finished cone is lightened in.
-        canvas.clipRect(Offset.zero & area.size);
-        canvas.saveLayer(
-            Offset.zero & area.size, Paint()..blendMode = BlendMode.lighten);
+        // A little past the box, and with a hard clip: an antialiased layer
+        // edge on the cone's own edge would make that edge partly
+        // transparent, and partial pixels stack.
+        final box = (Offset.zero & area.size).inflate(2);
+        canvas.clipRect(box, doAntiAlias: false);
+        canvas.saveLayer(box, Paint()..blendMode = BlendMode.lighten);
         canvas.drawColor(const Color(0xFF000000), BlendMode.src);
         area.painter.paintArea(
           canvas,
