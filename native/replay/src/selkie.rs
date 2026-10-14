@@ -1254,17 +1254,22 @@ mod tests {
             ..lz.clone()
         };
         assert_eq!(decode(&extended.archive(), size).unwrap(), plain);
-        // Both replacements come before the first list: with a first-region
-        // entry, reading the second count after it would misread the list.
-        let (mut lz, size) = compact_reuse();
-        lz.commands.insert(2, 0x09); // 14 bytes from output 0
-        lz.far[0].push(0);
-        let plain = decode(&lz.archive(), size + 14).unwrap();
+        // Both replacements come before the first list. With entries in
+        // both lists, reading the second count after the first list reads
+        // the wrong bytes. far_tokens with a first-region far match: 14
+        // bytes from output 0 in place of 14 literals, so nothing after moves.
+        let mut both = lz.clone();
+        both.commands.insert(0, 0x09);
+        both.split = Some(1);
+        both.far[0].push(0);
+        both.literals.drain(..14);
+        let plain = decode(&both.archive(), size).unwrap();
+        assert_eq!(plain[8..22], plain[..14]);
         let extended = LzChunk {
             extended_counts: true,
-            ..lz
+            ..both
         };
-        assert_eq!(decode(&extended.archive(), size + 14).unwrap(), plain);
+        assert_eq!(decode(&extended.archive(), size).unwrap(), plain);
         // A one-region chunk may spell its second count 0 that way, but not
         // more.
         let (lz, size) = compact_reuse();
