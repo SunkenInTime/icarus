@@ -91,7 +91,6 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
   @override
   Widget build(BuildContext context) {
     final palette = _palette();
-    final colorMapper = MapSvgColorMapper.forPalette(palette);
     // Marker sizes a captured strategy starts with, for the same reason.
     final preferences = ref.watch(appPreferencesProvider);
     return LayoutBuilder(
@@ -180,16 +179,15 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                             child: SvgPicture.asset(
                               'assets/maps/${mapName}_map'
                               '${isAttack ? '' : '_defense'}.svg',
-                              colorMapper: colorMapper,
+                              colorMapper: MapSvgColorMapper.floor(palette),
                               fit: BoxFit.contain,
                             ),
                           ),
                         ),
                       ),
-                      // View cones as one revealed floor on the map art,
-                      // then the map's ink again so walls and sites read
-                      // through them, under everything placed (as in the
-                      // editor).
+                      // View cones as one revealed floor, between the
+                      // map's floor and the rest of it, under everything
+                      // placed (as in the editor).
                       if (cuts != null)
                         Positioned.fill(
                           child: IgnorePointer(

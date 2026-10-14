@@ -151,7 +151,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);
     final double sideBarWidth = viewOnly ? 0 : Settings.sideBarReservedWidth;
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
-    final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
 
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
@@ -294,7 +293,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                           isAttack: isAttack,
                                           child: SvgPicture.asset(
                                             assetName,
-                                            colorMapper: mapColorMapper,
+                                            colorMapper:
+                                                MapSvgColorMapper.floor(
+                                                    effectivePalette),
                                             semanticsLabel: 'Map',
                                             fit: BoxFit.contain,
                                           ),
@@ -302,9 +303,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       ),
                                     ),
                                   ),
-                                  // View cones, as one revealed floor, then
-                                  // the map's ink again so walls and sites
-                                  // read through them.
+                                  // View cones, as one revealed floor,
+                                  // between the map's floor and the rest of
+                                  // it, so walls and sites read through.
                                   Positioned.fill(
                                     child: IgnorePointer(
                                       child: ConeCoverageLayer(

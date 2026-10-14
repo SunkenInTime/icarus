@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
+import 'package:icarus/widgets/map_svg_color_mapper.dart';
 
 /// Fills its whole box, as a cone fills its lit area.
 class _BoxCone extends CustomPainter implements ConeAreaPainter {
@@ -29,19 +31,21 @@ const _revealed = Color(0xFF808080);
 
 /// A floor, the coverage layer on it, and cones at [cones] (top-left, 40 px
 /// square) placed above, the way the editor stacks them.
-Widget _page(ConeCoverage? coverage, List<Offset> cones) {
-  final placed = Stack(children: [
-    for (final at in cones)
-      Positioned(
-        left: at.dx,
-        top: at.dy,
-        child: ConeArea(
-          size: const Size(40, 40),
-          painter: _BoxCone(),
-          fallback: _BoxCone(),
-        ),
-      ),
-  ]);
+Widget _page(ConeCoverage? coverage, List<Offset> cones, {double fade = 1}) {
+  final placed = ConeFade(
+      opacity: fade,
+      child: Stack(children: [
+        for (final at in cones)
+          Positioned(
+            left: at.dx,
+            top: at.dy,
+            child: ConeArea(
+              size: const Size(40, 40),
+              painter: _BoxCone(),
+              fallback: _BoxCone(),
+            ),
+          ),
+      ]));
   return Directionality(
     textDirection: TextDirection.ltr,
     child: Center(
@@ -141,5 +145,59 @@ void main() {
     );
     expect(revealedFloorColor(light).computeLuminance(),
         lessThan(light.baseColor.computeLuminance()));
+  });
+
+  testWidgets('a faded cone lifts the floor only that far', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(_page(coverage, const [Offset(10, 10)], fade: 0.5));
+    final half = await _pixels(tester)(20, 30);
+    // Halfway from 0x20 to 0x80.
+    expect((half.r * 255).round(), closeTo(0x50, 1));
+  });
+
+  test('the floor and ink passes draw every colour exactly once', () {
+    final palette = MapThemePalette(
+      baseColorValue: 0xFF767676,
+      detailColorValue: 0xFFFFFFFF,
+      highlightColorValue: 0xFFF6F23E,
+    );
+    final floor = MapSvgColorMapper.floor(palette);
+    final ink = MapSvgColorMapper.ink(palette);
+    Color through(MapSvgColorMapper mapper, Color color) =>
+        mapper.substitute(null, 'path', 'fill', color);
+    for (final (source, expected) in [
+      (MapSvgSourceColors.base, palette.baseColor),
+      (MapSvgSourceColors.detail, palette.detailColor),
+      (MapSvgSourceColors.highlight, palette.highlightColor),
+      // A colour no theme controls, such as a label's.
+      (const Color(0xFFABCDEF), const Color(0xFFABCDEF)),
+    ]) {
+      final drawn = [through(floor, source), through(ink, source)]
+          .where((c) => c.a > 0)
+          .toList();
+      expect(drawn, hasLength(1), reason: '$source');
+      expect(drawn.single.toARGB32(), expected.toARGB32());
+    }
+    // The site fills are 23% opaque in the art and stay so.
+    final site = MapSvgSourceColors.highlight.withValues(alpha: 0.23);
+    expect(through(ink, site).a, closeTo(0.23, 0.01));
+    expect(through(floor, site).a, 0);
+  });
+
+  test('floor and walls too alike still get a revealed floor that shows', () {
+    for (final floor in [0xFF303030, 0xFFD0D0D0]) {
+      final palette = MapThemePalette(
+        baseColorValue: floor,
+        detailColorValue: floor,
+        highlightColorValue: 0xFFF6F23E,
+      );
+      final revealed = revealedFloorColor(palette).computeLuminance();
+      final base = palette.baseColor.computeLuminance();
+      final ratio =
+          (math.max(revealed, base) + 0.05) / (math.min(revealed, base) + 0.05);
+      expect(ratio, greaterThanOrEqualTo(revealedFloorMinContrast),
+          reason: floor.toRadixString(16));
+    }
   });
 }

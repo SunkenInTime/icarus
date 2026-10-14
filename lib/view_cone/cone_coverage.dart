@@ -1,18 +1,21 @@
+import 'dart:math' as math;
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 
-/// View cones drawn the way VALORANT's own minimap shows what players see:
-/// the floor under any cone turns one lighter shade of itself, however many
-/// cones cover it, and walls, sites and everything placed on the map stay as
-/// they are.
+/// View cones as a revealed floor: the floor under any cone turns one
+/// lighter shade of itself, however many cones cover it, and walls, sites and
+/// everything placed on the map stay as they are. This adapts VALORANT's
+/// minimap, which ships a lighter "revealed" copy of each map's floor.
 ///
 /// The cones of a page register here ([ConeArea]) instead of painting
-/// themselves. [ConeCoverageLayer], placed on the map art, fills them all at
-/// once in the revealed floor colour, and the map's ink
-/// (`MapSvgColorMapper.ink`) is drawn again above it, so walls and sites read through. Everything
-/// placed sits above both. A cone outside any [ConeCoverageScope] (a drag
-/// preview in the app's overlay) paints itself.
+/// themselves. The map is drawn in two passes, its floor
+/// (`MapSvgColorMapper.floor`) and everything else
+/// (`MapSvgColorMapper.ink`); [ConeCoverageLayer] sits between them and fills
+/// every cone at once in the revealed floor colour. Everything placed sits
+/// above. A cone outside any [ConeCoverageScope] (a drag preview in the app's
+/// overlay) paints itself.
 class ConeCoverage extends ChangeNotifier {
   final _areas = <RenderConeArea>{};
 
@@ -31,15 +34,30 @@ class ConeCoverage extends ChangeNotifier {
 }
 
 /// How much of the way a cone lifts the floor toward the theme's wall
-/// colour. VALORANT's minimap lifts its floor from 118 to 181 against white
-/// walls: 0.46 of the way.
+/// colour. VALORANT's revealed minimap lifts its floor from 118 to 181
+/// against white walls: 0.46 of the way.
 const revealedFloorShare = 0.46;
 
+/// The least contrast (WCAG ratio) the revealed floor keeps with the floor.
+const revealedFloorMinContrast = 1.5;
+
 /// The floor colour wherever a cone reaches, for [palette]: its floor mixed
-/// toward its wall colour, so it reads on any theme whose walls read, light
-/// floors included.
-Color revealedFloorColor(MapThemePalette palette) =>
-    Color.lerp(palette.baseColor, palette.detailColor, revealedFloorShare)!;
+/// toward its wall colour, so it reads on any theme whose walls read. Where
+/// floor and walls are too alike for that to show, a dark floor is lightened
+/// and a light one darkened instead.
+Color revealedFloorColor(MapThemePalette palette) {
+  final floor = palette.baseColor;
+  final mixed = Color.lerp(floor, palette.detailColor, revealedFloorShare)!;
+  if (_contrast(mixed, floor) >= revealedFloorMinContrast) return mixed;
+  return floor.computeLuminance() < 0.5
+      ? Color.lerp(floor, const Color(0xFFFFFFFF), 0.35)!
+      : Color.lerp(floor, const Color(0xFF000000), 0.3)!;
+}
+
+double _contrast(Color a, Color b) {
+  final la = a.computeLuminance(), lb = b.computeLuminance();
+  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+}
 
 /// Something that paints one cone's lit area, clipped to the floor, with a
 /// given [fill], in its own coordinates.
@@ -68,6 +86,20 @@ class ConeCoverageScope extends InheritedWidget {
       oldWidget.coverage != coverage;
 }
 
+/// How strongly the cones below it show, for a parent that fades them with
+/// an [Opacity] the coverage layer cannot see (a page transition).
+class ConeFade extends InheritedWidget {
+  const ConeFade({super.key, required this.opacity, required super.child});
+
+  final double opacity;
+
+  static double of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ConeFade>()?.opacity ?? 1;
+
+  @override
+  bool updateShouldNotify(ConeFade oldWidget) => oldWidget.opacity != opacity;
+}
+
 /// One cone of [size], painted by [painter]: into the page's
 /// [ConeCoverageLayer] when there is one, otherwise by itself as [fallback]
 /// paints it.
@@ -91,7 +123,12 @@ class ConeArea extends StatelessWidget {
     if (coverage == null) {
       return RepaintBoundary(child: CustomPaint(size: size, painter: fallback));
     }
-    return _ConeAreaSlot(coverage: coverage, size: size, painter: painter);
+    return _ConeAreaSlot(
+      coverage: coverage,
+      size: size,
+      painter: painter,
+      fade: ConeFade.of(context),
+    );
   }
 }
 
@@ -100,22 +137,29 @@ class _ConeAreaSlot extends LeafRenderObjectWidget {
     required this.coverage,
     required this.size,
     required this.painter,
+    required this.fade,
   });
 
   final ConeCoverage coverage;
   final Size size;
   final ConeAreaPainter painter;
+  final double fade;
 
   @override
-  RenderConeArea createRenderObject(BuildContext context) =>
-      RenderConeArea(coverage: coverage, preferredSize: size, painter: painter);
+  RenderConeArea createRenderObject(BuildContext context) => RenderConeArea(
+        coverage: coverage,
+        preferredSize: size,
+        painter: painter,
+        fade: fade,
+      );
 
   @override
   void updateRenderObject(BuildContext context, RenderConeArea renderObject) {
     renderObject
       ..coverage = coverage
       ..preferredSize = size
-      ..painter = painter;
+      ..painter = painter
+      ..fade = fade;
   }
 }
 
@@ -126,9 +170,11 @@ class RenderConeArea extends RenderBox {
     required ConeCoverage coverage,
     required Size preferredSize,
     required ConeAreaPainter painter,
+    required double fade,
   })  : _coverage = coverage,
         _preferredSize = preferredSize,
-        _painter = painter;
+        _painter = painter,
+        _fade = fade;
 
   ConeCoverage _coverage;
   set coverage(ConeCoverage value) {
@@ -150,6 +196,16 @@ class RenderConeArea extends RenderBox {
   set painter(ConeAreaPainter value) {
     if (identical(value, _painter)) return;
     _painter = value;
+    _coverage._changed();
+  }
+
+  double _fade;
+
+  /// How strongly this cone shows, from a [ConeFade] above it.
+  double get fade => _fade;
+  set fade(double value) {
+    if (value == _fade) return;
+    _fade = value;
     _coverage._changed();
   }
 
@@ -285,7 +341,8 @@ class RenderConeCoverageLayer extends RenderBox {
       area.painter.paintArea(
         canvas,
         area.size,
-        Paint()..color = _color.withValues(alpha: area.painter.opacity),
+        Paint()
+          ..color = _color.withValues(alpha: area.painter.opacity * area.fade),
       );
       canvas.restore();
     }
