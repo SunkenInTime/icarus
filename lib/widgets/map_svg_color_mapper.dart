@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 
 /// The three placeholder colors the map SVGs are authored with. Rendering
 /// swaps them for a strategy's palette via [MapSvgColorMapper].
@@ -11,40 +12,25 @@ class MapSvgSourceColors {
 }
 
 class MapSvgColorMapper extends ColorMapper {
-  const MapSvgColorMapper(this.replacements) : others = null;
+  const MapSvgColorMapper(this.replacements);
 
   MapSvgColorMapper.forPalette(MapThemePalette palette)
       : replacements = {
           MapSvgSourceColors.base.toARGB32(): palette.baseColor,
           MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
-        },
-        others = null;
+        };
 
-  /// The map's floor alone, in [palette]: everything else left clear. With
-  /// [MapSvgColorMapper.ink] drawn above it, every part of the map is drawn
-  /// exactly once, and view cones fill the floor between the two (see
-  /// `lib/view_cone/cone_coverage.dart`).
-  MapSvgColorMapper.floor(MapThemePalette palette)
+  /// The map in [palette] as cones reveal it: the same art with its floor
+  /// in [revealedFloorColor] (see `lib/view_cone/cone_coverage.dart`).
+  MapSvgColorMapper.revealed(MapThemePalette palette)
       : replacements = {
-          MapSvgSourceColors.base.toARGB32(): palette.baseColor,
-        },
-        others = const Color(0x00000000);
-
-  /// Everything on the map but its floor: walls, sites and markings in
-  /// [palette].
-  MapSvgColorMapper.ink(MapThemePalette palette)
-      : replacements = {
-          MapSvgSourceColors.base.toARGB32(): const Color(0x00000000),
+          MapSvgSourceColors.base.toARGB32(): revealedFloorColor(palette),
           MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
-        },
-        others = null;
+        };
 
   final Map<int, Color> replacements;
-
-  /// What every colour not in [replacements] becomes; null keeps it.
-  final Color? others;
 
   @override
   Color substitute(
@@ -54,12 +40,10 @@ class MapSvgColorMapper extends ColorMapper {
     Color color,
   ) {
     final opaqueColorValue = (color.toARGB32() & 0x00FFFFFF) | 0xFF000000;
-    final replacement = replacements[opaqueColorValue] ?? others;
+    final replacement = replacements[opaqueColorValue];
     if (replacement == null) {
       return color;
     }
-    // A colour removed outright stays removed.
-    if (replacement.a == 0) return replacement;
     // Keep per-element opacity from the original SVG.
     final alpha = (color.a * 255.0).round().clamp(0, 255);
     return replacement.withAlpha(alpha);

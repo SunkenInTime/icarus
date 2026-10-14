@@ -56,9 +56,13 @@ Widget _page(ConeCoverage? coverage, List<Offset> cones, {double fade = 1}) {
           height: 100,
           child: Stack(children: [
             const Positioned.fill(child: ColoredBox(color: _floor)),
+            // The revealed map, here a plain revealed floor.
             if (coverage != null)
               Positioned.fill(
-                child: ConeCoverageLayer(coverage: coverage, color: _revealed),
+                child: ConeCoverageLayer(
+                  coverage: coverage,
+                  child: const ColoredBox(color: _revealed),
+                ),
               ),
             Positioned.fill(
               child: coverage == null
@@ -156,37 +160,41 @@ void main() {
     expect((half.r * 255).round(), closeTo(0x50, 1));
   });
 
-  test('the floor and ink passes draw every colour exactly once', () {
+  testWidgets('cones fading together lift the floor once', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(
+        _page(coverage, const [Offset(10, 10), Offset(30, 10)], fade: 0.5));
+    final at = _pixels(tester);
+    expect(await at(40, 30), await at(20, 30), reason: 'overlap, as one cone');
+  });
+
+  test('the revealed map changes only the floor', () {
     final palette = MapThemePalette(
       baseColorValue: 0xFF767676,
       detailColorValue: 0xFFFFFFFF,
       highlightColorValue: 0xFFF6F23E,
     );
-    final floor = MapSvgColorMapper.floor(palette);
-    final ink = MapSvgColorMapper.ink(palette);
+    final normal = MapSvgColorMapper.forPalette(palette);
+    final revealed = MapSvgColorMapper.revealed(palette);
     Color through(MapSvgColorMapper mapper, Color color) =>
         mapper.substitute(null, 'path', 'fill', color);
-    for (final (source, expected) in [
-      (MapSvgSourceColors.base, palette.baseColor),
-      (MapSvgSourceColors.detail, palette.detailColor),
-      (MapSvgSourceColors.highlight, palette.highlightColor),
-      // A colour no theme controls, such as a label's.
-      (const Color(0xFFABCDEF), const Color(0xFFABCDEF)),
+    expect(through(revealed, MapSvgSourceColors.base).toARGB32(),
+        revealedFloorColor(palette).toARGB32());
+    for (final color in [
+      MapSvgSourceColors.detail,
+      MapSvgSourceColors.highlight,
+      MapSvgSourceColors.highlight.withValues(alpha: 0.23),
+      const Color(0xFFABCDEF),
     ]) {
-      final drawn = [through(floor, source), through(ink, source)]
-          .where((c) => c.a > 0)
-          .toList();
-      expect(drawn, hasLength(1), reason: '$source');
-      expect(drawn.single.toARGB32(), expected.toARGB32());
+      expect(through(revealed, color), through(normal, color),
+          reason: '$color');
     }
-    // The site fills are 23% opaque in the art and stay so.
-    final site = MapSvgSourceColors.highlight.withValues(alpha: 0.23);
-    expect(through(ink, site).a, closeTo(0.23, 0.01));
-    expect(through(floor, site).a, 0);
   });
 
   test('floor and walls too alike still get a revealed floor that shows', () {
-    for (final floor in [0xFF303030, 0xFFD0D0D0]) {
+    for (var grey = 0; grey <= 255; grey += 5) {
+      final floor = 0xFF000000 | grey << 16 | grey << 8 | grey;
       final palette = MapThemePalette(
         baseColorValue: floor,
         detailColorValue: floor,

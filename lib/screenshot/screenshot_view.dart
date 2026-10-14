@@ -121,6 +121,7 @@ class ScreenshotView extends ConsumerWidget {
     String ultOrbsAssetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_ult_orbs.svg';
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
+    final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
     final mapWidth = CoordinateSystem.screenShotSize.height *
         CoordinateSystem.instance.mapAspectRatio;
     final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
@@ -155,32 +156,36 @@ class ScreenshotView extends ConsumerWidget {
               isAttack: isAttack,
               child: SvgPicture.asset(
                 assetName,
-                colorMapper: MapSvgColorMapper.floor(effectivePalette),
+                colorMapper: mapColorMapper,
                 semanticsLabel: 'Map',
                 fit: BoxFit.contain,
               ),
             ),
           ),
-          // View cones, as one revealed floor, between the map's floor and
-          // the rest of it, as in the editor.
+          // View cones: the map as they reveal it, shown wherever one
+          // reaches, as in the editor.
           Positioned.fill(
             child: ConeCoverageLayer(
               coverage: cones,
-              color: revealedFloorColor(effectivePalette),
-            ),
-          ),
-          Positioned(
-            left: mapLeft,
-            top: 0,
-            width: mapWidth,
-            height: CoordinateSystem.screenShotSize.height,
-            child: CanonicalMapArtwork(
-              map: mapValue,
-              isAttack: isAttack,
-              child: SvgPicture.asset(
-                assetName,
-                colorMapper: MapSvgColorMapper.ink(effectivePalette),
-                fit: BoxFit.contain,
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: mapLeft,
+                    top: 0,
+                    width: mapWidth,
+                    height: CoordinateSystem.screenShotSize.height,
+                    child: CanonicalMapArtwork(
+                      map: mapValue,
+                      isAttack: isAttack,
+                      child: SvgPicture.asset(
+                        assetName,
+                        colorMapper:
+                            MapSvgColorMapper.revealed(effectivePalette),
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

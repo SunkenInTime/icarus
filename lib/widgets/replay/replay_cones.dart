@@ -10,10 +10,10 @@ import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
 /// Every view cone of a replay moment in one layer, drawn as the editor
-/// draws placed cones (the same cut, clipped to the painted floor, filled
-/// with the theme's revealed floor so overlaps never stack; see
-/// `lib/view_cone/cone_coverage.dart`) but clipped to the floor once for all
-/// of them, from cuts made off the UI thread. A cut lagging its agent is
+/// draws placed cones (the same cut, clipped to the painted floor, opaque
+/// where each reaches, as the mask a [RevealedFloor] shows the revealed map
+/// through; see `lib/view_cone/cone_coverage.dart`) but clipped to the floor
+/// once for all of them, from cuts made off the UI thread. A cut lagging its agent is
 /// carried along and turned with it. Smokes and smoke walls are erased from
 /// each cone they hide part of.
 class ReplayConesPainter extends CustomPainter {
@@ -24,7 +24,6 @@ class ReplayConesPainter extends CustomPainter {
     required this.map,
     required this.isAttack,
     required this.apertureDegrees,
-    required this.color,
   });
 
   final Iterable<ReplayConeSource> cones;
@@ -38,10 +37,10 @@ class ReplayConesPainter extends CustomPainter {
   /// The cones' spread; cuts see all the way round.
   final double apertureDegrees;
 
-  /// The revealed floor colour every cone is filled with.
-  final Color color;
-
   static final _conePaths = Expando<Path>();
+
+  /// Where a cone reaches, for [RevealedFloor] to show the revealed map.
+  static final _reach = Paint()..color = const Color(0xFFFFFFFF);
   static final _floors = Expando<(Size, Float64List, Path)>();
 
   @override
@@ -102,7 +101,7 @@ class ReplayConesPainter extends CustomPainter {
         canvas,
         cone,
         _conePaths[cone] ??= Path()..addPolygon(cone.polygon, true),
-        Paint()..color = color,
+        _reach,
         reachRect,
       );
       canvas.restore();

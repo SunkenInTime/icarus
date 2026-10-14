@@ -7,15 +7,17 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 /// View cones as a revealed floor: the floor under any cone turns one
 /// lighter shade of itself, however many cones cover it, and walls, sites and
 /// everything placed on the map stay as they are. This adapts VALORANT's
-/// minimap, which ships a lighter "revealed" copy of each map's floor.
+/// minimap, which ships a lighter "revealed" copy of each map next to the
+/// normal one.
 ///
-/// The cones of a page register here ([ConeArea]) instead of painting
-/// themselves. The map is drawn in two passes, its floor
-/// (`MapSvgColorMapper.floor`) and everything else
-/// (`MapSvgColorMapper.ink`); [ConeCoverageLayer] sits between them and fills
-/// every cone at once in the revealed floor colour. Everything placed sits
-/// above. A cone outside any [ConeCoverageScope] (a drag preview in the app's
-/// overlay) paints itself.
+/// The map is drawn as always. Above it, [ConeCoverageLayer] (or
+/// [RevealedFloor], for a painter that knows every cone itself) draws a
+/// revealed copy of the whole map (`MapSvgColorMapper.revealed`), shown only
+/// where a cone reaches. The copy is the same art, drawn in the same order,
+/// so everything on the map appears exactly once either way. Everything
+/// placed sits above. The cones of a page register here ([ConeArea]) instead
+/// of painting themselves; a cone outside any [ConeCoverageScope] (a drag
+/// preview in the app's overlay) paints itself.
 class ConeCoverage extends ChangeNotifier {
   final _areas = <RenderConeArea>{};
 
@@ -43,15 +45,21 @@ const revealedFloorMinContrast = 1.5;
 
 /// The floor colour wherever a cone reaches, for [palette]: its floor mixed
 /// toward its wall colour, so it reads on any theme whose walls read. Where
-/// floor and walls are too alike for that to show, a dark floor is lightened
-/// and a light one darkened instead.
+/// floor and walls are too alike for that to show, the floor is moved toward
+/// white or black, whichever can show more, just far enough to keep
+/// [revealedFloorMinContrast].
 Color revealedFloorColor(MapThemePalette palette) {
   final floor = palette.baseColor;
   final mixed = Color.lerp(floor, palette.detailColor, revealedFloorShare)!;
   if (_contrast(mixed, floor) >= revealedFloorMinContrast) return mixed;
-  return floor.computeLuminance() < 0.5
-      ? Color.lerp(floor, const Color(0xFFFFFFFF), 0.35)!
-      : Color.lerp(floor, const Color(0xFF000000), 0.3)!;
+  const white = Color(0xFFFFFFFF), black = Color(0xFF000000);
+  final toward =
+      _contrast(white, floor) >= _contrast(black, floor) ? white : black;
+  for (var share = 0.05; share < 1; share += 0.05) {
+    final moved = Color.lerp(floor, toward, share)!;
+    if (_contrast(moved, floor) >= revealedFloorMinContrast) return moved;
+  }
+  return toward;
 }
 
 double _contrast(Color a, Color b) {
@@ -232,18 +240,44 @@ class RenderConeArea extends RenderBox {
   bool hitTestSelf(Offset position) => false;
 }
 
-/// Every registered cone of a [ConeCoverage], filled as one revealed floor
-/// in [color].
-class ConeCoverageLayer extends LeafRenderObjectWidget {
+/// Paints [mask] (what cones see, opaque where they reach) and shows
+/// [child] only there. Everything happens inside its own layer, so nothing
+/// under it is read; [child] must draw straight to the canvas (a picture, no
+/// repaint boundary of its own).
+void _paintRevealed(
+  PaintingContext context,
+  Offset offset,
+  Size size,
+  RenderBox child,
+  void Function(Canvas canvas) mask,
+) {
+  final canvas = context.canvas;
+  final bounds = offset & size;
+  canvas.saveLayer(bounds, Paint());
+  canvas.save();
+  canvas.translate(offset.dx, offset.dy);
+  mask(canvas);
+  canvas.restore();
+  canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.srcIn);
+  context.paintChild(child, offset);
+  canvas.restore();
+  canvas.restore();
+}
+
+/// The opaque paint a cone's reach is masked with.
+final _maskFill = Paint()..color = const Color(0xFFFFFFFF);
+
+/// Shows [child], the revealed copy of the map, wherever a cone registered
+/// with [coverage] reaches.
+class ConeCoverageLayer extends SingleChildRenderObjectWidget {
   const ConeCoverageLayer({
     super.key,
     required this.coverage,
-    required this.color,
     this.opacity = 1,
+    required super.child,
   });
 
   final ConeCoverage coverage;
-  final Color color;
 
   /// How strongly the whole layer shows, as placed widgets are dimmed in
   /// lineup mode.
@@ -251,11 +285,7 @@ class ConeCoverageLayer extends LeafRenderObjectWidget {
 
   @override
   RenderConeCoverageLayer createRenderObject(BuildContext context) =>
-      RenderConeCoverageLayer(
-        coverage: coverage,
-        color: color,
-        opacity: opacity,
-      );
+      RenderConeCoverageLayer(coverage: coverage, opacity: opacity);
 
   @override
   void updateRenderObject(
@@ -264,18 +294,15 @@ class ConeCoverageLayer extends LeafRenderObjectWidget {
   ) {
     renderObject
       ..coverage = coverage
-      ..color = color
       ..opacity = opacity;
   }
 }
 
-class RenderConeCoverageLayer extends RenderBox {
+class RenderConeCoverageLayer extends RenderProxyBox {
   RenderConeCoverageLayer({
     required ConeCoverage coverage,
-    required Color color,
     required double opacity,
   })  : _coverage = coverage,
-        _color = color,
         _opacity = opacity;
 
   ConeCoverage _coverage;
@@ -284,13 +311,6 @@ class RenderConeCoverageLayer extends RenderBox {
     if (attached) _coverage.removeListener(markNeedsPaint);
     _coverage = value;
     if (attached) _coverage.addListener(markNeedsPaint);
-    markNeedsPaint();
-  }
-
-  Color _color;
-  set color(Color value) {
-    if (value == _color) return;
-    _color = value;
     markNeedsPaint();
   }
 
@@ -314,40 +334,90 @@ class RenderConeCoverageLayer extends RenderBox {
   }
 
   @override
-  bool get sizedByParent => true;
+  bool hitTestSelf(Offset position) => false;
 
   @override
-  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      false;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null || _opacity <= 0) return;
+    // Cones by how strongly they show: cones fading together (a page
+    // transition) are one group, lifted once where they overlap.
+    final groups = <double, List<RenderConeArea>>{};
+    for (final area in _coverage.areas) {
+      if (!area.attached || !area.hasSize) continue;
+      final strength = area.painter.opacity * area.fade * _opacity;
+      if (strength <= 0) continue;
+      groups.putIfAbsent(strength, () => []).add(area);
+    }
+    if (groups.isEmpty) return;
+    _paintRevealed(context, offset, size, child, (canvas) {
+      for (final MapEntry(key: strength, value: areas) in groups.entries) {
+        if (strength < 1) {
+          canvas.saveLayer(
+              null, Paint()..color = Color.fromRGBO(0, 0, 0, strength));
+        }
+        for (final area in areas) {
+          canvas.save();
+          canvas.transform(area.getTransformTo(this).storage);
+          area.painter.paintArea(canvas, area.size, _maskFill);
+          canvas.restore();
+        }
+        if (strength < 1) canvas.restore();
+      }
+    });
+  }
+}
+
+/// Shows [child], the revealed copy of the map, wherever [cones] (a painter
+/// that draws every cone itself, opaque where each reaches) paints.
+class RevealedFloor extends SingleChildRenderObjectWidget {
+  const RevealedFloor({super.key, required this.cones, required super.child});
+
+  final CustomPainter cones;
+
+  @override
+  RenderRevealedFloor createRenderObject(BuildContext context) =>
+      RenderRevealedFloor(cones);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    RenderRevealedFloor renderObject,
+  ) {
+    renderObject.cones = cones;
+  }
+}
+
+class RenderRevealedFloor extends RenderProxyBox {
+  RenderRevealedFloor(this._cones);
+
+  CustomPainter _cones;
+  set cones(CustomPainter value) {
+    if (identical(value, _cones)) return;
+    final old = _cones;
+    _cones = value;
+    if (value.runtimeType != old.runtimeType || value.shouldRepaint(old)) {
+      markNeedsPaint();
+    }
+  }
 
   @override
   bool hitTestSelf(Offset position) => false;
 
   @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      false;
+
+  @override
   void paint(PaintingContext context, Offset offset) {
-    final areas = [
-      for (final area in _coverage.areas)
-        if (area.attached && area.hasSize) area,
-    ];
-    if (areas.isEmpty || _opacity <= 0) return;
-    final canvas = context.canvas;
-    canvas.save();
-    canvas.translate(offset.dx, offset.dy);
-    // Opaque fills in one group, so where cones overlap the floor is lifted
-    // once; the group's own opacity dims them all together.
-    canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, _opacity));
-    for (final area in areas) {
-      canvas.save();
-      canvas.transform(area.getTransformTo(this).storage);
-      area.painter.paintArea(
-        canvas,
-        area.size,
-        Paint()
-          ..color = _color.withValues(alpha: area.painter.opacity * area.fade),
-      );
-      canvas.restore();
-    }
-    canvas.restore();
-    canvas.restore();
+    final child = this.child;
+    if (child == null) return;
+    _paintRevealed(
+        context, offset, size, child, (canvas) => _cones.paint(canvas, size));
   }
 }
 

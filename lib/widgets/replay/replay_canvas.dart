@@ -179,20 +179,20 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                             child: SvgPicture.asset(
                               'assets/maps/${mapName}_map'
                               '${isAttack ? '' : '_defense'}.svg',
-                              colorMapper: MapSvgColorMapper.floor(palette),
+                              colorMapper: MapSvgColorMapper.forPalette(palette),
                               fit: BoxFit.contain,
                             ),
                           ),
                         ),
                       ),
-                      // View cones as one revealed floor, between the
-                      // map's floor and the rest of it, under everything
-                      // placed (as in the editor).
+                      // View cones: the map as they reveal it, shown
+                      // wherever one reaches, under everything placed (as in
+                      // the editor).
                       if (cuts != null)
                         Positioned.fill(
                           child: IgnorePointer(
-                            child: CustomPaint(
-                              painter: ReplayConesPainter(
+                            child: RevealedFloor(
+                              cones: ReplayConesPainter(
                                 cones: frame.cones.values,
                                 occluders: frame.occluders,
                                 model: isAttack
@@ -201,31 +201,31 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                                 map: widget.map,
                                 isAttack: isAttack,
                                 apertureDegrees: cuts.apertureDegrees,
-                                color: revealedFloorColor(palette),
+                              ),
+                              child: Stack(
+                                children: [
+                                  Positioned(
+                                    left: mapLeft,
+                                    top: 0,
+                                    width: mapWidth,
+                                    height: height,
+                                    child: CanonicalMapArtwork(
+                                      map: widget.map,
+                                      isAttack: isAttack,
+                                      child: SvgPicture.asset(
+                                        'assets/maps/${mapName}_map'
+                                        '${isAttack ? '' : '_defense'}.svg',
+                                        colorMapper:
+                                            MapSvgColorMapper.revealed(palette),
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
-                      Positioned(
-                        left: mapLeft,
-                        top: 0,
-                        width: mapWidth,
-                        height: height,
-                        child: IgnorePointer(
-                          child: RepaintBoundary(
-                            child: CanonicalMapArtwork(
-                              map: widget.map,
-                              isAttack: isAttack,
-                              child: SvgPicture.asset(
-                                'assets/maps/${mapName}_map'
-                                '${isAttack ? '' : '_defense'}.svg',
-                                colorMapper: MapSvgColorMapper.ink(palette),
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                       // Utility moves far less than players do: its own
                       // layer, rebuilt only when it changes, so its
                       // picture (faded ranges and all) is drawn from cache.
