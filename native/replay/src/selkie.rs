@@ -2,9 +2,10 @@
 //! type 10, mode-1 LZ chunks with raw substreams, raw chunks, raw blocks).
 //!
 //! Written clean-room. Its only sources were the facts-only format notes in
-//! `icarus-replay-work/oodle/`: `spec.md`, `corpus-variants.md`,
-//! `examples.json` and `census.json`, plus the recorded archive pairs in
-//! `vectors/` (`manifest.json`, `quick.json`, `*.in`/`*.out`). No existing
+//! `icarus-replay-work/oodle/`: `spec.md` (with its "13.08 extension"),
+//! `corpus-variants.md`, `corpus-1308.md`, `examples.json` and
+//! `census.json`, plus the recorded archive pairs in `vectors/`
+//! (`manifest.json`, `quick.json`, `quick-1308.json`, `*.in`/`*.out`). No existing
 //! Oodle, Kraken, Mermaid or Selkie decoder source was read. Section names
 //! below ("Block header", "Token meanings", ...) are the spec's.
 //!
@@ -28,12 +29,19 @@ const INITIAL_BYTES: usize = 8;
 /// Shortest match distance the profile allows; also each chunk's starting
 /// remembered distance.
 const MIN_DISTANCE: usize = 8;
-/// Region starts from here on may use a far encoding the profile lacks.
+/// Region starts from here on may hold four-byte far entries ("13.08
+/// extension").
 const FAR_REGION_LIMIT: usize = 0xbf_ffff;
+/// In such a region, a far entry whose first three bytes reach this value
+/// has a fourth byte.
+const FOUR_BYTE_FAR: usize = 0xc0_0000;
+/// What one unit of that fourth byte adds to the entry's value.
+const FOURTH_BYTE_UNIT: usize = 0x40_0000;
 /// The quantum-size value that marks a special quantum, not a payload size.
 const SPECIAL_QUANTUM: usize = 0x3_ffff;
-/// Counts that announce a different encoding rather than a count.
+/// A near count that announces a split stream the profile lacks.
 const SPLIT_NEAR_COUNT: usize = 0xffff;
+/// A far count replaced by the LE16 count after the count field.
 const EXTENDED_FAR_COUNT: usize = 0xfff;
 /// Up-front output allocation per input byte. Real archives inflate about
 /// 3x; a hostile size beyond this grows only as fast as blocks decode.
@@ -222,25 +230,26 @@ fn lz_chunk(mut payload: Stream<'_>, out: &mut Output, end: usize) -> Result<(),
     let near = payload.sub(2 * near_count, "near-entry")?;
     let far_at = payload.at;
     let far_counts = payload.le24()?;
-    let (first_far, second_far) = (far_counts >> 12, far_counts & 0xfff);
-    if first_far == EXTENDED_FAR_COUNT || second_far == EXTENDED_FAR_COUNT {
-        return Err(unsupported(far_at, "an extended far count"));
+    let mut counts = [far_counts >> 12, far_counts & 0xfff];
+    // Both replacements come before either list.
+    for count in &mut counts {
+        if *count == EXTENDED_FAR_COUNT {
+            *count = payload.le16()?;
+        }
     }
-    if !two_regions && second_far != 0 {
+    if !two_regions && counts[1] != 0 {
         return Err(corrupt(
             far_at,
             "second-region far entries in a one-region chunk",
         ));
     }
-    let last_region = if two_regions { start + REGION } else { start };
-    if last_region >= FAR_REGION_LIMIT {
-        return Err(unsupported(
-            far_at,
-            format_args!("a token region at output {last_region}"),
-        ));
-    }
-    let first_far = payload.sub(3 * first_far, "first-region far-entry")?;
-    let second_far = payload.sub(3 * second_far, "second-region far-entry")?;
+    let first_far = far_list(&mut payload, counts[0], start, "first-region far-entry")?;
+    let second_far = far_list(
+        &mut payload,
+        counts[1],
+        start + REGION,
+        "second-region far-entry",
+    )?;
     let lengths = payload.rest("length");
 
     let (first_commands, second_commands) = commands.split(split);
@@ -258,6 +267,45 @@ fn lz_chunk(mut payload: Stream<'_>, out: &mut Output, end: usize) -> Result<(),
     lz.literals.finish()?;
     lz.near.finish()?;
     lz.lengths.finish()
+}
+
+/// The next `count` far entries of the region starting at `region`, as
+/// their own stream: three bytes each, and a fourth for an entry that needs
+/// it ([`far_entry_is_wide`]).
+fn far_list<'a>(
+    payload: &mut Stream<'a>,
+    count: usize,
+    region: usize,
+    name: &'static str,
+) -> Result<Stream<'a>, ReplayError> {
+    if region < FAR_REGION_LIMIT {
+        return payload.sub(3 * count, name);
+    }
+    let mut len = 0;
+    for _ in 0..count {
+        let Some(&[a, b, c]) = payload.bytes.get(len..len + 3) else {
+            return Err(corrupt(
+                payload.at + len,
+                format_args!("{count} {name}s need more bytes than remain"),
+            ));
+        };
+        len += 3;
+        if far_entry_is_wide(region, le24_of(a, b, c)) {
+            len += 1;
+        }
+    }
+    payload.sub(len, name)
+}
+
+/// Whether a far entry whose first three bytes read `value` has a fourth:
+/// in a region starting at or beyond [`FAR_REGION_LIMIT`], when `value`
+/// reaches [`FOUR_BYTE_FAR`].
+fn far_entry_is_wide(region: usize, value: usize) -> bool {
+    region >= FAR_REGION_LIMIT && value >= FOUR_BYTE_FAR
+}
+
+fn le24_of(a: u8, b: u8, c: u8) -> usize {
+    usize::from(a) | usize::from(b) << 8 | usize::from(c) << 16
 }
 
 /// Read a raw byte-array header and its bytes ("Raw byte-array headers").
@@ -359,10 +407,14 @@ impl Lz<'_, '_> {
     }
 
     /// Take the region's next far entry as the remembered distance ("Far
-    /// counts and entries"): it names absolute source `start - V`.
+    /// counts and entries"): it names absolute source `start - V`. A wide
+    /// entry's fourth byte adds whole [`FOURTH_BYTE_UNIT`]s to V.
     fn far(&mut self, far: &mut Stream<'_>, start: usize) -> Result<(), ReplayError> {
         let at = far.at;
-        let back = far.le24()?;
+        let mut back = far.le24()?;
+        if far_entry_is_wide(start, back) {
+            back += usize::from(far.byte()?) * FOURTH_BYTE_UNIT;
+        }
         if back > start {
             return Err(corrupt(
                 at,
@@ -502,7 +554,7 @@ impl<'a> Stream<'a> {
 
     fn le24(&mut self) -> Result<usize, ReplayError> {
         let &[a, b, c] = self.array()?;
-        Ok(usize::from(a) | usize::from(b) << 8 | usize::from(c) << 16)
+        Ok(le24_of(a, b, c))
     }
 
     fn be24(&mut self) -> Result<usize, ReplayError> {
@@ -593,6 +645,11 @@ mod tests {
         near: Vec<u16>,
         far: [Vec<usize>; 2],
         lengths: Vec<u8>,
+        /// Write each far count as the 0xfff sentinel and its LE16.
+        extended_counts: bool,
+        /// The regions start at or beyond 0xbfffff: far values from
+        /// 0xc00000 on take a fourth byte.
+        wide: bool,
     }
 
     impl LzChunk {
@@ -609,9 +666,23 @@ mod tests {
             for distance in &self.near {
                 bytes.extend(distance.to_le_bytes());
             }
-            bytes.extend(le24(self.far[0].len() << 12 | self.far[1].len()));
+            if self.extended_counts {
+                bytes.extend(le24(EXTENDED_FAR_COUNT << 12 | EXTENDED_FAR_COUNT));
+                for list in &self.far {
+                    bytes.extend(u16::try_from(list.len()).unwrap().to_le_bytes());
+                }
+            } else {
+                bytes.extend(le24(self.far[0].len() << 12 | self.far[1].len()));
+            }
             for &back in self.far.iter().flatten() {
-                bytes.extend(le24(back));
+                if self.wide && back >= FOUR_BYTE_FAR {
+                    // V = W + Z * 0x400000, W kept at or above 0xc00000.
+                    let z = (back - FOUR_BYTE_FAR) / FOURTH_BYTE_UNIT;
+                    bytes.extend(le24(back - z * FOURTH_BYTE_UNIT));
+                    bytes.push(u8::try_from(z).unwrap());
+                } else {
+                    bytes.extend(le24(back));
+                }
             }
             bytes.extend(&self.lengths);
             bytes
@@ -995,13 +1066,17 @@ mod tests {
             "split near stream"
         );
         let far = near + 2 + 2 * lz.near.len();
+        // A far-count sentinel takes its replacement from the bytes after
+        // it, which here leaves the archive short.
         assert_eq!(
             edited(|a| a[far..far + 3].copy_from_slice(&le24(0xfff << 12))),
-            UNSUPPORTED
+            CORRUPT,
+            "first-count sentinel with no replacement"
         );
         assert_eq!(
             edited(|a| a[far..far + 3].copy_from_slice(&le24(0xfff))),
-            UNSUPPORTED
+            CORRUPT,
+            "second-count sentinel with no replacement"
         );
         assert_eq!(
             rebuilt(|lz| lz.far[1].push(0)),
@@ -1076,27 +1151,128 @@ mod tests {
         assert_eq!(rebuilt(|lz| lz.lengths[0] += 1), CORRUPT);
     }
 
-    #[test]
-    fn regions_from_0xbfffff_on_are_refused() {
-        // One compressed block, then raw blocks up to output 48 * 256 KiB =
-        // 0xc00000, then a compressed block there.
-        let mut lz = LzChunk {
+    /// An archive whose last block starts at `region`, a multiple of 256 KiB:
+    /// a first LZ block, then raw blocks of distinct patterns, then `last`.
+    fn far_reaching(region: usize, last: &LzChunk, size: usize) -> Vec<u8> {
+        let mut first = LzChunk {
             initial: vec![0; 8],
             split: Some(1),
             ..Default::default()
         };
-        lz.fill(REGION - 8);
-        lz.fill(REGION);
-        let mut archive = block(0x8c, &[chunk(1, &lz.encode()), chunk(0, &vec![0; CHUNK])]);
-        for _ in 1..48 {
+        first.fill(REGION - 8);
+        first.fill(REGION);
+        let mut archive = block(
+            0x8c,
+            &[chunk(1, &first.encode()), chunk(0, &vec![0; CHUNK])],
+        );
+        for i in 1..region / BLOCK {
             archive.extend([0x4c, 0x0a]);
-            archive.extend(vec![0; BLOCK]);
+            archive.extend(pattern(BLOCK, 100 + i as u32));
         }
-        let mut last = LzChunk::default();
-        last.fill(1000);
         archive.extend(block(0x0c, &[chunk(1, &last.encode())]));
-        assert_eq!(48 * BLOCK, 0xc0_0000);
-        assert_eq!(code(&archive, 48 * BLOCK + 1000), UNSUPPORTED);
+        assert!(size > region && size - region <= REGION);
+        archive
+    }
+
+    /// One `02` far match of `len` bytes from absolute `source`, filling the
+    /// whole last block of an archive whose last region starts at `region`.
+    fn one_far_match(region: usize, source: usize, len: usize) -> (Vec<u8>, usize) {
+        let last = LzChunk {
+            commands: vec![0x02],
+            far: [vec![region - source], vec![]],
+            lengths: vec![u8::try_from(len - 29).unwrap()],
+            wide: true,
+            ..Default::default()
+        };
+        (far_reaching(region, &last, region + len), region + len)
+    }
+
+    #[test]
+    fn a_far_entry_at_or_beyond_0xc00000_takes_a_fourth_byte() {
+        // As user2_1_147: region 0xcc0000, a 92-byte match from 214130, so
+        // V = 13155214 = 0xc8bb8e with a fourth byte of 0. Here the source
+        // lies in a raw block, whose bytes differ position to position.
+        let (region, source) = (0xcc_0000, 300_000);
+        let (archive, size) = one_far_match(region, source, 92);
+        let out = decode(&archive, size).unwrap();
+        assert_eq!(out[region..], out[source..source + 92]);
+    }
+
+    #[test]
+    fn the_fourth_byte_adds_whole_0x400000s() {
+        // `00 00 c0 01`: V = 0xc00000 + 1 * 0x400000 = 0x1000000, from
+        // region 0x1040000 back to output 0x40000.
+        let (region, source) = (0x104_0000, 0x4_0000);
+        let (archive, size) = one_far_match(region, source, 40);
+        let entry = [0x00, 0x00, 0xc0, 0x01];
+        assert!(
+            archive.windows(4).any(|w| w == entry),
+            "encoded as V's bytes"
+        );
+        let out = decode(&archive, size).unwrap();
+        assert_eq!(out[region..], out[source..source + 40]);
+    }
+
+    #[test]
+    fn below_0xbfffff_a_large_far_value_takes_no_fourth_byte() {
+        // Region 0xbc0000: an entry reading 0xc00000 would reach before the
+        // archive, and it has no fourth byte to change that.
+        let region = 0xbc_0000;
+        let last = LzChunk {
+            commands: vec![0x02],
+            far: [vec![FOUR_BYTE_FAR], vec![]],
+            lengths: vec![11],
+            wide: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            code(&far_reaching(region, &last, region + 40), region + 40),
+            CORRUPT
+        );
+        // Its three-byte neighbours keep working there.
+        let (archive, size) = one_far_match(region, 300_000, 40);
+        let out = decode(&archive, size).unwrap();
+        assert_eq!(out[region..], out[300_000..300_040]);
+    }
+
+    #[test]
+    fn a_wide_far_entry_without_its_fourth_byte_is_corrupt() {
+        // The same match written with three bytes only: the decoder takes
+        // the length byte as the fourth, which puts the source before the
+        // archive.
+        let (region, source) = (0xcc_0000, 300_000);
+        let short = LzChunk {
+            commands: vec![0x02],
+            far: [vec![region - source], vec![]],
+            lengths: vec![92 - 29],
+            ..Default::default()
+        };
+        let size = region + 92;
+        assert_eq!(code(&far_reaching(region, &short, size), size), CORRUPT);
+    }
+
+    #[test]
+    fn extended_far_counts_replace_the_count_field() {
+        // far_tokens with both counts written as 0xfff and their LE16s
+        // decodes to the same bytes.
+        let (lz, size) = far_tokens();
+        let plain = decode(&lz.archive(), size).unwrap();
+        let extended = LzChunk {
+            extended_counts: true,
+            ..lz.clone()
+        };
+        assert_eq!(decode(&extended.archive(), size).unwrap(), plain);
+        // A one-region chunk may spell its second count 0 that way, but not
+        // more.
+        let (lz, size) = compact_reuse();
+        let zero = LzChunk {
+            extended_counts: true,
+            ..lz
+        };
+        assert!(decode(&zero.archive(), size).is_ok());
+        let mut one = zero.clone();
+        one.far[1].push(8);
+        assert_eq!(code(&one.archive(), size), CORRUPT);
     }
 
     // Hostile input must come back as an error, never a panic or a hang.
