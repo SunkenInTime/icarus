@@ -63,12 +63,13 @@ class ReplayConesPainter extends CustomPainter {
     // fill is faint at any floor edge, which wall ink mostly covers, so a
     // hard edge reads the same and spares an antialiased mask every frame.
     canvas.clipPath(_floor(size, sourceToScreen), doAntiAlias: false);
-    for (final (:aim, :cut) in cones) {
+    for (final (:aim, :cut, :sight) in cones) {
       final cone = cut?.cone;
       final origin = cut?.origin;
       if (cut == null || cone == null || origin == null) continue;
       if (cone.polygon.length < 3) continue;
-      final reach = _range(transform);
+      // A flashed player's cone reaches only as far as they can see.
+      final reach = _range(transform) * sight;
       // Where the agent stands now, in height-model space. Smokes do not
       // move with a lagging cut, so they are judged from here.
       final standing = _source(aim.origin, transform);

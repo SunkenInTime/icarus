@@ -28,6 +28,7 @@ ReplayDocument document({
   List<Map<String, Object?>>? players,
   List<Map<String, Object?>> kills = const [],
   Map<String, Object?> vitals = const {},
+  Map<String, Object?> blinds = const {},
   List<Map<String, Object?>> utility = const [],
   Map<String, List<List<num>>> movement = const {},
   Map<String, Object?> firstRound = const {},
@@ -61,6 +62,7 @@ ReplayDocument document({
       ],
       'kills': kills,
       'vitals': vitals,
+      'blinds': blinds,
       'utility': utility,
       'movement': movementJson,
     },
@@ -256,6 +258,74 @@ void main() {
         builder(twoOmens).frameAt(2000, perspective: ReplayTeam.red).abilities,
         isEmpty,
       );
+    });
+  });
+
+  group('flashes', () {
+    // Flashed at 10 s for 2 s; the clear arrives just after.
+    final flashed = {
+      'a': [
+        [10000, 2.0],
+        [12003, 0],
+      ],
+    };
+
+    test('a flash blinds fully, then sight comes back over its end', () {
+      final doc = document(blinds: flashed, movement: {'a': still(0, 20000)});
+      final frames = builder(doc);
+      ReplayFrame at(int timeMs) =>
+          frames.frameAt(timeMs, perspective: ReplayTeam.red);
+
+      // Blind: no cone, and the icon fully washed.
+      final blind = at(10500);
+      final agent = blind.agents.single as PlacedAgent;
+      expect(agent.state, AgentState.none);
+      expect(
+        blind.effects.whereType<ReplayFlashed>().single.blindness,
+        1.0,
+      );
+
+      // 400 ms left of the 800 ms fade: half the sight is back.
+      final fading = at(11600);
+      final cone = fading.agents.single as PlacedViewConeAgent;
+      expect(cone.length, closeTo(ReplayFrameBuilder.coneLength / 2, 1e-6));
+      expect(
+        fading.effects.whereType<ReplayFlashed>().single.blindness,
+        closeTo(0.5, 1e-6),
+      );
+
+      final clear = at(12100);
+      expect(
+        (clear.agents.single as PlacedViewConeAgent).length,
+        ReplayFrameBuilder.coneLength,
+      );
+      expect(clear.effects.whereType<ReplayFlashed>(), isEmpty);
+    });
+
+    test('a cone shorter than the editor allows is no cone', () {
+      final doc = document(blinds: flashed, movement: {'a': still(0, 20000)});
+      // 50 ms into the 800 ms fade: a sixteenth of the sight is back.
+      final frame = builder(doc).frameAt(11250, perspective: ReplayTeam.red);
+      expect(frame.agents.single, isNot(isA<PlacedViewConeAgent>()));
+    });
+
+    test('the dead are never washed', () {
+      final doc = document(
+        blinds: flashed,
+        kills: [
+          {'timeMs': 10200, 'victim': 'a', 'killer': 'b'},
+        ],
+        movement: {'a': still(0, 20000)},
+      );
+      final frame = builder(doc).frameAt(10500, perspective: ReplayTeam.red);
+      expect((frame.agents.single as PlacedAgent).state, AgentState.dead);
+      expect(frame.effects.whereType<ReplayFlashed>(), isEmpty);
+    });
+
+    test('a decode without flashes reads as never flashed', () {
+      final json = sampleJson()..remove('blinds');
+      final doc = ReplayDocument.fromBytes(icrp(json));
+      expect(doc.blinds, isEmpty);
     });
   });
 

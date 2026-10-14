@@ -74,6 +74,9 @@ class ReplayEffectsPainter extends CustomPainter {
               ..strokeWidth = coordinates.scale(2 * (1 - progress) + 0.5)
               ..color = ink.withValues(alpha: 0.8 * (1 - progress)),
           );
+        case ReplayFlashed():
+          // Drawn over the agents, by [ReplayFlashPainter].
+          continue;
         case ReplayFlight(:final trail):
           // The path just flown, fading toward its tail.
           if (trail.length < 2) continue;
@@ -99,6 +102,46 @@ class ReplayEffectsPainter extends CustomPainter {
   @override
   bool shouldRepaint(ReplayEffectsPainter oldDelegate) =>
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
+}
+
+/// Flashed players' icons washed white, over the agents.
+class ReplayFlashPainter extends CustomPainter {
+  ReplayFlashPainter({
+    required this.flashed,
+    required this.isAttack,
+    required this.agentSize,
+  });
+
+  final List<ReplayFlashed> flashed;
+  final bool isAttack;
+
+  /// The agent icon's size, as placed widgets are given it.
+  final double agentSize;
+
+  /// The agent icon's own corner radius.
+  static const _radius = Radius.circular(3);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = CoordinateSystem.instance.scale(agentSize);
+    for (final flash in flashed) {
+      final at = replayScreenPoint(flash.centre, isAttack: isAttack);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: at, width: side, height: side),
+          _radius,
+        ),
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.85 * flash.blindness),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(ReplayFlashPainter oldDelegate) =>
+      oldDelegate.flashed != flashed ||
+      oldDelegate.isAttack != isAttack ||
+      oldDelegate.agentSize != agentSize;
 }
 
 /// A thrown utility's icon where it is now, a little smaller than the

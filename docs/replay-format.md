@@ -92,6 +92,9 @@ first byte.
   "vitals": {
     "<subject>": [[timeMs, health, armor], …] // see "Vitals"
   },
+  "blinds": {
+    "<subject>": [[timeMs, seconds], …]     // see "Blinds"
+  },
   "utility": [
     {
       "id": 4211,                           // actor NetGUID, unique per open
@@ -168,6 +171,15 @@ Armour is the armour item the player wears: bought, it counts its full
 points (25 or 50) until it reports a lower value, a survivor carries it into
 the next round, and selling it or a round's end after death leaves 0.
 Values are rounded to two decimals; both are always numbers.
+
+## Blinds
+
+A row is written when a flash lands on a player, holding how many seconds
+the longest flash on them lasts, and another, holding 0, when the last one
+wears off. The clear arrives a few milliseconds after the flash's seconds
+have passed, or sooner when the player dies or the round ends. Partial flashes
+are short: a player at the edge of one may be blind for 0.04 s. Players
+never flashed have no entry. Seconds are rounded to three decimals.
 
 ## Utility
 

@@ -103,10 +103,41 @@ fn every_replay_decodes_to_the_contract() {
         check_vitals(&id, &doc, rounds, kills, &team);
         check_movement(&id, &doc, parts.blob, &team);
         check_utility(&id, doc["utility"].as_array().unwrap());
+        check_blinds(&id, &doc, &team);
         for c in doc["casts"].as_array().unwrap() {
             assert!(
                 [3, 4, 5, 9].contains(&c["slot"].as_i64().unwrap()),
                 "{id}: cast {c}"
+            );
+        }
+    }
+}
+
+/// Flashes belong to players, and each one wears off: a row of seconds is
+/// followed by a 0 no later than its seconds (plus the few milliseconds the
+/// clear takes to arrive), or sooner when the player dies or the round ends.
+fn check_blinds(id: &str, doc: &Value, team: &HashMap<&str, &str>) {
+    let blinds = doc["blinds"].as_object().unwrap();
+    for (subject, rows) in blinds {
+        assert!(
+            team.contains_key(subject.as_str()),
+            "{id}: flash on {subject}"
+        );
+        let rows = rows.as_array().unwrap();
+        for (i, row) in rows.iter().enumerate() {
+            let (time, seconds) = (row[0].as_i64().unwrap(), row[1].as_f64().unwrap());
+            if seconds == 0.0 {
+                continue;
+            }
+            let clear = rows
+                .get(i + 1)
+                .unwrap_or_else(|| panic!("{id}: {subject}'s flash at {time} never ends"));
+            let ends = time + (seconds * 1000.0).round() as i64;
+            assert_eq!(clear[1].as_f64(), Some(0.0), "{id}: {subject} at {time}");
+            assert!(
+                clear[0].as_i64().unwrap() <= ends + 50,
+                "{id}: {subject}'s {seconds} s flash at {time} clears at {}",
+                clear[0]
             );
         }
     }

@@ -152,6 +152,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                   // Cones cut on the worker are drawn in one layer.
                   final cuts = widget.playback.coneCuts;
                   final flights = frame.effects.whereType<ReplayFlight>();
+                  final flashed =
+                      frame.effects.whereType<ReplayFlashed>().toList();
                   return Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -244,6 +246,18 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                                   key: ValueKey(placed.id),
                                   child: view(placed),
                                 ),
+                      if (flashed.isNotEmpty)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: ReplayFlashPainter(
+                                flashed: flashed,
+                                isAttack: isAttack,
+                                agentSize: agentSize,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   );
                 },

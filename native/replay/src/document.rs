@@ -10,6 +10,10 @@ pub type Vec3 = [f64; 3];
 /// `[timeMs, health, armor]`.
 pub type VitalsRow = (i64, f64, f64);
 
+/// `[timeMs, seconds]`: how long the longest flash on a player lasts, 0
+/// once none does.
+pub type BlindRow = (i64, f64);
+
 /// `[timeMs, x, y, z]`: like every row, its time is an integer.
 pub type PathRow = (i64, f64, f64, f64);
 
@@ -24,6 +28,8 @@ pub struct Document {
     pub kills: Vec<Kill>,
     /// subject -> `[timeMs, health, armor]` rows.
     pub vitals: BTreeMap<String, Vec<VitalsRow>>,
+    /// subject -> `[timeMs, seconds]` rows.
+    pub blinds: BTreeMap<String, Vec<BlindRow>>,
     pub utility: Vec<Utility>,
     pub casts: Vec<Cast>,
     pub movement: BTreeMap<String, MovementSpan>,
