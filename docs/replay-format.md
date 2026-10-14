@@ -41,7 +41,7 @@ first byte.
 
 ```jsonc
 {
-  "decoder": { "name": "icarus_replay", "version": "0.3.0+vrfkit.0.2.5", "vrfkit": "0.2.5" },
+  "decoder": { "name": "icarus_replay", "version": "0.3.1+vrfkit.0.2.5", "vrfkit": "0.2.5" },
   "match": {
     "id": "dc078274-2d68-495b-8321-5e58b2a3eeba",
     "mapPath": "/Game/Maps/Juliett/Juliett",
@@ -223,7 +223,8 @@ Crosshair 07-15-2023 14:55:05").
 `Ability1`, `Ability2` and `Ultimate` of the caster's agent. Every cast of 26
 agents across our 7 replays agrees with the item `classPath` where one is
 known. `classPath` is the ability item, absent where no charge spend ties a
-cast to it (always for ultimates).
+cast to it (always for ultimates). Astra also reports slot 0, her passive;
+those records are left out. Her stars appear in `utility`.
 
 ## Quality
 
@@ -269,7 +270,7 @@ the first). A clean replay has none.
   "durationMs": 321499,
   "recordedAt?": "2026-07-08T00:35:45Z",
   "supported": true,                       // a payload transform is registered for the build
-  "decoderVersion": "0.3.0+vrfkit.0.2.5",  // same as the document's decoder.version
+  "decoderVersion": "0.3.1+vrfkit.0.2.5",  // same as the document's decoder.version
   "players": [{ "subject": "…", "agentId": "…" }]
 }
 ```

@@ -14,6 +14,12 @@
 //! (player, slot) takes the item class those decrements agree on. Where they
 //! do not agree, or never fire (an ultimate spends no charge), `classPath`
 //! stays absent.
+//!
+//! Only those four slots are casts. On 13.08 Astra also reports slot 0, her
+//! passive (77 records on c903d8e9; many land with a star's spawn, not all),
+//! and those are left out. Her stars stay in utility
+//! (`GameObject_Rift_X_Markers`); what every slot-0 record means is not
+//! established.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -86,6 +92,9 @@ pub(super) fn casts(cx: &mut Context<'_>, rounds: &[Round]) -> Vec<Cast> {
         }
     }
 
+    /// The ability slots a cast can name.
+    const SLOTS: [i64; 4] = [3, 4, 5, 9];
+
     // Identities in first-send order.
     let mut seen: HashSet<(String, i64, i64, u64)> = HashSet::new();
     let mut found: Vec<Found> = Vec::new();
@@ -95,6 +104,9 @@ pub(super) fn casts(cx: &mut Context<'_>, rounds: &[Round]) -> Vec<Cast> {
         else {
             continue;
         };
+        if !SLOTS.contains(&slot) {
+            continue;
+        }
         if seen.insert((player.clone(), round, slot, cast_time.to_bits())) {
             found.push(Found {
                 first_send: time,
