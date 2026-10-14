@@ -13,24 +13,26 @@ class MapSvgSourceColors {
 }
 
 class MapSvgColorMapper extends ColorMapper {
-  const MapSvgColorMapper(this.replacements);
+  MapSvgColorMapper(Map<int, Color> replacements)
+      : replacements = Map.unmodifiable(replacements);
 
   MapSvgColorMapper.forPalette(MapThemePalette palette)
-      : replacements = {
+      : replacements = Map.unmodifiable({
           MapSvgSourceColors.base.toARGB32(): palette.baseColor,
           MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
-        };
+        });
 
   /// The map in [palette] as cones reveal it: the same art with its floor
   /// in [revealedFloorColor] (see `lib/view_cone/cone_coverage.dart`).
   MapSvgColorMapper.revealed(MapThemePalette palette)
-      : replacements = {
+      : replacements = Map.unmodifiable({
           MapSvgSourceColors.base.toARGB32(): revealedFloorColor(palette),
           MapSvgSourceColors.detail.toARGB32(): palette.detailColor,
           MapSvgSourceColors.highlight.toARGB32(): palette.highlightColor,
-        };
+        });
 
+  /// Unmodifiable: mappers are compared by these, so they never change.
   final Map<int, Color> replacements;
 
   @override

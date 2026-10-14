@@ -31,8 +31,8 @@ void main() {
 
   test('the order colours were listed in does not matter', () {
     const red = Color(0xFFFF0000), blue = Color(0xFF0000FF);
-    const one = MapSvgColorMapper({1: red, 2: blue});
-    const other = MapSvgColorMapper({2: blue, 1: red});
+    final one = MapSvgColorMapper(const {1: red, 2: blue});
+    final other = MapSvgColorMapper(const {2: blue, 1: red});
     expect(other, one);
     expect(other.hashCode, one.hashCode);
   });
