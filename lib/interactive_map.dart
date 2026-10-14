@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
+import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -128,6 +130,21 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
     controller.dispose();
     _cones.dispose();
     super.dispose();
+  }
+
+  /// The painted floor, which the revealed map is clipped to once; null
+  /// until the map's height model loads (no height cones show before it
+  /// does).
+  Path? _revealedFloor(bool isAttack) {
+    final map = ref.watch(mapProvider).currentMap;
+    final model = ref
+        .watch(svgHeightRuntimeProvider(map))
+        .asData
+        ?.value
+        ?.model(isAttack);
+    if (model == null) return null;
+    return SvgHeightMapTransform.forMap(map)
+        .floorOnScreen(model, isAttack: isAttack);
   }
 
   @override
@@ -308,6 +325,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     child: IgnorePointer(
                                       child: ConeCoverageLayer(
                                         coverage: _cones,
+                                        floor: _revealedFloor(isAttack),
                                         opacity: ref
                                                 .watch(interactionStateProvider)
                                                 .isLineUpMode

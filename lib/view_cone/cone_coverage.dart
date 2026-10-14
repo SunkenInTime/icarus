@@ -67,13 +67,16 @@ double _contrast(Color a, Color b) {
   return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
 }
 
-/// Something that paints one cone's lit area, clipped to the floor, with a
-/// given [fill], in its own coordinates.
+/// Something that paints one cone's lit area with a given [fill], in its
+/// own coordinates.
 abstract interface class ConeAreaPainter {
   /// How strongly this cone is drawn: below 1 for a drag preview.
   double get opacity;
 
-  void paintArea(Canvas canvas, Size size, Paint fill);
+  /// Paints the lit area, also clipped to the painted floor when
+  /// [clipToFloor] (when the layer it joins does not clip its map itself).
+  void paintArea(Canvas canvas, Size size, Paint fill,
+      {required bool clipToFloor});
 }
 
 /// Gives the cones below it a shared [ConeCoverage].
@@ -240,41 +243,52 @@ class RenderConeArea extends RenderBox {
   bool hitTestSelf(Offset position) => false;
 }
 
-/// Paints [mask] (what cones see, opaque where they reach) and shows
-/// [child] only there. Everything happens inside its own layer, so nothing
-/// under it is read; [child] must draw straight to the canvas (a picture, no
-/// repaint boundary of its own).
-void _paintRevealed(
+/// Shows [child] only where [mask] (what cones see, opaque where they reach)
+/// paints, and returns the layer that does it.
+///
+/// [child] is a repaint boundary, so the revealed map keeps one picture
+/// while cones move. The mask is drawn over it with dstIn, both inside a
+/// layer of their own (a clip to the whole box that saves a layer), so dstIn
+/// reaches only the revealed map, never the map under it. A colour filter
+/// would group them too, but the engine caches a filter's children as one
+/// image, which would redraw the map into a new image with every mask.
+ClipRectLayer? _paintRevealed(
   PaintingContext context,
+  bool needsCompositing,
   Offset offset,
   Size size,
   RenderBox child,
+  ClipRectLayer? oldLayer,
   void Function(Canvas canvas) mask,
 ) {
-  final canvas = context.canvas;
-  final bounds = offset & size;
-  canvas.saveLayer(bounds, Paint());
-  canvas.save();
-  canvas.translate(offset.dx, offset.dy);
-  mask(canvas);
-  canvas.restore();
-  canvas.saveLayer(bounds, Paint()..blendMode = BlendMode.srcIn);
-  context.paintChild(child, offset);
-  canvas.restore();
-  canvas.restore();
+  return context.pushClipRect(needsCompositing, offset, Offset.zero & size,
+      (context, offset) {
+    context.paintChild(child, offset);
+    final canvas = context.canvas;
+    canvas.saveLayer(offset & size, Paint()..blendMode = BlendMode.dstIn);
+    canvas.translate(offset.dx, offset.dy);
+    mask(canvas);
+    canvas.restore();
+  }, clipBehavior: Clip.antiAliasWithSaveLayer, oldLayer: oldLayer);
 }
 
 /// Shows [child], the revealed copy of the map, wherever a cone registered
 /// with [coverage] reaches.
 class ConeCoverageLayer extends SingleChildRenderObjectWidget {
-  const ConeCoverageLayer({
+  ConeCoverageLayer({
     super.key,
     required this.coverage,
     this.opacity = 1,
-    required super.child,
-  });
+    Path? floor,
+    required Widget child,
+  })  : clipsToFloor = floor != null,
+        super(child: _cachedMap(floor, child));
 
   final ConeCoverage coverage;
+
+  /// Whether the revealed map is clipped to the floor here, once, so cones
+  /// need not each clip themselves.
+  final bool clipsToFloor;
 
   /// How strongly the whole layer shows, as placed widgets are dimmed in
   /// lineup mode.
@@ -282,7 +296,11 @@ class ConeCoverageLayer extends SingleChildRenderObjectWidget {
 
   @override
   RenderConeCoverageLayer createRenderObject(BuildContext context) =>
-      RenderConeCoverageLayer(coverage: coverage, opacity: opacity);
+      RenderConeCoverageLayer(
+        coverage: coverage,
+        opacity: opacity,
+        clipsToFloor: clipsToFloor,
+      );
 
   @override
   void updateRenderObject(
@@ -291,7 +309,8 @@ class ConeCoverageLayer extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..coverage = coverage
-      ..opacity = opacity;
+      ..opacity = opacity
+      ..clipsToFloor = clipsToFloor;
   }
 }
 
@@ -299,8 +318,17 @@ class RenderConeCoverageLayer extends RenderProxyBox {
   RenderConeCoverageLayer({
     required ConeCoverage coverage,
     required double opacity,
+    required bool clipsToFloor,
   })  : _coverage = coverage,
-        _opacity = opacity;
+        _opacity = opacity,
+        _clipsToFloor = clipsToFloor;
+
+  bool _clipsToFloor;
+  set clipsToFloor(bool value) {
+    if (value == _clipsToFloor) return;
+    _clipsToFloor = value;
+    markNeedsPaint();
+  }
 
   ConeCoverage _coverage;
   set coverage(ConeCoverage value) {
@@ -340,13 +368,17 @@ class RenderConeCoverageLayer extends RenderProxyBox {
   @override
   void paint(PaintingContext context, Offset offset) {
     final child = this.child;
-    if (child == null || _opacity <= 0) return;
     final areas = [
       for (final area in _coverage.areas)
         if (area.attached && area.hasSize) area,
     ];
-    if (areas.isEmpty) return;
-    _paintRevealed(context, offset, size, child, (canvas) {
+    if (child == null || _opacity <= 0 || areas.isEmpty) {
+      layer = null;
+      return;
+    }
+    layer = _paintRevealed(
+        context, needsCompositing, offset, size, child, layer as ClipRectLayer?,
+        (canvas) {
       // Each cone's strength as an opaque grey on black (an edge pixel it
       // half covers is half as grey), lightened together: wherever cones
       // overlap, the strongest one counts, in any order. The grey then
@@ -373,6 +405,7 @@ class RenderConeCoverageLayer extends RenderProxyBox {
           Paint()
             ..color = Color.from(
                 alpha: 1, red: strength, green: strength, blue: strength),
+          clipToFloor: !_clipsToFloor,
         );
         canvas.restore();
         canvas.restore();
@@ -393,7 +426,14 @@ class RenderConeCoverageLayer extends RenderProxyBox {
 /// Shows [child], the revealed copy of the map, wherever [cones] (a painter
 /// that draws every cone itself, opaque where each reaches) paints.
 class RevealedFloor extends SingleChildRenderObjectWidget {
-  const RevealedFloor({super.key, required this.cones, required super.child});
+  /// [floor], when given, is where [child] shows at all: it is clipped to it
+  /// once, in the map's own cached layer, so [cones] need not clip to it.
+  RevealedFloor({
+    super.key,
+    required this.cones,
+    Path? floor,
+    required Widget child,
+  }) : super(child: _cachedMap(floor, child));
 
   final CustomPainter cones;
 
@@ -433,9 +473,12 @@ class RenderRevealedFloor extends RenderProxyBox {
   @override
   void paint(PaintingContext context, Offset offset) {
     final child = this.child;
-    if (child == null) return;
-    _paintRevealed(
-        context, offset, size, child, (canvas) => _cones.paint(canvas, size));
+    if (child == null) {
+      layer = null;
+      return;
+    }
+    layer = _paintRevealed(context, needsCompositing, offset, size, child,
+        layer as ClipRectLayer?, (canvas) => _cones.paint(canvas, size));
   }
 }
 
@@ -461,4 +504,29 @@ class _ConeCoverageHostState extends State<ConeCoverageHost> {
 
   @override
   Widget build(BuildContext context) => widget.builder(context, _coverage);
+}
+
+/// The revealed map in a layer of its own, clipped to [floor] if given.
+///
+/// Clipping the map once here, rather than every cone to the floor, is most
+/// of what makes cones cheap on Windows: the engine draws there without a
+/// stencil buffer, so a clip to a shape as complex as the floor is a mask
+/// drawn on the CPU, and cones moving every frame need new ones.
+Widget _cachedMap(Path? floor, Widget map) => RepaintBoundary(
+      child: floor == null
+          ? map
+          : ClipPath(clipper: _FloorClipper(floor), child: map),
+    );
+
+class _FloorClipper extends CustomClipper<Path> {
+  const _FloorClipper(this.floor);
+
+  final Path floor;
+
+  @override
+  Path getClip(Size size) => floor;
+
+  @override
+  bool shouldReclip(_FloorClipper oldClipper) =>
+      !identical(oldClipper.floor, floor);
 }
