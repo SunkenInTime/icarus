@@ -41,7 +41,7 @@ first byte.
 
 ```jsonc
 {
-  "decoder": { "name": "icarus_replay", "version": "0.2.0+vrfkit.0.2.5", "vrfkit": "0.2.5" },
+  "decoder": { "name": "icarus_replay", "version": "0.3.0+vrfkit.0.2.5", "vrfkit": "0.2.5" },
   "match": {
     "id": "dc078274-2d68-495b-8321-5e58b2a3eeba",
     "mapPath": "/Game/Maps/Juliett/Juliett",
@@ -91,6 +91,9 @@ first byte.
   ],
   "vitals": {
     "<subject>": [[timeMs, health, armor], …] // see "Vitals"
+  },
+  "blinds": {
+    "<subject>": [[timeMs, seconds], …]     // see "Blinds"
   },
   "utility": [
     {
@@ -168,6 +171,15 @@ Armour is the armour item the player wears: bought, it counts its full
 points (25 or 50) until it reports a lower value, a survivor carries it into
 the next round, and selling it or a round's end after death leaves 0.
 Values are rounded to two decimals; both are always numbers.
+
+## Blinds
+
+A row is written when a flash lands on a player, holding how many seconds
+the longest flash on them lasts, and another, holding 0, when the last one
+wears off. The clear arrives a few milliseconds after the flash's seconds
+have passed, or sooner when the player dies or the round ends. Partial flashes
+are short: a player at the edge of one may be blind for 0.04 s. Players
+never flashed have no entry. Seconds are rounded to three decimals.
 
 ## Utility
 
@@ -257,7 +269,7 @@ the first). A clean replay has none.
   "durationMs": 321499,
   "recordedAt?": "2026-07-08T00:35:45Z",
   "supported": true,                       // a payload transform is registered for the build
-  "decoderVersion": "0.2.0+vrfkit.0.2.5",  // same as the document's decoder.version
+  "decoderVersion": "0.3.0+vrfkit.0.2.5",  // same as the document's decoder.version
   "players": [{ "subject": "…", "agentId": "…" }]
 }
 ```

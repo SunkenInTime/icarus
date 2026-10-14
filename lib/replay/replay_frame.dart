@@ -62,10 +62,15 @@ class ReplayFrame {
   List<PlacedWidget> get widgets => [...utilities, ...abilities, ...agents];
 }
 
-/// A player's view cone as drawn: where it is aimed now, and its latest cut
+/// A player's view cone as drawn: where it is aimed now, its latest cut
 /// (see [ReplayConeCuts]), which may lag the aim by a frame or two and is
-/// carried along to it. No cut yet draws no cone.
-typedef ReplayConeSource = ({ReplayConeAim aim, ReplayConeCut? cut});
+/// carried along to it, and how much of its reach a flash leaves, 1 when
+/// unflashed. No cut yet draws no cone.
+typedef ReplayConeSource = ({
+  ReplayConeAim aim,
+  ReplayConeCut? cut,
+  double sight,
+});
 
 /// Something the viewer animates for a moment. Positions are canonical
 /// world units, like placed widgets'.
@@ -114,6 +119,25 @@ class ReplayExit extends ReplayEffect {
 
   /// Whether the ability was drawn faintly while it was up.
   final bool dimmed;
+}
+
+/// A flashed player: their icon washed white by how blind they are.
+class ReplayFlashed extends ReplayEffect {
+  const ReplayFlashed({
+    required this.agentId,
+    required this.centre,
+    required this.blindness,
+    required super.isAlly,
+  });
+
+  /// The flashed agent's placed id, so the wash is drawn with that agent.
+  final String agentId;
+
+  /// The icon's centre, where the player stands.
+  final Offset centre;
+
+  /// 1 fully blind, falling to 0 as sight comes back.
+  final double blindness;
 }
 
 /// A thrown utility in flight: its ability's icon where it is now, and the
@@ -301,6 +325,7 @@ class ReplayFrameBuilder {
 
     final agents = <PlacedAgentNode>[];
     final cones = <String, ReplayConeSource>{};
+    final flashed = <ReplayFlashed>[];
     for (final player in document.players) {
       final type = replayAgentType(player.agentId);
       final team = player.team;
@@ -318,7 +343,22 @@ class ReplayFrameBuilder {
       final id = 'replay-player-${player.subject}';
       final visionElevation = _visionElevation(pose);
       final rotation = projection.rotationForYaw(pose.yaw);
-      if (state.alive && cuts != null) {
+      // A flash shortens the cone; one shorter than the editor allows is
+      // none, so a capture keeps exactly what is drawn.
+      final blindness = state.alive
+          ? document.blinds[player.subject]?.blindnessAt(timeMs) ?? 0.0
+          : 0.0;
+      final sightLength = coneLength * (1 - blindness);
+      final sees = state.alive && sightLength >= ViewConeUtility.minLength;
+      if (blindness > 0) {
+        flashed.add(ReplayFlashed(
+          agentId: id,
+          centre: standing,
+          blindness: blindness,
+          isAlly: isAlly,
+        ));
+      }
+      if (sees && cuts != null) {
         final aim = ReplayConeAim(
           origin: standing,
           rotation: rotation,
@@ -331,20 +371,21 @@ class ReplayFrameBuilder {
           aim: aim,
           // A cut from the other side's map is no cut at all.
           cut: cut != null && cut.aim.isAttack == isAttack ? cut : null,
+          sight: sightLength / coneLength,
         );
       }
       // What they carried out of the buy phase.
       final weapon =
           replayWeaponType(round?.economyFor(player.subject)?.weapon);
       agents.add(
-        state.alive
+        sees
             ? PlacedViewConeAgent(
                 id: id,
                 type: type,
                 position: position,
                 presetType: UtilityType.viewCone180,
                 rotation: rotation,
-                length: coneLength,
+                length: sightLength,
                 visionElevation: visionElevation,
                 isAlly: isAlly,
                 weapon: weapon,
@@ -354,7 +395,7 @@ class ReplayFrameBuilder {
                 type: type,
                 position: position,
                 isAlly: isAlly,
-                state: AgentState.dead,
+                state: state.alive ? AgentState.none : AgentState.dead,
                 weapon: weapon,
               ),
       );
@@ -363,7 +404,7 @@ class ReplayFrameBuilder {
     final abilities = <PlacedAbility>[];
     final occluders = <VisionOccluder>[];
     final dimmed = <String>{};
-    final effects = <ReplayEffect>[];
+    final effects = <ReplayEffect>[...flashed];
     final mapScale = Maps.mapScale[projection.map] ?? 1.0;
     for (var i = 0; i < document.utility.length; i++) {
       final utility = document.utility[i];

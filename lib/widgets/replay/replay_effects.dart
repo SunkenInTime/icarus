@@ -74,6 +74,9 @@ class ReplayEffectsPainter extends CustomPainter {
               ..strokeWidth = coordinates.scale(2 * (1 - progress) + 0.5)
               ..color = ink.withValues(alpha: 0.8 * (1 - progress)),
           );
+        case ReplayFlashed():
+          // Drawn over the agents, by [ReplayFlashPainter].
+          continue;
         case ReplayFlight(:final trail):
           // The path just flown, fading toward its tail.
           if (trail.length < 2) continue;
@@ -99,6 +102,48 @@ class ReplayEffectsPainter extends CustomPainter {
   @override
   bool shouldRepaint(ReplayEffectsPainter oldDelegate) =>
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
+}
+
+/// A flashed player's icon washed white, drawn just above that agent so
+/// agents stacked over it stay clear.
+class ReplayFlashPainter extends CustomPainter {
+  ReplayFlashPainter({
+    required this.flash,
+    required this.isAttack,
+    required this.agentSize,
+  });
+
+  final ReplayFlashed flash;
+  final bool isAttack;
+
+  /// The agent icon's size, as placed widgets are given it.
+  final double agentSize;
+
+  /// The agent icon's own corner radius.
+  static const _radius = Radius.circular(3);
+
+  /// The wash at full blindness: the agent stays recognisable through it.
+  static const _fullWash = 0.7;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = CoordinateSystem.instance.scale(agentSize);
+    final at = replayScreenPoint(flash.centre, isAttack: isAttack);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: at, width: side, height: side),
+        _radius,
+      ),
+      Paint()
+        ..color = Colors.white.withValues(alpha: _fullWash * flash.blindness),
+    );
+  }
+
+  @override
+  bool shouldRepaint(ReplayFlashPainter oldDelegate) =>
+      oldDelegate.flash != flash ||
+      oldDelegate.isAttack != isAttack ||
+      oldDelegate.agentSize != agentSize;
 }
 
 /// A thrown utility's icon where it is now, a little smaller than the

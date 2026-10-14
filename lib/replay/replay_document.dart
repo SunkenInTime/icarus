@@ -14,6 +14,7 @@ class ReplayDocument {
     required this.kills,
     required this.utility,
     required this.vitals,
+    required this.blinds,
     required this.movement,
     required this.quality,
   });
@@ -29,6 +30,9 @@ class ReplayDocument {
 
   /// Health and armor per player, one row per change.
   final Map<String, ReplayVitalsTrack> vitals;
+
+  /// When each flashed player is blind, one row per change.
+  final Map<String, ReplayBlindTrack> blinds;
   final Map<String, ReplayMovementTrack> movement;
   final ReplayQuality quality;
 
@@ -82,6 +86,8 @@ class ReplayDocument {
         (json['movement'] as Map? ?? const {}).cast<String, dynamic>();
     final vitalsJson =
         (json['vitals'] as Map? ?? const {}).cast<String, dynamic>();
+    final blindsJson =
+        (json['blinds'] as Map? ?? const {}).cast<String, dynamic>();
 
     return ReplayDocument._(
       match: ReplayMatchInfo.fromJson(json['match'] as Map<String, dynamic>),
@@ -94,6 +100,10 @@ class ReplayDocument {
       vitals: {
         for (final entry in vitalsJson.entries)
           entry.key: ReplayVitalsTrack.fromJson(entry.value as List),
+      },
+      blinds: {
+        for (final entry in blindsJson.entries)
+          entry.key: ReplayBlindTrack.fromJson(entry.value as List),
       },
       movement: {
         for (final entry in movementJson.entries)
@@ -664,5 +674,50 @@ class ReplayVitalsTrack {
       health: math.max(0.0, _health[found]),
       armor: math.max(0.0, _armor[found]),
     );
+  }
+}
+
+/// A player's flashes: when one lands, how many seconds it lasts, and 0
+/// when the last wears off (docs/replay-format.md, "Blinds").
+class ReplayBlindTrack {
+  ReplayBlindTrack._(this._times, this._seconds);
+
+  final Int32List _times;
+  final Float32List _seconds;
+
+  /// The share of a flash, at its end, over which sight comes back.
+  static const fadeShare = 0.4;
+
+  factory ReplayBlindTrack.fromJson(List rows) {
+    final times = Int32List(rows.length);
+    final seconds = Float32List(rows.length);
+    for (var i = 0; i < rows.length; i++) {
+      final row = rows[i] as List;
+      times[i] = (row[0] as num).toInt();
+      seconds[i] = _finite(row[1] as num);
+    }
+    return ReplayBlindTrack._(times, seconds);
+  }
+
+  /// How blind the player is at [timeMs]: 1 through most of a flash, falling
+  /// to 0 over its last [fadeShare], and 0 with no flash in force.
+  double blindnessAt(int timeMs) {
+    var low = 0;
+    var high = _times.length - 1;
+    var found = -1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (_times[mid] <= timeMs) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    if (found < 0 || _seconds[found] <= 0) return 0;
+    final lastsMs = _seconds[found] * 1000;
+    final leftMs = lastsMs - (timeMs - _times[found]);
+    if (leftMs <= 0) return 0;
+    return math.min(1.0, leftMs / (lastsMs * fadeShare));
   }
 }

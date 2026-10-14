@@ -144,6 +144,7 @@ const EXACT: &[&str] = &[
     "Owner",
     "Instigator",
     "AggregateAssists",
+    "LongestActiveBlindDuration",
     "PlantedAtSite",
     "AuthResourceAmount",
     "ReplicatedMovement",
