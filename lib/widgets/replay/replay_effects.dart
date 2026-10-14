@@ -113,10 +113,14 @@ class ReplayFlashPainter extends CustomPainter {
     required this.flash,
     required this.isAttack,
     required this.agentSize,
+    required this.neutralTeamColors,
   });
 
   final ReplayFlashed flash;
   final bool isAttack;
+
+  /// Whether agents wear neutral outlines, as [AgentWidget] draws them.
+  final bool neutralTeamColors;
 
   /// The agent icon's size, as placed widgets are given it.
   final double agentSize;
@@ -127,8 +131,7 @@ class ReplayFlashPainter extends CustomPainter {
   /// The wash at full blindness: the agent stays recognisable through it.
   static const _fullWash = 0.7;
 
-  /// The eye's ink and its size against the icon.
-  static const _eyeInk = Color(0xE6141418);
+  /// The eye's size against the icon.
   static const _eyeShare = 0.55;
 
   @override
@@ -152,24 +155,27 @@ class ReplayFlashPainter extends CustomPainter {
           fontFamily: LucideIcons.eyeOff.fontFamily,
           package: LucideIcons.eyeOff.fontPackage,
           fontSize: side * _eyeShare,
-          color: _eyeInk,
+          color: Settings.flashedEyeInk,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
     eye.paint(canvas, at - Offset(eye.width / 2, eye.height / 2));
+    eye.dispose();
 
-    // The outline from top centre, clockwise, as far as the flash has gone.
-    final metric = _outlineFromTop(box).computeMetrics().first;
+    // Over the agent's own 1 px border, which lies just inside its box:
+    // from top centre, clockwise, as far as the flash has gone.
+    final metric =
+        _outlineFromTop(box.deflate(0.5)).computeMetrics().first;
     final trace = metric.extractPath(0, metric.length * flash.progress);
-    final team =
+    var team =
         flash.isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
+    if (neutralTeamColors) team = Settings.neutralTeamShade(team);
     canvas.drawPath(
       trace,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 1
         ..color = Color.lerp(team.withValues(alpha: 1), Colors.white, 0.35)!,
     );
   }
@@ -194,7 +200,8 @@ class ReplayFlashPainter extends CustomPainter {
   bool shouldRepaint(ReplayFlashPainter oldDelegate) =>
       oldDelegate.flash != flash ||
       oldDelegate.isAttack != isAttack ||
-      oldDelegate.agentSize != agentSize;
+      oldDelegate.agentSize != agentSize ||
+      oldDelegate.neutralTeamColors != neutralTeamColors;
 }
 
 /// A thrown utility's icon where it is now, a little smaller than the
