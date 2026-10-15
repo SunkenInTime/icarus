@@ -45,9 +45,16 @@ List<ReplayRoundEvent> replayRoundEvents(
   final plant = round.plant;
   final defuse = round.defuse;
   final detonateMs = round.detonateMs;
+  // The round runs on past its end, through the post-round, until the next
+  // one starts; a death there is still this round's.
+  final nextStartMs = document.rounds
+      .where((next) => next.index == round.index + 1)
+      .firstOrNull
+      ?.startMs;
   final events = [
     for (final kill in document.kills)
-      if (round.contains(kill.timeMs))
+      if (kill.timeMs >= round.startMs &&
+          (nextStartMs == null || kill.timeMs < nextStartMs))
         ReplayRoundEvent._(ReplayEventKind.kill, kill.timeMs, kill: kill),
     if (plant != null)
       ReplayRoundEvent._(

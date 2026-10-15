@@ -219,6 +219,36 @@ void main() {
     expect(p.timeMs, 58000);
   });
 
+  test('a death after the round ends, before the next starts, is its own',
+      () {
+    final withLateKill = ReplayDocument.fromBytes(icrp({
+      ...sampleJson(),
+      'rounds': [
+        {'index': 0, 'startMs': 0, 'endMs': 92000, 'attackingTeam': 'Red'},
+        {
+          'index': 1,
+          'startMs': 100000,
+          'endMs': 150000,
+          'attackingTeam': 'Red',
+        },
+      ],
+      'kills': [
+        {'timeMs': 95000, 'victim': 'b', 'killer': 'a'},
+      ],
+    }));
+    // Past the round's end, in its post-round.
+    expect(withLateKill.rounds.first.contains(95000), isFalse);
+    expect(
+      replayRoundEvents(withLateKill, withLateKill.rounds.first)
+          .map((event) => event.timeMs),
+      [95000],
+    );
+    expect(
+      replayRoundEvents(withLateKill, withLateKill.rounds.last),
+      isEmpty,
+    );
+  });
+
   testWidgets('a death with no killer or source reads as a death',
       (tester) async {
     final p = playback()..seek(125000);
