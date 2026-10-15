@@ -281,15 +281,15 @@ void main() {
     }
 
     testWidgets(
-        'D and the pen button take the pen out and pause; Esc and D '
-        'put it away', (tester) async {
+        "The editor's Draw key (Q) and the pen button take the pen out and "
+        'pause; Esc and Q put it away', (tester) async {
       await openReplay(tester);
       final playback = canvas(tester).playback;
       final drawing = canvas(tester).drawing;
 
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       expect(playback.playing, isTrue);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
       await tester.pump();
       expect(drawing.active, isTrue);
       expect(playback.playing, isFalse);
@@ -311,8 +311,11 @@ void main() {
       await tester.pump();
       expect(drawing.active, isFalse);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
       expect(drawing.active, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+      expect(drawing.active, isFalse);
+      // D is the editor's Next page, not the pen.
       await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
       expect(drawing.active, isFalse);
       // Esc with the pen away is left to whoever else wants it.

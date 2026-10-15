@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -269,10 +270,17 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     if (playback == null || drawing == null || event is KeyUpEvent) {
       return KeyEventResult.ignored;
     }
+    // The pen answers to the editor's Draw key, whatever the user bound it
+    // to, so the habit carries over.
+    final draw = ShortcutInfo.effectiveBindingFor(
+      IcarusShortcutAction.draw.name,
+      ref.read(appPreferencesProvider).customShortcutBindings,
+    ).toActivator();
+    if (draw.accepts(event, HardwareKeyboard.instance)) {
+      if (event is! KeyRepeatEvent) drawing.toggle();
+      return KeyEventResult.handled;
+    }
     switch (event.logicalKey) {
-      case LogicalKeyboardKey.keyD:
-        if (event is KeyRepeatEvent) return KeyEventResult.handled;
-        drawing.toggle();
       case LogicalKeyboardKey.escape when drawing.active:
         drawing.stop();
       case LogicalKeyboardKey.space:

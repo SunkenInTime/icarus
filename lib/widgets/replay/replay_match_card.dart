@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_drawing.dart';
@@ -234,6 +236,10 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     final strategy = _capture.strategy;
     final inCloud = strategy?.source == StrategySource.cloud;
     final queue = ref.watch(replayCaptureQueueProvider);
+    final drawKey = ShortcutInfo.displayLabelFor(
+      IcarusShortcutAction.draw.name,
+      ref.watch(appPreferencesProvider).customShortcutBindings,
+    );
     // A strategy found deleted or on another map holds none of them now.
     final captured = !inCloud
         ? strategy?.pageCount ?? 0
@@ -308,7 +314,9 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                     select: () => widget.drawing.active,
                     builder: (context, active) => _ToolButton(
                       icon: LucideIcons.pencil,
-                      tooltip: active ? 'Stop drawing (D)' : 'Draw (D)',
+                      tooltip: active
+                          ? 'Stop drawing ($drawKey)'
+                          : 'Draw ($drawKey)',
                       selected: active,
                       onPressed: widget.drawing.toggle,
                     ),
