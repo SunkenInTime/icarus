@@ -63,10 +63,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     try {
       // A fresh frame: the saved page must not share objects with the one
       // on screen.
-      final frame = playback.frames.frameAt(
-        playback.timeMs,
-        perspective: playback.perspective,
-      );
+      final frame = playback.freshFrame();
       final strategy =
           await _capture.capture(frame, pageName: replayMomentLabel(playback));
       _strategyIds.add(strategy.id);

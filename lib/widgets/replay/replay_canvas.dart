@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -63,11 +66,72 @@ Widget _inside(Widget view, Widget Function(Widget) wrap) {
 Widget _faded(Widget view, double opacity) =>
     _inside(view, (child) => Opacity(opacity: opacity, child: child));
 
+/// [view] at [opacity]. At full strength it is left unwrapped: an
+/// [Opacity] is a layer of its own, which no agent should cost while no one
+/// is watched.
+Widget _steppedBack(Widget view, double opacity) =>
+    opacity == 1 ? view : _faded(view, opacity);
+
 /// [view] with its range drawn faint and its icon solid.
 Widget _faintRange(Widget view) => _inside(
     view, (child) => AbilityRangeOpacity(opacity: _rangeOpacity, child: child));
 
-class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
+/// How strongly everyone but the watched player is drawn, so the one being
+/// watched stands out.
+const _othersOpacity = 0.55;
+
+/// How close the camera comes, at least, to a player picked to watch.
+const _watchScale = 2.0;
+
+/// How far past its icon's edge a click still picks an agent, as a share of
+/// the icon's radius.
+const _agentHitSlop = 0.25;
+
+/// Where [agent]'s icon is centred on the canvas, in canvas pixels.
+Offset _agentCentre(PlacedAgentNode agent, {required bool isAttack}) {
+  final coordinates = CoordinateSystem.instance;
+  final anchor = CoordinateSystem.virtualToWorld(storedAgentAnchor);
+  return coordinates.coordinateToScreen(coordinates.positionForSide(
+    canonicalPosition: agent.position + anchor,
+    reflectionOffset: Offset.zero,
+    isAttack: isAttack,
+  ));
+}
+
+/// The agent drawn under [point], in canvas pixels: of those whose icon
+/// (drawn [agentSize] across, grown a little) holds it, the nearest.
+@visibleForTesting
+PlacedAgentNode? replayAgentAt(
+  Iterable<PlacedAgentNode> agents,
+  Offset point, {
+  required bool isAttack,
+  required double agentSize,
+}) {
+  var reach =
+      CoordinateSystem.instance.scale(agentSize) / 2 * (1 + _agentHitSlop);
+  PlacedAgentNode? nearest;
+  for (final agent in agents) {
+    final distance = (_agentCentre(agent, isAttack: isAttack) - point).distance;
+    if (distance > reach) continue;
+    reach = distance;
+    nearest = agent;
+  }
+  return nearest;
+}
+
+/// The camera looking at [focus] (canvas pixels) from the centre of
+/// [viewport], at [scale].
+@visibleForTesting
+Matrix4 replayCameraOn(Offset focus, double scale, Size viewport) =>
+    Matrix4.diagonal3Values(scale, scale, 1)
+      ..setTranslationRaw(
+        viewport.width / 2 - focus.dx * scale,
+        viewport.height / 2 - focus.dy * scale,
+        0,
+      );
+
+class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
+    with SingleTickerProviderStateMixin {
   final _controller = TransformationController();
   Size? _lastViewport;
 
@@ -75,11 +139,146 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
   /// it failed), painted together as in the editor.
   final _cones = ConeCoverage();
 
+  /// Carries the camera to a player picked to watch; once there, it keeps
+  /// them centred each frame.
+  late final AnimationController _approach;
+  var _approaching = false;
+
+  /// Where the camera looked, and how close, as the approach began, and how
+  /// close it ends.
+  var _approachFrom = Offset.zero;
+  var _approachFromScale = 1.0;
+  var _approachToScale = 1.0;
+
+  /// The player the camera follows, by subject.
+  String? _followed;
+
+  @override
+  void initState() {
+    super.initState();
+    // Made here, not on first use: a canvas that never watched anyone
+    // would otherwise make it in dispose, after its ticker mode is gone.
+    _approach = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    )..addListener(_follow);
+    widget.playback.addListener(_playbackChanged);
+  }
+
+  @override
+  void didUpdateWidget(ReplayCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.playback != widget.playback) {
+      oldWidget.playback.removeListener(_playbackChanged);
+      widget.playback.addListener(_playbackChanged);
+    }
+  }
+
   @override
   void dispose() {
+    widget.playback.removeListener(_playbackChanged);
+    _approach.dispose();
     _controller.dispose();
     _cones.dispose();
     super.dispose();
+  }
+
+  /// Starts following a player as they are picked, and keeps them centred
+  /// as they move.
+  void _playbackChanged() {
+    final playback = widget.playback;
+    final followed = playback.following ? playback.watching : null;
+    if (followed != _followed) {
+      _followed = followed;
+      if (followed != null) {
+        _approachWatched();
+      } else {
+        _approach.stop();
+        _approaching = false;
+      }
+      return;
+    }
+    if (followed != null && !_approach.isAnimating) _follow();
+  }
+
+  /// Glides to the watched player, coming in to [_watchScale] when further
+  /// out than that.
+  void _approachWatched() {
+    final viewport = _lastViewport;
+    if (viewport == null) return;
+    final scale = _controller.value.getMaxScaleOnAxis();
+    _approachFrom = _controller.toScene(viewport.center(Offset.zero));
+    _approachFromScale = scale;
+    _approachToScale = math.max(scale, _watchScale);
+    _approaching = true;
+    _approach.forward(from: 0);
+  }
+
+  /// Centres the watched player in the part of the canvas the roster leaves
+  /// clear; part way there while approaching.
+  void _follow() {
+    final viewport = _lastViewport;
+    final at = _watchedCentre();
+    if (viewport == null || at == null) return;
+    var focus = at;
+    var scale = _controller.value.getMaxScaleOnAxis();
+    if (_approaching) {
+      final t = Curves.easeOutCubic.transform(_approach.value);
+      focus = Offset.lerp(_approachFrom, at, t)!;
+      scale = lerpDouble(_approachFromScale, _approachToScale, t)!;
+      if (_approach.value == 1) _approaching = false;
+    }
+    _controller.value = replayCameraOn(focus, scale, viewport);
+  }
+
+  /// Where the watched player's icon is, when they are on the map.
+  Offset? _watchedCentre() {
+    final subject = widget.playback.watching;
+    if (subject == null) return null;
+    final frame = widget.playback.frame;
+    final id = ReplayFrameBuilder.agentIdOf(subject);
+    for (final agent in frame.agents) {
+      if (agent.id == id) return _agentCentre(agent, isAttack: frame.isAttack);
+    }
+    return null;
+  }
+
+  /// A click on an agent watches them; one on empty map does nothing, so
+  /// the watch is never lost by accident. [point] is in canvas pixels.
+  void _tapped(Offset point) {
+    final playback = widget.playback;
+    final frame = playback.frame;
+    final agent = replayAgentAt(
+      frame.agents,
+      point,
+      isAttack: frame.isAttack,
+      agentSize:
+          ref.read(appPreferencesProvider).defaultAgentSizeForNewStrategies,
+    );
+    if (agent == null) return;
+    for (final player in playback.document.players) {
+      if (ReplayFrameBuilder.agentIdOf(player.subject) == agent.id) {
+        playback.watch(player.subject);
+        return;
+      }
+    }
+  }
+
+  /// Zooming keeps the followed player centred; moving the map by hand
+  /// stops following them.
+  void _interactionStarted(ScaleStartDetails details) {
+    _approach.stop();
+    _approaching = false;
+  }
+
+  void _interactionUpdated(ScaleUpdateDetails details) {
+    final playback = widget.playback;
+    if (!playback.following) return;
+    if (details.scale == 1 && details.focalPointDelta != Offset.zero) {
+      playback.stopFollowing();
+    } else {
+      _follow();
+    }
   }
 
   /// The theme a captured strategy starts with, so the map looks the same
@@ -111,11 +310,16 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
           _lastViewport = viewport;
           _controller.value = Matrix4.identity()
             ..translateByDouble((viewportWidth - worldWidth) / 2, 0, 0, 1);
+          if (widget.playback.following) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _follow();
+            });
+          }
         }
         final mapWidth = height * coordinates.mapAspectRatio;
         final mapLeft = (worldWidth - mapWidth) / 2;
 
-        return DecoratedBox(
+        final canvas = DecoratedBox(
           decoration: BoxDecoration(
             gradient: RadialGradient(
               radius: 1.5,
@@ -132,6 +336,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
             minScale: 1,
             maxScale: 8,
             boundaryMargin: const EdgeInsets.all(double.infinity),
+            onInteractionStart: _interactionStarted,
+            onInteractionUpdate: _interactionUpdated,
             child: SizedBox(
               width: worldWidth,
               height: height,
@@ -163,6 +369,27 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                     for (final flash in frame.effects.whereType<ReplayFlashed>())
                       flash.agentId: flash,
                   };
+                  // While one player is watched, everyone else steps back.
+                  // The watched agent is never wrapped, so its cone keeps
+                  // its state; the rest are drawn without cones.
+                  final watching = widget.playback.watching;
+                  final watchedId = watching == null
+                      ? null
+                      : ReplayFrameBuilder.agentIdOf(watching);
+                  // The watched agent is drawn last, so no one stands on
+                  // them.
+                  final agents = [
+                    for (final placed in widgets)
+                      if (placed is PlacedAgentNode && placed.id != watchedId)
+                        placed,
+                    for (final placed in widgets)
+                      if (placed is PlacedAgentNode && placed.id == watchedId)
+                        placed,
+                  ];
+                  double opacityOf(PlacedWidget placed) =>
+                      watchedId == null || placed.id == watchedId
+                          ? 1
+                          : _othersOpacity;
                   // The map as cones reveal it.
                   final revealedMap = Stack(
                     children: [
@@ -286,32 +513,36 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                           isAttack: isAttack,
                           abilitySize: abilitySize,
                         ),
-                      for (final placed in widgets)
-                        if (placed is PlacedAgentNode) ...[
+                      for (final placed in agents) ...[
                           cuts == null
                               ? ConeCoverageScope(
                                   key: ValueKey(placed.id),
                                   coverage: _cones,
-                                  child: view(placed),
+                                  child: _steppedBack(
+                                      view(placed), opacityOf(placed)),
                                 )
                               : ViewConesDrawnElsewhere(
                                   key: ValueKey(placed.id),
-                                  child: view(placed),
+                                  child: _steppedBack(
+                                      view(placed), opacityOf(placed)),
                                 ),
                           // Washed with its agent, under any stacked above.
                           if (flashed[placed.id] case final flash?)
                             Positioned.fill(
                               key: ValueKey('flash-${placed.id}'),
                               child: IgnorePointer(
-                                child: CustomPaint(
-                                  painter: ReplayFlashPainter(
-                                    flash: flash,
-                                    isAttack: isAttack,
-                                    agentSize: agentSize,
-                                    neutralTeamColors: ref
-                                        .watch(strategySettingsProvider)
-                                        .useNeutralTeamColors,
+                                child: _steppedBack(
+                                  CustomPaint(
+                                    painter: ReplayFlashPainter(
+                                      flash: flash,
+                                      isAttack: isAttack,
+                                      agentSize: agentSize,
+                                      neutralTeamColors: ref
+                                          .watch(strategySettingsProvider)
+                                          .useNeutralTeamColors,
+                                    ),
                                   ),
+                                  opacityOf(placed),
                                 ),
                               ),
                             ),
@@ -322,6 +553,12 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
               ),
             ),
           ),
+        );
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) =>
+              _tapped(_controller.toScene(details.localPosition)),
+          child: canvas,
         );
       },
     );

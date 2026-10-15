@@ -256,23 +256,8 @@ class _ReplayViewState extends ConsumerState<ReplayView>
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     final playback = _playback;
-    if (playback == null || event is KeyUpEvent) return KeyEventResult.ignored;
-    switch (event.logicalKey) {
-      case LogicalKeyboardKey.space:
-        if (event is KeyRepeatEvent) return KeyEventResult.handled;
-        playback.togglePlaying();
-      case LogicalKeyboardKey.arrowLeft:
-        playback.seek(playback.timeMs - 5000);
-      case LogicalKeyboardKey.arrowRight:
-        playback.seek(playback.timeMs + 5000);
-      case LogicalKeyboardKey.arrowUp:
-        playback.previousRound();
-      case LogicalKeyboardKey.arrowDown:
-        playback.nextRound();
-      default:
-        return KeyEventResult.ignored;
-    }
-    return KeyEventResult.handled;
+    if (playback == null) return KeyEventResult.ignored;
+    return replayKey(playback, event);
   }
 
   @override
@@ -305,6 +290,55 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     );
   }
 }
+
+/// What a key does to [playback]: Space plays and pauses, the arrows move
+/// through time and rounds, 1–0 watch a player (the allies top to bottom on
+/// 1–5, the enemies on 6–0, as the roster lists them) and Esc stops
+/// watching.
+KeyEventResult replayKey(ReplayPlayback playback, KeyEvent event) {
+  if (event is KeyUpEvent) return KeyEventResult.ignored;
+  final slot = _watchSlots.indexOf(event.logicalKey);
+  if (slot >= 0) {
+    // Held down, the key would flick between watching and not.
+    if (event is KeyRepeatEvent) return KeyEventResult.handled;
+    final player = playback.playerInSlot(slot);
+    if (player == null) return KeyEventResult.ignored;
+    playback.watch(player.subject);
+    return KeyEventResult.handled;
+  }
+  switch (event.logicalKey) {
+    case LogicalKeyboardKey.space:
+      if (event is KeyRepeatEvent) return KeyEventResult.handled;
+      playback.togglePlaying();
+    case LogicalKeyboardKey.arrowLeft:
+      playback.seek(playback.timeMs - 5000);
+    case LogicalKeyboardKey.arrowRight:
+      playback.seek(playback.timeMs + 5000);
+    case LogicalKeyboardKey.arrowUp:
+      playback.previousRound();
+    case LogicalKeyboardKey.arrowDown:
+      playback.nextRound();
+    case LogicalKeyboardKey.escape when playback.watching != null:
+      playback.stopWatching();
+    default:
+      return KeyEventResult.ignored;
+  }
+  return KeyEventResult.handled;
+}
+
+/// The number row, 1 to 0, as the game's replay numbers its players.
+const _watchSlots = [
+  LogicalKeyboardKey.digit1,
+  LogicalKeyboardKey.digit2,
+  LogicalKeyboardKey.digit3,
+  LogicalKeyboardKey.digit4,
+  LogicalKeyboardKey.digit5,
+  LogicalKeyboardKey.digit6,
+  LogicalKeyboardKey.digit7,
+  LogicalKeyboardKey.digit8,
+  LogicalKeyboardKey.digit9,
+  LogicalKeyboardKey.digit0,
+];
 
 class _ReplayStrip extends StatelessWidget {
   const _ReplayStrip({required this.map, required this.probe});

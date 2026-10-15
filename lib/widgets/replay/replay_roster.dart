@@ -66,6 +66,8 @@ extension on ReplayRoster {
     final round = playback.round;
     return [
       playback.perspective,
+      playback.watching,
+      playback.following,
       round?.index,
       for (final player in playback.document.players)
         if (playback.frames.playerState(player, now) case final state) ...[
@@ -96,35 +98,46 @@ class _TeamBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final states = [
-      for (final player in playback.document.players)
-        if (player.team == team)
-          playback.frames.playerState(player, playback.timeMs),
+      for (final player in playback.playersOf(team))
+        playback.frames.playerState(player, playback.timeMs),
     ];
     final alive = states.where((state) => state.alive).length;
+    // Rows reach 6px further out than the header, so a watched row's
+    // surface frames its content and the content lines up with the header.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: team.colorFor(playback.perspective),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: team.colorFor(playback.perspective),
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Text('$alive alive', style: theme.textTheme.muted),
-            ],
+                const Spacer(),
+                Text('$alive alive', style: theme.textTheme.muted),
+              ],
+            ),
           ),
           const SizedBox(height: 6),
           for (final state in states)
             _PlayerRow(
+              // Keyed: a swap moves each player to the other block, and
+              // a row (its hover, its watched state) must go with them.
+              key: ValueKey(state.player.subject),
               state: state,
               economy: playback.round?.economyFor(state.player.subject),
+              watched: playback.watching == state.player.subject,
+              following: playback.following,
+              watchKey: playback.watchKeyOf(state.player),
+              onWatch: () => playback.watch(state.player.subject),
             ),
         ],
       ),
@@ -132,20 +145,97 @@ class _TeamBlock extends StatelessWidget {
   }
 }
 
-class _PlayerRow extends StatelessWidget {
-  const _PlayerRow({required this.state, required this.economy});
+/// One player as they stand. Clicking the row watches them; the watched
+/// player's row is raised and ringed in violet.
+class _PlayerRow extends StatefulWidget {
+  const _PlayerRow({
+    super.key,
+    required this.state,
+    required this.economy,
+    required this.watched,
+    required this.following,
+    required this.watchKey,
+    required this.onWatch,
+  });
 
   final ReplayPlayerState state;
   final ReplayEconomy? economy;
+  final bool watched;
+
+  /// Whether the camera follows the watched player.
+  final bool following;
+
+  /// The number key that watches this player, when they have one.
+  final String? watchKey;
+  final VoidCallback onWatch;
+
+  @override
+  State<_PlayerRow> createState() => _PlayerRowState();
+}
+
+class _PlayerRowState extends State<_PlayerRow> {
+  var _hovered = false;
+
+  /// What clicking the row (or pressing its key) does.
+  String _tooltip(String name) {
+    final action = !widget.watched
+        ? 'Watch'
+        : widget.following
+            ? 'Stop watching'
+            : 'Follow';
+    final key = widget.watchKey;
+    return key == null ? '$action $name' : '$action $name ($key)';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final state = widget.state;
+    final economy = widget.economy;
     final agent = replayAgentType(state.player.agentId);
     final agentData = agent == null ? null : AgentData.agents[agent];
     final weapon = replayWeaponType(economy?.weapon);
     final name = state.player.name ?? agentData?.name ?? 'Unknown agent';
     final credits = economy?.credits;
+    const radius = 8.0;
+    return ShadTooltip(
+      builder: (context) => Text(_tooltip(name)),
+      // A Shad detector, so the tooltip sees the hover.
+      child: ShadGestureDetector(
+        cursor: SystemMouseCursors.click,
+        behavior: HitTestBehavior.opaque,
+        onHoverChange: (hovered) => setState(() => _hovered = hovered),
+        onTap: widget.onWatch,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: widget.watched
+              ? Settings.raisedSurface(radius)
+              : BoxDecoration(
+                  color: _hovered ? theme.colorScheme.accent : null,
+                  borderRadius: BorderRadius.circular(radius),
+                ),
+          foregroundDecoration: widget.watched
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(radius),
+                  border: Border.all(color: Settings.accentInk),
+                )
+              : null,
+          child: _content(theme, agentData, name, weapon, credits),
+        ),
+      ),
+    );
+  }
+
+  Widget _content(
+    ShadThemeData theme,
+    AgentData? agentData,
+    String name,
+    WeaponType weapon,
+    int? credits,
+  ) {
+    final state = widget.state;
     return Opacity(
       opacity: state.alive ? 1 : 0.4,
       child: SizedBox(
