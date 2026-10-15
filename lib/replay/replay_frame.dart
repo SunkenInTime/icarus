@@ -316,13 +316,18 @@ class ReplayFrameBuilder {
   /// How much of a thrown utility's path trails behind it.
   static const trailMs = 350;
 
+  /// The placed id of [subject]'s agent on every frame.
+  static String agentIdOf(String subject) => 'replay-player-$subject';
+
   /// The moment at [timeMs]. With [cuts], each living player's cone is
   /// asked for where they are now and drawn from its latest cut; see
-  /// [ReplayFrame.cones].
+  /// [ReplayFrame.cones]. While [watching] a player, only theirs is: the
+  /// rest are drawn without a cone, and none is cut for them.
   ReplayFrame frameAt(
     int timeMs, {
     required ReplayTeam perspective,
     ReplayConeCuts? cuts,
+    String? watching,
   }) {
     final round = document.roundAt(timeMs);
     final isAttack = (round?.attackingTeam ?? ReplayTeam.red) == perspective;
@@ -345,7 +350,7 @@ class ReplayFrameBuilder {
       if (!_onCanvas(standing)) continue;
       final position = standing - agentAnchor;
       final isAlly = team == perspective;
-      final id = 'replay-player-${player.subject}';
+      final id = agentIdOf(player.subject);
       final visionElevation = _visionElevation(pose);
       final rotation = projection.rotationForYaw(pose.yaw);
       // A flash shortens the cone; one shorter than the editor allows is
@@ -354,7 +359,10 @@ class ReplayFrameBuilder {
           state.alive ? document.blinds[player.subject]?.flashAt(timeMs) : null;
       final blindness = flash?.blindness ?? 0.0;
       final sightLength = coneLength * (1 - blindness);
-      final sees = state.alive && sightLength >= ViewConeUtility.minLength;
+      final watched = watching == null || watching == player.subject;
+      final sees = watched &&
+          state.alive &&
+          sightLength >= ViewConeUtility.minLength;
       if (flash != null) {
         flashed.add(ReplayFlashed(
           agentId: id,

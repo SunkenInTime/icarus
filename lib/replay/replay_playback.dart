@@ -49,19 +49,95 @@ class ReplayPlayback extends ChangeNotifier {
     final cached = _frame;
     if (cached != null &&
         cached.timeMs == _timeMs &&
-        _framePerspective == _perspective) {
+        _framePerspective == _perspective &&
+        _frameWatching == _watching) {
       return cached;
     }
     _framePerspective = _perspective;
+    _frameWatching = _watching;
     return _frame = frames.frameAt(
       _timeMs,
       perspective: _perspective,
       cuts: _coneCuts,
+      watching: _watching,
     );
   }
 
   ReplayFrame? _frame;
   ReplayTeam? _framePerspective;
+  String? _frameWatching;
+
+  /// The moment on screen built afresh, sharing no objects with [frame]:
+  /// what a capture saves, cones and all, exactly as drawn.
+  ReplayFrame freshFrame() => frames.frameAt(
+        _timeMs,
+        perspective: _perspective,
+        watching: _watching,
+      );
+
+  /// The player being watched, by subject: only their view cone is drawn.
+  /// Null while everyone's is.
+  String? get watching => _watching;
+  String? _watching;
+
+  /// Whether the camera keeps the watched player centred. Moving the map
+  /// by hand stops it; picking the player again starts it again.
+  bool get following => _following;
+  var _following = false;
+
+  /// Picks [subject] to watch, and follows them. Picking the player already
+  /// watched follows them again if the camera had stopped, and otherwise
+  /// stops watching.
+  void watch(String subject) {
+    if (_watching == subject && _following) {
+      stopWatching();
+      return;
+    }
+    _watching = subject;
+    _following = true;
+    notifyListeners();
+  }
+
+  void stopWatching() {
+    if (_watching == null) return;
+    _watching = null;
+    _following = false;
+    notifyListeners();
+  }
+
+  /// The user moved the map: the watched player stays watched, but the
+  /// camera stops following them.
+  void stopFollowing() {
+    if (!_following) return;
+    _following = false;
+    notifyListeners();
+  }
+
+  /// [team]'s players in the order the roster lists them.
+  List<ReplayPlayer> playersOf(ReplayTeam team) => [
+        for (final player in document.players)
+          if (player.team == team) player,
+      ];
+
+  /// The player watched with number key [slot] (0 for the 1 key, 9 for the
+  /// 0 key): the allies top to bottom on 1–5, the enemies on 6–0.
+  ReplayPlayer? playerInSlot(int slot) {
+    final team = slot < 5 ? _perspective : _perspective.other;
+    final players = playersOf(team);
+    final index = slot % 5;
+    return index < players.length ? players[index] : null;
+  }
+
+  /// The number key that watches [player], as it is labelled; null when
+  /// they have none.
+  String? watchKeyOf(ReplayPlayer player) {
+    final team = player.team;
+    if (team == null) return null;
+    final index = playersOf(team).indexOf(player);
+    if (index < 0 || index >= 5) return null;
+    final slot = index + (team == _perspective ? 0 : 5);
+    return '${(slot + 1) % 10}';
+  }
 
   /// Where view cones are cut, once the worker is up.
   ReplayConeCuts? get coneCuts => _coneCuts;
