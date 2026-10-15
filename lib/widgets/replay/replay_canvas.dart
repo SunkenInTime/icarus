@@ -229,6 +229,14 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas> {
                                   isAttack: isAttack,
                                   apertureDegrees: cuts.apertureDegrees,
                                 ),
+                                floor: SvgHeightMapTransform.forMap(
+                                        widget.map)
+                                    .floorOnScreen(
+                                  isAttack
+                                      ? cuts.attackModel
+                                      : cuts.defenseModel,
+                                  isAttack: isAttack,
+                                ),
                                 child: revealedMap,
                               ),
                             null => ConeCoverageLayer(

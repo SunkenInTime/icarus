@@ -15,7 +15,8 @@ class _BoxCone extends CustomPainter implements ConeAreaPainter {
   double get opacity => 1;
 
   @override
-  void paintArea(Canvas canvas, Size size, Paint fill) =>
+  void paintArea(Canvas canvas, Size size, Paint fill,
+          {bool clipToFloor = true}) =>
       canvas.drawRect(Offset.zero & size, fill);
 
   @override
@@ -38,7 +39,8 @@ class _ShapedCone extends CustomPainter implements ConeAreaPainter {
   double get opacity => 1;
 
   @override
-  void paintArea(Canvas canvas, Size size, Paint fill) {
+  void paintArea(Canvas canvas, Size size, Paint fill,
+      {bool clipToFloor = true}) {
     if (layered) {
       canvas.saveLayer(Offset.zero & size, Paint());
       canvas.drawRect(Offset.zero & size, fill);
@@ -62,6 +64,18 @@ class _ShapedCone extends CustomPainter implements ConeAreaPainter {
   bool shouldRepaint(_ShapedCone oldDelegate) => false;
 }
 
+/// A box cone that notes whether it was asked to clip itself to the floor.
+class _NotingCone extends _BoxCone {
+  final clipped = <bool>[];
+
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill,
+      {bool clipToFloor = true}) {
+    clipped.add(clipToFloor);
+    super.paintArea(canvas, size, fill, clipToFloor: clipToFloor);
+  }
+}
+
 const _floor = Color(0xFF202020);
 const _revealed = Color(0xFF808080);
 
@@ -74,6 +88,7 @@ Widget _page(
   List<double>? fades,
   List<ConeAreaPainter>? painters,
   double turn = 0,
+  Path? paintedFloor,
 }) {
   final placed = Stack(children: [
     for (final (i, at) in cones.indexed)
@@ -108,6 +123,7 @@ Widget _page(
               Positioned.fill(
                 child: ConeCoverageLayer(
                   coverage: coverage,
+                  floor: paintedFloor,
                   child: const ColoredBox(color: _revealed),
                 ),
               ),
@@ -161,6 +177,30 @@ void main() {
     expect(await at(40, 30), _revealed, reason: 'two cones: no stacking');
     expect(await at(60, 30), _revealed, reason: 'the other cone');
     expect(await at(80, 80), _floor, reason: 'no cone');
+  });
+
+  testWidgets(
+      'a layer given the floor reveals only the floor, and spares cones '
+      'clipping themselves', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    // The painted floor is the left 30 px; the cone covers x 10..50.
+    final cone = _NotingCone();
+    await tester.pumpWidget(_page(coverage, const [Offset(10, 10)],
+        painters: [cone],
+        paintedFloor: Path()..addRect(const Rect.fromLTWH(0, 0, 30, 100))));
+    final at = _pixels(tester);
+    expect(await at(20, 30), _revealed, reason: 'cone on the floor');
+    expect(await at(40, 30), _floor, reason: 'cone off the floor');
+    expect(cone.clipped, isNotEmpty);
+    expect(cone.clipped, everyElement(isFalse));
+
+    // Without the floor, cones still clip themselves.
+    final alone = _NotingCone();
+    await tester
+        .pumpWidget(_page(coverage, const [Offset(10, 10)], painters: [alone]));
+    expect(alone.clipped, isNotEmpty);
+    expect(alone.clipped, everyElement(isTrue));
   });
 
   testWidgets('a cone with no layer above it paints itself', (tester) async {
