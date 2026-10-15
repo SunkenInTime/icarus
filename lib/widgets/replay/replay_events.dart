@@ -145,10 +145,12 @@ class ReplayEventLine extends StatelessWidget {
       player: document.playerBySubject(kill.victim),
       perspective: playback.perspective,
     );
-    // A fall or the spike: no killer, just what killed when it's known.
+    // A fall or the spike: no killer, just what killed, or a skull when
+    // that isn't known, so the row still reads as a death.
     if (kill.killer == null) {
       return [
-        if (source != null) ...[source, const SizedBox(width: 6)],
+        source ?? _glyph(LucideIcons.skull),
+        const SizedBox(width: 6),
         victim,
       ];
     }

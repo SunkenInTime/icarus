@@ -76,6 +76,8 @@ ReplayDocument document() => ReplayDocument.fromBytes(icrp({
           'killer': 'c',
           'damageSource': headhunter,
         },
+        // A fall: no killer, no source.
+        {'timeMs': 120000, 'victim': 'b'},
       ],
       'vitals': {},
     }));
@@ -215,6 +217,23 @@ void main() {
     await tester.tap(find.byIcon(LucideIcons.bomb));
     await tester.pump();
     expect(p.timeMs, 58000);
+  });
+
+  testWidgets('a death with no killer or source reads as a death',
+      (tester) async {
+    final p = playback()..seek(125000);
+    await pumpBody(
+      tester,
+      Align(alignment: Alignment.topLeft, child: ReplayRoster(playback: p)),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ReplayEventLine),
+        matching: find.byIcon(LucideIcons.skull),
+      ),
+      findsOneWidget,
+    );
+    expect(asset('assets/agents/Omen/icon.webp'), findsOneWidget);
   });
 
   testWidgets('hovering a scrubber mark shows its killfeed line',
