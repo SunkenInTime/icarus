@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -52,22 +53,24 @@ class ReplayCapture {
   /// The pages captured into [strategy], in order.
   List<String> get pageIds => List.unmodifiable(_pageIds);
 
-  /// Saves [frame] as a page named [pageName] and returns the strategy.
-  /// Refuses, without writing, a frame holding a non-finite number. If the
-  /// user deleted the strategy or moved it to another map, this starts a
-  /// new one rather than writing this map's positions into it.
+  /// Saves [frame] as a page named [pageName], with [drawings] as its
+  /// drawings, and returns the strategy. Refuses, without writing, a frame
+  /// holding a non-finite number. If the user deleted the strategy or moved
+  /// it to another map, this starts a new one rather than writing this
+  /// map's positions into it.
   ///
   /// Captures are written one after another, in the order asked for.
   Future<CapturedStrategy> capture(
     ReplayFrame frame, {
     required String pageName,
+    List<DrawingElement> drawings = const [],
   }) {
     try {
       _checkFinite(frame);
     } catch (error, stackTrace) {
       return Future.error(error, stackTrace);
     }
-    final page = (name: pageName, frame: frame);
+    final page = (name: pageName, frame: frame, drawings: drawings);
     final written = _tail.then((_) => _write(page));
     _tail = written.then((_) {}, onError: (_) {});
     return written;
@@ -133,8 +136,12 @@ class ReplayCapture {
   }
 }
 
-/// One replay moment to save as a page.
-typedef CapturedPage = ({String name, ReplayFrame frame});
+/// One replay moment to save as a page, with what the user drew over it.
+typedef CapturedPage = ({
+  String name,
+  ReplayFrame frame,
+  List<DrawingElement> drawings,
+});
 
 /// The strategy a replay's captures fill, as it stood when last read.
 typedef CapturedStrategy = ({
@@ -273,7 +280,7 @@ class LocalReplayCaptureStore implements ReplayCaptureStore {
       id: const Uuid().v4(),
       name: captured.name,
       isAutoNamed: false,
-      drawingData: const [],
+      drawingData: captured.drawings,
       agentData: frame.agents,
       abilityData: frame.abilities,
       textData: const [],
@@ -389,7 +396,7 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
         id: pageId,
         name: page.name,
         isAutoNamed: false,
-        drawingData: const [],
+        drawingData: page.drawings,
         agentData: frame.agents,
         abilityData: frame.abilities,
         textData: const [],
