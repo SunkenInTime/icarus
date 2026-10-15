@@ -7,11 +7,13 @@ import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay/replay_weapons.dart';
+import 'package:icarus/widgets/replay/replay_events.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Both teams as they stand right now, then the round's kills.
+/// Both teams as they stand right now, then the round's kills and spike
+/// events.
 class ReplayRoster extends StatelessWidget {
   const ReplayRoster({super.key, required this.playback});
 
@@ -74,8 +76,8 @@ extension on ReplayRoster {
           state.armor?.round(),
         ],
       if (round != null)
-        playback.document.kills
-            .where((kill) => kill.timeMs >= round.startMs && kill.timeMs <= now)
+        replayRoundEvents(playback.document, round)
+            .where((event) => event.timeMs <= now)
             .length,
     ];
   }
@@ -257,7 +259,8 @@ class _VitalsBar extends StatelessWidget {
   }
 }
 
-/// This round's kills so far, newest first. Clicking one replays it.
+/// This round's kills and spike events so far, newest first. Clicking one
+/// replays it.
 class _Killfeed extends StatelessWidget {
   const _Killfeed({required this.playback});
 
@@ -268,92 +271,26 @@ class _Killfeed extends StatelessWidget {
     final theme = ShadTheme.of(context);
     final round = playback.round;
     final now = playback.timeMs;
-    final kills = [
-      for (final kill in playback.document.kills)
-        if (round != null && kill.timeMs >= round.startMs && kill.timeMs <= now)
-          kill,
+    final events = [
+      if (round != null)
+        for (final event in replayRoundEvents(playback.document, round))
+          if (event.timeMs <= now) event,
     ].reversed.toList();
-    if (kills.isEmpty) {
+    if (events.isEmpty) {
       return Center(
         child: Text('No kills yet this round', style: theme.textTheme.muted),
       );
     }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      itemCount: kills.length,
-      itemBuilder: (context, index) => _KillRow(
-        kill: kills[index],
-        playback: playback,
+      itemCount: events.length,
+      itemBuilder: (context, index) => ShadButton.ghost(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        mainAxisAlignment: MainAxisAlignment.start,
+        onPressed: () => playback.seek(events[index].timeMs - 2000),
+        child: ReplayEventLine(event: events[index], playback: playback),
       ),
-    );
-  }
-}
-
-class _KillRow extends StatelessWidget {
-  const _KillRow({required this.kill, required this.playback});
-
-  final ReplayKill kill;
-  final ReplayPlayback playback;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final document = playback.document;
-    final killer = document.playerBySubject(kill.killer);
-    final victim = document.playerBySubject(kill.victim);
-    final round = playback.round;
-    final since = round == null ? kill.timeMs : kill.timeMs - round.playStartMs;
-    return ShadButton.ghost(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      mainAxisAlignment: MainAxisAlignment.start,
-      onPressed: () => playback.seek(kill.timeMs - 2000),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 36,
-            child: Text(
-              replayClockLabel(since),
-              style: theme.textTheme.muted.copyWith(fontSize: 11),
-            ),
-          ),
-          _KillIcon(player: killer, perspective: playback.perspective),
-          const SizedBox(width: 6),
-          Icon(
-            LucideIcons.crosshair,
-            size: 12,
-            color: theme.colorScheme.mutedForeground,
-          ),
-          const SizedBox(width: 6),
-          _KillIcon(player: victim, perspective: playback.perspective),
-        ],
-      ),
-    );
-  }
-}
-
-class _KillIcon extends StatelessWidget {
-  const _KillIcon({required this.player, required this.perspective});
-
-  final ReplayPlayer? player;
-  final ReplayTeam perspective;
-
-  @override
-  Widget build(BuildContext context) {
-    final agent = player == null ? null : replayAgentType(player!.agentId);
-    return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.secondary,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: player?.team?.colorFor(perspective) ??
-              Settings.tacticalVioletTheme.border,
-        ),
-      ),
-      child:
-          agent == null ? null : Image.asset(AgentData.agents[agent]!.iconPath),
     );
   }
 }

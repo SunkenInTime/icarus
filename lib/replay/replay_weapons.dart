@@ -1,4 +1,6 @@
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/replay/replay_ability_catalog.dart';
 
 /// Icarus weapons by the equippable folder Valorant keeps each gun in, e.g.
 /// `/Game/Equippables/Guns/Rifles/AK/...` is the Vandal. The folders are
@@ -36,3 +38,33 @@ WeaponType replayWeaponType(String? equippablePath) {
   }
   return WeaponType.none;
 }
+
+/// The ability [damageSource] is, as an Icarus ability of the [killer]'s
+/// agent, or null for a gun, an unknown source, or an ability Icarus lacks.
+///
+/// A source the ability catalog knows (a molly zone, a projectile) is that
+/// ability. Otherwise an ability's guns and blades live in its slot folder,
+/// e.g. `/Game/Characters/Deadeye/S0/Ability_Q/Gun/Gun_Deadeye_Q_Pistol...`
+/// is Chamber's Headhunter. The folder is not Icarus's order and differs
+/// per agent (see replay_ability_catalog.dart), so only slots checked
+/// against kill sources map: the ultimate (Ability_X) is Icarus index 3,
+/// as every ultimate in the catalog is but Miks's, and the rest are listed.
+AbilityInfo? replayKillAbility(String? damageSource, AgentType? killer) {
+  if (damageSource == null) return null;
+  final catalogued = replayAbilityFor(damageSource);
+  if (catalogued != null) return catalogued.ability;
+  if (killer == null) return null;
+  final slot = RegExp(r'/Ability_([^/]+)/').firstMatch(damageSource)?.group(1);
+  final index = _killSlots[killer]?[slot] ?? (slot == 'X' ? 3 : null);
+  final abilities = AgentData.agents[killer]?.abilities;
+  if (index == null || abilities == null || index >= abilities.length) {
+    return null;
+  }
+  return abilities[index];
+}
+
+/// Icarus ability index by slot folder, where the rule above doesn't hold.
+const Map<AgentType, Map<String, int>> _killSlots = {
+  AgentType.chamber: {'Q': 1}, // Headhunter
+  AgentType.miks: {'X': 4},
+};

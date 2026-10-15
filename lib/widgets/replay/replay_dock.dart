@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_playback.dart';
+import 'package:icarus/widgets/replay/replay_events.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -96,8 +97,8 @@ class ReplayDock extends StatelessWidget {
   }
 }
 
-/// One chip per round, filled with the winner's colour; a gap where the
-/// teams swap sides.
+/// One chip per round, filled with the winner's colour and marked with how
+/// the round ended; a gap where the teams swap sides.
 class _RoundStrip extends StatelessWidget {
   const _RoundStrip({required this.playback});
 
@@ -123,7 +124,7 @@ class _RoundStrip extends StatelessWidget {
       );
     }
     return SizedBox(
-      height: 22,
+      height: 30,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(spacing: 3, children: chips),
@@ -154,15 +155,18 @@ class _RoundChip extends StatelessWidget {
         : winner == perspective
             ? Settings.allyBGColor
             : Settings.enemyBGColor;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+    final ink = selected ? theme.foreground : theme.mutedForeground;
+    final end = round.endReason;
+    return ShadTooltip(
+      builder: (context) => Text(_outcome(round, perspective)),
+      // A Shad gesture detector, so the tooltip hears the hover.
+      child: ShadGestureDetector(
+        cursor: SystemMouseCursors.click,
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           width: 22,
-          height: 22,
-          alignment: Alignment.center,
+          height: 30,
           decoration: selected
               ? Settings.raised(fill, 4)
               : BoxDecoration(
@@ -175,33 +179,108 @@ class _RoundChip extends StatelessWidget {
                   border: Border.all(color: Settings.accentInk, width: 1.5),
                 )
               : null,
-          child: Text(
-            '${round.index + 1}',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: selected ? theme.foreground : theme.mutedForeground,
-            ),
+          // The number keeps its place whether or not an outcome is known.
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '${round.index + 1}',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: ink,
+                ),
+              ),
+              const SizedBox(height: 2),
+              SizedBox.square(
+                dimension: 10,
+                child: end == null
+                    ? null
+                    : Icon(replayRoundEndIcon(end), size: 10, color: ink),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+
+  /// "Round 7 · Won · Spike defused on A", from [perspective]'s side.
+  static String _outcome(ReplayRound round, ReplayTeam perspective) {
+    final winner = round.winningTeam;
+    final plant = round.plant;
+    final on = plant?.site == null ? '' : ' on ${plant!.site}';
+    final afterPlant = plant == null ? '' : ' after plant$on';
+    final ending = switch (round.endReason) {
+      null => null,
+      ReplayRoundEnd.elimination => 'Elimination$afterPlant',
+      ReplayRoundEnd.detonated => 'Spike detonated$on',
+      ReplayRoundEnd.defused => 'Spike defused$on',
+      ReplayRoundEnd.time => 'Time ran out$afterPlant',
+      ReplayRoundEnd.surrender => 'Surrender$afterPlant',
+    };
+    return [
+      'Round ${round.index + 1}',
+      if (winner != null) winner == perspective ? 'Won' : 'Lost',
+      if (ending != null) ending,
+    ].join(' · ');
+  }
 }
 
 /// The round being watched, start to end. Drag or click to move through it;
-/// ticks mark kills (in the killer's team colour) and the plant.
-class _RoundScrubber extends StatelessWidget {
+/// ticks mark kills (in the killer's team colour), the plant, the defuse
+/// and the detonation. Hovering a mark shows its killfeed line above it.
+class _RoundScrubber extends StatefulWidget {
   const _RoundScrubber({required this.playback});
 
   final ReplayPlayback playback;
 
   @override
+  State<_RoundScrubber> createState() => _RoundScrubberState();
+}
+
+class _RoundScrubberState extends State<_RoundScrubber> {
+  /// How near, in pixels, the pointer must come to a mark to show its card.
+  static const _hoverReach = 6.0;
+
+  final _card = OverlayPortalController();
+  final _link = LayerLink();
+
+  ReplayRound? _eventsRound;
+  List<ReplayRoundEvent> _events = const [];
+
+  /// The mark under the pointer, and where along the track it sits.
+  ReplayRoundEvent? _hovered;
+  double _hoveredX = 0;
+
+  /// [round]'s events, worked out once per round rather than every frame.
+  List<ReplayRoundEvent> _eventsOf(ReplayRound? round) {
+    if (!identical(round, _eventsRound)) {
+      _eventsRound = round;
+      _events = round == null
+          ? const []
+          : replayRoundEvents(widget.playback.document, round);
+    }
+    return _events;
+  }
+
+  void _hover(ReplayRoundEvent? event, double x) {
+    if (!mounted || (event == _hovered && x == _hoveredX)) return;
+    setState(() {
+      _hovered = event;
+      _hoveredX = x;
+    });
+    event == null ? _card.hide() : _card.show();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final playback = widget.playback;
     final round = playback.round;
     final start = round?.startMs ?? 0;
     final end = round?.endMs ?? playback.durationMs;
     final span = (end - start).clamp(1, 1 << 31);
+    final events = _eventsOf(round);
 
     void seekTo(Offset local, double width) {
       final fraction = (local.dx / width).clamp(0.0, 1.0);
@@ -211,20 +290,48 @@ class _RoundScrubber extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        return MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (details) => seekTo(details.localPosition, width),
-            onHorizontalDragUpdate: (details) =>
-                seekTo(details.localPosition, width),
-            child: SizedBox(
-              height: 24,
-              child: CustomPaint(
-                painter: _ScrubberPainter(
-                  playback: playback,
-                  start: start,
-                  span: span,
+        double x(int ms) => ((ms - start) / span).clamp(0.0, 1.0) * width;
+
+        void hoverAt(double dx) {
+          ReplayRoundEvent? nearest;
+          var nearestX = 0.0;
+          var distance = double.infinity;
+          for (final event in events) {
+            final eventX = x(event.timeMs);
+            final d = (eventX - dx).abs();
+            if (d <= _hoverReach && d < distance) {
+              nearest = event;
+              nearestX = eventX;
+              distance = d;
+            }
+          }
+          _hover(nearest, nearestX);
+        }
+
+        return CompositedTransformTarget(
+          link: _link,
+          child: OverlayPortal(
+            controller: _card,
+            overlayChildBuilder: _buildCard,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onHover: (event) => hoverAt(event.localPosition.dx),
+              onExit: (_) => _hover(null, 0),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (details) => seekTo(details.localPosition, width),
+                onHorizontalDragUpdate: (details) =>
+                    seekTo(details.localPosition, width),
+                child: SizedBox(
+                  height: 24,
+                  child: CustomPaint(
+                    painter: _ScrubberPainter(
+                      playback: playback,
+                      events: events,
+                      start: start,
+                      span: span,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -233,17 +340,55 @@ class _RoundScrubber extends StatelessWidget {
       },
     );
   }
+
+  /// The hovered mark's killfeed line, in a card centred above it.
+  Widget _buildCard(BuildContext context) {
+    final hovered = _hovered;
+    // Play can carry the clock into the next round under a still pointer.
+    if (hovered == null || !_events.contains(hovered)) {
+      return const SizedBox.shrink();
+    }
+    final theme = ShadTheme.of(context);
+    return Align(
+      alignment: Alignment.topLeft,
+      child: CompositedTransformFollower(
+        link: _link,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.bottomCenter,
+        offset: Offset(_hoveredX, -4),
+        child: IgnorePointer(
+          child: Container(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.popover,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: theme.colorScheme.border),
+              boxShadow: const [Settings.floatingMenuShadow],
+            ),
+            child: DefaultTextStyle(
+              style: theme.textTheme.muted,
+              child: ReplayEventLine(event: hovered, playback: widget.playback),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ScrubberPainter extends CustomPainter {
   _ScrubberPainter({
     required this.playback,
+    required this.events,
     required this.start,
     required this.span,
   })  : timeMs = playback.timeMs,
         perspective = playback.perspective;
 
   final ReplayPlayback playback;
+  final List<ReplayRoundEvent> events;
   final int start;
   final int span;
   final int timeMs;
@@ -279,39 +424,62 @@ class _ScrubberPainter extends CustomPainter {
           ..color = theme.mutedForeground
           ..strokeWidth = 1,
       );
-      for (final kill in playback.document.kills) {
-        if (!round.contains(kill.timeMs)) continue;
-        final killer = playback.document.playerBySubject(kill.killer);
-        final victim = playback.document.playerBySubject(kill.victim);
-        // A kill counts for the killer's team; a fall or spike death for
-        // the other team.
-        final scoringTeam = killer?.team ?? victim?.team?.other;
-        final color = scoringTeam == null
-            ? theme.mutedForeground
-            : scoringTeam == playback.perspective
-                ? Settings.allyInk
-                : Settings.enemyInk;
-        canvas.drawRRect(
-          RRect.fromLTRBR(
-            x(kill.timeMs) - 1.5,
-            midY - 7,
-            x(kill.timeMs) + 1.5,
-            midY + 7,
-            const Radius.circular(1.5),
-          ),
-          Paint()..color = color,
-        );
-      }
-      final plant = round.plant;
-      if (plant != null) {
-        final px = x(plant.timeMs);
-        final path = Path()
-          ..moveTo(px, midY - 8)
-          ..lineTo(px + 5, midY)
-          ..lineTo(px, midY + 8)
-          ..lineTo(px - 5, midY)
-          ..close();
-        canvas.drawPath(path, Paint()..color = theme.foreground);
+      Path diamond(double px) => Path()
+        ..moveTo(px, midY - 8)
+        ..lineTo(px + 5, midY)
+        ..lineTo(px, midY + 8)
+        ..lineTo(px - 5, midY)
+        ..close();
+      for (final event in events) {
+        final ex = x(event.timeMs);
+        switch (event.kind) {
+          case ReplayEventKind.kill:
+            final kill = event.kill!;
+            final killer = playback.document.playerBySubject(kill.killer);
+            final victim = playback.document.playerBySubject(kill.victim);
+            // A kill counts for the killer's team; a fall or spike death for
+            // the other team.
+            final scoringTeam = killer?.team ?? victim?.team?.other;
+            final color = scoringTeam == null
+                ? theme.mutedForeground
+                : scoringTeam == playback.perspective
+                    ? Settings.allyInk
+                    : Settings.enemyInk;
+            canvas.drawRRect(
+              RRect.fromLTRBR(
+                ex - 1.5,
+                midY - 7,
+                ex + 1.5,
+                midY + 7,
+                const Radius.circular(1.5),
+              ),
+              Paint()..color = color,
+            );
+          case ReplayEventKind.plant:
+            canvas.drawPath(diamond(ex), Paint()..color = theme.foreground);
+          // The plant's diamond, emptied.
+          case ReplayEventKind.defuse:
+            canvas.drawPath(
+              diamond(ex),
+              Paint()
+                ..color = theme.foreground
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 1.5,
+            );
+          // A four-pointed burst.
+          case ReplayEventKind.detonation:
+            final burst = Path()
+              ..moveTo(ex, midY - 8)
+              ..lineTo(ex + 2, midY - 2)
+              ..lineTo(ex + 7, midY)
+              ..lineTo(ex + 2, midY + 2)
+              ..lineTo(ex, midY + 8)
+              ..lineTo(ex - 2, midY + 2)
+              ..lineTo(ex - 7, midY)
+              ..lineTo(ex - 2, midY - 2)
+              ..close();
+            canvas.drawPath(burst, Paint()..color = theme.foreground);
+        }
       }
     }
 
