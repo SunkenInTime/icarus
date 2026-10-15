@@ -11,6 +11,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
+import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
@@ -20,21 +21,25 @@ import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/replay/replay_cones.dart';
+import 'package:icarus/widgets/replay/replay_drawing_layer.dart';
 import 'package:icarus/widgets/replay/replay_effects.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// The map as the editor draws it, with the replay's current moment on top.
-/// Pans and zooms like the editor; [reservedRight] keeps the map clear of the
-/// roster panel.
+/// The map as the editor draws it, with the replay's current moment on top
+/// and what the user drew over it above that. Pans and zooms like the
+/// editor, except that while the pen is out a drag draws instead of
+/// panning; [reservedRight] keeps the map clear of the roster panel.
 class ReplayCanvas extends ConsumerStatefulWidget {
   const ReplayCanvas({
     super.key,
     required this.playback,
+    required this.drawing,
     required this.map,
     required this.reservedRight,
   });
 
   final ReplayPlayback playback;
+  final ReplayDrawing drawing;
   final MapValue map;
   final double reservedRight;
 
@@ -153,6 +158,9 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
   /// The player the camera follows, by subject.
   String? _followed;
 
+  /// Whether a drag pans, as it does unless the pen is out.
+  late bool _panEnabled = !widget.drawing.active;
+
   @override
   void initState() {
     super.initState();
@@ -163,6 +171,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
       duration: const Duration(milliseconds: 220),
     )..addListener(_follow);
     widget.playback.addListener(_playbackChanged);
+    widget.drawing.addListener(_drawingChanged);
   }
 
   @override
@@ -172,12 +181,22 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
       oldWidget.playback.removeListener(_playbackChanged);
       widget.playback.addListener(_playbackChanged);
     }
+    if (oldWidget.drawing == widget.drawing) return;
+    oldWidget.drawing.removeListener(_drawingChanged);
+    widget.drawing.addListener(_drawingChanged);
+    _panEnabled = !widget.drawing.active;
+  }
+
+  void _drawingChanged() {
+    if (_panEnabled == !widget.drawing.active) return;
+    setState(() => _panEnabled = !widget.drawing.active);
   }
 
   @override
   void dispose() {
     widget.playback.removeListener(_playbackChanged);
     _approach.dispose();
+    widget.drawing.removeListener(_drawingChanged);
     _controller.dispose();
     _cones.dispose();
     super.dispose();
@@ -246,6 +265,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
   /// A click on an agent watches them; one on empty map does nothing, so
   /// the watch is never lost by accident. [point] is in canvas pixels.
   void _tapped(Offset point) {
+    // With the pen out, a click is the start of a stroke.
+    if (widget.drawing.active) return;
     final playback = widget.playback;
     final frame = playback.frame;
     final agent = replayAgentAt(
@@ -335,6 +356,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
             alignment: Alignment.topLeft,
             minScale: 1,
             maxScale: 8,
+            panEnabled: _panEnabled,
             boundaryMargin: const EdgeInsets.all(double.infinity),
             onInteractionStart: _interactionStarted,
             onInteractionUpdate: _interactionUpdated,
@@ -343,7 +365,13 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
               height: height,
               child: ListenableBuilder(
                 listenable: widget.playback,
-                builder: (context, _) {
+                // Built once here, not every frame: it repaints only when
+                // the strokes change.
+                child: ReplayDrawingLayer(
+                  drawing: widget.drawing,
+                  playback: widget.playback,
+                ),
+                builder: (context, strokes) {
                   final frame = widget.playback.frame;
                   final isAttack = frame.isAttack;
                   final mapName = Maps.mapNames[widget.map];
@@ -547,6 +575,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                               ),
                             ),
                         ],
+                      // What the user drew, above everything on the map.
+                      Positioned.fill(child: strokes!),
                     ],
                   );
                 },

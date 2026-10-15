@@ -11,6 +11,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -443,6 +444,8 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       final p = playback(tenPlayers(walker: 'r2'))..seek(1000);
       addTearDown(p.dispose);
+      final drawing = ReplayDrawing(p);
+      addTearDown(drawing.dispose);
       await tester.pumpWidget(ProviderScope(
         overrides: [
           appPreferencesProvider.overrideWith(_Preferences.new),
@@ -452,6 +455,7 @@ void main() {
           home: Scaffold(
             body: ReplayCanvas(
               playback: p,
+              drawing: drawing,
               map: projection.map,
               reservedRight: reservedRight,
             ),

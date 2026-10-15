@@ -8,7 +8,6 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -19,9 +18,7 @@ import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
-import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_document.dart';
@@ -29,40 +26,8 @@ import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:uuid/uuid.dart';
 
 import 'replay_test_support.dart';
-
-/// What the library's New Strategy makes: one blank page.
-Future<StrategyData> createBlankStrategy(MapValue map, String name) async {
-  final strategy = StrategyData(
-    id: const Uuid().v4(),
-    name: name,
-    mapData: map,
-    versionNumber: Settings.versionNumber,
-    lastEdited: DateTime.now(),
-    folderID: null,
-    pages: [
-      StrategyPage(
-        id: const Uuid().v4(),
-        name: 'Page 1',
-        isAutoNamed: true,
-        drawingData: const [],
-        agentData: const [],
-        abilityData: const [],
-        textData: const [],
-        imageData: const [],
-        utilityData: const [],
-        sortIndex: 0,
-        isAttack: true,
-        settings: StrategySettings(),
-      ),
-    ],
-  );
-  await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-      .put(strategy.id, strategy);
-  return strategy;
-}
 
 ReplayFrame frame({Offset position = const Offset(500, 500)}) => ReplayFrame(
       timeMs: 1000,
