@@ -16,6 +16,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/replay/replay_decoder.dart';
+import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_files.dart';
@@ -62,6 +63,10 @@ class _ReplayViewState extends ConsumerState<ReplayView>
   Timer? _progressTimer;
 
   ReplayPlayback? _playback;
+
+  /// What the user draws over the paused replay. The screen's own, never
+  /// the editor's drawings.
+  ReplayDrawing? _drawing;
   ProviderSubscription<AsyncValue<SvgHeightRuntime?>>? _heightRuntime;
   SvgHeightVisibility? _heightModel;
   SvgHeightRuntime? _heightRuntimeValue;
@@ -117,7 +122,10 @@ class _ReplayViewState extends ConsumerState<ReplayView>
         perspective: perspective,
       )..addListener(_syncMapSide);
       if (_heightModel != null) playback.heightModel = _heightModel;
-      setState(() => _playback = playback);
+      setState(() {
+        _playback = playback;
+        _drawing = ReplayDrawing(playback);
+      });
       unawaited(_startConeCuts());
       claimEditorState();
       _ticker.start();
@@ -248,6 +256,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     _loader.cancel();
     _ticker.dispose();
     _coneCuts?.dispose();
+    _drawing?.dispose();
     _playback
       ?..removeListener(_syncMapSide)
       ..dispose();
@@ -256,8 +265,16 @@ class _ReplayViewState extends ConsumerState<ReplayView>
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     final playback = _playback;
-    if (playback == null || event is KeyUpEvent) return KeyEventResult.ignored;
+    final drawing = _drawing;
+    if (playback == null || drawing == null || event is KeyUpEvent) {
+      return KeyEventResult.ignored;
+    }
     switch (event.logicalKey) {
+      case LogicalKeyboardKey.keyD:
+        if (event is KeyRepeatEvent) return KeyEventResult.handled;
+        drawing.toggle();
+      case LogicalKeyboardKey.escape when drawing.active:
+        drawing.stop();
       case LogicalKeyboardKey.space:
         if (event is KeyRepeatEvent) return KeyEventResult.handled;
         playback.togglePlaying();
@@ -290,6 +307,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
               child: playback != null
                   ? _ReplayBench(
                       playback: playback,
+                      drawing: _drawing!,
                       map: map!,
                       onReturnFromEditor: claimEditorState,
                     )
@@ -371,11 +389,13 @@ String replayMapName(MapValue map) {
 class _ReplayBench extends StatelessWidget {
   const _ReplayBench({
     required this.playback,
+    required this.drawing,
     required this.map,
     required this.onReturnFromEditor,
   });
 
   final ReplayPlayback playback;
+  final ReplayDrawing drawing;
   final MapValue map;
   final VoidCallback onReturnFromEditor;
 
@@ -387,6 +407,7 @@ class _ReplayBench extends StatelessWidget {
           child: RepaintBoundary(
             child: ReplayCanvas(
               playback: playback,
+              drawing: drawing,
               map: map,
               reservedRight: ReplayRoster.width + 16,
             ),
@@ -398,6 +419,7 @@ class _ReplayBench extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             child: ReplayMatchCard(
               playback: playback,
+              drawing: drawing,
               map: map,
               onReturnFromEditor: onReturnFromEditor,
             ),

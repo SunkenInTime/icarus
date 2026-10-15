@@ -1,7 +1,15 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/replay/replay_document.dart';
+import 'package:uuid/uuid.dart';
 
 /// Builds an `.icrp` buffer the way `native/replay` lays it out.
 Uint8List icrp(Map<String, Object?> json,
@@ -86,3 +94,34 @@ Map<String, Object?> sampleJson({Map<String, Object?>? movement}) => {
       'quality': {'transformVerified': true, 'decodeErrors': 0},
     };
 
+
+/// What the library's New Strategy makes: one blank page.
+Future<StrategyData> createBlankStrategy(MapValue map, String name) async {
+  final strategy = StrategyData(
+    id: const Uuid().v4(),
+    name: name,
+    mapData: map,
+    versionNumber: Settings.versionNumber,
+    lastEdited: DateTime.now(),
+    folderID: null,
+    pages: [
+      StrategyPage(
+        id: const Uuid().v4(),
+        name: 'Page 1',
+        isAutoNamed: true,
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        sortIndex: 0,
+        isAttack: true,
+        settings: StrategySettings(),
+      ),
+    ],
+  );
+  await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+      .put(strategy.id, strategy);
+  return strategy;
+}

@@ -69,7 +69,6 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
         updateCounter: drawingState.updateCounter,
         coordinateSystem: coordinateSystem,
         elements: drawingState.elements, // Pass the data directly
-        drawingProvider: ref.read(drawingProvider.notifier),
         currentLine: drawingState.currentElement);
 
     final currentInteractionState = ref.watch(interactionStateProvider);
@@ -524,14 +523,12 @@ class DrawingPainter extends CustomPainter {
   final List<DrawingElement> elements; // Store the drawing elements
   final DrawingElement? currentLine;
   final int updateCounter;
-  final DrawingProvider drawingProvider;
 
   DrawingPainter({
     required this.updateCounter,
     required this.currentLine,
     required this.coordinateSystem,
     required this.elements,
-    required this.drawingProvider,
   });
 
   @override
