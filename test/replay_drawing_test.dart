@@ -400,7 +400,8 @@ void main() {
         await tester.pump();
         final layer = find.byType(ReplayDrawingLayer);
         final world = tester.getRect(layer);
-        final from = world.center - const Offset(100, 0);
+        // Off-centre, so a missing flip on defense would move it.
+        final from = world.center + const Offset(-300, -150);
         final gesture =
             await tester.startGesture(from, kind: PointerDeviceKind.mouse);
         for (var i = 0; i < 10; i++) {
@@ -657,5 +658,12 @@ Future<void> _expectEditorDraws(
     (await _pixel(tester, finder, point + const Offset(0, 40))).a,
     0,
     reason: 'nothing drawn away from the stroke',
+  );
+  expect(
+    (await _pixel(tester, finder,
+            Offset((1 - at.dx) * world.width, (1 - at.dy) * world.height)))
+        .a,
+    0,
+    reason: 'nothing drawn where the other side would put it',
   );
 }
