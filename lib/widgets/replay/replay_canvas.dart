@@ -376,6 +376,16 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                   final watchedId = watching == null
                       ? null
                       : ReplayFrameBuilder.agentIdOf(watching);
+                  // The watched agent is drawn last, so no one stands on
+                  // them.
+                  final agents = [
+                    for (final placed in widgets)
+                      if (placed is PlacedAgentNode && placed.id != watchedId)
+                        placed,
+                    for (final placed in widgets)
+                      if (placed is PlacedAgentNode && placed.id == watchedId)
+                        placed,
+                  ];
                   double opacityOf(PlacedWidget placed) =>
                       watchedId == null || placed.id == watchedId
                           ? 1
@@ -503,8 +513,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                           isAttack: isAttack,
                           abilitySize: abilitySize,
                         ),
-                      for (final placed in widgets)
-                        if (placed is PlacedAgentNode) ...[
+                      for (final placed in agents) ...[
                           cuts == null
                               ? ConeCoverageScope(
                                   key: ValueKey(placed.id),

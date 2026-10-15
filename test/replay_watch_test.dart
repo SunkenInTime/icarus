@@ -320,6 +320,31 @@ void main() {
       return shown.single;
     }
 
+    testWidgets("a swap never hands one player's row to another",
+        (tester) async {
+      final p = await roster(tester);
+      final subjects = [...reds, ...blues];
+      Map<String, State> rows() => {
+            for (final subject in subjects)
+              subject: tester.state(find.byKey(ValueKey(subject))),
+          };
+      p.watch('r2');
+      await tester.pump();
+      final before = rows();
+      p.perspective = p.perspective.other;
+      await tester.pump();
+      final after = rows();
+      for (final subject in subjects) {
+        // Either the player's own row, or a new one: never another's.
+        final kept = identical(after[subject], before[subject]);
+        expect(kept || !before.values.contains(after[subject]), isTrue,
+            reason: subject);
+      }
+      p.stopWatching();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('clicking a row watches that player, and again stops',
         (tester) async {
       final p = await roster(tester);
@@ -519,6 +544,24 @@ void main() {
       await settle(tester);
       expect((p.watching, p.following), ('r2', true));
       expectCentred(onScreen(p, controller, 'r2'));
+    });
+
+    testWidgets('the watched agent is drawn above the rest', (tester) async {
+      final (p, _) = await canvas(tester);
+      List<String> drawn() => [
+            for (final element in find
+                .byWidgetPredicate((widget) =>
+                    widget.key is ValueKey<String> &&
+                    (widget.key! as ValueKey<String>)
+                        .value
+                        .startsWith('replay-player-'))
+                .evaluate())
+              (element.widget.key! as ValueKey<String>).value,
+          ];
+      final first = drawn().first;
+      p.watch(first.substring('replay-player-'.length));
+      await tester.pump();
+      expect(drawn().last, first);
     });
 
     testWidgets('zooming with the wheel keeps following', (tester) async {

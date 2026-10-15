@@ -129,6 +129,9 @@ class _TeamBlock extends StatelessWidget {
           const SizedBox(height: 6),
           for (final state in states)
             _PlayerRow(
+              // Keyed: a swap moves each player to the other block, and
+              // a row (its hover, its watched state) must go with them.
+              key: ValueKey(state.player.subject),
               state: state,
               economy: playback.round?.economyFor(state.player.subject),
               watched: playback.watching == state.player.subject,
@@ -146,6 +149,7 @@ class _TeamBlock extends StatelessWidget {
 /// player's row is raised and ringed in violet.
 class _PlayerRow extends StatefulWidget {
   const _PlayerRow({
+    super.key,
     required this.state,
     required this.economy,
     required this.watched,
