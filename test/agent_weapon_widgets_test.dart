@@ -470,7 +470,7 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.byType(WeaponIcon), findsNWidgets(19));
+    expect(find.byType(WeaponIcon), findsNWidgets(20));
     final sizes = tester
         .elementList(find.byType(AgentWidget))
         .map(

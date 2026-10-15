@@ -30,7 +30,8 @@ HiveImpl _currentRegistry() {
 }
 
 /// What desktop 4.6.3 registers: this build's adapters, which are unchanged
-/// since that release, except the eight this build writes by hand.
+/// since that release, except the eight this build writes by hand and the
+/// weapon list, which gained the Warden.
 HiveImpl _desktop463Registry() {
   final registry = _currentRegistry();
   // hive_ce warns on every override, which is the point here.
@@ -45,7 +46,8 @@ HiveImpl _desktop463Registry() {
       ..registerAdapter(Desktop463FreeDrawingAdapter(), override: true)
       ..registerAdapter(Desktop463LineAdapter(), override: true)
       ..registerAdapter(Desktop463RectangleDrawingAdapter(), override: true)
-      ..registerAdapter(Desktop463EllipseDrawingAdapter(), override: true);
+      ..registerAdapter(Desktop463EllipseDrawingAdapter(), override: true)
+      ..registerAdapter(Desktop463WeaponTypeAdapter(), override: true);
   } finally {
     Logger.level = previousLevel;
   }
@@ -189,6 +191,22 @@ void main() {
     );
     expect(opened.abilityData.single.visualState.showRangeFill, isFalse);
     expect(opened.lineUpOrigins.single.agent.weapon, WeaponType.sheriff);
+  });
+
+  test('desktop 4.6.3 opens a Warden this build saved as no weapon', () {
+    final page = _richPage();
+    page.agentData.first.weapon = WeaponType.warden;
+    page.lineUpOrigins.single.agent.weapon = WeaponType.warden;
+    final opened = _across(current, desktop463, page);
+
+    expect(
+      opened.agentData.map((agent) => agent.weapon),
+      [WeaponType.none, WeaponType.operator, WeaponType.none],
+    );
+    expect(opened.lineUpOrigins.single.agent.weapon, WeaponType.none);
+    page.agentData.first.weapon = WeaponType.none;
+    page.lineUpOrigins.single.agent.weapon = WeaponType.none;
+    _expectSamePage(opened, page);
   });
 
   test('what desktop 4.6.3 saves back, this build opens whole', () {
