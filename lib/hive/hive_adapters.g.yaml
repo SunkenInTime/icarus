@@ -539,7 +539,7 @@ types:
         index: 6
   WeaponType:
     typeId: 38
-    nextIndex: 20
+    nextIndex: 21
     fields:
       none:
         index: 0
@@ -581,6 +581,8 @@ types:
         index: 18
       odin:
         index: 19
+      warden:
+        index: 20
   CloudMediaJobState:
     typeId: 39
     nextIndex: 3

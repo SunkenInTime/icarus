@@ -18,6 +18,7 @@ const List<(String, WeaponType)> _weaponsByPathPart = [
   ('/Rifles/DMR/', WeaponType.guardian),
   ('/Rifles/Carbine/', WeaponType.phantom),
   ('/Rifles/AK/', WeaponType.vandal),
+  ('/Rifles/BattleRifle/', WeaponType.warden),
   ('/Sniper/LeverSniperRifle/', WeaponType.marshal),
   ('/Sniper/DoubleSniper/', WeaponType.outlaw),
   ('/Sniper/BoltSniper/', WeaponType.operator),

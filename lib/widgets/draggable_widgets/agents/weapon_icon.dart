@@ -96,4 +96,5 @@ const _artworkBounds = <WeaponType, (Size, Rect)>{
   WeaponType.operator: (Size(512, 96), Rect.fromLTRB(18, 0, 494, 95)),
   WeaponType.ares: (Size(512, 96), Rect.fromLTRB(18, 1, 495, 96)),
   WeaponType.odin: (Size(384, 96), Rect.fromLTRB(18, 1, 361, 96)),
+  WeaponType.warden: (Size(512, 140), Rect.fromLTRB(4, 4, 505, 137)),
 };
