@@ -141,10 +141,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
 
   /// Carries the camera to a player picked to watch; once there, it keeps
   /// them centred each frame.
-  late final _approach = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 220),
-  )..addListener(_follow);
+  late final AnimationController _approach;
   var _approaching = false;
 
   /// Where the camera looked, and how close, as the approach began, and how
@@ -159,6 +156,12 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
   @override
   void initState() {
     super.initState();
+    // Made here, not on first use: a canvas that never watched anyone
+    // would otherwise make it in dispose, after its ticker mode is gone.
+    _approach = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    )..addListener(_follow);
     widget.playback.addListener(_playbackChanged);
   }
 
