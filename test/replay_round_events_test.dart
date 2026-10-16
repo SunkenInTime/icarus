@@ -115,6 +115,18 @@ Finder asset(String path) => find.descendant(
       ),
     );
 
+/// The spike's art in an event line.
+Finder spike() => find.descendant(
+      of: find.byType(ReplayEventLine),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is SvgPicture &&
+            widget.bytesLoader is SvgAssetLoader &&
+            (widget.bytesLoader as SvgAssetLoader).assetName ==
+                'assets/spike.svg',
+      ),
+    );
+
 List<ReplayEventKind> shownKinds(WidgetTester tester) => [
       for (final line
           in tester.widgetList<ReplayEventLine>(find.byType(ReplayEventLine)))
@@ -210,11 +222,12 @@ void main() {
     ]);
     expect(asset(AgentData.agents[AgentType.chamber]!.abilities[1].iconPath),
         findsOneWidget);
-    expect(find.byIcon(LucideIcons.bomb), findsOneWidget);
+    // The plant draws Valorant's spike, beside its site.
+    expect(spike(), findsOneWidget);
     expect(find.text('B'), findsOneWidget);
 
     // Clicking the plant goes to 2 s before it.
-    await tester.tap(find.byIcon(LucideIcons.bomb));
+    await tester.tap(spike());
     await tester.pump();
     expect(p.timeMs, 58000);
   });

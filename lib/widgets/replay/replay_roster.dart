@@ -371,15 +371,21 @@ class _Killfeed extends StatelessWidget {
         child: Text('No kills yet this round', style: theme.textTheme.muted),
       );
     }
+    // Rows sit 6px in from the panel, like the players above, and the line
+    // inside sets their height.
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.all(6),
       itemCount: events.length,
       itemBuilder: (context, index) => ShadButton.ghost(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        mainAxisAlignment: MainAxisAlignment.start,
+        height: 0,
+        expands: true,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         onPressed: () => playback.seek(events[index].timeMs - 2000),
-        child: ReplayEventLine(event: events[index], playback: playback),
+        child: ReplayEventLine(
+          event: events[index],
+          playback: playback,
+          fill: true,
+        ),
       ),
     );
   }
