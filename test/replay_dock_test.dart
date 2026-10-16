@@ -317,9 +317,12 @@ void main() {
     bool storyOpen(WidgetTester tester) =>
         tester.getSize(scrubber()).height > 24;
     // Where the scrubber's line runs on screen.
-    double line(WidgetTester tester) => tester.getRect(scrubber()).top +
-            (tester.widget<CustomPaint>(scrubber()).painter as dynamic).line
-        as double;
+    double line(WidgetTester tester) {
+      final double y =
+          (tester.widget<CustomPaint>(scrubber()).painter as dynamic).line;
+      return tester.getRect(scrubber()).top + y;
+    }
+
     Offset clock(WidgetTester tester) => tester.getCenter(find.text('0:04'));
     const away = Offset(10, 10);
 
