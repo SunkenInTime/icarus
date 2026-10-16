@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/replay/replay_document.dart';
@@ -22,8 +23,30 @@ const vandal = '/Game/Equippables/Guns/Rifles/AK/AK.AK_C';
 const headhunter = '/Game/Characters/Deadeye/S0/Ability_Q/Gun/'
     'Gun_Deadeye_Q_Pistol.Gun_Deadeye_Q_Pistol_C';
 
+/// A utility actor of [asset] from [spawnMs] to [endMs], [owner]'s when
+/// the replay names them.
+Map<String, Object?> utility(
+  String agentFolder,
+  String asset,
+  int spawnMs,
+  int? endMs, {
+  String? owner,
+}) =>
+    {
+      'id': spawnMs,
+      'classPath': '/Game/Characters/$agentFolder/S0/Ability_4/'
+          '$asset.${asset}_C',
+      'owner': owner,
+      'spawnMs': spawnMs,
+      'endMs': endMs,
+      'position': [0, 0, 0],
+    };
+
 /// Round 1 (0–100 s): Jett plants B, Omen defuses, Blue wins. Round 2
 /// (100–150 s): the spike detonates on A, Red wins. Red attacks both.
+/// Round 1's abilities: Chamber's trap in the buy, set off at 52 s; Omen's
+/// smokes thrown at 45 s and 45.5 s, the second landing first; Jett's two
+/// smokes 400 ms apart at 50 s.
 ReplayDocument document() => ReplayDocument.fromBytes(icrp({
       ...sampleJson(),
       'match': {
@@ -79,6 +102,27 @@ ReplayDocument document() => ReplayDocument.fromBytes(icrp({
         // A fall: no killer, no source.
         {'timeMs': 120000, 'victim': 'b'},
       ],
+      'utility': [
+        utility('Deadeye', 'GameObject_Deadeye_E_Trap', 5000, null,
+            owner: 'c'),
+        utility('Wraith', 'Projectile_Wraith_4_Smoke', 45000, 46200,
+            owner: 'b'),
+        utility('Wraith', 'Projectile_Wraith_4_Smoke', 45500, 45600,
+            owner: 'b'),
+        // The replay names no owner; Omen is the only Omen.
+        utility('Wraith', 'Zone_Wraith_4_Smoke', 46000, 61000),
+        // Nobody plays Breach.
+        utility('Breach', 'Projectile_Breach_4_FusionBlast', 47000, 48000),
+        utility('Wushu', 'Projectile_Wushu_4_Smoke', 50000, 51000,
+            owner: 'a'),
+        utility('Wushu', 'Projectile_Wushu_4_Smoke', 50400, 51400,
+            owner: 'a'),
+        utility('Wushu', 'GameObject_Wushu_4_SmokeZone', 50900, 55000,
+            owner: 'a'),
+        // The trap going off.
+        utility('Deadeye', 'Patch_Deadeye_E_Slow_Large', 52000, 59000,
+            owner: 'c'),
+      ],
       'vitals': {},
     }));
 
@@ -93,10 +137,12 @@ Future<void> pumpBody(WidgetTester tester, Widget child) async {
   await tester.binding.setSurfaceSize(const Size(1200, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
-    ShadApp(
-      home: Scaffold(
-        body: Center(
-          child: SizedBox(width: 880, height: 700, child: child),
+    ProviderScope(
+      child: ShadApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(width: 880, height: 700, child: child),
+          ),
         ),
       ),
     ),
@@ -372,5 +418,190 @@ void main() {
     await mouse.moveTo(Offset.zero);
     await tester.pump();
     expect(find.byType(ReplayEventLine), findsNothing);
+  });
+
+  test('one cast is one ability use, at the moment it was cast', () {
+    final doc = document();
+    String name(AgentType agent, int index) =>
+        AgentData.agents[agent]!.abilities[index].name;
+    expect(
+      [
+        for (final event in replayRoundEvents(doc, doc.rounds.first))
+          if (event.kind == ReplayEventKind.ability)
+            (event.timeMs, event.subject, event.ability!.name),
+      ],
+      [
+        // The trap, once: going off is not another use.
+        (5000, 'c', name(AgentType.chamber, 0)),
+        // A smoke thrown, not again where it lands, though Omen threw
+        // another meanwhile.
+        (45000, 'b', name(AgentType.omen, 2)),
+        (45500, 'b', name(AgentType.omen, 2)),
+        // Two smokes thrown one after the other are two.
+        (50000, 'a', name(AgentType.jett, 0)),
+        (50400, 'a', name(AgentType.jett, 0)),
+      ],
+    );
+  });
+
+  group('ability uses group actors', () {
+    const brimstone = '9f0d8ba9-4140-b941-57d3-a7ad57c6b417';
+    const neon = 'bb2a4828-46eb-8cd1-e765-15848195d751';
+
+    /// Brimstone (s) and Neon (n) over two rounds, the second starting at
+    /// 100 s; [utility] is everything they threw.
+    ReplayDocument twoRounds(List<Map<String, Object?>> utility) =>
+        ReplayDocument.fromBytes(icrp({
+          ...sampleJson(),
+          'players': [
+            {'subject': 's', 'agentId': brimstone, 'team': 'Red'},
+            {'subject': 'n', 'agentId': neon, 'team': 'Blue'},
+          ],
+          'rounds': [
+            {'index': 0, 'startMs': 0, 'endMs': 90000, 'attackingTeam': 'Red'},
+            {
+              'index': 1,
+              'startMs': 100000,
+              'endMs': 190000,
+              'attackingTeam': 'Red',
+            },
+          ],
+          'utility': utility,
+        }));
+    List<int> usesIn(ReplayDocument doc, int round) => [
+          for (final event in replayRoundEvents(doc, doc.rounds[round]))
+            if (event.kind == ReplayEventKind.ability) event.timeMs,
+        ];
+    Map<String, Object?> skySmoke(int spawnMs) => utility(
+        'Sarge', 'GameObject_Sarge_4_Smoke_ProductionNEW', spawnMs, 30000,
+        owner: 's');
+
+    test('within 100 ms of the first, an actor is the same cast', () {
+      final doc = twoRounds([
+        skySmoke(10000),
+        // Together with the first: one cast.
+        skySmoke(10100),
+        // 60 ms after the one before, but 160 ms after the cast began.
+        skySmoke(10160),
+        skySmoke(20000),
+        skySmoke(20101),
+      ]);
+      expect(usesIn(doc, 0), [10000, 10160, 20000, 20101]);
+    });
+
+    test('no cast carries over into the next round', () {
+      final doc = twoRounds([
+        // Its end never recorded, so it is up for the rest of the replay.
+        utility('Sprinter', 'GameObject_Sprinter_Q_ElectricSphere', 40000,
+            null,
+            owner: 'n'),
+        utility('Sprinter', 'GameObject_Sprinter_Q_ElectricSphere', 140000,
+            141000,
+            owner: 'n'),
+      ]);
+      expect(usesIn(doc, 0), [40000]);
+      expect(usesIn(doc, 1), [140000]);
+    });
+  });
+
+  group('the event filter', () {
+    testWidgets('picks what the killfeed lists', (tester) async {
+      final p = playback()..seek(35000);
+      await pumpBody(
+        tester,
+        Align(alignment: Alignment.topLeft, child: ReplayRoster(playback: p)),
+      );
+      // Ability uses start hidden, and the trap is all that has happened.
+      expect(find.byType(ReplayEventLine), findsNothing);
+      expect(find.text('No kills yet this round'), findsOneWidget);
+      // Each chip reads as one toggle button.
+      final semantics = tester.ensureSemantics();
+      expect(
+        tester.getSemantics(find.text('Abilities')),
+        isSemantics(
+          label: 'Abilities',
+          isButton: true,
+          hasToggledState: true,
+          isToggled: false,
+        ),
+      );
+      expect(
+        tester.getSemantics(find.text('Kills')),
+        isSemantics(label: 'Kills', isButton: true, isToggled: true),
+      );
+      semantics.dispose();
+
+      await tester.tap(find.text('Abilities'));
+      await tester.pump();
+      expect(shownKinds(tester), [ReplayEventKind.ability]);
+      // Placed in the buy, before the barriers dropped.
+      expect(find.text('-0:25'), findsOneWidget);
+      expect(find.text(AgentData.agents[AgentType.chamber]!.abilities[0].name),
+          findsOneWidget);
+
+      p.seek(65000);
+      await tester.pump();
+      expect(shownKinds(tester), [
+        ReplayEventKind.plant,
+        for (var i = 0; i < 4; i++) ReplayEventKind.ability,
+        ReplayEventKind.kill,
+        ReplayEventKind.ability,
+      ]);
+
+      await tester.tap(find.text('Kills'));
+      await tester.tap(find.text('Abilities'));
+      await tester.pump();
+      expect(shownKinds(tester), [ReplayEventKind.plant]);
+
+      await tester.tap(find.text('Spike'));
+      await tester.pump();
+      expect(find.byType(ReplayEventLine), findsNothing);
+      expect(find.text('Choose what to show'), findsOneWidget);
+    });
+
+    testWidgets('picks what the scrubber marks', (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final p = playback()..seek(35000);
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          home: Scaffold(body: Center(child: ReplayDock(playback: p))),
+        ),
+      ));
+      await tester.pump();
+
+      final scrubber = find.byWidgetPredicate((widget) =>
+          widget is CustomPaint &&
+          widget.painter.runtimeType.toString() == '_ScrubberPainter');
+      final track = tester.getRect(scrubber);
+      Offset at(int ms) =>
+          Offset(track.left + track.width * ms / 100000, track.center.dy);
+      // Ability uses are the scrubber's only small dots.
+      final abilityDot = paints..circle(radius: 2.5);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: Offset.zero);
+
+      expect(tester.renderObject(scrubber), isNot(abilityDot));
+      await mouse.moveTo(at(45000));
+      await tester.pump();
+      expect(find.byType(ReplayEventLine), findsNothing);
+
+      container.read(replayEventFiltersProvider.notifier).state = {
+        ReplayEventFilter.abilities,
+      };
+      await tester.pump();
+      expect(tester.renderObject(scrubber), abilityDot);
+      await mouse.moveTo(Offset.zero);
+      await tester.pump();
+      await mouse.moveTo(at(45000));
+      await tester.pump();
+      expect(shownKinds(tester), [ReplayEventKind.ability]);
+      expect(find.text(AgentData.agents[AgentType.omen]!.abilities[2].name),
+          findsOneWidget);
+    });
   });
 }

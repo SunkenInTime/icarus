@@ -1,8 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/replay/replay_ability_catalog.dart';
 import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -10,10 +14,40 @@ import 'package:icarus/replay/replay_weapons.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-enum ReplayEventKind { kill, plant, defuse, detonation }
+enum ReplayEventKind {
+  kill,
+  plant,
+  defuse,
+  detonation,
+  ability;
 
-/// Something that happened in a round: a kill, or the spike planted,
-/// defused or detonating. The killfeed lists them; the scrubber marks them.
+  ReplayEventFilter get filter => switch (this) {
+        kill => ReplayEventFilter.kills,
+        plant || defuse || detonation => ReplayEventFilter.spike,
+        ability => ReplayEventFilter.abilities,
+      };
+}
+
+/// The choices in the killfeed's filter, each showing some kinds of event.
+enum ReplayEventFilter {
+  kills('Kills'),
+  spike('Spike'),
+  abilities('Abilities');
+
+  const ReplayEventFilter(this.label);
+
+  final String label;
+}
+
+/// Which events the killfeed lists and the scrubber marks, kept while the
+/// app is open. Ability uses start hidden: a round has dozens of them.
+final replayEventFiltersProvider = StateProvider<Set<ReplayEventFilter>>(
+  (ref) => const {ReplayEventFilter.kills, ReplayEventFilter.spike},
+);
+
+/// Something that happened in a round: a kill, the spike planted, defused
+/// or detonating, or an ability used. The killfeed lists them; the scrubber
+/// marks them.
 class ReplayRoundEvent {
   const ReplayRoundEvent._(
     this.kind,
@@ -21,6 +55,7 @@ class ReplayRoundEvent {
     this.kill,
     this.subject,
     this.site,
+    this.ability,
   });
 
   final ReplayEventKind kind;
@@ -29,16 +64,28 @@ class ReplayRoundEvent {
   /// The kill, for a kill.
   final ReplayKill? kill;
 
-  /// Who planted or defused, when the replay says.
+  /// Who planted or defused, when the replay says, or who used the ability.
   final String? subject;
 
   /// Where the spike was planted, for a plant or a detonation.
   final String? site;
+
+  /// The ability used, for an ability use.
+  final AbilityInfo? ability;
 }
 
+final _eventsByRound = Expando<List<ReplayRoundEvent>>();
+
 /// [round]'s events in the order they happened; a kill comes before a
-/// spike event in the same millisecond.
+/// spike event in the same millisecond, and both before an ability use.
+/// Worked out once per round: the roster asks for them every frame.
 List<ReplayRoundEvent> replayRoundEvents(
+  ReplayDocument document,
+  ReplayRound round,
+) =>
+    _eventsByRound[round] ??= List.unmodifiable(_roundEvents(document, round));
+
+List<ReplayRoundEvent> _roundEvents(
   ReplayDocument document,
   ReplayRound round,
 ) {
@@ -51,10 +98,11 @@ List<ReplayRoundEvent> replayRoundEvents(
       .where((next) => next.index == round.index + 1)
       .firstOrNull
       ?.startMs;
+  bool inRound(int timeMs) =>
+      timeMs >= round.startMs && (nextStartMs == null || timeMs < nextStartMs);
   final events = [
     for (final kill in document.kills)
-      if (kill.timeMs >= round.startMs &&
-          (nextStartMs == null || kill.timeMs < nextStartMs))
+      if (inRound(kill.timeMs))
         ReplayRoundEvent._(ReplayEventKind.kill, kill.timeMs, kill: kill),
     if (plant != null)
       ReplayRoundEvent._(
@@ -75,9 +123,90 @@ List<ReplayRoundEvent> replayRoundEvents(
         detonateMs,
         site: plant?.site,
       ),
+    for (final use in _abilityUses(document))
+      if (inRound(use.timeMs)) use,
   ];
   mergeSort(events, compare: (a, b) => a.timeMs.compareTo(b.timeMs));
   return events;
+}
+
+final _abilityUsesByDocument = Expando<List<ReplayRoundEvent>>();
+
+/// Every ability use in [document], one per cast, at the moment its first
+/// actor appeared. Utility nobody can be named for is left out.
+List<ReplayRoundEvent> _abilityUses(ReplayDocument document) =>
+    _abilityUsesByDocument[document] ??= () {
+      final uses = <ReplayRoundEvent>[];
+      // A round runs until the next one starts, as for kills; no cast
+      // carries over into the next.
+      final roundStarts = [for (final round in document.rounds) round.startMs]
+        ..sort();
+      int roundOf(int timeMs) =>
+          roundStarts.lastIndexWhere((startMs) => startMs <= timeMs);
+      int? castsRound;
+      // Each caster's casts of each ability so far this round. A later
+      // actor joins the newest one that takes it: two smokes can be up at
+      // once, and the first may land after the second.
+      final casts = <(String, AgentType, int), List<_Cast>>{};
+      for (final utility in document.utility) {
+        final round = roundOf(utility.spawnMs);
+        if (round != castsRound) {
+          castsRound = round;
+          casts.clear();
+        }
+        final entry = replayAbilityFor(utility.classPath);
+        if (entry == null) continue;
+        final caster = replayCasterOf(document, utility, entry);
+        if (caster == null) continue;
+        final earlier =
+            casts[(caster.subject, entry.agent, entry.abilityIndex)] ??= [];
+        final cast = earlier.reversed.firstWhereOrNull(
+          (cast) => cast.takes(utility),
+        );
+        if (cast != null) {
+          cast.add(utility);
+          continue;
+        }
+        earlier.add(_Cast(utility));
+        uses.add(ReplayRoundEvent._(
+          ReplayEventKind.ability,
+          utility.spawnMs,
+          subject: caster.subject,
+          ability: entry.ability,
+        ));
+      }
+      return uses;
+    }();
+
+/// The utility actors of one cast so far.
+class _Cast {
+  _Cast(ReplayUtility first)
+      : startMs = first.spawnMs,
+        endMs = first.endMs;
+
+  /// How far apart, at most, the actors of one cast appear together or one
+  /// after another.
+  static const _slackMs = 100;
+
+  final int startMs;
+
+  /// When its last actor closes; null when one lasts to the end of the
+  /// replay.
+  int? endMs;
+
+  /// Whether [utility] is part of this cast: it appeared with the cast's
+  /// first actor (Brimstone's smokes land together), or it is a follow-up
+  /// ([replayFollowsCast]) to an actor of the cast still up or just gone.
+  /// Another of the same thrown later is a new cast, however soon.
+  bool takes(ReplayUtility utility) =>
+      utility.spawnMs - startMs <= _slackMs ||
+      (replayFollowsCast(utility.classPath) &&
+          (endMs == null || utility.spawnMs <= endMs! + _slackMs));
+
+  void add(ReplayUtility utility) {
+    final end = utility.endMs;
+    endMs = endMs == null || end == null ? null : math.max(endMs!, end);
+  }
 }
 
 /// The glyph for how a round ended. The killfeed draws a defuse and a
@@ -99,14 +228,14 @@ const String replaySpikeAsset = 'assets/spike.svg';
 class _LineSizes {
   const _LineSizes({
     required this.clock,
-    required this.clockFont,
+    required this.font,
     required this.portrait,
     required this.gap,
   });
 
   /// The scrubber's hover card: as small as the line still reads.
   static const compact =
-      _LineSizes(clock: 36, clockFont: 11, portrait: 22, gap: 6);
+      _LineSizes(clock: 36, font: 11, portrait: 22, gap: 6);
 
   /// A line [width] wide, as the killfeed draws it: the portraits take a
   /// sixth of what the clock leaves, so the line grows with its panel.
@@ -114,14 +243,16 @@ class _LineSizes {
     const clock = 40.0;
     return _LineSizes(
       clock: clock,
-      clockFont: 12,
+      font: 12,
       portrait: ((width - clock) / 6).clamp(22.0, 40.0).floorToDouble(),
       gap: 8,
     );
   }
 
   final double clock;
-  final double clockFont;
+
+  /// The size of the line's words: its clock, and an ability's name.
+  final double font;
   final double portrait;
   final double gap;
 
@@ -187,13 +318,30 @@ class ReplayEventLine extends StatelessWidget {
           ],
           null,
         ),
+      ReplayEventKind.ability => (
+          _actor(event.subject, sizes),
+          [
+            Image.asset(
+              event.ability!.iconPath,
+              width: sizes.glyph,
+              height: sizes.glyph,
+            ),
+            SizedBox(width: sizes.gap - 2),
+            Text(
+              event.ability!.name,
+              style: theme.textTheme.muted.copyWith(fontSize: sizes.font),
+            ),
+          ],
+          null,
+        ),
     };
     final clock = SizedBox(
       width: sizes.clock,
       child: Text(
-        replayClockLabel(since),
+        // A cast in the buy phase counts down to the barriers.
+        since < 0 ? '-${replayClockLabel(-since)}' : replayClockLabel(since),
         style: theme.textTheme.muted.copyWith(
-          fontSize: sizes.clockFont,
+          fontSize: sizes.font,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),

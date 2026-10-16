@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/weapons.dart';
@@ -13,8 +14,7 @@ import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Both teams as they stand right now, then the round's kills and spike
-/// events.
+/// Both teams as they stand right now, then the round's events.
 class ReplayRoster extends StatelessWidget {
   const ReplayRoster({super.key, required this.playback});
 
@@ -364,42 +364,146 @@ class _VitalsBar extends StatelessWidget {
   }
 }
 
-/// This round's kills and spike events so far, newest first. Clicking one
-/// replays it.
-class _Killfeed extends StatelessWidget {
+/// This round's events so far, newest first, as far as the filter above
+/// them shows. Clicking one replays it.
+class _Killfeed extends ConsumerWidget {
   const _Killfeed({required this.playback});
 
   final ReplayPlayback playback;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = ShadTheme.of(context);
+    final filters = ref.watch(replayEventFiltersProvider);
     final round = playback.round;
     final now = playback.timeMs;
     final events = [
       if (round != null)
         for (final event in replayRoundEvents(playback.document, round))
-          if (event.timeMs <= now) event,
+          if (event.timeMs <= now && filters.contains(event.kind.filter)) event,
     ].reversed.toList();
-    if (events.isEmpty) {
-      return Center(
-        child: Text('No kills yet this round', style: theme.textTheme.muted),
-      );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Lined up with the rows' clocks below, not spread like a toolbar.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          // Wraps rather than overflows, should a font run wide.
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (final filter in ReplayEventFilter.values)
+                _FilterChip(
+                  filter: filter,
+                  selected: filters.contains(filter),
+                  onTap: () => ref
+                      .read(replayEventFiltersProvider.notifier)
+                      .update((shown) => shown.contains(filter)
+                          ? ({...shown}..remove(filter))
+                          : {...shown, filter}),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: events.isEmpty
+              ? Center(
+                  child: Text(
+                    _emptyText(filters),
+                    style: theme.textTheme.muted,
+                  ),
+                )
+              // Rows sit 6px in from the panel, like the players above, and
+              // the line inside sets their height.
+              : ListView.builder(
+                  padding: const EdgeInsets.all(6),
+                  itemCount: events.length,
+                  itemBuilder: (context, index) => ShadButton.ghost(
+                    height: 0,
+                    expands: true,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    onPressed: () => playback.seek(events[index].timeMs - 2000),
+                    child: ReplayEventLine(
+                      event: events[index],
+                      playback: playback,
+                      fill: true,
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// What an empty list means: with kills shown, that no one has died.
+  static String _emptyText(Set<ReplayEventFilter> filters) {
+    final spike = filters.contains(ReplayEventFilter.spike);
+    final abilities = filters.contains(ReplayEventFilter.abilities);
+    if (filters.contains(ReplayEventFilter.kills)) {
+      return 'No kills yet this round';
     }
-    // Rows sit 6px in from the panel, like the players above, and the line
-    // inside sets their height.
-    return ListView.builder(
-      padding: const EdgeInsets.all(6),
-      itemCount: events.length,
-      itemBuilder: (context, index) => ShadButton.ghost(
-        height: 0,
-        expands: true,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        onPressed: () => playback.seek(events[index].timeMs - 2000),
-        child: ReplayEventLine(
-          event: events[index],
-          playback: playback,
-          fill: true,
+    if (spike && abilities) return 'No plant or abilities yet this round';
+    if (spike) return 'No plant yet this round';
+    if (abilities) return 'No abilities used yet this round';
+    return 'Choose what to show';
+  }
+}
+
+/// One choice in the killfeed's filter, drawn like the library's tabs: a
+/// raised zinc surface while its events show, flat and muted while they
+/// don't.
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.filter,
+    required this.selected,
+    required this.onTap,
+  });
+
+  static const _radius = 6.0;
+
+  final ReplayEventFilter filter;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final ink = selected ? theme.foreground : theme.mutedForeground;
+    // One node: the button's label and role, and whether it is on.
+    return MergeSemantics(
+      child: Semantics(
+        toggled: selected,
+        child: DecoratedBox(
+          decoration: selected
+              ? Settings.raisedSurface(_radius)
+              : const BoxDecoration(),
+          child: ShadButton.ghost(
+            height: 26,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            gap: 6,
+            backgroundColor: selected ? Colors.transparent : null,
+            hoverBackgroundColor: selected ? Colors.transparent : null,
+            foregroundColor: ink,
+            hoverForegroundColor: theme.foreground,
+            onPressed: onTap,
+            leading: switch (filter) {
+              ReplayEventFilter.kills =>
+                const Icon(LucideIcons.crosshair, size: 14),
+              ReplayEventFilter.spike => SvgPicture.asset(
+                  replaySpikeAsset,
+                  height: 13,
+                  colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
+                ),
+              ReplayEventFilter.abilities =>
+                const Icon(LucideIcons.sparkles, size: 14),
+            },
+            child: Text(
+              filter.label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
         ),
       ),
     );
