@@ -2,11 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 
 void main() {
-  test('agent abilities use wiki names in C Q E X order', () {
+  // Each name follows the icon and shape Icarus draws at that index, which
+  // for Phoenix, Deadlock, Vyse and Miks is not the game's C Q E X order.
+  test('agent abilities are named for what each index draws', () {
     final expectedNames = <AgentType, List<String>>{
       AgentType.jett: ['Cloudburst', 'Updraft', 'Tailwind', 'Blade Storm'],
       AgentType.raze: ['Boom Bot', 'Blast Pack', 'Paint Shells', 'Showstopper'],
-      AgentType.pheonix: ['Blaze', 'Hot Hands', 'Curveball', 'Run it Back'],
+      AgentType.pheonix: ['Blaze', 'Curveball', 'Hot Hands', 'Run it Back'],
       AgentType.astra: [
         'Gravity Well',
         'Nova Pulse',
@@ -29,9 +31,9 @@ void main() {
         "Viper's Pit",
       ],
       AgentType.deadlock: [
-        'Barrier Mesh',
-        'Sonic Sensor',
         'GravNet',
+        'Sonic Sensor',
+        'Barrier Mesh',
         'Annihilation',
       ],
       AgentType.yoru: [
@@ -79,7 +81,7 @@ void main() {
         'Healing Orb',
         'Resurrection',
       ],
-      AgentType.vyse: ['Razorvine', 'Shear', 'Arc Rose', 'Steel Garden'],
+      AgentType.vyse: ['Shear', 'Razorvine', 'Arc Rose', 'Steel Garden'],
       AgentType.tejo: [
         'Stealth Drone',
         'Special Delivery',
@@ -96,8 +98,8 @@ void main() {
       AgentType.miks: [
         'M-pulse Concuss',
         'M-pulse Healing',
-        'Harmonize',
         'Waveform',
+        'Harmonize',
         'Bassquake',
       ],
     };
@@ -109,7 +111,7 @@ void main() {
       expect(
         agent.abilities.map((ability) => ability.name),
         entry.value,
-        reason: '${agent.name} ability names should match VALORANT Wiki order',
+        reason: '${agent.name} ability names should match their icons',
       );
     }
   });
