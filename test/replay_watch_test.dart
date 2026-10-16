@@ -430,19 +430,48 @@ void main() {
           const Offset(500, 450));
       expect(camera.getMaxScaleOnAxis(), 2);
     });
+
+    test('the camera stops at the map edges, and centres a narrow map', () {
+      const world = Size(1600, 900);
+      Offset held(Matrix4 camera, Size viewport) {
+        final at =
+            replayCameraClamped(camera, world, viewport).getTranslation();
+        return Offset(at.x, at.y);
+      }
+
+      // Wider and as tall as the view: it slides sideways, edge to edge,
+      // and not at all up or down.
+      const narrow = Size(1300, 900);
+      expect(held(Matrix4.translationValues(500, 300, 0), narrow), Offset.zero);
+      expect(held(Matrix4.translationValues(-900, -300, 0), narrow),
+          const Offset(-300, 0));
+      expect(held(Matrix4.translationValues(-120, 0, 0), narrow),
+          const Offset(-120, 0));
+      // Zoomed in, its far corner stops at the view's far corner.
+      expect(
+          held(
+              Matrix4.diagonal3Values(3, 3, 1)
+                ..setTranslationRaw(-1e5, -1e5, 0),
+              narrow),
+          const Offset(1300 - 4800, 900 - 2700));
+      // Narrower than the view: it stays in the middle.
+      expect(held(Matrix4.translationValues(-700, 0, 0), const Size(2000, 900)),
+          const Offset(200, 0));
+    });
   });
 
   group('canvas', () {
     const reservedRight = 296.0;
 
     Future<(ReplayPlayback, TransformationController)> canvas(
-      WidgetTester tester,
-    ) async {
+      WidgetTester tester, {
+      String walker = 'r2',
+    }) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1600, 900);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
-      final p = playback(tenPlayers(walker: 'r2'))..seek(1000);
+      final p = playback(tenPlayers(walker: walker))..seek(1000);
       addTearDown(p.dispose);
       final drawing = ReplayDrawing(p);
       addTearDown(drawing.dispose);
@@ -579,6 +608,56 @@ void main() {
       expect(controller.value.getMaxScaleOnAxis(), greaterThan(2));
       expect(p.following, isTrue);
       expectCentred(onScreen(p, controller, 'r2'));
+    });
+
+    /// Where the map's top-left corner is on screen now.
+    Offset mapCorner(TransformationController controller) =>
+        MatrixUtils.transformPoint(controller.value, Offset.zero);
+
+    testWidgets('dragging the map past its edge stops at the edge',
+        (tester) async {
+      final (_, controller) = await canvas(tester);
+      await tester.dragFrom(const Offset(300, 300), const Offset(900, 600));
+      await tester.pump(const Duration(seconds: 3));
+      expect(mapCorner(controller), Offset.zero);
+      await tester.dragFrom(const Offset(900, 600), const Offset(-1200, -800));
+      await tester.pump(const Duration(seconds: 3));
+      expect(
+          mapCorner(controller), const Offset(1600 - reservedRight - 1600, 0));
+
+      // Moved by code, as far as it likes: held at the edge all the same.
+      controller.value = Matrix4.diagonal3Values(3, 3, 1)
+        ..setTranslationRaw(5000, 5000, 0);
+      expect(mapCorner(controller), Offset.zero);
+    });
+
+    testWidgets('following a player at the map edge keeps both in view',
+        (tester) async {
+      // r4 walks north to the top edge of the map.
+      final (p, controller) = await canvas(tester, walker: 'r4');
+      p.seek(10000);
+      p.watch('r4');
+      await settle(tester);
+      expectCentred(onScreen(p, controller, 'r4'));
+
+      var lastTop = mapCorner(controller).dy;
+      for (var t = 10000; t <= 56000; t += 500) {
+        p.seek(t);
+        await tester.pump();
+        final top = mapCorner(controller).dy;
+        // The map never comes down off the top of the view, and the camera
+        // eases into the edge rather than jumping to it.
+        expect(top, lessThanOrEqualTo(0));
+        expect((top - lastTop).abs(), lessThan(20));
+        lastTop = top;
+        final at = onScreen(p, controller, 'r4');
+        expect(at.dx, closeTo(middle.dx, 0.5));
+        expect(at.dy, inInclusiveRange(0, 900));
+      }
+      // At the edge they sit above the middle, the map's edge at the top.
+      expect(lastTop, 0);
+      expect(onScreen(p, controller, 'r4').dy, lessThan(middle.dy - 200));
+      expect(p.following, isTrue);
     });
   });
 }
