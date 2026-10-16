@@ -262,6 +262,7 @@ class _PlayerRowState extends State<_PlayerRow> {
             Container(
               width: 28,
               height: 28,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: theme.colorScheme.secondary,
                 borderRadius: BorderRadius.circular(6),

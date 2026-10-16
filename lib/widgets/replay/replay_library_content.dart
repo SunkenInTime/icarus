@@ -555,11 +555,16 @@ class _AgentChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
+    // Cut to the rounded square, the border drawn over the portrait.
     return Container(
       width: size,
       height: size,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: theme.card,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(4),
         border: Border.all(color: theme.border),
       ),
