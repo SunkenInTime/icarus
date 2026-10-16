@@ -17,11 +17,12 @@ const _omen = '8e253930-4c05-31dd-1b6c-968525494517';
 /// A match of [count] 10-second rounds, Red watched: Red attacks the first
 /// twelve, Blue the next twelve, then sides swap every overtime round. Each
 /// round ends the [ends] way at its index, round robin, and Red wins the
-/// even ones.
+/// even ones. [first] adds to the first round.
 ReplayPlayback _match(
   int count, {
   List<ReplayRoundEnd> ends = ReplayRoundEnd.values,
   List<Map<String, Object?>> kills = const [],
+  Map<String, Object?> first = const {},
 }) {
   String attacking(int i) => i < 12
       ? 'Red'
@@ -52,6 +53,7 @@ ReplayPlayback _match(
           'attackingTeam': attacking(i),
           'winningTeam': i.isEven ? 'Red' : 'Blue',
           'endReason': ends[i % ends.length].name,
+          if (i == 0) ...first,
         },
     ],
     'kills': kills,
@@ -125,9 +127,26 @@ void main() {
     final playback = _match(5);
     await _pumpDock(tester, playback);
 
-    for (final end in ReplayRoundEnd.values) {
-      expect(_asset(replayRoundEndAsset(end)), findsOneWidget, reason: '$end');
-    }
+    final slots = [
+      for (final element in find
+          .descendant(
+            of: find.byType(ReplayDock),
+            matching: find.byWidgetPredicate(
+                (widget) => widget is Image && widget.image is AssetImage),
+          )
+          .evaluate())
+        (element.widget as Image).image as AssetImage,
+    ];
+    // Left to right, the match's rounds as _match ends them.
+    expect([
+      for (final image in slots) image.assetName
+    ], [
+      'assets/replay/round-elimination.png',
+      'assets/replay/round-detonated.png',
+      'assets/replay/round-defused.png',
+      'assets/replay/round-time.png',
+      'assets/replay/round-surrender.png',
+    ]);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
@@ -249,6 +268,41 @@ void main() {
     await tester.tap(find.byIcon(LucideIcons.chevronsDownUp));
     await tester.pump();
     expect(portrait('Jett'), findsNothing);
+  });
+
+  testWidgets(
+      "a spike mark at the round's end stays on the track, and the one "
+      'on top answers the pointer', (tester) async {
+    // A plant half a second before the defuse that ends the round: their
+    // circles overlap, and the defuse sits on the track's last pixel.
+    final playback = _match(2, ends: [
+      ReplayRoundEnd.elimination
+    ], first: {
+      'plant': {'timeMs': 9500, 'site': 'A', 'subject': 'a'},
+      'defuse': {'timeMs': 10000, 'subject': 'b'},
+    })
+      ..seek(5000);
+    await _pumpDock(tester, playback);
+    await tester.tap(find.byIcon(LucideIcons.chevronsUpDown));
+    await tester.pump();
+    final track = tester.getRect(find.byWidgetPredicate((widget) =>
+        widget is CustomPaint &&
+        widget.painter.runtimeType.toString() == '_ScrubberPainter'));
+    final defuse =
+        tester.getRect(_asset(replayRoundEndAsset(ReplayRoundEnd.defused)));
+    expect(defuse.right, lessThanOrEqualTo(track.right - 4));
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(defuse.center);
+    await tester.pump();
+    final line = tester.widget<ReplayEventLine>(find.byType(ReplayEventLine));
+    expect(line.event.kind, ReplayEventKind.defuse);
+
+    await tester.tapAt(defuse.center);
+    await tester.pump();
+    expect(playback.timeMs, 10000);
   });
 
   group('a lane of portraits', () {

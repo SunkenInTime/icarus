@@ -910,7 +910,13 @@ class _PlayheadPainter extends CustomPainter {
 /// team's kills) or below it (the other team's), pushed sideways off
 /// others in its lane.
 class _StoryMark {
-  const _StoryMark(this.event, this.tick, {this.portrait, this.above});
+  const _StoryMark(
+    this.event,
+    this.tick, {
+    this.portrait,
+    this.above,
+    this.spike,
+  });
 
   static const height = 64.0;
   static const portraitSize = 22.0;
@@ -928,6 +934,10 @@ class _StoryMark {
   final double? portrait;
   final bool? above;
 
+  /// The centre of a plant's, defuse's or detonation's circle, along the
+  /// track: on its tick, or held inside the track at either end.
+  final double? spike;
+
   static const mid = height / 2;
 
   Rect? get portraitRect => portrait == null
@@ -939,7 +949,7 @@ class _StoryMark {
           portraitSize,
         );
 
-  bool get onLine => switch (event.kind) {
+  static bool _onLine(ReplayRoundEvent event) => switch (event.kind) {
         ReplayEventKind.plant ||
         ReplayEventKind.defuse ||
         ReplayEventKind.detonation =>
@@ -972,6 +982,9 @@ class _StoryMark {
         placed[kills[i]] = (centres[i], above);
       }
     }
+    // A defuse at the round's very end would hang half outside the track,
+    // over the speed button.
+    final spikeRange = math.max(spikeRadius, width - spikeRadius);
     return [
       for (final event in events)
         _StoryMark(
@@ -979,25 +992,29 @@ class _StoryMark {
           x(event.timeMs),
           portrait: placed[event]?.$1,
           above: placed[event]?.$2,
+          spike: _onLine(event)
+              ? x(event.timeMs).clamp(spikeRadius, spikeRange)
+              : null,
         ),
     ];
   }
 
-  /// The mark under [local] and where its card goes: a portrait or a spike
-  /// mark under the pointer, else the nearest tick or dot within [reach]
-  /// along the line.
+  /// The mark under [local] and where its card goes: a spike mark or a
+  /// portrait under the pointer, the one drawn on top where they overlap,
+  /// else the nearest tick or dot within [reach] along the line.
   static (ReplayRoundEvent, double)? hit(
     List<_StoryMark> marks,
     Offset local,
     double reach,
   ) {
-    for (final mark in marks) {
-      if (mark.onLine &&
-          (local - Offset(mark.tick, mid)).distance <= spikeRadius) {
-        return (mark.event, mark.tick);
+    for (final mark in marks.reversed) {
+      final spike = mark.spike;
+      if (spike != null &&
+          (local - Offset(spike, mid)).distance <= spikeRadius) {
+        return (mark.event, spike);
       }
     }
-    for (final mark in marks) {
+    for (final mark in marks.reversed) {
       final rect = mark.portraitRect;
       if (rect != null && rect.contains(local)) {
         return (mark.event, rect.center.dx);
@@ -1125,9 +1142,9 @@ class _StoryMarks extends StatelessWidget {
               ),
             ),
         for (final (i, mark) in marks.indexed)
-          if (mark.onLine)
+          if (mark.spike case final spike?)
             Positioned(
-              left: mark.tick - _StoryMark.spikeRadius,
+              left: spike - _StoryMark.spikeRadius,
               top: _StoryMark.mid - _StoryMark.spikeRadius,
               child: faint(i, _SpikeMark(kind: mark.event.kind)),
             ),
@@ -1228,6 +1245,18 @@ class _StoryPainter extends CustomPainter {
           const Radius.circular(1.5),
         ),
         Paint()..color = ink,
+      );
+    }
+    // A spike mark held inside the track keeps a line at its true moment.
+    for (final (i, mark) in marks.indexed) {
+      final spike = mark.spike;
+      if (spike == null || spike == mark.tick) continue;
+      canvas.drawLine(
+        Offset(mark.tick, mid - _StoryMark.spikeRadius - 3),
+        Offset(mark.tick, mid + _StoryMark.spikeRadius + 3),
+        Paint()
+          ..color = faint(Settings.tacticalVioletTheme.foreground, i)
+          ..strokeWidth = 1,
       );
     }
   }
