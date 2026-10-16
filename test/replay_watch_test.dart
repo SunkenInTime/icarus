@@ -292,14 +292,16 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       final p = playback(tenPlayers(kills: kills))..seek(1000);
       addTearDown(p.dispose);
-      await tester.pumpWidget(ShadApp(
-        home: Scaffold(
-          body: Focus(
-            autofocus: true,
-            onKeyEvent: (_, event) => replayKey(p, event),
-            child: Align(
-              alignment: Alignment.topRight,
-              child: SizedBox(height: 880, child: ReplayRoster(playback: p)),
+      await tester.pumpWidget(ProviderScope(
+        child: ShadApp(
+          home: Scaffold(
+            body: Focus(
+              autofocus: true,
+              onKeyEvent: (_, event) => replayKey(p, event),
+              child: Align(
+                alignment: Alignment.topRight,
+                child: SizedBox(height: 880, child: ReplayRoster(playback: p)),
+              ),
             ),
           ),
         ),
@@ -380,7 +382,11 @@ void main() {
         (tester) async {
       final p = await roster(tester);
       List<AnimatedContainer> rows() => tester
-          .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
+          .widgetList<AnimatedContainer>(find.descendant(
+            of: find.byWidgetPredicate(
+                (widget) => widget.runtimeType.toString() == '_PlayerRow'),
+            matching: find.byType(AnimatedContainer),
+          ))
           .toList();
       expect(rows(), hasLength(10));
       expect(rows().where((row) => row.foregroundDecoration != null), isEmpty);

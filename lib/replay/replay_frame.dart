@@ -208,18 +208,6 @@ class ReplayFrameBuilder {
     for (final utility in document.utility) replayAbilityFor(utility.classPath),
   ];
 
-  /// The owner of each utility actor when the replay does not name one but
-  /// only one player could have cast it.
-  late final Map<AgentType, ReplayPlayer?> _soleCasterByAgent = () {
-    final byAgent = <AgentType, ReplayPlayer?>{};
-    for (final player in document.players) {
-      final agent = replayAgentType(player.agentId);
-      if (agent == null) continue;
-      byAgent[agent] = byAgent.containsKey(agent) ? null : player;
-    }
-    return byAgent;
-  }();
-
   /// Whether [player] is alive at [timeMs]: whichever came last this round
   /// of the round starting (alive), a health reading (alive above 0, which
   /// sees revives) and a recorded death.
@@ -306,8 +294,7 @@ class ReplayFrameBuilder {
   }
 
   ReplayPlayer? ownerOf(ReplayUtility utility, ReplayAbilityEntry entry) =>
-      document.playerBySubject(utility.owner) ??
-      _soleCasterByAgent[entry.agent];
+      replayCasterOf(document, utility, entry);
 
   /// How long a utility's arrival ring and its exit last.
   static const activationMs = 450;

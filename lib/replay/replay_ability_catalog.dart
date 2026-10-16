@@ -7,6 +7,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
@@ -17,6 +18,74 @@ import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_w
 /// piece of an ability another actor already draws.
 ReplayAbilityEntry? replayAbilityFor(String classPath) =>
     _catalog[replayAssetName(classPath)];
+
+/// Who cast [utility]: the owner the replay names or, when it names none,
+/// the one player on [entry]'s agent. Null when two players share the
+/// agent and the replay doesn't say which of them it was.
+ReplayPlayer? replayCasterOf(
+  ReplayDocument document,
+  ReplayUtility utility,
+  ReplayAbilityEntry entry,
+) =>
+    document.playerBySubject(utility.owner) ??
+    _soleCasters(document)[entry.agent];
+
+final _soleCastersByDocument = Expando<Map<AgentType, ReplayPlayer?>>();
+
+Map<AgentType, ReplayPlayer?> _soleCasters(ReplayDocument document) =>
+    _soleCastersByDocument[document] ??= () {
+      final byAgent = <AgentType, ReplayPlayer?>{};
+      for (final player in document.players) {
+        final agent = replayAgentType(player.agentId);
+        if (agent == null) continue;
+        byAgent[agent] = byAgent.containsKey(agent) ? null : player;
+      }
+      return byAgent;
+    }();
+
+/// Whether [classPath] is an actor an earlier actor of the same cast gives
+/// rise to, rather than something the player threw or placed: where a
+/// thrown smoke or molly lands, what a trap, drone or bolt sets off, a
+/// relay bolt's second burst. Each was seen following its cast in our
+/// replays; one with nothing before it still counts as a cast.
+bool replayFollowsCast(String classPath) =>
+    _followUps.contains(replayAssetName(classPath));
+
+const _followUps = {
+  'GameObject_Breach_4_FusionBlast',
+  'GameObject_Sarge_E_SpeedStim',
+  'Patch_Sarge_Q_Molotov_Production',
+  'Patch_Deadeye_E_Slow_Large',
+  'GameObject_Smonk_Q_DecayExplosion',
+  'GameObject_RemovableObject_GumshoeTrackingDart',
+  'Patch_NetToss',
+  'GameObject_SoundSensor_SweetSpotFissure',
+  'GameObject_CableJamRoot',
+  'GameObject_Q_BountyHunter_Tether_SphereExpansion',
+  'GameObject_BountyHunter_E_LoSReveal_Source_Reactivate',
+  'Patch_Aggrobot_C_ExplodeyPatch',
+  'GameObject_Wushu_4_SmokeZone',
+  'Gameobject_Grenadier_E_SuppressionPulse',
+  'GameObject_Killjoy_4_BeeSwarm_Damage',
+  'GameObject_Thumper_Concuss',
+  'GameObject_Thumper_Heal',
+  'GameObject_Sprinter_Q_ElectricSphere',
+  'Zone_Wraith_4_Smoke',
+  'Patch_Phoenix_MolotovFire',
+  'GameObject_Vampire_4_NearsightAOE_Source',
+  'Patch_Thorne_4_SlowField_Production',
+  'GameObject_Guide_E_HawkFlash_FlashSource',
+  // Seekers go out one after another.
+  'Pawn_Guide_X_Pack',
+  'GameObject_Hunter_E_Drone_RevealDart',
+  'GameObject_Hunter_4_ExplosiveBolt_Explosion',
+  'GameObject_Hunter_Q_SonarBolt',
+  'GameObject_Cashew_4_SonarPing',
+  'GameObject_Cashew_E_MapMissileMarker_SecondRocket',
+  'GameObject_Nox_Wall',
+  'GameObject_Nox_BarbedWire',
+  'Patch_Nox_BarbedWire',
+};
 
 /// The asset name of a class path, the part Riot names the blueprint by:
 /// `/Game/Characters/Wraith/S0/Ability_4/Zone_Wraith_4_Smoke.Zone_Wraith_4_Smoke_C`

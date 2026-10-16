@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -229,17 +230,19 @@ class _RoundChip extends StatelessWidget {
 
 /// The round being watched, start to end. Drag or click to move through it;
 /// ticks mark kills (in the killer's team colour), the plant, the defuse
-/// and the detonation. Hovering a mark shows its killfeed line above it.
-class _RoundScrubber extends StatefulWidget {
+/// and the detonation, and dots ability uses (in the caster's), as far as
+/// the killfeed's filter shows them. Hovering a mark shows its killfeed
+/// line above it.
+class _RoundScrubber extends ConsumerStatefulWidget {
   const _RoundScrubber({required this.playback});
 
   final ReplayPlayback playback;
 
   @override
-  State<_RoundScrubber> createState() => _RoundScrubberState();
+  ConsumerState<_RoundScrubber> createState() => _RoundScrubberState();
 }
 
-class _RoundScrubberState extends State<_RoundScrubber> {
+class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
   /// How near, in pixels, the pointer must come to a mark to show its card.
   static const _hoverReach = 6.0;
 
@@ -247,19 +250,30 @@ class _RoundScrubberState extends State<_RoundScrubber> {
   final _link = LayerLink();
 
   ReplayRound? _eventsRound;
+  Set<ReplayEventFilter>? _eventsFilters;
   List<ReplayRoundEvent> _events = const [];
 
   /// The mark under the pointer, and where along the track it sits.
   ReplayRoundEvent? _hovered;
   double _hoveredX = 0;
 
-  /// [round]'s events, worked out once per round rather than every frame.
-  List<ReplayRoundEvent> _eventsOf(ReplayRound? round) {
-    if (!identical(round, _eventsRound)) {
+  /// [round]'s events that [filters] show, worked out when either changes
+  /// rather than every frame.
+  List<ReplayRoundEvent> _eventsOf(
+    ReplayRound? round,
+    Set<ReplayEventFilter> filters,
+  ) {
+    if (!identical(round, _eventsRound) ||
+        !identical(filters, _eventsFilters)) {
       _eventsRound = round;
+      _eventsFilters = filters;
       _events = round == null
           ? const []
-          : replayRoundEvents(widget.playback.document, round);
+          : [
+              for (final event
+                  in replayRoundEvents(widget.playback.document, round))
+                if (filters.contains(event.kind.filter)) event,
+            ];
     }
     return _events;
   }
@@ -280,7 +294,7 @@ class _RoundScrubberState extends State<_RoundScrubber> {
     final start = round?.startMs ?? 0;
     final end = round?.endMs ?? playback.durationMs;
     final span = (end - start).clamp(1, 1 << 31);
-    final events = _eventsOf(round);
+    final events = _eventsOf(round, ref.watch(replayEventFiltersProvider));
 
     void seekTo(Offset local, double width) {
       final fraction = (local.dx / width).clamp(0.0, 1.0);
@@ -430,9 +444,26 @@ class _ScrubberPainter extends CustomPainter {
         ..lineTo(px, midY + 8)
         ..lineTo(px - 5, midY)
         ..close();
+      // Ability uses first, and small, so kills and the spike stay on top.
+      for (final event in events) {
+        if (event.kind != ReplayEventKind.ability) continue;
+        final team = playback.document.playerBySubject(event.subject)?.team;
+        canvas.drawCircle(
+          Offset(x(event.timeMs), midY),
+          2.5,
+          Paint()
+            ..color = team == null
+                ? theme.mutedForeground
+                : team == perspective
+                    ? Settings.allyInk
+                    : Settings.enemyInk,
+        );
+      }
       for (final event in events) {
         final ex = x(event.timeMs);
         switch (event.kind) {
+          case ReplayEventKind.ability:
+            break;
           case ReplayEventKind.kill:
             final kill = event.kill!;
             final killer = playback.document.playerBySubject(kill.killer);
@@ -493,6 +524,7 @@ class _ScrubberPainter extends CustomPainter {
   @override
   bool shouldRepaint(_ScrubberPainter old) =>
       old.timeMs != timeMs ||
+      !identical(old.events, events) ||
       old.start != start ||
       old.span != span ||
       old.perspective != perspective;
