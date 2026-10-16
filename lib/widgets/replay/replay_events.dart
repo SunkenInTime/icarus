@@ -517,18 +517,25 @@ class _AgentIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final agent = player == null ? null : replayAgentType(player!.agentId);
+    final radius = BorderRadius.circular(
+      size < 22
+          ? 3
+          : size < 28
+              ? 4
+              : 6,
+    );
+    // The portrait is cut to the rounded square and the team border drawn
+    // over it, so the art's corners never poke past the border.
     return Container(
       width: size,
       height: size,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.secondary,
-        borderRadius: BorderRadius.circular(
-          size < 22
-              ? 3
-              : size < 28
-                  ? 4
-                  : 6,
-        ),
+        borderRadius: radius,
+      ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: radius,
         border: Border.all(
           color: player?.team?.colorFor(perspective) ??
               Settings.tacticalVioletTheme.border,
