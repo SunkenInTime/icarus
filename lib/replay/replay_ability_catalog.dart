@@ -47,15 +47,21 @@ enum ReplayUtilityKind {
   rectangle,
 
   /// Utility in flight whose effect has no lasting actor of its own
-  /// (flashes, Paranoia, Showstopper's rocket).
+  /// (flashes, High Tide, Showstopper's rocket).
   projectile,
+
+  /// A directed area a projectile sweeps out from where it was cast (Omen's
+  /// Paranoia, Iso's Undercut). The ability stays where it was cast, and its
+  /// area reaches only as far as the projectile has flown
+  /// ([ReplayAbilityEntry.sweptTo]).
+  sweep,
 
   /// Deadlock's Barrier Mesh: arms out from a centre.
   barrierMesh,
 
   /// A thrown utility on its way to becoming another actor (a smoke orb, a
-  /// molly, a recon bolt). Drawn as its ability's icon along its path, not
-  /// as the ability, which belongs to where it lands.
+  /// molly, a recon bolt, Haunt's eye). Drawn as its ability's icon along
+  /// its path, not as the ability, which belongs to where it lands.
   flight,
 }
 
@@ -129,6 +135,27 @@ class ReplayAbilityEntry {
       armLengthsMeters: geometry.armLengthsMeters,
     );
   }
+
+  /// Where a [ReplayUtilityKind.sweep]'s area ends at [timeMs], in canonical
+  /// world units: from where it was cast, along [placed]'s rotation, as far
+  /// as the projectile has flown, and never past the ability's full length.
+  Offset sweptTo({
+    required ReplayUtility utility,
+    required ReplayMapProjection projection,
+    required int timeMs,
+    required PlacedAbility placed,
+  }) {
+    final shape = ability.abilityData as SquareAbility;
+    final mapScale = Maps.mapScale[projection.map] ?? 1.0;
+    final cast = projection.toWorld(utility.position.x, utility.position.y);
+    final head = utility.positionAt(timeMs);
+    final flown = projection.toWorld(head.x, head.y) - cast;
+    final along = _unitForRotation(placed.rotation);
+    final full = CoordinateSystem.virtualLengthInWorld(shape.height * mapScale);
+    final reach =
+        (flown.dx * along.dx + flown.dy * along.dy).clamp(0.0, full);
+    return cast + along * reach;
+  }
 }
 
 /// Where the ability's anchor lands, in canonical world units, and the
@@ -192,16 +219,21 @@ class _AtPoint extends _Placement {
 ///
 /// With two or more shape points it runs from the first to the last. With
 /// one, it runs from the utility to that point (a wire's far anchor). With
-/// none, it starts at the utility and runs along its yaw plus [yawOffset].
+/// none, it starts at the utility and runs along its yaw plus [yawOffset];
+/// from where the utility is now, or with [fromCast] from where it spawned.
 /// Icarus anchors these squares at the caster, the ability's gap short of
 /// the shape's near edge (the squares' widgets lay the area out that way),
 /// so the anchor is set back by the gap and the near edge lands on the
 /// start. A resizable square also takes its length from start to end.
 class _FromStart extends _Placement {
-  const _FromStart({this.yawOffset = 0});
+  const _FromStart({this.yawOffset = 0, this.fromCast = false});
 
   /// Degrees from the utility's yaw to the way the shape runs.
   final double yawOffset;
+
+  /// Whether the shape stays where the utility was cast while the utility
+  /// flies on (a sweep).
+  final bool fromCast;
 
   @override
   _Geometry resolve({
@@ -212,10 +244,13 @@ class _FromStart extends _Placement {
     required double mapScale,
   }) {
     final points = utility.points;
-    // A shape drawn by its points stays put; otherwise the start travels
-    // with the utility (Paranoia, a moving cover).
-    final startPoint =
-        points.length >= 2 ? points.first : utility.positionAt(timeMs);
+    // A shape drawn by its points stays put, as does a sweep; otherwise the
+    // start travels with the utility (a moving cover).
+    final startPoint = points.length >= 2
+        ? points.first
+        : fromCast
+            ? utility.position
+            : utility.positionAt(timeMs);
     final start = projection.toWorld(startPoint.x, startPoint.y);
     final endPoint = points.isEmpty ? null : points.last;
     final end =
@@ -341,6 +376,8 @@ ReplayAbilityEntry _wall(AgentType agent, int index) =>
     ReplayAbilityEntry._(agent, index, ReplayUtilityKind.wall, _fromStart);
 ReplayAbilityEntry _rectangle(AgentType agent, int index) =>
     ReplayAbilityEntry._(agent, index, ReplayUtilityKind.rectangle, _fromStart);
+ReplayAbilityEntry _sweep(AgentType agent, int index) => ReplayAbilityEntry._(
+    agent, index, ReplayUtilityKind.sweep, const _FromStart(fromCast: true));
 
 // Keyed by asset name. Agents go by Riot's codenames in class paths (paired
 // through valorant-api.com's developerName). The slot folder in a path
@@ -408,12 +445,13 @@ final Map<String, ReplayAbilityEntry> _catalog = {
       AgentType.deadlock, 2, ReplayUtilityKind.barrierMesh, _BarrierMesh()),
   'GameObject_FishingHook_CageSphere': _marker(AgentType.deadlock, 3),
 
-  // Fade (BountyHunter).
+  // Fade (BountyHunter). Haunt's eye flies, stops, and drops; the reveal
+  // source takes over where it fell as the projectile ends.
   'Pawn_BountyHunter_4_WolfHound': _marker(AgentType.fade, 0),
   'GameObject_Q_BountyHunter_Tether_SphereExpansion': _area(AgentType.fade, 1),
   'Projectile_Q_BountyHunter_TetherGrenade_SphereExpansion':
       _flight(AgentType.fade, 1),
-  'Projectile_E_BountyHunter_Divebomb': _projectile(AgentType.fade, 2),
+  'Projectile_E_BountyHunter_Divebomb': _flight(AgentType.fade, 2),
   'GameObject_BountyHunter_E_LoSReveal_Source_Reactivate':
       _area(AgentType.fade, 2),
   'GameObject_BountyHunter_X_WaveForm': _rectangle(AgentType.fade, 3),
@@ -438,8 +476,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   // Iso (Sequoia).
   'GameObject_Sequoia_4_MovingCover': _rectangle(AgentType.iso, 0),
   'GameObject_Sequoia_4_MovingCover_Slower': _rectangle(AgentType.iso, 0),
-  'Projectile_Sequoia_Q_FragileMissile': const ReplayAbilityEntry._(
-      AgentType.iso, 1, ReplayUtilityKind.projectile, _fromStart),
+  'Projectile_Sequoia_Q_FragileMissile': _sweep(AgentType.iso, 1),
   'GameObject_Sequoia_E_Orb': _marker(AgentType.iso, 2),
   'GameObject_Sequoia_X_LineCapture': _rectangle(AgentType.iso, 3),
 
@@ -447,11 +484,12 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'GameObject_Wushu_4_SmokeZone': _smoke(AgentType.jett, 0),
   'Projectile_Wushu_4_Smoke': _flight(AgentType.jett, 0),
 
-  // KAY/O (Grenadier). FRAG/ment and NULL/cmd from the asset index.
+  // KAY/O (Grenadier). FRAG/ment and NULL/cmd from the asset index. The
+  // ZERO/point knife's pulse takes over where it stuck as the knife ends.
   'Projectile_Grenadier_Q_SemtexBasic': _projectile(AgentType.kayo, 0),
   'Projectile_C_Grenadier_Flash': _projectile(AgentType.kayo, 1),
   'Projectile_C_Grenadier_Flash_Underhand': _projectile(AgentType.kayo, 1),
-  'Projectile_Grenadier_E_SuppressionBlade': _projectile(AgentType.kayo, 2),
+  'Projectile_Grenadier_E_SuppressionBlade': _flight(AgentType.kayo, 2),
   'Gameobject_Grenadier_E_SuppressionPulse': _area(AgentType.kayo, 2),
   'Gameobject_Grenadier_X_UltPulse': _area(AgentType.kayo, 3),
 
@@ -477,8 +515,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'GameObject_Sprinter_Q_ElectricSphere': _area(AgentType.neon, 1),
 
   // Omen (Wraith). Shrouded Step has no actor.
-  'Projectile_Wraith_Q_NearsightMissile': const ReplayAbilityEntry._(
-      AgentType.omen, 1, ReplayUtilityKind.projectile, _fromStart),
+  'Projectile_Wraith_Q_NearsightMissile': _sweep(AgentType.omen, 1),
   'Zone_Wraith_4_Smoke': _smoke(AgentType.omen, 2),
   'Projectile_Wraith_4_Smoke': _flight(AgentType.omen, 2),
   'Intention_Wraith_X_GlobalTeleport': _marker(AgentType.omen, 3),

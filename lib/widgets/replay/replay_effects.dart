@@ -78,6 +78,9 @@ class ReplayEffectsPainter extends CustomPainter {
         case ReplayFlashed():
           // Drawn over the agents, by [ReplayFlashPainter].
           continue;
+        case ReplaySweep():
+          // Drawn under the utility, clipped by [ReplaySweepClipper].
+          continue;
         case ReplayFlight(:final trail):
           // The path just flown, fading toward its tail.
           if (trail.length < 2) continue;
@@ -103,6 +106,55 @@ class ReplayEffectsPainter extends CustomPainter {
   @override
   bool shouldRepaint(ReplayEffectsPainter oldDelegate) =>
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
+}
+
+/// Keeps the part of a sweep's area swept so far: from where it was cast to
+/// its head, as wide as the area. The icon at the cast point is left out,
+/// since the placed ability draws it already. The clip is no larger than the
+/// area, so the mask Skia draws for it on Windows stays small.
+class ReplaySweepClipper extends CustomClipper<Path> {
+  ReplaySweepClipper({
+    required this.sweep,
+    required this.isAttack,
+    required this.iconSide,
+  });
+
+  final ReplaySweep sweep;
+  final bool isAttack;
+
+  /// The ability icon's side on screen; it stands upright on the cast point.
+  final double iconSide;
+
+  /// Room past the area's sides, so its border is never cut.
+  static const _margin = 2.0;
+
+  @override
+  Path getClip(Size size) {
+    final from = replayScreenPoint(sweep.from, isAttack: isAttack);
+    final to = replayScreenPoint(sweep.to, isAttack: isAttack);
+    final reach = to - from;
+    // Nothing swept yet.
+    if (reach.distance < 0.5) return Path();
+    final along = reach / reach.distance;
+    final across = Offset(-along.dy, along.dx) *
+        (CoordinateSystem.instance.worldHeightToScreen(sweep.halfWidth) +
+            _margin);
+    final back = from - along * _margin;
+    final swept = Path()
+      ..addPolygon([back + across, back - across, to - across, to + across],
+          true);
+    final icon = Path()
+      ..addRect(
+          Rect.fromCenter(center: from, width: iconSide, height: iconSide));
+    return Path.combine(PathOperation.difference, swept, icon);
+  }
+
+  @override
+  bool shouldReclip(ReplaySweepClipper oldClipper) =>
+      oldClipper.sweep.from != sweep.from ||
+      oldClipper.sweep.to != sweep.to ||
+      oldClipper.isAttack != isAttack ||
+      oldClipper.iconSide != iconSide;
 }
 
 /// A flashed player's icon washed white and marked with a crossed-out eye,

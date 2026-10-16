@@ -565,6 +565,28 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                           },
                         ),
                       ),
+                      // Areas swept so far, under the icons they run from.
+                      for (final sweep
+                          in frame.effects.whereType<ReplaySweep>())
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: _steppedBack(
+                              ClipPath(
+                                clipper: ReplaySweepClipper(
+                                  sweep: sweep,
+                                  isAttack: isAttack,
+                                  iconSide: CoordinateSystem.instance
+                                      .scale(abilitySize),
+                                ),
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [view(sweep.area)],
+                                ),
+                              ),
+                              sweep.opacity,
+                            ),
+                          ),
+                        ),
                       // Utility moves far less than players do: its own
                       // layer, rebuilt only when it changes, so its
                       // picture (faded ranges and all) is drawn from cache.
