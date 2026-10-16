@@ -3,10 +3,12 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/replay/replay_document.dart';
@@ -391,6 +393,136 @@ void main() {
       final first = projection.toWorld(500, 0);
       expect((flight.trail.last - Offset.lerp(start, first, 0.5)!).distance,
           lessThan(1e-6));
+    });
+
+    // As the 13.08 replays record Haunt: the eye flies, stops and drops,
+    // and as it ends the reveal source starts where it fell.
+    const hauntEye = '/Game/Characters/BountyHunter/S0/Ability_E/'
+        'Projectile_E_BountyHunter_Divebomb.Projectile_E_BountyHunter_Divebomb_C';
+    const hauntReveal = '/Game/Characters/BountyHunter/S0/Ability_E/'
+        'GameObject_BountyHunter_E_LoSReveal_Source_Reactivate.'
+        'GameObject_BountyHunter_E_LoSReveal_Source_Reactivate_C';
+    ReplayDocument haunt() => document(utility: [
+          {
+            'id': 3,
+            'classPath': hauntEye,
+            'owner': 'b',
+            'spawnMs': 1000,
+            'endMs': 3400,
+            'position': [0, 0, 1400],
+            'path': [
+              [2500, 2000, 0, 2700],
+              [3000, 2000, 0, 2300],
+              [3300, 2000, 0, 2550],
+            ],
+          },
+          {
+            'id': 4,
+            'classPath': hauntReveal,
+            'owner': 'b',
+            'spawnMs': 3400,
+            'endMs': 4900,
+            'position': [2000, 0, 2570],
+          },
+        ]);
+
+    test("Haunt's eye has no reveal circle until it reveals", () {
+      final frames = builder(haunt());
+      ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
+      final landed = projection.toWorld(2000, 0);
+
+      // Flying, then fallen and not yet revealing: the eye's icon, no circle.
+      for (final t in [1800, 3200]) {
+        final frame = at(t);
+        expect(frame.abilities, isEmpty, reason: '$t');
+        expect(frame.effects.whereType<ReplayFlight>().single.iconPath,
+            AgentData.agents[AgentType.fade]!.abilities[2].iconPath);
+      }
+      final fallen = at(3200).effects.whereType<ReplayFlight>().single;
+      expect((fallen.trail.last - landed).distance, lessThan(1e-6));
+
+      // Revealing: Haunt's circle, centred where the eye fell.
+      final revealing = at(3600);
+      expect(revealing.effects.whereType<ReplayFlight>(), isEmpty);
+      final circle = revealing.abilities.single;
+      expect(circle.data.abilityData, isA<CircleAbility>());
+      expect((circle.data.type, circle.data.index), (AgentType.fade, 2));
+      final anchor = CoordinateSystem.virtualToWorld(storedAbilityAnchor(
+        ability: circle.data.abilityData!,
+        mapScale: Maps.mapScale[projection.map]!,
+      ));
+      expect((circle.position + anchor - landed).distance, lessThan(1e-6));
+    });
+
+    // Omen's Paranoia, cast from the origin along +x.
+    const paranoia = '/Game/Characters/Wraith/S0/Ability_Q/'
+        'Projectile_Wraith_Q_NearsightMissile.'
+        'Projectile_Wraith_Q_NearsightMissile_C';
+    ReplayDocument paranoiaCast({required int reachCm}) => document(utility: [
+          {
+            'id': 5,
+            'classPath': paranoia,
+            'owner': 'b',
+            'spawnMs': 1000,
+            'endMs': 2500,
+            'position': [0, 0, 100],
+            'yaw': 0,
+            'path': [
+              [2500, reachCm, 0, 100],
+            ],
+          },
+        ]);
+
+    test('Paranoia stays where it was cast and reaches as far as it flew', () {
+      final frames = builder(paranoiaCast(reachCm: 2000));
+      final frame = frames.frameAt(1750, perspective: ReplayTeam.red);
+      final cast = projection.toWorld(0, 0);
+      final head = projection.toWorld(1000, 0);
+
+      // What a capture saves: Paranoia's icon at the cast point, its area
+      // hidden, since a placed Paranoia can only draw its full length.
+      final placed = frame.abilities.single;
+      expect((placed.data.type, placed.data.index), (AgentType.omen, 1));
+      final anchor = CoordinateSystem.virtualToWorld(storedAbilityAnchor(
+        ability: placed.data.abilityData!,
+        mapScale: Maps.mapScale[projection.map]!,
+      ));
+      expect((placed.position + anchor - cast).distance, lessThan(1e-6));
+      expect(placed.visualState.showRangeFill, isFalse);
+
+      // What the viewer adds: the area from the cast point to the head.
+      final sweep = frame.effects.whereType<ReplaySweep>().single;
+      expect(sweep.from, cast);
+      expect((sweep.to - head).distance, lessThan(1e-6));
+      expect(sweep.area.position, placed.position);
+      expect(sweep.area.rotation, placed.rotation);
+      expect(sweep.area.visualState.showRangeFill, isTrue);
+      expect(sweep.opacity, 1);
+    });
+
+    test("Paranoia's reach stops at its full length and fades as it ends", () {
+      final frames = builder(paranoiaCast(reachCm: 6000));
+      ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
+      final cast = projection.toWorld(0, 0);
+      final shape = AgentData.agents[AgentType.omen]!.abilities[1].abilityData
+          as SquareAbility;
+      final full = CoordinateSystem.virtualLengthInWorld(
+          shape.height * Maps.mapScale[projection.map]!);
+
+      // The head is past the full length by now.
+      expect((projection.toWorld(5600, 0) - cast).distance, greaterThan(full));
+      final late = at(2400).effects.whereType<ReplaySweep>().single;
+      expect((late.to - cast).distance, closeTo(full, 1e-6));
+
+      // Ended at 2500: the icon and the swept area fade out together.
+      final leaving = at(2700);
+      expect(leaving.abilities, isEmpty);
+      final exit = leaving.effects.whereType<ReplayExit>().single;
+      expect(exit.ability.visualState.showRangeFill, isFalse);
+      expect(exit.centre, cast);
+      final fading = leaving.effects.whereType<ReplaySweep>().single;
+      expect(fading.opacity, closeTo(1 - exit.progress, 1e-9));
+      expect(at(3100).effects, isEmpty);
     });
   });
 

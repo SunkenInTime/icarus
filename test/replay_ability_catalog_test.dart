@@ -155,10 +155,14 @@ void main() {
     expect(covered, containsAll(AgentType.values));
   });
 
-  test('rectangles draw as Icarus squares, which run from their start', () {
+  test('rectangles and sweeps draw as Icarus squares, which run from their '
+      'start', () {
     for (final asset in replayAbilityAssetNames) {
       final entry = replayAbilityFor(asset)!;
-      if (entry.kind != ReplayUtilityKind.rectangle) continue;
+      if (entry.kind != ReplayUtilityKind.rectangle &&
+          entry.kind != ReplayUtilityKind.sweep) {
+        continue;
+      }
       expect(entry.ability.abilityData, isA<SquareAbility>(), reason: asset);
     }
   });

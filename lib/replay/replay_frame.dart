@@ -160,6 +160,35 @@ class ReplayFlight extends ReplayEffect {
   final List<Offset> trail;
 }
 
+/// A directed area a projectile is sweeping out from where it was cast
+/// (Paranoia, Undercut): the area as far as the projectile has flown.
+///
+/// The frame's placed ability is the one a capture saves: it stands where
+/// the utility was cast with its area hidden, since a placed ability can
+/// only draw its full length. This is the part of the area swept so far.
+class ReplaySweep extends ReplayEffect {
+  const ReplaySweep({
+    required this.area,
+    required this.from,
+    required this.to,
+    required this.opacity,
+    required super.isAlly,
+  });
+
+  /// The placed ability with its area shown, drawn only up to [to].
+  final PlacedAbility area;
+
+  /// Where it was cast, which the area runs from.
+  final Offset from;
+
+  /// How far the area reaches: the projectile's head, never past the
+  /// ability's full length.
+  final Offset to;
+
+  /// 1 while the utility is up, falling to 0 as it fades out.
+  final double opacity;
+}
+
 /// How a player stands at one moment.
 class ReplayPlayerState {
   const ReplayPlayerState({
@@ -460,15 +489,42 @@ class ReplayFrameBuilder {
         id: 'replay-utility-${utility.id}',
         isAlly: isAlly,
       );
-      final at = utility.positionAt(shownAt);
+      // A sweep stands where it was cast, its icon alone placed: the area
+      // swept so far is drawn over it (see ReplaySweep).
+      final sweeps = entry.kind == ReplayUtilityKind.sweep;
+      final at = sweeps ? utility.position : utility.positionAt(shownAt);
       final centre = projection.toWorld(at.x, at.y);
+      if (sweeps) {
+        effects.add(ReplaySweep(
+          area: ability,
+          from: centre,
+          to: entry.sweptTo(
+            utility: utility,
+            projection: projection,
+            timeMs: shownAt,
+            placed: ability,
+          ),
+          opacity: active ? 1 : 1 - (timeMs - endMs!) / exitMs,
+          isAlly: isAlly,
+        ));
+      }
+      final placed = sweeps
+          ? PlacedAbility(
+              data: ability.data,
+              position: ability.position,
+              id: ability.id,
+              isAlly: ability.isAlly,
+              rotation: ability.rotation,
+              visualState: const AbilityVisualState(showRangeFill: false),
+            )
+          : ability;
       final radius = _radiusOf(entry, mapScale);
       final faint =
           (entry.kind == ReplayUtilityKind.area && entry.blocks == null) ||
               entry.kind == ReplayUtilityKind.rectangle;
       if (!active) {
         effects.add(ReplayExit(
-          ability: ability,
+          ability: placed,
           centre: centre,
           radius: radius,
           progress: (timeMs - endMs!) / exitMs,
@@ -477,8 +533,8 @@ class ReplayFrameBuilder {
         ));
         continue;
       }
-      abilities.add(ability);
-      if (faint) dimmed.add(ability.id);
+      abilities.add(placed);
+      if (faint) dimmed.add(placed.id);
       final occluder = _occluderOf(entry, utility, timeMs, centre, radius);
       if (occluder != null) occluders.add(occluder);
       final age = timeMs - utility.spawnMs;

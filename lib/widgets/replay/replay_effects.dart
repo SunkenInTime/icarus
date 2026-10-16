@@ -78,6 +78,9 @@ class ReplayEffectsPainter extends CustomPainter {
         case ReplayFlashed():
           // Drawn over the agents, by [ReplayFlashPainter].
           continue;
+        case ReplaySweep():
+          // Drawn under the utility, clipped by [ReplaySweepClipper].
+          continue;
         case ReplayFlight(:final trail):
           // The path just flown, fading toward its tail.
           if (trail.length < 2) continue;
@@ -103,6 +106,42 @@ class ReplayEffectsPainter extends CustomPainter {
   @override
   bool shouldRepaint(ReplayEffectsPainter oldDelegate) =>
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
+}
+
+/// Keeps what lies on the cast side of where a sweep has reached: the
+/// sweep's whole area, cut square across the way it runs.
+class ReplaySweepClipper extends CustomClipper<Path> {
+  ReplaySweepClipper({required this.sweep, required this.isAttack});
+
+  final ReplaySweep sweep;
+  final bool isAttack;
+
+  /// Far enough to run off any canvas.
+  static const _far = 100000.0;
+
+  @override
+  Path getClip(Size size) {
+    final from = replayScreenPoint(sweep.from, isAttack: isAttack);
+    final to = replayScreenPoint(sweep.to, isAttack: isAttack);
+    final reach = to - from;
+    // Nothing swept yet.
+    if (reach.distance < 0.5) return Path();
+    final along = reach / reach.distance;
+    final across = Offset(-along.dy, along.dx);
+    return Path()
+      ..addPolygon([
+        to + across * _far,
+        to - across * _far,
+        to - across * _far - along * _far,
+        to + across * _far - along * _far,
+      ], true);
+  }
+
+  @override
+  bool shouldReclip(ReplaySweepClipper oldClipper) =>
+      oldClipper.sweep.from != sweep.from ||
+      oldClipper.sweep.to != sweep.to ||
+      oldClipper.isAttack != isAttack;
 }
 
 /// A flashed player's icon washed white and marked with a crossed-out eye,
