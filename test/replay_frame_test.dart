@@ -551,6 +551,15 @@ void main() {
         expect(clip.contains(at(iconSide)), isTrue, reason: '$isAttack');
         expect(clip.contains(at(reach - 1)), isTrue, reason: '$isAttack');
         expect(clip.contains(at(reach + 1)), isFalse, reason: '$isAttack');
+        // No wider than the area: on Windows Skia masks a clip like this on
+        // the CPU, and a mask the size of the canvas costs every frame.
+        final halfWidth =
+            CoordinateSystem.instance.worldHeightToScreen(sweep.halfWidth);
+        final side = Offset(-along.dy, along.dx);
+        expect(clip.contains(at(reach / 2) + side * (halfWidth - 1)), isTrue,
+            reason: '$isAttack');
+        expect(clip.contains(at(reach / 2) + side * (halfWidth + 3)), isFalse,
+            reason: '$isAttack');
       }
     });
   });

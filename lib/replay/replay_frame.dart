@@ -171,6 +171,7 @@ class ReplaySweep extends ReplayEffect {
     required this.area,
     required this.from,
     required this.to,
+    required this.halfWidth,
     required this.opacity,
     required super.isAlly,
   });
@@ -184,6 +185,9 @@ class ReplaySweep extends ReplayEffect {
   /// How far the area reaches: the projectile's head, never past the
   /// ability's full length.
   final Offset to;
+
+  /// Half the area's width across the way it runs, world units.
+  final double halfWidth;
 
   /// 1 while the utility is up, falling to 0 as it fades out.
   final double opacity;
@@ -504,6 +508,10 @@ class ReplayFrameBuilder {
             timeMs: shownAt,
             placed: ability,
           ),
+          halfWidth: CoordinateSystem.virtualLengthInWorld(
+              (entry.ability.abilityData as SquareAbility).width *
+                  mapScale /
+                  2),
           opacity: active ? 1 : 1 - (timeMs - endMs!) / exitMs,
           isAlly: isAlly,
         ));

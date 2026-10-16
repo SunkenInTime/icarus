@@ -108,9 +108,10 @@ class ReplayEffectsPainter extends CustomPainter {
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
 }
 
-/// Keeps what lies on the cast side of where a sweep has reached: the
-/// sweep's whole area, cut square across the way it runs. The icon at the
-/// cast point is left out, since the placed ability draws it already.
+/// Keeps the part of a sweep's area swept so far: from where it was cast to
+/// its head, as wide as the area. The icon at the cast point is left out,
+/// since the placed ability draws it already. The clip is no larger than the
+/// area, so the mask Skia draws for it on Windows stays small.
 class ReplaySweepClipper extends CustomClipper<Path> {
   ReplaySweepClipper({
     required this.sweep,
@@ -124,8 +125,8 @@ class ReplaySweepClipper extends CustomClipper<Path> {
   /// The ability icon's side on screen; it stands upright on the cast point.
   final double iconSide;
 
-  /// Far enough to run off any canvas.
-  static const _far = 100000.0;
+  /// Room past the area's sides, so its border is never cut.
+  static const _margin = 2.0;
 
   @override
   Path getClip(Size size) {
@@ -135,14 +136,13 @@ class ReplaySweepClipper extends CustomClipper<Path> {
     // Nothing swept yet.
     if (reach.distance < 0.5) return Path();
     final along = reach / reach.distance;
-    final across = Offset(-along.dy, along.dx);
+    final across = Offset(-along.dy, along.dx) *
+        (CoordinateSystem.instance.worldHeightToScreen(sweep.halfWidth) +
+            _margin);
+    final back = from - along * _margin;
     final swept = Path()
-      ..addPolygon([
-        to + across * _far,
-        to - across * _far,
-        to - across * _far - along * _far,
-        to + across * _far - along * _far,
-      ], true);
+      ..addPolygon([back + across, back - across, to - across, to + across],
+          true);
     final icon = Path()
       ..addRect(
           Rect.fromCenter(center: from, width: iconSide, height: iconSide));
