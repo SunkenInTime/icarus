@@ -395,10 +395,10 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'GameObject_RemovableObject_GumshoeTrackingDart':
       _marker(AgentType.cypher, 2),
 
-  // Deadlock (Cable). Icarus index 0 draws GravNet and index 2 the Barrier
-  // Mesh (by icon and shape), though agents.dart names them the other way.
-  // Sonic Sensor's yaw faces out of the surface it is stuck to. Annihilation's
-  // own actor stays on Deadlock; the cocoon is where it caught someone.
+  // Deadlock (Cable). Icarus index 0 is GravNet and index 2 the Barrier
+  // Mesh, not the game's key order. Sonic Sensor's yaw faces out of the
+  // surface it is stuck to. Annihilation's own actor stays on Deadlock; the
+  // cocoon is where it caught someone.
   'Patch_NetToss': _area(AgentType.deadlock, 0),
   'Projectile_NetToss': _flight(AgentType.deadlock, 0),
   'Projectile_CableJam_InAir': _flight(AgentType.deadlock, 2),
@@ -462,9 +462,8 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Pawn_Killjoy_E_Turret': _area(AgentType.killjoy, 2),
   'GameObject_Killjoy_X_Bomb': _area(AgentType.killjoy, 3),
 
-  // Miks (Iris). Icarus index 2 draws Waveform's smoke and index 3 is
-  // Harmonize (by icon), though agents.dart names them the other way.
-  // Harmonize is a buff with no actor.
+  // Miks (Iris). Icarus index 2 is Waveform's smoke and index 3 Harmonize,
+  // a buff with no actor.
   'GameObject_Thumper_Concuss': _area(AgentType.miks, 0),
   'Projectile_Thumper_Concuss': _flight(AgentType.miks, 0),
   'Projectile_Thumper_Heal': _flight(AgentType.miks, 1),
@@ -484,9 +483,9 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Projectile_Wraith_4_Smoke': _flight(AgentType.omen, 2),
   'Intention_Wraith_X_GlobalTeleport': _marker(AgentType.omen, 3),
 
-  // Phoenix. Icarus index 1 is Curveball and index 2 Hot Hands (by icon and
-  // shape), though agents.dart names them the other way. Curveball's flare
-  // replicates its flight as its own projectile, left or right.
+  // Phoenix. Icarus index 1 is Curveball and index 2 Hot Hands, not the
+  // game's key order. Curveball's flare replicates its flight as its own
+  // projectile, left or right.
   'GameObject_Phoenix_Q_FlameWallManager_Production':
       const ReplayAbilityEntry._(
           AgentType.pheonix, 0, ReplayUtilityKind.wall, _fromStart,
@@ -559,10 +558,10 @@ final Map<String, ReplayAbilityEntry> _catalog = {
       blocks: ReplayVisionBlock.line),
   'Patch_Pandemic_X_Circular': _area(AgentType.viper, 3),
 
-  // Vyse (Nox). Icarus index 0 draws Shear and index 1 Razorvine (by icon
-  // and shape), though agents.dart names them the other way. Shear's armed
-  // trap and its raised wall both sit on the wall's start; the trap's yaw
-  // runs along the wall and the raised wall's faces across it.
+  // Vyse (Nox). Icarus index 0 is Shear and index 1 Razorvine, not the
+  // game's key order. Shear's armed trap and its raised wall both sit on the
+  // wall's start; the trap's yaw runs along the wall and the raised wall's
+  // faces across it.
   'GameObject_Nox_Wall': const ReplayAbilityEntry._(
       AgentType.vyse, 0, ReplayUtilityKind.wall, _FromStart(yawOffset: -90)),
   'GameObject_Nox_WallTrap': _wall(AgentType.vyse, 0),
