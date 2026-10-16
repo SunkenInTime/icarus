@@ -74,9 +74,18 @@ class ReplayRoundEvent {
   final AbilityInfo? ability;
 }
 
+final _eventsByRound = Expando<List<ReplayRoundEvent>>();
+
 /// [round]'s events in the order they happened; a kill comes before a
 /// spike event in the same millisecond, and both before an ability use.
+/// Worked out once per round: the roster asks for them every frame.
 List<ReplayRoundEvent> replayRoundEvents(
+  ReplayDocument document,
+  ReplayRound round,
+) =>
+    _eventsByRound[round] ??= List.unmodifiable(_roundEvents(document, round));
+
+List<ReplayRoundEvent> _roundEvents(
   ReplayDocument document,
   ReplayRound round,
 ) {
@@ -124,16 +133,27 @@ List<ReplayRoundEvent> replayRoundEvents(
 final _abilityUsesByDocument = Expando<List<ReplayRoundEvent>>();
 
 /// Every ability use in [document], one per cast, at the moment its first
-/// actor appeared. Utility nobody can be named for is left out. Worked out
-/// once per replay: the roster asks for its round's events every frame.
+/// actor appeared. Utility nobody can be named for is left out.
 List<ReplayRoundEvent> _abilityUses(ReplayDocument document) =>
     _abilityUsesByDocument[document] ??= () {
       final uses = <ReplayRoundEvent>[];
-      // Each caster's casts of each ability so far. A later actor joins the
-      // newest one that takes it: two smokes can be up at once, and the
-      // first may land after the second.
+      // A round runs until the next one starts, as for kills; no cast
+      // carries over into the next.
+      final roundStarts = [for (final round in document.rounds) round.startMs]
+        ..sort();
+      int roundOf(int timeMs) =>
+          roundStarts.lastIndexWhere((startMs) => startMs <= timeMs);
+      int? castsRound;
+      // Each caster's casts of each ability so far this round. A later
+      // actor joins the newest one that takes it: two smokes can be up at
+      // once, and the first may land after the second.
       final casts = <(String, AgentType, int), List<_Cast>>{};
       for (final utility in document.utility) {
+        final round = roundOf(utility.spawnMs);
+        if (round != castsRound) {
+          castsRound = round;
+          casts.clear();
+        }
         final entry = replayAbilityFor(utility.classPath);
         if (entry == null) continue;
         final caster = replayCasterOf(document, utility, entry);

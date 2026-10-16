@@ -444,6 +444,66 @@ void main() {
     );
   });
 
+  group('ability uses group actors', () {
+    const brimstone = '9f0d8ba9-4140-b941-57d3-a7ad57c6b417';
+    const neon = 'bb2a4828-46eb-8cd1-e765-15848195d751';
+
+    /// Brimstone (s) and Neon (n) over two rounds, the second starting at
+    /// 100 s; [utility] is everything they threw.
+    ReplayDocument twoRounds(List<Map<String, Object?>> utility) =>
+        ReplayDocument.fromBytes(icrp({
+          ...sampleJson(),
+          'players': [
+            {'subject': 's', 'agentId': brimstone, 'team': 'Red'},
+            {'subject': 'n', 'agentId': neon, 'team': 'Blue'},
+          ],
+          'rounds': [
+            {'index': 0, 'startMs': 0, 'endMs': 90000, 'attackingTeam': 'Red'},
+            {
+              'index': 1,
+              'startMs': 100000,
+              'endMs': 190000,
+              'attackingTeam': 'Red',
+            },
+          ],
+          'utility': utility,
+        }));
+    List<int> usesIn(ReplayDocument doc, int round) => [
+          for (final event in replayRoundEvents(doc, doc.rounds[round]))
+            if (event.kind == ReplayEventKind.ability) event.timeMs,
+        ];
+    Map<String, Object?> skySmoke(int spawnMs) => utility(
+        'Sarge', 'GameObject_Sarge_4_Smoke_ProductionNEW', spawnMs, 30000,
+        owner: 's');
+
+    test('within 100 ms of the first, an actor is the same cast', () {
+      final doc = twoRounds([
+        skySmoke(10000),
+        // Together with the first: one cast.
+        skySmoke(10100),
+        // 60 ms after the one before, but 160 ms after the cast began.
+        skySmoke(10160),
+        skySmoke(20000),
+        skySmoke(20101),
+      ]);
+      expect(usesIn(doc, 0), [10000, 10160, 20000, 20101]);
+    });
+
+    test('no cast carries over into the next round', () {
+      final doc = twoRounds([
+        // Its end never recorded, so it is up for the rest of the replay.
+        utility('Sprinter', 'GameObject_Sprinter_Q_ElectricSphere', 40000,
+            null,
+            owner: 'n'),
+        utility('Sprinter', 'GameObject_Sprinter_Q_ElectricSphere', 140000,
+            141000,
+            owner: 'n'),
+      ]);
+      expect(usesIn(doc, 0), [40000]);
+      expect(usesIn(doc, 1), [140000]);
+    });
+  });
+
   group('the event filter', () {
     testWidgets('picks what the killfeed lists', (tester) async {
       final p = playback()..seek(35000);
