@@ -237,6 +237,15 @@ void main() {
     final line = tester.widget<ReplayEventLine>(find.byType(ReplayEventLine));
     expect(line.event.kill?.killer, 'b');
 
+    // Watched from the other side, the lanes swap.
+    await mouse.moveTo(Offset.zero);
+    playback.perspective = ReplayTeam.blue;
+    await tester.pump();
+    expect(tester.getRect(portrait('Jett')).top,
+        greaterThanOrEqualTo(track.center.dy));
+    expect(tester.getRect(portrait('Omen')).bottom,
+        lessThanOrEqualTo(track.center.dy));
+
     await tester.tap(find.byIcon(LucideIcons.chevronsDownUp));
     await tester.pump();
     expect(portrait('Jett'), findsNothing);

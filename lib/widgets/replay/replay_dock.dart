@@ -479,6 +479,7 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
   List<_StoryMark>? _story;
   List<ReplayRoundEvent>? _storyEvents;
   double? _storyWidth;
+  ReplayTeam? _storyPerspective;
 
   /// The mark under the pointer, and where along the track its card sits.
   ReplayRoundEvent? _hovered;
@@ -506,15 +507,19 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
   }
 
   /// Where the story draws [events] across [width], worked out once per
-  /// round, filter and width.
+  /// round, filter, width and perspective: swapping sides swaps the lanes.
   List<_StoryMark> _storyOf(
     List<ReplayRoundEvent> events,
     double Function(int ms) x,
     double width,
   ) {
-    if (!identical(events, _storyEvents) || width != _storyWidth) {
+    final perspective = widget.playback.perspective;
+    if (!identical(events, _storyEvents) ||
+        width != _storyWidth ||
+        perspective != _storyPerspective) {
       _storyEvents = events;
       _storyWidth = width;
+      _storyPerspective = perspective;
       _story = _StoryMark.layout(widget.playback, events, x, width);
     }
     return _story!;
