@@ -388,7 +388,7 @@ class _Killfeed extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
           child: Row(
-            spacing: 6,
+            spacing: 8,
             children: [
               for (final filter in ReplayEventFilter.values)
                 Expanded(
@@ -450,8 +450,9 @@ class _Killfeed extends ConsumerWidget {
   }
 }
 
-/// One choice in the killfeed's filter: raised in violet while it shows.
-class _FilterChip extends StatefulWidget {
+/// One choice in the killfeed's filter: a primary button, raised in
+/// violet, while it shows; an outline one while it doesn't.
+class _FilterChip extends StatelessWidget {
   const _FilterChip({
     required this.label,
     required this.selected,
@@ -463,52 +464,25 @@ class _FilterChip extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_FilterChip> createState() => _FilterChipState();
-}
-
-class _FilterChipState extends State<_FilterChip> {
-  var _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    const radius = 8.0;
-    final selected = widget.selected;
     return Semantics(
-      button: true,
       toggled: selected,
-      child: ShadGestureDetector(
-        cursor: SystemMouseCursors.click,
-        behavior: HitTestBehavior.opaque,
-        onHoverChange: (hovered) => setState(() => _hovered = hovered),
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          height: 24,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          alignment: Alignment.center,
-          decoration: selected
-              ? Settings.raisedPrimary(radius)
-              : BoxDecoration(
-                  color: _hovered ? theme.colorScheme.accent : null,
-                  borderRadius: BorderRadius.circular(radius),
-                  border: Border.all(color: theme.colorScheme.border),
-                ),
-          child: Text(
-            widget.label,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.fade,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: selected
-                  ? theme.colorScheme.primaryForeground
-                  : _hovered
-                      ? theme.colorScheme.foreground
-                      : theme.colorScheme.mutedForeground,
-            ),
-          ),
+      child: ShadButton.raw(
+        variant:
+            selected ? ShadButtonVariant.primary : ShadButtonVariant.outline,
+        height: 24,
+        expands: true,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        foregroundColor: selected ? null : theme.colorScheme.mutedForeground,
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        onPressed: onTap,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.fade,
         ),
       ),
     );

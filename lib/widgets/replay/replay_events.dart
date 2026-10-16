@@ -129,21 +129,25 @@ final _abilityUsesByDocument = Expando<List<ReplayRoundEvent>>();
 List<ReplayRoundEvent> _abilityUses(ReplayDocument document) =>
     _abilityUsesByDocument[document] ??= () {
       final uses = <ReplayRoundEvent>[];
-      // Each caster's latest cast of each ability, which later actors may
-      // still belong to.
-      final latest = <(String, AgentType, int), _Cast>{};
+      // Each caster's casts of each ability so far. A later actor joins the
+      // newest one that takes it: two smokes can be up at once, and the
+      // first may land after the second.
+      final casts = <(String, AgentType, int), List<_Cast>>{};
       for (final utility in document.utility) {
         final entry = replayAbilityFor(utility.classPath);
         if (entry == null) continue;
         final caster = replayCasterOf(document, utility, entry);
         if (caster == null) continue;
-        final key = (caster.subject, entry.agent, entry.abilityIndex);
-        final cast = latest[key];
-        if (cast != null && cast.takes(utility)) {
+        final earlier =
+            casts[(caster.subject, entry.agent, entry.abilityIndex)] ??= [];
+        final cast = earlier.reversed.firstWhereOrNull(
+          (cast) => cast.takes(utility),
+        );
+        if (cast != null) {
           cast.add(utility);
           continue;
         }
-        latest[key] = _Cast(utility);
+        earlier.add(_Cast(utility));
         uses.add(ReplayRoundEvent._(
           ReplayEventKind.ability,
           utility.spawnMs,

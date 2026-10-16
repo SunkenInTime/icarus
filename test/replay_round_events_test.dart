@@ -45,7 +45,8 @@ Map<String, Object?> utility(
 /// Round 1 (0–100 s): Jett plants B, Omen defuses, Blue wins. Round 2
 /// (100–150 s): the spike detonates on A, Red wins. Red attacks both.
 /// Round 1's abilities: Chamber's trap in the buy, set off at 52 s; Omen's
-/// smoke thrown at 45 s; Jett's two smokes 400 ms apart at 50 s.
+/// smokes thrown at 45 s and 45.5 s, the second landing first; Jett's two
+/// smokes 400 ms apart at 50 s.
 ReplayDocument document() => ReplayDocument.fromBytes(icrp({
       ...sampleJson(),
       'match': {
@@ -105,6 +106,8 @@ ReplayDocument document() => ReplayDocument.fromBytes(icrp({
         utility('Deadeye', 'GameObject_Deadeye_E_Trap', 5000, null,
             owner: 'c'),
         utility('Wraith', 'Projectile_Wraith_4_Smoke', 45000, 46200,
+            owner: 'b'),
+        utility('Wraith', 'Projectile_Wraith_4_Smoke', 45500, 45600,
             owner: 'b'),
         // The replay names no owner; Omen is the only Omen.
         utility('Wraith', 'Zone_Wraith_4_Smoke', 46000, 61000),
@@ -430,8 +433,10 @@ void main() {
       [
         // The trap, once: going off is not another use.
         (5000, 'c', name(AgentType.chamber, 0)),
-        // The smoke thrown, not again where it lands.
+        // A smoke thrown, not again where it lands, though Omen threw
+        // another meanwhile.
         (45000, 'b', name(AgentType.omen, 2)),
+        (45500, 'b', name(AgentType.omen, 2)),
         // Two smokes thrown one after the other are two.
         (50000, 'a', name(AgentType.jett, 0)),
         (50400, 'a', name(AgentType.jett, 0)),
@@ -462,9 +467,7 @@ void main() {
       await tester.pump();
       expect(shownKinds(tester), [
         ReplayEventKind.plant,
-        ReplayEventKind.ability,
-        ReplayEventKind.ability,
-        ReplayEventKind.ability,
+        for (var i = 0; i < 4; i++) ReplayEventKind.ability,
         ReplayEventKind.kill,
         ReplayEventKind.ability,
       ]);
@@ -500,17 +503,13 @@ void main() {
       final track = tester.getRect(scrubber);
       Offset at(int ms) =>
           Offset(track.left + track.width * ms / 100000, track.center.dy);
-      List<ReplayEventKind> marked() => [
-            for (final event in (tester.widget<CustomPaint>(scrubber).painter
-                    as dynamic)
-                .events as List<ReplayRoundEvent>)
-              event.kind,
-          ];
+      // Ability uses are the scrubber's only small dots.
+      final abilityDot = paints..circle(radius: 2.5);
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(mouse.removePointer);
       await mouse.addPointer(location: Offset.zero);
 
-      expect(marked(), isNot(contains(ReplayEventKind.ability)));
+      expect(tester.renderObject(scrubber), isNot(abilityDot));
       await mouse.moveTo(at(45000));
       await tester.pump();
       expect(find.byType(ReplayEventLine), findsNothing);
@@ -519,9 +518,7 @@ void main() {
         ReplayEventFilter.abilities,
       };
       await tester.pump();
-      expect(marked(), [
-        for (var i = 0; i < 4; i++) ReplayEventKind.ability,
-      ]);
+      expect(tester.renderObject(scrubber), abilityDot);
       await mouse.moveTo(Offset.zero);
       await tester.pump();
       await mouse.moveTo(at(45000));
