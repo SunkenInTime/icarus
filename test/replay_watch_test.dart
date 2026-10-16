@@ -428,6 +428,16 @@ void main() {
           [subject],
         );
       }
+      // Seen from the other team, the keys count from them.
+      p.perspective = p.perspective.other;
+      await tester.pump();
+      expect(
+        [
+          for (final subject in [...blues, ...reds])
+            keyOf(tester, subject).label
+        ],
+        ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+      );
     });
 
     testWidgets('each row says how to watch its player', (tester) async {
