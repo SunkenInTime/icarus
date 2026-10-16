@@ -135,9 +135,40 @@ Matrix4 replayCameraOn(Offset focus, double scale, Size viewport) =>
         0,
       );
 
+/// [camera] held so the [world] box stays in view: along each axis the box
+/// covers [viewport] when it is the larger, moved no further than that
+/// takes, and sits centred in it when it is the smaller. The map can never
+/// be panned away.
+@visibleForTesting
+Matrix4 replayCameraClamped(Matrix4 camera, Size world, Size viewport) {
+  final scale = camera.getMaxScaleOnAxis();
+  final at = camera.getTranslation();
+  double held(double from, double content, double room) => content <= room
+      ? (room - content) / 2
+      : from.clamp(room - content, 0.0);
+  final x = held(at.x, world.width * scale, viewport.width);
+  final y = held(at.y, world.height * scale, viewport.height);
+  if (x == at.x && y == at.y) return camera;
+  return camera.clone()..setTranslationRaw(x, y, at.z);
+}
+
+/// The canvas's camera, held to [replayCameraClamped] however it moves: a
+/// pan, a zoom, or following a player.
+class _MapCamera extends TransformationController {
+  /// The box the dot grid and map are drawn in, in canvas pixels.
+  Size world = Size.zero;
+
+  /// The part of the canvas the roster leaves clear.
+  Size viewport = Size.zero;
+
+  @override
+  set value(Matrix4 camera) => super.value =
+      world.isEmpty ? camera : replayCameraClamped(camera, world, viewport);
+}
+
 class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
     with SingleTickerProviderStateMixin {
-  final _controller = TransformationController();
+  final _controller = _MapCamera();
   Size? _lastViewport;
 
   /// The agents' own cones, while no worker cuts them (it is starting, or
@@ -234,7 +265,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
   }
 
   /// Centres the watched player in the part of the canvas the roster leaves
-  /// clear; part way there while approaching.
+  /// clear, as nearly as the map's edges allow; part way there while
+  /// approaching.
   void _follow() {
     final viewport = _lastViewport;
     final at = _watchedCentre();
@@ -327,6 +359,9 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
         final viewportWidth = (constraints.maxWidth - widget.reservedRight)
             .clamp(0.0, constraints.maxWidth);
         final viewport = Size(viewportWidth, height);
+        _controller
+          ..world = Size(worldWidth, height)
+          ..viewport = viewport;
         if (_lastViewport != viewport) {
           _lastViewport = viewport;
           _controller.value = Matrix4.identity()
@@ -357,6 +392,9 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
             minScale: 1,
             maxScale: 8,
             panEnabled: _panEnabled,
+            // The camera keeps the map in view itself. The viewer's own
+            // bounds would count the space under the roster as room, and
+            // would zoom in past 1 on a canvas wider than the map's box.
             boundaryMargin: const EdgeInsets.all(double.infinity),
             onInteractionStart: _interactionStarted,
             onInteractionUpdate: _interactionUpdated,
