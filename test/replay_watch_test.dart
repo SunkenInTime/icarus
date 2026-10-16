@@ -18,6 +18,7 @@ import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay_view.dart';
 import 'package:icarus/widgets/replay/replay_canvas.dart';
 import 'package:icarus/widgets/inset_shadow_decoration.dart';
+import 'package:icarus/widgets/keybind_badge.dart';
 import 'package:icarus/widgets/replay/replay_roster.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -281,24 +282,38 @@ void main() {
   });
 
   group('roster', () {
-    Future<ReplayPlayback> roster(WidgetTester tester) async {
+    Future<ReplayPlayback> roster(
+      WidgetTester tester, {
+      List<Map<String, Object?>> kills = const [],
+    }) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(600, 900);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
-      final p = playback(tenPlayers())..seek(1000);
+      final p = playback(tenPlayers(kills: kills))..seek(1000);
       addTearDown(p.dispose);
       await tester.pumpWidget(ShadApp(
         home: Scaffold(
-          body: Align(
-            alignment: Alignment.topRight,
-            child: SizedBox(height: 880, child: ReplayRoster(playback: p)),
+          body: Focus(
+            autofocus: true,
+            onKeyEvent: (_, event) => replayKey(p, event),
+            child: Align(
+              alignment: Alignment.topRight,
+              child: SizedBox(height: 880, child: ReplayRoster(playback: p)),
+            ),
           ),
         ),
       ));
       await tester.pump();
       return p;
     }
+
+    /// The key drawn on [subject]'s row.
+    KeybindBadge keyOf(WidgetTester tester, String subject) =>
+        tester.widget<KeybindBadge>(find.descendant(
+          of: find.byKey(ValueKey(subject)),
+          matching: find.byType(KeybindBadge),
+        ));
 
     /// The tooltip shown while the mouse rests on [row].
     Future<String> tooltipOf(WidgetTester tester, Finder row) async {
@@ -379,6 +394,50 @@ void main() {
       );
       expect(rows().where((row) => row.foregroundDecoration != null),
           hasLength(1));
+    });
+
+    testWidgets('each row shows its key, and the key watches that player',
+        (tester) async {
+      // r2 is dead: they keep their key, and can still be watched.
+      final p = await roster(tester, kills: [
+        {'timeMs': 500, 'victim': 'r2', 'killer': 'b0'},
+      ]);
+      final shown = {
+        for (final subject in [...reds, ...blues])
+          subject: keyOf(tester, subject).label,
+      };
+      expect(shown, {
+        'r0': '1',
+        'r1': '2',
+        'r2': '3',
+        'r3': '4',
+        'r4': '5',
+        'b0': '6',
+        'b1': '7',
+        'b2': '8',
+        'b3': '9',
+        'b4': '0',
+      });
+      for (final MapEntry(key: subject, value: label) in shown.entries) {
+        await tester.sendKeyEvent(LogicalKeyboardKey(label.codeUnitAt(0)));
+        await tester.pump();
+        expect(p.watching, subject, reason: 'pressed $label');
+        expect(keyOf(tester, subject).lit, isTrue, reason: subject);
+        expect(
+          [...reds, ...blues].where((other) => keyOf(tester, other).lit),
+          [subject],
+        );
+      }
+      // Seen from the other team, the keys count from them.
+      p.perspective = p.perspective.other;
+      await tester.pump();
+      expect(
+        [
+          for (final subject in [...blues, ...reds])
+            keyOf(tester, subject).label
+        ],
+        ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+      );
     });
 
     testWidgets('each row says how to watch its player', (tester) async {

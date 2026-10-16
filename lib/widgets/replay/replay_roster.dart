@@ -7,6 +7,7 @@ import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay/replay_weapons.dart';
+import 'package:icarus/widgets/keybind_badge.dart';
 import 'package:icarus/widgets/replay/replay_events.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
@@ -147,8 +148,9 @@ class _TeamBlock extends StatelessWidget {
   }
 }
 
-/// One player as they stand. Clicking the row watches them; the watched
-/// player's row is raised and ringed in violet.
+/// One player as they stand. Clicking the row, or pressing the key drawn at
+/// its left edge, watches them; the watched player's row is raised and
+/// ringed in violet.
 class _PlayerRow extends StatefulWidget {
   const _PlayerRow({
     super.key,
@@ -224,7 +226,20 @@ class _PlayerRowState extends State<_PlayerRow> {
                   border: Border.all(color: Settings.accentInk),
                 )
               : null,
-          child: _content(theme, agentData, name, weapon, credits),
+          child: Row(
+            children: [
+              // Numbered down the left edge, as a scoreboard numbers its
+              // players. Outside the dead fade: the dead can be watched too.
+              if (widget.watchKey case final key?)
+                KeybindBadge(label: key, lit: _hovered || widget.watched)
+              else
+                const SizedBox(width: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _content(theme, agentData, name, weapon, credits),
+              ),
+            ],
+          ),
         ),
       ),
     );
