@@ -454,6 +454,22 @@ void main() {
       // Ability uses start hidden, and the trap is all that has happened.
       expect(find.byType(ReplayEventLine), findsNothing);
       expect(find.text('No kills yet this round'), findsOneWidget);
+      // Each chip reads as one toggle button.
+      final semantics = tester.ensureSemantics();
+      expect(
+        tester.getSemantics(find.text('Abilities')),
+        isSemantics(
+          label: 'Abilities',
+          isButton: true,
+          hasToggledState: true,
+          isToggled: false,
+        ),
+      );
+      expect(
+        tester.getSemantics(find.text('Kills')),
+        isSemantics(label: 'Kills', isButton: true, isToggled: true),
+      );
+      semantics.dispose();
 
       await tester.tap(find.text('Abilities'));
       await tester.pump();

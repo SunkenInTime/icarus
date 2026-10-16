@@ -471,34 +471,38 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
     final ink = selected ? theme.foreground : theme.mutedForeground;
-    return Semantics(
-      toggled: selected,
-      child: DecoratedBox(
-        decoration: selected
-            ? Settings.raisedSurface(_radius)
-            : const BoxDecoration(),
-        child: ShadButton.ghost(
-          height: 26,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          gap: 6,
-          backgroundColor: selected ? Colors.transparent : null,
-          hoverBackgroundColor: selected ? Colors.transparent : null,
-          foregroundColor: ink,
-          hoverForegroundColor: theme.foreground,
-          onPressed: onTap,
-          leading: switch (filter) {
-            ReplayEventFilter.kills => const Icon(LucideIcons.crosshair, size: 14),
-            ReplayEventFilter.spike => SvgPicture.asset(
-                replaySpikeAsset,
-                height: 13,
-                colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
-              ),
-            ReplayEventFilter.abilities =>
-              const Icon(LucideIcons.sparkles, size: 14),
-          },
-          child: Text(
-            filter.label,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+    // One node: the button's label and role, and whether it is on.
+    return MergeSemantics(
+      child: Semantics(
+        toggled: selected,
+        child: DecoratedBox(
+          decoration: selected
+              ? Settings.raisedSurface(_radius)
+              : const BoxDecoration(),
+          child: ShadButton.ghost(
+            height: 26,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            gap: 6,
+            backgroundColor: selected ? Colors.transparent : null,
+            hoverBackgroundColor: selected ? Colors.transparent : null,
+            foregroundColor: ink,
+            hoverForegroundColor: theme.foreground,
+            onPressed: onTap,
+            leading: switch (filter) {
+              ReplayEventFilter.kills =>
+                const Icon(LucideIcons.crosshair, size: 14),
+              ReplayEventFilter.spike => SvgPicture.asset(
+                  replaySpikeAsset,
+                  height: 13,
+                  colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
+                ),
+              ReplayEventFilter.abilities =>
+                const Icon(LucideIcons.sparkles, size: 14),
+            },
+            child: Text(
+              filter.label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ),
         ),
       ),
