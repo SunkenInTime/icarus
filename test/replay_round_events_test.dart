@@ -115,6 +115,18 @@ Finder asset(String path) => find.descendant(
       ),
     );
 
+/// The spike's art in an event line.
+Finder spike() => find.descendant(
+      of: find.byType(ReplayEventLine),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is SvgPicture &&
+            widget.bytesLoader is SvgAssetLoader &&
+            (widget.bytesLoader as SvgAssetLoader).assetName ==
+                'assets/spike.svg',
+      ),
+    );
+
 List<ReplayEventKind> shownKinds(WidgetTester tester) => [
       for (final line
           in tester.widgetList<ReplayEventLine>(find.byType(ReplayEventLine)))
@@ -210,11 +222,12 @@ void main() {
     ]);
     expect(asset(AgentData.agents[AgentType.chamber]!.abilities[1].iconPath),
         findsOneWidget);
-    expect(find.byIcon(LucideIcons.bomb), findsOneWidget);
+    // The plant draws Valorant's spike, beside its site.
+    expect(spike(), findsOneWidget);
     expect(find.text('B'), findsOneWidget);
 
     // Clicking the plant goes to 2 s before it.
-    await tester.tap(find.byIcon(LucideIcons.bomb));
+    await tester.tap(spike());
     await tester.pump();
     expect(p.timeMs, 58000);
   });
@@ -264,6 +277,60 @@ void main() {
       findsOneWidget,
     );
     expect(asset('assets/agents/Omen/icon.webp'), findsOneWidget);
+  });
+
+  testWidgets('a kill with four assists fits its row, the victim at the edge',
+      (tester) async {
+    final crowded = ReplayDocument.fromBytes(icrp({
+      ...sampleJson(),
+      'players': [
+        for (final (subject, agentId, team) in [
+          ('k', jett, 'Red'),
+          ('a1', raze, 'Red'),
+          ('a2', chamber, 'Red'),
+          ('a3', raze, 'Red'),
+          ('a4', chamber, 'Red'),
+          ('v', omen, 'Blue'),
+        ])
+          {'subject': subject, 'agentId': agentId, 'team': team},
+      ],
+      'rounds': [
+        {
+          'index': 0,
+          'startMs': 0,
+          'combatStartMs': 1000,
+          'endMs': 60000,
+          'attackingTeam': 'Red',
+        },
+      ],
+      'kills': [
+        {
+          'timeMs': 5000,
+          'victim': 'v',
+          'killer': 'k',
+          'assists': ['a1', 'a2', 'a3', 'a4'],
+          'damageSource': '/Game/Equippables/Guns/HvyMachineGuns/HMG/'
+              'HMG.HMG_C',
+        },
+      ],
+    }));
+    final p = ReplayPlayback(
+      document: crowded,
+      projection:
+          ReplayMapProjection.forMapPath('/Game/Maps/Juliett/Juliett')!,
+      perspective: ReplayTeam.red,
+    )..seek(10000);
+    await pumpBody(
+      tester,
+      Align(alignment: Alignment.topLeft, child: ReplayRoster(playback: p)),
+    );
+
+    // A layout overflow would have failed the pump.
+    final line = tester.getRect(find.byType(ReplayEventLine));
+    final victim = tester.getRect(asset('assets/agents/Omen/icon.webp'));
+    expect(line.width, greaterThan(ReplayRoster.width - 40));
+    expect(victim.right, closeTo(line.right, 2));
+    expect(asset('assets/weapons/odin.png'), findsOneWidget);
   });
 
   testWidgets('hovering a scrubber mark shows its killfeed line',
