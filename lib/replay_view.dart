@@ -479,8 +479,12 @@ class _ReplayBench extends StatelessWidget {
         Positioned(
           left: 8,
           right: ReplayRoster.width + 16,
-          bottom: 8,
-          child: Center(child: ReplayDock(playback: playback)),
+          // The dock keeps the other 4 px itself, and gives them up while
+          // its story is open.
+          bottom: 4,
+          child: Center(
+            child: ReplayDock(playback: playback, drawing: drawing),
+          ),
         ),
       ],
     );

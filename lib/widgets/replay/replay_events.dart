@@ -209,16 +209,42 @@ class _Cast {
   }
 }
 
-/// The glyph for how a round ended. The killfeed draws a defuse and a
-/// detonation with the same glyphs, and a plant with the spike
-/// ([replaySpikeAsset]).
-IconData replayRoundEndIcon(ReplayRoundEnd end) => switch (end) {
-      ReplayRoundEnd.elimination => LucideIcons.skull,
-      ReplayRoundEnd.detonated => LucideIcons.flame,
-      ReplayRoundEnd.defused => LucideIcons.scissors,
-      ReplayRoundEnd.time => LucideIcons.timer,
-      ReplayRoundEnd.surrender => LucideIcons.flag,
+/// Valorant's own art for how a round ended, as its match history draws
+/// it: white glyphs on transparency, so any tint takes.
+String replayRoundEndAsset(ReplayRoundEnd end) => switch (end) {
+      ReplayRoundEnd.elimination => 'assets/replay/round-elimination.png',
+      ReplayRoundEnd.detonated => 'assets/replay/round-detonated.png',
+      ReplayRoundEnd.defused => 'assets/replay/round-defused.png',
+      ReplayRoundEnd.time => 'assets/replay/round-time.png',
+      ReplayRoundEnd.surrender => 'assets/replay/round-surrender.png',
     };
+
+/// How a round ended, in [color]: the round strip's slots, and the
+/// killfeed's and the scrubber's defuse and detonation. A plant draws the
+/// spike ([replaySpikeAsset]) instead.
+class ReplayRoundEndGlyph extends StatelessWidget {
+  const ReplayRoundEndGlyph(
+    this.end, {
+    super.key,
+    required this.size,
+    required this.color,
+  });
+
+  final ReplayRoundEnd end;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+        replayRoundEndAsset(end),
+        width: size,
+        height: size,
+        color: color,
+        colorBlendMode: BlendMode.srcIn,
+        // The art is 50 to 64 px: mipmaps keep it crisp at a quarter.
+        filterQuality: FilterQuality.medium,
+      );
+}
 
 /// Valorant's spike, the art the map draws a planted spike with.
 const String replaySpikeAsset = 'assets/spike.svg';
@@ -307,13 +333,13 @@ class ReplayEventLine extends StatelessWidget {
         ),
       ReplayEventKind.defuse => (
           _actor(event.subject, sizes),
-          [_glyph(replayRoundEndIcon(ReplayRoundEnd.defused), sizes)],
+          [_roundEnd(ReplayRoundEnd.defused, sizes)],
           null,
         ),
       ReplayEventKind.detonation => (
           null,
           [
-            _glyph(replayRoundEndIcon(ReplayRoundEnd.detonated), sizes),
+            _roundEnd(ReplayRoundEnd.detonated, sizes),
             ..._site(theme, sizes),
           ],
           null,
@@ -388,7 +414,7 @@ class ReplayEventLine extends StatelessWidget {
       replayAgentType(killer?.agentId),
       sizes,
     );
-    final victim = _AgentIcon(
+    final victim = ReplayAgentIcon(
       player: document.playerBySubject(kill.victim),
       perspective: playback.perspective,
       size: sizes.portrait,
@@ -401,7 +427,7 @@ class ReplayEventLine extends StatelessWidget {
     final actor = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _AgentIcon(
+        ReplayAgentIcon(
           player: killer,
           perspective: playback.perspective,
           size: sizes.portrait,
@@ -410,7 +436,7 @@ class ReplayEventLine extends StatelessWidget {
           const SizedBox(width: 2),
           Opacity(
             opacity: 0.6,
-            child: _AgentIcon(
+            child: ReplayAgentIcon(
               player: document.playerBySubject(assist),
               perspective: playback.perspective,
               size: sizes.assist,
@@ -461,7 +487,7 @@ class ReplayEventLine extends StatelessWidget {
   Widget? _actor(String? subject, _LineSizes sizes) {
     final player = playback.document.playerBySubject(subject);
     if (player == null) return null;
-    return _AgentIcon(
+    return ReplayAgentIcon(
       player: player,
       perspective: playback.perspective,
       size: sizes.portrait,
@@ -470,6 +496,13 @@ class ReplayEventLine extends StatelessWidget {
 
   static Widget _glyph(IconData icon, _LineSizes sizes) => Icon(
         icon,
+        size: sizes.glyph,
+        color: Settings.tacticalVioletTheme.mutedForeground,
+      );
+
+  static Widget _roundEnd(ReplayRoundEnd end, _LineSizes sizes) =>
+      ReplayRoundEndGlyph(
+        end,
         size: sizes.glyph,
         color: Settings.tacticalVioletTheme.mutedForeground,
       );
@@ -503,8 +536,9 @@ class ReplayEventLine extends StatelessWidget {
 
 /// A player as their agent's icon, bordered in their team's colour: the
 /// replay has no names, and both teams can field the same agent.
-class _AgentIcon extends StatelessWidget {
-  const _AgentIcon({
+class ReplayAgentIcon extends StatelessWidget {
+  const ReplayAgentIcon({
+    super.key,
     required this.player,
     required this.perspective,
     this.size = 22,
