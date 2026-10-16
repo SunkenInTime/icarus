@@ -17,6 +17,7 @@ import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_occluders.dart';
+import 'package:icarus/widgets/replay/replay_effects.dart';
 
 import 'replay_test_support.dart';
 
@@ -523,6 +524,34 @@ void main() {
       final fading = leaving.effects.whereType<ReplaySweep>().single;
       expect(fading.opacity, closeTo(1 - exit.progress, 1e-9));
       expect(at(3100).effects, isEmpty);
+    });
+
+    test('a sweep is drawn from its icon to its head, on either side', () {
+      CoordinateSystem(playAreaSize: const Size(1600, 900));
+      final sweep = builder(paranoiaCast(reachCm: 2000))
+          .frameAt(1750, perspective: ReplayTeam.red)
+          .effects
+          .whereType<ReplaySweep>()
+          .single;
+      const iconSide = 20.0;
+      for (final isAttack in [true, false]) {
+        final clip = ReplaySweepClipper(
+          sweep: sweep,
+          isAttack: isAttack,
+          iconSide: iconSide,
+        ).getClip(const Size(1600, 900));
+        final from = replayScreenPoint(sweep.from, isAttack: isAttack);
+        final to = replayScreenPoint(sweep.to, isAttack: isAttack);
+        final along = (to - from) / (to - from).distance;
+        Offset at(double pixels) => from + along * pixels;
+        final reach = (to - from).distance;
+        expect(reach, greaterThan(iconSide * 2), reason: '$isAttack');
+        // The placed ability draws the icon; the sweep leaves it out.
+        expect(clip.contains(from), isFalse, reason: '$isAttack');
+        expect(clip.contains(at(iconSide)), isTrue, reason: '$isAttack');
+        expect(clip.contains(at(reach - 1)), isTrue, reason: '$isAttack');
+        expect(clip.contains(at(reach + 1)), isFalse, reason: '$isAttack');
+      }
     });
   });
 

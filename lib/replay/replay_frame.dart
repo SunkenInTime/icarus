@@ -490,7 +490,7 @@ class ReplayFrameBuilder {
         isAlly: isAlly,
       );
       // A sweep stands where it was cast, its icon alone placed: the area
-      // swept so far is drawn over it (see ReplaySweep).
+      // swept so far is drawn under it (see ReplaySweep).
       final sweeps = entry.kind == ReplayUtilityKind.sweep;
       final at = sweeps ? utility.position : utility.positionAt(shownAt);
       final centre = projection.toWorld(at.x, at.y);

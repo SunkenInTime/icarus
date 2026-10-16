@@ -511,6 +511,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                                 clipper: ReplaySweepClipper(
                                   sweep: sweep,
                                   isAttack: isAttack,
+                                  iconSide: CoordinateSystem.instance
+                                      .scale(abilitySize),
                                 ),
                                 child: Stack(
                                   clipBehavior: Clip.none,

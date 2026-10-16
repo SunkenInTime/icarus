@@ -109,12 +109,20 @@ class ReplayEffectsPainter extends CustomPainter {
 }
 
 /// Keeps what lies on the cast side of where a sweep has reached: the
-/// sweep's whole area, cut square across the way it runs.
+/// sweep's whole area, cut square across the way it runs. The icon at the
+/// cast point is left out, since the placed ability draws it already.
 class ReplaySweepClipper extends CustomClipper<Path> {
-  ReplaySweepClipper({required this.sweep, required this.isAttack});
+  ReplaySweepClipper({
+    required this.sweep,
+    required this.isAttack,
+    required this.iconSide,
+  });
 
   final ReplaySweep sweep;
   final bool isAttack;
+
+  /// The ability icon's side on screen; it stands upright on the cast point.
+  final double iconSide;
 
   /// Far enough to run off any canvas.
   static const _far = 100000.0;
@@ -128,20 +136,25 @@ class ReplaySweepClipper extends CustomClipper<Path> {
     if (reach.distance < 0.5) return Path();
     final along = reach / reach.distance;
     final across = Offset(-along.dy, along.dx);
-    return Path()
+    final swept = Path()
       ..addPolygon([
         to + across * _far,
         to - across * _far,
         to - across * _far - along * _far,
         to + across * _far - along * _far,
       ], true);
+    final icon = Path()
+      ..addRect(
+          Rect.fromCenter(center: from, width: iconSide, height: iconSide));
+    return Path.combine(PathOperation.difference, swept, icon);
   }
 
   @override
   bool shouldReclip(ReplaySweepClipper oldClipper) =>
       oldClipper.sweep.from != sweep.from ||
       oldClipper.sweep.to != sweep.to ||
-      oldClipper.isAttack != isAttack;
+      oldClipper.isAttack != isAttack ||
+      oldClipper.iconSide != iconSide;
 }
 
 /// A flashed player's icon washed white and marked with a crossed-out eye,
