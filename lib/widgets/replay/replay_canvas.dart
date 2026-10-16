@@ -135,10 +135,10 @@ Matrix4 replayCameraOn(Offset focus, double scale, Size viewport) =>
         0,
       );
 
-/// [camera] moved as little as it takes to keep the [world] box in view:
-/// along each axis the box covers [viewport] when it is the larger, and
-/// sits centred in it when it is the smaller, so the map can never be
-/// panned away.
+/// [camera] held so the [world] box stays in view: along each axis the box
+/// covers [viewport] when it is the larger, moved no further than that
+/// takes, and sits centred in it when it is the smaller. The map can never
+/// be panned away.
 @visibleForTesting
 Matrix4 replayCameraClamped(Matrix4 camera, Size world, Size viewport) {
   final scale = camera.getMaxScaleOnAxis();
@@ -155,7 +155,10 @@ Matrix4 replayCameraClamped(Matrix4 camera, Size world, Size viewport) {
 /// The canvas's camera, held to [replayCameraClamped] however it moves: a
 /// pan, a zoom, or following a player.
 class _MapCamera extends TransformationController {
+  /// The box the dot grid and map are drawn in, in canvas pixels.
   Size world = Size.zero;
+
+  /// The part of the canvas the roster leaves clear.
   Size viewport = Size.zero;
 
   @override
@@ -389,8 +392,9 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
             minScale: 1,
             maxScale: 8,
             panEnabled: _panEnabled,
-            // The camera keeps the map in view itself: the viewer's own
-            // bounds would count the space under the roster as room.
+            // The camera keeps the map in view itself. The viewer's own
+            // bounds would count the space under the roster as room, and
+            // would zoom in past 1 on a canvas wider than the map's box.
             boundaryMargin: const EdgeInsets.all(double.infinity),
             onInteractionStart: _interactionStarted,
             onInteractionUpdate: _interactionUpdated,

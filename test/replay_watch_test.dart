@@ -610,8 +610,9 @@ void main() {
       expectCentred(onScreen(p, controller, 'r2'));
     });
 
-    /// Where the map's top-left corner is on screen now.
-    Offset mapCorner(TransformationController controller) =>
+    /// Where the top-left corner of the box the dot grid and map are drawn
+    /// in is on screen now.
+    Offset worldCorner(TransformationController controller) =>
         MatrixUtils.transformPoint(controller.value, Offset.zero);
 
     testWidgets('dragging the map past its edge stops at the edge',
@@ -619,16 +620,16 @@ void main() {
       final (_, controller) = await canvas(tester);
       await tester.dragFrom(const Offset(300, 300), const Offset(900, 600));
       await tester.pump(const Duration(seconds: 3));
-      expect(mapCorner(controller), Offset.zero);
+      expect(worldCorner(controller), Offset.zero);
       await tester.dragFrom(const Offset(900, 600), const Offset(-1200, -800));
       await tester.pump(const Duration(seconds: 3));
-      expect(
-          mapCorner(controller), const Offset(1600 - reservedRight - 1600, 0));
+      expect(worldCorner(controller),
+          const Offset(1600 - reservedRight - 1600, 0));
 
       // Moved by code, as far as it likes: held at the edge all the same.
       controller.value = Matrix4.diagonal3Values(3, 3, 1)
         ..setTranslationRaw(5000, 5000, 0);
-      expect(mapCorner(controller), Offset.zero);
+      expect(worldCorner(controller), Offset.zero);
     });
 
     testWidgets('following a player at the map edge keeps both in view',
@@ -640,13 +641,13 @@ void main() {
       await settle(tester);
       expectCentred(onScreen(p, controller, 'r4'));
 
-      var lastTop = mapCorner(controller).dy;
+      var lastTop = worldCorner(controller).dy;
       for (var t = 10000; t <= 56000; t += 500) {
         p.seek(t);
         await tester.pump();
-        final top = mapCorner(controller).dy;
+        final top = worldCorner(controller).dy;
         // The map never comes down off the top of the view, and the camera
-        // eases into the edge rather than jumping to it.
+        // slides up to the edge rather than jumping to it.
         expect(top, lessThanOrEqualTo(0));
         expect((top - lastTop).abs(), lessThan(20));
         lastTop = top;
