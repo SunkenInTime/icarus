@@ -638,6 +638,23 @@ void main() {
       expectCentred(onScreen(p, controller, 'r2'));
     });
 
+    testWidgets('a fling still coasting does not carry the camera off them',
+        (tester) async {
+      final (p, controller) = await canvas(tester);
+      // Zoomed in, so the fling has room to coast.
+      controller.value = Matrix4.diagonal3Values(3, 3, 1)
+        ..setTranslationRaw(-1600, -900, 0);
+      await tester.fling(find.byType(InteractiveViewer),
+          const Offset(-300, -200), 3000);
+      await tester.pump(const Duration(milliseconds: 16));
+      p.watch('r2');
+      await settle(tester);
+      // Well past where the fling would have run out.
+      await tester.pump(const Duration(seconds: 3));
+      expect((p.watching, p.following), ('r2', true));
+      expectCentred(onScreen(p, controller, 'r2'));
+    });
+
     testWidgets('the watched agent is drawn above the rest', (tester) async {
       final (p, _) = await canvas(tester);
       List<String> drawn() => [
