@@ -1103,9 +1103,39 @@ class _StoryMarks extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    Widget faint(int index, Widget child) => index >= passed
-        ? Opacity(opacity: _aheadOpacity, child: child)
-        : child;
+    // Each mark as a widget, in drawing order: portraits, then the spike's
+    // marks over the line.
+    List<Widget> widgets(bool Function(int index) take) => [
+          for (final (i, mark) in marks.indexed)
+            if (take(i))
+              if (mark.portraitRect case final rect?)
+                Positioned(
+                  left: rect.left - 2,
+                  top: rect.top - 2,
+                  // A ring of the card's colour lifts it off the line.
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: theme.card,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: ReplayAgentIcon(
+                      player: playback.document
+                          .playerBySubject(mark.event.kill!.killer),
+                      perspective: playback.perspective,
+                      size: _StoryMark.portraitSize,
+                    ),
+                  ),
+                ),
+          for (final (i, mark) in marks.indexed)
+            if (take(i))
+              if (mark.spike case final spike?)
+                Positioned(
+                  left: spike - _StoryMark.spikeRadius,
+                  top: _StoryMark.mid - _StoryMark.spikeRadius,
+                  child: _SpikeMark(kind: mark.event.kind),
+                ),
+        ];
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1118,36 +1148,18 @@ class _StoryMarks extends StatelessWidget {
             ),
           ),
         ),
-        for (final (i, mark) in marks.indexed)
-          if (mark.portraitRect case final rect?)
-            Positioned(
-              left: rect.left - 2,
-              top: rect.top - 2,
-              child: faint(
-                i,
-                // A ring of the card's colour lifts it off the line.
-                Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: theme.card,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: ReplayAgentIcon(
-                    player: playback.document
-                        .playerBySubject(mark.event.kill!.killer),
-                    perspective: playback.perspective,
-                    size: _StoryMark.portraitSize,
-                  ),
-                ),
+        ...widgets((i) => i < passed),
+        // Every mark still ahead faded together: one layer, not one each.
+        if (passed < marks.length)
+          Positioned.fill(
+            child: Opacity(
+              opacity: _aheadOpacity,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: widgets((i) => i >= passed),
               ),
             ),
-        for (final (i, mark) in marks.indexed)
-          if (mark.spike case final spike?)
-            Positioned(
-              left: spike - _StoryMark.spikeRadius,
-              top: _StoryMark.mid - _StoryMark.spikeRadius,
-              child: faint(i, _SpikeMark(kind: mark.event.kind)),
-            ),
+          ),
       ],
     );
   }
