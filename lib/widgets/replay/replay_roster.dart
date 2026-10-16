@@ -385,22 +385,23 @@ class _Killfeed extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Lined up with the rows' clocks below, not spread like a toolbar.
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: Row(
-            spacing: 8,
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          // Wraps rather than overflows, should a font run wide.
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
             children: [
               for (final filter in ReplayEventFilter.values)
-                Expanded(
-                  child: _FilterChip(
-                    label: filter.label,
-                    selected: filters.contains(filter),
-                    onTap: () => ref
-                        .read(replayEventFiltersProvider.notifier)
-                        .update((shown) => shown.contains(filter)
-                            ? ({...shown}..remove(filter))
-                            : {...shown, filter}),
-                  ),
+                _FilterChip(
+                  filter: filter,
+                  selected: filters.contains(filter),
+                  onTap: () => ref
+                      .read(replayEventFiltersProvider.notifier)
+                      .update((shown) => shown.contains(filter)
+                          ? ({...shown}..remove(filter))
+                          : {...shown, filter}),
                 ),
             ],
           ),
@@ -450,39 +451,55 @@ class _Killfeed extends ConsumerWidget {
   }
 }
 
-/// One choice in the killfeed's filter: a primary button, raised in
-/// violet, while it shows; an outline one while it doesn't.
+/// One choice in the killfeed's filter, drawn like the library's tabs: a
+/// raised zinc surface while its events show, flat and muted while they
+/// don't.
 class _FilterChip extends StatelessWidget {
   const _FilterChip({
-    required this.label,
+    required this.filter,
     required this.selected,
     required this.onTap,
   });
 
-  final String label;
+  static const _radius = 6.0;
+
+  final ReplayEventFilter filter;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
+    const theme = Settings.tacticalVioletTheme;
+    final ink = selected ? theme.foreground : theme.mutedForeground;
     return Semantics(
       toggled: selected,
-      child: ShadButton.raw(
-        variant:
-            selected ? ShadButtonVariant.primary : ShadButtonVariant.outline,
-        height: 24,
-        expands: true,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        foregroundColor: selected ? null : theme.colorScheme.mutedForeground,
-        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        onPressed: onTap,
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.fade,
+      child: DecoratedBox(
+        decoration: selected
+            ? Settings.raisedSurface(_radius)
+            : const BoxDecoration(),
+        child: ShadButton.ghost(
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          gap: 6,
+          backgroundColor: selected ? Colors.transparent : null,
+          hoverBackgroundColor: selected ? Colors.transparent : null,
+          foregroundColor: ink,
+          hoverForegroundColor: theme.foreground,
+          onPressed: onTap,
+          leading: switch (filter) {
+            ReplayEventFilter.kills => const Icon(LucideIcons.crosshair, size: 14),
+            ReplayEventFilter.spike => SvgPicture.asset(
+                replaySpikeAsset,
+                height: 13,
+                colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
+              ),
+            ReplayEventFilter.abilities =>
+              const Icon(LucideIcons.sparkles, size: 14),
+          },
+          child: Text(
+            filter.label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
         ),
       ),
     );
