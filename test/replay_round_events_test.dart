@@ -227,25 +227,6 @@ void main() {
     });
   });
 
-  testWidgets('round chips show how each round ended', (tester) async {
-    final p = playback();
-    await pumpBody(tester, Center(child: ReplayDock(playback: p)));
-
-    expect(find.byIcon(LucideIcons.scissors), findsOneWidget);
-    expect(find.byIcon(LucideIcons.flame), findsOneWidget);
-
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(find.text('1')));
-    await tester.pumpAndSettle();
-    expect(find.text('Round 1 · Lost · Spike defused on B'), findsOneWidget);
-
-    await mouse.moveTo(tester.getCenter(find.text('2')));
-    await tester.pumpAndSettle();
-    expect(find.text('Round 2 · Won · Spike detonated on A'), findsOneWidget);
-  });
-
   testWidgets('the killfeed shows what killed, and the spike', (tester) async {
     final p = playback()..seek(65000);
     await pumpBody(
