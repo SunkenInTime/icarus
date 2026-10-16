@@ -161,8 +161,17 @@ class _MapCamera extends TransformationController {
   /// The part of the canvas the roster leaves clear.
   Size viewport = Size.zero;
 
+  /// While set, only [place] moves the camera. A fling still coasting from
+  /// before a player was picked would otherwise carry it off them.
+  bool held = false;
+
   @override
-  set value(Matrix4 camera) => super.value =
+  set value(Matrix4 camera) {
+    if (!held) place(camera);
+  }
+
+  /// Moves the camera, held or not.
+  void place(Matrix4 camera) => super.value =
       world.isEmpty ? camera : replayCameraClamped(camera, world, viewport);
 }
 
@@ -188,6 +197,9 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
 
   /// The player the camera follows, by subject.
   String? _followed;
+
+  /// Whether the user's hands are on the map: a drag, a pinch, a scroll.
+  var _touching = false;
 
   /// Whether a drag pans, as it does unless the pen is out.
   late bool _panEnabled = !widget.drawing.active;
@@ -240,6 +252,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
     final followed = playback.following ? playback.watching : null;
     if (followed != _followed) {
       _followed = followed;
+      _holdCamera();
       if (followed != null) {
         _approachWatched();
       } else {
@@ -279,8 +292,12 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
       scale = lerpDouble(_approachFromScale, _approachToScale, t)!;
       if (_approach.value == 1) _approaching = false;
     }
-    _controller.value = replayCameraOn(focus, scale, viewport);
+    _controller.place(replayCameraOn(focus, scale, viewport));
   }
+
+  /// While following, the camera answers only to the follow and to the
+  /// user's own hands.
+  void _holdCamera() => _controller.held = _followed != null && !_touching;
 
   /// Where the watched player's icon is, when they are on the map.
   Offset? _watchedCentre() {
@@ -322,6 +339,14 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
   void _interactionStarted(ScaleStartDetails details) {
     _approach.stop();
     _approaching = false;
+    _touching = true;
+    _holdCamera();
+  }
+
+  /// The coasting that follows a fling is not the user's hands.
+  void _interactionEnded(ScaleEndDetails details) {
+    _touching = false;
+    _holdCamera();
   }
 
   void _interactionUpdated(ScaleUpdateDetails details) {
@@ -364,8 +389,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
           ..viewport = viewport;
         if (_lastViewport != viewport) {
           _lastViewport = viewport;
-          _controller.value = Matrix4.identity()
-            ..translateByDouble((viewportWidth - worldWidth) / 2, 0, 0, 1);
+          _controller.place(Matrix4.identity()
+            ..translateByDouble((viewportWidth - worldWidth) / 2, 0, 0, 1));
           if (widget.playback.following) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) _follow();
@@ -398,6 +423,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
             boundaryMargin: const EdgeInsets.all(double.infinity),
             onInteractionStart: _interactionStarted,
             onInteractionUpdate: _interactionUpdated,
+            onInteractionEnd: _interactionEnded,
             child: SizedBox(
               width: worldWidth,
               height: height,
