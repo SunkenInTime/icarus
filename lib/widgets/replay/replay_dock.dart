@@ -64,6 +64,7 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
   Timer? _dwell;
   Timer? _linger;
   bool _inside = false;
+  bool _overPlayback = false;
   bool _peeking = false;
 
   /// Whether the scrubber holds the story open: a drag, or a hover card.
@@ -95,7 +96,12 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
   }
 
   void _penChanged() {
-    if (_penOut) _close();
+    if (_penOut) {
+      _close();
+    } else if (_overPlayback) {
+      // Put away under a still pointer, the pen leaves it resting there.
+      _restOnPlayback();
+    }
   }
 
   void _enter() {
@@ -174,10 +180,19 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
                   const SizedBox(height: 4),
                 ],
                 MouseRegion(
-                  onEnter: (_) => _restOnPlayback(),
-                  onExit: (_) => _dwell?.cancel(),
+                  onEnter: (_) {
+                    _overPlayback = true;
+                    _restOnPlayback();
+                  },
+                  onExit: (_) {
+                    _overPlayback = false;
+                    _dwell?.cancel();
+                  },
                   child: _Surface(
                     width: width,
+                    // The open story's lower lane reaches the border, so
+                    // the scrubber answers over every portrait it draws.
+                    bottomPadding: story ? 0 : _Surface.padding,
                     child: _PlaybackRow(
                       playback: playback,
                       story: story,
@@ -204,19 +219,24 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
 
 /// One row of the dock: a card of its own, so the map shows around it.
 class _Surface extends StatelessWidget {
-  const _Surface({required this.width, required this.child});
+  const _Surface({
+    required this.width,
+    required this.child,
+    this.bottomPadding = padding,
+  });
 
   static const padding = 5.0;
 
   final double width;
   final Widget child;
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return Container(
       width: width,
-      padding: const EdgeInsets.all(padding),
+      padding: EdgeInsets.fromLTRB(padding, padding, padding, bottomPadding),
       decoration: BoxDecoration(
         color: theme.colorScheme.card,
         borderRadius: BorderRadius.circular(12),
@@ -760,7 +780,10 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
 
     /// The mark under [local], and where its card goes.
     (ReplayRoundEvent, double)? markAt(Offset local) {
-      if (marks != null) return _StoryMark.hit(marks, local, _hoverReach);
+      if (marks != null) {
+        final passed = _passed(events, playback.timeMs);
+        return _StoryMark.hit(marks, passed, local, _hoverReach);
+      }
       ReplayRoundEvent? nearest;
       var nearestX = 0.0;
       var distance = double.infinity;
@@ -1107,8 +1130,8 @@ class _StoryMark {
 
   /// The open story's height, and how far down it the line runs. The line
   /// sits low, so opening grows the track upward and moves the line only a
-  /// few pixels; the lower lane hangs into the row's padding.
-  static const height = 49.0;
+  /// few pixels; the row drops its bottom padding to make room below.
+  static const height = 54.0;
   static const mid = 27.0;
   static const portraitSize = 22.0;
 
@@ -1131,7 +1154,6 @@ class _StoryMark {
   /// The centre of a plant's, defuse's or detonation's circle, along the
   /// track: on its tick, or held inside the track at either end.
   final double? spike;
-
 
   Rect? get portraitRect => portrait == null
       ? null
@@ -1192,25 +1214,43 @@ class _StoryMark {
     ];
   }
 
-  /// The mark under [local] and where its card goes: a spike mark or a
-  /// portrait under the pointer, the one drawn on top where they overlap,
-  /// else the nearest tick or dot within [reach] along the line.
+  /// The story's portraits and spike marks bottom to top, as they are
+  /// drawn: those already passed, then those still ahead, which fade
+  /// together; within each, portraits and then the spike's marks over
+  /// them. Drawing and hit-testing both go by this one list.
+  static List<_StoryDrawn> drawOrder(List<_StoryMark> marks, int passed) => [
+        for (final ahead in const [false, true]) ...[
+          for (final (i, mark) in marks.indexed)
+            if ((i >= passed) == ahead)
+              if (mark.portraitRect case final rect?)
+                // With the ring of the card's colour around it.
+                _StoryDrawn(mark, rect.inflate(2), ahead: ahead),
+          for (final (i, mark) in marks.indexed)
+            if ((i >= passed) == ahead)
+              if (mark.spike case final spike?)
+                _StoryDrawn(
+                  mark,
+                  Rect.fromCircle(
+                    center: Offset(spike, mid),
+                    radius: spikeRadius,
+                  ),
+                  ahead: ahead,
+                ),
+        ],
+      ];
+
+  /// The mark under [local] and where its card goes: the topmost portrait
+  /// or spike mark under the pointer, with [passed] of [marks] behind the
+  /// playhead, else the nearest tick or dot within [reach] along the line.
   static (ReplayRoundEvent, double)? hit(
     List<_StoryMark> marks,
+    int passed,
     Offset local,
     double reach,
   ) {
-    for (final mark in marks.reversed) {
-      final spike = mark.spike;
-      if (spike != null &&
-          (local - Offset(spike, mid)).distance <= spikeRadius) {
-        return (mark.event, spike);
-      }
-    }
-    for (final mark in marks.reversed) {
-      final rect = mark.portraitRect;
-      if (rect != null && rect.contains(local)) {
-        return (mark.event, rect.center.dx);
+    for (final drawn in drawOrder(marks, passed).reversed) {
+      if (drawn.covers(local)) {
+        return (drawn.mark.event, drawn.box.center.dx);
       }
     }
     if ((local.dy - mid).abs() > 8) return null;
@@ -1225,6 +1265,24 @@ class _StoryMark {
     }
     return nearest == null ? null : (nearest.event, nearest.tick);
   }
+}
+
+/// One of the story's marks drawn over the line, a killer's portrait or a
+/// spike mark, and what it covers.
+class _StoryDrawn {
+  const _StoryDrawn(this.mark, this.box, {required this.ahead});
+
+  final _StoryMark mark;
+  final Rect box;
+
+  /// Still ahead of the playhead, so drawn faint.
+  final bool ahead;
+
+  bool get isSpike => mark.spike != null;
+
+  bool covers(Offset local) => isSpike
+      ? (local - box.center).distance <= box.width / 2
+      : box.contains(local);
 }
 
 /// Where one lane's portraits go, centre by centre, for [ticks] in
@@ -1296,39 +1354,26 @@ class _StoryMarks extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    // Each mark as a widget, in drawing order: portraits, then the spike's
-    // marks over the line.
-    List<Widget> widgets(bool Function(int index) take) => [
-          for (final (i, mark) in marks.indexed)
-            if (take(i))
-              if (mark.portraitRect case final rect?)
-                Positioned(
-                  left: rect.left - 2,
-                  top: rect.top - 2,
-                  // A ring of the card's colour lifts it off the line.
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: theme.card,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: ReplayAgentIcon(
-                      player: playback.document
-                          .playerBySubject(mark.event.kill!.killer),
-                      perspective: playback.perspective,
-                      size: _StoryMark.portraitSize,
-                    ),
+    Widget place(_StoryDrawn drawn) => Positioned.fromRect(
+          rect: drawn.box,
+          child: drawn.isSpike
+              ? _SpikeMark(kind: drawn.mark.event.kind)
+              // A ring of the card's colour lifts it off the line.
+              : Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: theme.card,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: ReplayAgentIcon(
+                    player: playback.document
+                        .playerBySubject(drawn.mark.event.kill!.killer),
+                    perspective: playback.perspective,
+                    size: _StoryMark.portraitSize,
                   ),
                 ),
-          for (final (i, mark) in marks.indexed)
-            if (take(i))
-              if (mark.spike case final spike?)
-                Positioned(
-                  left: spike - _StoryMark.spikeRadius,
-                  top: _StoryMark.mid - _StoryMark.spikeRadius,
-                  child: _SpikeMark(kind: mark.event.kind),
-                ),
-        ];
+        );
+    final drawn = _StoryMark.drawOrder(marks, passed);
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1341,15 +1386,20 @@ class _StoryMarks extends StatelessWidget {
             ),
           ),
         ),
-        ...widgets((i) => i < passed),
-        // Every mark still ahead faded together: one layer, not one each.
-        if (passed < marks.length)
+        for (final mark in drawn)
+          if (!mark.ahead) place(mark),
+        // Every mark still ahead faded together, one layer, not one each;
+        // they come last in the drawing order too.
+        if (drawn.any((mark) => mark.ahead))
           Positioned.fill(
             child: Opacity(
               opacity: _aheadOpacity,
               child: Stack(
                 clipBehavior: Clip.none,
-                children: widgets((i) => i >= passed),
+                children: [
+                  for (final mark in drawn)
+                    if (mark.ahead) place(mark),
+                ],
               ),
             ),
           ),

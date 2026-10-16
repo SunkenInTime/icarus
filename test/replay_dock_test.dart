@@ -243,7 +243,7 @@ void main() {
     final track = tester.getRect(find.byWidgetPredicate((widget) =>
         widget is CustomPaint &&
         widget.painter.runtimeType.toString() == '_ScrubberPainter'));
-    expect(track.height, 49);
+    expect(track.height, 54);
     final jett = tester.getRect(portrait('Jett'));
     final omen = tester.getRect(portrait('Omen'));
     expect(jett.bottom, lessThanOrEqualTo(track.center.dy));
@@ -260,6 +260,18 @@ void main() {
     await tester.pump();
     final line = tester.widget<ReplayEventLine>(find.byType(ReplayEventLine));
     expect(line.event.kill?.killer, 'b');
+
+    // The lower lane reaches below the line's own height; its last pixels
+    // still answer, the ring around the portrait too.
+    await mouse.moveTo(Offset(omen.center.dx, omen.bottom + 1));
+    await tester.pump();
+    expect(
+      tester.widget<ReplayEventLine>(find.byType(ReplayEventLine)).event,
+      line.event,
+    );
+    await tester.tapAt(Offset(omen.center.dx, omen.bottom + 1));
+    await tester.pump();
+    expect(playback.timeMs, 7000);
 
     // Watched from the other side, the lanes swap.
     await mouse.moveTo(Offset.zero);
@@ -308,6 +320,49 @@ void main() {
     await tester.tapAt(defuse.center);
     await tester.pump();
     expect(playback.timeMs, 10000);
+  });
+
+  testWidgets('the mark drawn on top answers, past or still ahead',
+      (tester) async {
+    // A plant, and a kill 100 ms later whose killer's portrait overlaps
+    // the plant's circle.
+    final playback = _match(2, ends: [
+      ReplayRoundEnd.elimination
+    ], kills: [
+      {'timeMs': 5100, 'victim': 'b', 'killer': 'a'},
+    ], first: {
+      'plant': {'timeMs': 5000, 'site': 'A', 'subject': 'a'},
+    });
+    await _pumpDock(tester, playback);
+    await tester.tap(find.byIcon(LucideIcons.pin));
+    await tester.pump();
+    final track = tester.getRect(find.byWidgetPredicate((widget) =>
+        widget is CustomPaint &&
+        widget.painter.runtimeType.toString() == '_ScrubberPainter'));
+    // Inside both the plant's circle and the portrait's ring.
+    final overlap = Offset(track.left + track.width * 0.5, track.top + 20);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    Future<ReplayEventKind> hovered(int timeMs) async {
+      playback.seek(timeMs);
+      await mouse.moveTo(Offset.zero);
+      await tester.pump();
+      await mouse.moveTo(overlap);
+      await tester.pump();
+      return tester
+          .widget<ReplayEventLine>(find.byType(ReplayEventLine))
+          .event
+          .kind;
+    }
+
+    // Both still ahead, faded together: the plant's circle is on top.
+    expect(await hovered(4000), ReplayEventKind.plant);
+    // The plant passed, the kill ahead: the faded portrait is on top.
+    expect(await hovered(5050), ReplayEventKind.kill);
+    // Both passed: the plant's circle is on top again.
+    expect(await hovered(6000), ReplayEventKind.plant);
   });
 
   group('resting on the playback row', () {
@@ -382,6 +437,25 @@ void main() {
       await mouse.up();
       await tester.pump(const Duration(milliseconds: 500));
       expect(storyOpen(tester), isFalse);
+    });
+
+    testWidgets('putting the pen away under a resting pointer opens it',
+        (tester) async {
+      final playback = _match(2)..seek(5000);
+      final drawing = ReplayDrawing(playback);
+      addTearDown(drawing.dispose);
+      await _pumpDock(tester, playback, drawing: drawing);
+      final mouse = await pointer(tester);
+      await mouse.moveTo(clock(tester));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(storyOpen(tester), isTrue);
+
+      drawing.start();
+      await tester.pump();
+      expect(storyOpen(tester), isFalse);
+      drawing.stop();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(storyOpen(tester), isTrue);
     });
 
     testWidgets('never opens with the pen out', (tester) async {
