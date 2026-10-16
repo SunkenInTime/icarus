@@ -636,26 +636,29 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
             },
             onHorizontalDragUpdate: (details) =>
                 seekTo(details.localPosition.dx),
-            child: SizedBox(
-              height: story ? _StoryMark.height : 24,
-              child: CustomPaint(
-                painter: painter,
-                foregroundPainter: playhead,
-                child: marks == null
-                    ? const SizedBox.expand()
-                    : RepaintBoundary(
-                        // Marks still ahead are drawn faint; this rebuilds
-                        // only as the playhead passes one.
-                        child: ReplaySelect(
-                          listenable: playback,
-                          select: () => _passed(events, playback.timeMs),
-                          builder: (context, passed) => _StoryMarks(
-                            playback: playback,
-                            marks: marks,
-                            passed: passed,
+            // The track repaints every frame; nothing around it need.
+            child: RepaintBoundary(
+              child: SizedBox(
+                height: story ? _StoryMark.height : 24,
+                child: CustomPaint(
+                  painter: painter,
+                  foregroundPainter: playhead,
+                  child: marks == null
+                      ? const SizedBox.expand()
+                      : RepaintBoundary(
+                          // Marks still ahead are drawn faint; this
+                          // rebuilds only as the playhead passes one.
+                          child: ReplaySelect(
+                            listenable: playback,
+                            select: () => _passed(events, playback.timeMs),
+                            builder: (context, passed) => _StoryMarks(
+                              playback: playback,
+                              marks: marks,
+                              passed: passed,
+                            ),
                           ),
                         ),
-                      ),
+                ),
               ),
             ),
           ),
