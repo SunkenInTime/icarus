@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/widgets/replay/replay_dock.dart';
@@ -67,7 +68,11 @@ ReplayPlayback _match(
   );
 }
 
-Future<void> _pumpDock(WidgetTester tester, ReplayPlayback playback) async {
+Future<void> _pumpDock(
+  WidgetTester tester,
+  ReplayPlayback playback, {
+  ReplayDrawing? drawing,
+}) async {
   await tester.binding.setSurfaceSize(const Size(1400, 600));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
@@ -76,7 +81,7 @@ Future<void> _pumpDock(WidgetTester tester, ReplayPlayback playback) async {
         home: Scaffold(
           body: Align(
             alignment: Alignment.bottomCenter,
-            child: ReplayDock(playback: playback),
+            child: ReplayDock(playback: playback, drawing: drawing),
           ),
         ),
       ),
@@ -233,12 +238,12 @@ void main() {
         );
     expect(portrait('Jett'), findsNothing);
 
-    await tester.tap(find.byIcon(LucideIcons.chevronsUpDown));
+    await tester.tap(find.byIcon(LucideIcons.pin));
     await tester.pump();
     final track = tester.getRect(find.byWidgetPredicate((widget) =>
         widget is CustomPaint &&
         widget.painter.runtimeType.toString() == '_ScrubberPainter'));
-    expect(track.height, 64);
+    expect(track.height, 49);
     final jett = tester.getRect(portrait('Jett'));
     final omen = tester.getRect(portrait('Omen'));
     expect(jett.bottom, lessThanOrEqualTo(track.center.dy));
@@ -265,7 +270,7 @@ void main() {
     expect(tester.getRect(portrait('Omen')).bottom,
         lessThanOrEqualTo(track.center.dy));
 
-    await tester.tap(find.byIcon(LucideIcons.chevronsDownUp));
+    await tester.tap(find.byIcon(LucideIcons.pin));
     await tester.pump();
     expect(portrait('Jett'), findsNothing);
   });
@@ -283,7 +288,7 @@ void main() {
     })
       ..seek(5000);
     await _pumpDock(tester, playback);
-    await tester.tap(find.byIcon(LucideIcons.chevronsUpDown));
+    await tester.tap(find.byIcon(LucideIcons.pin));
     await tester.pump();
     final track = tester.getRect(find.byWidgetPredicate((widget) =>
         widget is CustomPaint &&
@@ -303,6 +308,109 @@ void main() {
     await tester.tapAt(defuse.center);
     await tester.pump();
     expect(playback.timeMs, 10000);
+  });
+
+  group('resting on the playback row', () {
+    Finder scrubber() => find.byWidgetPredicate((widget) =>
+        widget is CustomPaint &&
+        widget.painter.runtimeType.toString() == '_ScrubberPainter');
+    bool storyOpen(WidgetTester tester) =>
+        tester.getSize(scrubber()).height > 24;
+    // Where the scrubber's line runs on screen.
+    double line(WidgetTester tester) => tester.getRect(scrubber()).top +
+            (tester.widget<CustomPaint>(scrubber()).painter as dynamic).line
+        as double;
+    Offset clock(WidgetTester tester) => tester.getCenter(find.text('0:04'));
+    const away = Offset(10, 10);
+
+    Future<TestGesture> pointer(WidgetTester tester) async {
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: away);
+      return mouse;
+    }
+
+    testWidgets('opens the story, its line barely moving', (tester) async {
+      await _pumpDock(tester, _match(2)..seek(5000));
+      final mouse = await pointer(tester);
+      final rest = line(tester);
+      await mouse.moveTo(clock(tester));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(storyOpen(tester), isFalse);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(storyOpen(tester), isTrue);
+      expect((line(tester) - rest).abs(), lessThan(8));
+
+      // Leaving, it lingers a moment, then closes.
+      await mouse.moveTo(away);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(storyOpen(tester), isTrue);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(storyOpen(tester), isFalse);
+      expect(line(tester), rest);
+    });
+
+    testWidgets('a quick pass opens nothing', (tester) async {
+      await _pumpDock(tester, _match(2)..seek(5000));
+      final mouse = await pointer(tester);
+      await mouse.moveTo(clock(tester));
+      await tester.pump(const Duration(milliseconds: 80));
+      await mouse.moveTo(away);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(storyOpen(tester), isFalse);
+    });
+
+    testWidgets('a drag holds it open off the dock', (tester) async {
+      final playback = _match(2)..seek(5000);
+      await _pumpDock(tester, playback);
+      final mouse = await pointer(tester);
+      await mouse.moveTo(clock(tester));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(storyOpen(tester), isTrue);
+
+      final track = tester.getRect(scrubber());
+      await mouse.moveTo(Offset(track.left + 40, track.top + 27));
+      await mouse.down(Offset(track.left + 40, track.top + 27));
+      await mouse.moveBy(const Offset(30, 0));
+      await mouse.moveBy(const Offset(30, -200));
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(storyOpen(tester), isTrue);
+
+      await mouse.up();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(storyOpen(tester), isFalse);
+    });
+
+    testWidgets('never opens with the pen out', (tester) async {
+      final playback = _match(2)..seek(5000);
+      final drawing = ReplayDrawing(playback)..start();
+      addTearDown(drawing.dispose);
+      await _pumpDock(tester, playback, drawing: drawing);
+      final mouse = await pointer(tester);
+      await mouse.moveTo(clock(tester));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(storyOpen(tester), isFalse);
+    });
+
+    testWidgets('pinned, it stays open without the pointer', (tester) async {
+      await _pumpDock(tester, _match(2)..seek(5000));
+      final mouse = await pointer(tester);
+      await mouse.moveTo(tester.getCenter(find.byIcon(LucideIcons.pin)));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.tap(find.byIcon(LucideIcons.pin));
+      await tester.pump();
+      await mouse.moveTo(away);
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(storyOpen(tester), isTrue);
+
+      // Unpinned, it closes once the pointer has gone.
+      await mouse.moveTo(tester.getCenter(find.byIcon(LucideIcons.pin)));
+      await tester.pump();
+      await tester.tap(find.byIcon(LucideIcons.pin));
+      await mouse.moveTo(away);
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(storyOpen(tester), isFalse);
+    });
   });
 
   group('a lane of portraits', () {

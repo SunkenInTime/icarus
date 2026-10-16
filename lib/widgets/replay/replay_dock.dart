@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/widgets/replay/replay_events.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
@@ -14,65 +16,188 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// app is open.
 final replayRoundsShownProvider = StateProvider<bool>((ref) => true);
 
-/// Whether the scrubber opens into the round's story: who killed when, and
-/// the spike. Kept while the app is open; it starts closed.
+/// Whether the round's story stays open: who killed when, and the spike.
+/// Unpinned, it opens only while the pointer rests on the dock. Kept while
+/// the app is open; it starts unpinned.
 final replayRoundStoryProvider = StateProvider<bool>((ref) => false);
 
 /// Playback along the bottom of the map, as a stack of small surfaces with
 /// the map showing between them: every round of the match on top, then the
 /// round being watched with its kills and plant marked. Both share the
 /// round strip's width, so hiding the strip moves nothing.
-class ReplayDock extends ConsumerWidget {
-  const ReplayDock({super.key, required this.playback});
+///
+/// Resting the pointer on the playback row opens the round's story, unless
+/// the pen is out; it closes a moment after the pointer leaves the dock,
+/// but not mid-drag. Resting on the round strip opens nothing: the strip
+/// moves up as the story opens, and would slide out from under a click.
+class ReplayDock extends ConsumerStatefulWidget {
+  const ReplayDock({super.key, required this.playback, this.drawing});
 
   final ReplayPlayback playback;
+
+  /// The pen; while it is out the story never opens on its own.
+  final ReplayDrawing? drawing;
 
   /// The narrowest the playback row gets, whatever the match: a 21-round
   /// match's strip. Below it the scrubber gets too short to tell kills a
   /// second apart, and a shorter match's strip only hugs its slots above.
   static const minPlaybackWidth = 560.0;
 
+  /// How long the pointer rests on the dock before the story opens; a
+  /// pass across it is quicker.
+  static const peekDwell = Duration(milliseconds: 200);
+
+  /// How long after the pointer leaves the story stays open, so a slip off
+  /// the edge doesn't shut it.
+  static const peekLinger = Duration(milliseconds: 400);
+
+  /// How far below the dock its own margin from the window's edge is when
+  /// the story is closed. The open story takes half of it, so the line it
+  /// grows around moves only a few pixels.
+  static const _margin = 4.0;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReplayDock> createState() => _ReplayDockState();
+}
+
+class _ReplayDockState extends ConsumerState<ReplayDock> {
+  Timer? _dwell;
+  Timer? _linger;
+  bool _inside = false;
+  bool _peeking = false;
+
+  /// Whether the scrubber holds the story open: a drag, or a hover card.
+  bool _held = false;
+
+  bool get _penOut => widget.drawing?.active ?? false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.drawing?.addListener(_penChanged);
+  }
+
+  @override
+  void didUpdateWidget(ReplayDock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.drawing != widget.drawing) {
+      oldWidget.drawing?.removeListener(_penChanged);
+      widget.drawing?.addListener(_penChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.drawing?.removeListener(_penChanged);
+    _dwell?.cancel();
+    _linger?.cancel();
+    super.dispose();
+  }
+
+  void _penChanged() {
+    if (_penOut) _close();
+  }
+
+  void _enter() {
+    _inside = true;
+    _linger?.cancel();
+  }
+
+  void _exit() {
+    _inside = false;
+    _dwell?.cancel();
+    _closeSoon();
+  }
+
+  void _restOnPlayback() {
+    if (_peeking || _penOut) return;
+    _dwell?.cancel();
+    _dwell = Timer(ReplayDock.peekDwell, () {
+      if (_inside && !_penOut) setState(() => _peeking = true);
+    });
+  }
+
+  void _closeSoon() {
+    if (!_peeking || _held) return;
+    _linger?.cancel();
+    _linger = Timer(ReplayDock.peekLinger, () {
+      if (!_inside && !_held) _close();
+    });
+  }
+
+  void _close() {
+    _dwell?.cancel();
+    _linger?.cancel();
+    if (_peeking && mounted) setState(() => _peeking = false);
+  }
+
+  void _hold(bool held) {
+    if (_held == held) return;
+    _held = held;
+    if (!held && !_inside) _closeSoon();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final playback = widget.playback;
     final roundsShown = ref.watch(replayRoundsShownProvider);
-    final story = ref.watch(replayRoundStoryProvider);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final room = constraints.maxWidth;
-        final strip = _RoundStrip.naturalWidth(playback.document.rounds);
-        final width = math.min(room, math.max(strip, minPlaybackWidth));
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (roundsShown) ...[
-              _Surface(
-                // Too many rounds for the room: the strip scrolls.
-                width: math.min(strip, room),
-                child: ReplaySelect(
-                  listenable: playback,
-                  select: () => (playback.round?.index, playback.perspective),
-                  builder: (context, _) => _RoundStrip(playback: playback),
+    final pinned = ref.watch(replayRoundStoryProvider);
+    final story = pinned || _peeking;
+    return MouseRegion(
+      // The gap between the rows counts as the dock, but the map under it
+      // still hears the pointer.
+      hitTestBehavior: HitTestBehavior.translucent,
+      onEnter: (_) => _enter(),
+      onExit: (_) => _exit(),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: story ? 0 : ReplayDock._margin),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final room = constraints.maxWidth;
+            final strip = _RoundStrip.naturalWidth(playback.document.rounds);
+            final width =
+                math.min(room, math.max(strip, ReplayDock.minPlaybackWidth));
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (roundsShown) ...[
+                  _Surface(
+                    // Too many rounds for the room: the strip scrolls.
+                    width: math.min(strip, room),
+                    child: ReplaySelect(
+                      listenable: playback,
+                      select: () =>
+                          (playback.round?.index, playback.perspective),
+                      builder: (context, _) => _RoundStrip(playback: playback),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                MouseRegion(
+                  onEnter: (_) => _restOnPlayback(),
+                  onExit: (_) => _dwell?.cancel(),
+                  child: _Surface(
+                    width: width,
+                    child: _PlaybackRow(
+                      playback: playback,
+                      story: story,
+                      pinned: pinned,
+                      roundsShown: roundsShown,
+                      onHold: _hold,
+                      onPin: () => ref
+                          .read(replayRoundStoryProvider.notifier)
+                          .update((pinned) => !pinned),
+                      onRounds: () => ref
+                          .read(replayRoundsShownProvider.notifier)
+                          .update((shown) => !shown),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-            ],
-            _Surface(
-              width: width,
-              child: _PlaybackRow(
-                playback: playback,
-                story: story,
-                roundsShown: roundsShown,
-                onStory: () => ref
-                    .read(replayRoundStoryProvider.notifier)
-                    .update((open) => !open),
-                onRounds: () => ref
-                    .read(replayRoundsShownProvider.notifier)
-                    .update((shown) => !shown),
-              ),
-            ),
-          ],
-        );
-      },
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -109,24 +234,36 @@ class _PlaybackRow extends StatelessWidget {
   const _PlaybackRow({
     required this.playback,
     required this.story,
+    required this.pinned,
     required this.roundsShown,
-    required this.onStory,
+    required this.onHold,
+    required this.onPin,
     required this.onRounds,
   });
 
   final ReplayPlayback playback;
   final bool story;
+  final bool pinned;
   final bool roundsShown;
-  final VoidCallback onStory;
+  final ValueChanged<bool> onHold;
+  final VoidCallback onPin;
   final VoidCallback onRounds;
 
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
+    // The controls stay level with the scrubber's line, which the story
+    // grows around.
+    final lift = story ? _StoryMark.height - _StoryMark.mid - 12 : 0.0;
+    Widget level(Widget child) => Padding(
+          padding: EdgeInsets.only(bottom: lift),
+          child: child,
+        );
     return Row(
       spacing: 4,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        ReplaySelect(
+        level(ReplaySelect(
           listenable: playback,
           select: () => playback.playing,
           builder: (context, playing) => ShadIconButton.ghost(
@@ -139,46 +276,57 @@ class _PlaybackRow extends StatelessWidget {
               size: 16,
             ),
           ),
-        ),
-        SizedBox(
+        )),
+        level(SizedBox(
           width: 40,
-          child: ListenableBuilder(
-            listenable: playback,
-            builder: (context, _) => Text(
-              _roundClock(playback),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                fontFeatures: [FontFeature.tabularFigures()],
+          height: 24,
+          child: Center(
+            child: ListenableBuilder(
+              listenable: playback,
+              builder: (context, _) => Text(
+                _roundClock(playback),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               ),
             ),
           ),
+        )),
+        Expanded(
+          child: _RoundScrubber(
+            playback: playback,
+            story: story,
+            onHold: onHold,
+          ),
         ),
-        Expanded(child: _RoundScrubber(playback: playback, story: story)),
-        ReplaySelect(
+        level(ReplaySelect(
           listenable: playback,
           select: () => playback.speed,
           builder: (context, _) => _SpeedButton(playback: playback),
-        ),
-        Container(
+        )),
+        level(Container(
           width: 1,
           height: 16,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
+          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
           color: theme.input,
-        ),
-        _ViewToggle(
-          icon: story ? LucideIcons.chevronsDownUp : LucideIcons.chevronsUpDown,
-          tooltip: story ? 'Hide round story' : 'Show round story',
-          onPressed: onStory,
-        ),
+        )),
+        // Resting on the dock opens the story; the pin keeps it open.
+        level(_ViewToggle(
+          icon: LucideIcons.pin,
+          checked: pinned,
+          tooltip: pinned ? 'Unpin round story' : 'Pin round story',
+          onPressed: onPin,
+        )),
         // At the row's end, where it stays whether the rounds show or not,
         // so a second click undoes the first.
-        _ViewToggle(
+        level(_ViewToggle(
           icon: roundsShown ? LucideIcons.chevronDown : LucideIcons.chevronUp,
           tooltip: roundsShown ? 'Hide rounds' : 'Show rounds',
           onPressed: onRounds,
-        ),
+        )),
       ],
     );
   }
@@ -199,11 +347,15 @@ class _ViewToggle extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.checked = false,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
+
+  /// Drawn in violet, the checked item's colour.
+  final bool checked;
 
   @override
   Widget build(BuildContext context) {
@@ -214,8 +366,8 @@ class _ViewToggle extends StatelessWidget {
         width: 24,
         height: 24,
         padding: EdgeInsets.zero,
-        foregroundColor: theme.mutedForeground,
-        hoverForegroundColor: theme.foreground,
+        foregroundColor: checked ? Settings.accentInk : theme.mutedForeground,
+        hoverForegroundColor: checked ? Settings.accentInk : theme.foreground,
         onPressed: onPressed,
         icon: Icon(icon, size: 14),
       ),
@@ -456,10 +608,18 @@ class _RoundSlot extends StatelessWidget {
 /// above the line for the watched team's kills and below it for the other
 /// team's, and the spike sits on it.
 class _RoundScrubber extends ConsumerStatefulWidget {
-  const _RoundScrubber({required this.playback, required this.story});
+  const _RoundScrubber({
+    required this.playback,
+    required this.story,
+    required this.onHold,
+  });
 
   final ReplayPlayback playback;
   final bool story;
+
+  /// Told when a drag or a hover card starts or stops holding the story
+  /// open.
+  final ValueChanged<bool> onHold;
 
   @override
   ConsumerState<_RoundScrubber> createState() => _RoundScrubberState();
@@ -530,8 +690,13 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
     super.didUpdateWidget(oldWidget);
     // The marks move when the story opens or closes; the card would point
     // at where one was. Without a mark the card draws nothing.
-    if (oldWidget.story != widget.story) _hovered = null;
+    if (oldWidget.story != widget.story && _hovered != null) {
+      _hovered = null;
+      widget.onHold(_dragging);
+    }
   }
+
+  bool _dragging = false;
 
   void _hover(ReplayRoundEvent? event, double x) {
     if (!mounted || (event == _hovered && x == _hoveredX)) return;
@@ -540,7 +705,15 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
       _hoveredX = x;
     });
     event == null ? _card.hide() : _card.show();
+    _holding();
   }
+
+  void _drag(bool dragging) {
+    _dragging = dragging;
+    _holding();
+  }
+
+  void _holding() => widget.onHold(_dragging || _hovered != null);
 
   @override
   Widget build(BuildContext context) {
@@ -608,17 +781,20 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
       _hover(mark?.$1, mark?.$2 ?? 0);
     }
 
+    final line = story ? _StoryMark.mid : 12.0;
     final painter = _ScrubberPainter(
       playback: playback,
       events: story ? const [] : events,
       start: start,
       span: span,
+      line: line,
     );
     final playhead = _PlayheadPainter(
       playback: playback,
       start: start,
       span: span,
       story: story,
+      line: line,
     );
     return CompositedTransformTarget(
       link: _link,
@@ -639,8 +815,11 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
                   ? seekTo(details.localPosition.dx)
                   : playback.seek(mark.$1.timeMs);
             },
+            onHorizontalDragStart: (_) => _drag(true),
             onHorizontalDragUpdate: (details) =>
                 seekTo(details.localPosition.dx),
+            onHorizontalDragEnd: (_) => _drag(false),
+            onHorizontalDragCancel: () => _drag(false),
             // The track repaints every frame; nothing around it need.
             child: RepaintBoundary(
               child: SizedBox(
@@ -744,6 +923,7 @@ class _ScrubberPainter extends CustomPainter {
     required this.events,
     required this.start,
     required this.span,
+    required this.line,
   })  : perspective = playback.perspective,
         super(repaint: playback);
 
@@ -755,10 +935,13 @@ class _ScrubberPainter extends CustomPainter {
   final int span;
   final ReplayTeam perspective;
 
+  /// How far down the track its line runs.
+  final double line;
+
   @override
   void paint(Canvas canvas, Size size) {
     const theme = Settings.tacticalVioletTheme;
-    final midY = size.height / 2;
+    final midY = line;
     final timeMs = playback.timeMs;
     double x(int ms) => ((ms - start) / span).clamp(0.0, 1.0) * size.width;
     Color ahead(Color color, int ms) =>
@@ -859,7 +1042,8 @@ class _ScrubberPainter extends CustomPainter {
       !identical(old.events, events) ||
       old.start != start ||
       old.span != span ||
-      old.perspective != perspective;
+      old.perspective != perspective ||
+      old.line != line;
 }
 
 /// The playhead, over every mark; in the story, a faint line through the
@@ -870,12 +1054,14 @@ class _PlayheadPainter extends CustomPainter {
     required this.start,
     required this.span,
     required this.story,
+    required this.line,
   }) : super(repaint: playback);
 
   final ReplayPlayback playback;
   final int start;
   final int span;
   final bool story;
+  final double line;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -891,7 +1077,7 @@ class _PlayheadPainter extends CustomPainter {
       );
     }
     canvas.drawCircle(
-      Offset(x, size.height / 2),
+      Offset(x, line),
       6,
       Paint()..color = theme.foreground,
     );
@@ -902,7 +1088,8 @@ class _PlayheadPainter extends CustomPainter {
       !identical(old.playback, playback) ||
       old.start != start ||
       old.span != span ||
-      old.story != story;
+      old.story != story ||
+      old.line != line;
 }
 
 /// Where the story draws one event: its tick on the line, and for a kill
@@ -918,8 +1105,15 @@ class _StoryMark {
     this.spike,
   });
 
-  static const height = 64.0;
+  /// The open story's height, and how far down it the line runs. The line
+  /// sits low, so opening grows the track upward and moves the line only a
+  /// few pixels; the lower lane hangs into the row's padding.
+  static const height = 49.0;
+  static const mid = 27.0;
   static const portraitSize = 22.0;
+
+  /// From the line to the nearer edge of a portrait.
+  static const portraitInset = 3.0;
 
   /// Centre to centre, the closest two portraits in a lane sit.
   static const portraitGap = 24.0;
@@ -938,13 +1132,12 @@ class _StoryMark {
   /// track: on its tick, or held inside the track at either end.
   final double? spike;
 
-  static const mid = height / 2;
 
   Rect? get portraitRect => portrait == null
       ? null
       : Rect.fromLTWH(
           portrait! - portraitSize / 2,
-          above! ? 0 : height - portraitSize,
+          above! ? mid - portraitInset - portraitSize : mid + portraitInset,
           portraitSize,
           portraitSize,
         );
@@ -1251,9 +1444,9 @@ class _StoryPainter extends CustomPainter {
       canvas.drawRRect(
         RRect.fromLTRBR(
           mark.tick - 1.5,
-          mid - 6,
+          mid - 4,
           mark.tick + 1.5,
-          mid + 6,
+          mid + 4,
           const Radius.circular(1.5),
         ),
         Paint()..color = ink,
