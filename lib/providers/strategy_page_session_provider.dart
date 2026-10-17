@@ -360,7 +360,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
-    await _switchToPage(pageId, animated: false);
+    // An animated switch still waiting gives way to this one and leaves its
+    // transition (see _PageSwitch.superseded): this switch ends it.
+    if (state.transitionState != PageTransitionState.idle) {
+      ref.read(transitionProvider.notifier).complete();
+      state = state.copyWith(transitionState: PageTransitionState.idle);
+    }
+    final outcome = await _switchToPage(pageId, animated: false);
+    if (outcome == _PageSwitch.stayed) _resumePendingRemoteReapplyIfPossible();
   }
 
   Future<void> setActivePageAnimated(

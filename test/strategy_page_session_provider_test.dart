@@ -2738,6 +2738,53 @@ void main() {
     );
   });
 
+  test('a direct switch overtaking an animated one ends its transition',
+      () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final three = _page('page-3', 2);
+    final loadedOne = _pageSnapshot(one, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [one, two, three], activePage: loadedOne),
+      pageCatalog: {
+        one.publicId: loadedOne,
+        two.publicId: _pageSnapshot(two, text: 'two'),
+        three.publicId: _pageSnapshot(three, text: 'three'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    final hold = Completer<void>();
+    remote.onFetchPage = (pageId) async {
+      if (pageId == two.publicId) await hold.future;
+    };
+
+    final animated = session.setActivePageAnimated(
+      two.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    await _settle();
+    await session.setActivePage(three.publicId);
+    hold.complete();
+    await animated;
+    await _settle();
+
+    final transition = container.read(transitionProvider);
+    expect(transition.hideView, isFalse);
+    expect(transition.phase, PageTransitionPhase.idle);
+    final state = container.read(strategyPageSessionProvider);
+    expect(state.activePageId, three.publicId);
+    expect(state.transitionState, PageTransitionState.idle);
+  });
+
   for (final readWorks in [true, false]) {
     test(
         'closing and reopening while a switch reads its page leaves no '
