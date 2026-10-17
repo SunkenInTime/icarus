@@ -24,8 +24,13 @@ mkdir -p "$output_dir" "$resources_dir"
 cd "$source_dir"
 rustup="$(dirname "$cargo")/rustup"
 
-# Rust reads MACOSX_DEPLOYMENT_TARGET from the environment Xcode sets; the
-# install name is set at link time so nothing edits (and unsigns) the dylib.
+# Xcode's MACOSX_DEPLOYMENT_TARGET (12.0) is withheld from cargo: it also
+# reaches the host proc-macros, and Xcode 27's ld links those with chained
+# fixups at 12.0 and up, which rustc 1.96 cannot load ("can't find crate for
+# `thiserror_impl`"). Rust's default floor (11.0) still loads in the app.
+unset MACOSX_DEPLOYMENT_TARGET
+# The install name is set at link time so nothing edits (and unsigns) the
+# dylib.
 export RUSTFLAGS="-C link-arg=-Wl,-install_name,@rpath/libicarus_replay.dylib"
 
 set --
