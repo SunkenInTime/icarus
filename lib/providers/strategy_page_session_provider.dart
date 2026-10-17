@@ -13,6 +13,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
@@ -1035,7 +1036,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   /// Returns false, leaving the page on screen, if a teammate deleted it
-  /// while its work was being flushed.
+  /// while its work was being flushed, or if the server can't send the
+  /// cloud page asked for.
   Future<bool> _switchToPage(
     String pageId, {
     required bool animated,
@@ -1061,14 +1063,28 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           .timeout(const Duration(milliseconds: 750), onTimeout: () {});
       // The page may have been deleted while its work was flushed.
       if (_deletedPageHoldsWork()) return false;
+      // Read the page before leaving this one. Leaving first dropped this
+      // page's server copy, and with it every later edit's way into the
+      // queue, whenever the read then failed (offline, say).
+      final remote = ref.read(remoteEditorSnapshotProvider.notifier);
+      final RemotePageSnapshot target;
+      try {
+        target = await remote.fetchPage(pageId);
+      } catch (error) {
+        AppErrorReporter.reportInfo(
+          'Page $pageId could not be read; staying on this page: $error',
+          source: 'strategy_page_session',
+        );
+        _showPageUnreachable(pageId);
+        return false;
+      }
+      if (ref.read(strategyProvider).strategyId != strategyId) return false;
       state = state.copyWith(activePageId: pageId);
       ref.read(activePageLiveSyncProvider.notifier).setContext(
             strategyPublicId: strategyId,
             activePageId: pageId,
           );
-      await ref
-          .read(remoteEditorSnapshotProvider.notifier)
-          .setActivePage(pageId);
+      await remote.setActivePage(pageId, fetched: target);
     }
 
     final pageData = await pageSource.loadPage(pageId);
@@ -1083,6 +1099,25 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       _updateHydrationBookkeeping(pageData.pageId);
     }
     return true;
+  }
+
+  void _showPageUnreachable(String pageId) {
+    final name = ref
+        .read(remoteEditorSnapshotProvider)
+        .valueOrNull
+        ?.pages
+        .where((page) => page.publicId == pageId)
+        .firstOrNull
+        ?.name;
+    try {
+      Settings.showToast(
+        message: "Couldn't open ${name ?? 'that page'}. Check your "
+            'connection and try again.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    } catch (error) {
+      // No overlay to show it on (tests); the page staying put says enough.
+    }
   }
 
   Future<void> _rehydrateActivePageFromSource(

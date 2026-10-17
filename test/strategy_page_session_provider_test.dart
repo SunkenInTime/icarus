@@ -98,14 +98,37 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   /// Runs as each page is asked for, before it is read.
   void Function(String? pagePublicId)? onSetActivePage;
 
+  /// While set, every page read fails, as with the connection down.
+  bool offline = false;
+
   @override
-  Future<RemotePageSnapshot?> setActivePage(String? pagePublicId) async {
+  Future<RemotePageSnapshot> fetchPage(String pagePublicId) async {
+    if (offline || pagePublicId == failingPageId) {
+      throw StateError('Failed to load $pagePublicId');
+    }
+    final page = pageCatalog[pagePublicId];
+    if (page == null) throw StateError('No page $pagePublicId');
+    return page;
+  }
+
+  @override
+  Future<RemotePageSnapshot?> setActivePage(
+    String? pagePublicId, {
+    RemotePageSnapshot? fetched,
+  }) async {
     selectedPageIds.add(pagePublicId);
     onSetActivePage?.call(pagePublicId);
     if (pagePublicId == failingPageId) {
       throw StateError('Failed to load $pagePublicId');
     }
     final current = state.valueOrNull ?? initialSnapshot;
+    if (offline && fetched == null) {
+      // Like the real read: the page asked for is the active one, and its
+      // read failed, so no page is held.
+      state = AsyncData(
+          RemoteEditorSnapshot(shell: current.shell, activePage: null));
+      return null;
+    }
     final page = pagePublicId == null ? null : pageCatalog[pagePublicId];
     state = AsyncData(RemoteEditorSnapshot(
       shell: current.shell,
@@ -2097,24 +2120,69 @@ void main() {
         );
     remote.failingPageId = pageTwo.publicId;
 
-    await expectLater(
-      container
-          .read(strategyPageSessionProvider.notifier)
-          .setActivePageAnimated(
-            pageTwo.publicId,
-            direction: PageTransitionDirection.forward,
-          ),
-      throwsStateError,
-    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          pageTwo.publicId,
+          direction: PageTransitionDirection.forward,
+        );
 
     final session = container.read(strategyPageSessionProvider);
     expect(session.activePageId, pageOne.publicId);
     expect(session.transitionState, PageTransitionState.idle);
     expect(container.read(transitionProvider).active, isFalse);
-    expect(remote.selectedPageIds, [pageTwo.publicId, pageOne.publicId]);
+    // The page that could not be read was never made the active one.
+    expect(remote.selectedPageIds, isEmpty);
     expect(
       container.read(activePageLiveSyncProvider).hydratedPageId,
       pageOne.publicId,
+    );
+  });
+
+  test('a page switch while offline keeps saving the page on screen', () async {
+    final pageOne = _page('page-1', 0);
+    final pageTwo = _page('page-2', 1);
+    final pageOneSnapshot = _pageSnapshot(pageOne, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(
+        pages: [pageOne, pageTwo],
+        activePage: pageOneSnapshot,
+      ),
+      pageCatalog: {
+        pageOne.publicId: pageOneSnapshot,
+        pageTwo.publicId: _pageSnapshot(pageTwo, text: 'two'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    remote.offline = true;
+
+    await session.setActivePageAnimated(
+      pageTwo.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'agent-1',
+          type: AgentType.jett,
+          position: const Offset(40, 40),
+        ));
+    await session.flushCurrentPage();
+
+    expect(
+      container.read(strategyPageSessionProvider).activePageId,
+      pageOne.publicId,
+    );
+    expect(
+      container.read(strategyOpQueueProvider).queuedByEntityKey.keys,
+      contains(EntitySyncKey.element(pageOne.publicId, 'agent-1')),
     );
   });
 
