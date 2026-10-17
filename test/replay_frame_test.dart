@@ -605,6 +605,21 @@ void main() {
       expect(p.timeMs, 0);
     });
 
+    test('the spawn barriers are up only until they drop', () {
+      // Round 1's barriers drop at 31 s; round 2 never recorded its drop.
+      final p = ReplayPlayback(
+        document: ReplayDocument.fromBytes(icrp(sampleJson())),
+        projection: projection,
+        perspective: ReplayTeam.red,
+      );
+      expect((p..seek(1000)).barriersUp, isTrue);
+      expect((p..seek(30999)).barriersUp, isTrue);
+      expect((p..seek(31000)).barriersUp, isFalse);
+      expect((p..seek(60000)).barriersUp, isFalse);
+      // Jumping to a round lands where play starts, barriers down.
+      expect((p..seekRound(0)).barriersUp, isFalse);
+    });
+
     ReplayDocument walkers(List<String> subjects) => document(
           players: [
             for (final subject in subjects)
