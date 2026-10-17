@@ -123,7 +123,7 @@ class Settings {
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
   static const int versionNumber = 104;
-  static const String versionName = "4.6.3";
+  static const String versionName = "5.0.0";
   static final Uri desktopUpdaterArchiveUrl =
       buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);
 

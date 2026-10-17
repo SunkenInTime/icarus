@@ -1,0 +1,84 @@
+{
+  "version": "5.0.0+104",
+  "shortVersion": 104,
+  "title": "5.0.0: Icarus goes online",
+  "description": "Sign in to keep your strategies in your account, share them with your team, and plan together live. Your library stays on this computer until you choose to move it.",
+  "date": "2026-10-13",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Sign in with email or Discord to save strategies to your account. They sync to every computer you use and to the web version of Icarus.",
+      "type": "feat"
+    },
+    {
+      "message": "Your existing library stays on this computer. To bring a strategy or folder into your account, right-click it and choose Move to cloud, or drag it onto a cloud folder.",
+      "type": "feat"
+    },
+    {
+      "message": "Share a strategy or folder with a link. Choose who can edit, see everyone who has access, and remove people at any time.",
+      "type": "feat"
+    },
+    {
+      "message": "Plan together live: see your teammates' cursors and names, and an outline around anything they're changing. Their edits merge with yours item by item.",
+      "type": "feat"
+    },
+    {
+      "message": "Watch your VALORANT replays on the map in the new Replays tab, then press Capture to turn any moment into a strategy page. Drop a .vrf file anywhere in Icarus, or open it from Explorer.",
+      "type": "feat"
+    },
+    {
+      "message": "Replays show who's flashed: their view cone shrinks away, their icon washes white with a crossed-out eye, and its outline fills as the flash wears off.",
+      "type": "feat"
+    },
+    {
+      "message": "Keep replays Valorant might clear with the Keep button, and remove ones you don't need. Removed replays go to the Recycle Bin.",
+      "type": "feat"
+    },
+    {
+      "message": "Deleted pages stay in Recently deleted for 30 days, so you can restore them.",
+      "type": "feat"
+    },
+    {
+      "message": "Placed lineups are locked so they can't be moved by accident. Use Edit placement to adjust them, and copy lineups and images to the next or previous page.",
+      "type": "feat"
+    },
+    {
+      "message": "Turn any placed ability with X.",
+      "type": "feat"
+    },
+    {
+      "message": "Share map themes as profile codes, try the new built-in Lotus Moss theme, and dim or hide the background dots.",
+      "type": "feat"
+    },
+    {
+      "message": "Export Library and folder export now include your cloud strategies.",
+      "type": "feat"
+    },
+    {
+      "message": "A short welcome tour explains what's new. Open it again any time from What's new.",
+      "type": "feat"
+    },
+    {
+      "message": "View cones light up the floor the way VALORANT's minimap does: overlapping cones no longer stack into haze, they read on every map theme, and they no longer dim the smokes and abilities under them.",
+      "type": "feat"
+    },
+    {
+      "message": "View cones now stop at the same walls VALORANT's minimap uses, and draw faster on every map.",
+      "type": "fix"
+    },
+    {
+      "message": "Corrode matches its new VALORANT 13.08 layout, including view cones and the paths agents take between pages.",
+      "type": "fix"
+    },
+    {
+      "message": "Omen's Paranoia and Vyse's Steel Garden now match their in-game sizes.",
+      "type": "fix"
+    },
+    {
+      "message": "Text and images stay in place when resized on defense, and dragging is smoother with Discord status turned on.",
+      "type": "fix"
+    }
+  ]
+}
