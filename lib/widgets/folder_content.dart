@@ -299,10 +299,14 @@ class FolderContent extends ConsumerWidget {
     final cloudFailed = (foldersAsync?.hasError ?? false) ||
         (strategiesAsync?.hasError ?? false);
     final bool cloudLoading;
+    var cloudUnreachable = false;
     if (foldersAsync == null || strategiesAsync == null) {
-      // Signed in, and the session is still connecting to the cloud.
-      cloudLoading = ref.watch(authProvider).isAuthenticated &&
-          ref.watch(cloudWorkspaceOutcomeProvider) == null;
+      // Signed in, and the session is still connecting to the cloud, or
+      // gave up connecting.
+      final signedIn = ref.watch(authProvider).isAuthenticated;
+      final outcome = ref.watch(cloudWorkspaceOutcomeProvider);
+      cloudLoading = signedIn && outcome == null;
+      cloudUnreachable = signedIn && outcome == false;
     } else {
       // Only the very first fetch counts; dependency changes keep the
       // previous value.
@@ -367,9 +371,11 @@ class FolderContent extends ConsumerWidget {
                 acceptsIcaDrops: _acceptsIcaDrops(ref),
                 banner: cloudFailed
                     ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
-                    : cloudLoading
-                        ? const _CloudLoadingBanner()
-                        : null,
+                    : cloudUnreachable
+                        ? const _CloudUnreachableBanner()
+                        : cloudLoading
+                            ? const _CloudLoadingBanner()
+                            : null,
                 emptyStateKey: const ValueKey('library-empty-state'),
                 emptyStateIcon: LucideIcons.folder,
                 emptyStateTitle: 'Your library is empty',
@@ -929,6 +935,36 @@ class _CloudErrorBanner extends StatelessWidget {
         onPressed: onRetry,
         child: const Text('Retry'),
       ),
+    );
+  }
+}
+
+/// Shown above the My Library root when the session is signed in but gave up
+/// connecting to the cloud. Retry connects again, the way Settings'
+/// Reconnect does; a server that refuses this build asks for the update.
+class _CloudUnreachableBanner extends ConsumerWidget {
+  const _CloudUnreachableBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(clientUpgradeRequiredProvider)) {
+      return ClientUpgradeNotice(
+        builder: (context, message, action) => _CloudBanner(
+          key: const ValueKey('cloud-upgrade-banner'),
+          leading: Icon(
+            LucideIcons.cloudOff,
+            size: 16,
+            color: Settings.tacticalVioletTheme.destructive,
+          ),
+          message: message,
+          action: action,
+        ),
+      );
+    }
+    return _CloudErrorBanner(
+      onRetry: () => ref
+          .read(authProvider.notifier)
+          .reinitializeConvexAuth(source: 'library_root_retry'),
     );
   }
 }
