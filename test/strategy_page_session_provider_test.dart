@@ -98,14 +98,41 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   /// Runs as each page is asked for, before it is read.
   void Function(String? pagePublicId)? onSetActivePage;
 
+  /// While set, every page read fails, as with the connection down.
+  bool offline = false;
+
+  /// Runs while a page is read, before the read answers.
+  Future<void> Function(String pagePublicId)? onFetchPage;
+
   @override
-  Future<RemotePageSnapshot?> setActivePage(String? pagePublicId) async {
+  Future<RemotePageSnapshot> fetchPage(String pagePublicId) async {
+    await onFetchPage?.call(pagePublicId);
+    if (offline || pagePublicId == failingPageId) {
+      throw StateError('Failed to load $pagePublicId');
+    }
+    final page = pageCatalog[pagePublicId];
+    if (page == null) throw StateError('No page $pagePublicId');
+    return page;
+  }
+
+  @override
+  Future<RemotePageSnapshot?> setActivePage(
+    String? pagePublicId, {
+    RemotePageSnapshot? fetched,
+  }) async {
     selectedPageIds.add(pagePublicId);
     onSetActivePage?.call(pagePublicId);
     if (pagePublicId == failingPageId) {
       throw StateError('Failed to load $pagePublicId');
     }
     final current = state.valueOrNull ?? initialSnapshot;
+    if (offline && fetched == null) {
+      // Like the real read: the page asked for is the active one, and its
+      // read failed, so no page is held.
+      state = AsyncData(
+          RemoteEditorSnapshot(shell: current.shell, activePage: null));
+      return null;
+    }
     final page = pagePublicId == null ? null : pageCatalog[pagePublicId];
     state = AsyncData(RemoteEditorSnapshot(
       shell: current.shell,
@@ -2097,24 +2124,69 @@ void main() {
         );
     remote.failingPageId = pageTwo.publicId;
 
-    await expectLater(
-      container
-          .read(strategyPageSessionProvider.notifier)
-          .setActivePageAnimated(
-            pageTwo.publicId,
-            direction: PageTransitionDirection.forward,
-          ),
-      throwsStateError,
-    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          pageTwo.publicId,
+          direction: PageTransitionDirection.forward,
+        );
 
     final session = container.read(strategyPageSessionProvider);
     expect(session.activePageId, pageOne.publicId);
     expect(session.transitionState, PageTransitionState.idle);
     expect(container.read(transitionProvider).active, isFalse);
-    expect(remote.selectedPageIds, [pageTwo.publicId, pageOne.publicId]);
+    // The page that could not be read was never made the active one.
+    expect(remote.selectedPageIds, isEmpty);
     expect(
       container.read(activePageLiveSyncProvider).hydratedPageId,
       pageOne.publicId,
+    );
+  });
+
+  test('a page switch while offline keeps saving the page on screen', () async {
+    final pageOne = _page('page-1', 0);
+    final pageTwo = _page('page-2', 1);
+    final pageOneSnapshot = _pageSnapshot(pageOne, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(
+        pages: [pageOne, pageTwo],
+        activePage: pageOneSnapshot,
+      ),
+      pageCatalog: {
+        pageOne.publicId: pageOneSnapshot,
+        pageTwo.publicId: _pageSnapshot(pageTwo, text: 'two'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    remote.offline = true;
+
+    await session.setActivePageAnimated(
+      pageTwo.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'agent-1',
+          type: AgentType.jett,
+          position: const Offset(40, 40),
+        ));
+    await session.flushCurrentPage();
+
+    expect(
+      container.read(strategyPageSessionProvider).activePageId,
+      pageOne.publicId,
+    );
+    expect(
+      container.read(strategyOpQueueProvider).queuedByEntityKey.keys,
+      contains(EntitySyncKey.element(pageOne.publicId, 'agent-1')),
     );
   });
 
@@ -2542,6 +2614,224 @@ void main() {
       expect(
         container.read(strategyOpQueueProvider).pausedByEntityKey.keys,
         [EntitySyncKey.forStrategyOp(paused)],
+      );
+    });
+  }
+
+  test('a deletion landing while a switch reads the next page tells the user',
+      () async {
+    final one = _page('page-1', 0, name: 'A exec');
+    final two = _page('page-2', 1);
+    final loadedOne = _pageSnapshot(
+      one,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: loadedOne,
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(editorPointersProvider.notifier)
+      ..markCanvas(1)
+      ..down(1);
+    container.read(drawingProvider.notifier)
+      ..startFreeDrawing(
+          const Offset(10, 20),
+          CoordinateSystem.instance,
+          Colors.white,
+          2,
+          false,
+          false,
+          false,
+          TraversalSpeedProfile.values.first)
+      ..finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    container.read(editorPointersProvider.notifier).release(1);
+    await _settle();
+    final stroke = container.read(drawingProvider).elements.single.id;
+    // The teammate's delete lands while page 2 is being read.
+    remote.onFetchPage = (_) async {
+      remote.onFetchPage = null;
+      remote.setSnapshot(_editorSnapshot(
+        pages: [two],
+        activePage: loadedOne,
+        themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+      ));
+    };
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          two.publicId,
+          direction: PageTransitionDirection.forward,
+        );
+    await _settle();
+
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
+    expect(session.activePageId, one.publicId);
+    expect(session.transitionState, PageTransitionState.idle);
+    expect(container.read(drawingProvider).elements.map((d) => d.id), [stroke]);
+  });
+
+  test('a switch still reading its page gives way to a newer one', () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final three = _page('page-3', 2);
+    final loadedOne = _pageSnapshot(one, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [one, two, three], activePage: loadedOne),
+      pageCatalog: {
+        one.publicId: loadedOne,
+        two.publicId: _pageSnapshot(two, text: 'two'),
+        three.publicId: _pageSnapshot(three, text: 'three'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    final hold = Completer<void>();
+    remote.onFetchPage = (pageId) async {
+      if (pageId == two.publicId) await hold.future;
+    };
+
+    final first = session.setActivePageAnimated(
+      two.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    await _settle();
+    await session.setActivePageAnimated(
+      three.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    hold.complete();
+    await first;
+    await _settle();
+
+    final state = container.read(strategyPageSessionProvider);
+    expect(state.activePageId, three.publicId);
+    expect(remote.selectedPageIds, [three.publicId]);
+    expect(
+      container.read(activePageLiveSyncProvider).hydratedPageId,
+      three.publicId,
+    );
+  });
+
+  test('a direct switch overtaking an animated one ends its transition',
+      () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final three = _page('page-3', 2);
+    final loadedOne = _pageSnapshot(one, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [one, two, three], activePage: loadedOne),
+      pageCatalog: {
+        one.publicId: loadedOne,
+        two.publicId: _pageSnapshot(two, text: 'two'),
+        three.publicId: _pageSnapshot(three, text: 'three'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    final hold = Completer<void>();
+    remote.onFetchPage = (pageId) async {
+      if (pageId == two.publicId) await hold.future;
+    };
+
+    final animated = session.setActivePageAnimated(
+      two.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    await _settle();
+    await session.setActivePage(three.publicId);
+    hold.complete();
+    await animated;
+    await _settle();
+
+    final transition = container.read(transitionProvider);
+    expect(transition.hideView, isFalse);
+    expect(transition.phase, PageTransitionPhase.idle);
+    final state = container.read(strategyPageSessionProvider);
+    expect(state.activePageId, three.publicId);
+    expect(state.transitionState, PageTransitionState.idle);
+  });
+
+  for (final readWorks in [true, false]) {
+    test(
+        'closing and reopening while a switch reads its page leaves no '
+        'transition behind (read works: $readWorks)', () async {
+      final one = _page('page-1', 0);
+      final two = _page('page-2', 1);
+      final loadedOne = _pageSnapshot(one, text: 'one');
+      final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(pages: [one, two], activePage: loadedOne),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        },
+      );
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      final session = container.read(strategyPageSessionProvider.notifier);
+      Future<void> open() => session.initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      await open();
+      final hold = Completer<void>();
+      remote.onFetchPage = (_) => hold.future;
+      if (!readWorks) remote.failingPageId = two.publicId;
+
+      final switching = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      expect(container.read(transitionProvider).hideView, isTrue);
+      session.reset();
+      await open();
+      hold.complete();
+      await switching;
+      await _settle();
+
+      final transition = container.read(transitionProvider);
+      expect(transition.hideView, isFalse);
+      expect(transition.phase, PageTransitionPhase.idle);
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        one.publicId,
       );
     });
   }

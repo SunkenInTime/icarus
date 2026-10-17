@@ -8,6 +8,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
@@ -90,7 +91,44 @@ class RemoteEditorSnapshotNotifier
     }
   }
 
-  Future<RemotePageSnapshot?> setActivePage(String? pagePublicId) async {
+  /// Reads [pagePublicId] of the open strategy without making it the active
+  /// page, so a page the server can't send leaves the active one as it was.
+  /// Throws when the page can't be read: at once while the connection is
+  /// down, rather than after the read's timeout.
+  Future<RemotePageSnapshot> fetchPage(String pagePublicId) async {
+    final strategyPublicId = _activeStrategyPublicId;
+    if (strategyPublicId == null) {
+      throw StateError('No cloud strategy is open.');
+    }
+    if (!ref.read(convexConnectionSnapshotProvider)) {
+      throw StateError('Offline: page $pagePublicId was not read.');
+    }
+    try {
+      return await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
+            strategyPublicId: strategyPublicId,
+            pagePublicId: pagePublicId,
+            shareToken: _shareToken,
+          );
+    } catch (error, stackTrace) {
+      if (_readsAsSignedIn && isConvexUnauthenticatedError(error)) {
+        unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
+              source: 'remote_editor:page_fetch',
+              error: error,
+              stackTrace: stackTrace,
+            ));
+      } else {
+        ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
+      }
+      rethrow;
+    }
+  }
+
+  /// Makes [pagePublicId] the active page and reads it, unless [fetched]
+  /// already holds it (see [fetchPage]).
+  Future<RemotePageSnapshot?> setActivePage(
+    String? pagePublicId, {
+    RemotePageSnapshot? fetched,
+  }) async {
     final strategyPublicId = _activeStrategyPublicId;
     if (strategyPublicId == null || pagePublicId == _activePagePublicId) {
       return state.valueOrNull?.activePage;
@@ -110,8 +148,9 @@ class RemoteEditorSnapshotNotifier
     if (pagePublicId == null) return null;
 
     try {
-      final page =
-          await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
+      final page = fetched != null && fetched.page.publicId == pagePublicId
+          ? fetched
+          : await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
                 strategyPublicId: strategyPublicId,
                 pagePublicId: pagePublicId,
                 shareToken: _shareToken,
