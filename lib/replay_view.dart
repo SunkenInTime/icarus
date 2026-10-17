@@ -270,14 +270,22 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     if (playback == null || drawing == null || event is KeyUpEvent) {
       return KeyEventResult.ignored;
     }
-    // The pen answers to the editor's Draw key, whatever the user bound it
-    // to, so the habit carries over.
+    // The pen and the eraser answer to the editor's Draw and Eraser keys,
+    // whatever the user bound them to, so the habit carries over.
     final draw = ShortcutInfo.effectiveBindingFor(
       IcarusShortcutAction.draw.name,
       ref.read(appPreferencesProvider).customShortcutBindings,
     ).toActivator();
     if (draw.accepts(event, HardwareKeyboard.instance)) {
       if (event is! KeyRepeatEvent) drawing.toggle();
+      return KeyEventResult.handled;
+    }
+    final erase = ShortcutInfo.effectiveBindingFor(
+      IcarusShortcutAction.erase.name,
+      ref.read(appPreferencesProvider).customShortcutBindings,
+    ).toActivator();
+    if (erase.accepts(event, HardwareKeyboard.instance)) {
+      if (event is! KeyRepeatEvent) drawing.toggleEraser();
       return KeyEventResult.handled;
     }
     // Esc puts the pen away before it stops watching a player.

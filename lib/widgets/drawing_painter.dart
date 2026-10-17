@@ -284,7 +284,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                 ),
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: _TraversalTimeOverlay(
+                    child: TraversalTimeOverlay(
                       coordinateSystem: coordinateSystem,
                       mapScale: mapScale,
                       isAttack: isAttack,
@@ -302,8 +302,11 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
   }
 }
 
-class _TraversalTimeOverlay extends StatelessWidget {
-  const _TraversalTimeOverlay({
+/// The time each traversal-timed stroke takes to walk, in a card at its
+/// end. [isAttack] turns the cards upright on a flipped defense layer.
+class TraversalTimeOverlay extends StatelessWidget {
+  const TraversalTimeOverlay({
+    super.key,
     required this.coordinateSystem,
     required this.mapScale,
     required this.isAttack,

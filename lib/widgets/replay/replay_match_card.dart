@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
+import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
@@ -18,6 +19,7 @@ import 'package:icarus/replay_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -233,10 +235,11 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     final strategy = _capture.strategy;
     final inCloud = strategy?.source == StrategySource.cloud;
     final queue = ref.watch(replayCaptureQueueProvider);
-    final drawKey = ShortcutInfo.displayLabelFor(
-      IcarusShortcutAction.draw.name,
-      ref.watch(appPreferencesProvider).customShortcutBindings,
-    );
+    final bindings = ref.watch(appPreferencesProvider).customShortcutBindings;
+    final drawKey =
+        ShortcutInfo.displayLabelFor(IcarusShortcutAction.draw.name, bindings);
+    final eraseKey =
+        ShortcutInfo.displayLabelFor(IcarusShortcutAction.erase.name, bindings);
     // A strategy found deleted or on another map holds none of them now.
     final captured = !inCloud
         ? strategy?.pageCount ?? 0
@@ -251,7 +254,9 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         inCloud && (ref.watch(convexConnectionProvider).valueOrNull ?? false);
     final upgradeRequired = inCloud && ref.watch(clientUpgradeRequiredProvider);
     return Container(
-      width: 260,
+      // Wide enough for the editor's drawing panel, shapes and strokes on
+      // one row as in the sidebar.
+      width: 300,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.card,
@@ -308,15 +313,34 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                   const SizedBox(width: 8),
                   ReplaySelect(
                     listenable: widget.drawing,
-                    select: () => widget.drawing.active,
-                    builder: (context, active) => _ToolButton(
-                      icon: LucideIcons.pencil,
-                      tooltip: active
-                          ? 'Stop drawing ($drawKey)'
-                          : 'Draw ($drawKey)',
-                      selected: active,
-                      onPressed: widget.drawing.toggle,
+                    select: () => (
+                      widget.drawing.active && !widget.drawing.erasing,
+                      widget.drawing.erasing,
                     ),
+                    builder: (context, shown) {
+                      final (drawing, erasing) = shown;
+                      return Row(
+                        spacing: 8,
+                        children: [
+                          _ToolButton(
+                            icon: LucideIcons.pencil,
+                            tooltip: drawing
+                                ? 'Stop drawing ($drawKey)'
+                                : 'Draw ($drawKey)',
+                            selected: drawing,
+                            onPressed: widget.drawing.toggle,
+                          ),
+                          _ToolButton(
+                            icon: CustomIcons.eraser,
+                            tooltip: erasing
+                                ? 'Stop erasing ($eraseKey)'
+                                : 'Eraser ($eraseKey)',
+                            selected: erasing,
+                            onPressed: widget.drawing.toggleEraser,
+                          ),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(width: 8),
                   ShadTooltip(
@@ -499,6 +523,8 @@ class _CloudStatus extends StatelessWidget {
 
 /// The pen's tools, under the card's actions while the pen is out: draw
 /// freehand or a straight arrow, and clear what is drawn.
+/// The editor's drawing panel while the pen is out, the same pen the
+/// editor draws with, and Clear once something is drawn.
 class _DrawingTools extends StatelessWidget {
   const _DrawingTools({required this.drawing});
 
@@ -508,37 +534,27 @@ class _DrawingTools extends StatelessWidget {
   Widget build(BuildContext context) {
     return ReplaySelect(
       listenable: drawing,
-      select: () => (drawing.active, drawing.tool, drawing.strokes.isNotEmpty),
+      select: () => (
+        drawing.active && !drawing.erasing,
+        drawing.active && drawing.strokes.isNotEmpty,
+      ),
       builder: (context, shown) {
-        final (active, tool, drawn) = shown;
-        if (!active) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Row(
-            children: [
-              _ToolButton(
-                icon: LucideIcons.lineSquiggle,
-                tooltip: 'Free draw',
-                selected: tool == ReplayDrawingTool.freehand,
-                onPressed: () => drawing.tool = ReplayDrawingTool.freehand,
-              ),
-              const SizedBox(width: 8),
-              _ToolButton(
-                icon: LucideIcons.moveUpRight,
-                tooltip: 'Arrow',
-                selected: tool == ReplayDrawingTool.arrow,
-                onPressed: () => drawing.tool = ReplayDrawingTool.arrow,
-              ),
-              const Spacer(),
-              if (drawn)
-                ShadButton.link(
+        final (pen, clearable) = shown;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (pen) const DrawingTools(padding: EdgeInsets.only(top: 8)),
+            if (clearable)
+              Align(
+                alignment: Alignment.centerRight,
+                child: ShadButton.link(
                   height: 24,
                   padding: EdgeInsets.zero,
                   onPressed: drawing.clear,
                   child: const Text('Clear'),
                 ),
-            ],
-          ),
+              ),
+          ],
         );
       },
     );

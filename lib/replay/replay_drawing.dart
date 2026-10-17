@@ -7,15 +7,14 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:uuid/uuid.dart';
 
-/// The two ways to draw over a replay.
-enum ReplayDrawingTool { freehand, arrow }
-
 /// What the user draws over the paused replay. Strokes are the editor's own
-/// drawing elements, in the same world coordinates as a page's, so they look
-/// like editor drawings and a capture saves them as page drawings.
+/// drawing elements, drawn with the editor's pen, in the same world
+/// coordinates as a page's, so they look like editor drawings and a capture
+/// saves them as page drawings.
 ///
 /// They mark up the moment on screen, so they go when it does: playing
 /// clears them and puts the pen away, and moving the clock while paused
@@ -28,15 +27,17 @@ class ReplayDrawing extends ChangeNotifier {
   final ReplayPlayback playback;
 
   bool _active = false;
-  ReplayDrawingTool _tool = ReplayDrawingTool.freehand;
+  bool _erasing = false;
   final List<DrawingElement> _strokes = [];
   DrawingElement? _current;
   int _revision = 0;
   int _timeMs;
 
-  /// Whether a drag on the map draws rather than pans.
+  /// Whether a drag on the map draws or erases rather than pans.
   bool get active => _active;
-  ReplayDrawingTool get tool => _tool;
+
+  /// Whether the drag erases, as the editor's eraser does.
+  bool get erasing => _erasing;
 
   /// The finished strokes, oldest first.
   List<DrawingElement> get strokes => List.unmodifiable(_strokes);
@@ -47,61 +48,83 @@ class ReplayDrawing extends ChangeNotifier {
   /// Changes whenever what is drawn changes, for the painter.
   int get revision => _revision;
 
-  /// Takes the pen out, pausing playback, or puts it away. Strokes stay
-  /// either way.
-  void toggle() => _active ? stop() : start();
+  /// Takes the pen out, pausing playback, or puts it away; with the eraser
+  /// out, swaps it for the pen. Strokes stay either way.
+  void toggle() => _active && !_erasing ? stop() : start();
 
-  void start() {
+  /// Takes the eraser out, or puts it away; with the pen out, swaps it for
+  /// the eraser.
+  void toggleEraser() => _erasing ? stop() : start(erasing: true);
+
+  void start({bool erasing = false}) {
     playback.pause();
-    if (_active) return;
+    if (_active && _erasing == erasing) return;
     _active = true;
-    notifyListeners();
+    _erasing = erasing;
+    _current = null;
+    _changed();
   }
 
   void stop() {
     if (!_active) return;
     _active = false;
+    _erasing = false;
     _current = null;
-    _revision++;
-    notifyListeners();
-  }
-
-  set tool(ReplayDrawingTool value) {
-    if (_tool == value) return;
-    _tool = value;
-    notifyListeners();
+    _changed();
   }
 
   /// Starts a stroke at [screenPoint], a point on the canvas in the
-  /// attack-side world [coordinates] describe, as the editor's painter does.
-  void begin(
-    Offset screenPoint,
-    CoordinateSystem coordinates, {
-    required Color color,
-    required double thickness,
-  }) {
-    if (!_active) return;
+  /// attack-side world [coordinates] describe, as the editor's painter does,
+  /// in the shape and style of [pen].
+  void begin(Offset screenPoint, CoordinateSystem coordinates, PenState pen) {
+    if (!_active || _erasing) return;
     final point = coordinates.screenToCoordinate(screenPoint);
     final id = const Uuid().v4();
     final box = BoundingBox(min: point, max: point);
-    _current = switch (_tool) {
-      ReplayDrawingTool.freehand => FreeDrawing(
-          colorValue: color.toARGB32(),
-          thickness: thickness,
+    final colorValue = pen.color.toARGB32();
+    _current = switch (pen.penMode) {
+      PenMode.freeDraw => FreeDrawing(
+          colorValue: colorValue,
+          thickness: pen.thickness,
           boundingBox: box,
-          isDotted: false,
-          hasArrow: false,
+          isDotted: pen.isDotted,
+          hasArrow: pen.hasArrow,
           id: id,
+          showTraversalTime: pen.traversalTimeEnabled,
+          traversalSpeedProfile: pen.activeTraversalSpeedProfile,
         )..appendPoint(point),
-      ReplayDrawingTool.arrow => Line(
+      PenMode.line => Line(
           lineStart: point,
           lineEnd: point,
-          colorValue: color.toARGB32(),
-          thickness: thickness,
+          colorValue: colorValue,
+          thickness: pen.thickness,
           boundingBox: box,
-          isDotted: false,
-          hasArrow: true,
+          isDotted: pen.isDotted,
+          hasArrow: pen.hasArrow,
           id: id,
+          showTraversalTime: pen.traversalTimeEnabled,
+          traversalSpeedProfile: pen.activeTraversalSpeedProfile,
+        ),
+      // The editor's shapes take neither an arrow nor a traversal time.
+      PenMode.square => RectangleDrawing(
+          start: point,
+          end: point,
+          colorValue: colorValue,
+          thickness: pen.thickness,
+          isDotted: pen.isDotted,
+          hasArrow: false,
+          id: id,
+          boundingBox: box,
+        ),
+      PenMode.ellipse => EllipseDrawing(
+          start: point,
+          end: point,
+          colorValue: colorValue,
+          thickness: pen.thickness,
+          isDotted: pen.isDotted,
+          hasArrow: false,
+          id: id,
+          boundingBox: box,
         ),
     };
     _changed();
@@ -126,6 +149,12 @@ class ReplayDrawing extends ChangeNotifier {
             BoundingBox(min: line.lineStart, max: line.lineStart),
             point,
           );
+      case final RectangleDrawing shape:
+        shape.updateEndPoint(point);
+        shape.boundingBox = _boxOf(shape.normalizedRect);
+      case final EllipseDrawing shape:
+        shape.updateEndPoint(point);
+        shape.boundingBox = _boxOf(shape.normalizedRect);
       default:
         return;
     }
@@ -150,10 +179,25 @@ class ReplayDrawing extends ChangeNotifier {
           ..rebuildPath(coordinates));
       case final Line line when line.lineEnd != line.lineStart:
         _strokes.add(line);
+      case final RectangleDrawing shape when shape.end != shape.start:
+        _strokes.add(shape);
+      case final EllipseDrawing shape when shape.end != shape.start:
+        _strokes.add(shape);
       default:
         break;
     }
     _changed();
+  }
+
+  /// Rubs out every stroke within the editor's eraser of [screenPoint].
+  void erase(Offset screenPoint, CoordinateSystem coordinates) {
+    if (!_erasing) return;
+    final point = coordinates.screenToCoordinate(screenPoint);
+    final before = _strokes.length;
+    _strokes.removeWhere(
+      (stroke) => isNearDrawing(stroke, point, Settings.erasingSize),
+    );
+    if (_strokes.length != before) _changed();
   }
 
   void clear() {
@@ -183,6 +227,7 @@ class ReplayDrawing extends ChangeNotifier {
     if (playback.playing) {
       if (!_active && _strokes.isEmpty && _current == null) return;
       _active = false;
+      _erasing = false;
       _strokes.clear();
       _current = null;
       _changed();
@@ -195,6 +240,9 @@ class ReplayDrawing extends ChangeNotifier {
     _revision++;
     notifyListeners();
   }
+
+  static BoundingBox _boxOf(Rect rect) =>
+      BoundingBox(min: rect.topLeft, max: rect.bottomRight);
 
   static BoundingBox _grown(BoundingBox box, Offset point) => BoundingBox(
         min: Offset(
