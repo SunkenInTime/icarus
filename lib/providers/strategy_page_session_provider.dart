@@ -317,6 +317,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     String? preferredPageId,
   }) async {
     _pageSessionGeneration++;
+    // As in reset: a switch this supersedes leaves its transition here.
+    ref.read(transitionProvider.notifier).complete();
+    state = state.copyWith(transitionState: PageTransitionState.idle);
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await pageSource.listPageIds();
     final initialPageId = pageIds.contains(preferredPageId)
@@ -1031,6 +1034,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   void reset() {
     _remoteChangeWaitsForEditor = false;
     _pageSessionGeneration++;
+    // A switch still waiting gives way without ending its transition (see
+    // _PageSwitch.superseded): ending the session ends it.
+    ref.read(transitionProvider.notifier).complete();
     state = const StrategyPageSessionState(
       activePageId: null,
       availablePageIds: [],

@@ -2738,6 +2738,57 @@ void main() {
     );
   });
 
+  for (final readWorks in [true, false]) {
+    test(
+        'closing and reopening while a switch reads its page leaves no '
+        'transition behind (read works: $readWorks)', () async {
+      final one = _page('page-1', 0);
+      final two = _page('page-2', 1);
+      final loadedOne = _pageSnapshot(one, text: 'one');
+      final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(pages: [one, two], activePage: loadedOne),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        },
+      );
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      final session = container.read(strategyPageSessionProvider.notifier);
+      Future<void> open() => session.initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      await open();
+      final hold = Completer<void>();
+      remote.onFetchPage = (_) => hold.future;
+      if (!readWorks) remote.failingPageId = two.publicId;
+
+      final switching = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      expect(container.read(transitionProvider).hideView, isTrue);
+      session.reset();
+      await open();
+      hold.complete();
+      await switching;
+      await _settle();
+
+      final transition = container.read(transitionProvider);
+      expect(transition.hideView, isFalse);
+      expect(transition.phase, PageTransitionPhase.idle);
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        one.publicId,
+      );
+    });
+  }
+
   test('a deletion landing while a switch flushes still tells the user',
       () async {
     final one = _page('page-1', 0, name: 'A exec');
