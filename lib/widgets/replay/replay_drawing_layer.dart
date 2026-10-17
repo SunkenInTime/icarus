@@ -38,17 +38,15 @@ class _ReplayDrawingLayerState extends ConsumerState<ReplayDrawingLayer> {
   /// The canvas size the freehand paths were last built for.
   Size? _pathsSize;
 
-  /// Where the eraser's ring is, while the pointer is over the map.
-  final _eraser = ValueNotifier<Offset?>(null);
+  /// Where the pointer is over the map, pen out or not, so the eraser's
+  /// ring is under it the moment the eraser comes out.
+  final _pointer = ValueNotifier<Offset?>(null);
 
   @override
   void dispose() {
-    _eraser.dispose();
+    _pointer.dispose();
     super.dispose();
   }
-
-  void _hover(Offset? position) =>
-      _eraser.value = widget.drawing.erasing ? position : null;
 
   @override
   Widget build(BuildContext context) {
@@ -73,82 +71,88 @@ class _ReplayDrawingLayerState extends ConsumerState<ReplayDrawingLayer> {
             child: Transform.flip(
               flipX: !isAttack,
               flipY: !isAttack,
-              child: IgnorePointer(
-                ignoring: !drawing.active,
-                child: MouseRegion(
-                  cursor: drawing.erasing
-                      ? SystemMouseCursors.none
-                      : pen.drawingCursor ??
-                          staticDrawingCursor ??
-                          SystemMouseCursors.precise,
-                  onHover: (event) => _hover(event.localPosition),
-                  onExit: (_) => _hover(null),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanStart: (details) {
-                      _hover(details.localPosition);
-                      if (drawing.erasing) {
-                        drawing.erase(details.localPosition, coordinates);
-                      } else {
-                        drawing.begin(details.localPosition, coordinates, pen);
-                      }
-                    },
-                    onPanUpdate: (details) {
-                      _hover(details.localPosition);
-                      if (drawing.erasing) {
-                        drawing.erase(details.localPosition, coordinates);
-                      } else {
-                        drawing.extend(details.localPosition, coordinates);
-                      }
-                    },
-                    onPanEnd: (_) => drawing.end(coordinates),
-                    onPanCancel: () => drawing.end(coordinates),
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: DrawingPainter(
-                              updateCounter: drawing.revision,
-                              coordinateSystem: coordinates,
-                              elements: drawing.strokes,
-                              currentLine: drawing.current,
+              // Watches the pointer without taking it from the map below.
+              child: MouseRegion(
+                opaque: false,
+                onHover: (event) => _pointer.value = event.localPosition,
+                onExit: (_) => _pointer.value = null,
+                child: IgnorePointer(
+                  ignoring: !drawing.active,
+                  child: MouseRegion(
+                    cursor: drawing.erasing
+                        ? SystemMouseCursors.none
+                        : pen.drawingCursor ??
+                            staticDrawingCursor ??
+                            SystemMouseCursors.precise,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: (details) {
+                        _pointer.value = details.localPosition;
+                        if (drawing.erasing) {
+                          drawing.erase(details.localPosition, coordinates);
+                        } else {
+                          drawing.begin(
+                              details.localPosition, coordinates, pen);
+                        }
+                      },
+                      onPanUpdate: (details) {
+                        _pointer.value = details.localPosition;
+                        if (drawing.erasing) {
+                          drawing.erase(details.localPosition, coordinates);
+                        } else {
+                          drawing.extend(details.localPosition, coordinates);
+                        }
+                      },
+                      onPanEnd: (_) => drawing.end(coordinates),
+                      onPanCancel: () => drawing.end(coordinates),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: DrawingPainter(
+                                updateCounter: drawing.revision,
+                                coordinateSystem: coordinates,
+                                elements: drawing.strokes,
+                                currentLine: drawing.current,
+                              ),
                             ),
                           ),
-                        ),
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: TraversalTimeOverlay(
-                              coordinateSystem: coordinates,
-                              mapScale: mapScale,
-                              isAttack: isAttack,
-                              elements: drawing.strokes,
-                              currentLine: drawing.current,
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: TraversalTimeOverlay(
+                                coordinateSystem: coordinates,
+                                mapScale: mapScale,
+                                isAttack: isAttack,
+                                elements: drawing.strokes,
+                                currentLine: drawing.current,
+                              ),
                             ),
                           ),
-                        ),
-                        ValueListenableBuilder(
-                          valueListenable: _eraser,
-                          builder: (context, at, _) =>
-                              at == null || !drawing.erasing
-                                  ? const SizedBox.shrink()
-                                  : Positioned(
-                                      left: at.dx - ring / 2,
-                                      top: at.dy - ring / 2,
-                                      child: IgnorePointer(
-                                        child: CursorCircle(
-                                          size: ring,
-                                          ringThickness: 1,
-                                          gap: 1,
-                                          ringColor: Settings
-                                              .tacticalVioletTheme.destructive,
-                                          fillColor: Settings
-                                              .tacticalVioletTheme.destructive
-                                              .withValues(alpha: 0.5),
+                          ValueListenableBuilder(
+                            valueListenable: _pointer,
+                            builder: (context, at, _) =>
+                                at == null || !drawing.erasing
+                                    ? const SizedBox.shrink()
+                                    : Positioned(
+                                        left: at.dx - ring / 2,
+                                        top: at.dy - ring / 2,
+                                        child: IgnorePointer(
+                                          child: CursorCircle(
+                                            size: ring,
+                                            ringThickness: 1,
+                                            gap: 1,
+                                            ringColor: Settings
+                                                .tacticalVioletTheme
+                                                .destructive,
+                                            fillColor: Settings
+                                                .tacticalVioletTheme.destructive
+                                                .withValues(alpha: 0.5),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

@@ -36,6 +36,7 @@ import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay_view.dart';
+import 'package:icarus/widgets/cursor_circle.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/replay/replay_canvas.dart';
 import 'package:icarus/widgets/replay/replay_drawing_layer.dart';
@@ -461,6 +462,29 @@ void main() {
       await drag(tester);
       expect(drawing.strokes, isEmpty);
       expect(view(tester), before, reason: 'erasing does not pan');
+    });
+
+    testWidgets(
+        "the eraser's ring is under the pointer as soon as the eraser is "
+        'out, and only then', (tester) async {
+      await openReplay(tester);
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+      final center = tester.getCenter(find.byType(ReplayDrawingLayer));
+      await tester.sendEventToBinding(pointer.hover(center));
+      await tester.pump();
+      expect(find.byType(CursorCircle), findsNothing);
+
+      // Straight from watching, the pointer never moving.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyW);
+      await tester.pump();
+      final ring = tester.getRect(find.byType(CursorCircle));
+      expect((ring.center - center).distance, lessThan(1));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+      await tester.pump();
+      expect(find.byType(CursorCircle), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
     });
 
     testWidgets('strokes clear when playback resumes or the time changes',

@@ -27,7 +27,8 @@ rustup="$(dirname "$cargo")/rustup"
 # Xcode's MACOSX_DEPLOYMENT_TARGET (12.0) is withheld from cargo: it also
 # reaches the host proc-macros, and Xcode 27's ld links those with chained
 # fixups at 12.0 and up, which rustc 1.96 cannot load ("can't find crate for
-# `thiserror_impl`"). Rust's default floor (11.0) still loads in the app.
+# `thiserror_impl`"). Rust's own floors (11.0 on arm64, 10.12 on x86_64)
+# are both below the app's, so the library still loads in it.
 unset MACOSX_DEPLOYMENT_TARGET
 # The install name is set at link time so nothing edits (and unsigns) the
 # dylib.
