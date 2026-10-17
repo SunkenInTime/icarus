@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
@@ -12,24 +13,21 @@ import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Whether the dock shows the match's rounds above playback, kept while the
-/// app is open.
-final replayRoundsShownProvider = StateProvider<bool>((ref) => true);
-
 /// Whether the round's story stays open: who killed when, and the spike.
 /// Unpinned, it opens only while the pointer rests on the dock. Kept while
 /// the app is open; it starts unpinned.
 final replayRoundStoryProvider = StateProvider<bool>((ref) => false);
 
-/// Playback along the bottom of the map, as a stack of small surfaces with
-/// the map showing between them: every round of the match on top, then the
-/// round being watched with its kills and plant marked. Both share the
-/// round strip's width, so hiding the strip moves nothing.
+/// Playback along the bottom of the map, in one card: every round of the
+/// match on top, then the round being watched with its kills and plant
+/// marked. The card is as wide as the rounds, no narrower than a usable
+/// scrubber and no wider than a full regulation match; overtime past that
+/// scrolls.
 ///
 /// Resting the pointer on the playback row opens the round's story, unless
 /// the pen is out; it closes a moment after the pointer leaves the dock,
-/// but not mid-drag. Resting on the round strip opens nothing: the strip
-/// moves up as the story opens, and would slide out from under a click.
+/// but not mid-drag. Resting on the rounds opens nothing: they move up as
+/// the story opens, and would slide out from under a click.
 class ReplayDock extends ConsumerStatefulWidget {
   const ReplayDock({super.key, required this.playback, this.drawing});
 
@@ -43,6 +41,10 @@ class ReplayDock extends ConsumerStatefulWidget {
   /// second apart, and a shorter match's strip only hugs its slots above.
   static const minPlaybackWidth = 560.0;
 
+  /// The widest the card gets: a full regulation match's 24 rounds. Past it
+  /// the playback row would only stretch, so overtime's rounds scroll.
+  static final maxWidth = _RoundStrip.widthOf(24, half: 12);
+
   /// How long the pointer rests on the dock before the story opens; a
   /// pass across it is quicker.
   static const peekDwell = Duration(milliseconds: 200);
@@ -51,16 +53,23 @@ class ReplayDock extends ConsumerStatefulWidget {
   /// the edge doesn't shut it.
   static const peekLinger = Duration(milliseconds: 400);
 
+  /// How long the story takes to grow open or fold shut.
+  static const storyDuration = Duration(milliseconds: 200);
+
   /// How far below the dock its own margin from the window's edge is when
   /// the story is closed. The open story takes half of it, so the line it
   /// grows around moves only a few pixels.
   static const _margin = 4.0;
 
+  /// The card's padding inside its border.
+  static const _padding = 5.0;
+
   @override
   ConsumerState<ReplayDock> createState() => _ReplayDockState();
 }
 
-class _ReplayDockState extends ConsumerState<ReplayDock> {
+class _ReplayDockState extends ConsumerState<ReplayDock>
+    with SingleTickerProviderStateMixin {
   Timer? _dwell;
   Timer? _linger;
   bool _inside = false;
@@ -69,6 +78,19 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
 
   /// Whether the scrubber holds the story open: a drag, or a hover card.
   bool _held = false;
+
+  /// How far open the story is, 0 to 1; it slows into both ends.
+  late final _storyController = AnimationController(
+    vsync: this,
+    duration: ReplayDock.storyDuration,
+    // A pinned story is open from the first frame.
+    value: ref.read(replayRoundStoryProvider) ? 1 : 0,
+  );
+  late final _story = CurvedAnimation(
+    parent: _storyController,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeOutCubic.flipped,
+  );
 
   bool get _penOut => widget.drawing?.active ?? false;
 
@@ -92,7 +114,18 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
     widget.drawing?.removeListener(_penChanged);
     _dwell?.cancel();
     _linger?.cancel();
+    _story.dispose();
+    _storyController.dispose();
     super.dispose();
+  }
+
+  /// Opens or closes the story to match the pin and the peek, leaving it
+  /// be when it is already on its way there.
+  void _showStory() {
+    if (!mounted) return;
+    final open = ref.read(replayRoundStoryProvider) || _peeking;
+    if (open == _storyController.status.isForwardOrCompleted) return;
+    open ? _storyController.forward() : _storyController.reverse();
   }
 
   void _penChanged() {
@@ -119,7 +152,9 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
     if (_peeking || _penOut) return;
     _dwell?.cancel();
     _dwell = Timer(ReplayDock.peekDwell, () {
-      if (_inside && !_penOut) setState(() => _peeking = true);
+      if (!_inside || _penOut) return;
+      _peeking = true;
+      _showStory();
     });
   }
 
@@ -134,7 +169,8 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
   void _close() {
     _dwell?.cancel();
     _linger?.cancel();
-    if (_peeking && mounted) setState(() => _peeking = false);
+    _peeking = false;
+    _showStory();
   }
 
   void _hold(bool held) {
@@ -146,135 +182,116 @@ class _ReplayDockState extends ConsumerState<ReplayDock> {
   @override
   Widget build(BuildContext context) {
     final playback = widget.playback;
-    final roundsShown = ref.watch(replayRoundsShownProvider);
+    final theme = ShadTheme.of(context);
     final pinned = ref.watch(replayRoundStoryProvider);
-    final story = pinned || _peeking;
+    ref.listen(replayRoundStoryProvider, (_, __) => _showStory());
+    const padding = ReplayDock._padding;
     return MouseRegion(
-      // The gap between the rows counts as the dock, but the map under it
+      // The margin under the card counts as the dock, but the map under it
       // still hears the pointer.
       hitTestBehavior: HitTestBehavior.translucent,
       onEnter: (_) => _enter(),
       onExit: (_) => _exit(),
-      child: Padding(
-        padding: EdgeInsets.only(bottom: story ? 0 : ReplayDock._margin),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final room = constraints.maxWidth;
-            final strip = _RoundStrip.naturalWidth(playback.document.rounds);
-            final width =
-                math.min(room, math.max(strip, ReplayDock.minPlaybackWidth));
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (roundsShown) ...[
-                  _Surface(
-                    // Too many rounds for the room: the strip scrolls.
-                    width: math.min(strip, room),
-                    child: ReplaySelect(
-                      listenable: playback,
-                      select: () =>
-                          (playback.round?.index, playback.perspective),
-                      builder: (context, _) => _RoundStrip(playback: playback),
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final room = constraints.maxWidth;
+          final strip = _RoundStrip.naturalWidth(playback.document.rounds);
+          final width = math.min(
+            room,
+            strip.clamp(ReplayDock.minPlaybackWidth, ReplayDock.maxWidth),
+          );
+          return AnimatedBuilder(
+            animation: _story,
+            // The rounds keep still while the story opens under them.
+            child: ReplaySelect(
+              listenable: playback,
+              select: () => (playback.round?.index, playback.perspective),
+              // Too many rounds for the room: the strip scrolls.
+              builder: (context, _) => _RoundStrip(playback: playback),
+            ),
+            builder: (context, rounds) {
+              final open = _story.value;
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: ReplayDock._margin * (1 - open),
+                ),
+                child: Container(
+                  width: width,
+                  // The open story's lower lane reaches the border, so the
+                  // scrubber answers over every portrait it draws.
+                  padding: EdgeInsets.fromLTRB(
+                    padding,
+                    padding,
+                    padding,
+                    padding * (1 - open),
                   ),
-                  const SizedBox(height: 4),
-                ],
-                MouseRegion(
-                  onEnter: (_) {
-                    _overPlayback = true;
-                    _restOnPlayback();
-                  },
-                  onExit: (_) {
-                    _overPlayback = false;
-                    _dwell?.cancel();
-                  },
-                  child: _Surface(
-                    width: width,
-                    // The open story's lower lane reaches the border, so
-                    // the scrubber answers over every portrait it draws.
-                    bottomPadding: story ? 0 : _Surface.padding,
-                    child: _PlaybackRow(
-                      playback: playback,
-                      story: story,
-                      pinned: pinned,
-                      roundsShown: roundsShown,
-                      onHold: _hold,
-                      onPin: () => ref
-                          .read(replayRoundStoryProvider.notifier)
-                          .update((pinned) => !pinned),
-                      onRounds: () => ref
-                          .read(replayRoundsShownProvider.notifier)
-                          .update((shown) => !shown),
-                    ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.card,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.border),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      rounds!,
+                      const SizedBox(height: 4),
+                      MouseRegion(
+                        onEnter: (_) {
+                          _overPlayback = true;
+                          _restOnPlayback();
+                        },
+                        onExit: (_) {
+                          _overPlayback = false;
+                          _dwell?.cancel();
+                        },
+                        child: _PlaybackRow(
+                          playback: playback,
+                          open: open,
+                          pinned: pinned,
+                          onHold: _hold,
+                          onPin: () => ref
+                              .read(replayRoundStoryProvider.notifier)
+                              .update((pinned) => !pinned),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            );
-          },
-        ),
+              );
+            },
+          );
+        },
       ),
     );
   }
 }
 
-/// One row of the dock: a card of its own, so the map shows around it.
-class _Surface extends StatelessWidget {
-  const _Surface({
-    required this.width,
-    required this.child,
-    this.bottomPadding = padding,
-  });
-
-  static const padding = 5.0;
-
-  final double width;
-  final Widget child;
-  final double bottomPadding;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return Container(
-      width: width,
-      padding: EdgeInsets.fromLTRB(padding, padding, padding, bottomPadding),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.border),
-      ),
-      child: child,
-    );
-  }
-}
-
-/// Play, the round's clock, the scrubber and the speed, then the two
-/// switches for what the dock shows. Only the clock and the scrubber change
+/// Play, the round's clock, the scrubber and the speed, then the pin that
+/// keeps the round's story open. Only the clock and the scrubber change
 /// every frame; the rest rebuilds when what it shows does.
 class _PlaybackRow extends StatelessWidget {
   const _PlaybackRow({
     required this.playback,
-    required this.story,
+    required this.open,
     required this.pinned,
-    required this.roundsShown,
     required this.onHold,
     required this.onPin,
-    required this.onRounds,
   });
 
   final ReplayPlayback playback;
-  final bool story;
+
+  /// How far open the round's story is, 0 to 1.
+  final double open;
   final bool pinned;
-  final bool roundsShown;
   final ValueChanged<bool> onHold;
   final VoidCallback onPin;
-  final VoidCallback onRounds;
 
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
     // The controls stay level with the scrubber's line, which the story
     // grows around.
-    final lift = story ? _StoryMark.height - _StoryMark.mid - 12 : 0.0;
+    final lift = (_StoryMark.height - _StoryMark.mid - 12) * open;
     Widget level(Widget child) => Padding(
           padding: EdgeInsets.only(bottom: lift),
           child: child,
@@ -318,7 +335,7 @@ class _PlaybackRow extends StatelessWidget {
         Expanded(
           child: _RoundScrubber(
             playback: playback,
-            story: story,
+            open: open,
             onHold: onHold,
           ),
         ),
@@ -339,13 +356,6 @@ class _PlaybackRow extends StatelessWidget {
           checked: pinned,
           tooltip: pinned ? 'Unpin round story' : 'Pin round story',
           onPressed: onPin,
-        )),
-        // At the row's end, where it stays whether the rounds show or not,
-        // so a second click undoes the first.
-        level(_ViewToggle(
-          icon: roundsShown ? LucideIcons.chevronDown : LucideIcons.chevronUp,
-          tooltip: roundsShown ? 'Hide rounds' : 'Show rounds',
-          onPressed: onRounds,
         )),
       ],
     );
@@ -410,7 +420,10 @@ class _ViewToggle extends StatelessWidget {
 /// One slot per round, showing how it ended on the winner's colour, with a
 /// thin divider at the half and "OT" before overtime. A hairline rail below
 /// numbers the first round, every fifth, and the second half's first.
-class _RoundStrip extends StatelessWidget {
+///
+/// When the rounds outrun the card, the strip scrolls, by wheel as well as
+/// trackpad, and follows the round being watched into view.
+class _RoundStrip extends StatefulWidget {
   const _RoundStrip({required this.playback});
 
   final ReplayPlayback playback;
@@ -420,45 +433,118 @@ class _RoundStrip extends StatelessWidget {
   static const _half = 8.0;
   static const _overtime = 18.0;
 
-  /// The strip's surface wide enough for every slot, unscrolled.
+  /// The dock's card wide enough for every slot, unscrolled.
   static double naturalWidth(List<ReplayRound> rounds) {
     final (:half, :overtime) = _breaks(rounds);
-    var width = rounds.length * _slot;
-    var items = rounds.length;
-    if (half != null) {
-      width += _half;
-      items++;
-    }
-    if (overtime != null) {
-      width += _overtime;
-      items++;
-    }
-    width += math.max(0, items - 1) * _gap;
-    // The surface's padding and border.
-    return width + 2 * _Surface.padding + 2;
+    return widthOf(rounds.length, half: half, overtime: overtime);
+  }
+
+  /// The card wide enough for [count] slots, broken at [half] and
+  /// [overtime].
+  static double widthOf(int count, {int? half, int? overtime}) =>
+      // The card's padding and border either side.
+      _slotLeft(count, half: half, overtime: overtime) -
+      (count > 0 ? _gap : 0) +
+      2 * ReplayDock._padding +
+      2;
+
+  /// Where slot [index] starts along the strip.
+  static double _slotLeft(int index, {int? half, int? overtime}) {
+    var left = index * (_slot + _gap);
+    if (half != null && index >= half) left += _half + _gap;
+    if (overtime != null && index >= overtime) left += _overtime + _gap;
+    return left;
+  }
+
+  @override
+  State<_RoundStrip> createState() => _RoundStripState();
+}
+
+class _RoundStripState extends State<_RoundStrip> {
+  final _scroll = ScrollController();
+
+  /// The round last brought into view.
+  int? _followed;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Scrolls just far enough to show round [index] with a neighbour either
+  /// side: at once the first time, smoothly after.
+  void _follow(int index, ({int? half, int? overtime}) breaks) {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    const slot = _RoundStrip._slot;
+    final left = _RoundStrip._slotLeft(
+          index,
+          half: breaks.half,
+          overtime: breaks.overtime,
+        ) -
+        slot;
+    final right = left + 3 * slot;
+    final target = (left < position.pixels
+            ? left
+            : right > position.pixels + position.viewportDimension
+                ? right - position.viewportDimension
+                : position.pixels)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (target == position.pixels) return;
+    _followed == null
+        ? _scroll.jumpTo(target)
+        : _scroll.animateTo(
+            target,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+          );
+  }
+
+  /// A plain mouse wheel turns the strip, which on its own only answers to
+  /// a sideways scroll; over the strip, the map doesn't zoom.
+  void _wheel(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || event.scrollDelta.dx != 0) return;
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    if (position.maxScrollExtent == position.minScrollExtent) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (event) {
+      final delta = (event as PointerScrollEvent).scrollDelta.dy;
+      _scroll.jumpTo((position.pixels + delta)
+          .clamp(position.minScrollExtent, position.maxScrollExtent));
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
+    final playback = widget.playback;
     final rounds = playback.document.rounds;
     final current = playback.round?.index;
-    final (:half, :overtime) = _breaks(rounds);
+    final breaks = _breaks(rounds);
+    final (:half, :overtime) = breaks;
+    if (current != null && current != _followed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _follow(current, breaks);
+        _followed = current;
+      });
+    }
     final children = <Widget>[];
     for (var i = 0; i < rounds.length; i++) {
       final round = rounds[i];
       if (i == half) {
         children.add(SizedBox(
-          width: _half,
-          height: _slot,
+          width: _RoundStrip._half,
+          height: _RoundStrip._slot,
           child: Center(
             child: Container(width: 1, height: 18, color: theme.input),
           ),
         ));
       } else if (i == overtime) {
         children.add(SizedBox(
-          width: _overtime,
-          height: _slot,
+          width: _RoundStrip._overtime,
+          height: _RoundStrip._slot,
           child: Center(
             child: Text(
               'OT',
@@ -487,12 +573,16 @@ class _RoundStrip extends StatelessWidget {
         ],
       ));
     }
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        spacing: _gap,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: children,
+    return Listener(
+      onPointerSignal: _wheel,
+      child: SingleChildScrollView(
+        controller: _scroll,
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          spacing: _RoundStrip._gap,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
       ),
     );
   }
@@ -566,7 +656,9 @@ class _RoundSlot extends StatelessWidget {
             : Settings.enemyBGColor;
     final end = round.endReason;
     return ShadTooltip(
-      builder: (context) => Text(_outcome(round, perspective)),
+      // Its colour says who won and its glyph how; the number is all the
+      // slot itself doesn't show.
+      builder: (context) => Text('Round ${round.index + 1}'),
       // A Shad gesture detector, so the tooltip hears the hover.
       child: ShadGestureDetector(
         cursor: SystemMouseCursors.click,
@@ -595,27 +687,6 @@ class _RoundSlot extends StatelessWidget {
       ),
     );
   }
-
-  /// "Round 7 · Won · Spike defused on A", from [perspective]'s side.
-  static String _outcome(ReplayRound round, ReplayTeam perspective) {
-    final winner = round.winningTeam;
-    final plant = round.plant;
-    final on = plant?.site == null ? '' : ' on ${plant!.site}';
-    final afterPlant = plant == null ? '' : ' after plant$on';
-    final ending = switch (round.endReason) {
-      null => null,
-      ReplayRoundEnd.elimination => 'Elimination$afterPlant',
-      ReplayRoundEnd.detonated => 'Spike detonated$on',
-      ReplayRoundEnd.defused => 'Spike defused$on',
-      ReplayRoundEnd.time => 'Time ran out$afterPlant',
-      ReplayRoundEnd.surrender => 'Surrender$afterPlant',
-    };
-    return [
-      'Round ${round.index + 1}',
-      if (winner != null) winner == perspective ? 'Won' : 'Lost',
-      if (ending != null) ending,
-    ].join(' · ');
-  }
 }
 
 /// The round being watched, start to end. Drag or click to move through it;
@@ -626,16 +697,20 @@ class _RoundSlot extends StatelessWidget {
 ///
 /// Opened into the round's story, it grows upward: each kill's killer sits
 /// above the line for the watched team's kills and below it for the other
-/// team's, and the spike sits on it.
+/// team's, and the spike sits on it. While it grows the story's marks fade
+/// in over the track's own; the pointer answers to the story only once it
+/// is fully open.
 class _RoundScrubber extends ConsumerStatefulWidget {
   const _RoundScrubber({
     required this.playback,
-    required this.story,
+    required this.open,
     required this.onHold,
   });
 
   final ReplayPlayback playback;
-  final bool story;
+
+  /// How far open the round's story is, 0 to 1.
+  final double open;
 
   /// Told when a drag or a hover card starts or stops holding the story
   /// open.
@@ -710,7 +785,7 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
     super.didUpdateWidget(oldWidget);
     // The marks move when the story opens or closes; the card would point
     // at where one was. Without a mark the card draws nothing.
-    if (oldWidget.story != widget.story && _hovered != null) {
+    if ((oldWidget.open == 1) != (widget.open == 1) && _hovered != null) {
       _hovered = null;
       widget.onHold(_dragging);
     }
@@ -769,9 +844,12 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
     double width,
   ) {
     final playback = widget.playback;
-    final story = widget.story;
+    final open = widget.open;
     double x(int ms) => ((ms - start) / span).clamp(0.0, 1.0) * width;
-    final marks = story ? _storyOf(events, x, width) : null;
+    final marks = open > 0 ? _storyOf(events, x, width) : null;
+    // What the pointer hovers and clicks: the story's marks once it is
+    // open, else the track's.
+    final story = open == 1 ? marks : null;
 
     void seekTo(double dx) {
       final fraction = (dx / width).clamp(0.0, 1.0);
@@ -780,9 +858,9 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
 
     /// The mark under [local], and where its card goes.
     (ReplayRoundEvent, double)? markAt(Offset local) {
-      if (marks != null) {
+      if (story != null) {
         final passed = _passed(events, playback.timeMs);
-        return _StoryMark.hit(marks, passed, local, _hoverReach);
+        return _StoryMark.hit(story, passed, local, _hoverReach);
       }
       ReplayRoundEvent? nearest;
       var nearestX = 0.0;
@@ -804,10 +882,12 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
       _hover(mark?.$1, mark?.$2 ?? 0);
     }
 
-    final line = story ? _StoryMark.mid : 12.0;
+    final line = 12 + (_StoryMark.mid - 12) * open;
+    final height = 24 + (_StoryMark.height - 24) * open;
     final painter = _ScrubberPainter(
       playback: playback,
-      events: story ? const [] : events,
+      events: open == 1 ? const [] : events,
+      opacity: 1 - open,
       start: start,
       span: span,
       line: line,
@@ -816,7 +896,7 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
       playback: playback,
       start: start,
       span: span,
-      story: story,
+      open: open,
       line: line,
     );
     return CompositedTransformTarget(
@@ -833,7 +913,7 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
             onTapDown: (details) {
               // In the story, a killer pushed aside from their tick still
               // goes to their kill.
-              final mark = marks == null ? null : markAt(details.localPosition);
+              final mark = story == null ? null : markAt(details.localPosition);
               mark == null
                   ? seekTo(details.localPosition.dx)
                   : playback.seek(mark.$1.timeMs);
@@ -846,24 +926,41 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
             // The track repaints every frame; nothing around it need.
             child: RepaintBoundary(
               child: SizedBox(
-                height: story ? _StoryMark.height : 24,
+                height: height,
                 child: CustomPaint(
                   painter: painter,
                   foregroundPainter: playhead,
                   child: marks == null
                       ? const SizedBox.expand()
-                      : RepaintBoundary(
-                          // Marks still ahead are drawn faint; this
-                          // rebuilds only as the playhead passes one.
-                          child: ReplaySelect(
-                            listenable: playback,
-                            select: () => _passed(events, playback.timeMs),
-                            builder: (context, passed) => _StoryMarks(
-                              playback: playback,
-                              marks: marks,
-                              passed: passed,
+                      // Laid out for the open story around its line, and
+                      // cut to the track while it grows.
+                      : Stack(
+                          clipBehavior: Clip.hardEdge,
+                          children: [
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: line - _StoryMark.mid,
+                              height: _StoryMark.height,
+                              child: Opacity(
+                                opacity: open,
+                                child: RepaintBoundary(
+                                  // Marks still ahead are drawn faint; this
+                                  // rebuilds only as the playhead passes one.
+                                  child: ReplaySelect(
+                                    listenable: playback,
+                                    select: () =>
+                                        _passed(events, playback.timeMs),
+                                    builder: (context, passed) => _StoryMarks(
+                                      playback: playback,
+                                      marks: marks,
+                                      passed: passed,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                 ),
               ),
@@ -944,6 +1041,7 @@ class _ScrubberPainter extends CustomPainter {
   _ScrubberPainter({
     required this.playback,
     required this.events,
+    required this.opacity,
     required this.start,
     required this.span,
     required this.line,
@@ -954,6 +1052,9 @@ class _ScrubberPainter extends CustomPainter {
 
   /// The marks to draw on the track; none when the story draws them.
   final List<ReplayRoundEvent> events;
+
+  /// How strongly [events] are drawn: they fade as the story opens.
+  final double opacity;
   final int start;
   final int span;
   final ReplayTeam perspective;
@@ -1000,6 +1101,14 @@ class _ScrubberPainter extends CustomPainter {
       ..lineTo(px, midY + 8)
       ..lineTo(px - 5, midY)
       ..close();
+    if (events.isEmpty) return;
+    // Faded together, while the story's own marks fade in over them.
+    if (opacity < 1) {
+      canvas.saveLayer(
+        Offset.zero & size,
+        Paint()..color = Color.fromRGBO(0, 0, 0, opacity),
+      );
+    }
     // Ability uses first, and small, so kills and the spike stay on top.
     for (final event in events) {
       if (event.kind != ReplayEventKind.ability) continue;
@@ -1057,12 +1166,14 @@ class _ScrubberPainter extends CustomPainter {
           canvas.drawPath(burst, Paint()..color = ink);
       }
     }
+    if (opacity < 1) canvas.restore();
   }
 
   @override
   bool shouldRepaint(_ScrubberPainter old) =>
       !identical(old.playback, playback) ||
       !identical(old.events, events) ||
+      old.opacity != opacity ||
       old.start != start ||
       old.span != span ||
       old.perspective != perspective ||
@@ -1070,32 +1181,32 @@ class _ScrubberPainter extends CustomPainter {
 }
 
 /// The playhead, over every mark; in the story, a faint line through the
-/// whole track too, to read the portraits against.
+/// whole track too, to read the portraits against, coming in as it opens.
 class _PlayheadPainter extends CustomPainter {
   _PlayheadPainter({
     required this.playback,
     required this.start,
     required this.span,
-    required this.story,
+    required this.open,
     required this.line,
   }) : super(repaint: playback);
 
   final ReplayPlayback playback;
   final int start;
   final int span;
-  final bool story;
+  final double open;
   final double line;
 
   @override
   void paint(Canvas canvas, Size size) {
     const theme = Settings.tacticalVioletTheme;
     final x = ((playback.timeMs - start) / span).clamp(0.0, 1.0) * size.width;
-    if (story) {
+    if (open > 0) {
       canvas.drawLine(
         Offset(x, 0),
         Offset(x, size.height),
         Paint()
-          ..color = theme.foreground.withValues(alpha: 0.45)
+          ..color = theme.foreground.withValues(alpha: 0.45 * open)
           ..strokeWidth = 1,
       );
     }
@@ -1111,7 +1222,7 @@ class _PlayheadPainter extends CustomPainter {
       !identical(old.playback, playback) ||
       old.start != start ||
       old.span != span ||
-      old.story != story ||
+      old.open != open ||
       old.line != line;
 }
 
