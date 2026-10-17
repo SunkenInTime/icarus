@@ -130,6 +130,11 @@ class StrategyPageSessionState {
   }
 }
 
+/// How a page switch ended: on the page asked for, on the page it started
+/// from, or handed over to a newer switch (or another strategy) that
+/// started while it waited.
+enum _PageSwitch { switched, stayed, superseded }
+
 class _RemotePageHydrationKey {
   const _RemotePageHydrationKey({
     required this.strategyPublicId,
@@ -407,14 +412,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
 
     try {
-      final switched = await _switchToPage(
+      final outcome = await _switchToPage(
         pageId,
         animated: true,
         direction: direction,
       );
-      if (!switched) {
+      // A newer switch took over while this one waited: the transition is
+      // that switch's now.
+      if (outcome == _PageSwitch.superseded) return;
+      if (outcome == _PageSwitch.stayed) {
         transitionNotifier.complete();
         state = state.copyWith(transitionState: PageTransitionState.idle);
+        _resumePendingRemoteReapplyIfPossible();
         return;
       }
     } catch (error, stackTrace) {
@@ -1035,20 +1044,20 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     ref.read(activePageLiveSyncProvider.notifier).reset();
   }
 
-  /// Returns false, leaving the page on screen, if a teammate deleted it
-  /// while its work was being flushed, or if the server can't send the
-  /// cloud page asked for.
-  Future<bool> _switchToPage(
+  /// Stays on the page on screen ([_PageSwitch.stayed]) if a teammate
+  /// deleted it while its work was being flushed, or if the server can't
+  /// send the cloud page asked for.
+  Future<_PageSwitch> _switchToPage(
     String pageId, {
     required bool animated,
     PageTransitionDirection? direction,
   }) async {
-    _pageSessionGeneration++;
+    final generation = ++_pageSessionGeneration;
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
     final source = strategyState.source;
     if (strategyId == null || source == null) {
-      return true;
+      return _PageSwitch.switched;
     }
 
     final pageSource = _resolvePageSource(strategyId, source);
@@ -1062,23 +1071,29 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           .flushNow()
           .timeout(const Duration(milliseconds: 750), onTimeout: () {});
       // The page may have been deleted while its work was flushed.
-      if (_deletedPageHoldsWork()) return false;
+      if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
       // Read the page before leaving this one. Leaving first dropped this
       // page's server copy, and with it every later edit's way into the
       // queue, whenever the read then failed (offline, say).
       final remote = ref.read(remoteEditorSnapshotProvider.notifier);
+      bool superseded() =>
+          generation != _pageSessionGeneration ||
+          ref.read(strategyProvider).strategyId != strategyId;
       final RemotePageSnapshot target;
       try {
         target = await remote.fetchPage(pageId);
       } catch (error) {
+        if (superseded()) return _PageSwitch.superseded;
         AppErrorReporter.reportInfo(
           'Page $pageId could not be read; staying on this page: $error',
           source: 'strategy_page_session',
         );
         _showPageUnreachable(pageId);
-        return false;
+        return _PageSwitch.stayed;
       }
-      if (ref.read(strategyProvider).strategyId != strategyId) return false;
+      if (superseded()) return _PageSwitch.superseded;
+      // Or deleted while the page was read.
+      if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
       state = state.copyWith(activePageId: pageId);
       ref.read(activePageLiveSyncProvider.notifier).setContext(
             strategyPublicId: strategyId,
@@ -1098,7 +1113,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (animated && direction != null) {
       _updateHydrationBookkeeping(pageData.pageId);
     }
-    return true;
+    return _PageSwitch.switched;
   }
 
   void _showPageUnreachable(String pageId) {

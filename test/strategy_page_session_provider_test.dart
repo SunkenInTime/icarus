@@ -101,8 +101,12 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   /// While set, every page read fails, as with the connection down.
   bool offline = false;
 
+  /// Runs while a page is read, before the read answers.
+  Future<void> Function(String pagePublicId)? onFetchPage;
+
   @override
   Future<RemotePageSnapshot> fetchPage(String pagePublicId) async {
+    await onFetchPage?.call(pagePublicId);
     if (offline || pagePublicId == failingPageId) {
       throw StateError('Failed to load $pagePublicId');
     }
@@ -2613,6 +2617,126 @@ void main() {
       );
     });
   }
+
+  test('a deletion landing while a switch reads the next page tells the user',
+      () async {
+    final one = _page('page-1', 0, name: 'A exec');
+    final two = _page('page-2', 1);
+    final loadedOne = _pageSnapshot(
+      one,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: loadedOne,
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(editorPointersProvider.notifier)
+      ..markCanvas(1)
+      ..down(1);
+    container.read(drawingProvider.notifier)
+      ..startFreeDrawing(
+          const Offset(10, 20),
+          CoordinateSystem.instance,
+          Colors.white,
+          2,
+          false,
+          false,
+          false,
+          TraversalSpeedProfile.values.first)
+      ..finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    container.read(editorPointersProvider.notifier).release(1);
+    await _settle();
+    final stroke = container.read(drawingProvider).elements.single.id;
+    // The teammate's delete lands while page 2 is being read.
+    remote.onFetchPage = (_) async {
+      remote.onFetchPage = null;
+      remote.setSnapshot(_editorSnapshot(
+        pages: [two],
+        activePage: loadedOne,
+        themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+      ));
+    };
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          two.publicId,
+          direction: PageTransitionDirection.forward,
+        );
+    await _settle();
+
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
+    expect(session.activePageId, one.publicId);
+    expect(session.transitionState, PageTransitionState.idle);
+    expect(container.read(drawingProvider).elements.map((d) => d.id), [stroke]);
+  });
+
+  test('a switch still reading its page gives way to a newer one', () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final three = _page('page-3', 2);
+    final loadedOne = _pageSnapshot(one, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [one, two, three], activePage: loadedOne),
+      pageCatalog: {
+        one.publicId: loadedOne,
+        two.publicId: _pageSnapshot(two, text: 'two'),
+        three.publicId: _pageSnapshot(three, text: 'three'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    final hold = Completer<void>();
+    remote.onFetchPage = (pageId) async {
+      if (pageId == two.publicId) await hold.future;
+    };
+
+    final first = session.setActivePageAnimated(
+      two.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    await _settle();
+    await session.setActivePageAnimated(
+      three.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    hold.complete();
+    await first;
+    await _settle();
+
+    final state = container.read(strategyPageSessionProvider);
+    expect(state.activePageId, three.publicId);
+    expect(remote.selectedPageIds, [three.publicId]);
+    expect(
+      container.read(activePageLiveSyncProvider).hydratedPageId,
+      three.publicId,
+    );
+  });
 
   test('a deletion landing while a switch flushes still tells the user',
       () async {
