@@ -930,7 +930,10 @@ class _CloudErrorBanner extends StatelessWidget {
       message: "Couldn't load your cloud library. Showing what's on this "
           'computer.',
       action: ShadButton.ghost(
+        // The button's usual vertical padding leaves too little of 28 for a
+        // line of text, and clips the y of Retry.
         height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         leading: const Icon(LucideIcons.refreshCw, size: 14),
         onPressed: onRetry,
         child: const Text('Retry'),
