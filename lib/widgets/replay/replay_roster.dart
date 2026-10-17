@@ -386,11 +386,13 @@ class _Killfeed extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Lined up with the rows' clocks below, not spread like a toolbar.
+        // Spread over the feed, every gap the same, the edges' too: the
+        // padding at either end matches the spacing between.
         Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
           // Wraps rather than overflows, should a font run wide.
           child: Wrap(
+            alignment: WrapAlignment.spaceEvenly,
             spacing: 4,
             runSpacing: 4,
             children: [

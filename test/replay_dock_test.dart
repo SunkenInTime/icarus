@@ -159,7 +159,7 @@ void main() {
     await mouse.moveTo(
         tester.getCenter(_asset(replayRoundEndAsset(ReplayRoundEnd.defused))));
     await tester.pumpAndSettle();
-    expect(find.text('Round 3 · Won · Spike defused'), findsOneWidget);
+    expect(find.text('Round 3'), findsOneWidget);
 
     await tester.tap(_asset(replayRoundEndAsset(ReplayRoundEnd.time)));
     await tester.pump();
@@ -187,27 +187,47 @@ void main() {
     expect(ot, lessThan(round25));
   });
 
-  testWidgets('hiding the rounds keeps the playback row where it was',
+  testWidgets('the rounds and playback share one card, as wide as the rounds',
       (tester) async {
     await _pumpDock(tester, _match(24));
-    final row = tester.getRect(_playbackRow.first);
+    final card = tester.getRect(_playbackRow.first);
     final strip = tester.getRect(find.byType(SingleChildScrollView));
-    // Both rows share their edges, the slots' width.
-    expect(row.width, greaterThan(ReplayDock.minPlaybackWidth));
-    expect(strip.left - row.left, closeTo(6, 0.01));
-    expect(row.right - strip.right, closeTo(6, 0.01));
+    expect(card.width, greaterThan(ReplayDock.minPlaybackWidth));
+    expect(strip.left - card.left, closeTo(6, 0.01));
+    expect(card.right - strip.right, closeTo(6, 0.01));
+    expect(strip.top, greaterThan(card.top));
+    expect(strip.bottom, lessThan(card.bottom));
+  });
 
-    final hide = tester.getCenter(find.byIcon(LucideIcons.chevronDown));
-    await tester.tap(find.byIcon(LucideIcons.chevronDown));
+  testWidgets('overtime past regulation scrolls, following the round watched',
+      (tester) async {
+    final playback = _match(30);
+    await _pumpDock(tester, playback);
+    final card = tester.getRect(_playbackRow.first);
+    final strip = tester.getRect(find.byType(SingleChildScrollView));
+    // As wide as a full regulation match, no wider.
+    expect(card.width, ReplayDock.maxWidth);
+    expect(ReplayDock.maxWidth, closeTo(644, 0.01));
+    expect(tester.getRect(find.text('30')).left, greaterThan(strip.right));
+
+    playback.seekRound(29);
     await tester.pump();
-    expect(find.byType(SingleChildScrollView), findsNothing);
-    expect(tester.getRect(_playbackRow.first), row);
-    // The same switch, in the same place, brings them back.
-    expect(tester.getCenter(find.byIcon(LucideIcons.chevronUp)), hide);
-    await tester.tap(find.byIcon(LucideIcons.chevronUp));
+    await tester.pumpAndSettle();
+    final last = tester.getRect(find.text('30'));
+    expect(last.left, greaterThanOrEqualTo(strip.left));
+    expect(last.right, lessThanOrEqualTo(strip.right));
+
+    // A plain wheel turns it back.
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: strip.center);
+    await tester.sendEventToBinding(PointerScrollEvent(
+      position: strip.center,
+      scrollDelta: const Offset(0, -1000),
+      kind: PointerDeviceKind.mouse,
+    ));
     await tester.pump();
-    expect(find.byType(SingleChildScrollView), findsOneWidget);
-    expect(tester.getRect(_playbackRow.first), row);
+    expect(tester.getRect(find.text('1')).left, closeTo(strip.left, 0.01));
   });
 
   testWidgets('a short match keeps a usable scrubber', (tester) async {
@@ -239,7 +259,7 @@ void main() {
     expect(portrait('Jett'), findsNothing);
 
     await tester.tap(find.byIcon(LucideIcons.pin));
-    await tester.pump();
+    await tester.pumpAndSettle();
     final track = tester.getRect(find.byWidgetPredicate((widget) =>
         widget is CustomPaint &&
         widget.painter.runtimeType.toString() == '_ScrubberPainter'));
@@ -283,7 +303,7 @@ void main() {
         lessThanOrEqualTo(track.center.dy));
 
     await tester.tap(find.byIcon(LucideIcons.pin));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(portrait('Jett'), findsNothing);
   });
 
@@ -301,7 +321,7 @@ void main() {
       ..seek(5000);
     await _pumpDock(tester, playback);
     await tester.tap(find.byIcon(LucideIcons.pin));
-    await tester.pump();
+    await tester.pumpAndSettle();
     final track = tester.getRect(find.byWidgetPredicate((widget) =>
         widget is CustomPaint &&
         widget.painter.runtimeType.toString() == '_ScrubberPainter'));
@@ -335,7 +355,7 @@ void main() {
     });
     await _pumpDock(tester, playback);
     await tester.tap(find.byIcon(LucideIcons.pin));
-    await tester.pump();
+    await tester.pumpAndSettle();
     final track = tester.getRect(find.byWidgetPredicate((widget) =>
         widget is CustomPaint &&
         widget.painter.runtimeType.toString() == '_ScrubberPainter'));
@@ -388,22 +408,29 @@ void main() {
       return mouse;
     }
 
-    testWidgets('opens the story, its line barely moving', (tester) async {
+    testWidgets('grows the story open, its line barely moving', (tester) async {
       await _pumpDock(tester, _match(2)..seek(5000));
       final mouse = await pointer(tester);
       final rest = line(tester);
       await mouse.moveTo(clock(tester));
       await tester.pump(const Duration(milliseconds: 150));
       expect(storyOpen(tester), isFalse);
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(storyOpen(tester), isTrue);
+      await tester.pump(const Duration(milliseconds: 50));
+      // Partway, the track is between its two heights.
+      await tester.pump(ReplayDock.storyDuration ~/ 2);
+      final growing = tester.getSize(scrubber()).height;
+      expect(growing, greaterThan(24));
+      expect(growing, lessThan(54));
+      await tester.pump(ReplayDock.storyDuration);
+      expect(tester.getSize(scrubber()).height, 54);
       expect((line(tester) - rest).abs(), lessThan(8));
 
-      // Leaving, it lingers a moment, then closes.
+      // Leaving, it lingers a moment, then folds shut.
       await mouse.moveTo(away);
       await tester.pump(const Duration(milliseconds: 300));
       expect(storyOpen(tester), isTrue);
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(ReplayDock.storyDuration);
       expect(storyOpen(tester), isFalse);
       expect(line(tester), rest);
     });
@@ -424,6 +451,7 @@ void main() {
       final mouse = await pointer(tester);
       await mouse.moveTo(clock(tester));
       await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(ReplayDock.storyDuration);
       expect(storyOpen(tester), isTrue);
 
       final track = tester.getRect(scrubber());
@@ -435,7 +463,8 @@ void main() {
       expect(storyOpen(tester), isTrue);
 
       await mouse.up();
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(ReplayDock.peekLinger);
+      await tester.pump(ReplayDock.storyDuration);
       expect(storyOpen(tester), isFalse);
     });
 
@@ -448,13 +477,16 @@ void main() {
       final mouse = await pointer(tester);
       await mouse.moveTo(clock(tester));
       await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(ReplayDock.storyDuration);
       expect(storyOpen(tester), isTrue);
 
       drawing.start();
       await tester.pump();
+      await tester.pump(ReplayDock.storyDuration);
       expect(storyOpen(tester), isFalse);
       drawing.stop();
       await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(ReplayDock.storyDuration);
       expect(storyOpen(tester), isTrue);
     });
 
@@ -486,6 +518,7 @@ void main() {
       await tester.tap(find.byIcon(LucideIcons.pin));
       await mouse.moveTo(away);
       await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump(ReplayDock.storyDuration);
       expect(storyOpen(tester), isFalse);
     });
   });

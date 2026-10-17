@@ -408,136 +408,15 @@ class DrawingProvider extends Notifier<DrawingState> {
 
   void onErase(Offset mousePos) {
     if (!ref.canEditPages) return;
-    final Set<int> indicesToDelete = {};
-
-    for (final (index, drawing) in state.elements.indexed) {
-      if (drawing is FreeDrawing) {
-        if (drawing.boundingBox != null &&
-            drawing.boundingBox!
-                .isWithinOrNear(mousePos, Settings.erasingSize)) {
-          for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
-            double distance = distanceToLineSegment(
-                mousePos, drawing.listOfPoints[i], drawing.listOfPoints[i + 1]);
-
-            if (distance < Settings.erasingSize) {
-              indicesToDelete.add(index);
-              break;
-            }
-          }
-        }
-      } else if (drawing is RectangleDrawing) {
-        if (drawing.boundingBox != null &&
-            drawing.boundingBox!
-                .isWithinOrNear(mousePos, Settings.erasingSize) &&
-            _isPointNearRectangleStroke(
-                mousePos, drawing, Settings.erasingSize)) {
-          indicesToDelete.add(index);
-        }
-      } else if (drawing is EllipseDrawing) {
-        if (drawing.boundingBox != null &&
-            drawing.boundingBox!
-                .isWithinOrNear(mousePos, Settings.erasingSize) &&
-            _isPointNearEllipseStroke(
-                mousePos, drawing, Settings.erasingSize)) {
-          indicesToDelete.add(index);
-        }
-      } else if (drawing is Line) {
-        if (drawing.boundingBox != null &&
-            drawing.boundingBox!
-                .isWithinOrNear(mousePos, Settings.erasingSize) &&
-            distanceToLineSegment(
-                  mousePos,
-                  drawing.lineStart,
-                  drawing.lineEnd,
-                ) <=
-                Settings.erasingSize) {
-          indicesToDelete.add(index);
-        }
-      }
-    }
+    final Set<int> indicesToDelete = {
+      for (final (index, drawing) in state.elements.indexed)
+        if (isNearDrawing(drawing, mousePos, Settings.erasingSize)) index,
+    };
 
     for (int index in indicesToDelete.toList()
       ..sort((a, b) => b.compareTo(a))) {
       deleteDrawing(index);
     }
-  }
-
-  double distanceToLineSegment(Offset p, Offset a, Offset b) {
-    // If a and b are the same point, just return distance to that point
-    if (a == b) return (p - a).distance;
-
-    // Calculate squared length of segment ab
-    final double lengthSquared =
-        (b - a).dx * (b - a).dx + (b - a).dy * (b - a).dy;
-
-    // Calculate projection of point p onto line ab
-    // t is the normalized position (0-1) along the line segment
-    double t = ((p.dx - a.dx) * (b.dx - a.dx) + (p.dy - a.dy) * (b.dy - a.dy)) /
-        lengthSquared;
-
-    // Clamp t to the segment
-    t = t.clamp(0.0, 1.0);
-
-    // Calculate the closest point on the segment
-    final Offset projection =
-        Offset(a.dx + t * (b.dx - a.dx), a.dy + t * (b.dy - a.dy));
-
-    // Return the distance to the closest point
-    return (p - projection).distance;
-  }
-
-  bool _isPointNearRectangleStroke(
-      Offset point, RectangleDrawing rectangle, double threshold) {
-    final rect = rectangle.normalizedRect;
-    final topLeft = Offset(rect.left, rect.top);
-    final topRight = Offset(rect.right, rect.top);
-    final bottomRight = Offset(rect.right, rect.bottom);
-    final bottomLeft = Offset(rect.left, rect.bottom);
-
-    return distanceToLineSegment(point, topLeft, topRight) <= threshold ||
-        distanceToLineSegment(point, topRight, bottomRight) <= threshold ||
-        distanceToLineSegment(point, bottomRight, bottomLeft) <= threshold ||
-        distanceToLineSegment(point, bottomLeft, topLeft) <= threshold;
-  }
-
-  bool _isPointNearEllipseStroke(
-      Offset point, EllipseDrawing ellipse, double threshold) {
-    final rect = ellipse.normalizedRect;
-    if (rect.width == 0 && rect.height == 0) {
-      return (point - rect.center).distance <= threshold;
-    }
-
-    if (rect.width == 0) {
-      return distanceToLineSegment(point, rect.topCenter, rect.bottomCenter) <=
-          threshold;
-    }
-
-    if (rect.height == 0) {
-      return distanceToLineSegment(point, rect.centerLeft, rect.centerRight) <=
-          threshold;
-    }
-
-    final outerRect = rect.inflate(threshold);
-    final isInsideOuter = _isPointInsideEllipse(point, outerRect);
-    if (!isInsideOuter) return false;
-
-    if (rect.width <= threshold * 2 || rect.height <= threshold * 2) {
-      return true;
-    }
-
-    final innerRect = rect.deflate(threshold);
-    return !_isPointInsideEllipse(point, innerRect);
-  }
-
-  bool _isPointInsideEllipse(Offset point, Rect rect) {
-    if (rect.width <= 0 || rect.height <= 0) return false;
-
-    final radiusX = rect.width / 2;
-    final radiusY = rect.height / 2;
-    final center = rect.center;
-    final normalizedX = (point.dx - center.dx) / radiusX;
-    final normalizedY = (point.dy - center.dy) / radiusY;
-    return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1;
   }
 
   // void startSimpleTap(Offset start, CoordinateSystem coordinateSystem) {
@@ -998,6 +877,111 @@ class DrawingProvider extends Notifier<DrawingState> {
     state = state.copyWith(elements: newElements);
     _triggerRepaint();
   }
+}
+
+/// Whether [point] lies within [threshold] of [drawing]'s stroke, all in
+/// world coordinates: what the eraser takes.
+bool isNearDrawing(DrawingElement drawing, Offset point, double threshold) {
+  final box = drawing.boundingBox;
+  if (box == null || !box.isWithinOrNear(point, threshold)) return false;
+  return switch (drawing) {
+    FreeDrawing() =>
+      _isPointNearPolyline(point, drawing.listOfPoints, threshold),
+    RectangleDrawing() =>
+      _isPointNearRectangleStroke(point, drawing, threshold),
+    EllipseDrawing() => _isPointNearEllipseStroke(point, drawing, threshold),
+    Line() =>
+      _distanceToLineSegment(point, drawing.lineStart, drawing.lineEnd) <=
+          threshold,
+    _ => false,
+  };
+}
+
+double _distanceToLineSegment(Offset p, Offset a, Offset b) {
+  // If a and b are the same point, just return distance to that point
+  if (a == b) return (p - a).distance;
+
+  // Calculate squared length of segment ab
+  final double lengthSquared =
+      (b - a).dx * (b - a).dx + (b - a).dy * (b - a).dy;
+
+  // Calculate projection of point p onto line ab
+  // t is the normalized position (0-1) along the line segment
+  double t = ((p.dx - a.dx) * (b.dx - a.dx) + (p.dy - a.dy) * (b.dy - a.dy)) /
+      lengthSquared;
+
+  // Clamp t to the segment
+  t = t.clamp(0.0, 1.0);
+
+  // Calculate the closest point on the segment
+  final Offset projection =
+      Offset(a.dx + t * (b.dx - a.dx), a.dy + t * (b.dy - a.dy));
+
+  // Return the distance to the closest point
+  return (p - projection).distance;
+}
+
+bool _isPointNearPolyline(Offset point, List<Offset> points, double threshold) {
+  for (int i = 0; i < points.length - 1; i++) {
+    if (_distanceToLineSegment(point, points[i], points[i + 1]) < threshold) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _isPointNearRectangleStroke(
+    Offset point, RectangleDrawing rectangle, double threshold) {
+  final rect = rectangle.normalizedRect;
+  final topLeft = Offset(rect.left, rect.top);
+  final topRight = Offset(rect.right, rect.top);
+  final bottomRight = Offset(rect.right, rect.bottom);
+  final bottomLeft = Offset(rect.left, rect.bottom);
+
+  return _distanceToLineSegment(point, topLeft, topRight) <= threshold ||
+      _distanceToLineSegment(point, topRight, bottomRight) <= threshold ||
+      _distanceToLineSegment(point, bottomRight, bottomLeft) <= threshold ||
+      _distanceToLineSegment(point, bottomLeft, topLeft) <= threshold;
+}
+
+bool _isPointNearEllipseStroke(
+    Offset point, EllipseDrawing ellipse, double threshold) {
+  final rect = ellipse.normalizedRect;
+  if (rect.width == 0 && rect.height == 0) {
+    return (point - rect.center).distance <= threshold;
+  }
+
+  if (rect.width == 0) {
+    return _distanceToLineSegment(point, rect.topCenter, rect.bottomCenter) <=
+        threshold;
+  }
+
+  if (rect.height == 0) {
+    return _distanceToLineSegment(point, rect.centerLeft, rect.centerRight) <=
+        threshold;
+  }
+
+  final outerRect = rect.inflate(threshold);
+  final isInsideOuter = _isPointInsideEllipse(point, outerRect);
+  if (!isInsideOuter) return false;
+
+  if (rect.width <= threshold * 2 || rect.height <= threshold * 2) {
+    return true;
+  }
+
+  final innerRect = rect.deflate(threshold);
+  return !_isPointInsideEllipse(point, innerRect);
+}
+
+bool _isPointInsideEllipse(Offset point, Rect rect) {
+  if (rect.width <= 0 || rect.height <= 0) return false;
+
+  final radiusX = rect.width / 2;
+  final radiusY = rect.height / 2;
+  final center = rect.center;
+  final normalizedX = (point.dx - center.dx) / radiusX;
+  final normalizedY = (point.dy - center.dy) / radiusY;
+  return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1;
 }
 
 int _readDrawingColorValue(Map<String, dynamic> json) {

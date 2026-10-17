@@ -12,12 +12,15 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -33,6 +36,7 @@ import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay_view.dart';
+import 'package:icarus/widgets/cursor_circle.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/replay/replay_canvas.dart';
 import 'package:icarus/widgets/replay/replay_drawing_layer.dart';
@@ -41,6 +45,26 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'replay_test_support.dart';
 
 const _mapPath = '/Game/Maps/Juliett/Juliett';
+
+/// The editor's pen, white and 5 thick, drawing [mode].
+PenState _pen({
+  PenMode mode = PenMode.freeDraw,
+  bool hasArrow = false,
+  bool isDotted = false,
+}) =>
+    PenState(
+      listOfColors: const [],
+      color: Colors.white,
+      hasArrow: hasArrow,
+      isDotted: isDotted,
+      opacity: 1,
+      thickness: 5,
+      penMode: mode,
+      traversalTimeEnabled: false,
+      activeTraversalSpeedProfile: TraversalSpeed.defaultProfile,
+      drawingCursor: null,
+      erasingCursor: null,
+    );
 
 ReplayPlayback _playback() => ReplayPlayback(
       document: ReplayDocument.fromBytes(icrp(sampleJson())),
@@ -100,12 +124,7 @@ void main() {
 
     /// Draws a freehand stroke across the canvas.
     void stroke(ReplayDrawing drawing) {
-      drawing.begin(
-        const Offset(100, 100),
-        coordinates,
-        color: Colors.white,
-        thickness: 5,
-      );
+      drawing.begin(const Offset(100, 100), coordinates, _pen());
       for (var x = 120.0; x <= 300; x += 20) {
         drawing.extend(Offset(x, 100), coordinates);
       }
@@ -159,39 +178,89 @@ void main() {
 
     test('a click that never moves draws nothing', () {
       final drawing = ReplayDrawing(_playback())..start();
-      for (final tool in ReplayDrawingTool.values) {
+      for (final mode in PenMode.values) {
         drawing
-          ..tool = tool
-          ..begin(
-            const Offset(50, 50),
-            coordinates,
-            color: Colors.white,
-            thickness: 5,
-          )
+          ..begin(const Offset(50, 50), coordinates, _pen(mode: mode))
           ..end(coordinates);
       }
       expect(drawing.strokes, isEmpty);
     });
 
-    test('the arrow is a straight line with an arrowhead', () {
+    test("a straight line takes the pen's arrow and dots", () {
       final drawing = ReplayDrawing(_playback())
         ..start()
-        ..tool = ReplayDrawingTool.arrow
         ..begin(
           const Offset(100, 100),
           coordinates,
-          color: Colors.white,
-          thickness: 5,
+          _pen(mode: PenMode.line, hasArrow: true, isDotted: true),
         )
         ..extend(const Offset(150, 200), coordinates)
         ..extend(const Offset(400, 300), coordinates)
         ..end(coordinates);
       final line = drawing.strokes.single as Line;
       expect(line.hasArrow, isTrue);
+      expect(line.isDotted, isTrue);
       expect(line.lineStart,
           coordinates.screenToCoordinate(const Offset(100, 100)));
       expect(
           line.lineEnd, coordinates.screenToCoordinate(const Offset(400, 300)));
+    });
+
+    test('the rectangle and the ellipse span the drag, as in the editor', () {
+      final drawing = ReplayDrawing(_playback())..start();
+      for (final mode in [PenMode.square, PenMode.ellipse]) {
+        drawing
+          ..begin(const Offset(400, 300), coordinates, _pen(mode: mode))
+          ..extend(const Offset(250, 200), coordinates)
+          ..extend(const Offset(200, 100), coordinates)
+          ..end(coordinates);
+      }
+      final [rectangle as RectangleDrawing, ellipse as EllipseDrawing] =
+          drawing.strokes;
+      final spanned = Rect.fromPoints(
+        coordinates.screenToCoordinate(const Offset(200, 100)),
+        coordinates.screenToCoordinate(const Offset(400, 300)),
+      );
+      for (final shape in [rectangle.normalizedRect, ellipse.normalizedRect]) {
+        expect(shape, spanned);
+      }
+      expect(rectangle.boundingBox!.min, spanned.topLeft);
+      expect(ellipse.boundingBox!.max, spanned.bottomRight);
+    });
+
+    test('the eraser rubs out what it passes over, and draws nothing', () {
+      final drawing = ReplayDrawing(_playback())..start();
+      stroke(drawing);
+      drawing.begin(const Offset(100, 400), coordinates, _pen());
+      drawing
+        ..extend(const Offset(300, 400), coordinates)
+        ..end(coordinates);
+      expect(drawing.strokes, hasLength(2));
+
+      drawing.toggleEraser();
+      expect(drawing.erasing, isTrue);
+      expect(drawing.active, isTrue);
+      drawing
+        ..begin(const Offset(200, 250), coordinates, _pen())
+        ..extend(const Offset(220, 250), coordinates)
+        ..end(coordinates);
+      expect(drawing.strokes, hasLength(2), reason: 'the eraser never draws');
+      // Clear of either stroke, then across the first.
+      drawing.erase(const Offset(200, 250), coordinates);
+      expect(drawing.strokes, hasLength(2));
+      drawing.erase(const Offset(200, 102), coordinates);
+      expect(drawing.strokes.single.boundingBox!.min.dy,
+          coordinates.screenToCoordinate(const Offset(0, 400)).dy);
+
+      // The pen swaps the eraser out, and erasing then does nothing.
+      drawing.toggle();
+      expect(drawing.erasing, isFalse);
+      expect(drawing.active, isTrue);
+      drawing.erase(const Offset(200, 400), coordinates);
+      expect(drawing.strokes, hasLength(1));
+      drawing.toggleEraser();
+      drawing.toggleEraser();
+      expect(drawing.active, isFalse);
     });
 
     test('a capture copies the strokes, sharing nothing with the screen', () {
@@ -293,10 +362,13 @@ void main() {
       await tester.pump();
       expect(drawing.active, isTrue);
       expect(playback.playing, isFalse);
-      // The pen's tools show while it is out; Clear only once something is
-      // drawn.
+      // The editor's drawing panel shows while the pen is out; Clear only
+      // once something is drawn.
+      for (final heading in ['Color', 'Shape', 'Stroke', 'Thickness']) {
+        expect(find.text(heading), findsOneWidget);
+      }
       expect(find.byIcon(LucideIcons.lineSquiggle), findsOneWidget);
-      expect(find.byIcon(LucideIcons.moveUpRight), findsOneWidget);
+      expect(find.byIcon(LucideIcons.circle), findsOneWidget);
       expect(find.text('Clear'), findsNothing);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -315,6 +387,21 @@ void main() {
       expect(drawing.active, isTrue);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
       expect(drawing.active, isFalse);
+      // The editor's Eraser key (W) and the eraser button take the eraser
+      // out, swapping with the pen, and the panel goes with the pen.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyW);
+      await tester.pump();
+      expect(drawing.erasing, isTrue);
+      expect(find.text('Thickness'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyW);
+      expect(drawing.active, isFalse);
+      await tester.tap(find.byIcon(CustomIcons.eraser));
+      await tester.pump();
+      expect(drawing.erasing, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      expect(drawing.active, isFalse);
+
       // D is the editor's Next page, not the pen.
       await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
       expect(drawing.active, isFalse);
@@ -358,6 +445,46 @@ void main() {
       await tester.pump();
       expect(drawing.strokes, isEmpty);
       expect(find.text('Clear'), findsNothing);
+    });
+
+    testWidgets('with the eraser out, a drag over a stroke rubs it out',
+        (tester) async {
+      await openReplay(tester);
+      final drawing = canvas(tester).drawing;
+
+      drawing.start();
+      await tester.pump();
+      await drag(tester);
+      expect(drawing.strokes, hasLength(1));
+      drawing.toggleEraser();
+      await tester.pump();
+      final before = view(tester);
+      await drag(tester);
+      expect(drawing.strokes, isEmpty);
+      expect(view(tester), before, reason: 'erasing does not pan');
+    });
+
+    testWidgets(
+        "the eraser's ring is under the pointer as soon as the eraser is "
+        'out, and only then', (tester) async {
+      await openReplay(tester);
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+      final center = tester.getCenter(find.byType(ReplayDrawingLayer));
+      await tester.sendEventToBinding(pointer.hover(center));
+      await tester.pump();
+      expect(find.byType(CursorCircle), findsNothing);
+
+      // Straight from watching, the pointer never moving.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyW);
+      await tester.pump();
+      final ring = tester.getRect(find.byType(CursorCircle));
+      expect((ring.center - center).distance, lessThan(1));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+      await tester.pump();
+      expect(find.byType(CursorCircle), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
     });
 
     testWidgets('strokes clear when playback resumes or the time changes',
@@ -484,23 +611,16 @@ void main() {
       addTearDown(container.dispose);
       final coordinates = CoordinateSystem(playAreaSize: const Size(1600, 900));
       final drawing = ReplayDrawing(_playback())..start();
-      drawing.begin(
-        const Offset(100, 100),
-        coordinates,
-        color: Colors.white,
-        thickness: 5,
-      );
+      drawing.begin(const Offset(100, 100), coordinates, _pen());
       for (var x = 120.0; x <= 300; x += 20) {
         drawing.extend(Offset(x, 140), coordinates);
       }
       drawing
         ..end(coordinates)
-        ..tool = ReplayDrawingTool.arrow
         ..begin(
           const Offset(400, 400),
           coordinates,
-          color: Colors.white,
-          thickness: 5,
+          _pen(mode: PenMode.line, hasArrow: true),
         )
         ..extend(const Offset(500, 300), coordinates)
         ..end(coordinates);

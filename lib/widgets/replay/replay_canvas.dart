@@ -565,6 +565,28 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                           },
                         ),
                       ),
+                      // The spawn barriers through the buy phase, over the
+                      // map as the editor draws them.
+                      if (widget.playback.barriersUp)
+                        Positioned(
+                          left: mapLeft,
+                          top: 0,
+                          width: mapWidth,
+                          height: height,
+                          child: IgnorePointer(
+                            child: RepaintBoundary(
+                              child: Transform.flip(
+                                flipX: !isAttack,
+                                flipY: !isAttack,
+                                child: SvgPicture.asset(
+                                  'assets/maps/${mapName}_spawn_walls.svg',
+                                  semanticsLabel: 'Barrier',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       // Areas swept so far, under the icons they run from.
                       for (final sweep
                           in frame.effects.whereType<ReplaySweep>())

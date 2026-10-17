@@ -42,6 +42,13 @@ class ReplayPlayback extends ChangeNotifier {
   int get durationMs => document.match.durationMs;
   ReplayRound? get round => document.roundAt(_timeMs);
 
+  /// Whether the spawn barriers are still up: the round's buy phase, before
+  /// they drop. A round without its drop recorded never shows them.
+  bool get barriersUp {
+    final drop = round?.combatStartMs;
+    return drop != null && _timeMs < drop;
+  }
+
   /// The moment on screen, every player exactly where they are. With
   /// [coneCuts], view cones are cut on a worker and drawn from their latest
   /// cut, so the UI thread only draws; without, each cone cuts its own.
