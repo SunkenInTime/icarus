@@ -136,7 +136,7 @@ void main() {
     (container.read(authProvider.notifier) as _ReadyAuthProvider)
         .startSigningOut();
     final ended = _beginSession('account-a')..endSessions();
-    await store.deleteAccount(ended);
+    await store.deleteAllExcept(null);
     gate.complete();
     await _settle();
 

@@ -170,10 +170,14 @@ void main() {
       container.read(authProvider.notifier) as _ReadyAuthProvider;
 
   /// What AuthProvider does when [accountId]'s session ends: end its
-  /// sessions, then delete what it kept.
+  /// sessions, then delete everything but the account signed in now (none,
+  /// when it is signing out).
   Future<void> endAccount(String accountId) async {
-    final ended = _beginSession(accountId)..endSessions();
-    await store.deleteAccount(ended);
+    _beginSession(accountId).endSessions();
+    final current = container.read(cloudCopyScopeProvider);
+    await store.deleteAllExcept(
+      current?.accountId == accountId ? null : current,
+    );
   }
 
   test('an answer held across Supabase ending the session is kept for no one',

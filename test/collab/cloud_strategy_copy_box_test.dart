@@ -184,8 +184,8 @@ void main() {
               askedAt: _at(0), arrivedAt: _at(0));
 
           asked.endSessions();
-          await copy.deleteAccount(asked);
           final next = nextAccount == null ? null : _beginSession(nextAccount);
+          await copy.deleteAllExcept(next);
           // The held answer arrives now.
           await copy.writeShell(asked, shellAnswer(['a', 'b']),
               askedAt: _at(1), arrivedAt: _at(2));
@@ -221,11 +221,15 @@ void main() {
           askedAt: _at(0), arrivedAt: _at(0));
     }
 
-    await store.deleteAccount(_scope);
-
+    // Another account signed in: only its entries stay.
+    await store.deleteAllExcept(otherAccount);
     expect(store.readShell(_scope, 'strategy'), isNull);
+    expect(store.readShell(otherDeployment, 'strategy'), isNull);
     expect(store.readShell(otherAccount, 'strategy'), isNotNull);
-    expect(store.readShell(otherDeployment, 'strategy'), isNotNull);
+
+    // Signed out: nothing stays.
+    await store.deleteAllExcept(null);
+    expect(store.entryKeys, isEmpty);
   });
 
   test('a full snapshot keeps every page with the images it shows', () async {

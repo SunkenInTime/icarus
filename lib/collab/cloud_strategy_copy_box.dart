@@ -229,14 +229,15 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     );
   }
 
-  /// Deletes everything [scope] keeps, as signing out does. Image files are
-  /// not touched.
+  /// Deletes every entry that isn't [keep]'s deployment and account, or
+  /// every entry when [keep] is null (signed out). Image files are not
+  /// touched.
   @override
-  Future<void> deleteAccount(CloudCopyScope scope) {
-    final prefix = scope.storageKeyPrefix;
-    return deleteEntries(
-      entryKeys.where((key) => key.startsWith(prefix)).toList(),
-    );
+  Future<void> deleteAllExcept(CloudCopyScope? keep) {
+    return deleteEntries([
+      for (final key in entryKeys)
+        if (keep == null || !key.startsWith(keep.storageKeyPrefix)) key,
+    ]);
   }
 
   // Each merge reads the entry and writes the result with no await in
@@ -343,6 +344,15 @@ class HiveCloudStrategyCopyStore extends CloudStrategyCopyStore {
 
   @override
   Iterable<String> get entryKeys => _box.keys.map((key) => key.toString());
+
+  /// Hive only marks deleted entries in its file; compacting rewrites the
+  /// file without them, so a signed-out account's strategies are off the
+  /// disk.
+  @override
+  Future<void> deleteAllExcept(CloudCopyScope? keep) async {
+    await super.deleteAllExcept(keep);
+    await _box.compact();
+  }
 }
 
 class MemoryCloudStrategyCopyStore extends CloudStrategyCopyStore {
