@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
-import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';

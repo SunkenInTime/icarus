@@ -160,13 +160,13 @@ class _Harness {
         // The bar draws the outbox's waiting page changes; none wait here.
         durableStrategyOutboxStoreProvider
             .overrideWithValue(MemoryDurableStrategyOutboxStore()),
-    strategyOutboxSessionProvider.overrideWithValue(
-      const StrategyOutboxSession(
-        accountId: null,
-        isReady: false,
-        hasAuthIncident: false,
-      ),
-    ),
+        strategyOutboxSessionProvider.overrideWithValue(
+          const StrategyOutboxSession(
+            accountId: null,
+            isReady: false,
+            hasAuthIncident: false,
+          ),
+        ),
         strategyProvider.overrideWith(() => strategy),
         strategyPageSessionProvider.overrideWith(() => session),
         appPreferencesProvider.overrideWith(_Preferences.new),

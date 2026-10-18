@@ -138,13 +138,13 @@ Future<void> _expandedBar(
       // The bar draws the outbox's waiting page changes; none wait here.
       durableStrategyOutboxStoreProvider
           .overrideWithValue(MemoryDurableStrategyOutboxStore()),
-  strategyOutboxSessionProvider.overrideWithValue(
-    const StrategyOutboxSession(
-      accountId: null,
-      isReady: false,
-      hasAuthIncident: false,
-    ),
-  ),
+      strategyOutboxSessionProvider.overrideWithValue(
+        const StrategyOutboxSession(
+          accountId: null,
+          isReady: false,
+          hasAuthIncident: false,
+        ),
+      ),
       strategyProvider.overrideWith(_CloudStrategy.new),
       strategyPageSessionProvider.overrideWith(_Session.new),
       appPreferencesProvider.overrideWith(_Preferences.new),
