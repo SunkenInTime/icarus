@@ -3321,8 +3321,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       });
       if (hasOversizedWork) return cloudOperationTooLargeMessage;
       // A change the server refused for its own reason (a lineup, a page
-      // in the trash) keeps that reason, so the sync button does not call
-      // it a conflict. Other attention beside it is noted so it is not left
+      // in the trash), or held because it no longer fits the page, keeps
+      // that reason, so the sync button does not call it a conflict. Other attention beside it is noted so it is not left
       // unexplained.
       String? specificReason;
       var hasOtherWork = false;
@@ -3338,6 +3338,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             reason == lineupOverlapMessage ||
             reason == teammateDeletedMessage ||
             reason == retiredLineupOpMessage ||
+            reason == undrawableWorkMessage ||
             reason == pageDeletedMessage) {
           // A second, different reason is other work too: one explanation
           // must not stand for both.

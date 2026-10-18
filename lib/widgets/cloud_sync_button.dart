@@ -4,6 +4,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -475,12 +476,24 @@ class _SyncStatusPopover extends StatelessWidget {
   bool get hasRejectedWork => rejectedCount > 0;
 
   /// The lineup changes to list, when there is no more specific reason to
-  /// show instead (a deleted page, an oversized change).
+  /// show instead (a deleted page, an oversized change). Lineups whose
+  /// change no longer fits the cloud's are listed: what a teammate changed
+  /// is what Keep mine replaces.
   List<LineupGroupConflict>? get _shownLineupConflicts {
     final error = saveState.cloudSyncError;
-    if (error != null && isSpecificAttentionReason(error)) return null;
+    if (error != null && isSpecificAttentionReason(error) && !_noLongerFits) {
+      return null;
+    }
     return lineupConflicts;
   }
+
+  /// The work waits because it no longer fits the page as the cloud has it
+  /// (see undrawableWorkMessage): Keep mine saves it whole.
+  bool get _noLongerFits =>
+      saveState.cloudSyncError
+          ?.toLowerCase()
+          .contains(undrawableWorkMessage.toLowerCase()) ??
+      false;
 
   @override
   Widget build(BuildContext context) {
@@ -646,7 +659,19 @@ class _SyncStatusPopover extends StatelessWidget {
     final parts = <String>[];
     final error = saveState.cloudSyncError;
     final hasSpecificReason = error != null && isSpecificAttentionReason(error);
-    if (_shownLineupConflicts != null) {
+    final listsWholeGroups = _shownLineupConflicts != null && _noLongerFits;
+    if (listsWholeGroups) {
+      parts.add(
+        'A teammate changed these lineups while you were working on them, '
+        'so your change was not sent. The page shows your version, still '
+        'saved on this device.',
+      );
+      parts.add(
+        'Keep mine saves these lineups exactly as shown, replacing all of '
+        'their changes, even to lineups you did not edit. Use cloud replaces '
+        'yours, and Keep both adds yours beside theirs as a copy.',
+      );
+    } else if (_shownLineupConflicts != null) {
       parts.add(
         'A teammate changed these lineups while you were working on them. '
         'Your version remains saved on this device.',
@@ -670,6 +695,7 @@ class _SyncStatusPopover extends StatelessWidget {
         error?.toLowerCase().contains('cannot be retried automatically') ??
             false;
     if (error != null &&
+        !listsWholeGroups &&
         (!hasRejectedWork || retryUnavailable || hasSpecificReason)) {
       parts.add(friendlyCloudSyncError(error));
     }

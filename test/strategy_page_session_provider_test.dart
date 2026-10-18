@@ -9000,6 +9000,17 @@ void main() {
           record = store.load().records.single;
           expect(record.pending.op.opId, 'notes-edit');
           expect(record.status, DurableOutboxStatus.attention);
+          // Each side's changes are still told from the version the user's
+          // change was made from.
+          final conflict = container.read(lineupConflictsProvider)!.single;
+          expect(
+            [for (final change in conflict.yours) change.description],
+            ['notes edited', 'notes edited'],
+          );
+          expect(
+            [for (final change in conflict.cloud!) change.description],
+            ['deleted'],
+          );
 
           // Keep mine, once back online: the user's group is saved whole.
           container.read(_online.notifier).state = true;
@@ -9022,6 +9033,128 @@ void main() {
           expect(store.load().records, isEmpty);
         });
       }
+
+      test(
+          'a lineup change that no longer fits lists what the teammate '
+          'changed, and only Keep mine replaces it', () async {
+        final page = _page('page-1', 0);
+        Map<String, dynamic> linkA({String notes = 'remote lineup'}) =>
+            _linkJson('link-a',
+                originId: 'origin',
+                landingId: 'landing-a',
+                name: 'Heaven',
+                notes: notes);
+        Map<String, dynamic> linkB({String notes = 'remote lineup'}) =>
+            _linkJson('link-b',
+                originId: 'origin',
+                landingId: 'landing-b',
+                name: 'Mid',
+                notes: notes);
+        // A teammate deleted Heaven, and with it the landing only it used,
+        // and retyped Mid's notes.
+        server = _FakeServer(page.publicId, lineups: [
+          _groupRow(
+            page.publicId,
+            'link-a',
+            origins: [_originJson('origin')],
+            landings: [_landingJson('landing-b', const Offset(60, 60))],
+            links: [linkB(notes: 'theirs')],
+            revision: 8,
+          ),
+        ])
+          ..mergesByField = true;
+        // Offline, before that, the user had changed Heaven's notes.
+        final edited = _groupRow(
+          page.publicId,
+          'link-a',
+          origins: [_originJson('origin')],
+          landings: [
+            _landingJson('landing-a'),
+            _landingJson('landing-b', const Offset(60, 60)),
+          ],
+          links: [linkA(notes: 'offline'), linkB()],
+        ).payload;
+        final key = EntitySyncKey.lineup(page.publicId, 'link-a');
+        final store = MemoryDurableStrategyOutboxStore();
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          entityKey: key,
+          pending: PendingOp(
+            op: LineupPatchOp(
+              opId: 'notes-edit',
+              lineupPublicId: 'link-a',
+              pagePublicId: page.publicId,
+              payload: edited,
+              sortIndex: 0,
+              expectedLineupRevision: 7,
+              merge: FieldMerge(
+                fields: const ['links/link-a'],
+                base: {'links/link-a': linkA()},
+              ),
+            ),
+            clientId: 'test-client',
+          ),
+          status: DurableOutboxStatus.queued,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ));
+
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(lineUpProvider).linkById('link-b')!.notes,
+            'remote lineup');
+
+        // The reason is the one that says why, and each side's changes are
+        // told from the version the user's change was made from: theirs is
+        // not hidden behind the user's version on screen.
+        expect(container.read(strategyOpQueueProvider).lastError,
+            undrawableWorkMessage);
+        String listed(List<LineupChange> changes) => [
+              for (final change in changes)
+                '${change.label}: ${change.description}',
+            ].join('; ');
+        final conflict = container.read(lineupConflictsProvider)!.single;
+        expect(listed(conflict.yours), 'Heaven: notes edited');
+        expect(listed(conflict.cloud!), 'Mid: notes edited; Heaven: deleted');
+
+        // Back online, nothing is sent, and the teammate's notes stand.
+        container.read(_online.notifier).state = true;
+        final queue = container.read(strategyOpQueueProvider.notifier);
+        await queue.flushNow();
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(sentFor(batches, key), isEmpty);
+        expect(
+          {
+            for (final link
+                in lineUpGraphFromRemoteLineups(server.liveRows).links)
+              link.id: link.notes,
+          },
+          {'link-b': 'theirs'},
+        );
+
+        // Only Keep mine replaces the group with the user's, as the popover
+        // says: Heaven back with its notes, and Mid's notes as the user has
+        // them.
+        await queue.retryRejected(flushImmediately: false);
+        await queue.flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        expect(sentFor(batches, key), hasLength(1));
+        expect(
+          {
+            for (final link
+                in lineUpGraphFromRemoteLineups(server.liveRows).links)
+              link.id: link.notes,
+          },
+          {'link-a': 'offline', 'link-b': 'remote lineup'},
+        );
+      });
 
       test(
           'refused work recovered after a restart survives an edit on top and '

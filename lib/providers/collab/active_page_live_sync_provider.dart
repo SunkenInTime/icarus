@@ -156,6 +156,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
   }
 
+  /// Whether the canvas drew [key] from outbox work (see [_drawQueuedWork]).
+  /// Its [hydratedBase] is then what an edit of it is checked against,
+  /// rebuilt over the server's version as it is now: it carries the
+  /// revision the work was made against, not that version's content.
+  bool drewFromOutbox(EntitySyncKey key) => _drawnWorkByKey.containsKey(key);
+
   /// The lineup group [itemId] (a lineup, origin or landing) on [pageId]
   /// was last in.
   String? lineupGroupOf(String pageId, String itemId) =>

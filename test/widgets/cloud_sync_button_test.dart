@@ -1183,6 +1183,69 @@ void main() {
       expect(queue.flushNowCount, 0);
     });
 
+    testWidgets(
+        'a change that no longer fits lists what the teammate changed and '
+        'says Keep mine replaces all of it', (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession();
+      // The user edited Heaven's notes offline; a teammate deleted Heaven
+      // and edited Mid's notes. The page shows the user's whole group.
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: [
+          LineupGroupConflict(
+            key: const EntitySyncKey.lineup('page-1', 'link-a'),
+            yours: [change('Heaven', 'notes edited')],
+            cloud: [
+              change('Mid', 'notes edited'),
+              change('Heaven', 'deleted'),
+            ],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(strategySaveStateProvider.notifier)
+          .setCloudSyncError(undrawableWorkMessage);
+      await openPopover(tester, container);
+
+      expect(
+        find.textContaining(
+          'so your change was not sent. The page shows your version, still '
+          'saved on this device.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Keep mine saves these lineups exactly as shown, replacing all of '
+          'their changes, even to lineups you did not edit.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Your changes'), findsOneWidget);
+      expect(line('Heaven · notes edited'), findsOneWidget);
+      expect(find.text('Cloud changes'), findsOneWidget);
+      expect(line('Mid · notes edited'), findsOneWidget);
+      expect(line('Heaven · deleted'), findsOneWidget);
+      expect(find.text('No lineup changes'), findsNothing);
+      // The field-by-field wording, and the reason told twice, are not.
+      expect(find.textContaining('Keep mine replaces their changes'),
+          findsNothing);
+      expect(
+          find.textContaining('A saved change no longer fits'), findsNothing);
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep both'), findsOneWidget);
+
+      // Nothing is replaced until the user chooses Keep mine.
+      expect(queue.retryRejectedCount, 0);
+      await tester.tap(find.text('Keep mine'));
+      await tester.pumpAndSettle();
+      expect(queue.retryRejectedCount, 1);
+      expect(session.useCloudCount, 0);
+    });
+
     testWidgets('a Keep both that cannot load the cloud version says so',
         (tester) async {
       final queue = _AttentionOpQueue(1);
